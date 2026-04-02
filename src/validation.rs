@@ -332,27 +332,39 @@ fn validate_value(
 }
 
 /// Validate a metric definition against the event.
+///
+/// Formula-style metrics (no `field`) are skipped at ingestion time —
+/// they are informational / for downstream aggregation systems only.
+/// Field-bound metrics (with `field` set) are checked against `min`/`max`.
 fn validate_metric(
     metric: &MetricDefinition,
     event: &Value,
     violations: &mut Vec<Violation>,
 ) {
-    let value = resolve_path(event, &metric.field);
+    // Formula-only metrics have no field — nothing to validate per-event.
+    let field_path = match &metric.field {
+        Some(f) => f,
+        None => return,
+    };
+
+    // Only validate if bounds are actually set
+    if metric.min.is_none() && metric.max.is_none() {
+        return;
+    }
+
+    let value = resolve_path(event, field_path);
 
     let n = match value.and_then(numeric_value) {
         Some(n) => n,
         None => {
-            // Missing metric field is a violation if it has bounds
-            if metric.min.is_some() || metric.max.is_some() {
-                violations.push(Violation {
-                    field: metric.field.clone(),
-                    message: format!(
-                        "Metric '{}' field '{}' is missing or not numeric",
-                        metric.name, metric.field
-                    ),
-                    kind: ViolationKind::MissingRequiredField,
-                });
-            }
+            violations.push(Violation {
+                field: field_path.clone(),
+                message: format!(
+                    "Metric '{}' field '{}' is missing or not numeric",
+                    metric.name, field_path
+                ),
+                kind: ViolationKind::MissingRequiredField,
+            });
             return;
         }
     };
@@ -360,10 +372,10 @@ fn validate_metric(
     if let Some(min) = metric.min {
         if n < min {
             violations.push(Violation {
-                field: metric.field.clone(),
+                field: field_path.clone(),
                 message: format!(
                     "Metric '{}' value {} is below minimum {} (field: '{}')",
-                    metric.name, n, min, metric.field
+                    metric.name, n, min, field_path
                 ),
                 kind: ViolationKind::MetricRangeViolation,
             });
@@ -372,10 +384,10 @@ fn validate_metric(
     if let Some(max) = metric.max {
         if n > max {
             violations.push(Violation {
-                field: metric.field.clone(),
+                field: field_path.clone(),
                 message: format!(
                     "Metric '{}' value {} exceeds maximum {} (field: '{}')",
-                    metric.name, n, max, metric.field
+                    metric.name, n, max, field_path
                 ),
                 kind: ViolationKind::MetricRangeViolation,
             });
