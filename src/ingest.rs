@@ -116,6 +116,31 @@ pub async fn ingest_handler(
             });
         }
 
+        // --- Quarantine failed events (fire-and-forget) ---
+        if !passed {
+            let pool = state.db.clone();
+            let event_clone = event.clone();
+            let violation_json_clone = violation_json.clone();
+            let source_ip_clone = source_ip.clone();
+            let validation_us = vr.validation_us as i64;
+
+            tokio::spawn(async move {
+                if let Err(e) = storage::quarantine_event(
+                    &pool,
+                    contract_id,
+                    event_clone,
+                    violation_count,
+                    violation_json_clone,
+                    validation_us,
+                    source_ip_clone.as_deref(),
+                )
+                .await
+                {
+                    tracing::warn!("Failed to quarantine event for contract {}: {:?}", contract_id, e);
+                }
+            });
+        }
+
         // --- Forward passing events to configured destination ---
         let forwarded = if passed {
             forward_event(&state, contract_id, event).await
