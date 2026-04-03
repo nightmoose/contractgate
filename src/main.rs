@@ -33,6 +33,8 @@ mod error;
 mod ingest;
 mod storage;
 mod validation;
+#[cfg(test)]
+mod tests;
 
 use contract::{
     ContractResponse, ContractSummary, CreateContractRequest, UpdateContractRequest,

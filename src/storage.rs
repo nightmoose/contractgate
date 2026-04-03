@@ -42,14 +42,24 @@ impl ContractRow {
 }
 
 // ---------------------------------------------------------------------------
-// Internal row helper for aggregate stats.
+// Internal row helpers for aggregate stats.
 // ---------------------------------------------------------------------------
 
+/// Maps the COUNT/SUM/AVG aggregate query for ingestion stats.
+/// All fields use Option<> for safety across different row-count scenarios.
 #[derive(sqlx::FromRow)]
 struct StatsRow {
-    total: i64,
-    passed: i64,
-    avg_us: f64,
+    total: Option<i64>,
+    passed: Option<i64>,
+    avg_us: Option<f64>,
+}
+
+/// Maps the percentile_disc aggregate query results.
+#[derive(sqlx::FromRow)]
+struct PercRow {
+    p50: Option<i64>,
+    p95: Option<i64>,
+    p99: Option<i64>,
 }
 
 // ---------------------------------------------------------------------------
@@ -127,17 +137,17 @@ pub async fn update_contract_yaml(
     let parsed: Contract = serde_yaml::from_str(yaml_content)
         .map_err(|e| AppError::InvalidContractYaml(e.to_string()))?;
 
-    let result = sqlx::query!(
+    let result = sqlx::query(
         r#"
         UPDATE contracts
         SET yaml_content = $1, name = $2, version = $3, updated_at = NOW()
         WHERE id = $4
         "#,
-        yaml_content,
-        parsed.name,
-        parsed.version,
-        id
     )
+    .bind(yaml_content)
+    .bind(&parsed.name)
+    .bind(&parsed.version)
+    .bind(id)
     .execute(pool)
     .await?;
 
@@ -152,7 +162,7 @@ pub async fn update_contract_active(
     id: Uuid,
     active: bool,
 ) -> AppResult<()> {
-    let result = sqlx::query!(
+    let result = sqlx::query(
         r#"UPDATE contracts SET active = $1, updated_at = NOW() WHERE id = $2"#,
     )
     .bind(active)
@@ -175,10 +185,6 @@ pub async fn delete_contract(pool: &PgPool, id: Uuid) -> AppResult<()> {
 }
 
 // ---------------------------------------------------------------------------
-// Audit log
-// ---------------------------------------------------------------------------
-
-// ---------------------------------------------------------------------------
 // Quarantine events
 // ---------------------------------------------------------------------------
 
@@ -195,21 +201,21 @@ pub async fn quarantine_event(
     validation_us: i64,
     source_ip: Option<&str>,
 ) -> AppResult<()> {
-    sqlx::query!(
+    sqlx::query(
         r#"
         INSERT INTO quarantine_events
             (id, contract_id, payload, violation_count, violation_details,
              validation_us, source_ip, status, created_at)
         VALUES ($1, $2, $3, $4, $5, $6, $7, 'pending', NOW())
         "#,
-        Uuid::new_v4(),
-        contract_id,
-        payload,
-        violation_count,
-        violation_details,
-        validation_us,
-        source_ip
     )
+    .bind(Uuid::new_v4())
+    .bind(contract_id)
+    .bind(payload)
+    .bind(violation_count)
+    .bind(violation_details)
+    .bind(validation_us)
+    .bind(source_ip)
     .execute(pool)
     .await?;
     Ok(())
@@ -294,18 +300,24 @@ pub async fn recent_audit_entries(
 }
 
 /// Fetch summary statistics for the dashboard monitor, including p50/p95/p99 latency.
+///
+/// Uses two separate runtime queries — one for counts/avg, one for percentiles —
+/// to avoid compile-time DATABASE_URL dependency while staying fast (both are
+/// simple aggregates with index support on `validation_us`).
 pub async fn ingestion_stats(
     pool: &PgPool,
     contract_id: Option<Uuid>,
 ) -> AppResult<IngestionStats> {
-    // Aggregate counts + avg
-    let (total, passed, avg_us) = if let Some(cid) = contract_id {
-        let r = sqlx::query!(
+    // -----------------------------------------------------------------------
+    // Query 1: aggregate counts + average latency
+    // -----------------------------------------------------------------------
+    let stats: StatsRow = if let Some(cid) = contract_id {
+        sqlx::query_as::<_, StatsRow>(
             r#"
             SELECT
-                COUNT(*) AS total,
-                COALESCE(SUM(CASE WHEN passed THEN 1 ELSE 0 END), 0)::bigint AS passed,
-                COALESCE(AVG(validation_us::float8), 0.0) AS avg_us
+                COUNT(*)::bigint                                                    AS total,
+                COALESCE(SUM(CASE WHEN passed THEN 1 ELSE 0 END), 0)::bigint       AS passed,
+                COALESCE(AVG(validation_us::float8), 0.0)                          AS avg_us
             FROM audit_log
             WHERE contract_id = $1
             "#,
@@ -317,9 +329,9 @@ pub async fn ingestion_stats(
         sqlx::query_as::<_, StatsRow>(
             r#"
             SELECT
-                COUNT(*) AS total,
-                COALESCE(SUM(CASE WHEN passed THEN 1 ELSE 0 END), 0)::bigint AS passed,
-                COALESCE(AVG(validation_us::float8), 0.0) AS avg_us
+                COUNT(*)::bigint                                                    AS total,
+                COALESCE(SUM(CASE WHEN passed THEN 1 ELSE 0 END), 0)::bigint       AS passed,
+                COALESCE(AVG(validation_us::float8), 0.0)                          AS avg_us
             FROM audit_log
             "#,
         )
@@ -327,46 +339,57 @@ pub async fn ingestion_stats(
         .await?
     };
 
-    // Percentile latencies (p50, p95, p99)
-    let (p50_us, p95_us, p99_us) = if let Some(cid) = contract_id {
-        let r = sqlx::query!(
+    let total = stats.total.unwrap_or(0);
+    let passed = stats.passed.unwrap_or(0);
+    let avg_us = stats.avg_us.unwrap_or(0.0);
+
+    // -----------------------------------------------------------------------
+    // Query 2: percentile latencies (p50 / p95 / p99)
+    //
+    // percentile_disc is a built-in ordered-set aggregate in PostgreSQL 9.4+.
+    // Returns NULL when the input set is empty — handled safely by Option<i64>.
+    // -----------------------------------------------------------------------
+    let perc: PercRow = if let Some(cid) = contract_id {
+        sqlx::query_as::<_, PercRow>(
             r#"
             SELECT
-                percentile_disc(0.50) WITHIN GROUP (ORDER BY validation_us) as p50,
-                percentile_disc(0.95) WITHIN GROUP (ORDER BY validation_us) as p95,
-                percentile_disc(0.99) WITHIN GROUP (ORDER BY validation_us) as p99
+                percentile_disc(0.50) WITHIN GROUP (ORDER BY validation_us) AS p50,
+                percentile_disc(0.95) WITHIN GROUP (ORDER BY validation_us) AS p95,
+                percentile_disc(0.99) WITHIN GROUP (ORDER BY validation_us) AS p99
             FROM audit_log
             WHERE contract_id = $1
             "#,
-            cid
         )
+        .bind(cid)
         .fetch_one(pool)
-        .await?;
-        (r.p50.unwrap_or(0), r.p95.unwrap_or(0), r.p99.unwrap_or(0))
+        .await?
     } else {
-        let r = sqlx::query!(
+        sqlx::query_as::<_, PercRow>(
             r#"
             SELECT
-                percentile_disc(0.50) WITHIN GROUP (ORDER BY validation_us) as p50,
-                percentile_disc(0.95) WITHIN GROUP (ORDER BY validation_us) as p95,
-                percentile_disc(0.99) WITHIN GROUP (ORDER BY validation_us) as p99
+                percentile_disc(0.50) WITHIN GROUP (ORDER BY validation_us) AS p50,
+                percentile_disc(0.95) WITHIN GROUP (ORDER BY validation_us) AS p95,
+                percentile_disc(0.99) WITHIN GROUP (ORDER BY validation_us) AS p99
             FROM audit_log
-            "#
+            "#,
         )
         .fetch_one(pool)
-        .await?;
-        (r.p50.unwrap_or(0), r.p95.unwrap_or(0), r.p99.unwrap_or(0))
+        .await?
     };
 
     Ok(IngestionStats {
         total_events: total,
         passed_events: passed,
         failed_events: total - passed,
-        pass_rate: if total > 0 { passed as f64 / total as f64 } else { 0.0 },
+        pass_rate: if total > 0 {
+            passed as f64 / total as f64
+        } else {
+            0.0
+        },
         avg_validation_us: avg_us,
-        p50_validation_us: p50_us,
-        p95_validation_us: p95_us,
-        p99_validation_us: p99_us,
+        p50_validation_us: perc.p50.unwrap_or(0),
+        p95_validation_us: perc.p95.unwrap_or(0),
+        p99_validation_us: perc.p99.unwrap_or(0),
     })
 }
 

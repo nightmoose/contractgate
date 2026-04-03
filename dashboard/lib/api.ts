@@ -10,7 +10,8 @@ async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
     headers: { "Content-Type": "application/json", ...init?.headers },
     ...init,
   });
-  if (!res.ok) {
+  // 207 Multi-Status is a valid success response from the ingest endpoint
+  if (!res.ok && res.status !== 207) {
     const body = await res.json().catch(() => ({ error: res.statusText }));
     throw new Error(body?.error ?? `Request failed: ${res.status}`);
   }
@@ -53,6 +54,8 @@ export interface BatchIngestResponse {
   total: number;
   passed: number;
   failed: number;
+  /** true when the request was sent with ?dry_run=true — no data was persisted */
+  dry_run: boolean;
   results: IngestEventResult[];
 }
 
@@ -109,11 +112,17 @@ export const deleteContract = (id: string) =>
 // Ingestion
 // ---------------------------------------------------------------------------
 
-export const ingestEvent = (contractId: string, event: unknown) =>
-  apiFetch<BatchIngestResponse>(`/ingest/${contractId}`, {
+export const ingestEvent = (
+  contractId: string,
+  event: unknown,
+  opts: { dryRun?: boolean } = {}
+) => {
+  const qs = opts.dryRun ? "?dry_run=true" : "";
+  return apiFetch<BatchIngestResponse>(`/ingest/${contractId}${qs}`, {
     method: "POST",
     body: JSON.stringify(event),
   });
+};
 
 export const getContractStats = (contractId: string) =>
   apiFetch<IngestionStats>(`/ingest/${contractId}/stats`);

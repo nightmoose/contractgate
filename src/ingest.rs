@@ -4,10 +4,19 @@
 //! against the named contract.  On success the event(s) are forwarded to the
 //! configured destination.  On failure, clear violation details are returned
 //! and the event is quarantined in the audit log.
+//!
+//! ### HTTP status codes
+//! - **200 OK**               — all events passed validation
+//! - **207 Multi-Status**     — batch had a mix of passed and failed events
+//! - **422 Unprocessable**    — all events failed validation
+//!
+//! ### Query parameters
+//! - `?dry_run=true` — validate without writing to the database
 
 use axum::{
-    extract::{Path, State},
-    http::HeaderMap,
+    extract::{Path, Query, State},
+    http::{HeaderMap, StatusCode},
+    response::IntoResponse,
     Json,
 };
 use serde::{Deserialize, Serialize};
@@ -17,12 +26,20 @@ use uuid::Uuid;
 
 use crate::error::{AppError, AppResult};
 use crate::storage;
-use crate::validation::{validate, CompiledContract, ValidationResult};
+use crate::validation::validate;
 use crate::AppState;
 
 // ---------------------------------------------------------------------------
 // Request / response types
 // ---------------------------------------------------------------------------
+
+/// Query parameters accepted by the ingest endpoint.
+#[derive(Debug, Deserialize)]
+pub struct IngestQuery {
+    /// When true: validate only — do not write audit log, quarantine, or forward.
+    #[serde(default)]
+    pub dry_run: bool,
+}
 
 /// The result of validating (and optionally forwarding) a single event.
 #[derive(Debug, Serialize)]
@@ -31,7 +48,8 @@ pub struct IngestEventResult {
     pub violations: Vec<crate::validation::Violation>,
     /// Validation time in microseconds
     pub validation_us: u64,
-    /// Whether the event was forwarded to the downstream destination
+    /// Whether the event was forwarded to the downstream destination.
+    /// Always false when `dry_run=true`.
     pub forwarded: bool,
 }
 
@@ -41,6 +59,8 @@ pub struct BatchIngestResponse {
     pub total: usize,
     pub passed: usize,
     pub failed: usize,
+    /// true when dry_run=true was set; no data was persisted
+    pub dry_run: bool,
     pub results: Vec<IngestEventResult>,
 }
 
@@ -48,16 +68,13 @@ pub struct BatchIngestResponse {
 // Handler: POST /ingest/{contract_id}
 // ---------------------------------------------------------------------------
 
-/// Validates one event (JSON object) or a batch (JSON array) against the
-/// contract identified by `contract_id`.
-///
-/// Returns 200 if all events passed, 422 if any event violated the contract.
 pub async fn ingest_handler(
     State(state): State<Arc<AppState>>,
     Path(contract_id): Path<Uuid>,
+    Query(query): Query<IngestQuery>,
     headers: HeaderMap,
     Json(body): Json<Value>,
-) -> AppResult<Json<BatchIngestResponse>> {
+) -> AppResult<impl IntoResponse> {
     // --- Load & compile contract (hot-path: cached in state) ---
     let compiled = state
         .get_compiled_contract(contract_id)
@@ -90,59 +107,65 @@ pub async fn ingest_handler(
         let violation_count = vr.violations.len() as i32;
         let violation_json = serde_json::to_value(&vr.violations).unwrap_or(Value::Array(vec![]));
 
-        // --- Write audit log (fire-and-forget; don't block response) ---
-        {
-            let pool = state.db.clone();
-            let event_clone = event.clone();
-            let violation_json_clone = violation_json.clone();
-            let source_ip_clone = source_ip.clone();
-            let validation_us = vr.validation_us as i64;
+        if !query.dry_run {
+            // --- Write audit log (fire-and-forget; don't block response) ---
+            {
+                let pool = state.db.clone();
+                let event_clone = event.clone();
+                let violation_json_clone = violation_json.clone();
+                let source_ip_clone = source_ip.clone();
+                let validation_us = vr.validation_us as i64;
 
-            tokio::spawn(async move {
-                if let Err(e) = storage::log_audit_entry(
-                    &pool,
-                    contract_id,
-                    passed,
-                    violation_count,
-                    violation_json_clone,
-                    event_clone,
-                    validation_us,
-                    source_ip_clone.as_deref(),
-                )
-                .await
-                {
-                    tracing::warn!("Failed to write audit log: {:?}", e);
-                }
-            });
-        }
+                tokio::spawn(async move {
+                    if let Err(e) = storage::log_audit_entry(
+                        &pool,
+                        contract_id,
+                        passed,
+                        violation_count,
+                        violation_json_clone,
+                        event_clone,
+                        validation_us,
+                        source_ip_clone.as_deref(),
+                    )
+                    .await
+                    {
+                        tracing::warn!("Failed to write audit log: {:?}", e);
+                    }
+                });
+            }
 
-        // --- Quarantine failed events (fire-and-forget) ---
-        if !passed {
-            let pool = state.db.clone();
-            let event_clone = event.clone();
-            let violation_json_clone = violation_json.clone();
-            let source_ip_clone = source_ip.clone();
-            let validation_us = vr.validation_us as i64;
+            // --- Quarantine failed events (fire-and-forget) ---
+            if !passed {
+                let pool = state.db.clone();
+                let event_clone = event.clone();
+                let violation_json_clone = violation_json.clone();
+                let source_ip_clone = source_ip.clone();
+                let validation_us = vr.validation_us as i64;
 
-            tokio::spawn(async move {
-                if let Err(e) = storage::quarantine_event(
-                    &pool,
-                    contract_id,
-                    event_clone,
-                    violation_count,
-                    violation_json_clone,
-                    validation_us,
-                    source_ip_clone.as_deref(),
-                )
-                .await
-                {
-                    tracing::warn!("Failed to quarantine event for contract {}: {:?}", contract_id, e);
-                }
-            });
+                tokio::spawn(async move {
+                    if let Err(e) = storage::quarantine_event(
+                        &pool,
+                        contract_id,
+                        event_clone,
+                        violation_count,
+                        violation_json_clone,
+                        validation_us,
+                        source_ip_clone.as_deref(),
+                    )
+                    .await
+                    {
+                        tracing::warn!(
+                            "Failed to quarantine event for contract {}: {:?}",
+                            contract_id,
+                            e
+                        );
+                    }
+                });
+            }
         }
 
         // --- Forward passing events to configured destination ---
-        let forwarded = if passed {
+        let forwarded = if passed && !query.dry_run {
             forward_event(&state, contract_id, event).await
         } else {
             false
@@ -163,12 +186,27 @@ pub async fn ingest_handler(
     let total = events.len();
     let failed = total - passed_count;
 
-    Ok(Json(BatchIngestResponse {
+    let response_body = BatchIngestResponse {
         total,
         passed: passed_count,
         failed,
+        dry_run: query.dry_run,
         results,
-    }))
+    };
+
+    // Choose appropriate HTTP status:
+    //   200 — all events passed
+    //   207 — partial success (some passed, some failed)
+    //   422 — all events failed
+    let status = if failed == 0 {
+        StatusCode::OK
+    } else if passed_count == 0 {
+        StatusCode::UNPROCESSABLE_ENTITY
+    } else {
+        StatusCode::MULTI_STATUS
+    };
+
+    Ok((status, Json(response_body)))
 }
 
 // ---------------------------------------------------------------------------
@@ -177,13 +215,11 @@ pub async fn ingest_handler(
 
 /// Forward a validated event to the configured downstream destination.
 ///
-/// Currently supports:
-///   - Supabase table insert (via `events` table)
-///   - Webhook (configurable per-contract in future)
+/// Currently inserts into the `forwarded_events` table in Supabase.
+/// Webhook destination support is planned per-contract configuration.
 ///
 /// Returns `true` if forwarding succeeded.
 async fn forward_event(state: &AppState, contract_id: Uuid, event: &Value) -> bool {
-    // MVP: insert into the `forwarded_events` table in Supabase
     match sqlx::query(
         r#"
         INSERT INTO forwarded_events (id, contract_id, payload, created_at)
@@ -212,11 +248,10 @@ pub async fn ingest_stats_handler(
     State(state): State<Arc<AppState>>,
     Path(contract_id): Path<Uuid>,
 ) -> AppResult<Json<storage::IngestionStats>> {
-    // Verify contract exists
-    let _ = state
-        .get_compiled_contract(contract_id)
+    // Verify contract exists (returns 404 if not found)
+    let _ = storage::get_contract(&state.db, contract_id)
         .await
-        .ok_or(AppError::ContractNotFound(contract_id))?;
+        .map_err(|_| AppError::ContractNotFound(contract_id))?;
 
     let stats = storage::ingestion_stats(&state.db, Some(contract_id)).await?;
     Ok(Json(stats))
