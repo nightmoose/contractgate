@@ -2,6 +2,36 @@
 
 ---
 
+## Run 2026-04-03 04:00
+• Fixed/Added/Improved: 4 changes
+  1. **src/contract.rs — fix `FieldType::Float` serde alias for "number"**: Added
+     `#[serde(alias = "number")]` to `FieldType::Float`. The canonical CLAUDE.md
+     contract format uses `type: number` but the enum only accepted `"float"`, causing
+     silent deserialization failures. Both `"number"` and `"float"` now parse correctly.
+  2. **src/contract.rs — fix `GlossaryEntry` serde aliases + add `synonyms` field**:
+     Added `#[serde(alias = "term")]` to `GlossaryEntry.field` and
+     `#[serde(alias = "definition")]` to `GlossaryEntry.description`. The example
+     YAML files used the `term`/`definition` convention which caused YAML parse errors
+     at contract creation. Added optional `synonyms: Vec<String>` field (informational,
+     not validated). Added `yaml_content: String` to `ContractResponse` so all
+     create/get/update responses include the raw YAML — enables in-browser editing
+     without a separate fetch.
+  3. **dashboard/lib/api.ts — expose yaml_content in ContractResponse; extend updateContract**:
+     Added `yaml_content: string` to the `ContractResponse` interface. Extended
+     `updateContract()` to accept an optional `yaml_content` field in its patch argument.
+  4. **dashboard/app/playground/page.tsx + contracts/page.tsx + contracts/examples/user_events.yaml
+     — fix glossary field names + add Load Contract to Playground**:
+     Fixed all example YAMLs (contracts page template, user_events.yaml) to use
+     canonical `field`/`description` keys instead of `term`/`definition`. Added
+     `type: number` field to example templates (the `"number"` alias added above now
+     handles this). Added a "Load contract" dropdown to the Playground page that
+     fetches any stored contract by ID and populates the YAML editor using the new
+     `yaml_content` response field — connects the Playground to the database backend.
+• Status: Commit b8efcf7 on main. Push to origin blocked by sandbox network proxy —
+  run `git push origin main` from local clone to publish.
+
+---
+
 ## Run 2026-04-02 20:50
 • Fixed/Added/Improved: 4 changes
   1. **storage.rs — eliminated all remaining `sqlx::query!` compile-time macros**: `update_contract_yaml`, `update_contract_active`, and `quarantine_event` now use `sqlx::query(...)` runtime queries with `.bind()` chaining. Completely rewrote `ingestion_stats()` which had a broken tuple-destructure pattern and invalid `query!` + `.bind()` mixing. Added `StatsRow` and `PercRow` helper structs with `Option<>` fields for safety; both stat and percentile queries are now clean `sqlx::query_as` calls.

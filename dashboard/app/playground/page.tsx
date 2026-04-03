@@ -1,9 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import useSWR from "swr";
-import { playgroundValidate, listContracts, getContract } from "@/lib/api";
-import type { ValidationResult, ContractSummary } from "@/lib/api";
+import { playgroundValidate } from "@/lib/api";
+import type { ValidationResult } from "@/lib/api";
 import clsx from "clsx";
 
 const DEFAULT_YAML = `version: "1.0"
@@ -24,21 +23,9 @@ ontology:
       type: integer
       required: true
       min: 0
-    - name: amount
-      type: number
-      required: false
-      min: 0
 
-glossary:
-  - field: "user_id"
-    description: "Unique user identifier"
-  - field: "amount"
-    description: "Monetary value in USD"
-    constraints: "must be non-negative"
-
-metrics:
-  - name: "total_revenue"
-    formula: "sum(amount) where event_type = 'purchase'"
+glossary: []
+metrics: []
 `;
 
 const DEFAULT_EVENT = `{
@@ -52,26 +39,7 @@ export default function PlaygroundPage() {
   const [eventJson, setEventJson] = useState(DEFAULT_EVENT);
   const [result, setResult] = useState<ValidationResult | null>(null);
   const [loading, setLoading] = useState(false);
-  const [loadingContract, setLoadingContract] = useState(false);
   const [parseError, setParseError] = useState<string | null>(null);
-
-  // Load stored contracts for the "Load from store" dropdown
-  const { data: contracts } = useSWR<ContractSummary[]>("contracts", listContracts);
-
-  const handleLoadContract = async (id: string) => {
-    if (!id) return;
-    setLoadingContract(true);
-    setParseError(null);
-    try {
-      const c = await getContract(id);
-      setYaml(c.yaml_content);
-      setResult(null);
-    } catch (e: unknown) {
-      setParseError(e instanceof Error ? e.message : String(e));
-    } finally {
-      setLoadingContract(false);
-    }
-  };
 
   const handleValidate = async () => {
     setParseError(null);
@@ -102,31 +70,6 @@ export default function PlaygroundPage() {
           Test a contract YAML against a sample JSON event — no ingestion, no storage
         </p>
       </div>
-
-      {/* Load from stored contracts */}
-      {contracts && contracts.length > 0 && (
-        <div className="mb-6 flex items-center gap-3">
-          <span className="text-xs text-slate-500 uppercase tracking-wider whitespace-nowrap">
-            Load contract:
-          </span>
-          <select
-            onChange={(e) => handleLoadContract(e.target.value)}
-            defaultValue=""
-            disabled={loadingContract}
-            className="bg-[#111827] border border-[#1f2937] text-slate-300 text-sm rounded-lg px-3 py-1.5 outline-none focus:border-green-700 disabled:opacity-50"
-          >
-            <option value="">— select stored contract —</option>
-            {contracts.map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.name} v{c.version}{!c.active ? " (inactive)" : ""}
-              </option>
-            ))}
-          </select>
-          {loadingContract && (
-            <span className="text-xs text-slate-500 animate-pulse">Loading…</span>
-          )}
-        </div>
-      )}
 
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
         {/* Left: inputs */}

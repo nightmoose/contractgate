@@ -81,16 +81,11 @@ pub struct FieldDefinition {
 }
 
 /// Supported field types inside a contract ontology.
-///
-/// `"number"` is accepted as an alias for `"float"` to match common data-contract
-/// conventions (the canonical CLAUDE.md example uses `type: number`).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum FieldType {
     String,
     Integer,
-    /// `"float"` or `"number"` — both accepted during deserialization.
-    #[serde(alias = "number")]
     Float,
     Boolean,
     Object,
@@ -109,29 +104,19 @@ fn default_true() -> bool {
 
 /// A single term definition in the business glossary.
 ///
-/// Accepts two naming conventions for maximum YAML compatibility:
-///   - Canonical:  `field` / `description` / `constraints`
-///   - Legacy/alt: `term`  / `definition`  / `constraints`
-///
-/// Both forms are accepted during deserialization; serialization always
-/// uses the canonical names (`field`, `description`).
+/// Uses the same field names as the canonical YAML example:
+///   - `field`       — the event field this glossary entry describes
+///   - `description` — human-readable explanation of the field
+///   - `constraints` — optional natural-language constraint summary
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GlossaryEntry {
-    /// The event field name this entry documents.
-    /// Also accepted as `"term"` in YAML for compatibility with common contract editors.
-    #[serde(alias = "term")]
+    /// The event field name this entry documents
     pub field: String,
-    /// Human-readable description of the field's meaning.
-    /// Also accepted as `"definition"` in YAML.
-    #[serde(alias = "definition")]
+    /// Human-readable description
     pub description: String,
     /// Optional natural-language constraint statement (informational only)
     #[serde(default)]
     pub constraints: Option<String>,
-    /// Optional list of alternate names / synonyms for documentation (informational only).
-    /// Not used for validation — stored for reference.
-    #[serde(default)]
-    pub synonyms: Option<Vec<String>>,
 }
 
 // ---------------------------------------------------------------------------
@@ -229,9 +214,6 @@ pub struct CreateContractRequest {
 }
 
 /// Response returned after creating or fetching a contract.
-///
-/// Includes `yaml_content` so callers can render or edit the full contract
-/// definition without a separate fetch.
 #[derive(Debug, Serialize)]
 pub struct ContractResponse {
     pub id: uuid::Uuid,
@@ -240,8 +222,6 @@ pub struct ContractResponse {
     pub active: bool,
     pub created_at: chrono::DateTime<chrono::Utc>,
     pub updated_at: chrono::DateTime<chrono::Utc>,
-    /// The raw YAML content that defines this contract.
-    pub yaml_content: String,
 }
 
 impl From<&StoredContract> for ContractResponse {
@@ -253,7 +233,6 @@ impl From<&StoredContract> for ContractResponse {
             active: sc.active,
             created_at: sc.created_at,
             updated_at: sc.updated_at,
-            yaml_content: sc.yaml_content.clone(),
         }
     }
 }
