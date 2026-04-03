@@ -1,0 +1,91 @@
+# ContractGate CI — runs on every push and pull request to main.
+#
+# Jobs:
+#   rust-check  — cargo check + clippy + unit tests (no DB needed)
+#   dashboard   — Next.js type-check + lint
+#   docker      — verify the Dockerfile builds (no push)
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+env:
+  CARGO_TERM_COLOR: always
+  # Tells sqlx to use cached .sqlx/ metadata instead of a live DB
+  SQLX_OFFLINE: "true"
+
+jobs:
+  # ── Rust ──────────────────────────────────────────────────
+  rust-check:
+    name: Rust — check / clippy / test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+
+      - name: Cache cargo registry + build artefacts
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-cargo-
+
+      - name: cargo check
+        run: cargo check --all-targets
+
+      - name: cargo clippy
+        run: cargo clippy --all-targets -- -D warnings
+
+      - name: cargo test
+        run: cargo test --lib
+
+  # ── Next.js dashboard ─────────────────────────────────────
+  dashboard:
+    name: Dashboard — type-check / lint
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: dashboard
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: npm install
+        run: npm install
+
+      - name: TypeScript type-check
+        run: npm run type-check
+
+      - name: ESLint
+        run: npm run lint
+
+      - name: Next.js build
+        run: npm run build
+        env:
+          # Point at localhost during CI; no real backend needed for static build
+          NEXT_PUBLIC_API_URL: "http://localhost:3001"
+
+  # ── Docker build smoke-test ───────────────────────────────
+  docker:
+    name: Docker — build smoke-test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build Docker image
+        run: docker build -t contractgate-api:ci .

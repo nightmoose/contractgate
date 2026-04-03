@@ -159,15 +159,15 @@ pub async fn ingest_handler(
 /// Returns `true` if forwarding succeeded.
 async fn forward_event(state: &AppState, contract_id: Uuid, event: &Value) -> bool {
     // MVP: insert into the `forwarded_events` table in Supabase
-    match sqlx::query!(
+    match sqlx::query(
         r#"
         INSERT INTO forwarded_events (id, contract_id, payload, created_at)
         VALUES ($1, $2, $3, NOW())
         "#,
-        Uuid::new_v4(),
-        contract_id,
-        event
     )
+    .bind(Uuid::new_v4())
+    .bind(contract_id)
+    .bind(event)
     .execute(&state.db)
     .await
     {

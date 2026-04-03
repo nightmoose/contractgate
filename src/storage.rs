@@ -1,8 +1,10 @@
 //! Supabase (PostgreSQL) storage layer for ContractGate.
 //!
-//! All database access goes through this module.  Uses `sqlx` with compile-time
-//! query checking disabled (`query!` macro) to keep the build self-contained —
-//! switch to `query!` with DATABASE_URL set for full compile-time verification.
+//! All database access goes through this module.  Uses `sqlx` with **runtime**
+//! (non-macro) query execution so the crate builds without requiring a live
+//! `DATABASE_URL` at compile time.  To enable compile-time query verification,
+//! run `cargo sqlx prepare` against a real database and commit the `.sqlx/`
+//! directory, then switch to `query!` / `query_as!` macros.
 
 use crate::contract::{Contract, ContractSummary, StoredContract};
 use crate::error::{AppError, AppResult};
@@ -10,107 +12,116 @@ use sqlx::PgPool;
 use uuid::Uuid;
 
 // ---------------------------------------------------------------------------
+// Internal row helper — maps directly to the `contracts` table columns.
+// ---------------------------------------------------------------------------
+
+#[derive(sqlx::FromRow)]
+struct ContractRow {
+    id: Uuid,
+    name: String,
+    version: String,
+    active: bool,
+    yaml_content: String,
+    created_at: chrono::DateTime<chrono::Utc>,
+    updated_at: chrono::DateTime<chrono::Utc>,
+}
+
+impl ContractRow {
+    fn into_stored(self, parsed: Option<Contract>) -> StoredContract {
+        StoredContract {
+            id: self.id,
+            name: self.name,
+            version: self.version,
+            active: self.active,
+            yaml_content: self.yaml_content,
+            created_at: self.created_at,
+            updated_at: self.updated_at,
+            parsed,
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Internal row helper for aggregate stats.
+// ---------------------------------------------------------------------------
+
+#[derive(sqlx::FromRow)]
+struct StatsRow {
+    total: i64,
+    passed: i64,
+    avg_us: f64,
+}
+
+// ---------------------------------------------------------------------------
 // Contract CRUD
 // ---------------------------------------------------------------------------
 
-pub async fn create_contract(
-    pool: &PgPool,
-    yaml_content: &str,
-) -> AppResult<StoredContract> {
-    // Parse first to validate the YAML
+pub async fn create_contract(pool: &PgPool, yaml_content: &str) -> AppResult<StoredContract> {
+    // Parse first to validate the YAML and extract name/version
     let parsed: Contract = serde_yaml::from_str(yaml_content)
         .map_err(|e| AppError::InvalidContractYaml(e.to_string()))?;
 
     let id = Uuid::new_v4();
     let now = chrono::Utc::now();
 
-    let row = sqlx::query!(
+    let row = sqlx::query_as::<_, ContractRow>(
         r#"
         INSERT INTO contracts (id, name, version, active, yaml_content, created_at, updated_at)
         VALUES ($1, $2, $3, true, $4, $5, $6)
         RETURNING id, name, version, active, yaml_content, created_at, updated_at
         "#,
-        id,
-        parsed.name,
-        parsed.version,
-        yaml_content,
-        now,
-        now
     )
+    .bind(id)
+    .bind(&parsed.name)
+    .bind(&parsed.version)
+    .bind(yaml_content)
+    .bind(now)
+    .bind(now)
     .fetch_one(pool)
     .await?;
 
-    Ok(StoredContract {
-        id: row.id,
-        name: row.name,
-        version: row.version,
-        active: row.active,
-        yaml_content: row.yaml_content,
-        created_at: row.created_at,
-        updated_at: row.updated_at,
-        parsed: Some(parsed),
-    })
+    Ok(row.into_stored(Some(parsed)))
 }
 
 pub async fn get_contract(pool: &PgPool, id: Uuid) -> AppResult<StoredContract> {
-    let row = sqlx::query!(
+    let row = sqlx::query_as::<_, ContractRow>(
         r#"
         SELECT id, name, version, active, yaml_content, created_at, updated_at
         FROM contracts
         WHERE id = $1
         "#,
-        id
     )
+    .bind(id)
     .fetch_optional(pool)
     .await?
     .ok_or(AppError::ContractNotFound(id))?;
 
-    let mut sc = StoredContract {
-        id: row.id,
-        name: row.name,
-        version: row.version,
-        active: row.active,
-        yaml_content: row.yaml_content,
-        created_at: row.created_at,
-        updated_at: row.updated_at,
-        parsed: None,
-    };
-    sc.parse().map_err(|e| AppError::InvalidContractYaml(e.to_string()))?;
+    let mut sc = row.into_stored(None);
+    sc.parse()
+        .map_err(|e| AppError::InvalidContractYaml(e.to_string()))?;
     Ok(sc)
 }
 
 pub async fn list_contracts(pool: &PgPool) -> AppResult<Vec<ContractSummary>> {
-    let rows = sqlx::query!(
+    let rows = sqlx::query_as::<_, ContractSummary>(
         r#"
         SELECT id, name, version, active
         FROM contracts
         ORDER BY created_at DESC
-        "#
+        "#,
     )
     .fetch_all(pool)
     .await?;
 
-    Ok(rows
-        .into_iter()
-        .map(|r| ContractSummary {
-            id: r.id,
-            name: r.name,
-            version: r.version,
-            active: r.active,
-        })
-        .collect())
+    Ok(rows)
 }
 
-pub async fn update_contract_active(
-    pool: &PgPool,
-    id: Uuid,
-    active: bool,
-) -> AppResult<()> {
-    let result = sqlx::query!(
+pub async fn update_contract_active(pool: &PgPool, id: Uuid, active: bool) -> AppResult<()> {
+    let result = sqlx::query(
         r#"UPDATE contracts SET active = $1, updated_at = NOW() WHERE id = $2"#,
-        active,
-        id
     )
+    .bind(active)
+    .bind(id)
     .execute(pool)
     .await?;
 
@@ -121,7 +132,8 @@ pub async fn update_contract_active(
 }
 
 pub async fn delete_contract(pool: &PgPool, id: Uuid) -> AppResult<()> {
-    sqlx::query!("DELETE FROM contracts WHERE id = $1", id)
+    sqlx::query("DELETE FROM contracts WHERE id = $1")
+        .bind(id)
         .execute(pool)
         .await?;
     Ok(())
@@ -142,22 +154,22 @@ pub async fn log_audit_entry(
     validation_us: i64,
     source_ip: Option<&str>,
 ) -> AppResult<()> {
-    sqlx::query!(
+    sqlx::query(
         r#"
         INSERT INTO audit_log
             (id, contract_id, passed, violation_count, violation_details,
              raw_event, validation_us, source_ip, created_at)
         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW())
         "#,
-        Uuid::new_v4(),
-        contract_id,
-        passed,
-        violation_count,
-        violation_details,
-        raw_event,
-        validation_us,
-        source_ip
     )
+    .bind(Uuid::new_v4())
+    .bind(contract_id)
+    .bind(passed)
+    .bind(violation_count)
+    .bind(violation_details)
+    .bind(raw_event)
+    .bind(validation_us)
+    .bind(source_ip)
     .execute(pool)
     .await?;
     Ok(())
@@ -171,8 +183,7 @@ pub async fn recent_audit_entries(
     offset: i64,
 ) -> AppResult<Vec<AuditEntry>> {
     let rows = if let Some(cid) = contract_id {
-        sqlx::query_as!(
-            AuditEntry,
+        sqlx::query_as::<_, AuditEntry>(
             r#"
             SELECT id, contract_id, passed, violation_count, violation_details,
                    raw_event, validation_us, source_ip, created_at
@@ -181,15 +192,14 @@ pub async fn recent_audit_entries(
             ORDER BY created_at DESC
             LIMIT $2 OFFSET $3
             "#,
-            cid,
-            limit,
-            offset
         )
+        .bind(cid)
+        .bind(limit)
+        .bind(offset)
         .fetch_all(pool)
         .await?
     } else {
-        sqlx::query_as!(
-            AuditEntry,
+        sqlx::query_as::<_, AuditEntry>(
             r#"
             SELECT id, contract_id, passed, violation_count, violation_details,
                    raw_event, validation_us, source_ip, created_at
@@ -197,9 +207,9 @@ pub async fn recent_audit_entries(
             ORDER BY created_at DESC
             LIMIT $1 OFFSET $2
             "#,
-            limit,
-            offset
         )
+        .bind(limit)
+        .bind(offset)
         .fetch_all(pool)
         .await?
     };
@@ -208,46 +218,53 @@ pub async fn recent_audit_entries(
 }
 
 /// Fetch summary statistics for the dashboard monitor.
+///
+/// Uses explicit casts to guarantee the Postgres return types that sqlx expects:
+///   - `COUNT(*)` → bigint (i64)
+///   - `SUM(...)::bigint` → bigint (i64), COALESCE ensures non-NULL
+///   - `AVG(...)::float8`  → double precision (f64), COALESCE ensures non-NULL
 pub async fn ingestion_stats(
     pool: &PgPool,
     contract_id: Option<Uuid>,
 ) -> AppResult<IngestionStats> {
-    let (total, passed, avg_us) = if let Some(cid) = contract_id {
-        let r = sqlx::query!(
+    let r = if let Some(cid) = contract_id {
+        sqlx::query_as::<_, StatsRow>(
             r#"
             SELECT
-                COUNT(*) as total,
-                SUM(CASE WHEN passed THEN 1 ELSE 0 END) as passed,
-                AVG(validation_us) as avg_us
+                COUNT(*) AS total,
+                COALESCE(SUM(CASE WHEN passed THEN 1 ELSE 0 END), 0)::bigint AS passed,
+                COALESCE(AVG(validation_us::float8), 0.0) AS avg_us
             FROM audit_log
             WHERE contract_id = $1
             "#,
-            cid
         )
+        .bind(cid)
         .fetch_one(pool)
-        .await?;
-        (r.total.unwrap_or(0), r.passed.unwrap_or(0), r.avg_us.unwrap_or(0.0))
+        .await?
     } else {
-        let r = sqlx::query!(
+        sqlx::query_as::<_, StatsRow>(
             r#"
             SELECT
-                COUNT(*) as total,
-                SUM(CASE WHEN passed THEN 1 ELSE 0 END) as passed,
-                AVG(validation_us) as avg_us
+                COUNT(*) AS total,
+                COALESCE(SUM(CASE WHEN passed THEN 1 ELSE 0 END), 0)::bigint AS passed,
+                COALESCE(AVG(validation_us::float8), 0.0) AS avg_us
             FROM audit_log
-            "#
+            "#,
         )
         .fetch_one(pool)
-        .await?;
-        (r.total.unwrap_or(0), r.passed.unwrap_or(0), r.avg_us.unwrap_or(0.0))
+        .await?
     };
 
     Ok(IngestionStats {
-        total_events: total,
-        passed_events: passed,
-        failed_events: total - passed,
-        pass_rate: if total > 0 { passed as f64 / total as f64 } else { 0.0 },
-        avg_validation_us: avg_us,
+        total_events: r.total,
+        passed_events: r.passed,
+        failed_events: r.total - r.passed,
+        pass_rate: if r.total > 0 {
+            r.passed as f64 / r.total as f64
+        } else {
+            0.0
+        },
+        avg_validation_us: r.avg_us,
     })
 }
 

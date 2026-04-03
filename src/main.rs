@@ -14,7 +14,6 @@ use axum::{
     routing::{delete, get, post, put},
     Router,
 };
-use once_cell::sync::OnceCell;
 use sqlx::PgPool;
 use std::{
     collections::HashMap,

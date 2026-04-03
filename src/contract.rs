@@ -8,7 +8,6 @@
 //! Contracts are stored as YAML and versioned in Supabase.
 
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
 
 // ---------------------------------------------------------------------------
 // Top-level contract
@@ -208,7 +207,7 @@ impl From<&StoredContract> for ContractResponse {
 }
 
 /// Summary info for contract listing (lightweight).
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, sqlx::FromRow)]
 pub struct ContractSummary {
     pub id: uuid::Uuid,
     pub name: String,
