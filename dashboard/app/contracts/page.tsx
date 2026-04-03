@@ -35,11 +35,21 @@ ontology:
       required: true
       min: 0
 
-glossary:
-  - term: "user_id"
-    definition: "Unique user identifier"
+    - name: amount
+      type: number
+      required: false
+      min: 0
 
-metrics: []
+glossary:
+  - field: "user_id"
+    description: "Unique user identifier"
+  - field: "amount"
+    description: "Monetary value in USD"
+    constraints: "must be non-negative"
+
+metrics:
+  - name: "total_revenue"
+    formula: "sum(amount) where event_type = 'purchase'"
 `;
 
 export default function ContractsPage() {

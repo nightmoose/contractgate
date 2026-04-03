@@ -38,7 +38,7 @@ ontology:
       pattern: "^[a-f0-9]{32}$"
 
     - name: amount
-      type: float
+      type: number
       required: false
       min: 0.0
       max: 1000000.0
@@ -57,21 +57,25 @@ ontology:
           max_length: 512
 
 glossary:
-  - term: "user_id"
-    definition: "Unique, stable identifier for a registered user in the system"
+  - field: "user_id"
+    description: "Unique, stable identifier for a registered user in the system"
     synonyms: ["uid", "userId"]
 
-  - term: "event_type"
-    definition: "High-level category describing the action a user performed"
+  - field: "event_type"
+    description: "High-level category describing the action a user performed"
     synonyms: ["action", "eventName"]
 
-  - term: "timestamp"
-    definition: "Unix epoch timestamp (seconds) when the event occurred on the client"
+  - field: "timestamp"
+    description: "Unix epoch timestamp (seconds) when the event occurred on the client"
     synonyms: ["ts", "event_time"]
 
-  - term: "session_id"
-    definition: "32-character hex token identifying the user's browser session"
+  - field: "session_id"
+    description: "32-character hex token identifying the user's browser session"
     synonyms: ["sid", "sessionId"]
+
+  - field: "amount"
+    description: "Monetary amount in USD associated with a purchase event"
+    constraints: "must be non-negative; maximum 1 000 000"
 
 metrics:
   - name: "purchase_amount"
@@ -79,3 +83,6 @@ metrics:
     type: float
     min: 0.0
     max: 1000000.0
+
+  - name: "total_revenue"
+    formula: "sum(amount) where event_type = 'purchase'"
