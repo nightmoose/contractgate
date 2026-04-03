@@ -32,6 +32,8 @@ export interface ContractSummary {
 export interface ContractResponse extends ContractSummary {
   created_at: string;
   updated_at: string;
+  /** Raw YAML definition — included in all create/get/update responses */
+  yaml_content: string;
 }
 
 export interface Violation {
@@ -99,7 +101,10 @@ export const createContract = (yaml_content: string) =>
     body: JSON.stringify({ yaml_content }),
   });
 
-export const updateContract = (id: string, patch: { active?: boolean }) =>
+export const updateContract = (
+  id: string,
+  patch: { active?: boolean; yaml_content?: string }
+) =>
   apiFetch<ContractResponse>(`/contracts/${id}`, {
     method: "PUT",
     body: JSON.stringify(patch),
