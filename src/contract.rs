@@ -103,32 +103,63 @@ fn default_true() -> bool {
 // ---------------------------------------------------------------------------
 
 /// A single term definition in the business glossary.
+///
+/// Uses the same field names as the canonical YAML example:
+///   - `field`       — the event field this glossary entry describes
+///   - `description` — human-readable explanation of the field
+///   - `constraints` — optional natural-language constraint summary
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GlossaryEntry {
-    pub term: String,
-    pub definition: String,
+    /// The event field name this entry documents
+    pub field: String,
+    /// Human-readable description
+    pub description: String,
+    /// Optional natural-language constraint statement (informational only)
     #[serde(default)]
-    pub synonyms: Vec<String>,
+    pub constraints: Option<String>,
 }
 
 // ---------------------------------------------------------------------------
 // Metric definitions
 // ---------------------------------------------------------------------------
 
-/// Defines a numeric KPI / measure that must pass range checks.
+/// Defines a numeric KPI / measure associated with a contract.
+///
+/// Two styles are supported:
+///
+/// 1. **Field-bound metric** — validates a single event field stays within
+///    optional `min`/`max` bounds:
+///    ```yaml
+///    - name: latency_ms
+///      field: latency
+///      type: float
+///      max: 500
+///    ```
+///
+/// 2. **Formula metric** — records the formula string for documentation /
+///    downstream aggregation systems. ContractGate does not evaluate the
+///    formula at ingestion time; it is stored for reference:
+///    ```yaml
+///    - name: total_revenue
+///      formula: "sum(amount) where event_type = 'purchase'"
+///    ```
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MetricDefinition {
-    /// Metric name (used in violation messages)
+    /// Metric name (used in violation messages and dashboards)
     pub name: String,
-    /// JSON field path containing the metric value (dot-separated)
-    pub field: String,
-    /// Expected numeric type
-    #[serde(rename = "type")]
-    pub metric_type: MetricType,
-    /// Inclusive lower bound (optional)
+    /// JSON field path for field-bound metrics (dot-separated, e.g. "user.score")
+    #[serde(default)]
+    pub field: Option<String>,
+    /// Expected numeric type for field-bound metrics
+    #[serde(rename = "type", default)]
+    pub metric_type: Option<MetricType>,
+    /// Formula string for aggregate / formula-style metrics (informational)
+    #[serde(default)]
+    pub formula: Option<String>,
+    /// Inclusive lower bound — only applies when `field` is set
     #[serde(default)]
     pub min: Option<f64>,
-    /// Inclusive upper bound (optional)
+    /// Inclusive upper bound — only applies when `field` is set
     #[serde(default)]
     pub max: Option<f64>,
 }

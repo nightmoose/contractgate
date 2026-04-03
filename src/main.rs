@@ -129,11 +129,19 @@ async fn update_contract_handler(
     Path(id): Path<Uuid>,
     Json(req): Json<UpdateContractRequest>,
 ) -> AppResult<Json<ContractResponse>> {
+    // Handle yaml_content replacement first (re-parses + re-validates the YAML)
+    if let Some(ref yaml) = req.yaml_content {
+        storage::update_contract_yaml(&state.db, id, yaml).await?;
+        // Evict cached compiled contract — it will be rebuilt on next request
+        state.invalidate_contract(id);
+    }
+
+    // Handle active flag toggle
     if let Some(active) = req.active {
         storage::update_contract_active(&state.db, id, active).await?;
         state.invalidate_contract(id);
     }
-    // Future: handle yaml_content update
+
     let stored = storage::get_contract(&state.db, id).await?;
     Ok(Json(ContractResponse::from(&stored)))
 }

@@ -116,8 +116,43 @@ pub async fn list_contracts(pool: &PgPool) -> AppResult<Vec<ContractSummary>> {
     Ok(rows)
 }
 
-pub async fn update_contract_active(pool: &PgPool, id: Uuid, active: bool) -> AppResult<()> {
-    let result = sqlx::query(
+/// Replace a contract's YAML content.  Parses the YAML first so invalid
+/// contracts are rejected before touching the database.
+pub async fn update_contract_yaml(
+    pool: &PgPool,
+    id: Uuid,
+    yaml_content: &str,
+) -> AppResult<()> {
+    // Validate YAML before writing
+    let parsed: Contract = serde_yaml::from_str(yaml_content)
+        .map_err(|e| AppError::InvalidContractYaml(e.to_string()))?;
+
+    let result = sqlx::query!(
+        r#"
+        UPDATE contracts
+        SET yaml_content = $1, name = $2, version = $3, updated_at = NOW()
+        WHERE id = $4
+        "#,
+        yaml_content,
+        parsed.name,
+        parsed.version,
+        id
+    )
+    .execute(pool)
+    .await?;
+
+    if result.rows_affected() == 0 {
+        return Err(AppError::ContractNotFound(id));
+    }
+    Ok(())
+}
+
+pub async fn update_contract_active(
+    pool: &PgPool,
+    id: Uuid,
+    active: bool,
+) -> AppResult<()> {
+    let result = sqlx::query!(
         r#"UPDATE contracts SET active = $1, updated_at = NOW() WHERE id = $2"#,
     )
     .bind(active)
@@ -136,6 +171,47 @@ pub async fn delete_contract(pool: &PgPool, id: Uuid) -> AppResult<()> {
         .bind(id)
         .execute(pool)
         .await?;
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// Audit log
+// ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
+// Quarantine events
+// ---------------------------------------------------------------------------
+
+/// Write a failed event to the quarantine table.
+///
+/// Called fire-and-forget from the ingest handler — errors are logged but
+/// do not affect the HTTP response.
+pub async fn quarantine_event(
+    pool: &PgPool,
+    contract_id: Uuid,
+    payload: serde_json::Value,
+    violation_count: i32,
+    violation_details: serde_json::Value,
+    validation_us: i64,
+    source_ip: Option<&str>,
+) -> AppResult<()> {
+    sqlx::query!(
+        r#"
+        INSERT INTO quarantine_events
+            (id, contract_id, payload, violation_count, violation_details,
+             validation_us, source_ip, status, created_at)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, 'pending', NOW())
+        "#,
+        Uuid::new_v4(),
+        contract_id,
+        payload,
+        violation_count,
+        violation_details,
+        validation_us,
+        source_ip
+    )
+    .execute(pool)
+    .await?;
     Ok(())
 }
 
@@ -217,18 +293,14 @@ pub async fn recent_audit_entries(
     Ok(rows)
 }
 
-/// Fetch summary statistics for the dashboard monitor.
-///
-/// Uses explicit casts to guarantee the Postgres return types that sqlx expects:
-///   - `COUNT(*)` → bigint (i64)
-///   - `SUM(...)::bigint` → bigint (i64), COALESCE ensures non-NULL
-///   - `AVG(...)::float8`  → double precision (f64), COALESCE ensures non-NULL
+/// Fetch summary statistics for the dashboard monitor, including p50/p95/p99 latency.
 pub async fn ingestion_stats(
     pool: &PgPool,
     contract_id: Option<Uuid>,
 ) -> AppResult<IngestionStats> {
-    let r = if let Some(cid) = contract_id {
-        sqlx::query_as::<_, StatsRow>(
+    // Aggregate counts + avg
+    let (total, passed, avg_us) = if let Some(cid) = contract_id {
+        let r = sqlx::query!(
             r#"
             SELECT
                 COUNT(*) AS total,
@@ -255,16 +327,46 @@ pub async fn ingestion_stats(
         .await?
     };
 
+    // Percentile latencies (p50, p95, p99)
+    let (p50_us, p95_us, p99_us) = if let Some(cid) = contract_id {
+        let r = sqlx::query!(
+            r#"
+            SELECT
+                percentile_disc(0.50) WITHIN GROUP (ORDER BY validation_us) as p50,
+                percentile_disc(0.95) WITHIN GROUP (ORDER BY validation_us) as p95,
+                percentile_disc(0.99) WITHIN GROUP (ORDER BY validation_us) as p99
+            FROM audit_log
+            WHERE contract_id = $1
+            "#,
+            cid
+        )
+        .fetch_one(pool)
+        .await?;
+        (r.p50.unwrap_or(0), r.p95.unwrap_or(0), r.p99.unwrap_or(0))
+    } else {
+        let r = sqlx::query!(
+            r#"
+            SELECT
+                percentile_disc(0.50) WITHIN GROUP (ORDER BY validation_us) as p50,
+                percentile_disc(0.95) WITHIN GROUP (ORDER BY validation_us) as p95,
+                percentile_disc(0.99) WITHIN GROUP (ORDER BY validation_us) as p99
+            FROM audit_log
+            "#
+        )
+        .fetch_one(pool)
+        .await?;
+        (r.p50.unwrap_or(0), r.p95.unwrap_or(0), r.p99.unwrap_or(0))
+    };
+
     Ok(IngestionStats {
-        total_events: r.total,
-        passed_events: r.passed,
-        failed_events: r.total - r.passed,
-        pass_rate: if r.total > 0 {
-            r.passed as f64 / r.total as f64
-        } else {
-            0.0
-        },
-        avg_validation_us: r.avg_us,
+        total_events: total,
+        passed_events: passed,
+        failed_events: total - passed,
+        pass_rate: if total > 0 { passed as f64 / total as f64 } else { 0.0 },
+        avg_validation_us: avg_us,
+        p50_validation_us: p50_us,
+        p95_validation_us: p95_us,
+        p99_validation_us: p99_us,
     })
 }
 
@@ -292,4 +394,10 @@ pub struct IngestionStats {
     pub failed_events: i64,
     pub pass_rate: f64,
     pub avg_validation_us: f64,
+    /// Median (p50) validation latency in microseconds
+    pub p50_validation_us: i64,
+    /// 95th-percentile validation latency in microseconds
+    pub p95_validation_us: i64,
+    /// 99th-percentile validation latency in microseconds (target: <15 000 µs)
+    pub p99_validation_us: i64,
 }

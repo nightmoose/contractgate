@@ -62,6 +62,12 @@ export interface IngestionStats {
   failed_events: number;
   pass_rate: number;
   avg_validation_us: number;
+  /** Median validation latency in microseconds */
+  p50_validation_us: number;
+  /** 95th-percentile validation latency in microseconds */
+  p95_validation_us: number;
+  /** 99th-percentile validation latency in microseconds (target: <15 000 µs) */
+  p99_validation_us: number;
 }
 
 export interface AuditEntry {
