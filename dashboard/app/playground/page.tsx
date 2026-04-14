@@ -78,7 +78,7 @@ export default function PlaygroundPage() {
     let parsed: unknown;
     try {
       parsed = JSON.parse(eventJson);
-    } catch (e) {
+    } catch {
       setParseError("Invalid JSON in event field");
       return;
     }
