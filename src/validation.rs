@@ -50,6 +50,7 @@ pub enum ViolationKind {
     RangeViolation,
     LengthViolation,
     MetricRangeViolation,
+    #[allow(dead_code)]
     UnknownField,
 }
 
@@ -115,7 +116,7 @@ pub fn validate(compiled: &CompiledContract, event: &Value) -> ValidationResult 
     let t0 = std::time::Instant::now();
     let mut violations = Vec::new();
 
-    let obj = match event.as_object() {
+    let _obj = match event.as_object() {
         Some(o) => o,
         None => {
             return ValidationResult {
