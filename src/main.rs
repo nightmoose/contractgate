@@ -10,10 +10,12 @@
 use axum::{
     extract::{Path, Query, State},
     http::StatusCode,
+    middleware::{self, Next},
     response::Json,
     routing::{get, post},
     Router,
 };
+use axum::extract::Request;
 use sqlx::PgPool;
 use std::{
     collections::HashMap,
@@ -52,13 +54,17 @@ pub struct AppState {
     /// In-memory cache of compiled contracts (contract_id → compiled).
     /// Avoids re-parsing + re-compiling regex on every request.
     contract_cache: RwLock<HashMap<Uuid, Arc<CompiledContract>>>,
+    /// Optional API key — if set, all protected routes require `x-api-key: <key>`.
+    /// Leave empty (or unset API_KEY env var) to run without auth (dev only).
+    pub api_key: String,
 }
 
 impl AppState {
-    pub fn new(db: PgPool) -> Self {
+    pub fn new(db: PgPool, api_key: String) -> Self {
         AppState {
             db,
             contract_cache: RwLock::new(HashMap::new()),
+            api_key,
         }
     }
 
@@ -227,6 +233,38 @@ async fn playground_handler(
 }
 
 // ---------------------------------------------------------------------------
+// Auth middleware
+// ---------------------------------------------------------------------------
+
+/// Tower middleware that enforces `x-api-key` on all protected routes.
+///
+/// If `API_KEY` env var is unset or empty the check is skipped (dev mode).
+/// In production, set `API_KEY` via `fly secrets set API_KEY=<secret>`.
+async fn require_api_key(
+    State(state): State<Arc<AppState>>,
+    request: Request,
+    next: Next,
+) -> Result<axum::response::Response, error::AppError> {
+    // If no API key is configured, allow all traffic (useful for local dev)
+    if state.api_key.is_empty() {
+        return Ok(next.run(request).await);
+    }
+
+    let provided = request
+        .headers()
+        .get("x-api-key")
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("");
+
+    if provided == state.api_key {
+        Ok(next.run(request).await)
+    } else {
+        tracing::warn!("Rejected request: missing or invalid x-api-key");
+        Err(error::AppError::Unauthorized)
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Router
 // ---------------------------------------------------------------------------
 
@@ -236,9 +274,13 @@ fn build_router(state: Arc<AppState>) -> Router {
         .allow_methods(Any)
         .allow_headers(Any);
 
-    Router::new()
-        // Health
+    // Public routes — no auth required
+    let public = Router::new()
         .route("/health", get(health_handler))
+        .route("/playground/validate", post(playground_handler));
+
+    // Protected routes — require x-api-key header
+    let protected = Router::new()
         // Contract management
         .route("/contracts", get(list_contracts_handler).post(create_contract_handler))
         .route(
@@ -250,12 +292,14 @@ fn build_router(state: Arc<AppState>) -> Router {
         // Ingestion
         .route("/ingest/:contract_id", post(ingest::ingest_handler))
         .route("/ingest/:contract_id/stats", get(ingest::ingest_stats_handler))
-        // Audit
+        // Audit + stats
         .route("/audit", get(audit_log_handler))
         .route("/stats", get(global_stats_handler))
-        // Playground (no DB required)
-        .route("/playground/validate", post(playground_handler))
-        // Middleware
+        .layer(middleware::from_fn_with_state(state.clone(), require_api_key));
+
+    Router::new()
+        .merge(public)
+        .merge(protected)
         .layer(cors)
         .layer(TraceLayer::new_for_http())
         .layer(TimeoutLayer::new(std::time::Duration::from_secs(30)))
@@ -287,7 +331,15 @@ async fn main() -> anyhow::Result<()> {
     let pool = PgPool::connect(&database_url).await?;
     tracing::info!("Connected to database");
 
-    let state = Arc::new(AppState::new(pool));
+    // API key — warn loudly if unset in production
+    let api_key = std::env::var("API_KEY").unwrap_or_default();
+    if api_key.is_empty() {
+        tracing::warn!("API_KEY is not set — running without authentication (dev mode only)");
+    } else {
+        tracing::info!("API key authentication enabled");
+    }
+
+    let state = Arc::new(AppState::new(pool, api_key));
     let app = build_router(state);
 
     let port: u16 = std::env::var("PORT")

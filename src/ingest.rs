@@ -91,6 +91,16 @@ pub async fn ingest_handler(
         return Err(AppError::BadRequest("Empty event batch".into()));
     }
 
+    // Hard cap: prevent memory exhaustion from oversized batches
+    const MAX_BATCH_SIZE: usize = 500;
+    if events.len() > MAX_BATCH_SIZE {
+        return Err(AppError::BadRequest(format!(
+            "Batch too large: {} events submitted, maximum is {}",
+            events.len(),
+            MAX_BATCH_SIZE
+        )));
+    }
+
     let source_ip = headers
         .get("x-forwarded-for")
         .or_else(|| headers.get("x-real-ip"))
