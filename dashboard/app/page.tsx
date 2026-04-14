@@ -3,14 +3,6 @@
 import useSWR from "swr";
 import { getGlobalStats, getAuditLog, listContracts } from "@/lib/api";
 import type { IngestionStats, AuditEntry, ContractSummary } from "@/lib/api";
-import {
-  AreaChart,
-  Area,
-  XAxis,
-  YAxis,
-  Tooltip,
-  ResponsiveContainer,
-} from "recharts";
 import clsx from "clsx";
 
 // ---------------------------------------------------------------------------
