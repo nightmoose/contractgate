@@ -1,40 +1,41 @@
-# fly.toml — ContractGate Rust backend on Fly.io
-# Deploy with: fly deploy
-# First-time: fly launch --no-deploy, then fly secrets set DATABASE_URL=... && fly deploy
+# fly.toml app configuration file generated for contractgate-api on 2026-04-14T15:52:37-04:00
+#
+# See https://fly.io/docs/reference/configuration/ for information about how to use this file.
+#
 
-app = "contractgate-api"
-primary_region = "iad"
+app = 'contractgate-api'
+primary_region = 'iad'
 
 [build]
-  dockerfile = "Dockerfile"
+  dockerfile = 'Dockerfile'
 
 [env]
-  PORT = "3001"
-  RUST_LOG = "contractgate=info,tower_http=warn"
+  PORT = '3001'
+  RUST_LOG = 'contractgate=info,tower_http=warn'
 
 [http_service]
   internal_port = 3001
   force_https = true
-  auto_stop_machines = true
+  auto_stop_machines = 'stop'
   auto_start_machines = true
   min_machines_running = 0
 
   [http_service.concurrency]
-    type = "requests"
+    type = 'requests'
     hard_limit = 500
     soft_limit = 400
 
-[[vm]]
-  cpu_kind = "shared"
-  cpus = 1
-  memory_mb = 256
-
 [checks]
   [checks.health]
-    grace_period = "10s"
-    interval = "15s"
-    method = "GET"
-    path = "/health"
     port = 3001
-    timeout = "5s"
-    type = "http"
+    type = 'http'
+    interval = '15s'
+    timeout = '5s'
+    grace_period = '10s'
+    method = 'GET'
+    path = '/health'
+
+[[vm]]
+  cpu_kind = 'shared'
+  cpus = 1
+  memory_mb = 256
