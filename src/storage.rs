@@ -192,6 +192,7 @@ pub async fn delete_contract(pool: &PgPool, id: Uuid) -> AppResult<()> {
 ///
 /// Called fire-and-forget from the ingest handler — errors are logged but
 /// do not affect the HTTP response.
+#[allow(clippy::too_many_arguments)]
 pub async fn quarantine_event(
     pool: &PgPool,
     contract_id: Uuid,
@@ -226,6 +227,7 @@ pub async fn quarantine_event(
 // ---------------------------------------------------------------------------
 
 /// Insert a record into the audit log after each ingestion attempt.
+#[allow(clippy::too_many_arguments)]
 pub async fn log_audit_entry(
     pool: &PgPool,
     contract_id: Uuid,
