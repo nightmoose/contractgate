@@ -20,3 +20,4 @@ dashboard/.env
 # Editor
 .vscode/
 .idea/
+dashboard/tsconfig.tsbuildinfo

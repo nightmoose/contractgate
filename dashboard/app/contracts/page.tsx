@@ -1,14 +1,16 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { useRouter } from "next/navigation";
 import useSWR, { mutate } from "swr";
 import {
   listContracts,
+  getContract,
   createContract,
   updateContract,
   deleteContract,
 } from "@/lib/api";
-import type { ContractSummary } from "@/lib/api";
+import type { ContractSummary, ContractResponse } from "@/lib/api";
 import clsx from "clsx";
 
 // ---------------------------------------------------------------------------
@@ -181,6 +183,176 @@ function buildYaml(name: string, fields: InferredField[]): string {
 }
 
 // ---------------------------------------------------------------------------
+// Edit Contract Modal
+// ---------------------------------------------------------------------------
+
+function EditContractModal({
+  contractId,
+  onClose,
+  onSaved,
+  onTestInPlayground,
+}: {
+  contractId: string;
+  onClose: () => void;
+  onSaved: () => void;
+  onTestInPlayground: (yaml: string, contractId: string) => void;
+}) {
+  const [yaml, setYaml] = useState<string>("");
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [contract, setContract] = useState<ContractResponse | null>(null);
+  const [copied, setCopied] = useState(false);
+
+  const BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001";
+  const ingestUrl = `${BASE}/ingest/${contractId}`;
+
+  useEffect(() => {
+    setLoading(true);
+    getContract(contractId)
+      .then((c) => {
+        setContract(c);
+        setYaml(c.yaml_content);
+      })
+      .catch((e) => setError(e instanceof Error ? e.message : String(e)))
+      .finally(() => setLoading(false));
+  }, [contractId]);
+
+  const handleSave = async () => {
+    setSaving(true);
+    setError(null);
+    try {
+      await updateContract(contractId, { yaml_content: yaml });
+      await mutate("contracts");
+      onSaved();
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleCopyEndpoint = () => {
+    navigator.clipboard.writeText(ingestUrl);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  // Close on Escape key
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [onClose]);
+
+  return (
+    /* Backdrop */
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4"
+      onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
+    >
+      <div className="bg-[#0f1623] border border-[#1f2937] rounded-2xl w-full max-w-3xl shadow-2xl flex flex-col max-h-[90vh]">
+        {/* Header */}
+        <div className="flex items-start justify-between p-6 border-b border-[#1f2937]">
+          <div>
+            <h2 className="text-lg font-semibold text-slate-100">
+              {loading ? "Loading…" : contract?.name ?? "Contract"}
+            </h2>
+            {contract && (
+              <p className="text-xs text-slate-500 font-mono mt-1">{contract.id}</p>
+            )}
+          </div>
+          <button
+            onClick={onClose}
+            className="text-slate-500 hover:text-slate-300 transition-colors text-xl leading-none ml-4"
+            aria-label="Close"
+          >
+            ✕
+          </button>
+        </div>
+
+        {/* Ingest endpoint strip */}
+        {contract && (
+          <div className="px-6 py-3 bg-[#111827] border-b border-[#1f2937] flex items-center gap-3">
+            <span className="text-xs text-slate-500 uppercase tracking-wider font-medium shrink-0">
+              Ingest URL
+            </span>
+            <code className="text-xs text-blue-400 font-mono truncate flex-1">{ingestUrl}</code>
+            <button
+              onClick={handleCopyEndpoint}
+              className="shrink-0 px-3 py-1 text-xs bg-[#1f2937] hover:bg-[#374151] text-slate-300 rounded-lg transition-colors"
+            >
+              {copied ? "✔ Copied!" : "Copy"}
+            </button>
+            <button
+              onClick={() => onTestInPlayground(yaml, contractId)}
+              className="shrink-0 px-3 py-1 text-xs bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg transition-colors"
+            >
+              Test in Playground →
+            </button>
+          </div>
+        )}
+
+        {/* YAML editor */}
+        <div className="flex-1 overflow-auto p-6">
+          {loading ? (
+            <div className="flex items-center justify-center h-48 text-slate-500 text-sm">
+              Loading contract…
+            </div>
+          ) : (
+            <>
+              <div className="flex items-center justify-between mb-2">
+                <label className="text-xs font-medium text-slate-400 uppercase tracking-wider">
+                  Contract YAML
+                </label>
+                {contract && (
+                  <span className="text-xs text-slate-600">
+                    Updated {new Date(contract.updated_at).toLocaleString()}
+                  </span>
+                )}
+              </div>
+              <textarea
+                className="w-full h-80 bg-[#0a0d12] text-green-300 font-mono text-sm p-4 rounded-lg border border-[#1f2937] outline-none focus:border-green-700 resize-y"
+                value={yaml}
+                onChange={(e) => { setYaml(e.target.value); setError(null); }}
+                spellCheck={false}
+              />
+              {error && (
+                <p className="mt-2 text-sm text-red-400 bg-red-900/20 border border-red-800/40 rounded p-2">
+                  {error}
+                </p>
+              )}
+            </>
+          )}
+        </div>
+
+        {/* Footer actions */}
+        {!loading && (
+          <div className="flex items-center gap-3 p-6 border-t border-[#1f2937]">
+            <button
+              onClick={handleSave}
+              disabled={saving}
+              className="px-4 py-2 bg-green-600 hover:bg-green-500 disabled:opacity-50 text-white text-sm font-medium rounded-lg transition-colors"
+            >
+              {saving ? "Saving…" : "Save Changes"}
+            </button>
+            <button
+              onClick={onClose}
+              className="px-4 py-2 bg-[#1f2937] hover:bg-[#374151] text-slate-300 text-sm font-medium rounded-lg transition-colors"
+            >
+              Cancel
+            </button>
+            <span className="ml-auto text-xs text-slate-600">
+              Press <kbd className="bg-[#1f2937] px-1 rounded">Esc</kbd> to close
+            </span>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Sub-components
 // ---------------------------------------------------------------------------
 
@@ -189,11 +361,13 @@ function ContractList({
   isLoading,
   onToggleActive,
   onDelete,
+  onEdit,
 }: {
   contracts?: ContractSummary[];
   isLoading: boolean;
   onToggleActive: (c: ContractSummary) => void;
   onDelete: (id: string) => void;
+  onEdit: (id: string) => void;
 }) {
   if (isLoading) return <p className="text-slate-500 text-sm">Loading…</p>;
   if (!contracts || contracts.length === 0) {
@@ -229,6 +403,12 @@ function ContractList({
             <p className="text-xs text-slate-600 mt-1 font-mono">{c.id}</p>
           </div>
           <div className="flex items-center gap-2">
+            <button
+              onClick={() => onEdit(c.id)}
+              className="px-3 py-1.5 text-xs bg-indigo-900/30 hover:bg-indigo-900/50 text-indigo-400 rounded-lg transition-colors"
+            >
+              Edit / View
+            </button>
             <button
               onClick={() => onToggleActive(c)}
               className="px-3 py-1.5 text-xs bg-[#1f2937] hover:bg-[#374151] text-slate-300 rounded-lg transition-colors"
@@ -490,12 +670,14 @@ function ManualCreatePanel({ onCancel, onCreated }: { onCancel: () => void; onCr
 type Tab = "list" | "generate";
 
 export default function ContractsPage() {
+  const router = useRouter();
   const { data: contracts, isLoading } = useSWR<ContractSummary[]>(
     "contracts",
     listContracts
   );
   const [tab, setTab] = useState<Tab>("list");
   const [showCreate, setShowCreate] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
 
   const handleToggleActive = async (c: ContractSummary) => {
     await updateContract(c.id, { active: !c.active });
@@ -508,8 +690,25 @@ export default function ContractsPage() {
     await mutate("contracts");
   };
 
+  const handleTestInPlayground = (yaml: string, contractId: string) => {
+    // Store in sessionStorage so the Playground page can pick it up
+    sessionStorage.setItem("playground_yaml", yaml);
+    sessionStorage.setItem("playground_contract_id", contractId);
+    router.push("/playground");
+  };
+
   return (
     <div>
+      {/* Edit modal (portal-style overlay) */}
+      {editingId && (
+        <EditContractModal
+          contractId={editingId}
+          onClose={() => setEditingId(null)}
+          onSaved={() => setEditingId(null)}
+          onTestInPlayground={handleTestInPlayground}
+        />
+      )}
+
       {/* Header */}
       <div className="flex items-center justify-between mb-6">
         <div>
@@ -568,6 +767,7 @@ export default function ContractsPage() {
             isLoading={isLoading}
             onToggleActive={handleToggleActive}
             onDelete={handleDelete}
+            onEdit={(id) => setEditingId(id)}
           />
         </>
       )}

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import useSWR from "swr";
 import { playgroundValidate, listContracts, getContract } from "@/lib/api";
 import type { ValidationResult, ContractSummary } from "@/lib/api";
@@ -54,9 +54,23 @@ export default function PlaygroundPage() {
   const [loading, setLoading] = useState(false);
   const [loadingContract, setLoadingContract] = useState(false);
   const [parseError, setParseError] = useState<string | null>(null);
+  const [prefilledFrom, setPrefilledFrom] = useState<string | null>(null);
 
   // Load stored contracts for the "Load from store" dropdown
   const { data: contracts } = useSWR<ContractSummary[]>("contracts", listContracts);
+
+  // On mount: check if we were sent here from the Contracts page via "Test in Playground"
+  useEffect(() => {
+    const storedYaml = sessionStorage.getItem("playground_yaml");
+    const storedId   = sessionStorage.getItem("playground_contract_id");
+    if (storedYaml) {
+      setYaml(storedYaml);
+      setResult(null);
+      if (storedId) setPrefilledFrom(storedId);
+      sessionStorage.removeItem("playground_yaml");
+      sessionStorage.removeItem("playground_contract_id");
+    }
+  }, []);
 
   const handleLoadContract = async (id: string) => {
     if (!id) return;
@@ -102,6 +116,27 @@ export default function PlaygroundPage() {
           Test a contract YAML against a sample JSON event — no ingestion, no storage
         </p>
       </div>
+
+      {/* Pre-fill banner — shown when arriving from Contracts → "Test in Playground" */}
+      {prefilledFrom && (
+        <div className="mb-6 flex items-center gap-3 bg-indigo-900/20 border border-indigo-700/40 rounded-xl px-4 py-3">
+          <span className="text-indigo-400 text-lg">🔗</span>
+          <p className="text-sm text-indigo-300 flex-1">
+            Contract loaded from your{" "}
+            <a href="/contracts" className="underline underline-offset-2 hover:text-indigo-200">
+              Contracts page
+            </a>
+            . Edit the YAML below or validate straight away.
+          </p>
+          <button
+            onClick={() => setPrefilledFrom(null)}
+            className="text-indigo-500 hover:text-indigo-300 text-sm transition-colors"
+            aria-label="Dismiss"
+          >
+            ✕
+          </button>
+        </div>
+      )}
 
       {/* Load from stored contracts */}
       {contracts && contracts.length > 0 && (
