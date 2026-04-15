@@ -7,11 +7,13 @@ const BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001";
 const API_KEY = process.env.NEXT_PUBLIC_API_KEY ?? "";
 
 async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
-  const authHeader = API_KEY ? { "x-api-key": API_KEY } : {};
-  const res = await fetch(`${BASE}${path}`, {
-    headers: { "Content-Type": "application/json", ...authHeader, ...init?.headers },
-    ...init,
-  });
+  const headers: Record<string, string> = { "Content-Type": "application/json" };
+  if (API_KEY) headers["x-api-key"] = API_KEY;
+  // Merge any caller-supplied headers (supports Headers, string[][], or plain object)
+  if (init?.headers) {
+    new Headers(init.headers).forEach((v, k) => { headers[k] = v; });
+  }
+  const res = await fetch(`${BASE}${path}`, { ...init, headers });
   // 207 Multi-Status is a valid success response from the ingest endpoint
   if (!res.ok && res.status !== 207) {
     const body = await res.json().catch(() => ({ error: res.statusText }));
