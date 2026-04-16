@@ -11,6 +11,7 @@ import {
   deleteContract,
 } from "@/lib/api";
 import type { ContractSummary, ContractResponse } from "@/lib/api";
+import VisualBuilder from "./VisualBuilder";
 import clsx from "clsx";
 
 // ---------------------------------------------------------------------------
@@ -667,7 +668,7 @@ function ManualCreatePanel({ onCancel, onCreated }: { onCancel: () => void; onCr
 // Page
 // ---------------------------------------------------------------------------
 
-type Tab = "list" | "generate";
+type Tab = "list" | "build" | "generate";
 
 export default function ContractsPage() {
   const router = useRouter();
@@ -741,6 +742,17 @@ export default function ContractsPage() {
           My Contracts
         </button>
         <button
+          onClick={() => { setTab("build"); setShowCreate(false); }}
+          className={clsx(
+            "px-4 py-2 text-sm font-medium rounded-lg transition-colors flex items-center gap-2",
+            tab === "build"
+              ? "bg-[#1f2937] text-slate-100"
+              : "text-slate-500 hover:text-slate-300"
+          )}
+        >
+          🧱 Visual Builder
+        </button>
+        <button
           onClick={() => { setTab("generate"); setShowCreate(false); }}
           className={clsx(
             "px-4 py-2 text-sm font-medium rounded-lg transition-colors flex items-center gap-2",
@@ -770,6 +782,10 @@ export default function ContractsPage() {
             onEdit={(id) => setEditingId(id)}
           />
         </>
+      )}
+
+      {tab === "build" && (
+        <VisualBuilder onSaved={() => setTab("list")} />
       )}
 
       {tab === "generate" && (
