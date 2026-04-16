@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback, useId } from "react";
+import { useState, useCallback } from "react";
 import { createContract } from "@/lib/api";
 import { mutate } from "swr";
 import clsx from "clsx";
