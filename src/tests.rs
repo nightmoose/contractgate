@@ -6,6 +6,195 @@
 //! DB-dependent tests (ingest, audit) belong in a separate `tests/integration/`
 //! directory and require `DATABASE_URL` to be set.
 
+// ---------------------------------------------------------------------------
+// Batch validation tests (RFC-001)
+//
+// These exercise the *validation layer* of the batch pipeline — order
+// preservation, parallel correctness, a rough throughput sanity check.  The
+// HTTP handler itself (`ingest_handler`) needs a live Postgres pool and is
+// covered by the manual curl checks described in `docs/rfcs/001-batch-ingest.md`.
+// ---------------------------------------------------------------------------
+
+#[cfg(test)]
+mod batch {
+    use crate::contract::{Contract, FieldDefinition, FieldType, Ontology};
+    use crate::validation::{validate, CompiledContract, ViolationKind};
+    use rayon::prelude::*;
+    use serde_json::{json, Value};
+
+    fn tiny_contract() -> Contract {
+        Contract {
+            version: "1.0".into(),
+            name: "batch_test".into(),
+            description: None,
+            ontology: Ontology {
+                entities: vec![
+                    FieldDefinition {
+                        name: "user_id".into(),
+                        field_type: FieldType::String,
+                        required: true,
+                        pattern: Some(r"^[a-z0-9_]+$".into()),
+                        allowed_values: None,
+                        min: None,
+                        max: None,
+                        min_length: None,
+                        max_length: None,
+                        properties: None,
+                        items: None,
+                    },
+                    FieldDefinition {
+                        name: "event_type".into(),
+                        field_type: FieldType::String,
+                        required: true,
+                        pattern: None,
+                        allowed_values: Some(vec![json!("click"), json!("view")]),
+                        min: None,
+                        max: None,
+                        min_length: None,
+                        max_length: None,
+                        properties: None,
+                        items: None,
+                    },
+                ],
+            },
+            glossary: vec![],
+            metrics: vec![],
+        }
+    }
+
+    fn events_with_one_bad_at(bad_index: usize, total: usize) -> Vec<Value> {
+        (0..total)
+            .map(|i| {
+                if i == bad_index {
+                    json!({ "user_id": "BAD ID!!", "event_type": "click" })
+                } else {
+                    json!({ "user_id": format!("user_{}", i), "event_type": "click" })
+                }
+            })
+            .collect()
+    }
+
+    /// Sanity: parallel validation yields the same per-event verdicts as the
+    /// sequential loop.  Equivalence is what lets us replace one with the other
+    /// with no behavioural change.
+    #[test]
+    fn parallel_matches_sequential() {
+        let cc = CompiledContract::compile(tiny_contract()).unwrap();
+        let events = events_with_one_bad_at(17, 64);
+
+        let sequential: Vec<bool> = events.iter().map(|e| validate(&cc, e).passed).collect();
+
+        let parallel: Vec<bool> = events
+            .par_iter()
+            .map(|e| validate(&cc, e).passed)
+            .collect();
+
+        assert_eq!(sequential, parallel);
+        assert!(!parallel[17], "bad event should be at index 17");
+        assert!(parallel[16] && parallel[18], "neighbouring events should pass");
+    }
+
+    /// Ordering guarantee: `par_iter().map().collect()` preserves input order.
+    /// The batch-ingest response contract depends on `results[i]` matching
+    /// `events[i]`; this test is a regression guard in case rayon ever changes
+    /// its collect semantics.
+    #[test]
+    fn parallel_preserves_input_order() {
+        let cc = CompiledContract::compile(tiny_contract()).unwrap();
+        // 200 events, each failing because user_id contains its own index in
+        // uppercase — unique per event, so we can tell them apart in the output.
+        let events: Vec<Value> = (0..200)
+            .map(|i| json!({ "user_id": format!("USER_{}", i), "event_type": "click" }))
+            .collect();
+
+        let results: Vec<_> = events
+            .par_iter()
+            .map(|e| validate(&cc, e))
+            .collect();
+
+        assert_eq!(results.len(), 200);
+        for (i, vr) in results.iter().enumerate() {
+            assert!(!vr.passed, "event {} should fail pattern check", i);
+            // The violation message mentions the exact value we put in —
+            // confirms the i-th result corresponds to the i-th input.
+            let joined: String = vr.violations.iter().map(|v| v.message.clone()).collect();
+            assert!(
+                joined.contains(&format!("USER_{}", i)),
+                "event {} result should reference its own value — got: {}",
+                i,
+                joined
+            );
+        }
+    }
+
+    /// An all-pass batch collects zero violations.  Validates that the
+    /// parallel + `par_iter().filter()` pattern used in the handler to build
+    /// forward-rows yields the full batch when everything passes.
+    #[test]
+    fn all_pass_batch_has_no_failures() {
+        let cc = CompiledContract::compile(tiny_contract()).unwrap();
+        let events: Vec<Value> = (0..500)
+            .map(|i| json!({ "user_id": format!("ok_{}", i), "event_type": "view" }))
+            .collect();
+
+        let results: Vec<_> = events.par_iter().map(|e| validate(&cc, e)).collect();
+        let pass_count = results.iter().filter(|r| r.passed).count();
+        let fail_count = results.len() - pass_count;
+        assert_eq!(pass_count, 500);
+        assert_eq!(fail_count, 0);
+    }
+
+    /// A mixed batch splits cleanly into passes and failures with the expected
+    /// violation kinds reported only on the failing events.
+    #[test]
+    fn mixed_batch_separates_cleanly() {
+        let cc = CompiledContract::compile(tiny_contract()).unwrap();
+        let events = events_with_one_bad_at(3, 10);
+
+        let results: Vec<_> = events.par_iter().map(|e| validate(&cc, e)).collect();
+        let failing: Vec<_> = results
+            .iter()
+            .enumerate()
+            .filter(|(_, r)| !r.passed)
+            .collect();
+
+        assert_eq!(failing.len(), 1);
+        assert_eq!(failing[0].0, 3);
+        assert!(failing[0].1.violations.iter().any(|v| v.kind == ViolationKind::PatternMismatch));
+    }
+
+    /// Throughput sanity: validating a 1 000-event batch in parallel completes
+    /// well under the batch-level latency budget declared in RFC-001 (<100 ms
+    /// end-to-end on a 4-core runner; we give CI a generous 5 s because debug
+    /// builds are much slower than release).
+    #[test]
+    fn thousand_event_batch_completes_quickly() {
+        let cc = CompiledContract::compile(tiny_contract()).unwrap();
+        let events: Vec<Value> = (0..1_000)
+            .map(|i| json!({ "user_id": format!("user_{}", i), "event_type": "click" }))
+            .collect();
+
+        let t0 = std::time::Instant::now();
+        let results: Vec<_> = events.par_iter().map(|e| validate(&cc, e)).collect();
+        let elapsed = t0.elapsed();
+
+        assert_eq!(results.len(), 1_000);
+        assert!(results.iter().all(|r| r.passed));
+
+        #[cfg(debug_assertions)]
+        let budget = std::time::Duration::from_secs(5);
+        #[cfg(not(debug_assertions))]
+        let budget = std::time::Duration::from_millis(100);
+
+        assert!(
+            elapsed < budget,
+            "1 000-event batch took {:?} — expected < {:?}",
+            elapsed,
+            budget
+        );
+    }
+}
+
 #[cfg(test)]
 mod playground {
     use crate::contract::{Contract, FieldDefinition, FieldType, GlossaryEntry, MetricDefinition, Ontology};

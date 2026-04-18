@@ -30,11 +30,15 @@ use tower_http::{
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 use uuid::Uuid;
 
-mod contract;
+// Pure validation logic lives in the library crate (src/lib.rs) so it can be
+// shared with other binaries (e.g. src/bin/demo.rs).  We re-export it here so
+// existing submodules that refer to `crate::contract` / `crate::validation`
+// continue to resolve unchanged.
+pub use contractgate::{contract, validation};
+
 mod error;
 mod ingest;
 mod storage;
-mod validation;
 #[cfg(test)]
 mod tests;
 

@@ -1,0 +1,45 @@
+version: "1.0"
+name: "user_events_simple"
+description: |
+  Small, flat event contract — the canonical "click-stream" shape.
+  Used by the speed demo as the low-complexity baseline: lots of small
+  events, minimal nesting, fast path.
+
+ontology:
+  entities:
+    - name: user_id
+      type: string
+      required: true
+      pattern: "^[a-zA-Z0-9_-]{3,64}$"
+
+    - name: event_type
+      type: string
+      required: true
+      enum: ["click", "view", "purchase", "login", "logout"]
+
+    - name: timestamp
+      type: integer
+      required: true
+      min: 1577836800        # 2020-01-01 sanity floor
+
+    - name: amount
+      type: number
+      required: false
+      min: 0
+      max: 1000000
+
+    - name: session_id
+      type: string
+      required: true
+      pattern: "^[a-f0-9]{32}$"
+
+glossary:
+  - field: user_id
+    description: "Stable customer identifier, URL-safe token."
+  - field: amount
+    description: "Monetary amount in USD; only present on purchase events."
+    constraints: "must be non-negative, capped at 1M to catch fat-finger bugs"
+
+metrics:
+  - name: total_revenue
+    formula: "sum(amount) where event_type = 'purchase'"

@@ -190,9 +190,9 @@ pub async fn delete_contract(pool: &PgPool, id: Uuid) -> AppResult<()> {
 
 /// Write a failed event to the quarantine table.
 ///
-/// Called fire-and-forget from the ingest handler — errors are logged but
-/// do not affect the HTTP response.
-#[allow(clippy::too_many_arguments)]
+/// Kept as a single-event helper for ad-hoc use (scripts, manual replays).
+/// The live ingest handler uses [`quarantine_events_batch`] — see RFC-001.
+#[allow(clippy::too_many_arguments, dead_code)]
 pub async fn quarantine_event(
     pool: &PgPool,
     contract_id: Uuid,
@@ -425,4 +425,192 @@ pub struct IngestionStats {
     pub p95_validation_us: i64,
     /// 99th-percentile validation latency in microseconds (target: <15 000 µs)
     pub p99_validation_us: i64,
+}
+
+// ---------------------------------------------------------------------------
+// Batch insert helpers (RFC-001)
+//
+// At 1 000 events per request, the old pattern of `tokio::spawn` per event
+// would burn through 1 000+ concurrent Postgres connections per batch.  The
+// helpers below collapse each side-effect kind (audit / quarantine / forward)
+// into a SINGLE multi-row INSERT via PostgreSQL's `UNNEST`, which means a
+// batch of 1 000 events uses at most 3 connections to durably record the
+// outcome.
+//
+// The insert structs are plain data: the ingest handler fills them in once
+// per event after validation and then hands the vectors to the helpers.
+// ---------------------------------------------------------------------------
+
+/// One row to insert into `audit_log`.  Everything needed to reconstruct the
+/// ingestion decision; IDs and timestamps are filled in server-side.
+#[derive(Debug, Clone)]
+pub struct AuditEntryInsert {
+    pub contract_id: Uuid,
+    pub passed: bool,
+    pub violation_count: i32,
+    pub violation_details: serde_json::Value,
+    pub raw_event: serde_json::Value,
+    pub validation_us: i64,
+    pub source_ip: Option<String>,
+}
+
+/// One row to insert into `quarantine_events`.  Only failed events get one.
+#[derive(Debug, Clone)]
+pub struct QuarantineEventInsert {
+    pub contract_id: Uuid,
+    pub payload: serde_json::Value,
+    pub violation_count: i32,
+    pub violation_details: serde_json::Value,
+    pub validation_us: i64,
+    pub source_ip: Option<String>,
+}
+
+/// One row to insert into `forwarded_events`.  Only passing events get one.
+#[derive(Debug, Clone)]
+pub struct ForwardEventInsert {
+    pub contract_id: Uuid,
+    pub payload: serde_json::Value,
+}
+
+/// Batch-insert audit log entries in a single round-trip.
+///
+/// Uses `UNNEST` of typed arrays so one SQL statement handles the whole batch
+/// regardless of size.  Rows in the input slice keep their order; the
+/// database assigns each a fresh UUID via `uuid_generate_v4()`.
+pub async fn log_audit_entries_batch(
+    pool: &PgPool,
+    entries: &[AuditEntryInsert],
+) -> AppResult<()> {
+    if entries.is_empty() {
+        return Ok(());
+    }
+
+    // Split the struct-of-arrays columns for UNNEST.
+    let contract_ids: Vec<Uuid> = entries.iter().map(|e| e.contract_id).collect();
+    let passed: Vec<bool> = entries.iter().map(|e| e.passed).collect();
+    let violation_counts: Vec<i32> = entries.iter().map(|e| e.violation_count).collect();
+    let violation_details: Vec<serde_json::Value> =
+        entries.iter().map(|e| e.violation_details.clone()).collect();
+    let raw_events: Vec<serde_json::Value> =
+        entries.iter().map(|e| e.raw_event.clone()).collect();
+    let validation_us: Vec<i64> = entries.iter().map(|e| e.validation_us).collect();
+    // Postgres's UNNEST needs a concrete nullable text[] — represent absent
+    // source_ips as empty strings and convert back to NULL in SQL via NULLIF.
+    let source_ips: Vec<String> = entries
+        .iter()
+        .map(|e| e.source_ip.clone().unwrap_or_default())
+        .collect();
+
+    sqlx::query(
+        r#"
+        INSERT INTO audit_log
+            (id, contract_id, passed, violation_count, violation_details,
+             raw_event, validation_us, source_ip, created_at)
+        SELECT
+            uuid_generate_v4(),
+            contract_id, passed, violation_count, violation_details,
+            raw_event, validation_us,
+            NULLIF(source_ip, ''),
+            NOW()
+        FROM UNNEST(
+            $1::uuid[], $2::bool[], $3::int[], $4::jsonb[],
+            $5::jsonb[], $6::bigint[], $7::text[]
+        ) AS t(contract_id, passed, violation_count, violation_details,
+               raw_event, validation_us, source_ip)
+        "#,
+    )
+    .bind(&contract_ids)
+    .bind(&passed)
+    .bind(&violation_counts)
+    .bind(&violation_details)
+    .bind(&raw_events)
+    .bind(&validation_us)
+    .bind(&source_ips)
+    .execute(pool)
+    .await?;
+
+    Ok(())
+}
+
+/// Batch-insert quarantine entries in a single round-trip.
+pub async fn quarantine_events_batch(
+    pool: &PgPool,
+    entries: &[QuarantineEventInsert],
+) -> AppResult<()> {
+    if entries.is_empty() {
+        return Ok(());
+    }
+
+    let contract_ids: Vec<Uuid> = entries.iter().map(|e| e.contract_id).collect();
+    let payloads: Vec<serde_json::Value> =
+        entries.iter().map(|e| e.payload.clone()).collect();
+    let violation_counts: Vec<i32> = entries.iter().map(|e| e.violation_count).collect();
+    let violation_details: Vec<serde_json::Value> =
+        entries.iter().map(|e| e.violation_details.clone()).collect();
+    let validation_us: Vec<i64> = entries.iter().map(|e| e.validation_us).collect();
+    let source_ips: Vec<String> = entries
+        .iter()
+        .map(|e| e.source_ip.clone().unwrap_or_default())
+        .collect();
+
+    sqlx::query(
+        r#"
+        INSERT INTO quarantine_events
+            (id, contract_id, payload, violation_count, violation_details,
+             validation_us, source_ip, status, created_at)
+        SELECT
+            uuid_generate_v4(),
+            contract_id, payload, violation_count, violation_details,
+            validation_us,
+            NULLIF(source_ip, ''),
+            'pending',
+            NOW()
+        FROM UNNEST(
+            $1::uuid[], $2::jsonb[], $3::int[], $4::jsonb[],
+            $5::bigint[], $6::text[]
+        ) AS t(contract_id, payload, violation_count, violation_details,
+               validation_us, source_ip)
+        "#,
+    )
+    .bind(&contract_ids)
+    .bind(&payloads)
+    .bind(&violation_counts)
+    .bind(&violation_details)
+    .bind(&validation_us)
+    .bind(&source_ips)
+    .execute(pool)
+    .await?;
+
+    Ok(())
+}
+
+/// Batch-insert forwarded events in a single round-trip.
+///
+/// Unlike the other two helpers this one is awaited inline from the ingest
+/// handler so the response can mark individual events as `forwarded: true`.
+pub async fn forward_events_batch(
+    pool: &PgPool,
+    entries: &[ForwardEventInsert],
+) -> AppResult<()> {
+    if entries.is_empty() {
+        return Ok(());
+    }
+
+    let contract_ids: Vec<Uuid> = entries.iter().map(|e| e.contract_id).collect();
+    let payloads: Vec<serde_json::Value> =
+        entries.iter().map(|e| e.payload.clone()).collect();
+
+    sqlx::query(
+        r#"
+        INSERT INTO forwarded_events (id, contract_id, payload, created_at)
+        SELECT uuid_generate_v4(), contract_id, payload, NOW()
+        FROM UNNEST($1::uuid[], $2::jsonb[]) AS t(contract_id, payload)
+        "#,
+    )
+    .bind(&contract_ids)
+    .bind(&payloads)
+    .execute(pool)
+    .await?;
+
+    Ok(())
 }

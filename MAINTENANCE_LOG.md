@@ -2,6 +2,51 @@
 
 ---
 
+## Run 2026-04-17 (post-demo feedback → batch ingest)
+• Fixed/Added/Improved: 5 changes
+  1. **docs/rfcs/001-batch-ingest.md — new RFC**: Captured the design before
+     touching code, per Alex's preferred workflow. Covers endpoint surface,
+     1,000-event cap, parallel validation via rayon, `?atomic=true` semantics,
+     and the batch-insert write path. RFC-002 (versioning), RFC-003 (auto-retry),
+     and RFC-004 (PII masking) are called out as deferred.
+  2. **src/ingest.rs — batch ingest handler**: Raised `MAX_BATCH_SIZE` from 500
+     to 1,000. Added `atomic` query flag. Wrapped the validation loop in
+     `tokio::task::spawn_blocking` + `rayon::par_iter().map(validate).collect()`
+     so validation fans out across CPU cores without blocking the async reactor.
+     Atomic mode writes a single `batch_rejected` audit row via the existing
+     audit_log table (no schema change) and returns 422 if any event fails.
+     Non-atomic path collects audit/quarantine/forward inserts into vectors and
+     calls the new batch helpers once instead of spawning N tasks per request.
+  3. **src/storage.rs — batch insert helpers**: Added `AuditEntryInsert`,
+     `QuarantineEventInsert`, `ForwardEventInsert` structs plus
+     `log_audit_entries_batch`, `quarantine_events_batch`, `forward_events_batch`
+     using `INSERT ... SELECT FROM UNNEST(...)` — one Postgres roundtrip
+     regardless of batch size. The per-event `quarantine_event` helper is kept
+     with `#[allow(dead_code)]` for ad-hoc / manual-replay use.
+  4. **Cargo.toml — rayon + rustls + `demo` feature flag**: Added
+     `rayon = "1"`. Switched sqlx from `runtime-tokio-native-tls` to
+     `runtime-tokio-rustls` so the build no longer requires system libssl —
+     rustls is pure Rust and fully Postgres-over-TLS compatible. Made
+     `rdkafka` optional and introduced a `demo` feature (default off) that
+     gates the `demo` binary. `cargo check` / `cargo build` / `cargo test`
+     now work on any host with Rust installed — no cmake / curl / openssl
+     system deps required unless you opt into `--features demo`.
+  5. **src/tests.rs — batch module**: 5 new tests —
+     `parallel_matches_sequential`, `parallel_preserves_input_order`,
+     `all_pass_batch_has_no_failures`, `mixed_batch_separates_cleanly`,
+     `thousand_event_batch_completes_quickly` (5 s debug / 100 ms release).
+• Verification: `cargo check --lib` clean. `cargo test --bin contractgate`
+  → 18 passed, 0 failed (12 playground + 5 batch + 1 existing). `cargo test
+  --lib` → 6 validation tests pass.
+• Status: Files written on branch `nightly-maintenance-2026-04-17`. Git
+  commit deferred — `.git/index.lock` from a prior run is held by a process
+  the sandbox can't reap. Changes are durable on disk.
+• Follow-ups: commit + push when lock clears; land dashboard
+  `BatchIngestResponse.atomic?: boolean` (one-line type change); consider an
+  "atomic" checkbox on the Playground page; RFC-002 versioning next.
+
+---
+
 ## Run 2026-04-03 04:00
 • Fixed/Added/Improved: 4 changes
   1. **src/contract.rs — fix `FieldType::Float` serde alias for "number"**: Added
