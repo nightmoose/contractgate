@@ -2,10 +2,16 @@
 //! Patent Pending.
 //!
 //! Starts an Axum HTTP server with routes for:
-//!   - Contract management (CRUD)
-//!   - Ingestion API (POST /ingest/{contract_id})
+//!   - Contract identity CRUD (`/contracts`)
+//!   - Contract version CRUD (`/contracts/:id/versions/...`)
+//!   - Version state transitions (promote / deprecate)
+//!   - Name-change history
+//!   - Ingestion API (`POST /ingest/{contract_id}[@version]`)
 //!   - Audit log queries
 //!   - Health check
+//!
+//! Version resolution + fallback semantics live in `ingest.rs`; this module
+//! is just wiring.
 
 use axum::{
     extract::{Path, Query, State},
@@ -43,7 +49,9 @@ mod storage;
 mod tests;
 
 use contract::{
-    ContractResponse, ContractSummary, CreateContractRequest, UpdateContractRequest,
+    Contract, ContractIdentity, ContractResponse, ContractSummary, ContractVersion,
+    CreateContractRequest, CreateVersionRequest, NameHistoryEntry, PatchContractRequest,
+    PatchVersionRequest, VersionResponse, VersionSummary,
 };
 use error::{AppError, AppResult};
 use validation::CompiledContract;
@@ -53,13 +61,15 @@ use validation::CompiledContract;
 // ---------------------------------------------------------------------------
 
 /// Shared application state passed to every Axum handler.
+///
+/// The compiled-contract cache is **keyed by (contract_id, version)** — every
+/// live version has at most one compiled form in memory.  The cache is
+/// warmed on boot with every stable + deprecated version; drafts load lazily
+/// the first time they're pinned.
 pub struct AppState {
     pub db: PgPool,
-    /// In-memory cache of compiled contracts (contract_id → compiled).
-    /// Avoids re-parsing + re-compiling regex on every request.
-    contract_cache: RwLock<HashMap<Uuid, Arc<CompiledContract>>>,
-    /// Optional API key — if set, all protected routes require `x-api-key: <key>`.
-    /// Leave empty (or unset API_KEY env var) to run without auth (dev only).
+    /// (contract_id, version) → compiled contract.
+    contract_cache: RwLock<HashMap<(Uuid, String), Arc<CompiledContract>>>,
     pub api_key: String,
 }
 
@@ -72,52 +82,130 @@ impl AppState {
         }
     }
 
-    /// Retrieve a compiled contract from cache, loading from DB if necessary.
-    pub async fn get_compiled_contract(&self, id: Uuid) -> Option<Arc<CompiledContract>> {
-        // Fast path: check cache under read lock
+    /// Load every stable + deprecated version into the cache.  Drafts are
+    /// loaded lazily — they're rare, mutable, and not usually pinned.
+    pub async fn warm_cache(&self) -> AppResult<()> {
+        let versions = storage::load_all_non_draft_versions(&self.db).await?;
+        let mut cache = self.contract_cache.write().unwrap();
+        for v in versions {
+            match compile_version(&v) {
+                Ok(compiled) => {
+                    cache.insert((v.contract_id, v.version.clone()), Arc::new(compiled));
+                }
+                Err(e) => {
+                    // A single malformed contract must not prevent the
+                    // server from booting — log it and move on.
+                    tracing::warn!(
+                        contract_id = %v.contract_id,
+                        version = %v.version,
+                        "skipping cache warmup for bad contract: {}",
+                        e
+                    );
+                }
+            }
+        }
+        Ok(())
+    }
+
+    /// Look up the compiled contract for (contract_id, version), loading from
+    /// DB + compiling on a cache miss.  Returns a clone of the shared `Arc`
+    /// so validation can run without holding the lock.
+    pub async fn get_compiled(
+        &self,
+        contract_id: Uuid,
+        version: &str,
+    ) -> AppResult<Arc<CompiledContract>> {
+        // Fast path: read lock
         {
             let cache = self.contract_cache.read().unwrap();
-            if let Some(cc) = cache.get(&id) {
-                return Some(Arc::clone(cc));
+            if let Some(cc) = cache.get(&(contract_id, version.to_string())) {
+                return Ok(Arc::clone(cc));
             }
         }
 
-        // Slow path: load from DB and compile
-        let mut stored = storage::get_contract(&self.db, id).await.ok()?;
-        if !stored.active {
-            return None;
-        }
-
-        let parsed = stored.parsed.take()?;
-        let compiled = CompiledContract::compile(parsed).ok()?;
+        // Slow path: fetch + compile + insert
+        let row = storage::get_version(&self.db, contract_id, version).await?;
+        let compiled = compile_version(&row).map_err(|e| {
+            AppError::InvalidContractYaml(format!(
+                "could not compile contract {}@{}: {}",
+                contract_id, version, e
+            ))
+        })?;
         let arc = Arc::new(compiled);
 
-        // Write into cache
         {
             let mut cache = self.contract_cache.write().unwrap();
-            cache.insert(id, Arc::clone(&arc));
+            cache.insert((contract_id, version.to_string()), Arc::clone(&arc));
         }
 
-        Some(arc)
+        Ok(arc)
     }
 
-    /// Invalidate a contract from the cache (called after updates / deletes).
-    pub fn invalidate_contract(&self, id: Uuid) {
+    /// Drop a single (contract_id, version) entry from the cache.  Call on
+    /// draft edits — the YAML has changed, so the compiled form is stale.
+    pub fn invalidate_version(&self, contract_id: Uuid, version: &str) {
         let mut cache = self.contract_cache.write().unwrap();
-        cache.remove(&id);
+        cache.remove(&(contract_id, version.to_string()));
+    }
+
+    /// Drop every cached version for a contract.  Call on delete.
+    pub fn invalidate_contract_all(&self, contract_id: Uuid) {
+        let mut cache = self.contract_cache.write().unwrap();
+        cache.retain(|(cid, _), _| *cid != contract_id);
     }
 }
 
+/// Parse + compile a `ContractVersion` row into a `CompiledContract`.
+fn compile_version(v: &ContractVersion) -> Result<CompiledContract, String> {
+    let parsed: Contract =
+        serde_yaml::from_str(&v.yaml_content).map_err(|e| e.to_string())?;
+    CompiledContract::compile(parsed).map_err(|e| e.to_string())
+}
+
 // ---------------------------------------------------------------------------
-// Contract handlers
+// Response shaping helpers
+// ---------------------------------------------------------------------------
+
+/// Merge an identity row with aggregated version info into a response.
+async fn identity_to_response(
+    db: &PgPool,
+    id: ContractIdentity,
+) -> AppResult<ContractResponse> {
+    let summaries = storage::list_versions(db, id.id).await?;
+    let version_count = summaries.len() as i64;
+    let latest_stable_version = storage::get_latest_stable_version(db, id.id)
+        .await?
+        .map(|v| v.version);
+    Ok(ContractResponse {
+        id: id.id,
+        name: id.name,
+        description: id.description,
+        multi_stable_resolution: id.multi_stable_resolution,
+        created_at: id.created_at,
+        updated_at: id.updated_at,
+        version_count,
+        latest_stable_version,
+    })
+}
+
+// ---------------------------------------------------------------------------
+// Contract identity handlers
 // ---------------------------------------------------------------------------
 
 async fn create_contract_handler(
     State(state): State<Arc<AppState>>,
     Json(req): Json<CreateContractRequest>,
 ) -> AppResult<(StatusCode, Json<ContractResponse>)> {
-    let stored = storage::create_contract(&state.db, &req.yaml_content).await?;
-    let resp = ContractResponse::from(&stored);
+    let (identity, _first_version) = storage::create_contract(
+        &state.db,
+        &req.name,
+        req.description.as_deref(),
+        &req.yaml_content,
+        req.multi_stable_resolution.unwrap_or_default(),
+    )
+    .await?;
+
+    let resp = identity_to_response(&state.db, identity).await?;
     Ok((StatusCode::CREATED, Json(resp)))
 }
 
@@ -125,8 +213,8 @@ async fn get_contract_handler(
     State(state): State<Arc<AppState>>,
     Path(id): Path<Uuid>,
 ) -> AppResult<Json<ContractResponse>> {
-    let stored = storage::get_contract(&state.db, id).await?;
-    Ok(Json(ContractResponse::from(&stored)))
+    let identity = storage::get_contract_identity(&state.db, id).await?;
+    Ok(Json(identity_to_response(&state.db, identity).await?))
 }
 
 async fn list_contracts_handler(
@@ -136,26 +224,21 @@ async fn list_contracts_handler(
     Ok(Json(contracts))
 }
 
-async fn update_contract_handler(
+async fn patch_contract_handler(
     State(state): State<Arc<AppState>>,
     Path(id): Path<Uuid>,
-    Json(req): Json<UpdateContractRequest>,
+    Json(req): Json<PatchContractRequest>,
 ) -> AppResult<Json<ContractResponse>> {
-    // Handle yaml_content replacement first (re-parses + re-validates the YAML)
-    if let Some(ref yaml) = req.yaml_content {
-        storage::update_contract_yaml(&state.db, id, yaml).await?;
-        // Evict cached compiled contract — it will be rebuilt on next request
-        state.invalidate_contract(id);
-    }
-
-    // Handle active flag toggle
-    if let Some(active) = req.active {
-        storage::update_contract_active(&state.db, id, active).await?;
-        state.invalidate_contract(id);
-    }
-
-    let stored = storage::get_contract(&state.db, id).await?;
-    Ok(Json(ContractResponse::from(&stored)))
+    let identity = storage::patch_contract_identity(
+        &state.db,
+        id,
+        req.name.as_deref(),
+        req.description.as_deref(),
+        req.multi_stable_resolution,
+    )
+    .await?;
+    // Identity-only patch doesn't touch yaml; no cache eviction needed.
+    Ok(Json(identity_to_response(&state.db, identity).await?))
 }
 
 async fn delete_contract_handler(
@@ -163,8 +246,109 @@ async fn delete_contract_handler(
     Path(id): Path<Uuid>,
 ) -> AppResult<StatusCode> {
     storage::delete_contract(&state.db, id).await?;
-    state.invalidate_contract(id);
+    state.invalidate_contract_all(id);
     Ok(StatusCode::NO_CONTENT)
+}
+
+// ---------------------------------------------------------------------------
+// Version handlers
+// ---------------------------------------------------------------------------
+
+async fn create_version_handler(
+    State(state): State<Arc<AppState>>,
+    Path(contract_id): Path<Uuid>,
+    Json(req): Json<CreateVersionRequest>,
+) -> AppResult<(StatusCode, Json<VersionResponse>)> {
+    let v = storage::create_version(&state.db, contract_id, &req.version, &req.yaml_content)
+        .await?;
+    // Drafts are cached lazily on first pin — no eager insert.
+    Ok((StatusCode::CREATED, Json(VersionResponse::from(&v))))
+}
+
+async fn list_versions_handler(
+    State(state): State<Arc<AppState>>,
+    Path(contract_id): Path<Uuid>,
+) -> AppResult<Json<Vec<VersionSummary>>> {
+    let versions = storage::list_versions(&state.db, contract_id).await?;
+    Ok(Json(versions))
+}
+
+async fn get_version_handler(
+    State(state): State<Arc<AppState>>,
+    Path((contract_id, version)): Path<(Uuid, String)>,
+) -> AppResult<Json<VersionResponse>> {
+    let v = storage::get_version(&state.db, contract_id, &version).await?;
+    Ok(Json(VersionResponse::from(&v)))
+}
+
+async fn get_latest_stable_handler(
+    State(state): State<Arc<AppState>>,
+    Path(contract_id): Path<Uuid>,
+) -> AppResult<Json<VersionResponse>> {
+    // Ensure the contract exists (clean 404).
+    let _ = storage::get_contract_identity(&state.db, contract_id).await?;
+    let v = storage::get_latest_stable_version(&state.db, contract_id)
+        .await?
+        .ok_or(AppError::NoStableVersion { contract_id })?;
+    Ok(Json(VersionResponse::from(&v)))
+}
+
+async fn patch_version_handler(
+    State(state): State<Arc<AppState>>,
+    Path((contract_id, version)): Path<(Uuid, String)>,
+    Json(req): Json<PatchVersionRequest>,
+) -> AppResult<Json<VersionResponse>> {
+    let v = storage::patch_version_yaml(
+        &state.db,
+        contract_id,
+        &version,
+        &req.yaml_content,
+    )
+    .await?;
+    // Evict: a draft edit changes its compiled form.
+    state.invalidate_version(contract_id, &version);
+    Ok(Json(VersionResponse::from(&v)))
+}
+
+async fn promote_version_handler(
+    State(state): State<Arc<AppState>>,
+    Path((contract_id, version)): Path<(Uuid, String)>,
+) -> AppResult<Json<VersionResponse>> {
+    let v = storage::promote_version(&state.db, contract_id, &version).await?;
+    // Version is now stable and frozen.  Pre-warm the cache so the first
+    // ingest request doesn't take the slow path.
+    let _ = state.get_compiled(contract_id, &version).await;
+    Ok(Json(VersionResponse::from(&v)))
+}
+
+async fn deprecate_version_handler(
+    State(state): State<Arc<AppState>>,
+    Path((contract_id, version)): Path<(Uuid, String)>,
+) -> AppResult<Json<VersionResponse>> {
+    let v = storage::deprecate_version(&state.db, contract_id, &version).await?;
+    // Cached compiled form is still correct (YAML didn't change); the
+    // deprecated-pin short-circuit in ingest.rs looks at the DB row's state,
+    // not the cache.  No invalidation needed.
+    Ok(Json(VersionResponse::from(&v)))
+}
+
+async fn delete_version_handler(
+    State(state): State<Arc<AppState>>,
+    Path((contract_id, version)): Path<(Uuid, String)>,
+) -> AppResult<StatusCode> {
+    storage::delete_version(&state.db, contract_id, &version).await?;
+    state.invalidate_version(contract_id, &version);
+    Ok(StatusCode::NO_CONTENT)
+}
+
+async fn list_name_history_handler(
+    State(state): State<Arc<AppState>>,
+    Path(contract_id): Path<Uuid>,
+) -> AppResult<Json<Vec<NameHistoryEntry>>> {
+    // 404 if the contract is gone.
+    let _ = storage::get_contract_identity(&state.db, contract_id).await?;
+    let rows = storage::list_name_history(&state.db, contract_id).await?;
+    Ok(Json(rows))
 }
 
 // ---------------------------------------------------------------------------
@@ -214,7 +398,7 @@ async fn health_handler() -> Json<serde_json::Value> {
 }
 
 // ---------------------------------------------------------------------------
-// Test: validate a contract YAML + event without ingestion
+// Playground — validate a YAML + event without persisting anything
 // ---------------------------------------------------------------------------
 
 #[derive(serde::Deserialize)]
@@ -240,16 +424,11 @@ async fn playground_handler(
 // Auth middleware
 // ---------------------------------------------------------------------------
 
-/// Tower middleware that enforces `x-api-key` on all protected routes.
-///
-/// If `API_KEY` env var is unset or empty the check is skipped (dev mode).
-/// In production, set `API_KEY` via `fly secrets set API_KEY=<secret>`.
 async fn require_api_key(
     State(state): State<Arc<AppState>>,
     request: Request,
     next: Next,
 ) -> Result<axum::response::Response, error::AppError> {
-    // If no API key is configured, allow all traffic (useful for local dev)
     if state.api_key.is_empty() {
         return Ok(next.run(request).await);
     }
@@ -285,17 +464,50 @@ fn build_router(state: Arc<AppState>) -> Router {
 
     // Protected routes — require x-api-key header
     let protected = Router::new()
-        // Contract management
-        .route("/contracts", get(list_contracts_handler).post(create_contract_handler))
+        // Contract identity CRUD
+        .route(
+            "/contracts",
+            get(list_contracts_handler).post(create_contract_handler),
+        )
         .route(
             "/contracts/:id",
             get(get_contract_handler)
-                .put(update_contract_handler)
+                .patch(patch_contract_handler)
                 .delete(delete_contract_handler),
         )
-        // Ingestion
-        .route("/ingest/:contract_id", post(ingest::ingest_handler))
-        .route("/ingest/:contract_id/stats", get(ingest::ingest_stats_handler))
+        .route(
+            "/contracts/:id/name-history",
+            get(list_name_history_handler),
+        )
+        // Versions
+        .route(
+            "/contracts/:id/versions",
+            get(list_versions_handler).post(create_version_handler),
+        )
+        .route(
+            "/contracts/:id/versions/latest-stable",
+            get(get_latest_stable_handler),
+        )
+        .route(
+            "/contracts/:id/versions/:version",
+            get(get_version_handler)
+                .patch(patch_version_handler)
+                .delete(delete_version_handler),
+        )
+        .route(
+            "/contracts/:id/versions/:version/promote",
+            post(promote_version_handler),
+        )
+        .route(
+            "/contracts/:id/versions/:version/deprecate",
+            post(deprecate_version_handler),
+        )
+        // Ingestion — the path is String so we can accept `@version` suffix.
+        .route("/ingest/:raw_id", post(ingest::ingest_handler))
+        .route(
+            "/ingest/:contract_id/stats",
+            get(ingest::ingest_stats_handler),
+        )
         // Audit + stats
         .route("/audit", get(audit_log_handler))
         .route("/stats", get(global_stats_handler))
@@ -316,10 +528,8 @@ fn build_router(state: Arc<AppState>) -> Router {
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    // Load .env if present
     dotenvy::dotenv().ok();
 
-    // Tracing
     tracing_subscriber::registry()
         .with(
             tracing_subscriber::EnvFilter::try_from_default_env()
@@ -328,14 +538,12 @@ async fn main() -> anyhow::Result<()> {
         .with(tracing_subscriber::fmt::layer())
         .init();
 
-    // Database
     let database_url =
         std::env::var("DATABASE_URL").expect("DATABASE_URL must be set");
 
     let pool = PgPool::connect(&database_url).await?;
     tracing::info!("Connected to database");
 
-    // API key — warn loudly if unset in production
     let api_key = std::env::var("API_KEY").unwrap_or_default();
     if api_key.is_empty() {
         tracing::warn!("API_KEY is not set — running without authentication (dev mode only)");
@@ -344,6 +552,14 @@ async fn main() -> anyhow::Result<()> {
     }
 
     let state = Arc::new(AppState::new(pool, api_key));
+
+    // Warm the compiled-contract cache with every stable + deprecated
+    // version.  Failure here is logged but does not block boot.
+    match state.warm_cache().await {
+        Ok(()) => tracing::info!("contract cache warmed"),
+        Err(e) => tracing::warn!("failed to warm contract cache: {:?}", e),
+    }
+
     let app = build_router(state);
 
     let port: u16 = std::env::var("PORT")

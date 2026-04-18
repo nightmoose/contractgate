@@ -504,3 +504,155 @@ metrics: []
         assert!(r.violations.iter().any(|v| v.kind == ViolationKind::RangeViolation));
     }
 }
+
+// ---------------------------------------------------------------------------
+// Versioning tests (RFC-002) — pure, DB-free layer.
+//
+// The full RFC-002 test plan (`docs/rfcs/002-versioning.md` §test plan) covers
+// 35 cases spanning DB-dependent CRUD + state transitions + ingest resolution
+// + fallback.  The DB-backed ones need a live Postgres and will land as
+// integration tests under `tests/integration/` once the harness is wired up.
+// This module covers what can be verified without any I/O:
+//
+//   - `VersionState` and `MultiStableResolution` parse ↔ as_str round-trip
+//   - Default resolution is `strict`  (guards against accidental permissiveness)
+//   - Json deserialization of the request types with/without optional fields
+//   - `VersionResponse::from(&ContractVersion)` carries every field through
+//
+// The ingest path parser is covered by `mod path_tests` in `src/ingest.rs`.
+// ---------------------------------------------------------------------------
+
+#[cfg(test)]
+mod versioning {
+    use crate::contract::{
+        ContractVersion, CreateContractRequest, CreateVersionRequest, MultiStableResolution,
+        PatchContractRequest, PatchVersionRequest, VersionResponse, VersionState,
+    };
+    use chrono::Utc;
+    use serde_json::json;
+    use uuid::Uuid;
+
+    #[test]
+    fn version_state_string_roundtrip() {
+        for s in ["draft", "stable", "deprecated"] {
+            let parsed = VersionState::parse(s).expect("valid state");
+            assert_eq!(parsed.as_str(), s);
+        }
+    }
+
+    #[test]
+    fn version_state_rejects_unknown() {
+        assert!(VersionState::parse("retired").is_none());
+        assert!(VersionState::parse("").is_none());
+        assert!(VersionState::parse("DRAFT").is_none()); // case-sensitive on purpose
+    }
+
+    #[test]
+    fn multi_stable_resolution_roundtrip() {
+        for s in ["strict", "fallback"] {
+            let parsed = MultiStableResolution::parse(s).expect("valid policy");
+            assert_eq!(parsed.as_str(), s);
+        }
+    }
+
+    #[test]
+    fn multi_stable_resolution_default_is_strict() {
+        // Defaulting to `fallback` would weaken the product pitch; RFC-002
+        // §2b calls out `strict` as the intentional default.
+        assert_eq!(MultiStableResolution::default(), MultiStableResolution::Strict);
+    }
+
+    #[test]
+    fn create_contract_request_defaults_resolution_absent() {
+        // Request can omit multi_stable_resolution; it should land as None
+        // so the handler can apply the `Strict` default.
+        let body = json!({
+            "name": "user_events",
+            "yaml_content": "version: \"1.0\"\nname: user_events\nontology:\n  entities: []\n"
+        });
+        let req: CreateContractRequest = serde_json::from_value(body).unwrap();
+        assert_eq!(req.name, "user_events");
+        assert!(req.description.is_none());
+        assert!(req.multi_stable_resolution.is_none());
+    }
+
+    #[test]
+    fn create_contract_request_accepts_fallback() {
+        let body = json!({
+            "name": "lenient",
+            "yaml_content": "---",
+            "multi_stable_resolution": "fallback"
+        });
+        let req: CreateContractRequest = serde_json::from_value(body).unwrap();
+        assert_eq!(req.multi_stable_resolution, Some(MultiStableResolution::Fallback));
+    }
+
+    #[test]
+    fn patch_contract_all_optional_empty_body() {
+        // Every field is optional — an empty body should deserialize
+        // cleanly (= "no changes").
+        let req: PatchContractRequest = serde_json::from_value(json!({})).unwrap();
+        assert!(req.name.is_none());
+        assert!(req.description.is_none());
+        assert!(req.multi_stable_resolution.is_none());
+    }
+
+    #[test]
+    fn create_version_request_requires_version_and_yaml() {
+        // version + yaml_content are both required.
+        let ok: CreateVersionRequest = serde_json::from_value(json!({
+            "version": "1.1.0",
+            "yaml_content": "---"
+        }))
+        .unwrap();
+        assert_eq!(ok.version, "1.1.0");
+
+        let missing_version = serde_json::from_value::<CreateVersionRequest>(json!({
+            "yaml_content": "---"
+        }));
+        assert!(missing_version.is_err());
+
+        let missing_yaml = serde_json::from_value::<CreateVersionRequest>(json!({
+            "version": "1.0.0"
+        }));
+        assert!(missing_yaml.is_err());
+    }
+
+    #[test]
+    fn patch_version_request_carries_yaml() {
+        let req: PatchVersionRequest = serde_json::from_value(json!({
+            "yaml_content": "new: yaml"
+        }))
+        .unwrap();
+        assert_eq!(req.yaml_content, "new: yaml");
+    }
+
+    #[test]
+    fn version_response_from_carries_every_field() {
+        // Guards against a future refactor silently dropping a field from
+        // the API contract (`yaml_content`, `state`, timestamps, etc.).
+        let cid = Uuid::new_v4();
+        let vid = Uuid::new_v4();
+        let created = Utc::now();
+        let promoted = Some(Utc::now());
+        let v = ContractVersion {
+            id: vid,
+            contract_id: cid,
+            version: "1.2.3".into(),
+            state: VersionState::Stable,
+            yaml_content: "---\nyaml: here".into(),
+            created_at: created,
+            promoted_at: promoted,
+            deprecated_at: None,
+        };
+        let resp = VersionResponse::from(&v);
+        assert_eq!(resp.id, vid);
+        assert_eq!(resp.contract_id, cid);
+        assert_eq!(resp.version, "1.2.3");
+        assert_eq!(resp.state, VersionState::Stable);
+        assert_eq!(resp.yaml_content, "---\nyaml: here");
+        assert_eq!(resp.created_at, created);
+        assert_eq!(resp.promoted_at, promoted);
+        assert_eq!(resp.deprecated_at, None);
+    }
+}

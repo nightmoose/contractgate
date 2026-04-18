@@ -55,11 +55,18 @@ The embedded web dashboard (`http://localhost:8088`) shows live:
 docker compose up -d
 
 # 2. Build + run the demo (release mode matters — validation is that fast)
-cargo run --release --bin demo
+cargo demo
 
 # 3. Open the dashboard
 open http://localhost:8088
 ```
+
+> `cargo demo` is a project-local alias (defined in `.cargo/config.toml`) for
+> `cargo run --release --features demo --bin demo --`.  The `demo` feature
+> gates `rdkafka` so that default builds don't need cmake / libcurl / libssl
+> installed — only the demo itself pulls those in.  If you're invoking cargo
+> directly (e.g. from a script that doesn't pick up the alias), use
+> `cargo run --release --features demo --bin demo`.
 
 Pick a scenario, set a fail ratio, optionally cap the producer rate, and hit
 **Start**. Stop any time with **Stop** or let the duration expire.
@@ -103,7 +110,13 @@ own.
 ## CLI flags
 
 ```bash
-cargo run --release --bin demo -- \
+cargo demo -- \
+    --brokers localhost:9092 \
+    --port 8088 \
+    --snapshot-interval-ms 200
+
+# Or explicitly, without the alias:
+cargo run --release --features demo --bin demo -- \
     --brokers localhost:9092 \
     --port 8088 \
     --snapshot-interval-ms 200
