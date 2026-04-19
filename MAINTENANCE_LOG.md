@@ -2,6 +2,87 @@
 
 ---
 
+## Run 2026-04-18 (RFC-003 → manual replay quarantine)
+• Fixed/Added/Improved: 5 changes
+  1. **docs/rfcs/003-auto-retry.md — design locked + signed off**: Captured
+     the full replay model before touching code per the RFC-first workflow.
+     Alex signed off on all four open questions (2026-04-18): `reviewed`
+     rows are replayable (only `purged` is terminal), draft-version targets
+     are allowed and flagged in the response (`target_is_draft: true`),
+     replay-passes fire the forward destination just like fresh ingest, and
+     the per-request cap is 1,000 rows to match batch ingest. Replay never
+     mutates source quarantine payloads or their recorded
+     `contract_version` — on success the source row is stamped
+     `status='replayed' + replayed_at + replayed_into_audit_id`; on failure
+     a new quarantine row is written linked back via
+     `replay_of_quarantine_id` and the source is untouched.
+  2. **supabase/migrations/004_quarantine_replay.sql — additive schema**:
+     Added `replayed_at TIMESTAMPTZ`, `replayed_into_audit_id UUID` and
+     `replay_of_quarantine_id UUID` to `quarantine_events`, plus
+     `replay_of_quarantine_id UUID` on `audit_log`. Partial indexes on
+     both `replay_of_quarantine_id` columns (WHERE NOT NULL) for the
+     history-drawer lookup path. Added a BEFORE UPDATE trigger
+     (`quarantine_replay_stamp_guard`) that refuses to overwrite a set
+     `replayed_at` / `replayed_into_audit_id` pair — belt-and-braces
+     against a race where two concurrent replay attempts both win past
+     the app-level conditional UPDATE. Existing `status` enum
+     (`pending`/`reviewed`/`replayed`/`purged`) is unchanged; `replayed`
+     is now reached for the first time.
+  3. **src/storage.rs — replay helpers + extended inserts**: Added
+     `pre_assigned_id: Option<Uuid>` and `replay_of_quarantine_id:
+     Option<Uuid>` to `AuditEntryInsert`; `replay_of_quarantine_id:
+     Option<Uuid>` to `QuarantineEventInsert`. Sentinel-zero-UUID + NULLIF
+     pattern (same shape as the existing source_ip handling) keeps the
+     UNNEST columns uniform. Pre-assigned IDs let the replay handler link
+     source → new audit row atomically before the INSERT returns. Added
+     `QuarantineRow` + `list_quarantine_by_ids` (bulk loader for the
+     replay categorizer), `mark_quarantine_replayed_batch` (conditional
+     UPDATE with an IN (pending, reviewed) AND replayed_at IS NULL race
+     guard — returns the set of IDs actually stamped so losers can be
+     downgraded to `already_replayed`), and `replay_history_for` (source
+     row + failed-replay children + terminal audit row as a tagged union
+     for the dashboard drawer). Fresh-ingest call sites in ingest.rs were
+     updated to pass `None` for the three new fields.
+  4. **src/replay.rs — new module + route surface**: `POST
+     /contracts/:id/quarantine/replay` takes `{ ids, target_version? }`,
+     validates 1..=1000 bounds, resolves target (explicit vs
+     default-stable, carries `target_is_draft` flag), bulk-loads source
+     rows, categorizes (not_found / wrong_contract / purged /
+     already_replayed / eligible), parallel-validates eligibles via rayon
+     inside `spawn_blocking`, honors `multi_stable_resolution = fallback`
+     when the target was resolved by default (mirrors ingest's fan-out),
+     then bulk-inserts audit rows (with pre-assigned UUIDs) + quarantine
+     rows (failures) + forwarded_events rows (passes, Q3=A). Race-guarded
+     `mark_quarantine_replayed_batch` downgrades lost races to
+     `already_replayed` in the response. Also added `GET
+     /contracts/:id/quarantine/:quar_id/replay-history` backed by
+     `storage::replay_history_for`. Tagged enum `ReplayItemOutcome`
+     serializes as `{"outcome": "replayed", ...}` via `#[serde(tag =
+     "outcome")]` so the per-item result is uniform.
+  5. **src/replay.rs — 8 DB-free unit tests**: `validate_bounds` edge
+     cases (empty list, 1001 rejected, exactly 1000 accepted, single id),
+     `tally` sums every outcome kind and the sum equals input length,
+     `ReplayRequest` deserialization with and without `target_version`,
+     and `ReplayItemOutcome` serialization emits the `outcome` tag in
+     snake_case (`replayed`, `already_replayed`, `not_found`). DB-backed
+     flow tests (§5-17 of the RFC-003 plan) land under the same deferred
+     `tests/integration/` harness as RFC-002's remaining tests.
+• Verification: `cargo check --bin contractgate` is clean. `cargo test
+  --bin contractgate` → 40 passed (22 existing + 4 path + 10 versioning +
+  4 batch (legacy path) + 8 new replay). `cargo test --lib` → 6 passed
+  (validation engine). 46 total, 0 failed.
+• Status: Files on branch `nightly-maintenance-2026-04-18`, committed
+  on top of the RFC-002 commit.
+• Follow-ups: (a) wire a DB-backed integration test harness under
+  `tests/integration/` to exercise the §5-17 tests against a real
+  Postgres (shared with RFC-002's ~30 deferred tests); (b) dashboard
+  Quarantine tab: checkbox column + Replay button + version picker +
+  replay-history drawer; (c) Consider adding `pre_assigned_id` to
+  `QuarantineEventInsert` too so failed-replay rows can be echoed back
+  in the response instead of deferring to `replay-history`.
+
+---
+
 ## Run 2026-04-18 (RFC-002 → contract versioning)
 • Fixed/Added/Improved: 7 changes
   1. **docs/rfcs/002-contract-versioning.md — design locked before code**:

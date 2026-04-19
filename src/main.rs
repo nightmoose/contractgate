@@ -44,6 +44,7 @@ pub use contractgate::{contract, validation};
 
 mod error;
 mod ingest;
+mod replay;
 mod storage;
 #[cfg(test)]
 mod tests;
@@ -507,6 +508,15 @@ fn build_router(state: Arc<AppState>) -> Router {
         .route(
             "/ingest/:contract_id/stats",
             get(ingest::ingest_stats_handler),
+        )
+        // Replay Quarantine (RFC-003)
+        .route(
+            "/contracts/:id/quarantine/replay",
+            post(replay::replay_handler),
+        )
+        .route(
+            "/contracts/:id/quarantine/:quar_id/replay-history",
+            get(replay::replay_history_handler),
         )
         // Audit + stats
         .route("/audit", get(audit_log_handler))

@@ -380,6 +380,9 @@ pub async fn ingest_handler(
                 raw_event: event.clone(),
                 validation_us: vr.validation_us as i64,
                 source_ip: source_ip.clone(),
+                // Fresh ingest: let Postgres generate the ID and no replay link.
+                pre_assigned_id: None,
+                replay_of_quarantine_id: None,
             })
             .collect();
 
@@ -397,6 +400,8 @@ pub async fn ingest_handler(
                     .unwrap_or_else(|_| Value::Array(vec![])),
                 validation_us: vr.validation_us as i64,
                 source_ip: source_ip.clone(),
+                // Fresh ingest: no parent replay source.
+                replay_of_quarantine_id: None,
             })
             .collect();
 
@@ -541,6 +546,8 @@ async fn deprecated_pin_quarantine(
                 violation_details: Value::Array(vec![synthetic_violation.clone()]),
                 validation_us: 0,
                 source_ip: source_ip.clone(),
+                // Deprecated-pin quarantine is ingest-time, not replay-derived.
+                replay_of_quarantine_id: None,
             })
             .collect();
 
