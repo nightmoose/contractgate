@@ -28,21 +28,21 @@
 //! draft versions are **never** fallback candidates.
 //!
 //! ### HTTP status codes
-//! - **200 OK**               — all events passed validation
-//! - **207 Multi-Status**     — batch had a mix of passed and failed events
-//! - **422 Unprocessable**    — all events failed OR atomic+any-fail OR
-//!                              deprecated-pin batch quarantine
-//! - **409 Conflict**         — unpinned request on a contract with no
-//!                              stable version yet
-//! - **400 Bad Request**      — malformed `contract_id`, empty batch,
-//!                              oversized batch
-//! - **404 Not Found**        — pinned version doesn't exist on the contract
+//! - **200 OK** — all events passed validation
+//! - **207 Multi-Status** — batch had a mix of passed and failed events
+//! - **422 Unprocessable** — all events failed OR atomic+any-fail OR
+//!   deprecated-pin batch quarantine
+//! - **409 Conflict** — unpinned request on a contract with no stable version
+//!   yet
+//! - **400 Bad Request** — malformed `contract_id`, empty batch, oversized
+//!   batch
+//! - **404 Not Found** — pinned version doesn't exist on the contract
 //!
 //! ### Query parameters
 //! - `?dry_run=true` — validate without writing to the database
-//! - `?atomic=true`  — all-or-nothing batch semantics.  If ANY event in the
-//!                     batch fails, the entire batch is rejected (422) and
-//!                     no events are persisted or forwarded.
+//! - `?atomic=true` — all-or-nothing batch semantics.  If ANY event in the
+//!   batch fails, the entire batch is rejected (422) and no events are
+//!   persisted or forwarded.
 //!
 //! ### Batch size cap
 //! Up to **1 000 events** per request.  Above that, 400.  Parallel
