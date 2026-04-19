@@ -6,6 +6,195 @@
 //! DB-dependent tests (ingest, audit) belong in a separate `tests/integration/`
 //! directory and require `DATABASE_URL` to be set.
 
+// ---------------------------------------------------------------------------
+// Batch validation tests (RFC-001)
+//
+// These exercise the *validation layer* of the batch pipeline — order
+// preservation, parallel correctness, a rough throughput sanity check.  The
+// HTTP handler itself (`ingest_handler`) needs a live Postgres pool and is
+// covered by the manual curl checks described in `docs/rfcs/001-batch-ingest.md`.
+// ---------------------------------------------------------------------------
+
+#[cfg(test)]
+mod batch {
+    use crate::contract::{Contract, FieldDefinition, FieldType, Ontology};
+    use crate::validation::{validate, CompiledContract, ViolationKind};
+    use rayon::prelude::*;
+    use serde_json::{json, Value};
+
+    fn tiny_contract() -> Contract {
+        Contract {
+            version: "1.0".into(),
+            name: "batch_test".into(),
+            description: None,
+            ontology: Ontology {
+                entities: vec![
+                    FieldDefinition {
+                        name: "user_id".into(),
+                        field_type: FieldType::String,
+                        required: true,
+                        pattern: Some(r"^[a-z0-9_]+$".into()),
+                        allowed_values: None,
+                        min: None,
+                        max: None,
+                        min_length: None,
+                        max_length: None,
+                        properties: None,
+                        items: None,
+                    },
+                    FieldDefinition {
+                        name: "event_type".into(),
+                        field_type: FieldType::String,
+                        required: true,
+                        pattern: None,
+                        allowed_values: Some(vec![json!("click"), json!("view")]),
+                        min: None,
+                        max: None,
+                        min_length: None,
+                        max_length: None,
+                        properties: None,
+                        items: None,
+                    },
+                ],
+            },
+            glossary: vec![],
+            metrics: vec![],
+        }
+    }
+
+    fn events_with_one_bad_at(bad_index: usize, total: usize) -> Vec<Value> {
+        (0..total)
+            .map(|i| {
+                if i == bad_index {
+                    json!({ "user_id": "BAD ID!!", "event_type": "click" })
+                } else {
+                    json!({ "user_id": format!("user_{}", i), "event_type": "click" })
+                }
+            })
+            .collect()
+    }
+
+    /// Sanity: parallel validation yields the same per-event verdicts as the
+    /// sequential loop.  Equivalence is what lets us replace one with the other
+    /// with no behavioural change.
+    #[test]
+    fn parallel_matches_sequential() {
+        let cc = CompiledContract::compile(tiny_contract()).unwrap();
+        let events = events_with_one_bad_at(17, 64);
+
+        let sequential: Vec<bool> = events.iter().map(|e| validate(&cc, e).passed).collect();
+
+        let parallel: Vec<bool> = events
+            .par_iter()
+            .map(|e| validate(&cc, e).passed)
+            .collect();
+
+        assert_eq!(sequential, parallel);
+        assert!(!parallel[17], "bad event should be at index 17");
+        assert!(parallel[16] && parallel[18], "neighbouring events should pass");
+    }
+
+    /// Ordering guarantee: `par_iter().map().collect()` preserves input order.
+    /// The batch-ingest response contract depends on `results[i]` matching
+    /// `events[i]`; this test is a regression guard in case rayon ever changes
+    /// its collect semantics.
+    #[test]
+    fn parallel_preserves_input_order() {
+        let cc = CompiledContract::compile(tiny_contract()).unwrap();
+        // 200 events, each failing because user_id contains its own index in
+        // uppercase — unique per event, so we can tell them apart in the output.
+        let events: Vec<Value> = (0..200)
+            .map(|i| json!({ "user_id": format!("USER_{}", i), "event_type": "click" }))
+            .collect();
+
+        let results: Vec<_> = events
+            .par_iter()
+            .map(|e| validate(&cc, e))
+            .collect();
+
+        assert_eq!(results.len(), 200);
+        for (i, vr) in results.iter().enumerate() {
+            assert!(!vr.passed, "event {} should fail pattern check", i);
+            // The violation message mentions the exact value we put in —
+            // confirms the i-th result corresponds to the i-th input.
+            let joined: String = vr.violations.iter().map(|v| v.message.clone()).collect();
+            assert!(
+                joined.contains(&format!("USER_{}", i)),
+                "event {} result should reference its own value — got: {}",
+                i,
+                joined
+            );
+        }
+    }
+
+    /// An all-pass batch collects zero violations.  Validates that the
+    /// parallel + `par_iter().filter()` pattern used in the handler to build
+    /// forward-rows yields the full batch when everything passes.
+    #[test]
+    fn all_pass_batch_has_no_failures() {
+        let cc = CompiledContract::compile(tiny_contract()).unwrap();
+        let events: Vec<Value> = (0..500)
+            .map(|i| json!({ "user_id": format!("ok_{}", i), "event_type": "view" }))
+            .collect();
+
+        let results: Vec<_> = events.par_iter().map(|e| validate(&cc, e)).collect();
+        let pass_count = results.iter().filter(|r| r.passed).count();
+        let fail_count = results.len() - pass_count;
+        assert_eq!(pass_count, 500);
+        assert_eq!(fail_count, 0);
+    }
+
+    /// A mixed batch splits cleanly into passes and failures with the expected
+    /// violation kinds reported only on the failing events.
+    #[test]
+    fn mixed_batch_separates_cleanly() {
+        let cc = CompiledContract::compile(tiny_contract()).unwrap();
+        let events = events_with_one_bad_at(3, 10);
+
+        let results: Vec<_> = events.par_iter().map(|e| validate(&cc, e)).collect();
+        let failing: Vec<_> = results
+            .iter()
+            .enumerate()
+            .filter(|(_, r)| !r.passed)
+            .collect();
+
+        assert_eq!(failing.len(), 1);
+        assert_eq!(failing[0].0, 3);
+        assert!(failing[0].1.violations.iter().any(|v| v.kind == ViolationKind::PatternMismatch));
+    }
+
+    /// Throughput sanity: validating a 1 000-event batch in parallel completes
+    /// well under the batch-level latency budget declared in RFC-001 (<100 ms
+    /// end-to-end on a 4-core runner; we give CI a generous 5 s because debug
+    /// builds are much slower than release).
+    #[test]
+    fn thousand_event_batch_completes_quickly() {
+        let cc = CompiledContract::compile(tiny_contract()).unwrap();
+        let events: Vec<Value> = (0..1_000)
+            .map(|i| json!({ "user_id": format!("user_{}", i), "event_type": "click" }))
+            .collect();
+
+        let t0 = std::time::Instant::now();
+        let results: Vec<_> = events.par_iter().map(|e| validate(&cc, e)).collect();
+        let elapsed = t0.elapsed();
+
+        assert_eq!(results.len(), 1_000);
+        assert!(results.iter().all(|r| r.passed));
+
+        #[cfg(debug_assertions)]
+        let budget = std::time::Duration::from_secs(5);
+        #[cfg(not(debug_assertions))]
+        let budget = std::time::Duration::from_millis(100);
+
+        assert!(
+            elapsed < budget,
+            "1 000-event batch took {:?} — expected < {:?}",
+            elapsed,
+            budget
+        );
+    }
+}
+
 #[cfg(test)]
 mod playground {
     use crate::contract::{Contract, FieldDefinition, FieldType, GlossaryEntry, MetricDefinition, Ontology};
@@ -313,5 +502,157 @@ metrics: []
         let r = validate(&cc, &bad);
         assert!(!r.passed);
         assert!(r.violations.iter().any(|v| v.kind == ViolationKind::RangeViolation));
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Versioning tests (RFC-002) — pure, DB-free layer.
+//
+// The full RFC-002 test plan (`docs/rfcs/002-versioning.md` §test plan) covers
+// 35 cases spanning DB-dependent CRUD + state transitions + ingest resolution
+// + fallback.  The DB-backed ones need a live Postgres and will land as
+// integration tests under `tests/integration/` once the harness is wired up.
+// This module covers what can be verified without any I/O:
+//
+//   - `VersionState` and `MultiStableResolution` parse ↔ as_str round-trip
+//   - Default resolution is `strict`  (guards against accidental permissiveness)
+//   - Json deserialization of the request types with/without optional fields
+//   - `VersionResponse::from(&ContractVersion)` carries every field through
+//
+// The ingest path parser is covered by `mod path_tests` in `src/ingest.rs`.
+// ---------------------------------------------------------------------------
+
+#[cfg(test)]
+mod versioning {
+    use crate::contract::{
+        ContractVersion, CreateContractRequest, CreateVersionRequest, MultiStableResolution,
+        PatchContractRequest, PatchVersionRequest, VersionResponse, VersionState,
+    };
+    use chrono::Utc;
+    use serde_json::json;
+    use uuid::Uuid;
+
+    #[test]
+    fn version_state_string_roundtrip() {
+        for s in ["draft", "stable", "deprecated"] {
+            let parsed = VersionState::parse(s).expect("valid state");
+            assert_eq!(parsed.as_str(), s);
+        }
+    }
+
+    #[test]
+    fn version_state_rejects_unknown() {
+        assert!(VersionState::parse("retired").is_none());
+        assert!(VersionState::parse("").is_none());
+        assert!(VersionState::parse("DRAFT").is_none()); // case-sensitive on purpose
+    }
+
+    #[test]
+    fn multi_stable_resolution_roundtrip() {
+        for s in ["strict", "fallback"] {
+            let parsed = MultiStableResolution::parse(s).expect("valid policy");
+            assert_eq!(parsed.as_str(), s);
+        }
+    }
+
+    #[test]
+    fn multi_stable_resolution_default_is_strict() {
+        // Defaulting to `fallback` would weaken the product pitch; RFC-002
+        // §2b calls out `strict` as the intentional default.
+        assert_eq!(MultiStableResolution::default(), MultiStableResolution::Strict);
+    }
+
+    #[test]
+    fn create_contract_request_defaults_resolution_absent() {
+        // Request can omit multi_stable_resolution; it should land as None
+        // so the handler can apply the `Strict` default.
+        let body = json!({
+            "name": "user_events",
+            "yaml_content": "version: \"1.0\"\nname: user_events\nontology:\n  entities: []\n"
+        });
+        let req: CreateContractRequest = serde_json::from_value(body).unwrap();
+        assert_eq!(req.name, "user_events");
+        assert!(req.description.is_none());
+        assert!(req.multi_stable_resolution.is_none());
+    }
+
+    #[test]
+    fn create_contract_request_accepts_fallback() {
+        let body = json!({
+            "name": "lenient",
+            "yaml_content": "---",
+            "multi_stable_resolution": "fallback"
+        });
+        let req: CreateContractRequest = serde_json::from_value(body).unwrap();
+        assert_eq!(req.multi_stable_resolution, Some(MultiStableResolution::Fallback));
+    }
+
+    #[test]
+    fn patch_contract_all_optional_empty_body() {
+        // Every field is optional — an empty body should deserialize
+        // cleanly (= "no changes").
+        let req: PatchContractRequest = serde_json::from_value(json!({})).unwrap();
+        assert!(req.name.is_none());
+        assert!(req.description.is_none());
+        assert!(req.multi_stable_resolution.is_none());
+    }
+
+    #[test]
+    fn create_version_request_requires_version_and_yaml() {
+        // version + yaml_content are both required.
+        let ok: CreateVersionRequest = serde_json::from_value(json!({
+            "version": "1.1.0",
+            "yaml_content": "---"
+        }))
+        .unwrap();
+        assert_eq!(ok.version, "1.1.0");
+
+        let missing_version = serde_json::from_value::<CreateVersionRequest>(json!({
+            "yaml_content": "---"
+        }));
+        assert!(missing_version.is_err());
+
+        let missing_yaml = serde_json::from_value::<CreateVersionRequest>(json!({
+            "version": "1.0.0"
+        }));
+        assert!(missing_yaml.is_err());
+    }
+
+    #[test]
+    fn patch_version_request_carries_yaml() {
+        let req: PatchVersionRequest = serde_json::from_value(json!({
+            "yaml_content": "new: yaml"
+        }))
+        .unwrap();
+        assert_eq!(req.yaml_content, "new: yaml");
+    }
+
+    #[test]
+    fn version_response_from_carries_every_field() {
+        // Guards against a future refactor silently dropping a field from
+        // the API contract (`yaml_content`, `state`, timestamps, etc.).
+        let cid = Uuid::new_v4();
+        let vid = Uuid::new_v4();
+        let created = Utc::now();
+        let promoted = Some(Utc::now());
+        let v = ContractVersion {
+            id: vid,
+            contract_id: cid,
+            version: "1.2.3".into(),
+            state: VersionState::Stable,
+            yaml_content: "---\nyaml: here".into(),
+            created_at: created,
+            promoted_at: promoted,
+            deprecated_at: None,
+        };
+        let resp = VersionResponse::from(&v);
+        assert_eq!(resp.id, vid);
+        assert_eq!(resp.contract_id, cid);
+        assert_eq!(resp.version, "1.2.3");
+        assert_eq!(resp.state, VersionState::Stable);
+        assert_eq!(resp.yaml_content, "---\nyaml: here");
+        assert_eq!(resp.created_at, created);
+        assert_eq!(resp.promoted_at, promoted);
+        assert_eq!(resp.deprecated_at, None);
     }
 }

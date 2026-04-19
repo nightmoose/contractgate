@@ -187,89 +187,219 @@ pub enum MetricType {
 }
 
 // ---------------------------------------------------------------------------
-// Stored contract (includes DB metadata)
+// DB row types — identity vs version split (RFC-002)
 // ---------------------------------------------------------------------------
 
-/// A contract as stored in Supabase — wraps the YAML definition with metadata.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct StoredContract {
-    pub id: uuid::Uuid,
-    pub created_at: chrono::DateTime<chrono::Utc>,
-    pub updated_at: chrono::DateTime<chrono::Utc>,
-    /// Human-readable name (mirrors `Contract::name`)
-    pub name: String,
-    /// Semver version string
-    pub version: String,
-    /// Whether this contract is active / accepting ingestion
-    pub active: bool,
-    /// Raw YAML content of the contract
-    pub yaml_content: String,
-    /// Parsed contract (not stored, derived on load)
-    #[serde(skip)]
-    pub parsed: Option<Contract>,
-}
-
-impl StoredContract {
-    /// Parse the stored YAML into a `Contract` value.
-    pub fn parse(&mut self) -> anyhow::Result<()> {
-        let contract: Contract = serde_yaml::from_str(&self.yaml_content)?;
-        self.parsed = Some(contract);
-        Ok(())
-    }
-}
-
-// ---------------------------------------------------------------------------
-// API request/response models
-// ---------------------------------------------------------------------------
-
-/// Request body for creating a new contract.
-#[derive(Debug, Deserialize)]
-pub struct CreateContractRequest {
-    pub yaml_content: String,
-}
-
-/// Response returned after creating or fetching a contract.
+/// State machine for `contract_versions.state`.
 ///
-/// Includes `yaml_content` so callers can render or edit the full contract
-/// definition without a separate fetch.
-#[derive(Debug, Serialize)]
-pub struct ContractResponse {
-    pub id: uuid::Uuid,
-    pub name: String,
-    pub version: String,
-    pub active: bool,
-    pub created_at: chrono::DateTime<chrono::Utc>,
-    pub updated_at: chrono::DateTime<chrono::Utc>,
-    /// The raw YAML content that defines this contract.
-    pub yaml_content: String,
+/// Strict, forward-only transitions: `draft → stable → deprecated`.  No
+/// other moves are legal, in either direction, ever.  The Postgres trigger
+/// `contract_versions_frozen` enforces this at the storage layer as a
+/// belt-and-braces check.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum VersionState {
+    Draft,
+    Stable,
+    Deprecated,
 }
 
-impl From<&StoredContract> for ContractResponse {
-    fn from(sc: &StoredContract) -> Self {
-        ContractResponse {
-            id: sc.id,
-            name: sc.name.clone(),
-            version: sc.version.clone(),
-            active: sc.active,
-            created_at: sc.created_at,
-            updated_at: sc.updated_at,
-            yaml_content: sc.yaml_content.clone(),
+impl VersionState {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            VersionState::Draft => "draft",
+            VersionState::Stable => "stable",
+            VersionState::Deprecated => "deprecated",
+        }
+    }
+
+    pub fn parse(s: &str) -> Option<Self> {
+        match s {
+            "draft" => Some(Self::Draft),
+            "stable" => Some(Self::Stable),
+            "deprecated" => Some(Self::Deprecated),
+            _ => None,
         }
     }
 }
 
-/// Summary info for contract listing (lightweight).
-#[derive(Debug, Serialize, sqlx::FromRow)]
+/// Resolution policy for unpinned ingest traffic on a given contract.
+///
+/// See RFC-002 §2b.
+///   - `Strict`   — validate against latest-stable only; fail-closed.
+///   - `Fallback` — on failure, retry against other stables in `promoted_at
+///     DESC` order, first-pass-wins.  `contract_version` on the resulting
+///     audit row always records the version that actually matched.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum MultiStableResolution {
+    #[default]
+    Strict,
+    Fallback,
+}
+
+impl MultiStableResolution {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            MultiStableResolution::Strict => "strict",
+            MultiStableResolution::Fallback => "fallback",
+        }
+    }
+
+    pub fn parse(s: &str) -> Option<Self> {
+        match s {
+            "strict" => Some(Self::Strict),
+            "fallback" => Some(Self::Fallback),
+            _ => None,
+        }
+    }
+}
+
+/// Identity row — one per `contract_id`.  Mutable: `name`, `description`,
+/// `multi_stable_resolution`.  Renames are mirrored to
+/// `contract_name_history` via the `contracts_record_rename` trigger.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ContractIdentity {
+    pub id: uuid::Uuid,
+    pub name: String,
+    pub description: Option<String>,
+    pub multi_stable_resolution: MultiStableResolution,
+    pub created_at: chrono::DateTime<chrono::Utc>,
+    pub updated_at: chrono::DateTime<chrono::Utc>,
+}
+
+/// Version row — one per `(contract_id, version)` pair.  Frozen once state
+/// leaves `draft`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ContractVersion {
+    pub id: uuid::Uuid,
+    pub contract_id: uuid::Uuid,
+    pub version: String,
+    pub state: VersionState,
+    pub yaml_content: String,
+    pub created_at: chrono::DateTime<chrono::Utc>,
+    pub promoted_at: Option<chrono::DateTime<chrono::Utc>>,
+    pub deprecated_at: Option<chrono::DateTime<chrono::Utc>>,
+}
+
+/// One row of `contract_name_history`.
+#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
+pub struct NameHistoryEntry {
+    pub id: uuid::Uuid,
+    pub contract_id: uuid::Uuid,
+    pub old_name: String,
+    pub new_name: String,
+    pub changed_at: chrono::DateTime<chrono::Utc>,
+}
+
+// ---------------------------------------------------------------------------
+// API request / response models
+// ---------------------------------------------------------------------------
+
+/// Request body for `POST /contracts` — identity + initial v1.0.0 draft in
+/// a single transactional call.
+#[derive(Debug, Deserialize)]
+pub struct CreateContractRequest {
+    pub name: String,
+    #[serde(default)]
+    pub description: Option<String>,
+    /// YAML for the auto-created v1.0.0 draft.  Must parse as a valid
+    /// `Contract`.
+    pub yaml_content: String,
+    /// Defaults to `strict` when omitted.
+    #[serde(default)]
+    pub multi_stable_resolution: Option<MultiStableResolution>,
+}
+
+/// Request body for `PATCH /contracts/{id}` — identity-level metadata
+/// only.  Does not touch any version's YAML; that's immutable after draft.
+#[derive(Debug, Deserialize)]
+pub struct PatchContractRequest {
+    #[serde(default)]
+    pub name: Option<String>,
+    #[serde(default)]
+    pub description: Option<String>,
+    #[serde(default)]
+    pub multi_stable_resolution: Option<MultiStableResolution>,
+}
+
+/// Request body for `POST /contracts/{id}/versions` — create a new draft.
+#[derive(Debug, Deserialize)]
+pub struct CreateVersionRequest {
+    /// Semver string, e.g. "1.1.0".  Must be unique per contract.
+    pub version: String,
+    pub yaml_content: String,
+}
+
+/// Request body for `PATCH /contracts/{id}/versions/{version}` — only
+/// legal when the version is still in `draft` state.
+#[derive(Debug, Deserialize)]
+pub struct PatchVersionRequest {
+    pub yaml_content: String,
+}
+
+/// Full contract response — identity + aggregated version summary.
+///
+/// `latest_stable_version` is `None` if no stable version exists yet (the
+/// contract has only drafts so far, or all versions have been deprecated).
+#[derive(Debug, Serialize)]
+pub struct ContractResponse {
+    pub id: uuid::Uuid,
+    pub name: String,
+    pub description: Option<String>,
+    pub multi_stable_resolution: MultiStableResolution,
+    pub created_at: chrono::DateTime<chrono::Utc>,
+    pub updated_at: chrono::DateTime<chrono::Utc>,
+    pub version_count: i64,
+    pub latest_stable_version: Option<String>,
+}
+
+/// Lightweight listing row.
+#[derive(Debug, Serialize)]
 pub struct ContractSummary {
     pub id: uuid::Uuid,
     pub name: String,
-    pub version: String,
-    pub active: bool,
+    pub multi_stable_resolution: MultiStableResolution,
+    pub latest_stable_version: Option<String>,
+    pub version_count: i64,
 }
 
-/// Request to toggle contract active state.
-#[derive(Debug, Deserialize)]
-pub struct UpdateContractRequest {
-    pub active: Option<bool>,
-    pub yaml_content: Option<String>,
+/// Full response for a single version — includes YAML so the dashboard can
+/// render/edit without a second fetch.
+#[derive(Debug, Serialize)]
+pub struct VersionResponse {
+    pub id: uuid::Uuid,
+    pub contract_id: uuid::Uuid,
+    pub version: String,
+    pub state: VersionState,
+    pub yaml_content: String,
+    pub created_at: chrono::DateTime<chrono::Utc>,
+    pub promoted_at: Option<chrono::DateTime<chrono::Utc>>,
+    pub deprecated_at: Option<chrono::DateTime<chrono::Utc>>,
+}
+
+impl From<&ContractVersion> for VersionResponse {
+    fn from(v: &ContractVersion) -> Self {
+        Self {
+            id: v.id,
+            contract_id: v.contract_id,
+            version: v.version.clone(),
+            state: v.state,
+            yaml_content: v.yaml_content.clone(),
+            created_at: v.created_at,
+            promoted_at: v.promoted_at,
+            deprecated_at: v.deprecated_at,
+        }
+    }
+}
+
+/// Lightweight version listing row (no YAML — saves bandwidth on list
+/// views).
+#[derive(Debug, Serialize)]
+pub struct VersionSummary {
+    pub version: String,
+    pub state: VersionState,
+    pub created_at: chrono::DateTime<chrono::Utc>,
+    pub promoted_at: Option<chrono::DateTime<chrono::Utc>>,
+    pub deprecated_at: Option<chrono::DateTime<chrono::Utc>>,
 }

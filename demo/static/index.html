@@ -1,0 +1,471 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>ContractGate — Speed Demo</title>
+<!-- Chart.js for the throughput graph.  Pulled from CDN; browser-local cache
+     will pick it up on subsequent loads.  If you need the demo to be usable
+     entirely offline, vendor this file into demo/static/chart.umd.min.js
+     and switch the src below. -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+<style>
+  :root {
+    --bg: #0b0f17;
+    --panel: #131a28;
+    --panel-2: #1a2336;
+    --border: #253049;
+    --text: #e6edf7;
+    --muted: #8a97ad;
+    --green: #3ddc84;
+    --red: #ff6b6b;
+    --blue: #5ea1ff;
+    --amber: #ffc857;
+    --violator: #5ea1ff;
+    --copy: #ffc857;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; padding: 0;
+    background: var(--bg); color: var(--text);
+    font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    font-size: 14px; line-height: 1.45;
+  }
+  header {
+    padding: 18px 28px; border-bottom: 1px solid var(--border);
+    display: flex; align-items: center; justify-content: space-between;
+    background: linear-gradient(180deg, #0e1422 0%, #0b0f17 100%);
+  }
+  header h1 { margin: 0; font-size: 18px; font-weight: 600; letter-spacing: .2px; }
+  header h1 .tag {
+    display: inline-block; margin-left: 10px;
+    font-size: 10px; padding: 2px 6px; border-radius: 4px;
+    background: #20304d; color: #a9c0ef; letter-spacing: .5px;
+  }
+  main { padding: 20px 28px 40px; display: grid; gap: 20px; max-width: 1400px; margin: 0 auto; }
+
+  .controls { display: grid; grid-template-columns: repeat(5, 1fr) auto auto; gap: 12px; align-items: end; }
+  .controls label { display: block; color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: .8px; margin-bottom: 4px; }
+  .controls select,
+  .controls input {
+    width: 100%; background: var(--panel); color: var(--text);
+    border: 1px solid var(--border); border-radius: 6px;
+    padding: 8px 10px; font-size: 13px;
+  }
+  .controls input[type="range"] { padding: 0; }
+  button {
+    padding: 10px 16px; border-radius: 6px; border: 1px solid var(--border);
+    background: var(--panel); color: var(--text); font-weight: 500; cursor: pointer;
+    font-size: 13px; min-width: 80px;
+  }
+  button.primary { background: var(--green); color: #062415; border-color: transparent; }
+  button.danger { background: var(--red); color: #2a0b0b; border-color: transparent; }
+  button:disabled { opacity: .4; cursor: not-allowed; }
+
+  .lanes { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+  .lane {
+    background: var(--panel); border: 1px solid var(--border); border-radius: 10px;
+    padding: 18px 20px; display: flex; flex-direction: column; gap: 14px;
+  }
+  .lane h2 {
+    margin: 0 0 2px 0; font-size: 14px; font-weight: 600;
+    display: flex; align-items: center; gap: 8px;
+  }
+  .lane h2 .dot { width: 10px; height: 10px; border-radius: 50%; }
+  .lane.validator h2 .dot { background: var(--violator); box-shadow: 0 0 8px var(--violator); }
+  .lane.copy h2 .dot { background: var(--copy); box-shadow: 0 0 8px var(--copy); }
+  .lane h2 .sub { color: var(--muted); font-weight: 400; font-size: 12px; }
+
+  .metrics { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+  .metric {
+    background: var(--panel-2); border-radius: 8px; padding: 10px 12px;
+  }
+  .metric .k { color: var(--muted); font-size: 10px; text-transform: uppercase; letter-spacing: .7px; }
+  .metric .v { font-size: 22px; font-weight: 600; margin-top: 2px; font-variant-numeric: tabular-nums; }
+  .metric .u { color: var(--muted); font-weight: 400; font-size: 11px; margin-left: 4px; }
+
+  .latency { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+  .lat {
+    background: var(--panel-2); border-radius: 8px; padding: 8px 10px;
+    display: flex; flex-direction: column;
+  }
+  .lat .k { color: var(--muted); font-size: 10px; text-transform: uppercase; letter-spacing: .7px; }
+  .lat .v { font-size: 16px; font-weight: 600; margin-top: 2px; font-variant-numeric: tabular-nums; }
+
+  .bar {
+    display: grid; grid-template-columns: 1fr 1fr;
+    background: var(--panel-2); border-radius: 8px; overflow: hidden; height: 28px;
+    font-size: 11px; font-weight: 600;
+  }
+  .bar .seg { display: flex; align-items: center; justify-content: center; }
+  .bar .seg.pass { background: rgba(61, 220, 132, .2); color: var(--green); }
+  .bar .seg.fail { background: rgba(255, 107, 107, .2); color: var(--red); }
+
+  .chart-wrap {
+    background: var(--panel); border: 1px solid var(--border); border-radius: 10px;
+    padding: 16px 18px; height: 280px;
+  }
+  .chart-wrap h2 { margin: 0 0 10px 0; font-size: 13px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .7px; }
+
+  .summary { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-top: 4px; }
+  .summary .card { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 14px 16px; }
+  .summary .card .k { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: .7px; }
+  .summary .card .v { font-size: 24px; font-weight: 600; margin-top: 4px; font-variant-numeric: tabular-nums; }
+  .summary .card .sub {
+    color: var(--muted); font-size: 11px; margin-top: 2px;
+    font-variant-numeric: tabular-nums;
+  }
+  /* Overhead card color coding — green when validation cost is tiny,
+     amber as it creeps up, red only if ContractGate starts falling behind. */
+  .card.overhead-good  { border-color: rgba(61, 220, 132, .45); }
+  .card.overhead-good  .v { color: var(--green); }
+  .card.overhead-warn  { border-color: rgba(255, 200, 87, .45); }
+  .card.overhead-warn  .v { color: var(--amber); }
+  .card.overhead-bad   { border-color: rgba(255, 107, 107, .5); }
+  .card.overhead-bad   .v { color: var(--red); }
+
+  .status-pill {
+    display: inline-block; padding: 3px 10px; border-radius: 12px;
+    background: #1b2c4d; color: #92b7f0; font-size: 11px; font-weight: 500;
+  }
+  .status-pill.running { background: #0f3b2a; color: var(--green); }
+  .status-pill.stopped { background: #3b0f1a; color: var(--red); }
+
+  @media (max-width: 900px) {
+    .controls { grid-template-columns: 1fr 1fr; }
+    .lanes { grid-template-columns: 1fr; }
+    .summary { grid-template-columns: 1fr 1fr; }
+  }
+</style>
+</head>
+<body>
+<header>
+  <h1>
+    ContractGate <span class="tag">SPEED DEMO</span>
+  </h1>
+  <div>
+    <span id="status" class="status-pill stopped">idle</span>
+  </div>
+</header>
+
+<main>
+  <!-- ======================================================================
+       Run controls
+  ======================================================================= -->
+  <section class="controls">
+    <div>
+      <label for="scenario">Scenario</label>
+      <select id="scenario">
+        <option value="simple">simple — flat click-stream</option>
+        <option value="nested">nested — e-commerce order</option>
+      </select>
+    </div>
+    <div>
+      <label for="fail">Fail ratio (% violating)</label>
+      <input id="fail" type="number" min="0" max="100" step="1" value="10" />
+    </div>
+    <div>
+      <label for="rate">Target rate (events/sec, 0 = max)</label>
+      <input id="rate" type="number" min="0" step="1000" value="0" />
+    </div>
+    <div>
+      <label for="duration">Duration (seconds, 0 = until stop)</label>
+      <input id="duration" type="number" min="0" step="5" value="30" />
+    </div>
+    <div></div>
+    <button id="start" class="primary">Start</button>
+    <button id="stop" class="danger" disabled>Stop</button>
+  </section>
+
+  <!-- ======================================================================
+       Summary strip — the headline pitch numbers.  Lead with ContractGate
+       throughput and the actual validation cost; relegate producer counters
+       to the sub-lines.
+  ======================================================================= -->
+  <section class="summary">
+    <div class="card">
+      <div class="k">ContractGate throughput</div>
+      <div class="v"><span id="cg-rate">0</span><span class="u">ev/s</span></div>
+      <div class="sub"><span id="cg-forwarded">0</span> forwarded</div>
+    </div>
+    <div class="card" id="overhead-card">
+      <div class="k">Overhead vs baseline</div>
+      <div class="v"><span id="overhead">—</span><span class="u">%</span></div>
+      <div class="sub"><span id="p99-delta">—</span> µs · validation cost (p99)</div>
+    </div>
+    <div class="card">
+      <div class="k">Producer</div>
+      <div class="v"><span id="prod-rate">0</span><span class="u">ev/s</span></div>
+      <div class="sub"><span id="prod-sent">0</span> sent</div>
+    </div>
+    <div class="card">
+      <div class="k">Elapsed</div>
+      <div class="v" id="elapsed">0<span class="u">s</span></div>
+      <div class="sub"><span id="ratio">—</span>% of baseline throughput</div>
+    </div>
+  </section>
+
+  <!-- ======================================================================
+       Throughput chart
+  ======================================================================= -->
+  <section class="chart-wrap">
+    <h2>Throughput — events/sec</h2>
+    <canvas id="throughput"></canvas>
+  </section>
+
+  <!-- ======================================================================
+       Per-lane detail
+  ======================================================================= -->
+  <section class="lanes">
+    <div class="lane validator">
+      <h2>
+        <span class="dot"></span>ContractGate validator
+        <span class="sub">consume → validate → forward to valid/quarantine</span>
+      </h2>
+      <div class="metrics">
+        <div class="metric"><div class="k">Rate</div><div class="v"><span id="v-rate">0</span><span class="u">ev/s</span></div></div>
+        <div class="metric"><div class="k">Consumed</div><div class="v" id="v-consumed">0</div></div>
+        <div class="metric"><div class="k">Forwarded</div><div class="v" id="v-forwarded">0</div></div>
+      </div>
+      <div class="latency">
+        <div class="lat"><span class="k">p50</span><span class="v" id="v-p50">0<span class="u"> µs</span></span></div>
+        <div class="lat"><span class="k">p95</span><span class="v" id="v-p95">0<span class="u"> µs</span></span></div>
+        <div class="lat"><span class="k">p99</span><span class="v" id="v-p99">0<span class="u"> µs</span></span></div>
+        <div class="lat"><span class="k">max</span><span class="v" id="v-max">0<span class="u"> µs</span></span></div>
+      </div>
+      <div class="bar">
+        <div class="seg pass" id="v-pass-bar" style="flex:1">pass 0</div>
+        <div class="seg fail" id="v-fail-bar" style="flex:0">fail 0</div>
+      </div>
+    </div>
+
+    <div class="lane copy">
+      <h2>
+        <span class="dot"></span>Straight-copy baseline
+        <span class="sub">consume → forward unchanged to copy (no validation)</span>
+      </h2>
+      <div class="metrics">
+        <div class="metric"><div class="k">Rate</div><div class="v"><span id="c-rate">0</span><span class="u">ev/s</span></div></div>
+        <div class="metric"><div class="k">Consumed</div><div class="v" id="c-consumed">0</div></div>
+        <div class="metric"><div class="k">Forwarded</div><div class="v" id="c-forwarded">0</div></div>
+      </div>
+      <div class="latency">
+        <div class="lat"><span class="k">p50</span><span class="v" id="c-p50">0<span class="u"> µs</span></span></div>
+        <div class="lat"><span class="k">p95</span><span class="v" id="c-p95">0<span class="u"> µs</span></span></div>
+        <div class="lat"><span class="k">p99</span><span class="v" id="c-p99">0<span class="u"> µs</span></span></div>
+        <div class="lat"><span class="k">max</span><span class="v" id="c-max">0<span class="u"> µs</span></span></div>
+      </div>
+      <div class="bar">
+        <div class="seg pass" style="flex:1">passthrough (no checks)</div>
+      </div>
+    </div>
+  </section>
+</main>
+
+<script>
+(() => {
+  // -----------------------------------------------------------------------
+  // Throughput chart — two lines, sliding window of last N samples.
+  // -----------------------------------------------------------------------
+  const WINDOW = 120; // ~24s at 200ms snapshots
+  const labels = [];
+  const validatorSeries = [];
+  const copySeries = [];
+  const producerSeries = [];
+
+  const ctx = document.getElementById('throughput').getContext('2d');
+  const chart = new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels,
+      datasets: [
+        { label: 'Producer',           data: producerSeries, borderColor: '#8a97ad', backgroundColor: 'rgba(138,151,173,.1)', borderWidth: 1.5, tension: .2, pointRadius: 0, fill: true },
+        { label: 'ContractGate',       data: validatorSeries, borderColor: '#5ea1ff', backgroundColor: 'rgba(94,161,255,.18)', borderWidth: 2,   tension: .2, pointRadius: 0, fill: true },
+        { label: 'Straight-copy',      data: copySeries,      borderColor: '#ffc857', backgroundColor: 'rgba(255,200,87,.15)',  borderWidth: 2,   tension: .2, pointRadius: 0, fill: true },
+      ]
+    },
+    options: {
+      animation: false,
+      responsive: true,
+      maintainAspectRatio: false,
+      interaction: { intersect: false, mode: 'index' },
+      plugins: {
+        legend: { labels: { color: '#e6edf7', font: { size: 11 } } },
+        tooltip: { backgroundColor: '#131a28', borderColor: '#253049', borderWidth: 1 }
+      },
+      scales: {
+        x: { grid: { color: 'rgba(255,255,255,.04)' }, ticks: { color: '#8a97ad', maxTicksLimit: 8, font: { size: 10 } } },
+        y: { grid: { color: 'rgba(255,255,255,.04)' }, ticks: { color: '#8a97ad', font: { size: 10 }, callback: (v) => v.toLocaleString() }, beginAtZero: true }
+      }
+    }
+  });
+
+  // -----------------------------------------------------------------------
+  // Dashboard controls
+  // -----------------------------------------------------------------------
+  const $ = (id) => document.getElementById(id);
+  const startBtn = $('start');
+  const stopBtn  = $('stop');
+  const statusPill = $('status');
+
+  async function postJson(url, body) {
+    const r = await fetch(url, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(body ?? {})
+    });
+    if (!r.ok) throw new Error(`${r.status}: ${await r.text()}`);
+    return r.json();
+  }
+
+  startBtn.addEventListener('click', async () => {
+    const cfg = {
+      scenario: $('scenario').value,
+      fail_ratio: Math.max(0, Math.min(100, Number($('fail').value) || 0)) / 100,
+      target_rate: Number($('rate').value) || 0,
+      duration_secs: Number($('duration').value) || 0,
+    };
+    startBtn.disabled = true;
+    try {
+      await postJson('/api/start', cfg);
+      stopBtn.disabled = false;
+      // Reset chart on new run
+      labels.length = 0; validatorSeries.length = 0; copySeries.length = 0; producerSeries.length = 0;
+      chart.update('none');
+    } catch (e) {
+      alert('Start failed: ' + e.message);
+      startBtn.disabled = false;
+    }
+  });
+
+  stopBtn.addEventListener('click', async () => {
+    stopBtn.disabled = true;
+    try { await postJson('/api/stop'); } catch (e) { /* idempotent */ }
+    startBtn.disabled = false;
+  });
+
+  // -----------------------------------------------------------------------
+  // Formatters
+  // -----------------------------------------------------------------------
+  const fmtNum = (n) => (n ?? 0).toLocaleString(undefined, { maximumFractionDigits: 0 });
+  const fmtRate = (n) => {
+    if (!Number.isFinite(n) || n === 0) return '0';
+    if (n >= 1_000_000) return (n / 1_000_000).toFixed(2) + 'M';
+    if (n >= 1_000)     return (n / 1_000).toFixed(1) + 'k';
+    return Math.round(n).toString();
+  };
+
+  // -----------------------------------------------------------------------
+  // SSE stream
+  // -----------------------------------------------------------------------
+  function connect() {
+    const es = new EventSource('/api/stream');
+    es.onmessage = (ev) => {
+      let s;
+      try { s = JSON.parse(ev.data); } catch { return; }
+      render(s);
+    };
+    es.onerror = () => {
+      // Browser auto-reconnects; just surface status
+      statusPill.textContent = 'reconnecting…';
+      statusPill.className = 'status-pill';
+    };
+  }
+  connect();
+
+  let lastElapsedMs = 0;
+  function render(s) {
+    // Status pill
+    if (s.running) {
+      statusPill.textContent = `running — ${s.scenario} • ${(s.fail_ratio*100).toFixed(0)}% fail`;
+      statusPill.className = 'status-pill running';
+      stopBtn.disabled = false;
+      startBtn.disabled = true;
+    } else {
+      statusPill.textContent = 'idle';
+      statusPill.className = 'status-pill stopped';
+      stopBtn.disabled = true;
+      startBtn.disabled = false;
+    }
+
+    // Summary
+    $('prod-sent').textContent = fmtNum(s.producer.sent);
+    $('prod-rate').textContent = fmtRate(s.producer.rate_per_sec);
+    $('elapsed').innerHTML = (s.elapsed_ms/1000).toFixed(1) + '<span class="u">s</span>';
+
+    $('cg-rate').textContent = fmtRate(s.validator.rate_per_sec);
+    $('cg-forwarded').textContent = fmtNum(s.validator.produced_downstream);
+
+    // ratio = ContractGate / Copy, as a percentage.  Overhead = 100 - ratio
+    // (capped at 0), i.e. "how much slower is ContractGate than a passthrough".
+    const ratio = s.copy.rate_per_sec > 0
+      ? Math.round(100 * s.validator.rate_per_sec / s.copy.rate_per_sec)
+      : null;
+    $('ratio').textContent = ratio !== null ? ratio.toString() : '—';
+
+    const overheadCard = $('overhead-card');
+    const overheadEl = $('overhead');
+    if (ratio !== null) {
+      const overhead = Math.max(0, 100 - ratio);
+      overheadEl.textContent = overhead.toString();
+      overheadCard.classList.remove('overhead-good','overhead-warn','overhead-bad');
+      if      (overhead <= 5)  overheadCard.classList.add('overhead-good');
+      else if (overhead <= 20) overheadCard.classList.add('overhead-warn');
+      else                     overheadCard.classList.add('overhead-bad');
+    } else {
+      overheadEl.textContent = '—';
+      overheadCard.classList.remove('overhead-good','overhead-warn','overhead-bad');
+    }
+
+    // Validation cost (p99) — the isolated latency price ContractGate adds on
+    // top of what the passthrough pays for Kafka + your laptop.  Only show
+    // once both histograms have seen data, otherwise the delta is noise.
+    const haveLatency = s.validator.p99_us > 0 && s.copy.p99_us > 0;
+    const p99Delta = haveLatency
+      ? Math.max(0, s.validator.p99_us - s.copy.p99_us)
+      : null;
+    $('p99-delta').textContent = p99Delta !== null ? fmtNum(p99Delta) : '—';
+
+    // Validator lane
+    $('v-rate').textContent = fmtRate(s.validator.rate_per_sec);
+    $('v-consumed').textContent = fmtNum(s.validator.consumed);
+    $('v-forwarded').textContent = fmtNum(s.validator.produced_downstream);
+    $('v-p50').innerHTML = fmtNum(s.validator.p50_us) + '<span class="u"> µs</span>';
+    $('v-p95').innerHTML = fmtNum(s.validator.p95_us) + '<span class="u"> µs</span>';
+    $('v-p99').innerHTML = fmtNum(s.validator.p99_us) + '<span class="u"> µs</span>';
+    $('v-max').innerHTML = fmtNum(s.validator.max_us) + '<span class="u"> µs</span>';
+
+    const vTot = (s.validator.passed + s.validator.failed) || 1;
+    const passFrac = s.validator.passed / vTot;
+    const failFrac = s.validator.failed / vTot;
+    $('v-pass-bar').style.flex = passFrac;
+    $('v-pass-bar').textContent = `pass ${fmtNum(s.validator.passed)}`;
+    $('v-fail-bar').style.flex = failFrac;
+    $('v-fail-bar').textContent = `fail ${fmtNum(s.validator.failed)}`;
+
+    // Copy lane
+    $('c-rate').textContent = fmtRate(s.copy.rate_per_sec);
+    $('c-consumed').textContent = fmtNum(s.copy.consumed);
+    $('c-forwarded').textContent = fmtNum(s.copy.produced_downstream);
+    $('c-p50').innerHTML = fmtNum(s.copy.p50_us) + '<span class="u"> µs</span>';
+    $('c-p95').innerHTML = fmtNum(s.copy.p95_us) + '<span class="u"> µs</span>';
+    $('c-p99').innerHTML = fmtNum(s.copy.p99_us) + '<span class="u"> µs</span>';
+    $('c-max').innerHTML = fmtNum(s.copy.max_us) + '<span class="u"> µs</span>';
+
+    // Chart — only append when elapsed advanced (avoid jitter from overlapping updates)
+    if (s.elapsed_ms !== lastElapsedMs) {
+      lastElapsedMs = s.elapsed_ms;
+      labels.push((s.elapsed_ms/1000).toFixed(1));
+      validatorSeries.push(Math.round(s.validator.rate_per_sec));
+      copySeries.push(Math.round(s.copy.rate_per_sec));
+      producerSeries.push(Math.round(s.producer.rate_per_sec));
+      if (labels.length > WINDOW) {
+        labels.shift(); validatorSeries.shift(); copySeries.shift(); producerSeries.shift();
+      }
+      chart.update('none');
+    }
+  }
+})();
+</script>
+</body>
+</html>
