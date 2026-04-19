@@ -228,20 +228,14 @@ impl VersionState {
 /// See RFC-002 §2b.
 ///   - `Strict`   — validate against latest-stable only; fail-closed.
 ///   - `Fallback` — on failure, retry against other stables in `promoted_at
-///                  DESC` order, first-pass-wins.  `contract_version` on
-///                  the resulting audit row always records the version that
-///                  actually matched.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+///     DESC` order, first-pass-wins.  `contract_version` on the resulting
+///     audit row always records the version that actually matched.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum MultiStableResolution {
+    #[default]
     Strict,
     Fallback,
-}
-
-impl Default for MultiStableResolution {
-    fn default() -> Self {
-        Self::Strict
-    }
 }
 
 impl MultiStableResolution {
