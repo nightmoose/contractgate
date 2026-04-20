@@ -64,8 +64,10 @@ use uuid::Uuid;
 use crate::contract::{ContractIdentity, MultiStableResolution, VersionState};
 use crate::error::{AppError, AppResult};
 use crate::storage;
+use crate::transform::{apply_transforms, TransformedPayload};
 use crate::validation::{validate, CompiledContract, ValidationResult};
 use crate::AppState;
+use std::collections::HashMap;
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -98,6 +100,15 @@ pub struct IngestEventResult {
     /// the default latest-stable if nothing matched).  Under `strict` mode
     /// this always equals the resolved version.
     pub contract_version: String,
+    /// RFC-004 (Q5 echo-transformed): the post-transform payload as it
+    /// was written to `audit_log` / `quarantine_events` / the forward
+    /// destination.  When no transforms are declared on the matching
+    /// contract this is byte-for-byte identical to the input event;
+    /// when transforms are declared the raw values are already replaced
+    /// (mask / hash / drop / redact).  Callers that depended on the
+    /// response echoing the raw request must switch to tracking the
+    /// request body themselves.
+    pub transformed_event: Value,
 }
 
 #[derive(Debug, Serialize)]
@@ -233,10 +244,16 @@ pub async fn ingest_handler(
     // Any traffic that resolves to a deprecated version is rejected wholesale:
     // no per-event validation is run, every event is quarantined under the
     // pinned version, and a single batch_rejected audit row records the pin.
+    //
+    // RFC-004 invariant still applies: the deprecated version's declared
+    // transforms run on each event before quarantine so raw PII never
+    // lands in `quarantine_events.payload` even on the deprecated path.
     if version_row.state == VersionState::Deprecated {
         let latest_stable = storage::get_latest_stable_version(&state.db, contract_id)
             .await?
             .map(|v| v.version);
+        let deprecated_compiled =
+            state.get_compiled(contract_id, &resolved_version).await?;
         return deprecated_pin_quarantine(
             &state,
             contract_id,
@@ -245,6 +262,7 @@ pub async fn ingest_handler(
             events,
             source_ip,
             query,
+            deprecated_compiled,
         )
         .await;
     }
@@ -253,6 +271,13 @@ pub async fn ingest_handler(
     let compiled = state
         .get_compiled(contract_id, &resolved_version)
         .await?;
+
+    // RFC-004: keep a version-keyed index of every compiled contract we
+    // might consult so post-validation transforms can be applied with the
+    // exact contract that matched each event (transforms are per-version:
+    // `v1` may mask `email`, `v2` may hash it).
+    let mut compiled_by_version: HashMap<String, Arc<CompiledContract>> = HashMap::new();
+    compiled_by_version.insert(resolved_version.clone(), Arc::clone(&compiled));
 
     // --- First-pass validation against the resolved version ----------------
     let validation_results: Vec<ValidationResult> =
@@ -295,6 +320,10 @@ pub async fn ingest_handler(
                 Vec::with_capacity(other_stables.len());
             for v in &other_stables {
                 let cc = state.get_compiled(contract_id, &v.version).await?;
+                // Also stash it in the version-keyed index so the post-
+                // validation transform pass can reach it by version name
+                // regardless of which version accepted the event.
+                compiled_by_version.insert(v.version.clone(), Arc::clone(&cc));
                 compiled_fallbacks.push((v.version.clone(), cc));
             }
 
@@ -326,6 +355,26 @@ pub async fn ingest_handler(
         }
     }
 
+    // --- RFC-004: apply transforms once per event, using the specific
+    // contract version that matched that event.  Runs on BOTH pass and
+    // fail paths — "raw PII never leaves the validator" applies to
+    // quarantined events too (Q3).  `TransformedPayload` is the newtype
+    // receipt that transforms actually ran; we `.into_inner()` at the
+    // storage boundary while the signatures are still `Value`-typed
+    // (tightening those is a follow-up pass per RFC-004 rollout §6).
+    let transformed_payloads: Vec<TransformedPayload> = events
+        .iter()
+        .enumerate()
+        .map(|(idx, event)| {
+            let version = &per_event_versions[idx];
+            let cc = compiled_by_version
+                .get(version)
+                .cloned()
+                .unwrap_or_else(|| Arc::clone(&compiled));
+            apply_transforms(&cc, event.clone())
+        })
+        .collect();
+
     // --- Assemble per-event results + roll-up counts -----------------------
     let total = events.len();
     let mut passed_count = 0usize;
@@ -344,6 +393,10 @@ pub async fn ingest_handler(
             validation_us: vr.validation_us,
             forwarded: false,
             contract_version: per_event_versions[idx].clone(),
+            // Echo the post-transform form (Q5).  Clone from the
+            // wrapper so the storage path below still owns an
+            // independent copy.
+            transformed_event: transformed_payloads[idx].as_value().clone(),
         });
     }
     let failed_count = total - passed_count;
@@ -366,18 +419,22 @@ pub async fn ingest_handler(
     let should_persist_per_event = !query.dry_run && !atomic_rejected;
 
     if should_persist_per_event {
+        // RFC-004: every durable write (audit, quarantine, forward) uses
+        // the post-transform payload.  `_event` (raw) is deliberately
+        // unused below — the only place raw data touches is in-memory
+        // validation, which has already happened.
         let audit_rows: Vec<storage::AuditEntryInsert> = effective_results
             .iter()
             .enumerate()
             .zip(events.iter())
-            .map(|((idx, vr), event)| storage::AuditEntryInsert {
+            .map(|((idx, vr), _event)| storage::AuditEntryInsert {
                 contract_id,
                 contract_version: per_event_versions[idx].clone(),
                 passed: vr.passed,
                 violation_count: vr.violations.len() as i32,
                 violation_details: serde_json::to_value(&vr.violations)
                     .unwrap_or_else(|_| Value::Array(vec![])),
-                raw_event: event.clone(),
+                raw_event: transformed_payloads[idx].as_value().clone(),
                 validation_us: vr.validation_us as i64,
                 source_ip: source_ip.clone(),
                 // Fresh ingest: let Postgres generate the ID and no replay link.
@@ -391,10 +448,10 @@ pub async fn ingest_handler(
             .enumerate()
             .zip(events.iter())
             .filter(|((_, vr), _)| !vr.passed)
-            .map(|((idx, vr), event)| storage::QuarantineEventInsert {
+            .map(|((idx, vr), _event)| storage::QuarantineEventInsert {
                 contract_id,
                 contract_version: per_event_versions[idx].clone(),
-                payload: event.clone(),
+                payload: transformed_payloads[idx].as_value().clone(),
                 violation_count: vr.violations.len() as i32,
                 violation_details: serde_json::to_value(&vr.violations)
                     .unwrap_or_else(|_| Value::Array(vec![])),
@@ -410,10 +467,10 @@ pub async fn ingest_handler(
             .enumerate()
             .zip(events.iter())
             .filter(|((_, vr), _)| vr.passed)
-            .map(|((idx, _vr), event)| storage::ForwardEventInsert {
+            .map(|((idx, _vr), _event)| storage::ForwardEventInsert {
                 contract_id,
                 contract_version: per_event_versions[idx].clone(),
-                payload: event.clone(),
+                payload: transformed_payloads[idx].as_value().clone(),
             })
             .collect();
 
@@ -513,6 +570,7 @@ async fn deprecated_pin_quarantine(
     events: Vec<Value>,
     source_ip: Option<String>,
     query: IngestQuery,
+    compiled: Arc<CompiledContract>,
 ) -> AppResult<axum::response::Response> {
     let total = events.len();
     let synthetic_violation = json!({
@@ -521,27 +579,35 @@ async fn deprecated_pin_quarantine(
         "latest_stable": latest_stable,
     });
 
+    // RFC-004: transform each event under the pinned (deprecated) version's
+    // declared rules before it touches quarantine storage or the response.
+    let transformed_payloads: Vec<TransformedPayload> = events
+        .iter()
+        .map(|event| apply_transforms(&compiled, event.clone()))
+        .collect();
+
     // Per-event synthetic results so the response is shaped consistently
     // with the happy path.
-    let per_event_results: Vec<IngestEventResult> = events
+    let per_event_results: Vec<IngestEventResult> = transformed_payloads
         .iter()
-        .map(|_| IngestEventResult {
+        .map(|tp| IngestEventResult {
             passed: false,
             violations: vec![],
             validation_us: 0,
             forwarded: false,
             contract_version: pinned_version.to_string(),
+            transformed_event: tp.as_value().clone(),
         })
         .collect();
 
     if !query.dry_run {
         // Bulk-quarantine every event under the pinned (deprecated) version.
-        let quarantine_rows: Vec<storage::QuarantineEventInsert> = events
+        let quarantine_rows: Vec<storage::QuarantineEventInsert> = transformed_payloads
             .iter()
-            .map(|event| storage::QuarantineEventInsert {
+            .map(|tp| storage::QuarantineEventInsert {
                 contract_id,
                 contract_version: pinned_version.to_string(),
-                payload: event.clone(),
+                payload: tp.as_value().clone(),
                 violation_count: 1,
                 violation_details: Value::Array(vec![synthetic_violation.clone()]),
                 validation_us: 0,

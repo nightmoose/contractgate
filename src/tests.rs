@@ -27,6 +27,7 @@ mod batch {
             version: "1.0".into(),
             name: "batch_test".into(),
             description: None,
+            compliance_mode: false,
             ontology: Ontology {
                 entities: vec![
                     FieldDefinition {
@@ -41,6 +42,7 @@ mod batch {
                         max_length: None,
                         properties: None,
                         items: None,
+                        transform: None,
                     },
                     FieldDefinition {
                         name: "event_type".into(),
@@ -54,6 +56,7 @@ mod batch {
                         max_length: None,
                         properties: None,
                         items: None,
+                        transform: None,
                     },
                 ],
             },
@@ -210,6 +213,7 @@ mod playground {
             version: "1.0".into(),
             name: "user_events".into(),
             description: Some("Contract for user interaction events".into()),
+            compliance_mode: false,
             ontology: Ontology {
                 entities: vec![
                     FieldDefinition {
@@ -224,6 +228,7 @@ mod playground {
                         max_length: None,
                         properties: None,
                         items: None,
+                        transform: None,
                     },
                     FieldDefinition {
                         name: "event_type".into(),
@@ -242,6 +247,7 @@ mod playground {
                         max_length: None,
                         properties: None,
                         items: None,
+                        transform: None,
                     },
                     FieldDefinition {
                         name: "timestamp".into(),
@@ -255,6 +261,7 @@ mod playground {
                         max_length: None,
                         properties: None,
                         items: None,
+                        transform: None,
                     },
                     FieldDefinition {
                         name: "amount".into(),
@@ -268,6 +275,7 @@ mod playground {
                         max_length: None,
                         properties: None,
                         items: None,
+                        transform: None,
                     },
                 ],
             },
@@ -644,6 +652,7 @@ mod versioning {
             created_at: created,
             promoted_at: promoted,
             deprecated_at: None,
+            compliance_mode: false,
         };
         let resp = VersionResponse::from(&v);
         assert_eq!(resp.id, vid);
@@ -654,5 +663,6 @@ mod versioning {
         assert_eq!(resp.created_at, created);
         assert_eq!(resp.promoted_at, promoted);
         assert_eq!(resp.deprecated_at, None);
+        assert!(!resp.compliance_mode);
     }
 }

@@ -10,4 +10,5 @@
 //! resolve unchanged.
 
 pub mod contract;
+pub mod transform;
 pub mod validation;

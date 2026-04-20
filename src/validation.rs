@@ -13,7 +13,7 @@
 use crate::contract::{Contract, FieldDefinition, FieldType, MetricDefinition};
 use regex::Regex;
 use serde_json::Value;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 // ---------------------------------------------------------------------------
 // Public result types
@@ -52,6 +52,10 @@ pub enum ViolationKind {
     MetricRangeViolation,
     #[allow(dead_code)]
     UnknownField,
+    /// RFC-004 compliance-mode violation: an inbound event contained a
+    /// field name that is not declared in the contract's ontology.  Only
+    /// raised when the resolved version has `compliance_mode = true`.
+    UndeclaredField,
 }
 
 // ---------------------------------------------------------------------------
@@ -60,19 +64,60 @@ pub enum ViolationKind {
 
 /// A `Contract` with expensive operations (regex compilation) done once.
 /// Re-use across many `validate()` calls for maximum throughput.
+#[derive(Debug)]
 pub struct CompiledContract {
     pub contract: Contract,
     /// field_name → compiled regex (for ontology fields with `pattern`)
     pub patterns: HashMap<String, Regex>,
+    /// RFC-004: per-contract 32-byte salt for the hash + format-preserving
+    /// mask transforms.  Loaded from `contracts.pii_salt` on the identity
+    /// row; `compile()` with no salt defaults to an empty `Vec<u8>` which
+    /// is valid for any contract that does not declare a `hash` or
+    /// `format_preserving` transform (the transform engine only reads this
+    /// when it actually needs keying material).
+    pub pii_salt: Vec<u8>,
+    /// RFC-004: the set of top-level field names declared in the ontology,
+    /// cached here so the compliance-mode undeclared-field check is an
+    /// O(1) HashSet lookup per incoming field rather than an O(n) scan.
+    /// Empty when `contract.compliance_mode == false` (the validator
+    /// short-circuits the check, so the set is never consulted).
+    pub declared_top_level_fields: HashSet<String>,
 }
 
 impl CompiledContract {
-    /// Compile all regex patterns in the contract.
-    /// Returns an error if any pattern is invalid.
+    /// Compile all regex patterns in the contract with no PII salt.
+    /// Backwards-compatible entry point used by unit tests and any call
+    /// site that pre-dates RFC-004.  For production paths that serve
+    /// ingest traffic, use `compile_with_salt` so hash + format-preserving
+    /// transforms are keyed correctly.
     pub fn compile(contract: Contract) -> anyhow::Result<Self> {
+        Self::compile_with_salt(contract, Vec::new())
+    }
+
+    /// Compile with an explicit per-contract salt loaded from
+    /// `contracts.pii_salt`.  This is the production entry point.
+    pub fn compile_with_salt(contract: Contract, pii_salt: Vec<u8>) -> anyhow::Result<Self> {
         let mut patterns = HashMap::new();
         compile_field_patterns(&contract.ontology.entities, "", &mut patterns)?;
-        Ok(CompiledContract { contract, patterns })
+        validate_transform_types(&contract.ontology.entities, "")?;
+
+        let declared_top_level_fields = if contract.compliance_mode {
+            contract
+                .ontology
+                .entities
+                .iter()
+                .map(|f| f.name.clone())
+                .collect()
+        } else {
+            HashSet::new()
+        };
+
+        Ok(CompiledContract {
+            contract,
+            patterns,
+            pii_salt,
+            declared_top_level_fields,
+        })
     }
 }
 
@@ -99,6 +144,40 @@ fn compile_field_patterns(
         if field.field_type == FieldType::Object {
             if let Some(props) = &field.properties {
                 compile_field_patterns(props, &path, out)?;
+            }
+        }
+    }
+    Ok(())
+}
+
+/// RFC-004: reject contracts that declare a `transform` on any non-string
+/// entity.  Applying `hash` / `mask` to a number or boolean is either a
+/// type error at runtime OR silently coerces through JSON, both of which
+/// produce surprises in prod — reject at contract-compile time instead.
+/// Numeric PII (account numbers, etc.) should be typed as `string` in the
+/// contract.
+fn validate_transform_types(
+    fields: &[FieldDefinition],
+    prefix: &str,
+) -> anyhow::Result<()> {
+    for field in fields {
+        let path = if prefix.is_empty() {
+            field.name.clone()
+        } else {
+            format!("{}.{}", prefix, field.name)
+        };
+
+        if field.transform.is_some() && field.field_type != FieldType::String {
+            return Err(anyhow::anyhow!(
+                "Field '{}' declares a PII transform but has type '{:?}' — transforms are only supported on string fields. If this field holds PII, change its type to 'string'.",
+                path,
+                field.field_type
+            ));
+        }
+
+        if field.field_type == FieldType::Object {
+            if let Some(props) = &field.properties {
+                validate_transform_types(props, &path)?;
             }
         }
     }
@@ -143,6 +222,29 @@ pub fn validate(compiled: &CompiledContract, event: &Value) -> ValidationResult 
     // 2. Validate metric definitions
     for metric in &compiled.contract.metrics {
         validate_metric(metric, event, &mut violations);
+    }
+
+    // 3. RFC-004: compliance-mode undeclared-field check.  Runs last so
+    //    undeclared-field violations appear after the standard
+    //    missing/mismatched-field violations in the response — which
+    //    matches how operators typically triage ("fix my ontology
+    //    errors before you worry about stray fields").  Only runs when
+    //    the resolved version opted in.
+    if compiled.contract.compliance_mode {
+        if let Some(obj) = event.as_object() {
+            for field_name in obj.keys() {
+                if !compiled.declared_top_level_fields.contains(field_name) {
+                    violations.push(Violation {
+                        field: field_name.clone(),
+                        message: format!(
+                            "Field '{}' is not declared in the contract ontology. Compliance mode rejects undeclared fields.",
+                            field_name
+                        ),
+                        kind: ViolationKind::UndeclaredField,
+                    });
+                }
+            }
+        }
     }
 
     let validation_us = t0.elapsed().as_micros() as u64;
@@ -451,6 +553,7 @@ mod tests {
             version: "1.0".into(),
             name: "test".into(),
             description: None,
+            compliance_mode: false,
             ontology: Ontology {
                 entities: vec![
                     FieldDefinition {
@@ -465,6 +568,7 @@ mod tests {
                         max_length: None,
                         properties: None,
                         items: None,
+                        transform: None,
                     },
                     FieldDefinition {
                         name: "event_type".into(),
@@ -482,6 +586,7 @@ mod tests {
                         max_length: None,
                         properties: None,
                         items: None,
+                        transform: None,
                     },
                     FieldDefinition {
                         name: "timestamp".into(),
@@ -495,6 +600,7 @@ mod tests {
                         max_length: None,
                         properties: None,
                         items: None,
+                        transform: None,
                     },
                 ],
             },
