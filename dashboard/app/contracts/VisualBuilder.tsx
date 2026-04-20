@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useCallback } from "react";
-import { createContract } from "@/lib/api";
+import { createContract, type TransformKind, type MaskStyle } from "@/lib/api";
 import { mutate } from "swr";
 import clsx from "clsx";
 
@@ -30,6 +30,15 @@ interface FieldState {
   // Glossary
   description: string;
   constraints: string;
+  // RFC-004: PII transform (string fields only; server rejects transforms
+  // declared on non-string entities at contract-compile time).
+  // Empty string = "no transform declared" and the transform block is
+  // omitted from the emitted YAML entirely.
+  transformKind: TransformKind | "";
+  // Only meaningful when `transformKind === "mask"`.  "opaque" is the
+  // server-side default — we emit the `style:` key in YAML only when
+  // the user explicitly picks a non-default (i.e. `format_preserving`).
+  maskStyle: MaskStyle | "";
 }
 
 interface MetricState {
@@ -42,6 +51,11 @@ interface BuilderState {
   name: string;
   version: string;
   description: string;
+  // RFC-004: when on, the validator raises UNDECLARED_FIELD on any
+  // inbound field not listed in `ontology.entities`, AND the transform
+  // engine strips those fields from the stored payload.  Off = legacy
+  // behavior (undeclared fields pass through).
+  complianceMode: boolean;
   fields: FieldState[];
   metrics: MetricState[];
 }
@@ -86,6 +100,13 @@ function buildYaml(state: BuilderState): string {
     lines.push(`description: "${state.description.trim()}"`);
   }
 
+  // RFC-004: emit compliance_mode only when true.  Default `false` matches
+  // the server-side `#[serde(default)]`, so omitting it keeps the legacy
+  // pre-RFC-004 YAML shape byte-identical for contracts that don't opt in.
+  if (state.complianceMode) {
+    lines.push("compliance_mode: true");
+  }
+
   lines.push("", "ontology:", "  entities:");
 
   const validFields = state.fields.filter((f) => f.name.trim());
@@ -115,6 +136,16 @@ function buildYaml(state: BuilderState): string {
       }
       if (f.type === "string" && f.maxLength !== "") {
         lines.push(`      max_length: ${f.maxLength}`);
+      }
+      // RFC-004: emit the PII transform block when declared.  Only
+      // strings can carry transforms (gated in the UI); emit `style`
+      // only for mask, and only when non-default (opaque is default).
+      if (f.type === "string" && f.transformKind) {
+        lines.push("      transform:");
+        lines.push(`        kind: ${f.transformKind}`);
+        if (f.transformKind === "mask" && f.maskStyle === "format_preserving") {
+          lines.push(`        style: format_preserving`);
+        }
       }
     }
   }
@@ -172,6 +203,8 @@ function defaultField(): FieldState {
     maxLength: "",
     description: "",
     constraints: "",
+    transformKind: "",
+    maskStyle: "",
   };
 }
 
@@ -253,7 +286,7 @@ function FieldCard({
           {(["string", "integer", "number", "boolean"] as FieldType[]).map((t) => (
             <button
               key={t}
-              onClick={() => onChange({ type: t, enumValues: [], patternPreset: "", customPattern: "", min: "", max: "", minLength: "", maxLength: "" })}
+              onClick={() => onChange({ type: t, enumValues: [], patternPreset: "", customPattern: "", min: "", max: "", minLength: "", maxLength: "", transformKind: "", maskStyle: "" })}
               className={clsx(
                 "px-2.5 py-1 text-xs rounded-lg border font-medium transition-colors",
                 field.type === t
@@ -370,6 +403,50 @@ function FieldCard({
               />
             </div>
           </div>
+
+          {/* RFC-004: PII transform — only valid on string fields.
+              Selecting a kind means the raw value is replaced before any
+              durable write.  Mask has a sub-style; the other kinds take
+              no options. */}
+          <div className="flex items-center gap-2 flex-wrap">
+            <label className="text-xs text-slate-500 w-20 shrink-0" title="Applied after validation; raw value never reaches audit / forward.">
+              Transform
+            </label>
+            <select
+              value={field.transformKind}
+              onChange={(e) => {
+                const next = e.target.value as TransformKind | "";
+                // When switching away from mask, drop the style too so
+                // the emitted YAML stays minimal.
+                onChange({
+                  transformKind: next,
+                  maskStyle: next === "mask" ? field.maskStyle : "",
+                });
+              }}
+              className="bg-[#111827] border border-[#1f2937] text-slate-300 text-xs rounded-lg px-2 py-1.5 outline-none focus:border-amber-600"
+            >
+              <option value="">None</option>
+              <option value="mask">Mask</option>
+              <option value="hash">Hash (HMAC-SHA256)</option>
+              <option value="drop">Drop</option>
+              <option value="redact">Redact</option>
+            </select>
+            {field.transformKind === "mask" && (
+              <select
+                value={field.maskStyle}
+                onChange={(e) => onChange({ maskStyle: e.target.value as MaskStyle | "" })}
+                className="bg-[#111827] border border-[#1f2937] text-slate-300 text-xs rounded-lg px-2 py-1.5 outline-none focus:border-amber-600"
+              >
+                <option value="">Opaque (****)</option>
+                <option value="format_preserving">Format preserving</option>
+              </select>
+            )}
+            {field.transformKind && (
+              <span className="text-[10px] text-amber-400/70 font-medium inline-flex items-center gap-1">
+                <span aria-hidden>🔒</span> PII — raw value never stored
+              </span>
+            )}
+          </div>
         </div>
       )}
 
@@ -468,6 +545,7 @@ const INITIAL_STATE: BuilderState = {
   name: "my_contract",
   version: "1.0",
   description: "",
+  complianceMode: false,
   fields: [
     {
       ...defaultField(),
@@ -631,6 +709,32 @@ export default function VisualBuilder({ onSaved }: { onSaved: () => void }) {
               placeholder="What does this contract validate?"
             />
           </div>
+
+          {/* RFC-004: compliance mode toggle.  Once a version is promoted
+              (stable / deprecated) the server freezes this flag — you can
+              only change it while the version is still a draft. */}
+          <label className="flex items-start gap-2.5 pt-1 cursor-pointer group">
+            <input
+              type="checkbox"
+              checked={state.complianceMode}
+              onChange={(e) => setState((s) => ({ ...s, complianceMode: e.target.checked }))}
+              className="mt-0.5 h-4 w-4 rounded border-[#1f2937] bg-[#0a0d12] text-amber-600 focus:ring-amber-600 focus:ring-offset-0 accent-amber-600"
+            />
+            <span className="flex-1">
+              <span className="flex items-center gap-1.5 text-sm text-slate-300 group-hover:text-slate-200">
+                <span aria-hidden>🔒</span>
+                Compliance mode
+                {state.complianceMode && (
+                  <span className="text-[10px] font-semibold uppercase tracking-wider text-amber-400 bg-amber-950/60 border border-amber-800/60 rounded px-1.5 py-0.5">
+                    ON
+                  </span>
+                )}
+              </span>
+              <span className="block text-xs text-slate-500 mt-0.5">
+                Reject events containing fields not declared above, and strip them from the stored payload. Frozen once this version is promoted.
+              </span>
+            </span>
+          </label>
         </section>
 
         {/* Fields */}

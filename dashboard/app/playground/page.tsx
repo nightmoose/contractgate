@@ -4,7 +4,7 @@ import { useState, useEffect, useMemo } from "react";
 import useSWR from "swr";
 import yaml from "js-yaml";
 import { playgroundValidate, listContracts, getContract } from "@/lib/api";
-import type { ValidationResult, ContractSummary, Violation } from "@/lib/api";
+import type { PlaygroundResponse, ContractSummary, Violation } from "@/lib/api";
 import clsx from "clsx";
 
 const DEFAULT_YAML = `version: "1.0"
@@ -245,13 +245,189 @@ function ContractRulesPanel({
 }
 
 // ---------------------------------------------------------------------------
+// Transformed-payload preview panel (RFC-004 "what we stored")
+// ---------------------------------------------------------------------------
+
+/**
+ * Top-level-key diff between the submitted event and the post-transform
+ * payload.  We intentionally stop at the top level: RFC-004 v1 only
+ * declares transforms on top-level string fields, so a deeper diff
+ * would highlight keys the transform engine never touched.
+ *
+ * Returns the set of key names that differ (either by JSON-stringified
+ * value, or by presence — `drop` transforms remove the key entirely).
+ */
+function diffTopLevelKeys(before: unknown, after: unknown): Set<string> {
+  const changed = new Set<string>();
+  const b = (before && typeof before === "object" ? before : {}) as Record<string, unknown>;
+  const a = (after && typeof after === "object" ? after : {}) as Record<string, unknown>;
+  const keys = new Set([...Object.keys(b), ...Object.keys(a)]);
+  for (const k of keys) {
+    const bv = JSON.stringify(b[k]);
+    const av = JSON.stringify(a[k]);
+    if (bv !== av) changed.add(k);
+  }
+  return changed;
+}
+
+/**
+ * Render a JSON object with specific top-level keys highlighted.
+ * Falls back to a plain `<pre>` dump for non-object roots.
+ */
+function HighlightedJson({
+  value,
+  changedKeys,
+  highlightColor,
+}: {
+  value: unknown;
+  changedKeys: Set<string>;
+  /** Tailwind class applied to the value span when its key is in `changedKeys` */
+  highlightColor: string;
+}) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return (
+      <pre className="text-xs text-slate-300 font-mono whitespace-pre-wrap break-all">
+        {JSON.stringify(value, null, 2)}
+      </pre>
+    );
+  }
+  const entries = Object.entries(value as Record<string, unknown>);
+  return (
+    <pre className="text-xs font-mono whitespace-pre-wrap break-all leading-relaxed">
+      <span className="text-slate-500">{"{"}</span>
+      {entries.map(([k, v], i) => {
+        const isChanged = changedKeys.has(k);
+        return (
+          <div key={k} className="pl-4">
+            <span className={clsx("text-slate-300", isChanged && "font-semibold")}>
+              &quot;{k}&quot;
+            </span>
+            <span className="text-slate-500">: </span>
+            <span
+              className={clsx(
+                isChanged ? highlightColor : "text-slate-300",
+                isChanged && "bg-opacity-10 rounded px-1"
+              )}
+            >
+              {v === undefined ? (
+                <em className="text-slate-600">(removed)</em>
+              ) : (
+                JSON.stringify(v)
+              )}
+            </span>
+            {i < entries.length - 1 && <span className="text-slate-500">,</span>}
+          </div>
+        );
+      })}
+      <span className="text-slate-500">{"}"}</span>
+    </pre>
+  );
+}
+
+function TransformPreviewPanel({
+  requestBody,
+  transformed,
+}: {
+  requestBody: unknown;
+  transformed: unknown;
+}) {
+  const changedKeys = useMemo(
+    () => diffTopLevelKeys(requestBody, transformed),
+    [requestBody, transformed]
+  );
+  const diverged = changedKeys.size > 0;
+
+  // For the "removed by drop" story, overlay the missing keys into the
+  // transformed column as `undefined` so the reader sees them greyed out
+  // in place.  We do NOT mutate the transformed object — we render a
+  // display copy that carries the sentinel.
+  const transformedDisplay = useMemo(() => {
+    if (!transformed || typeof transformed !== "object" || Array.isArray(transformed)) {
+      return transformed;
+    }
+    const before = (requestBody && typeof requestBody === "object" && !Array.isArray(requestBody)
+      ? (requestBody as Record<string, unknown>)
+      : {});
+    const after = { ...(transformed as Record<string, unknown>) };
+    for (const k of Object.keys(before)) {
+      if (!(k in after)) after[k] = undefined;
+    }
+    return after;
+  }, [requestBody, transformed]);
+
+  return (
+    <div className="bg-[#111827] border border-[#1f2937] rounded-xl p-6">
+      <div className="flex items-center justify-between mb-4">
+        <h2 className="text-sm font-semibold text-slate-400 uppercase tracking-wider">
+          Transformed Payload · what we&apos;d store
+        </h2>
+        {diverged ? (
+          <span className="inline-flex items-center gap-1.5 text-xs bg-indigo-900/40 text-indigo-300 border border-indigo-700/40 rounded-full px-2.5 py-1 font-medium">
+            <span>🔒</span>
+            <span>PII scrubbed · {changedKeys.size} field{changedKeys.size !== 1 ? "s" : ""}</span>
+          </span>
+        ) : (
+          <span className="inline-flex items-center gap-1.5 text-xs bg-slate-800/60 text-slate-400 border border-slate-700/40 rounded-full px-2.5 py-1">
+            <span>=</span>
+            <span>Identical — no transforms triggered</span>
+          </span>
+        )}
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+        <div>
+          <p className="text-[10px] text-slate-500 uppercase tracking-wider mb-2">
+            Request body
+          </p>
+          <div className="bg-[#0a0d12] border border-[#1f2937] rounded-lg p-3 overflow-x-auto">
+            <HighlightedJson
+              value={requestBody}
+              changedKeys={changedKeys}
+              highlightColor="text-rose-300 bg-rose-900"
+            />
+          </div>
+        </div>
+        <div>
+          <p className="text-[10px] text-slate-500 uppercase tracking-wider mb-2">
+            After transforms
+          </p>
+          <div className="bg-[#0a0d12] border border-[#1f2937] rounded-lg p-3 overflow-x-auto">
+            <HighlightedJson
+              value={transformedDisplay}
+              changedKeys={changedKeys}
+              highlightColor="text-emerald-300 bg-emerald-900"
+            />
+          </div>
+        </div>
+      </div>
+
+      {diverged && (
+        <p className="text-[11px] text-slate-500 mt-3 leading-relaxed">
+          Preview only — the Playground uses an empty salt, so <code>hash</code> and
+          format-preserving <code>mask</code> outputs shown here will not match
+          production ingest (which keys on each contract&apos;s <code>pii_salt</code>).
+          Shape, drops, and redactions are exact.
+        </p>
+      )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Page
 // ---------------------------------------------------------------------------
 
 export default function PlaygroundPage() {
   const [yaml_, setYaml] = useState(DEFAULT_YAML);
   const [eventJson, setEventJson] = useState(DEFAULT_EVENT);
-  const [result, setResult] = useState<ValidationResult | null>(null);
+  const [result, setResult] = useState<PlaygroundResponse | null>(null);
+  /**
+   * Snapshot of the event body that produced `result`, captured at submit
+   * time.  Rendering the "Transformed Payload" diff against this (rather
+   * than against live `eventJson`) avoids misleading diffs when the user
+   * keeps typing in the textarea after clicking Validate.
+   */
+  const [submittedEvent, setSubmittedEvent] = useState<unknown>(null);
   const [loading, setLoading] = useState(false);
   const [loadingContract, setLoadingContract] = useState(false);
   const [parseError, setParseError] = useState<string | null>(null);
@@ -270,6 +446,7 @@ export default function PlaygroundPage() {
     if (storedYaml) {
       setYaml(storedYaml);
       setResult(null);
+      setSubmittedEvent(null);
       if (storedId) setPrefilledFrom(storedId);
       sessionStorage.removeItem("playground_yaml");
       sessionStorage.removeItem("playground_contract_id");
@@ -284,6 +461,7 @@ export default function PlaygroundPage() {
       const c = await getContract(id);
       setYaml(c.yaml_content);
       setResult(null);
+      setSubmittedEvent(null);
     } catch (e: unknown) {
       setParseError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -305,6 +483,7 @@ export default function PlaygroundPage() {
     try {
       const r = await playgroundValidate(yaml_, parsed);
       setResult(r);
+      setSubmittedEvent(parsed);
     } catch (e: unknown) {
       setParseError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -376,7 +555,7 @@ export default function PlaygroundPage() {
             </label>
             <textarea
               value={yaml_}
-              onChange={(e) => { setYaml(e.target.value); setResult(null); }}
+              onChange={(e) => { setYaml(e.target.value); setResult(null); setSubmittedEvent(null); }}
               className="w-full h-72 bg-[#0a0d12] text-green-300 font-mono text-xs p-4 rounded-lg border border-[#1f2937] outline-none focus:border-green-700 resize-y"
               spellCheck={false}
             />
@@ -482,6 +661,14 @@ export default function PlaygroundPage() {
               </div>
             )}
           </div>
+
+          {/* Transformed-payload preview — only after a validate call */}
+          {result && submittedEvent !== null && (
+            <TransformPreviewPanel
+              requestBody={submittedEvent}
+              transformed={result.transformed_event}
+            />
+          )}
 
           {/* Contract Rules panel — parses YAML live */}
           <ContractRulesPanel
