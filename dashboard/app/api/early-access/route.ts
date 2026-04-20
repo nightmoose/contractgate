@@ -3,7 +3,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { Resend } from 'resend';
 
 export async function POST(request: NextRequest) {
-  // CORS headers for cross-subdomain calls (www. → app.)
+  // ← CORS headers for cross-subdomain calls (www. → app.)
   const responseHeaders = new Headers();
   responseHeaders.set('Access-Control-Allow-Origin', 'https://www.datacontractgate.com');
   responseHeaders.set('Access-Control-Allow-Methods', 'POST, OPTIONS');
@@ -21,11 +21,10 @@ export async function POST(request: NextRequest) {
     if (!name || !email || !stack) {
       return NextResponse.json(
         { error: 'Name, email, and stack are required' },
-        { status: 400 }
+        { status: 400, headers: responseHeaders }
       );
     }
 
-    // ←←← KEY CHANGE: Create Resend only when the request actually comes in
     const resend = new Resend(process.env.RESEND_API_KEY);
 
     await resend.emails.send({
@@ -42,16 +41,16 @@ export async function POST(request: NextRequest) {
         <p><strong>Message:</strong></p>
         <p>${message || 'No additional message provided.'}</p>
         <hr>
-        <p style="font-size: 12px; color: #777;">Sent from datacontractgate.com marketing site • ${new Date().toISOString()}</p>
+        <p style="font-size: 12px; color: #666;">Sent from datacontractgate.com • ${new Date().toISOString()}</p>
       `,
     });
 
     return NextResponse.json({ success: true }, { headers: responseHeaders });
-  } catch (error: unknown) {
+  } catch (error: any) {
     console.error('Early access error:', error);
     return NextResponse.json(
       { error: 'Failed to send request' },
-      { status: 500 }
+      { status: 500, headers: responseHeaders }
     );
   }
 }
