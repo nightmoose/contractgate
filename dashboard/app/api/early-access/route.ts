@@ -41,7 +41,7 @@ export async function POST(request: NextRequest) {
         <p><strong>Message:</strong></p>
         <p>${message || 'No additional message provided.'}</p>
         <hr>
-        <p style="font-size: 12px; color: #777;">Sent from datacontractgate.com • ${new Date().toISOString()}</p>
+        <p style="font-size: 12px; color: #808;">Sent from datacontractgate.com • ${new Date().toISOString()}</p>
       `,
     });
 
