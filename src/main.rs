@@ -423,17 +423,49 @@ struct PlaygroundRequest {
     event: serde_json::Value,
 }
 
+/// Playground response — the unsaved-contract counterpart to
+/// `BatchIngestResponse`.  Carries the validation verdict plus the
+/// post-transform payload the backend *would* persist, so the dashboard
+/// can render the "what we stored" diff (RFC-004) without requiring the
+/// user to save the contract first.
+///
+/// `transformed_event` is produced by [`transform::apply_transforms`] on
+/// the compiled contract regardless of whether validation passed — if the
+/// contract declares no transforms it is byte-for-byte identical to the
+/// request body.  The salt used here is empty (the Playground has no row
+/// in `contracts`), so hash + format-preserving outputs are *illustrative*
+/// only — they will not match what ingest produces under the real
+/// per-contract salt.
+#[derive(serde::Serialize)]
+struct PlaygroundResponse {
+    #[serde(flatten)]
+    validation: validation::ValidationResult,
+    /// Echo of the post-transform payload.  `null` is possible only if
+    /// the request body was literal JSON `null`; every other shape round-
+    /// trips through `apply_transforms`.
+    transformed_event: serde_json::Value,
+}
+
 async fn playground_handler(
     Json(req): Json<PlaygroundRequest>,
-) -> AppResult<Json<validation::ValidationResult>> {
+) -> AppResult<Json<PlaygroundResponse>> {
     let contract: contract::Contract = serde_yaml::from_str(&req.yaml_content)
         .map_err(|e| AppError::InvalidContractYaml(e.to_string()))?;
 
     let compiled = CompiledContract::compile(contract)
         .map_err(|e| AppError::InvalidContractYaml(e.to_string()))?;
 
-    let result = validation::validate(&compiled, &req.event);
-    Ok(Json(result))
+    let validation = validation::validate(&compiled, &req.event);
+    // RFC-004: always run transforms so the dashboard can surface the
+    // diff — even failing events are informative ("look what we were
+    // about to write to quarantine").
+    let transformed_event = transform::apply_transforms(&compiled, req.event.clone())
+        .into_inner();
+
+    Ok(Json(PlaygroundResponse {
+        validation,
+        transformed_event,
+    }))
 }
 
 // ---------------------------------------------------------------------------

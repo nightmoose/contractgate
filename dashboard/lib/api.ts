@@ -46,14 +46,71 @@ export interface Violation {
   kind: string;
 }
 
+// ---------------------------------------------------------------------------
+// RFC-004: PII transforms
+//
+// These describe the YAML the dashboard emits into `ontology.entities[].transform`
+// and the contract-level `compliance_mode` flag.  They are NOT on any response
+// payload directly — the server round-trips them through `yaml_content`.
+// ---------------------------------------------------------------------------
+
+/** Which transform to apply to a string field before it reaches durable storage. */
+export type TransformKind = "mask" | "hash" | "drop" | "redact";
+
+/** Sub-style for `kind: "mask"`.  Ignored for every other kind. */
+export type MaskStyle = "opaque" | "format_preserving";
+
+/**
+ * Per-field PII transform declaration.  Only valid on string fields — the
+ * server rejects contracts at compile time that attach a transform to a
+ * non-string entity.  `style` is only meaningful when `kind === "mask"`
+ * and defaults to `"opaque"` when omitted.
+ */
+export interface Transform {
+  kind: TransformKind;
+  style?: MaskStyle;
+}
+
 export interface ValidationResult {
   passed: boolean;
   violations: Violation[];
   validation_us: number;
 }
 
+/**
+ * Playground response — extends `ValidationResult` with the post-transform
+ * payload that *would* be persisted if this YAML were saved and ingested
+ * against.  Always populated; if the contract declares no transforms and
+ * `compliance_mode` is off, this is byte-for-byte identical to the
+ * request body.
+ *
+ * Note: the Playground has no per-contract salt (the contract isn't
+ * saved yet), so `hash` and `format_preserving` mask outputs here are
+ * illustrative — production ingest uses the real per-contract salt.
+ */
+export interface PlaygroundResponse extends ValidationResult {
+  transformed_event: unknown;
+}
+
 export interface IngestEventResult extends ValidationResult {
   forwarded: boolean;
+  /**
+   * The contract version that actually produced the decision for this event.
+   * Under `multi_stable_resolution = fallback` this may differ from the
+   * request's resolved version when a fallback stable accepted the event.
+   * Always set by the backend (RFC-002).
+   */
+  contract_version: string;
+  /**
+   * RFC-004 echo: the post-transform payload as it was written to
+   * `audit_log` / `quarantine_events` / the forward destination.  If the
+   * matching contract version declares no transforms this is byte-for-byte
+   * identical to the request body; otherwise values have already been
+   * masked / hashed / dropped / redacted.  Callers that need the raw
+   * request body must track it themselves — it does not survive to any
+   * persisted row.
+   */
+  transformed_event: unknown;
 }
 
 export interface BatchIngestResponse {
@@ -62,6 +119,15 @@ export interface BatchIngestResponse {
   failed: number;
   /** true when the request was sent with ?dry_run=true — no data was persisted */
   dry_run: boolean;
+  /** true when the request was sent with ?atomic=true */
+  atomic: boolean;
+  /**
+   * The version the request was dispatched against before any fallback retry.
+   * Mirrors what got logged server-side (RFC-002).
+   */
+  resolved_version: string;
+  /** Where the resolved version came from: "header", "path", "default_stable", or "pinned_deprecated". */
+  version_pin_source: string;
   results: IngestEventResult[];
 }
 
@@ -159,7 +225,7 @@ export const getAuditLog = (params?: {
 // ---------------------------------------------------------------------------
 
 export const playgroundValidate = (yaml_content: string, event: unknown) =>
-  apiFetch<ValidationResult>("/playground/validate", {
+  apiFetch<PlaygroundResponse>("/playground/validate", {
     method: "POST",
     body: JSON.stringify({ yaml_content, event }),
   });

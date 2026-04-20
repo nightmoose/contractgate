@@ -34,6 +34,7 @@ use uuid::Uuid;
 use crate::contract::{MultiStableResolution, VersionState};
 use crate::error::{AppError, AppResult};
 use crate::storage;
+use crate::transform::TransformedPayload;
 use crate::validation::{validate, CompiledContract, ValidationResult, Violation};
 use crate::AppState;
 
@@ -280,13 +281,19 @@ pub async fn replay_handler(
         let event = &eligible_payloads[idx];
         if vr.passed {
             let audit_id = Uuid::new_v4();
+            // RFC-004 §Replay: the stored quarantine payload is already in
+            // post-transform form ("once transformed, forever transformed" —
+            // re-running `apply_transforms` on a format-preserving mask would
+            // reshuffle it).  `from_stored` is the sanctioned escape hatch
+            // for this exact case.
+            let stored_payload = TransformedPayload::from_stored(event.clone());
             audit_inserts.push(storage::AuditEntryInsert {
                 contract_id,
                 contract_version: matched_ver.clone(),
                 passed: true,
                 violation_count: 0,
                 violation_details: serde_json::Value::Array(vec![]),
-                raw_event: event.clone(),
+                raw_event: stored_payload.clone(),
                 validation_us: vr.validation_us as i64,
                 source_ip: e.source_ip.clone(),
                 pre_assigned_id: Some(audit_id),
@@ -296,7 +303,7 @@ pub async fn replay_handler(
             forward_inserts.push(storage::ForwardEventInsert {
                 contract_id,
                 contract_version: matched_ver.clone(),
-                payload: event.clone(),
+                payload: stored_payload,
             });
             replay_pairs.push((e.id, audit_id));
             pending.push(Pending::Pass {
@@ -331,7 +338,10 @@ pub async fn replay_handler(
             quar_inserts.push(storage::QuarantineEventInsert {
                 contract_id,
                 contract_version: matched_ver.clone(),
-                payload: event.clone(),
+                // RFC-004 §Replay: same reasoning as the pass-path above —
+                // the source quarantine row is already post-transform, we
+                // just carry it forward verbatim.
+                payload: TransformedPayload::from_stored(event.clone()),
                 violation_count: violation_count as i32,
                 violation_details,
                 validation_us: vr.validation_us as i64,

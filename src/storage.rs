@@ -11,6 +11,7 @@ use crate::contract::{
     NameHistoryEntry, VersionState, VersionSummary,
 };
 use crate::error::{AppError, AppResult};
+use crate::transform::TransformedPayload;
 use sqlx::PgPool;
 use uuid::Uuid;
 
@@ -670,12 +671,17 @@ pub async fn list_name_history(
 ///
 /// `contract_version` must be the exact version that rejected the event
 /// (audit honesty — see `feedback_audit_honesty` memory).
+///
+/// `payload` is [`TransformedPayload`] (RFC-004 §6) — raw PII never reaches
+/// `quarantine_events.payload`.  Callers that already hold a stored value
+/// (replay re-quarantine, etc.) can wrap it via
+/// [`TransformedPayload::from_stored`].
 #[allow(clippy::too_many_arguments, dead_code)]
 pub async fn quarantine_event(
     pool: &PgPool,
     contract_id: Uuid,
     contract_version: &str,
-    payload: serde_json::Value,
+    payload: TransformedPayload,
     violation_count: i32,
     violation_details: serde_json::Value,
     validation_us: i64,
@@ -692,7 +698,7 @@ pub async fn quarantine_event(
     .bind(Uuid::new_v4())
     .bind(contract_id)
     .bind(contract_version)
-    .bind(payload)
+    .bind(payload.into_inner())
     .bind(violation_count)
     .bind(violation_details)
     .bind(validation_us)
@@ -710,6 +716,11 @@ pub async fn quarantine_event(
 ///
 /// `contract_version` must reflect the version that actually produced the
 /// decision — never a default or guess (audit honesty).
+///
+/// `raw_event` is [`TransformedPayload`] (RFC-004 §6) — raw PII never
+/// reaches `audit_log.raw_event`.  Summary-audit callers that carry
+/// synthetic bookkeeping JSON (batch-rejected, deprecated-pin) wrap via
+/// [`TransformedPayload::from_stored`].
 #[allow(clippy::too_many_arguments)]
 pub async fn log_audit_entry(
     pool: &PgPool,
@@ -718,7 +729,7 @@ pub async fn log_audit_entry(
     passed: bool,
     violation_count: i32,
     violation_details: serde_json::Value,
-    raw_event: serde_json::Value,
+    raw_event: TransformedPayload,
     validation_us: i64,
     source_ip: Option<&str>,
 ) -> AppResult<()> {
@@ -736,7 +747,7 @@ pub async fn log_audit_entry(
     .bind(passed)
     .bind(violation_count)
     .bind(violation_details)
-    .bind(raw_event)
+    .bind(raw_event.into_inner())
     .bind(validation_us)
     .bind(source_ip)
     .execute(pool)
@@ -936,6 +947,13 @@ pub struct IngestionStats {
 /// `contract_version` must be the exact version that produced the decision
 /// (audit honesty).  Under fallback resolution, this is the version that
 /// actually accepted (or, for the final fail, rejected) the event.
+///
+/// `raw_event` is typed as [`TransformedPayload`] (RFC-004 §6) so the
+/// compiler enforces "raw PII never reaches `audit_log`".  The only legal
+/// ways to produce a value are [`crate::transform::apply_transforms`] at
+/// the ingest boundary or [`TransformedPayload::from_stored`] for rows
+/// whose payload was already durable-stored in post-transform form
+/// (replay, summary audits).
 #[derive(Debug, Clone)]
 pub struct AuditEntryInsert {
     pub contract_id: Uuid,
@@ -943,7 +961,7 @@ pub struct AuditEntryInsert {
     pub passed: bool,
     pub violation_count: i32,
     pub violation_details: serde_json::Value,
-    pub raw_event: serde_json::Value,
+    pub raw_event: TransformedPayload,
     pub validation_us: i64,
     pub source_ip: Option<String>,
     /// Optional app-generated UUID.  Replay uses this so the caller can
@@ -960,11 +978,14 @@ pub struct AuditEntryInsert {
 /// One row to insert into `quarantine_events`.  Only failed events get one.
 ///
 /// `contract_version` is the version that rejected the event.
+///
+/// `payload` is [`TransformedPayload`] — same invariant as
+/// `AuditEntryInsert::raw_event`, RFC-004 §6.
 #[derive(Debug, Clone)]
 pub struct QuarantineEventInsert {
     pub contract_id: Uuid,
     pub contract_version: String,
-    pub payload: serde_json::Value,
+    pub payload: TransformedPayload,
     pub violation_count: i32,
     pub violation_details: serde_json::Value,
     pub validation_us: i64,
@@ -978,11 +999,14 @@ pub struct QuarantineEventInsert {
 /// One row to insert into `forwarded_events`.  Only passing events get one.
 ///
 /// `contract_version` is the version that accepted the event.
+///
+/// `payload` is [`TransformedPayload`] so the forward destination also
+/// only ever sees the post-transform form (RFC-004 §6).
 #[derive(Debug, Clone)]
 pub struct ForwardEventInsert {
     pub contract_id: Uuid,
     pub contract_version: String,
-    pub payload: serde_json::Value,
+    pub payload: TransformedPayload,
 }
 
 /// Batch-insert audit log entries in a single round-trip.
@@ -1009,8 +1033,14 @@ pub async fn log_audit_entries_batch(
     let violation_counts: Vec<i32> = entries.iter().map(|e| e.violation_count).collect();
     let violation_details: Vec<serde_json::Value> =
         entries.iter().map(|e| e.violation_details.clone()).collect();
-    let raw_events: Vec<serde_json::Value> =
-        entries.iter().map(|e| e.raw_event.clone()).collect();
+    // RFC-004 §6: extract the underlying JSON only at the SQL bind boundary.
+    // The struct field is `TransformedPayload` so callers cannot supply raw
+    // events; we unwrap here purely because sqlx wants a `Vec<Value>` for the
+    // jsonb[] UNNEST.
+    let raw_events: Vec<serde_json::Value> = entries
+        .iter()
+        .map(|e| e.raw_event.as_value().clone())
+        .collect();
     let validation_us: Vec<i64> = entries.iter().map(|e| e.validation_us).collect();
     // Postgres's UNNEST needs a concrete nullable text[] — represent absent
     // source_ips as empty strings and convert back to NULL in SQL via NULLIF.
@@ -1084,8 +1114,12 @@ pub async fn quarantine_events_batch(
         .iter()
         .map(|e| e.contract_version.clone())
         .collect();
-    let payloads: Vec<serde_json::Value> =
-        entries.iter().map(|e| e.payload.clone()).collect();
+    // RFC-004 §6: same pattern as `log_audit_entries_batch` — unwrap to
+    // `Value` only at the SQL boundary.
+    let payloads: Vec<serde_json::Value> = entries
+        .iter()
+        .map(|e| e.payload.as_value().clone())
+        .collect();
     let violation_counts: Vec<i32> = entries.iter().map(|e| e.violation_count).collect();
     let violation_details: Vec<serde_json::Value> =
         entries.iter().map(|e| e.violation_details.clone()).collect();
@@ -1154,8 +1188,11 @@ pub async fn forward_events_batch(
         .iter()
         .map(|e| e.contract_version.clone())
         .collect();
-    let payloads: Vec<serde_json::Value> =
-        entries.iter().map(|e| e.payload.clone()).collect();
+    // RFC-004 §6: forward destination only ever sees post-transform payloads.
+    let payloads: Vec<serde_json::Value> = entries
+        .iter()
+        .map(|e| e.payload.as_value().clone())
+        .collect();
 
     sqlx::query(
         r#"

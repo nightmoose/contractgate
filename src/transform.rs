@@ -56,6 +56,27 @@ impl TransformedPayload {
     pub fn as_value(&self) -> &Value {
         &self.0
     }
+
+    /// Mint a `TransformedPayload` from a value that was **already** stored
+    /// in the post-transform form — i.e. read back from
+    /// `quarantine_events.payload` or `audit_log.raw_event`.  This is the
+    /// single documented crack in the "only `apply_transforms` produces a
+    /// `TransformedPayload`" invariant (see RFC-004 §Replay).
+    ///
+    /// Legitimate callers:
+    ///   - `src/replay.rs` — re-validating a quarantined payload under a
+    ///     new target version writes the stored form back verbatim.
+    ///   - Summary audit rows (batch-rejected, deprecated-pin) that carry
+    ///     synthetic bookkeeping JSON rather than user event data.
+    ///
+    /// **Never call this on data that came from an HTTP request body or
+    /// any other client-controlled source** — that bypasses the whole
+    /// "raw PII never leaves the validator" guarantee.  If you are
+    /// working with a raw event, route it through
+    /// [`apply_transforms`] instead.
+    pub fn from_stored(value: Value) -> Self {
+        Self(value)
+    }
 }
 
 impl serde::Serialize for TransformedPayload {
