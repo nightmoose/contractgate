@@ -23,6 +23,12 @@ pub struct Contract {
     /// Optional description of what data this contract covers
     #[serde(default)]
     pub description: Option<String>,
+    /// RFC-004: when true, events containing fields not declared in
+    /// `ontology.entities` are rejected as per-event `UNDECLARED_FIELD`
+    /// violations.  Default `false` preserves the pre-RFC-004 behavior
+    /// (undeclared fields pass through untouched).
+    #[serde(default)]
+    pub compliance_mode: bool,
     /// Field-level ontology (structure + constraints)
     pub ontology: Ontology,
     /// Business glossary entries
@@ -78,6 +84,11 @@ pub struct FieldDefinition {
     /// For Array fields — element type constraints
     #[serde(default)]
     pub items: Option<Box<FieldDefinition>>,
+    /// RFC-004: optional PII transform applied AFTER validation.  Only
+    /// supported on `FieldType::String` — a non-string field with a
+    /// transform declared is a compile-time error at contract load.
+    #[serde(default)]
+    pub transform: Option<Transform>,
 }
 
 /// Supported field types inside a contract ontology.
@@ -101,6 +112,57 @@ pub enum FieldType {
 
 fn default_true() -> bool {
     true
+}
+
+// ---------------------------------------------------------------------------
+// PII transforms (RFC-004)
+// ---------------------------------------------------------------------------
+
+/// A PII transform declaration attached to a single string-typed field.
+///
+/// Runs in the ingest pipeline AFTER validation and BEFORE storage/forward.
+/// Raw values reach the validator; the transformed form is what lands on
+/// disk and in downstream systems.  See RFC-004 for the full pipeline.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Transform {
+    /// Which transform to apply.
+    pub kind: TransformKind,
+    /// Mask style — required for `kind: mask`, ignored otherwise.  Defaults
+    /// to `Opaque` when omitted on a mask transform.
+    #[serde(default)]
+    pub style: Option<MaskStyle>,
+}
+
+/// The four transform kinds supported in v1.  No stacking: each field gets
+/// at most one transform.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum TransformKind {
+    /// Replace with a sentinel.  See `MaskStyle` for exact behavior.
+    Mask,
+    /// Deterministic HMAC-SHA256 keyed on the per-contract `pii_salt`.
+    /// Output is `"hmac-sha256:<hex>"`.  Same input → same output on the
+    /// same contract, so analytics joins on hashed keys work forever.
+    Hash,
+    /// Remove the field from the payload entirely.
+    Drop,
+    /// Replace with the literal sentinel string `"<REDACTED>"`.
+    Redact,
+}
+
+/// Sub-setting for `TransformKind::Mask`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum MaskStyle {
+    /// Replace entire value with the fixed sentinel `"****"` — length
+    /// doesn't leak.  Default when `style` is omitted on a mask transform.
+    #[default]
+    Opaque,
+    /// Preserve length + character class per position (digit → digit,
+    /// letter → letter of same case, symbols pass through), shuffled
+    /// deterministically per (contract salt, field name).  Not reversible,
+    /// not a formal FPE scheme — see RFC-004 non-goals.
+    FormatPreserving,
 }
 
 // ---------------------------------------------------------------------------
@@ -258,6 +320,13 @@ impl MultiStableResolution {
 /// Identity row — one per `contract_id`.  Mutable: `name`, `description`,
 /// `multi_stable_resolution`.  Renames are mirrored to
 /// `contract_name_history` via the `contracts_record_rename` trigger.
+///
+/// RFC-004: carries `pii_salt` loaded from the DB — a 32-byte secret
+/// key used by the hash + format-preserving-mask transforms.  This
+/// struct is an internal/storage type; it must NEVER be serialized to
+/// an HTTP response directly.  The `#[serde(skip_serializing)]` on
+/// `pii_salt` is defence-in-depth; the public-facing types
+/// (`ContractResponse`, `ContractSummary`) don't carry the field at all.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ContractIdentity {
     pub id: uuid::Uuid,
@@ -266,10 +335,15 @@ pub struct ContractIdentity {
     pub multi_stable_resolution: MultiStableResolution,
     pub created_at: chrono::DateTime<chrono::Utc>,
     pub updated_at: chrono::DateTime<chrono::Utc>,
+    /// Per-contract 32-byte salt for PII transforms.  NEVER serialize.
+    #[serde(skip_serializing)]
+    pub pii_salt: Vec<u8>,
 }
 
 /// Version row — one per `(contract_id, version)` pair.  Frozen once state
-/// leaves `draft`.
+/// leaves `draft`.  `compliance_mode` is per-version (RFC-004): it is part
+/// of the semantic contract and cannot be toggled after promotion; the
+/// migration-005 trigger enforces the freeze.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ContractVersion {
     pub id: uuid::Uuid,
@@ -280,6 +354,11 @@ pub struct ContractVersion {
     pub created_at: chrono::DateTime<chrono::Utc>,
     pub promoted_at: Option<chrono::DateTime<chrono::Utc>>,
     pub deprecated_at: Option<chrono::DateTime<chrono::Utc>>,
+    /// Mirrors `contract_versions.compliance_mode`.  When `true`, the
+    /// validator raises `UNDECLARED_FIELD` on any inbound field not in
+    /// the ontology (RFC-004).  Default `false`.
+    #[serde(default)]
+    pub compliance_mode: bool,
 }
 
 /// One row of `contract_name_history`.
@@ -376,6 +455,9 @@ pub struct VersionResponse {
     pub created_at: chrono::DateTime<chrono::Utc>,
     pub promoted_at: Option<chrono::DateTime<chrono::Utc>>,
     pub deprecated_at: Option<chrono::DateTime<chrono::Utc>>,
+    /// RFC-004 compliance mode flag — exposed so the dashboard can render
+    /// the toggle state without re-parsing YAML.
+    pub compliance_mode: bool,
 }
 
 impl From<&ContractVersion> for VersionResponse {
@@ -389,6 +471,7 @@ impl From<&ContractVersion> for VersionResponse {
             created_at: v.created_at,
             promoted_at: v.promoted_at,
             deprecated_at: v.deprecated_at,
+            compliance_mode: v.compliance_mode,
         }
     }
 }

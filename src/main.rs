@@ -40,7 +40,7 @@ use uuid::Uuid;
 // shared with other binaries (e.g. src/bin/demo.rs).  We re-export it here so
 // existing submodules that refer to `crate::contract` / `crate::validation`
 // continue to resolve unchanged.
-pub use contractgate::{contract, validation};
+pub use contractgate::{contract, transform, validation};
 
 mod error;
 mod ingest;
@@ -85,11 +85,20 @@ impl AppState {
 
     /// Load every stable + deprecated version into the cache.  Drafts are
     /// loaded lazily — they're rare, mutable, and not usually pinned.
+    ///
+    /// Also loads every contract's `pii_salt` in a single round-trip so
+    /// each compiled contract is seeded with the correct HMAC key for
+    /// `kind: hash` and `format_preserving` transforms (RFC-004).
     pub async fn warm_cache(&self) -> AppResult<()> {
         let versions = storage::load_all_non_draft_versions(&self.db).await?;
+        let salts = storage::load_all_pii_salts(&self.db).await?;
         let mut cache = self.contract_cache.write().unwrap();
         for v in versions {
-            match compile_version(&v) {
+            // Missing salt would only happen if a contract row vanished
+            // between the two queries.  Fall back to an empty salt and
+            // log — a follow-up cache miss will re-fetch cleanly.
+            let salt = salts.get(&v.contract_id).cloned().unwrap_or_default();
+            match compile_version(&v, salt) {
                 Ok(compiled) => {
                     cache.insert((v.contract_id, v.version.clone()), Arc::new(compiled));
                 }
@@ -124,9 +133,13 @@ impl AppState {
             }
         }
 
-        // Slow path: fetch + compile + insert
+        // Slow path: fetch + compile + insert.  We load the identity so
+        // we can seed the compiled contract with the correct `pii_salt`
+        // (RFC-004).  Cost is one extra round-trip on cache miss —
+        // acceptable because misses are rare (boot + draft pins).
         let row = storage::get_version(&self.db, contract_id, version).await?;
-        let compiled = compile_version(&row).map_err(|e| {
+        let identity = storage::get_contract_identity(&self.db, contract_id).await?;
+        let compiled = compile_version(&row, identity.pii_salt).map_err(|e| {
             AppError::InvalidContractYaml(format!(
                 "could not compile contract {}@{}: {}",
                 contract_id, version, e
@@ -156,11 +169,13 @@ impl AppState {
     }
 }
 
-/// Parse + compile a `ContractVersion` row into a `CompiledContract`.
-fn compile_version(v: &ContractVersion) -> Result<CompiledContract, String> {
+/// Parse + compile a `ContractVersion` row into a `CompiledContract`,
+/// seeded with the contract's per-contract `pii_salt` for RFC-004
+/// transforms (`kind: hash`, `mask:format_preserving`).
+fn compile_version(v: &ContractVersion, salt: Vec<u8>) -> Result<CompiledContract, String> {
     let parsed: Contract =
         serde_yaml::from_str(&v.yaml_content).map_err(|e| e.to_string())?;
-    CompiledContract::compile(parsed).map_err(|e| e.to_string())
+    CompiledContract::compile_with_salt(parsed, salt).map_err(|e| e.to_string())
 }
 
 // ---------------------------------------------------------------------------

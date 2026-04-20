@@ -28,6 +28,8 @@ struct ContractIdentityRow {
     multi_stable_resolution: String,
     created_at: chrono::DateTime<chrono::Utc>,
     updated_at: chrono::DateTime<chrono::Utc>,
+    /// RFC-004: per-contract 32-byte secret salt.  BYTEA in Postgres.
+    pii_salt: Vec<u8>,
 }
 
 impl ContractIdentityRow {
@@ -46,6 +48,7 @@ impl ContractIdentityRow {
             multi_stable_resolution: resolution,
             created_at: self.created_at,
             updated_at: self.updated_at,
+            pii_salt: self.pii_salt,
         })
     }
 }
@@ -60,6 +63,10 @@ struct ContractVersionRow {
     created_at: chrono::DateTime<chrono::Utc>,
     promoted_at: Option<chrono::DateTime<chrono::Utc>>,
     deprecated_at: Option<chrono::DateTime<chrono::Utc>>,
+    /// RFC-004: denormalized for SQL-level filtering + indexing.  YAML
+    /// remains the single source of truth — this column is synced to
+    /// `Contract::compliance_mode` at INSERT / UPDATE time.
+    compliance_mode: bool,
 }
 
 impl ContractVersionRow {
@@ -79,6 +86,7 @@ impl ContractVersionRow {
             created_at: self.created_at,
             promoted_at: self.promoted_at,
             deprecated_at: self.deprecated_at,
+            compliance_mode: self.compliance_mode,
         })
     }
 }
@@ -152,9 +160,13 @@ pub async fn create_contract(
     yaml_content: &str,
     resolution: MultiStableResolution,
 ) -> AppResult<(ContractIdentity, ContractVersion)> {
-    // Parse first — reject invalid YAML before touching the DB.
-    let _parsed: Contract = serde_yaml::from_str(yaml_content)
+    // Parse first — reject invalid YAML before touching the DB.  We also
+    // extract `compliance_mode` so the column stays in sync with the YAML
+    // (RFC-004: YAML is authoritative; column is a denormalization for
+    // SQL-level filtering).
+    let parsed: Contract = serde_yaml::from_str(yaml_content)
         .map_err(|e| AppError::InvalidContractYaml(e.to_string()))?;
+    let compliance_mode = parsed.compliance_mode;
 
     let contract_id = Uuid::new_v4();
     let version_id = Uuid::new_v4();
@@ -166,7 +178,7 @@ pub async fn create_contract(
         INSERT INTO contracts
             (id, name, description, multi_stable_resolution, created_at, updated_at)
         VALUES ($1, $2, $3, $4, NOW(), NOW())
-        RETURNING id, name, description, multi_stable_resolution, created_at, updated_at
+        RETURNING id, name, description, multi_stable_resolution, created_at, updated_at, pii_salt
         "#,
     )
     .bind(contract_id)
@@ -179,15 +191,16 @@ pub async fn create_contract(
     let version_row = sqlx::query_as::<_, ContractVersionRow>(
         r#"
         INSERT INTO contract_versions
-            (id, contract_id, version, state, yaml_content, created_at)
-        VALUES ($1, $2, '1.0.0', 'draft', $3, NOW())
+            (id, contract_id, version, state, yaml_content, created_at, compliance_mode)
+        VALUES ($1, $2, '1.0.0', 'draft', $3, NOW(), $4)
         RETURNING id, contract_id, version, state, yaml_content,
-                  created_at, promoted_at, deprecated_at
+                  created_at, promoted_at, deprecated_at, compliance_mode
         "#,
     )
     .bind(version_id)
     .bind(contract_id)
     .bind(yaml_content)
+    .bind(compliance_mode)
     .fetch_one(&mut *tx)
     .await?;
 
@@ -203,7 +216,7 @@ pub async fn get_contract_identity(
 ) -> AppResult<ContractIdentity> {
     let row = sqlx::query_as::<_, ContractIdentityRow>(
         r#"
-        SELECT id, name, description, multi_stable_resolution, created_at, updated_at
+        SELECT id, name, description, multi_stable_resolution, created_at, updated_at, pii_salt
         FROM contracts
         WHERE id = $1
         "#,
@@ -269,7 +282,7 @@ pub async fn patch_contract_identity(
             multi_stable_resolution = COALESCE($4, multi_stable_resolution),
             updated_at              = NOW()
         WHERE id = $1
-        RETURNING id, name, description, multi_stable_resolution, created_at, updated_at
+        RETURNING id, name, description, multi_stable_resolution, created_at, updated_at, pii_salt
         "#,
     )
     .bind(id)
@@ -308,8 +321,9 @@ pub async fn create_version(
     version: &str,
     yaml_content: &str,
 ) -> AppResult<ContractVersion> {
-    let _parsed: Contract = serde_yaml::from_str(yaml_content)
+    let parsed: Contract = serde_yaml::from_str(yaml_content)
         .map_err(|e| AppError::InvalidContractYaml(e.to_string()))?;
+    let compliance_mode = parsed.compliance_mode;
 
     // Ensure the contract exists first so we get a clean 404 instead of a
     // foreign-key violation.
@@ -320,16 +334,17 @@ pub async fn create_version(
     let row = sqlx::query_as::<_, ContractVersionRow>(
         r#"
         INSERT INTO contract_versions
-            (id, contract_id, version, state, yaml_content, created_at)
-        VALUES ($1, $2, $3, 'draft', $4, NOW())
+            (id, contract_id, version, state, yaml_content, created_at, compliance_mode)
+        VALUES ($1, $2, $3, 'draft', $4, NOW(), $5)
         RETURNING id, contract_id, version, state, yaml_content,
-                  created_at, promoted_at, deprecated_at
+                  created_at, promoted_at, deprecated_at, compliance_mode
         "#,
     )
     .bind(id)
     .bind(contract_id)
     .bind(version)
     .bind(yaml_content)
+    .bind(compliance_mode)
     .fetch_one(pool)
     .await
     .map_err(|e| match &e {
@@ -354,8 +369,14 @@ pub async fn patch_version_yaml(
     version: &str,
     yaml_content: &str,
 ) -> AppResult<ContractVersion> {
-    let _parsed: Contract = serde_yaml::from_str(yaml_content)
+    // Parse first — reject invalid YAML before touching the DB.  We also
+    // extract `compliance_mode` so the column stays in sync on UPDATE.  The
+    // DB trigger `contract_versions_compliance_mode_guard` will reject any
+    // change to `compliance_mode` once the version leaves draft, so this is
+    // safe to always bind (RFC-004).
+    let parsed: Contract = serde_yaml::from_str(yaml_content)
         .map_err(|e| AppError::InvalidContractYaml(e.to_string()))?;
+    let compliance_mode = parsed.compliance_mode;
 
     // Fetch first so we can emit a specific error (not-found vs. immutable).
     let current = get_version(pool, contract_id, version).await?;
@@ -369,15 +390,17 @@ pub async fn patch_version_yaml(
     let row = sqlx::query_as::<_, ContractVersionRow>(
         r#"
         UPDATE contract_versions
-        SET yaml_content = $3
+        SET yaml_content = $3,
+            compliance_mode = $4
         WHERE contract_id = $1 AND version = $2
         RETURNING id, contract_id, version, state, yaml_content,
-                  created_at, promoted_at, deprecated_at
+                  created_at, promoted_at, deprecated_at, compliance_mode
         "#,
     )
     .bind(contract_id)
     .bind(version)
     .bind(yaml_content)
+    .bind(compliance_mode)
     .fetch_one(pool)
     .await?;
 
@@ -405,7 +428,7 @@ pub async fn promote_version(
         SET state = 'stable', promoted_at = NOW()
         WHERE contract_id = $1 AND version = $2 AND state = 'draft'
         RETURNING id, contract_id, version, state, yaml_content,
-                  created_at, promoted_at, deprecated_at
+                  created_at, promoted_at, deprecated_at, compliance_mode
         "#,
     )
     .bind(contract_id)
@@ -437,7 +460,7 @@ pub async fn deprecate_version(
         SET state = 'deprecated', deprecated_at = NOW()
         WHERE contract_id = $1 AND version = $2 AND state = 'stable'
         RETURNING id, contract_id, version, state, yaml_content,
-                  created_at, promoted_at, deprecated_at
+                  created_at, promoted_at, deprecated_at, compliance_mode
         "#,
     )
     .bind(contract_id)
@@ -483,7 +506,7 @@ pub async fn get_version(
     let row = sqlx::query_as::<_, ContractVersionRow>(
         r#"
         SELECT id, contract_id, version, state, yaml_content,
-               created_at, promoted_at, deprecated_at
+               created_at, promoted_at, deprecated_at, compliance_mode
         FROM contract_versions
         WHERE contract_id = $1 AND version = $2
         "#,
@@ -510,7 +533,7 @@ pub async fn list_versions(
     let rows = sqlx::query_as::<_, ContractVersionRow>(
         r#"
         SELECT id, contract_id, version, state, yaml_content,
-               created_at, promoted_at, deprecated_at
+               created_at, promoted_at, deprecated_at, compliance_mode
         FROM contract_versions
         WHERE contract_id = $1
         ORDER BY created_at DESC
@@ -542,7 +565,7 @@ pub async fn get_latest_stable_version(
     let row = sqlx::query_as::<_, ContractVersionRow>(
         r#"
         SELECT id, contract_id, version, state, yaml_content,
-               created_at, promoted_at, deprecated_at
+               created_at, promoted_at, deprecated_at, compliance_mode
         FROM contract_versions
         WHERE contract_id = $1 AND state = 'stable'
         ORDER BY promoted_at DESC
@@ -565,7 +588,7 @@ pub async fn list_stable_versions(
     let rows = sqlx::query_as::<_, ContractVersionRow>(
         r#"
         SELECT id, contract_id, version, state, yaml_content,
-               created_at, promoted_at, deprecated_at
+               created_at, promoted_at, deprecated_at, compliance_mode
         FROM contract_versions
         WHERE contract_id = $1 AND state = 'stable'
         ORDER BY promoted_at DESC
@@ -578,6 +601,22 @@ pub async fn list_stable_versions(
     rows.into_iter().map(|r| r.into_version()).collect()
 }
 
+/// Load every contract's `pii_salt` keyed by contract id.  Used at boot
+/// alongside [`load_all_non_draft_versions`] so the warm-cache path can
+/// compile each version against the right salt without issuing a
+/// per-contract round-trip.
+pub async fn load_all_pii_salts(
+    pool: &PgPool,
+) -> AppResult<std::collections::HashMap<Uuid, Vec<u8>>> {
+    let rows: Vec<(Uuid, Vec<u8>)> = sqlx::query_as(
+        r#"SELECT id, pii_salt FROM contracts"#,
+    )
+    .fetch_all(pool)
+    .await?;
+
+    Ok(rows.into_iter().collect())
+}
+
 /// Load every stable + deprecated version across all contracts — used at
 /// boot to warm the in-memory cache.  Drafts are loaded lazily on pin.
 pub async fn load_all_non_draft_versions(
@@ -586,7 +625,7 @@ pub async fn load_all_non_draft_versions(
     let rows = sqlx::query_as::<_, ContractVersionRow>(
         r#"
         SELECT id, contract_id, version, state, yaml_content,
-               created_at, promoted_at, deprecated_at
+               created_at, promoted_at, deprecated_at, compliance_mode
         FROM contract_versions
         WHERE state IN ('stable', 'deprecated')
         "#,

@@ -52,6 +52,15 @@ serde_yaml = "0.9"
 # Validation
 regex = "1"
 
+# PII transforms (RFC-004): HMAC-SHA256 for `kind: hash`, seeded ChaCha20
+# PRNG for `mask: format_preserving`.  All three crates are pure-Rust, no
+# system deps — portable across CI + sandbox builds.
+sha2 = "0.10"
+hmac = "0.12"
+hex = "0.4"
+rand_chacha = "0.3"
+rand_core = "0.6"
+
 # Data-parallel batch validation (RFC-001).  Used by the ingest handler to
 # fan out a batch of events across CPU cores while keeping the tokio reactor
 # free (the parallel stage runs inside `spawn_blocking`).
