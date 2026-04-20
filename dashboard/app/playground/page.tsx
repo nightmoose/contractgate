@@ -331,9 +331,18 @@ function TransformPreviewPanel({
   requestBody: unknown;
   transformed: unknown;
 }) {
+  // Defensive: if the backend didn't return a post-transform payload (e.g.
+  // the Rust deploy is behind the dashboard deploy and doesn't have the
+  // RFC-004 Playground handler yet), hide the panel entirely rather than
+  // rendering a misleading "every field was scrubbed" diff.  Only render
+  // when `transformed` is a real non-null object or array.
+  const hasTransformedPayload =
+    transformed !== null &&
+    transformed !== undefined &&
+    typeof transformed === "object";
   const changedKeys = useMemo(
-    () => diffTopLevelKeys(requestBody, transformed),
-    [requestBody, transformed]
+    () => (hasTransformedPayload ? diffTopLevelKeys(requestBody, transformed) : new Set<string>()),
+    [requestBody, transformed, hasTransformedPayload]
   );
   const diverged = changedKeys.size > 0;
 
@@ -354,6 +363,25 @@ function TransformPreviewPanel({
     }
     return after;
   }, [requestBody, transformed]);
+
+  // Field missing from the response — the server we're talking to doesn't
+  // know about RFC-004 yet.  Show a muted "preview unavailable" card
+  // instead of lying about what got scrubbed.
+  if (!hasTransformedPayload) {
+    return (
+      <div className="bg-[#111827] border border-[#1f2937] rounded-xl p-6">
+        <h2 className="text-sm font-semibold text-slate-400 uppercase tracking-wider mb-2">
+          Transformed Payload · what we&apos;d store
+        </h2>
+        <p className="text-xs text-slate-500 leading-relaxed">
+          The backend didn&apos;t return a post-transform payload for this
+          request. This usually means the server is on a build that predates
+          the RFC-004 Playground handler — redeploy the Rust service to surface
+          the diff here.
+        </p>
+      </div>
+    );
+  }
 
   return (
     <div className="bg-[#111827] border border-[#1f2937] rounded-xl p-6">
