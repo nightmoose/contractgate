@@ -148,9 +148,24 @@ export interface IngestionStats {
 export interface AuditEntry {
   id: string;
   contract_id: string;
+  /**
+   * The exact contract version that produced this decision (RFC-002).
+   * Null only for legacy rows written before RFC-002 shipped; every row
+   * written on or after the versioning rollout has this populated.
+   */
+  contract_version: string | null;
   passed: boolean;
   violation_count: number;
   violation_details: Violation[];
+  /**
+   * The post-transform payload as it was written to `audit_log.raw_event`
+   * (RFC-004 §6).  This is ALREADY scrubbed — masks, hashes, drops, and
+   * redactions have been applied before the row landed.  If the matching
+   * contract version declared no transforms, this is byte-for-byte
+   * identical to the request body; otherwise values are post-transform.
+   * Raw PII never reaches this field.
+   */
+  raw_event: unknown;
   validation_us: number;
   source_ip: string | null;
   created_at: string;
