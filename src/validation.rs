@@ -64,6 +64,7 @@ pub enum ViolationKind {
 
 /// A `Contract` with expensive operations (regex compilation) done once.
 /// Re-use across many `validate()` calls for maximum throughput.
+#[derive(Debug)]
 pub struct CompiledContract {
     pub contract: Contract,
     /// field_name → compiled regex (for ontology fields with `pattern`)
