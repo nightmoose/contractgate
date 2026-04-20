@@ -3,6 +3,17 @@ import { NextRequest, NextResponse } from 'next/server';
 import { Resend } from 'resend';
 
 export async function POST(request: NextRequest) {
+  // CORS headers for cross-subdomain calls (www. → app.)
+  const responseHeaders = new Headers();
+  responseHeaders.set('Access-Control-Allow-Origin', 'https://www.datacontractgate.com');
+  responseHeaders.set('Access-Control-Allow-Methods', 'POST, OPTIONS');
+  responseHeaders.set('Access-Control-Allow-Headers', 'Content-Type');
+
+  // Handle preflight OPTIONS request
+  if (request.method === 'OPTIONS') {
+    return NextResponse.json({}, { headers: responseHeaders });
+  }
+
   try {
     const body = await request.json();
     const { name, email, company, stack, message } = body;
@@ -35,8 +46,8 @@ export async function POST(request: NextRequest) {
       `,
     });
 
-    return NextResponse.json({ success: true });
-  } catch (error) {
+    return NextResponse.json({ success: true }, { headers: responseHeaders });
+  } catch (error: unknown) {
     console.error('Early access error:', error);
     return NextResponse.json(
       { error: 'Failed to send request' },
