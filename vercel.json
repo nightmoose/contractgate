@@ -1,8 +1,1 @@
-{
-  "builds": [
-    {
-      "src": "dashboard/package.json",
-      "use": "@vercel/next"
-    }
-  ]
-}
+{}
