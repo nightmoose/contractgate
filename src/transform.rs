@@ -7,14 +7,14 @@
 //! [`apply_transforms`] first.
 //!
 //! Four kinds (signed off 2026-04-19):
-//!   - `mask`    — `style: opaque` (default, `"****"`) or
-//!                 `format_preserving` (same length + char-class per
-//!                 position, deterministic per contract).
-//!   - `hash`    — HMAC-SHA256 keyed on the per-contract `pii_salt`;
-//!                 emitted as `"hmac-sha256:<hex>"`.  Deterministic so
-//!                 downstream joins on hashed keys work forever.
-//!   - `drop`    — the field is removed from the payload.
-//!   - `redact`  — replaced with the literal sentinel `"<REDACTED>"`.
+//!   - `mask` — `style: opaque` (default, `"****"`) or
+//!     `format_preserving` (same length + char-class per position,
+//!     deterministic per contract).
+//!   - `hash` — HMAC-SHA256 keyed on the per-contract `pii_salt`; emitted
+//!     as `"hmac-sha256:<hex>"`.  Deterministic so downstream joins on
+//!     hashed keys work forever.
+//!   - `drop` — the field is removed from the payload.
+//!   - `redact` — replaced with the literal sentinel `"<REDACTED>"`.
 //!
 //! All four operate on top-level string fields only.  Non-string fields
 //! with a transform declared are rejected at contract-compile time by
@@ -150,11 +150,11 @@ pub(crate) fn hmac_sha256_hex(key: &[u8], msg: &[u8]) -> String {
 
 /// Format-preserving mask (RFC-004 Q6 = seeded ChaCha20 per-position
 /// scramble).  For every position in `input`:
-///   - ASCII digit  → random ASCII digit (0–9)
-///   - ASCII upper  → random ASCII upper (A–Z)
-///   - ASCII lower  → random ASCII lower (a–z)
-///   - any other    → passed through unchanged (symbols, whitespace,
-///                    non-ASCII bytes keep their original value)
+///   - ASCII digit → random ASCII digit (0–9)
+///   - ASCII upper → random ASCII upper (A–Z)
+///   - ASCII lower → random ASCII lower (a–z)
+///   - any other → passed through unchanged (symbols, whitespace,
+///     non-ASCII bytes keep their original value)
 ///
 /// The PRNG is seeded deterministically on `(salt, field_name)` so the
 /// same input under the same contract + field always produces the same
