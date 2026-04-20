@@ -2,6 +2,67 @@
 
 ---
 
+## Run 2026-04-20 (prod-DB rescue: migrations 003–005 were never applied)
+
+Triaged a Fly runtime error
+(`42703: column "contract_version" does not exist`) that was silently
+breaking the audit and contracts dashboards. Root cause: migrations
+003 / 004 / 005 had been written, committed, and merged over the past
+two weeks, but never applied against the live Supabase (project
+`nmhoehpveqkkpfegkzpn`). The code shipped past them and crashed on the
+first query referencing a post-003 column. This masqueraded as an API
+auth issue because Vercel was returning partial UIs instead of a clear
+server-error banner.
+
+• Fixed/Added/Improved: 4 changes
+
+  1. **Backed up then applied 003 / 004 / 005 against live Supabase**:
+     Dumped all 9 `contracts` rows with their `yaml_content` into
+     `supabase/backups/2026-04-20_pre_migration_003.json` before
+     running 003 (which TRUNCATEs all 4 event/definition tables per
+     the 2026-04-18 dev/test authorization). After migrations, re-seeded
+     the one contract that mattered — `my_contract` v1.1 with the
+     RFC-004 `kind: mask` transform on `user_id` — as a stable version,
+     picking up the `pii_salt` default from 005. Post-run verification:
+     five schema-existence checks all returned `ok: true`, Fly `/health`
+     returns 200, `/contracts` returns a clean 401 (auth wall intact,
+     not crashing on SQL).
+
+  2. **supabase/migrations/003_contract_versioning.sql — drop-view
+     ordering fix**: The migration file dropped
+     `contracts.{version, active, yaml_content}` in Section 1 but only
+     dropped the `v_ingestion_summary` view that depends on
+     `contracts.version` in Section 6. Postgres refuses the column drop
+     with `2BP01: cannot drop column ... because other objects depend
+     on it`, aborting the whole migration. Added a new Section 0a that
+     runs `DROP VIEW IF EXISTS v_ingestion_summary` before any column
+     reshaping; removed the now-redundant DROP inside Section 6 (only
+     the CREATE remains). Any future dev bootstrapping from 001 → 003
+     would have hit the same wall — this run caught it.
+
+  3. **supabase/backups/2026-04-20_pre_migration_003.json — new
+     snapshot**: JSON dump of `public.contracts` rows taken immediately
+     before 003's TRUNCATE. Includes each row's `yaml_content` so the
+     other 8 contracts can be re-imported via the dashboard if needed.
+     Six of the nine were `user_events_test` smoke-test duplicates; the
+     two load-bearing rows were today's `my_contract` draft (v1.0 with
+     `compliance_mode: true` and `mask` on `event_type`) and the active
+     v1.1 that was re-seeded post-migration.
+
+  4. **Process note — migration-application is now a manual gap in the
+     nightly workflow**: There is no CI step that applies Supabase
+     migrations on merge, and no tracker row ever existed in
+     `supabase_migrations.schema_migrations` for 003 / 004 / 005 before
+     today (verified via `list_migrations`). We've been lucky that 004
+     and 005 are purely additive — if they had been destructive, shipping
+     code that assumed them would have corrupted live data on first
+     query. Worth an RFC on either wiring `supabase db push` into CI or
+     adding a boot-time assertion in `main.rs` that fails fast if
+     expected columns are missing. Not touched this run — flagged for
+     next nightly.
+
+---
+
 ## Run 2026-04-18 (RFC-003 → manual replay quarantine)
 • Fixed/Added/Improved: 5 changes
   1. **docs/rfcs/003-auto-retry.md — design locked + signed off**: Captured
