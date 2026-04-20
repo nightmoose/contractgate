@@ -3,7 +3,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { Resend } from 'resend';
 
 export async function POST(request: NextRequest) {
-  // ← CORS headers for cross-subdomain calls (www. → app.)
+  // CORS headers for cross-subdomain calls (www. → app.)
   const responseHeaders = new Headers();
   responseHeaders.set('Access-Control-Allow-Origin', 'https://www.datacontractgate.com');
   responseHeaders.set('Access-Control-Allow-Methods', 'POST, OPTIONS');
@@ -41,12 +41,12 @@ export async function POST(request: NextRequest) {
         <p><strong>Message:</strong></p>
         <p>${message || 'No additional message provided.'}</p>
         <hr>
-        <p style="font-size: 12px; color: #777;">Sent from datacontractgate.com • ${new Date().toISOString()}</p>
+        <p style="font-size: 12px; color: #666;">Sent from datacontractgate.com • ${new Date().toISOString()}</p>
       `,
     });
 
     return NextResponse.json({ success: true }, { headers: responseHeaders });
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('Early access error:', error);
     return NextResponse.json(
       { error: 'Failed to send request' },
