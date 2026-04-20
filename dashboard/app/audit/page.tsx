@@ -8,6 +8,194 @@ import type { AuditEntry, ContractSummary } from "@/lib/api";
 import clsx from "clsx";
 
 // ---------------------------------------------------------------------------
+// Raw-event drawer (RFC-004 surfacing)
+// ---------------------------------------------------------------------------
+
+/**
+ * Side-panel drawer that shows the stored `raw_event` for a single audit
+ * row.  The framing matters: under RFC-004 §6, the value in this column
+ * has ALREADY been through the transform engine (masks / hashes / drops /
+ * redactions applied) — it is the exact bytes the server wrote to
+ * `audit_log.raw_event`.  We label the panel "Stored payload" rather than
+ * "raw event" so nobody mistakes this for the request body.
+ */
+function RawEventDrawer({
+  entry,
+  onClose,
+}: {
+  entry: AuditEntry | null;
+  onClose: () => void;
+}) {
+  const [copied, setCopied] = useState(false);
+
+  // Escape closes the drawer — standard modal affordance.
+  useEffect(() => {
+    if (!entry) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [entry, onClose]);
+
+  // Reset the "Copied!" flash when switching rows.
+  useEffect(() => {
+    setCopied(false);
+  }, [entry?.id]);
+
+  if (!entry) return null;
+
+  const prettyJson = JSON.stringify(entry.raw_event, null, 2);
+
+  const handleCopy = async () => {
+    try {
+      await navigator.clipboard.writeText(prettyJson);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    } catch {
+      // clipboard permission can be blocked — fall back silently.
+    }
+  };
+
+  return (
+    <>
+      {/* Backdrop */}
+      <button
+        onClick={onClose}
+        className="fixed inset-0 bg-black/50 z-40"
+        aria-label="Close audit entry"
+      />
+      {/* Drawer panel */}
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="raw-event-drawer-title"
+        className="fixed top-0 right-0 h-full w-full md:w-[560px] bg-[#0d1117] border-l border-[#1f2937] z-50 shadow-2xl flex flex-col"
+      >
+        {/* Header */}
+        <div className="flex items-start justify-between px-6 py-5 border-b border-[#1f2937]">
+          <div className="min-w-0">
+            <h2
+              id="raw-event-drawer-title"
+              className="text-sm font-semibold text-slate-200 uppercase tracking-wider"
+            >
+              Audit Entry
+            </h2>
+            <p className="text-xs text-slate-500 font-mono mt-1 truncate" title={entry.id}>
+              {entry.id}
+            </p>
+          </div>
+          <button
+            onClick={onClose}
+            className="text-slate-500 hover:text-slate-200 text-xl leading-none ml-4"
+            aria-label="Close"
+          >
+            ✕
+          </button>
+        </div>
+
+        {/* Meta chips */}
+        <div className="px-6 py-4 border-b border-[#1f2937] space-y-3">
+          <div className="flex flex-wrap items-center gap-2">
+            <span
+              className={clsx(
+                "text-xs px-2 py-0.5 rounded-full font-medium",
+                entry.passed
+                  ? "bg-green-900/40 text-green-400"
+                  : "bg-red-900/40 text-red-400"
+              )}
+            >
+              {entry.passed ? "PASS" : "FAIL"}
+            </span>
+            {entry.contract_version && (
+              <span
+                className="text-xs bg-indigo-900/40 text-indigo-300 border border-indigo-700/40 rounded-full px-2 py-0.5 font-mono"
+                title="Contract version that produced this decision (RFC-002)"
+              >
+                v{entry.contract_version}
+              </span>
+            )}
+            <span className="text-xs text-slate-500 font-mono">
+              {entry.validation_us}µs
+            </span>
+            {entry.source_ip && (
+              <span className="text-xs text-slate-500 font-mono">
+                {entry.source_ip}
+              </span>
+            )}
+          </div>
+          <dl className="grid grid-cols-[auto,1fr] gap-x-3 gap-y-1 text-xs">
+            <dt className="text-slate-600 uppercase tracking-wider">Contract</dt>
+            <dd className="text-slate-400 font-mono truncate">{entry.contract_id}</dd>
+            <dt className="text-slate-600 uppercase tracking-wider">Recorded</dt>
+            <dd className="text-slate-400">
+              {new Date(entry.created_at).toLocaleString()}
+            </dd>
+          </dl>
+        </div>
+
+        {/* Violations (if any) */}
+        {entry.violation_count > 0 && (
+          <div className="px-6 py-4 border-b border-[#1f2937]">
+            <p className="text-xs text-slate-500 uppercase tracking-wider mb-2">
+              Violations · {entry.violation_count}
+            </p>
+            <ul className="space-y-1.5">
+              {entry.violation_details?.map((v, i) => (
+                <li
+                  key={i}
+                  className="bg-red-900/20 border border-red-800/30 rounded-lg p-2.5 text-xs"
+                >
+                  <div className="flex items-center gap-2 mb-0.5">
+                    <span className="bg-red-900/50 text-red-400 px-1.5 py-0.5 rounded font-mono text-[10px]">
+                      {v.kind}
+                    </span>
+                    <span className="text-slate-400 font-mono">{v.field}</span>
+                  </div>
+                  <p className="text-slate-300">{v.message}</p>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+
+        {/* Stored payload — scrolls independently */}
+        <div className="flex-1 overflow-y-auto px-6 py-4">
+          <div className="flex items-center justify-between mb-2">
+            <p className="text-xs text-slate-500 uppercase tracking-wider">
+              Stored payload
+            </p>
+            <button
+              onClick={handleCopy}
+              className="text-xs px-2.5 py-1 bg-[#1f2937] hover:bg-[#374151] border border-[#374151] rounded text-slate-300 transition-colors"
+            >
+              {copied ? "✓ Copied" : "Copy JSON"}
+            </button>
+          </div>
+          <div className="mb-3 flex items-start gap-2 bg-indigo-900/15 border border-indigo-700/30 rounded-lg px-3 py-2">
+            <span className="text-indigo-400 text-sm leading-5">🔒</span>
+            <p className="text-[11px] text-indigo-200 leading-relaxed">
+              Under RFC-004 §6, values here have already been through the
+              contract&apos;s PII transforms before being written to{" "}
+              <code className="text-indigo-300">audit_log.raw_event</code>. Raw
+              PII never reaches this column — fields with a declared{" "}
+              <code className="text-indigo-300">mask</code>,{" "}
+              <code className="text-indigo-300">hash</code>,{" "}
+              <code className="text-indigo-300">drop</code>, or{" "}
+              <code className="text-indigo-300">redact</code> transform are
+              already scrubbed.
+            </p>
+          </div>
+          <pre className="text-xs text-green-300 font-mono bg-[#0a0d12] border border-[#1f2937] rounded-lg p-3 whitespace-pre-wrap break-all">
+            {prettyJson}
+          </pre>
+        </div>
+      </div>
+    </>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // CSV export helper
 // ---------------------------------------------------------------------------
 
@@ -59,6 +247,7 @@ function AuditContent() {
   );
   const [statusFilter, setStatusFilter] = useState<"all" | "pass" | "fail">("all");
   const [page, setPage] = useState(0);
+  const [selected, setSelected] = useState<AuditEntry | null>(null);
   const PAGE_SIZE = 50;
 
   // If a contract_id lands via URL (e.g. quick-link from the dashboard), apply it
@@ -186,14 +375,20 @@ function AuditContent() {
               entries.map((e) => (
                 <tr
                   key={e.id}
-                  className="border-b border-[#1f2937]/50 hover:bg-[#1f2937]/20"
+                  onClick={() => setSelected(e)}
+                  className="border-b border-[#1f2937]/50 hover:bg-[#1f2937]/30 cursor-pointer"
+                  title="Open stored payload"
                 >
                   <td className="px-4 py-3 text-slate-400 font-mono text-xs">
                     {new Date(e.created_at).toLocaleString()}
                   </td>
                   <td className="px-4 py-3">
                     <button
-                      onClick={() => { setContractFilter(e.contract_id); setPage(0); }}
+                      onClick={(ev) => {
+                        ev.stopPropagation();
+                        setContractFilter(e.contract_id);
+                        setPage(0);
+                      }}
                       className="text-slate-500 font-mono text-xs hover:text-green-400 transition-colors"
                       title="Filter by this contract"
                     >
@@ -214,7 +409,10 @@ function AuditContent() {
                   </td>
                   <td className="px-4 py-3 text-slate-400">
                     {e.violation_count > 0 ? (
-                      <details className="cursor-pointer">
+                      <details
+                        className="cursor-pointer"
+                        onClick={(ev) => ev.stopPropagation()}
+                      >
                         <summary className="text-red-400">
                           {e.violation_count} violation{e.violation_count > 1 ? "s" : ""}
                         </summary>
@@ -276,6 +474,9 @@ function AuditContent() {
           Next →
         </button>
       </div>
+
+      {/* Drawer — portaled via fixed positioning, only mounts when a row is selected */}
+      <RawEventDrawer entry={selected} onClose={() => setSelected(null)} />
     </div>
   );
 }
