@@ -6,10 +6,9 @@ const nextConfig: NextConfig = {
   // Vercel will deploy "use client" pages as static and API routes as
   // serverless functions automatically.
 
-  // trailingSlash causes Next.js to emit /contracts/index.html instead
-  // of /contracts.html, which Vercel's static hosting resolves correctly
-  // when you navigate to /contracts.
-  trailingSlash: true,
+  // trailingSlash was removed — it was only needed for static export mode
+  // (to generate /contracts/index.html). In server mode it causes redirects
+  // that flip POST requests to GET, breaking API routes like /api/early-access.
 
   // Keep images unoptimized to avoid requiring a server image optimizer.
   images: { unoptimized: true },
