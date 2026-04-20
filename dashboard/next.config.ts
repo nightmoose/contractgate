@@ -1,16 +1,17 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  // Static export — all pages are "use client" + SWR so no server
-  // components or SSR needed. Deployed to Vercel as a static site.
-  output: "export",
+  // NOTE: output: "export" was removed to enable API route handlers (e.g.
+  // /api/early-access). Static export disables all server-side routes.
+  // Vercel will deploy "use client" pages as static and API routes as
+  // serverless functions automatically.
 
   // trailingSlash causes Next.js to emit /contracts/index.html instead
   // of /contracts.html, which Vercel's static hosting resolves correctly
   // when you navigate to /contracts.
   trailingSlash: true,
 
-  // Image optimisation is not available in static export mode.
+  // Keep images unoptimized to avoid requiring a server image optimizer.
   images: { unoptimized: true },
 };
 
