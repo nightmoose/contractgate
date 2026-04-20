@@ -2,8 +2,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { Resend } from 'resend';
 
-const resend = new Resend(process.env.RESEND_API_KEY);
-
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
@@ -16,9 +14,12 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // ←←← KEY CHANGE: Create Resend only when the request actually comes in
+    const resend = new Resend(process.env.RESEND_API_KEY);
+
     await resend.emails.send({
-      from: 'ContractGate Early Access <noreply@datacontractgate.com>',
-      to: 'alex@yourdomain.com',        // ← CHANGE THIS TO YOUR REAL EMAIL
+      from: 'ContractGate Early Access <datacontractgate@nightmoose.com>',
+      to: 'datacontractgate_signup@nightmoose.com',
       replyTo: email,
       subject: `Early Access Request from ${name}`,
       html: `
@@ -30,7 +31,7 @@ export async function POST(request: NextRequest) {
         <p><strong>Message:</strong></p>
         <p>${message || 'No additional message provided.'}</p>
         <hr>
-        <p style="font-size: 12px; color: #666;">Sent from datacontractgate.com marketing site • ${new Date().toISOString()}</p>
+        <p style="font-size: 12px; color: #777;">Sent from datacontractgate.com marketing site • ${new Date().toISOString()}</p>
       `,
     });
 
