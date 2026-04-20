@@ -6,12 +6,26 @@ if (!process.env.RESEND_API_KEY) {
   console.error("[early-access] ❌ RESEND_API_KEY is not set!");
 }
 
+const CORS_HEADERS = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Methods": "POST, OPTIONS",
+  "Access-Control-Allow-Headers": "Content-Type",
+};
+
+// Handle CORS preflight
+export async function OPTIONS() {
+  return new NextResponse(null, { status: 204, headers: CORS_HEADERS });
+}
+
 export async function POST(req: Request) {
   try {
     const { name, email, company, stack, message } = await req.json();
 
     if (!name || !email || !stack) {
-      return NextResponse.json({ error: "Name, email, and stack are required." }, { status: 400 });
+      return NextResponse.json(
+        { error: "Name, email, and stack are required." },
+        { status: 400, headers: CORS_HEADERS }
+      );
     }
 
     const resend = new Resend(process.env.RESEND_API_KEY);
@@ -19,7 +33,6 @@ export async function POST(req: Request) {
     await resend.emails.send({
       from: 'ContractGate Early Access <datacontractgate@nightmoose.com>',
       to: 'datacontractgate_signup@nightmoose.com',
-
       replyTo: email,
       subject: `Early Access Request from ${name}`,
       html: `
@@ -35,9 +48,12 @@ export async function POST(req: Request) {
       `,
     });
 
-    return NextResponse.json({ success: true });
+    return NextResponse.json({ success: true }, { headers: CORS_HEADERS });
   } catch (err) {
     console.error("[early-access]", err);
-    return NextResponse.json({ error: "Something went wrong." }, { status: 500 });
+    return NextResponse.json(
+      { error: "Something went wrong." },
+      { status: 500, headers: CORS_HEADERS }
+    );
   }
 }
