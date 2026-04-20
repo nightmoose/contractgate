@@ -10,7 +10,19 @@
 -- reshaped cleanly.  Per Alex 2026-04-18 — this is a dev/test environment.
 
 -- ---------------------------------------------------------------------------
--- 0. Wipe dependent data so we can reshape the tables without compat pain.
+-- 0a. Drop the v1 `v_ingestion_summary` view BEFORE reshaping any columns.
+--
+-- The view (from migration 001) references `contracts.version`, which
+-- Section 1 drops.  Without this explicit DROP, the ALTER TABLE in Section 1
+-- errors with `2BP01: cannot drop column version because other objects
+-- depend on it` and the whole migration aborts.  The view is recreated
+-- against the new schema in Section 6.
+-- ---------------------------------------------------------------------------
+
+DROP VIEW IF EXISTS v_ingestion_summary;
+
+-- ---------------------------------------------------------------------------
+-- 0b. Wipe dependent data so we can reshape the tables without compat pain.
 -- ---------------------------------------------------------------------------
 
 TRUNCATE audit_log, quarantine_events, forwarded_events, contracts CASCADE;
@@ -158,11 +170,11 @@ CREATE INDEX idx_audit_contract_version
     ON audit_log (contract_id, contract_version);
 
 -- ---------------------------------------------------------------------------
--- 6. Refresh v_ingestion_summary so it groups by contract_version too.
+-- 6. Rebuild v_ingestion_summary against the new schema (groups by
+--    contract_version too).  The old view was dropped in Section 0a before
+--    the column reshape so we only need the CREATE here.
 --    v_latency_percentiles is unchanged (contract_id-level is still useful).
 -- ---------------------------------------------------------------------------
-
-DROP VIEW IF EXISTS v_ingestion_summary;
 
 CREATE VIEW v_ingestion_summary AS
 SELECT
