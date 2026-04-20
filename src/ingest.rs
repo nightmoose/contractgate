@@ -359,9 +359,9 @@ pub async fn ingest_handler(
     // contract version that matched that event.  Runs on BOTH pass and
     // fail paths — "raw PII never leaves the validator" applies to
     // quarantined events too (Q3).  `TransformedPayload` is the newtype
-    // receipt that transforms actually ran; we `.into_inner()` at the
-    // storage boundary while the signatures are still `Value`-typed
-    // (tightening those is a follow-up pass per RFC-004 rollout §6).
+    // receipt that transforms actually ran; the storage insert structs
+    // require it (§6) so this is the only place a raw event becomes a
+    // value the durable layer can accept.
     let transformed_payloads: Vec<TransformedPayload> = events
         .iter()
         .enumerate()
@@ -434,7 +434,9 @@ pub async fn ingest_handler(
                 violation_count: vr.violations.len() as i32,
                 violation_details: serde_json::to_value(&vr.violations)
                     .unwrap_or_else(|_| Value::Array(vec![])),
-                raw_event: transformed_payloads[idx].as_value().clone(),
+                // RFC-004 §6: hand the typed wrapper through; only storage
+                // unwraps to `Value` at the SQL bind boundary.
+                raw_event: transformed_payloads[idx].clone(),
                 validation_us: vr.validation_us as i64,
                 source_ip: source_ip.clone(),
                 // Fresh ingest: let Postgres generate the ID and no replay link.
@@ -451,7 +453,7 @@ pub async fn ingest_handler(
             .map(|((idx, vr), _event)| storage::QuarantineEventInsert {
                 contract_id,
                 contract_version: per_event_versions[idx].clone(),
-                payload: transformed_payloads[idx].as_value().clone(),
+                payload: transformed_payloads[idx].clone(),
                 violation_count: vr.violations.len() as i32,
                 violation_details: serde_json::to_value(&vr.violations)
                     .unwrap_or_else(|_| Value::Array(vec![])),
@@ -470,7 +472,7 @@ pub async fn ingest_handler(
             .map(|((idx, _vr), _event)| storage::ForwardEventInsert {
                 contract_id,
                 contract_version: per_event_versions[idx].clone(),
-                payload: transformed_payloads[idx].as_value().clone(),
+                payload: transformed_payloads[idx].clone(),
             })
             .collect();
 
@@ -607,7 +609,7 @@ async fn deprecated_pin_quarantine(
             .map(|tp| storage::QuarantineEventInsert {
                 contract_id,
                 contract_version: pinned_version.to_string(),
-                payload: tp.as_value().clone(),
+                payload: tp.clone(),
                 violation_count: 1,
                 violation_details: Value::Array(vec![synthetic_violation.clone()]),
                 validation_us: 0,
@@ -643,6 +645,10 @@ async fn deprecated_pin_quarantine(
                 "pinned_version": pinned_version,
                 "latest_stable": latest_stable,
             })]);
+        // RFC-004 §6: this row carries synthetic bookkeeping JSON, not a user
+        // event, so there is no PII to transform.  `from_stored` is the
+        // documented escape hatch for this case (see transform.rs docstring).
+        let summary_payload = TransformedPayload::from_stored(summary_raw);
 
         tokio::spawn(async move {
             if let Err(e) = storage::log_audit_entry(
@@ -652,7 +658,7 @@ async fn deprecated_pin_quarantine(
                 false,
                 1,
                 violation_details,
-                summary_raw,
+                summary_payload,
                 0,
                 source_ip_owned.as_deref(),
             )
@@ -727,6 +733,8 @@ fn write_batch_rejected_audit(
     let version = contract_version.to_string();
     let violation_count = failed_indices.len() as i32;
     let details_value = Value::Array(details);
+    // RFC-004 §6: synthetic batch-rejected summary, no client PII to transform.
+    let summary_payload = TransformedPayload::from_stored(summary);
 
     tokio::spawn(async move {
         if let Err(e) = storage::log_audit_entry(
@@ -736,7 +744,7 @@ fn write_batch_rejected_audit(
             false,
             violation_count,
             details_value,
-            summary,
+            summary_payload,
             0,
             source_ip_owned.as_deref(),
         )
