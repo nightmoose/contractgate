@@ -609,7 +609,7 @@ export default function StreamDemoPage() {
         <div>
           <h1 className="text-2xl font-bold">Stream Demo</h1>
           <p className="text-sm text-slate-500 mt-1">
-            In-browser simulation of ContractGate's Kafka validation pipeline — no backend required
+            In-browser simulation of ContractGate&apos;s Kafka validation pipeline — no backend required
           </p>
         </div>
         <StatusPill
