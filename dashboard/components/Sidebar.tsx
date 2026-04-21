@@ -5,10 +5,11 @@ import { usePathname } from "next/navigation";
 import clsx from "clsx";
 
 const NAV = [
-  { href: "/",            label: "Dashboard",  icon: "⬡" },
-  { href: "/contracts",   label: "Contracts",  icon: "📋" },
-  { href: "/audit",       label: "Audit Log",  icon: "🔍" },
-  { href: "/playground",  label: "Playground", icon: "🧪" },
+  { href: "/",             label: "Dashboard",    icon: "⬡" },
+  { href: "/contracts",    label: "Contracts",    icon: "📋" },
+  { href: "/audit",        label: "Audit Log",    icon: "🔍" },
+  { href: "/playground",   label: "Playground",   icon: "🧪" },
+  { href: "/stream-demo",  label: "Stream Demo",  icon: "⚡" },
 ];
 
 export default function Sidebar() {
