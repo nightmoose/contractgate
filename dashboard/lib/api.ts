@@ -3,8 +3,22 @@
  * All functions throw on non-2xx responses.
  */
 
+import * as yaml from "js-yaml";
+
 const BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001";
 const API_KEY = process.env.NEXT_PUBLIC_API_KEY ?? "";
+
+/** Parse name + description out of a contract YAML string. */
+function extractYamlMeta(yaml_content: string): { name: string; description?: string } {
+  try {
+    const doc = yaml.load(yaml_content) as Record<string, unknown>;
+    const name = typeof doc?.name === "string" ? doc.name : "";
+    const description = typeof doc?.description === "string" ? doc.description : undefined;
+    return { name, description };
+  } catch {
+    return { name: "" };
+  }
+}
 
 async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
   const headers: Record<string, string> = { "Content-Type": "application/json" };
@@ -180,11 +194,13 @@ export const listContracts = () => apiFetch<ContractSummary[]>("/contracts");
 export const getContract = (id: string) =>
   apiFetch<ContractResponse>(`/contracts/${id}`);
 
-export const createContract = (yaml_content: string) =>
-  apiFetch<ContractResponse>("/contracts", {
+export const createContract = (yaml_content: string) => {
+  const { name, description } = extractYamlMeta(yaml_content);
+  return apiFetch<ContractResponse>("/contracts", {
     method: "POST",
-    body: JSON.stringify({ yaml_content }),
+    body: JSON.stringify({ name, description, yaml_content }),
   });
+};
 
 export const updateContract = (
   id: string,
