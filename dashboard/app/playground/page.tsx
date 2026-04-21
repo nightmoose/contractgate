@@ -3,7 +3,7 @@
 import { useState, useEffect, useMemo } from "react";
 import useSWR from "swr";
 import yaml from "js-yaml";
-import { playgroundValidate, listContracts, getContract } from "@/lib/api";
+import { playgroundValidate, listContracts, getLatestStableVersion, listVersions, getVersion } from "@/lib/api";
 import type { PlaygroundResponse, ContractSummary, Violation } from "@/lib/api";
 import clsx from "clsx";
 
@@ -486,8 +486,26 @@ export default function PlaygroundPage() {
     setLoadingContract(true);
     setParseError(null);
     try {
-      const c = await getContract(id);
-      setYaml(c.yaml_content);
+      // Prefer the latest stable version — that's what ingest would use for
+      // unpinned traffic.  If the contract has no stable yet (everything is
+      // still draft), fall back to the newest draft so the dropdown still
+      // loads something sensible.
+      let yaml_content: string | null = null;
+      try {
+        const v = await getLatestStableVersion(id);
+        yaml_content = v.yaml_content;
+      } catch {
+        const versions = await listVersions(id);
+        if (versions.length === 0) {
+          throw new Error("Contract has no versions");
+        }
+        const newest = [...versions].sort((a, b) =>
+          b.created_at.localeCompare(a.created_at)
+        )[0];
+        const v = await getVersion(id, newest.version);
+        yaml_content = v.yaml_content;
+      }
+      setYaml(yaml_content);
       setResult(null);
       setSubmittedEvent(null);
     } catch (e: unknown) {
@@ -564,7 +582,10 @@ export default function PlaygroundPage() {
             <option value="">— select stored contract —</option>
             {contracts.map((c) => (
               <option key={c.id} value={c.id}>
-                {c.name} v{c.version}{!c.active ? " (inactive)" : ""}
+                {c.name}
+                {c.latest_stable_version
+                  ? ` · stable v${c.latest_stable_version}`
+                  : " · no stable yet"}
               </option>
             ))}
           </select>

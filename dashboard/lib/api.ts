@@ -1,6 +1,20 @@
 /**
  * API client for the ContractGate Rust backend.
  * All functions throw on non-2xx responses.
+ *
+ * Shape is authoritative from `src/contract.rs` and `src/main.rs` under
+ * RFC-002 (contract versioning) and RFC-004 (PII transforms).  The key
+ * invariants every caller must respect:
+ *
+ *   1. Contracts have identity (name, description, policy).  YAML lives
+ *      on `contract_versions`, one row per (contract, version) pair.
+ *   2. A version is draft / stable / deprecated.  Only drafts can have
+ *      their YAML edited (PATCH /contracts/:id/versions/:version).
+ *      Promoting a draft freezes it forever.
+ *   3. `updateContract` is a PATCH and is identity-only — name,
+ *      description, resolution policy.  It will never touch YAML.
+ *      Use `patchVersionYaml` (drafts only) or create a new draft via
+ *      `createVersion` to ship YAML changes.
  */
 
 import * as yaml from "js-yaml";
@@ -9,11 +23,14 @@ const BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001";
 const API_KEY = process.env.NEXT_PUBLIC_API_KEY ?? "";
 
 /** Parse name + description out of a contract YAML string. */
-function extractYamlMeta(yaml_content: string): { name: string; description?: string } {
+function extractYamlMeta(
+  yaml_content: string
+): { name: string; description?: string } {
   try {
     const doc = yaml.load(yaml_content) as Record<string, unknown>;
     const name = typeof doc?.name === "string" ? doc.name : "";
-    const description = typeof doc?.description === "string" ? doc.description : undefined;
+    const description =
+      typeof doc?.description === "string" ? doc.description : undefined;
     return { name, description };
   } catch {
     return { name: "" };
@@ -21,11 +38,15 @@ function extractYamlMeta(yaml_content: string): { name: string; description?: st
 }
 
 async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
-  const headers: Record<string, string> = { "Content-Type": "application/json" };
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+  };
   if (API_KEY) headers["x-api-key"] = API_KEY;
   // Merge any caller-supplied headers (supports Headers, string[][], or plain object)
   if (init?.headers) {
-    new Headers(init.headers).forEach((v, k) => { headers[k] = v; });
+    new Headers(init.headers).forEach((v, k) => {
+      headers[k] = v;
+    });
   }
   const res = await fetch(`${BASE}${path}`, { ...init, headers });
   // 207 Multi-Status is a valid success response from the ingest endpoint
@@ -33,25 +54,80 @@ async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
     const body = await res.json().catch(() => ({ error: res.statusText }));
     throw new Error(body?.error ?? `Request failed: ${res.status}`);
   }
+  // 204 No Content — typed as void by callers
+  if (res.status === 204) return undefined as T;
   return res.json() as Promise<T>;
 }
 
 // ---------------------------------------------------------------------------
-// Types (mirrors Rust structs)
+// Types (mirrors Rust structs in src/contract.rs)
 // ---------------------------------------------------------------------------
 
+/** Mirrors `enum MultiStableResolution { Strict, Fallback }`. */
+export type MultiStableResolution = "strict" | "fallback";
+
+/** Mirrors `enum VersionState { Draft, Stable, Deprecated }`. */
+export type VersionState = "draft" | "stable" | "deprecated";
+
+/**
+ * Lightweight listing row for `GET /contracts`.  Identity-only — no YAML.
+ * `latest_stable_version` is null when every version is still a draft or
+ * every stable has been deprecated.
+ */
 export interface ContractSummary {
   id: string;
   name: string;
-  version: string;
-  active: boolean;
+  multi_stable_resolution: MultiStableResolution;
+  latest_stable_version: string | null;
+  version_count: number;
 }
 
-export interface ContractResponse extends ContractSummary {
+/**
+ * Full response for `GET /contracts/:id` / `POST /contracts` /
+ * `PATCH /contracts/:id`.  Still identity-only — fetch YAML via
+ * `getLatestStableVersion` or `getVersion`.
+ */
+export interface ContractResponse {
+  id: string;
+  name: string;
+  description: string | null;
+  multi_stable_resolution: MultiStableResolution;
   created_at: string;
   updated_at: string;
-  /** Raw YAML definition — included in all create/get/update responses */
+  version_count: number;
+  latest_stable_version: string | null;
+}
+
+/** One row for `GET /contracts/:id/versions`. */
+export interface VersionSummary {
+  version: string;
+  state: VersionState;
+  created_at: string;
+  promoted_at: string | null;
+  deprecated_at: string | null;
+}
+
+/** Full response for a single version — includes YAML. */
+export interface VersionResponse {
+  id: string;
+  contract_id: string;
+  version: string;
+  state: VersionState;
   yaml_content: string;
+  created_at: string;
+  promoted_at: string | null;
+  deprecated_at: string | null;
+  /** RFC-004: when true, undeclared inbound fields fail validation. */
+  compliance_mode: boolean;
+}
+
+/** Row in the append-only rename log for `GET /contracts/:id/name-history`. */
+export interface NameHistoryEntry {
+  id: string;
+  contract_id: string;
+  old_name: string;
+  new_name: string;
+  changed_at: string;
 }
 
 export interface Violation {
@@ -61,25 +137,12 @@ export interface Violation {
 }
 
 // ---------------------------------------------------------------------------
-// RFC-004: PII transforms
-//
-// These describe the YAML the dashboard emits into `ontology.entities[].transform`
-// and the contract-level `compliance_mode` flag.  They are NOT on any response
-// payload directly — the server round-trips them through `yaml_content`.
+// RFC-004: PII transforms — shape of the YAML the dashboard emits.
 // ---------------------------------------------------------------------------
 
-/** Which transform to apply to a string field before it reaches durable storage. */
 export type TransformKind = "mask" | "hash" | "drop" | "redact";
-
-/** Sub-style for `kind: "mask"`.  Ignored for every other kind. */
 export type MaskStyle = "opaque" | "format_preserving";
 
-/**
- * Per-field PII transform declaration.  Only valid on string fields — the
- * server rejects contracts at compile time that attach a transform to a
- * non-string entity.  `style` is only meaningful when `kind === "mask"`
- * and defaults to `"opaque"` when omitted.
- */
 export interface Transform {
   kind: TransformKind;
   style?: MaskStyle;
@@ -97,10 +160,6 @@ export interface ValidationResult {
  * against.  Always populated; if the contract declares no transforms and
  * `compliance_mode` is off, this is byte-for-byte identical to the
  * request body.
- *
- * Note: the Playground has no per-contract salt (the contract isn't
- * saved yet), so `hash` and `format_preserving` mask outputs here are
- * illustrative — production ingest uses the real per-contract salt.
  */
 export interface PlaygroundResponse extends ValidationResult {
   transformed_event: unknown;
@@ -108,22 +167,9 @@ export interface PlaygroundResponse extends ValidationResult {
 
 export interface IngestEventResult extends ValidationResult {
   forwarded: boolean;
-  /**
-   * The contract version that actually produced the decision for this event.
-   * Under `multi_stable_resolution = fallback` this may differ from the
-   * request's resolved version when a fallback stable accepted the event.
-   * Always set by the backend (RFC-002).
-   */
+  /** Contract version that actually accepted/rejected this event (RFC-002). */
   contract_version: string;
-  /**
-   * RFC-004 echo: the post-transform payload as it was written to
-   * `audit_log` / `quarantine_events` / the forward destination.  If the
-   * matching contract version declares no transforms this is byte-for-byte
-   * identical to the request body; otherwise values have already been
-   * masked / hashed / dropped / redacted.  Callers that need the raw
-   * request body must track it themselves — it does not survive to any
-   * persisted row.
-   */
+  /** Post-transform payload as it was written to storage (RFC-004). */
   transformed_event: unknown;
 }
 
@@ -131,16 +177,9 @@ export interface BatchIngestResponse {
   total: number;
   passed: number;
   failed: number;
-  /** true when the request was sent with ?dry_run=true — no data was persisted */
   dry_run: boolean;
-  /** true when the request was sent with ?atomic=true */
   atomic: boolean;
-  /**
-   * The version the request was dispatched against before any fallback retry.
-   * Mirrors what got logged server-side (RFC-002).
-   */
   resolved_version: string;
-  /** Where the resolved version came from: "header", "path", "default_stable", or "pinned_deprecated". */
   version_pin_source: string;
   results: IngestEventResult[];
 }
@@ -151,34 +190,19 @@ export interface IngestionStats {
   failed_events: number;
   pass_rate: number;
   avg_validation_us: number;
-  /** Median validation latency in microseconds */
   p50_validation_us: number;
-  /** 95th-percentile validation latency in microseconds */
   p95_validation_us: number;
-  /** 99th-percentile validation latency in microseconds (target: <15 000 µs) */
   p99_validation_us: number;
 }
 
 export interface AuditEntry {
   id: string;
   contract_id: string;
-  /**
-   * The exact contract version that produced this decision (RFC-002).
-   * Null only for legacy rows written before RFC-002 shipped; every row
-   * written on or after the versioning rollout has this populated.
-   */
   contract_version: string | null;
   passed: boolean;
   violation_count: number;
   violation_details: Violation[];
-  /**
-   * The post-transform payload as it was written to `audit_log.raw_event`
-   * (RFC-004 §6).  This is ALREADY scrubbed — masks, hashes, drops, and
-   * redactions have been applied before the row landed.  If the matching
-   * contract version declared no transforms, this is byte-for-byte
-   * identical to the request body; otherwise values are post-transform.
-   * Raw PII never reaches this field.
-   */
+  /** Post-transform payload (RFC-004 §6) — PII already scrubbed. */
   raw_event: unknown;
   validation_us: number;
   source_ip: string | null;
@@ -186,7 +210,7 @@ export interface AuditEntry {
 }
 
 // ---------------------------------------------------------------------------
-// Contracts
+// Contracts — identity-level CRUD
 // ---------------------------------------------------------------------------
 
 export const listContracts = () => apiFetch<ContractSummary[]>("/contracts");
@@ -194,6 +218,11 @@ export const listContracts = () => apiFetch<ContractSummary[]>("/contracts");
 export const getContract = (id: string) =>
   apiFetch<ContractResponse>(`/contracts/${id}`);
 
+/**
+ * Create a contract + its v1.0.0 draft in a single transactional call.
+ * `name` and `description` are parsed out of the YAML (the server also
+ * validates the YAML itself and requires `name` on the request body).
+ */
 export const createContract = (yaml_content: string) => {
   const { name, description } = extractYamlMeta(yaml_content);
   return apiFetch<ContractResponse>("/contracts", {
@@ -202,17 +231,92 @@ export const createContract = (yaml_content: string) => {
   });
 };
 
+/**
+ * Identity-level metadata patch.  Does NOT touch YAML — that is immutable
+ * once a version leaves draft.  Use `createVersion` to ship YAML changes.
+ */
 export const updateContract = (
   id: string,
-  patch: { active?: boolean; yaml_content?: string }
+  patch: {
+    name?: string;
+    description?: string;
+    multi_stable_resolution?: MultiStableResolution;
+  }
 ) =>
   apiFetch<ContractResponse>(`/contracts/${id}`, {
-    method: "PUT",
+    method: "PATCH",
     body: JSON.stringify(patch),
   });
 
 export const deleteContract = (id: string) =>
   apiFetch<void>(`/contracts/${id}`, { method: "DELETE" });
+
+export const listNameHistory = (contractId: string) =>
+  apiFetch<NameHistoryEntry[]>(`/contracts/${contractId}/name-history`);
+
+// ---------------------------------------------------------------------------
+// Versions — one row per (contract, version) pair.  YAML lives here.
+// ---------------------------------------------------------------------------
+
+export const listVersions = (contractId: string) =>
+  apiFetch<VersionSummary[]>(`/contracts/${contractId}/versions`);
+
+/**
+ * Create a new DRAFT version.  `version` must be unique per contract
+ * (server enforces).  The new version is always born in `draft` state;
+ * promote it via `promoteVersion` to make it eligible for ingest.
+ */
+export const createVersion = (
+  contractId: string,
+  body: { version: string; yaml_content: string }
+) =>
+  apiFetch<VersionResponse>(`/contracts/${contractId}/versions`, {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+
+export const getVersion = (contractId: string, version: string) =>
+  apiFetch<VersionResponse>(
+    `/contracts/${contractId}/versions/${encodeURIComponent(version)}`
+  );
+
+export const getLatestStableVersion = (contractId: string) =>
+  apiFetch<VersionResponse>(
+    `/contracts/${contractId}/versions/latest-stable`
+  );
+
+/** Edit a draft version's YAML.  Fails server-side if the version is not draft. */
+export const patchVersionYaml = (
+  contractId: string,
+  version: string,
+  yaml_content: string
+) =>
+  apiFetch<VersionResponse>(
+    `/contracts/${contractId}/versions/${encodeURIComponent(version)}`,
+    { method: "PATCH", body: JSON.stringify({ yaml_content }) }
+  );
+
+/** Promote draft → stable.  Irreversible freeze of this version's YAML. */
+export const promoteVersion = (contractId: string, version: string) =>
+  apiFetch<VersionResponse>(
+    `/contracts/${contractId}/versions/${encodeURIComponent(version)}/promote`,
+    { method: "POST" }
+  );
+
+/** Mark a stable version as deprecated.  Ingest still works but new traffic
+ *  resolves to the next-newest stable instead. */
+export const deprecateVersion = (contractId: string, version: string) =>
+  apiFetch<VersionResponse>(
+    `/contracts/${contractId}/versions/${encodeURIComponent(version)}/deprecate`,
+    { method: "POST" }
+  );
+
+/** Delete a version.  Server only allows this for drafts. */
+export const deleteVersion = (contractId: string, version: string) =>
+  apiFetch<void>(
+    `/contracts/${contractId}/versions/${encodeURIComponent(version)}`,
+    { method: "DELETE" }
+  );
 
 // ---------------------------------------------------------------------------
 // Ingestion
@@ -260,3 +364,23 @@ export const playgroundValidate = (yaml_content: string, event: unknown) =>
     method: "POST",
     body: JSON.stringify({ yaml_content, event }),
   });
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+/**
+ * Suggest the next semver for a new draft, bumping the patch component.
+ * Accepts `1.0`, `1.0.0`, `2.3.4` and similar; falls back to `1.0.0`
+ * if it can't parse.  Used by the Edit modal when the user wants to ship
+ * a YAML change as a fresh draft.
+ */
+export function suggestNextVersion(current: string | null): string {
+  if (!current) return "1.0.0";
+  const parts = current.trim().split(".");
+  const nums = parts.map((p) => parseInt(p, 10));
+  if (nums.some((n) => !Number.isFinite(n))) return `${current}.1`;
+  while (nums.length < 3) nums.push(0);
+  nums[2] += 1;
+  return nums.slice(0, 3).join(".");
+}

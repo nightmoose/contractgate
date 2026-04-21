@@ -339,7 +339,7 @@ export default function DashboardPage() {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
         <div className="bg-[#111827] border border-[#1f2937] rounded-xl p-5">
           <h2 className="text-sm font-semibold text-slate-400 mb-3 uppercase tracking-wider">
-            Active Contracts
+            Contracts
           </h2>
           {contracts && contracts.length > 0 ? (
             <ul className="space-y-2">
@@ -355,11 +355,19 @@ export default function DashboardPage() {
                     {c.name}
                   </a>
                   <span className="flex items-center gap-2">
-                    <span className="text-xs text-slate-500">v{c.version}</span>
+                    {c.latest_stable_version ? (
+                      <span className="text-xs text-slate-500">
+                        stable v{c.latest_stable_version}
+                      </span>
+                    ) : (
+                      <span className="text-xs text-amber-500">draft only</span>
+                    )}
                     <span
                       className={clsx(
                         "w-2 h-2 rounded-full",
-                        c.active ? "bg-green-400" : "bg-slate-600"
+                        c.latest_stable_version
+                          ? "bg-green-400"
+                          : "bg-amber-500"
                       )}
                     />
                   </span>

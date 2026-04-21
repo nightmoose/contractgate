@@ -313,7 +313,10 @@ function AuditContent() {
           <option value="">All contracts</option>
           {contracts?.map((c) => (
             <option key={c.id} value={c.id}>
-              {c.name} (v{c.version})
+              {c.name}
+              {c.latest_stable_version
+                ? ` (stable v${c.latest_stable_version})`
+                : ""}
             </option>
           ))}
         </select>
