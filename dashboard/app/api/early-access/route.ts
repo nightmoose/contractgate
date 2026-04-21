@@ -1,27 +1,30 @@
 // app/api/early-access/route.ts
-import { NextRequest, NextResponse } from 'next/server';
+import { NextResponse } from "next/server";
 import { Resend } from 'resend';
 
-export async function POST(request: NextRequest) {
-  // ← CORS headers for cross-subdomain calls (www. → app.)
-  const responseHeaders = new Headers();
-  responseHeaders.set('Access-Control-Allow-Origin', 'https://www.datacontractgate.com');
-  responseHeaders.set('Access-Control-Allow-Methods', 'POST, OPTIONS');
-  responseHeaders.set('Access-Control-Allow-Headers', 'Content-Type');
+if (!process.env.RESEND_API_KEY) {
+  console.error("[early-access] ❌ RESEND_API_KEY is not set!");
+}
 
-  // Handle preflight OPTIONS request
-  if (request.method === 'OPTIONS') {
-    return NextResponse.json({}, { headers: responseHeaders });
-  }
+const CORS_HEADERS = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Methods": "POST, OPTIONS",
+  "Access-Control-Allow-Headers": "Content-Type",
+};
 
+// Handle CORS preflight
+export async function OPTIONS() {
+  return new NextResponse(null, { status: 204, headers: CORS_HEADERS });
+}
+
+export async function POST(req: Request) {
   try {
-    const body = await request.json();
-    const { name, email, company, stack, message } = body;
+    const { name, email, company, stack, message } = await req.json();
 
     if (!name || !email || !stack) {
       return NextResponse.json(
-        { error: 'Name, email, and stack are required' },
-        { status: 400, headers: responseHeaders }
+        { error: "Name, email, and stack are required." },
+        { status: 400, headers: CORS_HEADERS }
       );
     }
 
@@ -41,16 +44,16 @@ export async function POST(request: NextRequest) {
         <p><strong>Message:</strong></p>
         <p>${message || 'No additional message provided.'}</p>
         <hr>
-        <p style="font-size: 12px; color: #666;">Sent from datacontractgate.com • ${new Date().toISOString()}</p>
+        <p style="font-size: 12px; color: #666;">Sent from datacontractgate.com marketing site • ${new Date().toISOString()}</p>
       `,
     });
 
-    return NextResponse.json({ success: true }, { headers: responseHeaders });
-  } catch (error: any) {
-    console.error('Early access error:', error);
+    return NextResponse.json({ success: true }, { headers: CORS_HEADERS });
+  } catch (err) {
+    console.error("[early-access]", err);
     return NextResponse.json(
-      { error: 'Failed to send request' },
-      { status: 500, headers: responseHeaders }
+      { error: "Something went wrong." },
+      { status: 500, headers: CORS_HEADERS }
     );
   }
 }

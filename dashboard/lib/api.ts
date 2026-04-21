@@ -17,6 +17,8 @@
  *      `createVersion` to ship YAML changes.
  */
 
+import * as yaml from "js-yaml";
+
 const BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001";
 const API_KEY = process.env.NEXT_PUBLIC_API_KEY ?? "";
 
