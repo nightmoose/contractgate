@@ -66,12 +66,25 @@ function fmtRate(n: number): string {
 }
 
 // ---------------------------------------------------------------------------
-// SVG Throughput chart
+// SVG Throughput chart — with clickable legend toggles + auto Y rescale
 // ---------------------------------------------------------------------------
+
+type SeriesKey = "producer" | "validator" | "copy";
+
+const SERIES: { key: SeriesKey; color: string; label: string; fill: string; strokeWidth: number; fn: (h: HistoryPoint) => number }[] = [
+  { key: "producer",  color: "#8a97ad", label: "Producer",      fill: "rgba(138,151,173,0.08)", strokeWidth: 1.5, fn: (h) => h.producer_rate  },
+  { key: "validator", color: "#5ea1ff", label: "ContractGate",  fill: "rgba(94,161,255,0.15)",  strokeWidth: 2,   fn: (h) => h.validator_rate },
+  { key: "copy",      color: "#ffc857", label: "Straight-copy", fill: "rgba(255,200,87,0.12)",  strokeWidth: 2,   fn: (h) => h.copy_rate      },
+];
 
 function ThroughputChart({ history }: { history: HistoryPoint[] }) {
   const wrapRef = useRef<HTMLDivElement>(null);
   const [width, setWidth] = useState(700);
+  const [visible, setVisible] = useState<Record<SeriesKey, boolean>>({
+    producer: true, validator: true, copy: true,
+  });
+
+  const toggle = (key: SeriesKey) => setVisible((v) => ({ ...v, [key]: !v[key] }));
 
   useEffect(() => {
     if (!wrapRef.current) return;
@@ -83,10 +96,12 @@ function ThroughputChart({ history }: { history: HistoryPoint[] }) {
 
   const innerW = width - PAD.left - PAD.right;
   const innerH = CHART_H - PAD.top - PAD.bottom;
-  const maxRate = Math.max(
-    ...history.map((h) => Math.max(h.producer_rate, h.validator_rate, h.copy_rate)),
-    1000
+
+  // Y scale only considers visible series so toggling Producer reveals the gap
+  const visibleRates = history.flatMap((h) =>
+    SERIES.filter((s) => visible[s.key]).map((s) => s.fn(h))
   );
+  const maxRate = Math.max(...(visibleRates.length ? visibleRates : [0]), 1000);
 
   function toX(i: number) {
     return PAD.left + ((i + HISTORY_LEN - history.length) / (HISTORY_LEN - 1)) * innerW;
@@ -121,33 +136,52 @@ function ThroughputChart({ history }: { history: HistoryPoint[] }) {
           Waiting for data…
         </div>
       ) : (
-        <svg width={width} height={CHART_H}>
-          {yTicks.map((t, i) => (
-            <g key={i}>
-              <line x1={PAD.left} y1={t.y} x2={width - PAD.right} y2={t.y} stroke="rgba(255,255,255,0.04)" strokeWidth={1} />
-              <text x={PAD.left - 6} y={t.y + 4} textAnchor="end" fill="#8a97ad" fontSize={10} fontFamily="ui-monospace,monospace">{t.label}</text>
-            </g>
-          ))}
-          {xTicks.map((t, i) => (
-            <text key={i} x={t.x} y={CHART_H - 6} textAnchor="middle" fill="#8a97ad" fontSize={10} fontFamily="ui-monospace,monospace">{t.label}</text>
-          ))}
-          <polygon points={area((h) => h.producer_rate)} fill="rgba(138,151,173,0.08)" />
-          <polygon points={area((h) => h.copy_rate)} fill="rgba(255,200,87,0.12)" />
-          <polygon points={area((h) => h.validator_rate)} fill="rgba(94,161,255,0.15)" />
-          <polyline points={pts((h) => h.producer_rate)} fill="none" stroke="#8a97ad" strokeWidth={1.5} strokeLinejoin="round" />
-          <polyline points={pts((h) => h.copy_rate)} fill="none" stroke="#ffc857" strokeWidth={2} strokeLinejoin="round" />
-          <polyline points={pts((h) => h.validator_rate)} fill="none" stroke="#5ea1ff" strokeWidth={2} strokeLinejoin="round" />
-          {[
-            { color: "#8a97ad", label: "Producer" },
-            { color: "#5ea1ff", label: "ContractGate" },
-            { color: "#ffc857", label: "Straight-copy" },
-          ].map((item, i) => (
-            <g key={i} transform={`translate(${PAD.left + 8 + i * 120}, ${PAD.top + 6})`}>
-              <line x1={0} y1={5} x2={16} y2={5} stroke={item.color} strokeWidth={2} />
-              <text x={20} y={9} fill="#e6edf7" fontSize={11} fontFamily="ui-sans-serif,system-ui">{item.label}</text>
-            </g>
-          ))}
-        </svg>
+        <>
+          {/* Clickable legend lives outside the SVG so hover/cursor works reliably */}
+          <div className="flex items-center gap-5 mb-2 ml-14 flex-wrap">
+            {SERIES.map((s) => (
+              <button
+                key={s.key}
+                onClick={() => toggle(s.key)}
+                className="flex items-center gap-1.5 text-xs transition-opacity select-none"
+                style={{ opacity: visible[s.key] ? 1 : 0.35 }}
+                title={visible[s.key] ? `Hide ${s.label}` : `Show ${s.label}`}
+              >
+                <svg width={18} height={10} className="shrink-0">
+                  <line
+                    x1={0} y1={5} x2={18} y2={5}
+                    stroke={s.color}
+                    strokeWidth={s.strokeWidth}
+                    strokeDasharray={visible[s.key] ? undefined : "3,2"}
+                  />
+                </svg>
+                <span style={{ color: visible[s.key] ? "#e6edf7" : "#6b7280", textDecoration: visible[s.key] ? "none" : "line-through" }}>
+                  {s.label}
+                </span>
+              </button>
+            ))}
+            <span className="text-[10px] text-slate-600 ml-1">click to toggle</span>
+          </div>
+
+          <svg width={width} height={CHART_H}>
+            {yTicks.map((t, i) => (
+              <g key={i}>
+                <line x1={PAD.left} y1={t.y} x2={width - PAD.right} y2={t.y} stroke="rgba(255,255,255,0.04)" strokeWidth={1} />
+                <text x={PAD.left - 6} y={t.y + 4} textAnchor="end" fill="#8a97ad" fontSize={10} fontFamily="ui-monospace,monospace">{t.label}</text>
+              </g>
+            ))}
+            {xTicks.map((t, i) => (
+              <text key={i} x={t.x} y={CHART_H - 6} textAnchor="middle" fill="#8a97ad" fontSize={10} fontFamily="ui-monospace,monospace">{t.label}</text>
+            ))}
+            {/* Render back-to-front: areas first, then lines on top */}
+            {SERIES.map((s) => visible[s.key] && (
+              <polygon key={`area-${s.key}`} points={area(s.fn)} fill={s.fill} />
+            ))}
+            {SERIES.map((s) => visible[s.key] && (
+              <polyline key={`line-${s.key}`} points={pts(s.fn)} fill="none" stroke={s.color} strokeWidth={s.strokeWidth} strokeLinejoin="round" />
+            ))}
+          </svg>
+        </>
       )}
     </div>
   );
