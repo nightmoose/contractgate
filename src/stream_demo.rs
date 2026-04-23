@@ -163,7 +163,7 @@ impl LaneCounters {
             .hist
             .lock()
             .map(|h| {
-                if h.len() == 0 {
+                if h.is_empty() {
                     (0, 0, 0, 0)
                 } else {
                     (
@@ -394,7 +394,7 @@ async fn run_loop(state: Arc<StreamDemoState>, cfg: RunConfig) {
     let mut window_count = 0u64;
 
     while state.running.load(Ordering::Acquire) {
-        if deadline.map_or(false, |d| Instant::now() >= d) {
+        if deadline.is_some_and(|d| Instant::now() >= d) {
             break;
         }
 
@@ -425,9 +425,9 @@ async fn run_loop(state: Arc<StreamDemoState>, cfg: RunConfig) {
             state.validator.failed.fetch_add(1, Ordering::Relaxed);
         }
         // Sample 1-in-8 into the histogram.
-        if v_seq % 8 == 0 {
+        if v_seq.is_multiple_of(8) {
             if let Ok(mut h) = state.validator.hist.lock() {
-                let _ = h.record(v_us.max(1).min(60_000_000));
+                let _ = h.record(v_us.clamp(1, 60_000_000));
             }
         }
 
@@ -440,9 +440,9 @@ async fn run_loop(state: Arc<StreamDemoState>, cfg: RunConfig) {
         state.copy.produced_downstream.fetch_add(1, Ordering::Relaxed);
         state.copy.bytes_in.fetch_add(byte_len, Ordering::Relaxed);
         state.copy.passed.fetch_add(1, Ordering::Relaxed);
-        if c_seq % 8 == 0 {
+        if c_seq.is_multiple_of(8) {
             if let Ok(mut h) = state.copy.hist.lock() {
-                let _ = h.record(c_us.max(1).min(60_000_000));
+                let _ = h.record(c_us.clamp(1, 60_000_000));
             }
         }
 
@@ -459,7 +459,7 @@ async fn run_loop(state: Arc<StreamDemoState>, cfg: RunConfig) {
             }
         } else {
             // Unbounded: yield periodically so the reactor stays responsive.
-            if state.producer_sent.load(Ordering::Relaxed) % 5_000 == 0 {
+            if state.producer_sent.load(Ordering::Relaxed).is_multiple_of(5_000) {
                 tokio::task::yield_now().await;
             }
         }
