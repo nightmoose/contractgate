@@ -46,6 +46,7 @@ mod error;
 mod ingest;
 mod replay;
 mod storage;
+mod stream_demo;
 #[cfg(test)]
 mod tests;
 
@@ -72,6 +73,8 @@ pub struct AppState {
     /// (contract_id, version) → compiled contract.
     contract_cache: RwLock<HashMap<(Uuid, String), Arc<CompiledContract>>>,
     pub api_key: String,
+    /// In-process stream demo state (no Kafka, no DB writes).
+    pub stream_demo: std::sync::Arc<stream_demo::StreamDemoState>,
 }
 
 impl AppState {
@@ -80,6 +83,7 @@ impl AppState {
             db,
             contract_cache: RwLock::new(HashMap::new()),
             api_key,
+            stream_demo: std::sync::Arc::new(stream_demo::StreamDemoState::new()),
         }
     }
 
@@ -508,7 +512,12 @@ fn build_router(state: Arc<AppState>) -> Router {
     // Public routes — no auth required
     let public = Router::new()
         .route("/health", get(health_handler))
-        .route("/playground/validate", post(playground_handler));
+        .route("/playground/validate", post(playground_handler))
+        // Stream demo — public so the browser's EventSource can connect
+        // without auth headers (no sensitive data, local demo only).
+        .route("/demo/start", post(stream_demo::start_handler))
+        .route("/demo/stop", post(stream_demo::stop_handler))
+        .route("/demo/stream", get(stream_demo::stream_handler));
 
     // Protected routes — require x-api-key header
     let protected = Router::new()
