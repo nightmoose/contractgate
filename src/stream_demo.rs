@@ -41,7 +41,7 @@ use serde_json::{json, Value};
 use tokio::sync::{broadcast, RwLock};
 use tokio_stream::{wrappers::BroadcastStream, StreamExt as _};
 
-use crate::validation::{validate, CompiledContract};
+use crate::validation::{validate, CompiledContract, Violation};
 use crate::contract::Contract;
 
 // Scenario YAML files are embedded at compile time — same approach as the
@@ -103,6 +103,27 @@ pub struct LaneSnapshot {
     pub p95_us: u64,
     pub p99_us: u64,
     pub max_us: u64,
+}
+
+// ---------------------------------------------------------------------------
+// Individual event record (sampled, sent to the live-feed SSE)
+// ---------------------------------------------------------------------------
+
+/// A sampled validation result forwarded to the `/demo/events` SSE stream.
+///
+/// Sampling rate: 1-in-500 for passing events, 1-in-50 for violations —
+/// failures are 10× overrepresented so the Records tab stays interesting
+/// even at low fail-ratios.
+#[derive(Debug, Clone, Serialize)]
+pub struct EventRecord {
+    /// Monotonically increasing sequence number (validator lane).
+    pub seq: u64,
+    /// Milliseconds since the run started.
+    pub elapsed_ms: u64,
+    pub passed: bool,
+    pub violations: Vec<Violation>,
+    /// The raw event JSON — truncated to a shallow preview by the frontend.
+    pub event: Value,
 }
 
 // ---------------------------------------------------------------------------
@@ -209,8 +230,12 @@ pub struct StreamDemoState {
     pub validator: LaneCounters,
     pub copy: LaneCounters,
 
-    /// Broadcast channel for SSE fan-out.  Messages are pre-serialised JSON.
+    /// Broadcast channel for SSE fan-out of stats snapshots (every 200 ms).
     pub updates: broadcast::Sender<String>,
+
+    /// Broadcast channel for sampled individual event records (live feed).
+    /// Each message is a serialised `EventRecord`.
+    pub event_tx: broadcast::Sender<String>,
 
     /// Abort handle for the active run task.  Replaced on every Start.
     run_handle: tokio::sync::Mutex<Option<tokio::task::AbortHandle>>,
@@ -228,6 +253,7 @@ impl StreamDemoState {
         }
 
         let (tx, _) = broadcast::channel(512);
+        let (event_tx, _) = broadcast::channel(256);
 
         StreamDemoState {
             contracts,
@@ -238,6 +264,7 @@ impl StreamDemoState {
             validator: LaneCounters::new(),
             copy: LaneCounters::new(),
             updates: tx,
+            event_tx,
             run_handle: tokio::sync::Mutex::new(None),
         }
     }
@@ -354,6 +381,17 @@ pub async fn stream_handler(
     Sse::new(stream).keep_alive(KeepAlive::new().interval(Duration::from_secs(15)))
 }
 
+pub async fn events_handler(
+    State(state): State<Arc<crate::AppState>>,
+) -> Sse<impl Stream<Item = Result<SseEvent, std::convert::Infallible>> + Send + 'static> {
+    let rx = state.stream_demo.event_tx.subscribe();
+    let stream = BroadcastStream::new(rx).filter_map(|msg| match msg {
+        Ok(payload) => Some(Ok(SseEvent::default().data(payload))),
+        Err(_) => None, // lagged — skip
+    });
+    Sse::new(stream).keep_alive(KeepAlive::new().interval(Duration::from_secs(15)))
+}
+
 // ---------------------------------------------------------------------------
 // Internal helpers
 // ---------------------------------------------------------------------------
@@ -428,6 +466,28 @@ async fn run_loop(state: Arc<StreamDemoState>, cfg: RunConfig) {
         if v_seq.is_multiple_of(8) {
             if let Ok(mut h) = state.validator.hist.lock() {
                 let _ = h.record(v_us.clamp(1, 60_000_000));
+            }
+        }
+
+        // ── Live feed sampling ────────────────────────────────────────────
+        // 1-in-500 passes, 1-in-50 failures so the Records tab sees plenty
+        // of both even at low fail_ratio.  We clone only on the sampled path.
+        let should_sample = if result.passed {
+            v_seq.is_multiple_of(500)
+        } else {
+            v_seq.is_multiple_of(50)
+        };
+        if should_sample {
+            let elapsed_ms = started.elapsed().as_millis() as u64;
+            let record = EventRecord {
+                seq: v_seq,
+                elapsed_ms,
+                passed: result.passed,
+                violations: result.violations.clone(),
+                event: event.clone(),
+            };
+            if let Ok(json) = serde_json::to_string(&record) {
+                let _ = state.event_tx.send(json);
             }
         }
 

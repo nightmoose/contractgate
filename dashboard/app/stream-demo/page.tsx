@@ -42,6 +42,20 @@ interface HistoryPoint {
   copy_rate: number;
 }
 
+interface EventViolation {
+  field: string;
+  message: string;
+  kind: string;
+}
+
+interface EventRecord {
+  seq: number;
+  elapsed_ms: number;
+  passed: boolean;
+  violations: EventViolation[];
+  event: Record<string, unknown>;
+}
+
 // ---------------------------------------------------------------------------
 // Constants
 // ---------------------------------------------------------------------------
@@ -260,6 +274,134 @@ function LanePanel({ title, sub, color, stats, passthrough }: {
 }
 
 // ---------------------------------------------------------------------------
+// Records tab — live feed of sampled validation results
+// ---------------------------------------------------------------------------
+
+const EVENT_FEED_MAX = 50;
+
+function kindBadge(kind: string) {
+  const map: Record<string, string> = {
+    missing_required_field: "missing",
+    type_mismatch:          "type",
+    pattern_mismatch:       "pattern",
+    enum_violation:         "enum",
+    range_violation:        "range",
+    length_violation:       "length",
+    metric_range_violation: "metric",
+    undeclared_field:       "undeclared",
+  };
+  return map[kind] ?? kind;
+}
+
+function EventRow({ rec }: { rec: EventRecord }) {
+  const [open, setOpen] = useState(false);
+  const elapsedS = (rec.elapsed_ms / 1000).toFixed(2);
+
+  // Build a compact one-line preview of the event: top-level scalar fields only
+  const preview = Object.entries(rec.event)
+    .filter(([, v]) => typeof v !== "object" || v === null)
+    .slice(0, 4)
+    .map(([k, v]) => `${k}: ${JSON.stringify(v)}`)
+    .join("  ·  ");
+
+  return (
+    <div className={clsx(
+      "border-b border-[#1f2937]/60 last:border-0 px-4 py-2.5",
+      open && "bg-[#0a0d12]/60"
+    )}>
+      <div
+        className="flex items-start gap-3 cursor-pointer"
+        onClick={() => setOpen((o) => !o)}
+      >
+        {/* pass/fail badge */}
+        <span className={clsx(
+          "shrink-0 mt-0.5 text-[10px] font-bold px-1.5 py-0.5 rounded font-mono",
+          rec.passed
+            ? "bg-green-900/40 text-green-400 border border-green-700/40"
+            : "bg-red-900/40 text-red-400 border border-red-700/40"
+        )}>
+          {rec.passed ? "PASS" : "FAIL"}
+        </span>
+
+        {/* time + seq */}
+        <span className="shrink-0 text-[10px] text-slate-600 font-mono mt-0.5 w-16">{elapsedS}s</span>
+
+        {/* preview */}
+        <span className="flex-1 min-w-0 text-xs text-slate-400 truncate font-mono">
+          {preview}
+        </span>
+
+        {/* violation pills */}
+        {!rec.passed && (
+          <div className="shrink-0 flex gap-1 flex-wrap justify-end max-w-[40%]">
+            {rec.violations.slice(0, 3).map((v, i) => (
+              <span key={i} className="text-[9px] bg-red-900/20 text-red-400 border border-red-800/30 rounded px-1.5 py-0.5 font-mono">
+                {v.field}: {kindBadge(v.kind)}
+              </span>
+            ))}
+            {rec.violations.length > 3 && (
+              <span className="text-[9px] text-slate-600">+{rec.violations.length - 3}</span>
+            )}
+          </div>
+        )}
+
+        {/* expand chevron */}
+        <span className="shrink-0 text-slate-600 text-xs mt-0.5">{open ? "▲" : "▼"}</span>
+      </div>
+
+      {/* Expanded detail */}
+      {open && (
+        <div className="mt-2 ml-[76px] space-y-2">
+          {/* Full violation list */}
+          {rec.violations.length > 0 && (
+            <div className="space-y-1">
+              {rec.violations.map((v, i) => (
+                <div key={i} className="flex items-start gap-2 text-xs">
+                  <span className="text-red-500 font-mono shrink-0">{v.field}</span>
+                  <span className="text-slate-500">{v.message}</span>
+                </div>
+              ))}
+            </div>
+          )}
+          {/* Raw event JSON */}
+          <pre className="text-[10px] text-slate-500 bg-[#0a0d12] border border-[#1f2937] rounded p-2 overflow-x-auto">
+            {JSON.stringify(rec.event, null, 2)}
+          </pre>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function RecordsTab({ records }: { records: EventRecord[] }) {
+  if (records.length === 0) {
+    return (
+      <div className="flex flex-col items-center justify-center py-16 text-slate-600">
+        <p className="text-sm">No records yet — start a run to see the live feed.</p>
+        <p className="text-xs mt-1">Sampled at 1-in-500 (passes) · 1-in-50 (failures)</p>
+      </div>
+    );
+  }
+
+  const passes = records.filter((r) => r.passed).length;
+  const fails = records.length - passes;
+
+  return (
+    <div>
+      <div className="flex items-center gap-4 px-4 py-2 border-b border-[#1f2937] text-xs text-slate-500">
+        <span>Last <strong className="text-slate-300">{records.length}</strong> sampled records</span>
+        <span className="text-green-500">{passes} pass</span>
+        <span className="text-red-500">{fails} fail</span>
+        <span className="ml-auto">click row to expand · newest first</span>
+      </div>
+      {records.map((rec) => (
+        <EventRow key={`${rec.seq}-${rec.elapsed_ms}`} rec={rec} />
+      ))}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Main page
 // ---------------------------------------------------------------------------
 
@@ -283,6 +425,11 @@ export default function StreamDemoPage() {
   const [running, setRunning] = useState(false);
   const [connState, setConnState] = useState<ConnState>("idle");
   const [error, setError] = useState<string | null>(null);
+
+  // ── Records tab ───────────────────────────────────────────────────────────
+  const [tab, setTab] = useState<"stats" | "records">("stats");
+  const [eventRecords, setEventRecords] = useState<EventRecord[]>([]);
+  const eventsEsRef = useRef<EventSource | null>(null);
 
   const esRef = useRef<EventSource | null>(null);
   const lastElapsedRef = useRef(0);
@@ -332,17 +479,33 @@ export default function StreamDemoPage() {
     };
   }, []);
 
-  // Connect on mount, clean up on unmount
+  // Connect stats SSE on mount
   useEffect(() => {
     connect();
     return () => { esRef.current?.close(); };
   }, [connect]);
+
+  // Connect events SSE on mount — stays open in background regardless of active tab
+  useEffect(() => {
+    const es = new EventSource(`${BASE}/demo/events`);
+    eventsEsRef.current = es;
+    es.onmessage = (ev) => {
+      let rec: EventRecord;
+      try { rec = JSON.parse(ev.data); } catch { return; }
+      setEventRecords((prev) => {
+        const next = [rec, ...prev];
+        return next.length > EVENT_FEED_MAX ? next.slice(0, EVENT_FEED_MAX) : next;
+      });
+    };
+    return () => { es.close(); };
+  }, []);
 
   // ── Start / Stop ──────────────────────────────────────────────────────────
 
   async function handleStart() {
     setError(null);
     setHistory([]);
+    setEventRecords([]);
     lastElapsedRef.current = 0;
     try {
       const res = await fetch(`${BASE}/demo/start`, {
@@ -466,6 +629,32 @@ export default function StreamDemoPage() {
         </div>
       </div>
 
+      {/* Tab bar */}
+      <div className="flex gap-1 border-b border-[#1f2937]">
+        {(["stats", "records"] as const).map((t) => (
+          <button
+            key={t}
+            onClick={() => setTab(t)}
+            className={clsx(
+              "px-4 py-2 text-sm font-medium transition-colors border-b-2 -mb-px",
+              tab === t
+                ? "border-green-500 text-green-400"
+                : "border-transparent text-slate-500 hover:text-slate-300"
+            )}
+          >
+            {t === "stats" ? "📊 Stats" : "📋 Records"}
+            {t === "records" && eventRecords.length > 0 && (
+              <span className="ml-1.5 text-[10px] bg-slate-700 text-slate-400 rounded-full px-1.5 py-0.5">
+                {eventRecords.length}
+              </span>
+            )}
+          </button>
+        ))}
+      </div>
+
+      {/* Stats tab */}
+      {tab === "stats" && <>
+
       {/* Summary strip */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         <div className="bg-[#111827] border border-[#1f2937] rounded-xl p-4">
@@ -514,6 +703,15 @@ export default function StreamDemoPage() {
         The latency delta between them is the <em>exact cost</em> of semantic validation.
         The full Kafka-backed demo (<code className="text-slate-400">cargo demo</code>) adds real queue depth and network overhead on top.
       </div>
+
+      </> /* end stats tab */}
+
+      {/* Records tab */}
+      {tab === "records" && (
+        <div className="bg-[#111827] border border-[#1f2937] rounded-xl overflow-hidden">
+          <RecordsTab records={eventRecords} />
+        </div>
+      )}
     </div>
   );
 }
