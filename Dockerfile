@@ -24,7 +24,10 @@ RUN cargo build --release 2>&1 || true
 # Remove the dummy artifact so the real build picks up src/
 RUN rm -f target/release/contractgate* target/release/deps/contractgate*
 
-# Now copy real source and build
+# Now copy real source and build.
+# demo/ must be present alongside src/ because stream_demo.rs embeds the
+# scenario YAML files at compile time via include_str!("../demo/scenarios/…").
+COPY demo ./demo
 COPY src ./src
 RUN cargo build --release
 
