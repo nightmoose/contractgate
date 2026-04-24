@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { useRouter } from "next/navigation";
 import type { User } from "@supabase/supabase-js";
+import AuthGate from "@/components/AuthGate";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 interface ApiKey {
@@ -57,7 +58,7 @@ function CopyButton({ text }: { text: string }) {
 }
 
 // ── Page ──────────────────────────────────────────────────────────────────────
-export default function AccountPage() {
+function AccountContent() {
   const router = useRouter();
   const supabase = createClient();
 
@@ -335,5 +336,13 @@ transforms.contractgate.contractgate.contract.id=<your contract UUID>`}
         </p>
       </section>
     </div>
+  );
+}
+
+export default function AccountPage() {
+  return (
+    <AuthGate page="account">
+      <AccountContent />
+    </AuthGate>
   );
 }
