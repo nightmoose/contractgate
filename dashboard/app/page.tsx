@@ -7,6 +7,7 @@ import type { IngestionStats, AuditEntry, ContractSummary } from "@/lib/api";
 import clsx from "clsx";
 import { useRouter } from "next/navigation";
 import AuthGate from "@/components/AuthGate";
+import { useOrg } from "@/lib/org";
 
 // ---------------------------------------------------------------------------
 // Hero banner — dismissible pitch for first-time / non-technical visitors
@@ -249,16 +250,22 @@ function AuditTable({ entries }: { entries: AuditEntry[] }) {
 
 function DashboardContent() {
   const [healthyMode, setHealthyMode] = useState(false);
+  const { org } = useOrg();
 
-  const { data: rawStats } = useSWR<IngestionStats>("stats", getGlobalStats, {
-    refreshInterval: 5000,
-  });
+  const { data: rawStats } = useSWR<IngestionStats>(
+    org ? "stats" : null,
+    getGlobalStats,
+    { refreshInterval: 5000 }
+  );
   const { data: audit } = useSWR<AuditEntry[]>(
-    "audit-recent",
+    org ? "audit-recent" : null,
     () => getAuditLog({ limit: 20 }),
     { refreshInterval: 5000 }
   );
-  const { data: contracts } = useSWR<ContractSummary[]>("contracts", listContracts);
+  const { data: contracts } = useSWR<ContractSummary[]>(
+    org ? "contracts" : null,
+    listContracts
+  );
 
   const stats = healthyMode ? HEALTHY_BASELINE : rawStats;
 
