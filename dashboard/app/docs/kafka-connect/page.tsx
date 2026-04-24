@@ -435,7 +435,7 @@ errors.retry.delay.max.ms=5000`}</Code>
           },
           {
             q: "Does it add latency to my pipeline?",
-            a: "Typically 2–8ms per record at p99. Each validation call is a single HTTP POST to the ContractGate API. For very high-throughput pipelines (>50k records/sec), set contractgate.dry.run=true to skip audit DB writes on the server side.",
+            a: "The validation engine itself runs in under 50µs per record. End-to-end latency depends on network topology between your Kafka brokers and the ContractGate API — for same-datacenter deployments this is typically sub-millisecond. We publish benchmark results as we gather them from production deployments.",
           },
           {
             q: "Can I use it with Confluent Cloud managed connectors?",
