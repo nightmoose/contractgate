@@ -190,7 +190,15 @@ pub async fn ingest_handler(
     key_ext: Option<Extension<ValidatedKey>>,
     Json(body): Json<Value>,
 ) -> AppResult<axum::response::Response> {
-    let org_id: Option<Uuid> = key_ext.map(|Extension(k)| k.org_id);
+    // DB-backed key wins; fall back to x-org-id header in legacy/dev mode.
+    let org_id: Option<Uuid> = key_ext
+        .map(|Extension(k)| k.org_id)
+        .or_else(|| {
+            headers
+                .get("x-org-id")
+                .and_then(|v| v.to_str().ok())
+                .and_then(|s| Uuid::parse_str(s).ok())
+        });
     // --- Parse path + headers -----------------------------------------------
     let (contract_id, path_version) = parse_ingest_path(&raw_id)?;
     let header_version = headers

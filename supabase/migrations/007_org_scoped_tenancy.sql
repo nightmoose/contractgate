@@ -34,14 +34,8 @@ comment on table public.orgs is
 
 alter table public.orgs enable row level security;
 
--- Members can read their own org.
-create policy "org members can read their org"
-    on public.orgs for select
-    using (
-        id in (
-            select org_id from public.org_memberships where user_id = auth.uid()
-        )
-    );
+-- NOTE: The SELECT policy on orgs references org_memberships and is defined
+-- below, after org_memberships is created, to avoid a forward-reference error.
 
 -- Only service role writes orgs (the trigger below uses SECURITY DEFINER).
 create policy "service role full access to orgs"
@@ -70,6 +64,16 @@ create index if not exists org_memberships_user_id_idx  on public.org_membership
 create index if not exists org_memberships_org_id_idx   on public.org_memberships (org_id);
 
 alter table public.org_memberships enable row level security;
+
+-- Now that org_memberships exists, we can create the orgs SELECT policy that
+-- references it (deferred from the orgs block above to avoid a forward reference).
+create policy "org members can read their org"
+    on public.orgs for select
+    using (
+        id in (
+            select org_id from public.org_memberships where user_id = auth.uid()
+        )
+    );
 
 -- Members can see the full membership list for their org (needed for the
 -- Members tab in /account).
