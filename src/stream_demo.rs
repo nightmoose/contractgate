@@ -29,7 +29,7 @@ use std::{
 };
 
 use axum::{
-    extract::State,
+    extract::{Query, State},
     response::sse::{Event as SseEvent, KeepAlive, Sse},
     Json,
 };
@@ -379,6 +379,28 @@ pub async fn stream_handler(
         Err(_) => None, // lagged — skip
     });
     Sse::new(stream).keep_alive(KeepAlive::new().interval(Duration::from_secs(15)))
+}
+
+/// Returns the raw YAML contract for a scenario so the frontend can display it.
+/// Query param: `?scenario=simple` (default) or `?scenario=nested`.
+#[derive(serde::Deserialize)]
+pub struct ContractQuery {
+    #[serde(default = "default_scenario")]
+    pub scenario: String,
+}
+fn default_scenario() -> String { "simple".into() }
+
+pub async fn contract_handler(
+    Query(q): Query<ContractQuery>,
+) -> Result<String, (axum::http::StatusCode, String)> {
+    match q.scenario.as_str() {
+        "simple" => Ok(SCENARIO_SIMPLE.to_string()),
+        "nested" => Ok(SCENARIO_NESTED.to_string()),
+        other => Err((
+            axum::http::StatusCode::NOT_FOUND,
+            format!("unknown scenario '{other}' — valid values: simple, nested"),
+        )),
+    }
 }
 
 pub async fn events_handler(

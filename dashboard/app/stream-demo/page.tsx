@@ -378,25 +378,129 @@ function RecordsTab({ records }: { records: EventRecord[] }) {
     return (
       <div className="flex flex-col items-center justify-center py-16 text-slate-600">
         <p className="text-sm">No records yet — start a run to see the live feed.</p>
-        <p className="text-xs mt-1">Sampled at 1-in-500 (passes) · 1-in-50 (failures)</p>
+        <p className="text-xs mt-1 text-slate-700">
+          Failures are sampled 10× more often than passes so violations are easy to inspect.
+        </p>
       </div>
     );
   }
 
   const passes = records.filter((r) => r.passed).length;
-  const fails = records.length - passes;
+  const fails  = records.length - passes;
 
   return (
     <div>
+      {/* Sampling callout */}
+      <div className="flex items-start gap-2 px-4 py-2.5 bg-amber-900/10 border-b border-amber-700/20 text-xs text-amber-400/80">
+        <span className="shrink-0 mt-px">ℹ</span>
+        <span>
+          <strong className="text-amber-300">Intentional oversampling:</strong> failures are captured
+          1-in-50 events; passes 1-in-500 — so violations are 10× more likely to appear here than
+          they are in actual traffic. The true fail ratio is the percentage you set in the controls,
+          not the ratio shown below.
+        </span>
+      </div>
+
+      {/* Summary row */}
       <div className="flex items-center gap-4 px-4 py-2 border-b border-[#1f2937] text-xs text-slate-500">
-        <span>Last <strong className="text-slate-300">{records.length}</strong> sampled records</span>
-        <span className="text-green-500">{passes} pass</span>
-        <span className="text-red-500">{fails} fail</span>
+        <span>Newest <strong className="text-slate-300">{records.length}</strong> sampled events</span>
+        <span className="text-green-500">{passes} pass in sample</span>
+        <span className="text-red-500">{fails} fail in sample</span>
         <span className="ml-auto">click row to expand · newest first</span>
       </div>
+
       {records.map((rec) => (
         <EventRow key={`${rec.seq}-${rec.elapsed_ms}`} rec={rec} />
       ))}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Contract tab — shows the YAML contract for the selected scenario
+// ---------------------------------------------------------------------------
+
+function ContractTab({ scenario }: { scenario: "simple" | "nested" }) {
+  const [yaml, setYaml] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [err, setErr] = useState<string | null>(null);
+
+  useEffect(() => {
+    setLoading(true);
+    setErr(null);
+    fetch(`${BASE}/demo/contract?scenario=${scenario}`)
+      .then((r) => {
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        return r.text();
+      })
+      .then((text) => { setYaml(text); setLoading(false); })
+      .catch((e) => { setErr(String(e)); setLoading(false); });
+  }, [scenario]);
+
+  const labels: Record<string, string> = {
+    simple: "simple — flat click-stream",
+    nested: "nested — e-commerce order",
+  };
+
+  return (
+    <div className="p-5 space-y-4">
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <div>
+          <p className="text-xs text-slate-500 uppercase tracking-wider font-semibold">Active contract</p>
+          <p className="text-sm text-slate-200 mt-0.5 font-mono">{labels[scenario]}</p>
+        </div>
+        <a
+          href={`${BASE}/demo/contract?scenario=${scenario}`}
+          target="_blank"
+          rel="noreferrer"
+          className="text-xs text-slate-500 hover:text-slate-300 underline underline-offset-2"
+        >
+          raw ↗
+        </a>
+      </div>
+
+      {/* Explainer */}
+      <div className="text-xs text-slate-500 leading-relaxed bg-[#0a0d12] border border-[#1f2937] rounded-lg p-3">
+        This is the semantic contract every event is validated against during the demo run.
+        Fields marked <code className="text-slate-400">required: true</code> must be present and
+        match their declared type, pattern, and enum/range constraints.
+        Violations are shown in real-time on the <strong className="text-slate-400">Records</strong> tab.
+      </div>
+
+      {/* YAML block */}
+      {loading && (
+        <div className="text-xs text-slate-600 animate-pulse py-4 text-center">Loading contract…</div>
+      )}
+      {err && (
+        <div className="text-xs text-red-400 bg-red-900/20 border border-red-800/30 rounded-lg p-3">{err}</div>
+      )}
+      {yaml && !loading && (
+        <pre className="text-[12px] leading-relaxed text-slate-300 bg-[#0a0d12] border border-[#1f2937] rounded-xl p-5 overflow-x-auto font-mono whitespace-pre">
+          {yaml.split("\n").map((line, i) => {
+            // Highlight keys, string values, booleans, and comments with colour
+            const isComment  = line.trimStart().startsWith("#");
+            const isKey      = /^\s+- name:/.test(line) || /^\w[\w_]*:/.test(line.trimStart());
+            const highlighted = line
+              // comments
+              .replace(/(#.*)$/, '<span style="color:#4b5563">$1</span>')
+              // boolean values
+              .replace(/:\s*(true|false)(\s*$)/g, ': <span style="color:#f59e0b">$1</span>$2')
+              // quoted strings
+              .replace(/"([^"]*)"/g, '"<span style="color:#86efac">$1</span>"')
+              // yaml keys (word followed by colon)
+              .replace(/^(\s*)([\w_-]+)(:)/g, '$1<span style="color:#93c5fd">$2</span>$3')
+              // list dashes
+              .replace(/^(\s*)(- )/, '$1<span style="color:#6b7280">- </span>');
+            return (
+              <span key={i} className={isComment ? "opacity-50" : isKey ? "" : ""}>
+                <span dangerouslySetInnerHTML={{ __html: highlighted }} />
+                {"\n"}
+              </span>
+            );
+          })}
+        </pre>
+      )}
     </div>
   );
 }
@@ -426,8 +530,8 @@ export default function StreamDemoPage() {
   const [connState, setConnState] = useState<ConnState>("idle");
   const [error, setError] = useState<string | null>(null);
 
-  // ── Records tab ───────────────────────────────────────────────────────────
-  const [tab, setTab] = useState<"stats" | "records">("stats");
+  // ── Tabs ──────────────────────────────────────────────────────────────────
+  const [tab, setTab] = useState<"stats" | "records" | "contract">("stats");
   const [eventRecords, setEventRecords] = useState<EventRecord[]>([]);
   const eventsEsRef = useRef<EventSource | null>(null);
 
@@ -631,7 +735,7 @@ export default function StreamDemoPage() {
 
       {/* Tab bar */}
       <div className="flex gap-1 border-b border-[#1f2937]">
-        {(["stats", "records"] as const).map((t) => (
+        {(["stats", "records", "contract"] as const).map((t) => (
           <button
             key={t}
             onClick={() => setTab(t)}
@@ -642,7 +746,7 @@ export default function StreamDemoPage() {
                 : "border-transparent text-slate-500 hover:text-slate-300"
             )}
           >
-            {t === "stats" ? "📊 Stats" : "📋 Records"}
+            {t === "stats" ? "📊 Stats" : t === "records" ? "📋 Records" : "📄 Contract"}
             {t === "records" && eventRecords.length > 0 && (
               <span className="ml-1.5 text-[10px] bg-slate-700 text-slate-400 rounded-full px-1.5 py-0.5">
                 {eventRecords.length}
@@ -710,6 +814,13 @@ export default function StreamDemoPage() {
       {tab === "records" && (
         <div className="bg-[#111827] border border-[#1f2937] rounded-xl overflow-hidden">
           <RecordsTab records={eventRecords} />
+        </div>
+      )}
+
+      {/* Contract tab */}
+      {tab === "contract" && (
+        <div className="bg-[#111827] border border-[#1f2937] rounded-xl overflow-hidden">
+          <ContractTab scenario={scenario} />
         </div>
       )}
     </div>
