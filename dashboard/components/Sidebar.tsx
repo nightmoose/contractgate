@@ -11,6 +11,8 @@ const NAV = [
   { href: "/playground",   label: "Playground",   icon: "🧪" },
   { href: "/stream-demo",  label: "Stream Demo",  icon: "⚡" },
   { href: "/pricing",      label: "Pricing",      icon: "💳" },
+  { href: "/docs/kafka-connect", label: "Kafka Connect", icon: "🔗" },
+  { href: "/account",     label: "Account",      icon: "🔑" },
 ];
 
 export default function Sidebar() {
