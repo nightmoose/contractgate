@@ -289,6 +289,7 @@ pub async fn replay_handler(
             let stored_payload = TransformedPayload::from_stored(event.clone());
             audit_inserts.push(storage::AuditEntryInsert {
                 contract_id,
+                org_id: None, // replay runs server-side; no API key context available
                 contract_version: matched_ver.clone(),
                 passed: true,
                 violation_count: 0,

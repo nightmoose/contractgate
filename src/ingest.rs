@@ -50,11 +50,12 @@
 //! stays responsive (see RFC-001).
 
 use axum::{
-    extract::{Path, Query, State},
+    extract::{Extension, Path, Query, State},
     http::{HeaderMap, StatusCode},
     response::IntoResponse,
     Json,
 };
+use crate::api_key_auth::ValidatedKey;
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
@@ -186,8 +187,10 @@ pub async fn ingest_handler(
     Path(raw_id): Path<String>,
     Query(query): Query<IngestQuery>,
     headers: HeaderMap,
+    key_ext: Option<Extension<ValidatedKey>>,
     Json(body): Json<Value>,
 ) -> AppResult<axum::response::Response> {
+    let org_id: Option<Uuid> = key_ext.map(|Extension(k)| k.org_id);
     // --- Parse path + headers -----------------------------------------------
     let (contract_id, path_version) = parse_ingest_path(&raw_id)?;
     let header_version = headers
@@ -257,6 +260,7 @@ pub async fn ingest_handler(
         return deprecated_pin_quarantine(
             &state,
             contract_id,
+            org_id,
             &resolved_version,
             latest_stable,
             events,
@@ -407,6 +411,7 @@ pub async fn ingest_handler(
         write_batch_rejected_audit(
             &state,
             contract_id,
+            org_id,
             &resolved_version, // atomic rejection is charged to the resolved version
             total,
             &failed_indices,
@@ -429,6 +434,7 @@ pub async fn ingest_handler(
             .zip(events.iter())
             .map(|((idx, vr), _event)| storage::AuditEntryInsert {
                 contract_id,
+                org_id,
                 contract_version: per_event_versions[idx].clone(),
                 passed: vr.passed,
                 violation_count: vr.violations.len() as i32,
@@ -567,6 +573,7 @@ async fn parallel_validate(
 async fn deprecated_pin_quarantine(
     state: &AppState,
     contract_id: Uuid,
+    org_id: Option<Uuid>,
     pinned_version: &str,
     latest_stable: Option<String>,
     events: Vec<Value>,
@@ -654,6 +661,7 @@ async fn deprecated_pin_quarantine(
             if let Err(e) = storage::log_audit_entry(
                 &pool_a,
                 contract_id,
+                org_id,
                 &pinned_v,
                 false,
                 1,
@@ -704,6 +712,7 @@ async fn deprecated_pin_quarantine(
 fn write_batch_rejected_audit(
     state: &AppState,
     contract_id: Uuid,
+    org_id: Option<Uuid>,
     contract_version: &str,
     total: usize,
     failed_indices: &[usize],
@@ -740,6 +749,7 @@ fn write_batch_rejected_audit(
         if let Err(e) = storage::log_audit_entry(
             &pool,
             contract_id,
+            org_id,
             &version,
             false,
             violation_count,
@@ -769,7 +779,7 @@ pub async fn ingest_stats_handler(
 ) -> AppResult<Json<storage::IngestionStats>> {
     // Verify contract exists (clean 404 if not).
     let _ = storage::get_contract_identity(&state.db, contract_id).await?;
-    let stats = storage::ingestion_stats(&state.db, Some(contract_id)).await?;
+    let stats = storage::ingestion_stats(&state.db, None, Some(contract_id)).await?;
     Ok(Json(stats))
 }
 

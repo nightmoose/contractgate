@@ -6,6 +6,7 @@ import { getGlobalStats, getAuditLog, listContracts } from "@/lib/api";
 import type { IngestionStats, AuditEntry, ContractSummary } from "@/lib/api";
 import clsx from "clsx";
 import { useRouter } from "next/navigation";
+import AuthGate from "@/components/AuthGate";
 
 // ---------------------------------------------------------------------------
 // Hero banner — dismissible pitch for first-time / non-technical visitors
@@ -246,7 +247,7 @@ function AuditTable({ entries }: { entries: AuditEntry[] }) {
 // Page
 // ---------------------------------------------------------------------------
 
-export default function DashboardPage() {
+function DashboardContent() {
   const [healthyMode, setHealthyMode] = useState(false);
 
   const { data: rawStats } = useSWR<IngestionStats>("stats", getGlobalStats, {
@@ -407,5 +408,13 @@ export default function DashboardPage() {
         </div>
       </div>
     </div>
+  );
+}
+
+export default function DashboardPage() {
+  return (
+    <AuthGate page="dashboard">
+      <DashboardContent />
+    </AuthGate>
   );
 }

@@ -6,6 +6,7 @@ import yaml from "js-yaml";
 import { playgroundValidate, listContracts, getLatestStableVersion, listVersions, getVersion } from "@/lib/api";
 import type { PlaygroundResponse, ContractSummary, Violation } from "@/lib/api";
 import clsx from "clsx";
+import AuthGate from "@/components/AuthGate";
 
 const DEFAULT_YAML = `version: "1.0"
 name: "user_events"
@@ -445,7 +446,7 @@ function TransformPreviewPanel({
 // Page
 // ---------------------------------------------------------------------------
 
-export default function PlaygroundPage() {
+function PlaygroundContent() {
   const [yaml_, setYaml] = useState(DEFAULT_YAML);
   const [eventJson, setEventJson] = useState(DEFAULT_EVENT);
   const [result, setResult] = useState<PlaygroundResponse | null>(null);
@@ -728,5 +729,13 @@ export default function PlaygroundPage() {
         </div>
       </div>
     </div>
+  );
+}
+
+export default function PlaygroundPage() {
+  return (
+    <AuthGate page="playground">
+      <PlaygroundContent />
+    </AuthGate>
   );
 }

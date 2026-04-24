@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import useSWR, { mutate } from "swr";
+import AuthGate from "@/components/AuthGate";
 import {
   listContracts,
   getContract,
@@ -1027,7 +1028,7 @@ function ManualCreatePanel({ onCancel, onCreated }: { onCancel: () => void; onCr
 
 type Tab = "list" | "build" | "generate";
 
-export default function ContractsPage() {
+function ContractsContent() {
   const router = useRouter();
   const { data: contracts, isLoading } = useSWR<ContractSummary[]>(
     "contracts",
@@ -1145,5 +1146,13 @@ export default function ContractsPage() {
         </div>
       )}
     </div>
+  );
+}
+
+export default function ContractsPage() {
+  return (
+    <AuthGate page="contracts">
+      <ContractsContent />
+    </AuthGate>
   );
 }

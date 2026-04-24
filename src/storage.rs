@@ -153,6 +153,9 @@ struct PercRow {
 /// submitted YAML, all in one transaction.  The YAML is parsed first to
 /// reject invalid contracts before any write hits the DB.
 ///
+/// `org_id` scopes the contract to a specific org. Pass `None` in dev-mode
+/// (no auth configured) to skip org assignment — fine for local testing.
+///
 /// Returns the identity + the freshly created draft version.
 pub async fn create_contract(
     pool: &PgPool,
@@ -160,6 +163,7 @@ pub async fn create_contract(
     description: Option<&str>,
     yaml_content: &str,
     resolution: MultiStableResolution,
+    org_id: Option<Uuid>,
 ) -> AppResult<(ContractIdentity, ContractVersion)> {
     // Parse first — reject invalid YAML before touching the DB.  We also
     // extract `compliance_mode` so the column stays in sync with the YAML
@@ -177,12 +181,13 @@ pub async fn create_contract(
     let identity_row = sqlx::query_as::<_, ContractIdentityRow>(
         r#"
         INSERT INTO contracts
-            (id, name, description, multi_stable_resolution, created_at, updated_at)
-        VALUES ($1, $2, $3, $4, NOW(), NOW())
+            (id, org_id, name, description, multi_stable_resolution, created_at, updated_at)
+        VALUES ($1, $2, $3, $4, $5, NOW(), NOW())
         RETURNING id, name, description, multi_stable_resolution, created_at, updated_at, pii_salt
         "#,
     )
     .bind(contract_id)
+    .bind(org_id)
     .bind(name)
     .bind(description)
     .bind(resolution.as_str())
@@ -231,33 +236,63 @@ pub async fn get_contract_identity(
 }
 
 /// List contracts with aggregated version info — suitable for the dashboard
-/// list view.
-pub async fn list_contracts(pool: &PgPool) -> AppResult<Vec<ContractSummary>> {
+/// list view.  When `org_id` is Some, results are scoped to that org.
+/// Pass `None` only in dev-mode (no auth configured).
+pub async fn list_contracts(pool: &PgPool, org_id: Option<Uuid>) -> AppResult<Vec<ContractSummary>> {
     // Subquery picks the most recently promoted stable version per contract.
-    let rows = sqlx::query_as::<_, ContractSummaryRow>(
-        r#"
-        SELECT
-            c.id,
-            c.name,
-            c.multi_stable_resolution,
-            (
-                SELECT version
-                FROM contract_versions cv
-                WHERE cv.contract_id = c.id AND cv.state = 'stable'
-                ORDER BY cv.promoted_at DESC
-                LIMIT 1
-            ) AS latest_stable_version,
-            (
-                SELECT COUNT(*)::bigint
-                FROM contract_versions cv
-                WHERE cv.contract_id = c.id
-            ) AS version_count
-        FROM contracts c
-        ORDER BY c.created_at DESC
-        "#,
-    )
-    .fetch_all(pool)
-    .await?;
+    let rows = if let Some(oid) = org_id {
+        sqlx::query_as::<_, ContractSummaryRow>(
+            r#"
+            SELECT
+                c.id,
+                c.name,
+                c.multi_stable_resolution,
+                (
+                    SELECT version
+                    FROM contract_versions cv
+                    WHERE cv.contract_id = c.id AND cv.state = 'stable'
+                    ORDER BY cv.promoted_at DESC
+                    LIMIT 1
+                ) AS latest_stable_version,
+                (
+                    SELECT COUNT(*)::bigint
+                    FROM contract_versions cv
+                    WHERE cv.contract_id = c.id
+                ) AS version_count
+            FROM contracts c
+            WHERE c.org_id = $1
+            ORDER BY c.created_at DESC
+            "#,
+        )
+        .bind(oid)
+        .fetch_all(pool)
+        .await?
+    } else {
+        sqlx::query_as::<_, ContractSummaryRow>(
+            r#"
+            SELECT
+                c.id,
+                c.name,
+                c.multi_stable_resolution,
+                (
+                    SELECT version
+                    FROM contract_versions cv
+                    WHERE cv.contract_id = c.id AND cv.state = 'stable'
+                    ORDER BY cv.promoted_at DESC
+                    LIMIT 1
+                ) AS latest_stable_version,
+                (
+                    SELECT COUNT(*)::bigint
+                    FROM contract_versions cv
+                    WHERE cv.contract_id = c.id
+                ) AS version_count
+            FROM contracts c
+            ORDER BY c.created_at DESC
+            "#,
+        )
+        .fetch_all(pool)
+        .await?
+    };
 
     rows.into_iter().map(|r| r.into_summary()).collect()
 }
@@ -725,6 +760,7 @@ pub async fn quarantine_event(
 pub async fn log_audit_entry(
     pool: &PgPool,
     contract_id: Uuid,
+    org_id: Option<Uuid>,
     contract_version: &str,
     passed: bool,
     violation_count: i32,
@@ -736,13 +772,14 @@ pub async fn log_audit_entry(
     sqlx::query(
         r#"
         INSERT INTO audit_log
-            (id, contract_id, contract_version, passed, violation_count,
+            (id, contract_id, org_id, contract_version, passed, violation_count,
              violation_details, raw_event, validation_us, source_ip, created_at)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW())
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NOW())
         "#,
     )
     .bind(Uuid::new_v4())
     .bind(contract_id)
+    .bind(org_id)
     .bind(contract_version)
     .bind(passed)
     .bind(violation_count)
@@ -756,42 +793,73 @@ pub async fn log_audit_entry(
 }
 
 /// Fetch recent audit entries for the dashboard monitor.
+/// `org_id` scopes results to one org when Some; `contract_id` further filters
+/// to one contract within that org. Pass `org_id = None` in dev-mode only.
 pub async fn recent_audit_entries(
     pool: &PgPool,
+    org_id: Option<Uuid>,
     contract_id: Option<Uuid>,
     limit: i64,
     offset: i64,
 ) -> AppResult<Vec<AuditEntry>> {
-    let rows = if let Some(cid) = contract_id {
-        sqlx::query_as::<_, AuditEntry>(
-            r#"
-            SELECT id, contract_id, contract_version, passed, violation_count,
-                   violation_details, raw_event, validation_us, source_ip, created_at
-            FROM audit_log
-            WHERE contract_id = $1
-            ORDER BY created_at DESC
-            LIMIT $2 OFFSET $3
-            "#,
-        )
-        .bind(cid)
-        .bind(limit)
-        .bind(offset)
-        .fetch_all(pool)
-        .await?
-    } else {
-        sqlx::query_as::<_, AuditEntry>(
-            r#"
-            SELECT id, contract_id, contract_version, passed, violation_count,
-                   violation_details, raw_event, validation_us, source_ip, created_at
-            FROM audit_log
-            ORDER BY created_at DESC
-            LIMIT $1 OFFSET $2
-            "#,
-        )
-        .bind(limit)
-        .bind(offset)
-        .fetch_all(pool)
-        .await?
+    let rows = match (org_id, contract_id) {
+        (Some(oid), Some(cid)) => {
+            sqlx::query_as::<_, AuditEntry>(
+                r#"
+                SELECT id, contract_id, contract_version, passed, violation_count,
+                       violation_details, raw_event, validation_us, source_ip, created_at
+                FROM audit_log
+                WHERE org_id = $1 AND contract_id = $2
+                ORDER BY created_at DESC
+                LIMIT $3 OFFSET $4
+                "#,
+            )
+            .bind(oid).bind(cid).bind(limit).bind(offset)
+            .fetch_all(pool).await?
+        }
+        (Some(oid), None) => {
+            sqlx::query_as::<_, AuditEntry>(
+                r#"
+                SELECT id, contract_id, contract_version, passed, violation_count,
+                       violation_details, raw_event, validation_us, source_ip, created_at
+                FROM audit_log
+                WHERE org_id = $1
+                ORDER BY created_at DESC
+                LIMIT $2 OFFSET $3
+                "#,
+            )
+            .bind(oid).bind(limit).bind(offset)
+            .fetch_all(pool).await?
+        }
+        (None, Some(cid)) => {
+            // Dev-mode: no org, but still filter by contract
+            sqlx::query_as::<_, AuditEntry>(
+                r#"
+                SELECT id, contract_id, contract_version, passed, violation_count,
+                       violation_details, raw_event, validation_us, source_ip, created_at
+                FROM audit_log
+                WHERE contract_id = $1
+                ORDER BY created_at DESC
+                LIMIT $2 OFFSET $3
+                "#,
+            )
+            .bind(cid).bind(limit).bind(offset)
+            .fetch_all(pool).await?
+        }
+        (None, None) => {
+            // Dev-mode: no scoping at all
+            sqlx::query_as::<_, AuditEntry>(
+                r#"
+                SELECT id, contract_id, contract_version, passed, violation_count,
+                       violation_details, raw_event, validation_us, source_ip, created_at
+                FROM audit_log
+                ORDER BY created_at DESC
+                LIMIT $1 OFFSET $2
+                "#,
+            )
+            .bind(limit).bind(offset)
+            .fetch_all(pool).await?
+        }
     };
 
     Ok(rows)
@@ -799,42 +867,41 @@ pub async fn recent_audit_entries(
 
 /// Fetch summary statistics for the dashboard monitor, including p50/p95/p99 latency.
 ///
-/// Uses two separate runtime queries — one for counts/avg, one for percentiles —
-/// to avoid compile-time DATABASE_URL dependency while staying fast (both are
-/// simple aggregates with index support on `validation_us`).
+/// `org_id` scopes all aggregates to one org when Some.  Pass `None` only in
+/// dev-mode (no auth configured).  `contract_id` further narrows within the org.
 pub async fn ingestion_stats(
     pool: &PgPool,
+    org_id: Option<Uuid>,
     contract_id: Option<Uuid>,
 ) -> AppResult<IngestionStats> {
     // -----------------------------------------------------------------------
     // Query 1: aggregate counts + average latency
     // -----------------------------------------------------------------------
-    let stats: StatsRow = if let Some(cid) = contract_id {
-        sqlx::query_as::<_, StatsRow>(
-            r#"
-            SELECT
-                COUNT(*)::bigint                                                    AS total,
-                COALESCE(SUM(CASE WHEN passed THEN 1 ELSE 0 END), 0)::bigint       AS passed,
-                COALESCE(AVG(validation_us::float8), 0.0)                          AS avg_us
-            FROM audit_log
-            WHERE contract_id = $1
-            "#,
-        )
-        .bind(cid)
-        .fetch_one(pool)
-        .await?
-    } else {
-        sqlx::query_as::<_, StatsRow>(
-            r#"
-            SELECT
-                COUNT(*)::bigint                                                    AS total,
-                COALESCE(SUM(CASE WHEN passed THEN 1 ELSE 0 END), 0)::bigint       AS passed,
-                COALESCE(AVG(validation_us::float8), 0.0)                          AS avg_us
-            FROM audit_log
-            "#,
-        )
-        .fetch_one(pool)
-        .await?
+    let stats: StatsRow = match (org_id, contract_id) {
+        (Some(oid), Some(cid)) => sqlx::query_as::<_, StatsRow>(
+            r#"SELECT COUNT(*)::bigint AS total,
+                      COALESCE(SUM(CASE WHEN passed THEN 1 ELSE 0 END), 0)::bigint AS passed,
+                      COALESCE(AVG(validation_us::float8), 0.0) AS avg_us
+               FROM audit_log WHERE org_id = $1 AND contract_id = $2"#)
+            .bind(oid).bind(cid).fetch_one(pool).await?,
+        (Some(oid), None) => sqlx::query_as::<_, StatsRow>(
+            r#"SELECT COUNT(*)::bigint AS total,
+                      COALESCE(SUM(CASE WHEN passed THEN 1 ELSE 0 END), 0)::bigint AS passed,
+                      COALESCE(AVG(validation_us::float8), 0.0) AS avg_us
+               FROM audit_log WHERE org_id = $1"#)
+            .bind(oid).fetch_one(pool).await?,
+        (None, Some(cid)) => sqlx::query_as::<_, StatsRow>(
+            r#"SELECT COUNT(*)::bigint AS total,
+                      COALESCE(SUM(CASE WHEN passed THEN 1 ELSE 0 END), 0)::bigint AS passed,
+                      COALESCE(AVG(validation_us::float8), 0.0) AS avg_us
+               FROM audit_log WHERE contract_id = $1"#)
+            .bind(cid).fetch_one(pool).await?,
+        (None, None) => sqlx::query_as::<_, StatsRow>(
+            r#"SELECT COUNT(*)::bigint AS total,
+                      COALESCE(SUM(CASE WHEN passed THEN 1 ELSE 0 END), 0)::bigint AS passed,
+                      COALESCE(AVG(validation_us::float8), 0.0) AS avg_us
+               FROM audit_log"#)
+            .fetch_one(pool).await?,
     };
 
     let total = stats.total.unwrap_or(0);
@@ -843,36 +910,32 @@ pub async fn ingestion_stats(
 
     // -----------------------------------------------------------------------
     // Query 2: percentile latencies (p50 / p95 / p99)
-    //
-    // percentile_disc is a built-in ordered-set aggregate in PostgreSQL 9.4+.
-    // Returns NULL when the input set is empty — handled safely by Option<i64>.
     // -----------------------------------------------------------------------
-    let perc: PercRow = if let Some(cid) = contract_id {
-        sqlx::query_as::<_, PercRow>(
-            r#"
-            SELECT
-                percentile_disc(0.50) WITHIN GROUP (ORDER BY validation_us) AS p50,
-                percentile_disc(0.95) WITHIN GROUP (ORDER BY validation_us) AS p95,
-                percentile_disc(0.99) WITHIN GROUP (ORDER BY validation_us) AS p99
-            FROM audit_log
-            WHERE contract_id = $1
-            "#,
-        )
-        .bind(cid)
-        .fetch_one(pool)
-        .await?
-    } else {
-        sqlx::query_as::<_, PercRow>(
-            r#"
-            SELECT
-                percentile_disc(0.50) WITHIN GROUP (ORDER BY validation_us) AS p50,
-                percentile_disc(0.95) WITHIN GROUP (ORDER BY validation_us) AS p95,
-                percentile_disc(0.99) WITHIN GROUP (ORDER BY validation_us) AS p99
-            FROM audit_log
-            "#,
-        )
-        .fetch_one(pool)
-        .await?
+    let perc: PercRow = match (org_id, contract_id) {
+        (Some(oid), Some(cid)) => sqlx::query_as::<_, PercRow>(
+            r#"SELECT percentile_disc(0.50) WITHIN GROUP (ORDER BY validation_us) AS p50,
+                      percentile_disc(0.95) WITHIN GROUP (ORDER BY validation_us) AS p95,
+                      percentile_disc(0.99) WITHIN GROUP (ORDER BY validation_us) AS p99
+               FROM audit_log WHERE org_id = $1 AND contract_id = $2"#)
+            .bind(oid).bind(cid).fetch_one(pool).await?,
+        (Some(oid), None) => sqlx::query_as::<_, PercRow>(
+            r#"SELECT percentile_disc(0.50) WITHIN GROUP (ORDER BY validation_us) AS p50,
+                      percentile_disc(0.95) WITHIN GROUP (ORDER BY validation_us) AS p95,
+                      percentile_disc(0.99) WITHIN GROUP (ORDER BY validation_us) AS p99
+               FROM audit_log WHERE org_id = $1"#)
+            .bind(oid).fetch_one(pool).await?,
+        (None, Some(cid)) => sqlx::query_as::<_, PercRow>(
+            r#"SELECT percentile_disc(0.50) WITHIN GROUP (ORDER BY validation_us) AS p50,
+                      percentile_disc(0.95) WITHIN GROUP (ORDER BY validation_us) AS p95,
+                      percentile_disc(0.99) WITHIN GROUP (ORDER BY validation_us) AS p99
+               FROM audit_log WHERE contract_id = $1"#)
+            .bind(cid).fetch_one(pool).await?,
+        (None, None) => sqlx::query_as::<_, PercRow>(
+            r#"SELECT percentile_disc(0.50) WITHIN GROUP (ORDER BY validation_us) AS p50,
+                      percentile_disc(0.95) WITHIN GROUP (ORDER BY validation_us) AS p95,
+                      percentile_disc(0.99) WITHIN GROUP (ORDER BY validation_us) AS p99
+               FROM audit_log"#)
+            .fetch_one(pool).await?,
     };
 
     Ok(IngestionStats {
@@ -957,6 +1020,8 @@ pub struct IngestionStats {
 #[derive(Debug, Clone)]
 pub struct AuditEntryInsert {
     pub contract_id: Uuid,
+    /// Org that owns this contract. None in dev-mode only.
+    pub org_id: Option<Uuid>,
     pub contract_version: String,
     pub passed: bool,
     pub violation_count: i32,
@@ -1025,6 +1090,11 @@ pub async fn log_audit_entries_batch(
     // Split the struct-of-arrays columns for UNNEST.  Columns are aligned
     // positionally — every Vec is the same length as `entries`.
     let contract_ids: Vec<Uuid> = entries.iter().map(|e| e.contract_id).collect();
+    // org_id: None entries use nil UUID as sentinel; NULLIF converts to SQL NULL.
+    let org_ids: Vec<Uuid> = entries
+        .iter()
+        .map(|e| e.org_id.unwrap_or(Uuid::nil()))
+        .collect();
     let contract_versions: Vec<String> = entries
         .iter()
         .map(|e| e.contract_version.clone())
@@ -1034,25 +1104,15 @@ pub async fn log_audit_entries_batch(
     let violation_details: Vec<serde_json::Value> =
         entries.iter().map(|e| e.violation_details.clone()).collect();
     // RFC-004 §6: extract the underlying JSON only at the SQL bind boundary.
-    // The struct field is `TransformedPayload` so callers cannot supply raw
-    // events; we unwrap here purely because sqlx wants a `Vec<Value>` for the
-    // jsonb[] UNNEST.
     let raw_events: Vec<serde_json::Value> = entries
         .iter()
         .map(|e| e.raw_event.as_value().clone())
         .collect();
     let validation_us: Vec<i64> = entries.iter().map(|e| e.validation_us).collect();
-    // Postgres's UNNEST needs a concrete nullable text[] — represent absent
-    // source_ips as empty strings and convert back to NULL in SQL via NULLIF.
     let source_ips: Vec<String> = entries
         .iter()
         .map(|e| e.source_ip.clone().unwrap_or_default())
         .collect();
-    // Pre-assigned IDs: replay callers supply a UUID so they can link the
-    // source quarantine row to this exact audit row atomically.  Fresh
-    // ingest passes NULL and Postgres fills it in via uuid_generate_v4().
-    // We smuggle "absent" through the UNNEST pipeline as a sentinel zero
-    // UUID and NULLIF in SQL — matches the source_ip pattern above.
     let pre_assigned_ids: Vec<Uuid> = entries
         .iter()
         .map(|e| e.pre_assigned_id.unwrap_or(Uuid::nil()))
@@ -1065,26 +1125,29 @@ pub async fn log_audit_entries_batch(
     sqlx::query(
         r#"
         INSERT INTO audit_log
-            (id, contract_id, contract_version, passed, violation_count,
+            (id, contract_id, org_id, contract_version, passed, violation_count,
              violation_details, raw_event, validation_us, source_ip,
              replay_of_quarantine_id, created_at)
         SELECT
             COALESCE(NULLIF(pre_assigned_id, '00000000-0000-0000-0000-000000000000'::uuid),
                      uuid_generate_v4()),
-            contract_id, contract_version, passed, violation_count,
+            contract_id,
+            NULLIF(org_id, '00000000-0000-0000-0000-000000000000'::uuid),
+            contract_version, passed, violation_count,
             violation_details, raw_event, validation_us,
             NULLIF(source_ip, ''),
             NULLIF(replay_of_quarantine_id, '00000000-0000-0000-0000-000000000000'::uuid),
             NOW()
         FROM UNNEST(
-            $1::uuid[], $2::text[], $3::bool[], $4::int[], $5::jsonb[],
-            $6::jsonb[], $7::bigint[], $8::text[], $9::uuid[], $10::uuid[]
-        ) AS t(contract_id, contract_version, passed, violation_count,
+            $1::uuid[], $2::uuid[], $3::text[], $4::bool[], $5::int[], $6::jsonb[],
+            $7::jsonb[], $8::bigint[], $9::text[], $10::uuid[], $11::uuid[]
+        ) AS t(contract_id, org_id, contract_version, passed, violation_count,
                violation_details, raw_event, validation_us, source_ip,
                pre_assigned_id, replay_of_quarantine_id)
         "#,
     )
     .bind(&contract_ids)
+    .bind(&org_ids)
     .bind(&contract_versions)
     .bind(&passed)
     .bind(&violation_counts)

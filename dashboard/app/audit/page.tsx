@@ -6,6 +6,7 @@ import useSWR from "swr";
 import { getAuditLog, listContracts } from "@/lib/api";
 import type { AuditEntry, ContractSummary } from "@/lib/api";
 import clsx from "clsx";
+import AuthGate from "@/components/AuthGate";
 
 // ---------------------------------------------------------------------------
 // Raw-event drawer (RFC-004 surfacing)
@@ -490,8 +491,10 @@ function AuditContent() {
 
 export default function AuditPage() {
   return (
-    <Suspense fallback={<div className="text-slate-500 text-sm p-8">Loading audit log…</div>}>
-      <AuditContent />
-    </Suspense>
+    <AuthGate page="audit">
+      <Suspense fallback={<div className="text-slate-500 text-sm p-8">Loading audit log…</div>}>
+        <AuditContent />
+      </Suspense>
+    </AuthGate>
   );
 }

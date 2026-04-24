@@ -1,13 +1,23 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 
-// Routes that don't require authentication
+// Routes that don't require authentication at the middleware level.
+// Pages that use <AuthGate> for client-side gating are listed here so the
+// middleware doesn't hard-redirect them — they show a compelling preview to
+// unauthenticated visitors instead of a bare login wall.
 const PUBLIC_ROUTES = [
   "/auth/login",
   "/auth/signup",
   "/auth/callback",
   "/pricing",
   "/docs",
+  "/stream-demo",
+  // AuthGate pages — show feature preview to unauthenticated users
+  "/",
+  "/contracts",
+  "/audit",
+  "/playground",
+  "/account",
 ];
 
 function isPublic(pathname: string) {

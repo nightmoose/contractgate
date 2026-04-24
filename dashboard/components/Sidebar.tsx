@@ -4,20 +4,40 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import clsx from "clsx";
 
-const NAV = [
-  { href: "/",             label: "Dashboard",    icon: "⬡" },
-  { href: "/contracts",    label: "Contracts",    icon: "📋" },
-  { href: "/audit",        label: "Audit Log",    icon: "🔍" },
-  { href: "/playground",   label: "Playground",   icon: "🧪" },
-  { href: "/stream-demo",  label: "Stream Demo",  icon: "⚡" },
-  { href: "/pricing",      label: "Pricing",      icon: "💳" },
+const PUBLIC_NAV = [
+  { href: "/stream-demo",        label: "Stream Demo",  icon: "⚡" },
   { href: "/docs/kafka-connect", label: "Kafka Connect", icon: "🔗" },
-  { href: "/account",     label: "Account",      icon: "🔑" },
+  { href: "/pricing",            label: "Pricing",       icon: "💳" },
 ];
 
-export default function Sidebar() {
-  const pathname = usePathname();
+const ACCOUNT_NAV = [
+  { href: "/",           label: "Dashboard",  icon: "⬡" },
+  { href: "/contracts",  label: "Contracts",  icon: "📋" },
+  { href: "/audit",      label: "Audit Log",  icon: "🔍" },
+  { href: "/playground", label: "Playground", icon: "🧪" },
+  { href: "/account",    label: "Account",    icon: "🔑" },
+];
 
+function NavLink({ href, label, icon }: { href: string; label: string; icon: string }) {
+  const pathname = usePathname();
+  const active = pathname === href;
+  return (
+    <Link
+      href={href}
+      className={clsx(
+        "flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors",
+        active
+          ? "bg-green-900/30 text-green-400 border border-green-800/50"
+          : "text-slate-400 hover:text-slate-200 hover:bg-[#1f2937]"
+      )}
+    >
+      <span className="text-base">{icon}</span>
+      {label}
+    </Link>
+  );
+}
+
+export default function Sidebar() {
   return (
     <aside className="fixed left-0 top-0 h-full w-64 bg-[#111827] border-r border-[#1f2937] flex flex-col z-50">
       {/* Logo */}
@@ -36,22 +56,29 @@ export default function Sidebar() {
       </div>
 
       {/* Navigation */}
-      <nav className="flex-1 p-4 space-y-1">
-        {NAV.map(({ href, label, icon }) => (
-          <Link
-            key={href}
-            href={href}
-            className={clsx(
-              "flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors",
-              pathname === href
-                ? "bg-green-900/30 text-green-400 border border-green-800/50"
-                : "text-slate-400 hover:text-slate-200 hover:bg-[#1f2937]"
-            )}
-          >
-            <span className="text-base">{icon}</span>
-            {label}
-          </Link>
-        ))}
+      <nav className="flex-1 p-4 overflow-y-auto">
+        {/* Public section */}
+        <div className="space-y-1">
+          {PUBLIC_NAV.map((item) => (
+            <NavLink key={item.href} {...item} />
+          ))}
+        </div>
+
+        {/* Divider */}
+        <div className="my-4 flex items-center gap-2">
+          <div className="flex-1 h-px bg-[#1f2937]" />
+          <span className="text-[10px] text-slate-600 uppercase tracking-widest font-medium">
+            Your Account
+          </span>
+          <div className="flex-1 h-px bg-[#1f2937]" />
+        </div>
+
+        {/* Account section */}
+        <div className="space-y-1">
+          {ACCOUNT_NAV.map((item) => (
+            <NavLink key={item.href} {...item} />
+          ))}
+        </div>
       </nav>
 
       {/* Footer */}

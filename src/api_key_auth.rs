@@ -3,10 +3,10 @@
 //! # Key format
 //! Keys are generated client-side in the form `cg_live_<48 hex chars>` (56
 //! chars total).  Only two things are stored in the database:
-//!   - `key_prefix`  — first 12 characters of the raw key (not secret on its
-//!                     own; used as a cheap discriminator to narrow the DB
-//!                     lookup to a single candidate row)
-//!   - `key_hash`    — SHA-256 of the raw key, base64-encoded
+//!   - `key_prefix` — first 12 characters of the raw key (not secret on its
+//!     own; used as a cheap discriminator to narrow the DB lookup to a single
+//!     candidate row)
+//!   - `key_hash` — SHA-256 of the raw key, base64-encoded
 //!
 //! The raw key is **never** stored anywhere.
 //!
@@ -35,6 +35,7 @@ use uuid::Uuid;
 struct ApiKeyRow {
     id: Uuid,
     user_id: Uuid,
+    org_id: Uuid,
     key_hash: String,
     allowed_contract_ids: Option<Vec<Uuid>>,
 }
@@ -51,6 +52,8 @@ const TTL: Duration = Duration::from_secs(60);
 pub struct ValidatedKey {
     pub api_key_id: Uuid,
     pub user_id: Uuid,
+    /// The org this key belongs to. All queries are scoped to this org.
+    pub org_id: Uuid,
     /// NULL → unrestricted; Some → key only works for listed contract UUIDs.
     pub allowed_contract_ids: Option<Vec<Uuid>>,
 }
@@ -158,7 +161,7 @@ async fn verify_against_db(raw_key: &str, db: &PgPool) -> Result<ValidatedKey, (
     // or .sqlx cache entry is required for this new table.
     let row = sqlx::query_as::<_, ApiKeyRow>(
         r#"
-        SELECT id, user_id, key_hash, allowed_contract_ids
+        SELECT id, user_id, org_id, key_hash, allowed_contract_ids
         FROM   api_keys
         WHERE  key_prefix = $1
           AND  revoked_at IS NULL
@@ -189,6 +192,7 @@ async fn verify_against_db(raw_key: &str, db: &PgPool) -> Result<ValidatedKey, (
     Ok(ValidatedKey {
         api_key_id: row.id,
         user_id: row.user_id,
+        org_id: row.org_id,
         allowed_contract_ids: row.allowed_contract_ids,
     })
 }

@@ -14,7 +14,7 @@
 //! is just wiring.
 
 use axum::{
-    extract::{Path, Query, State},
+    extract::{FromRequest, Path, Query, State},
     http::StatusCode,
     middleware::{self, Next},
     response::Json,
@@ -215,19 +215,39 @@ async fn identity_to_response(
 }
 
 // ---------------------------------------------------------------------------
+// Helper: extract org_id from request extensions.
+//
+// Returns Some(org_id) when the request was authenticated with a DB-backed
+// API key (the normal production path).  Returns None in dev-mode (no auth
+// configured) or legacy-env-key mode, where we skip org scoping.
+// ---------------------------------------------------------------------------
+
+fn org_id_from_req(req: &axum::extract::Request) -> Option<uuid::Uuid> {
+    req.extensions()
+        .get::<api_key_auth::ValidatedKey>()
+        .map(|k| k.org_id)
+}
+
+// ---------------------------------------------------------------------------
 // Contract identity handlers
 // ---------------------------------------------------------------------------
 
 async fn create_contract_handler(
     State(state): State<Arc<AppState>>,
-    Json(req): Json<CreateContractRequest>,
+    req: axum::extract::Request,
 ) -> AppResult<(StatusCode, Json<ContractResponse>)> {
+    let org_id = org_id_from_req(&req);
+    // Extract JSON body after reading extensions
+    let Json(body_req): Json<CreateContractRequest> = axum::Json::from_request(req, &state)
+        .await
+        .map_err(|e| AppError::BadRequest(e.to_string()))?;
     let (identity, _first_version) = storage::create_contract(
         &state.db,
-        &req.name,
-        req.description.as_deref(),
-        &req.yaml_content,
-        req.multi_stable_resolution.unwrap_or_default(),
+        &body_req.name,
+        body_req.description.as_deref(),
+        &body_req.yaml_content,
+        body_req.multi_stable_resolution.unwrap_or_default(),
+        org_id,
     )
     .await?;
 
@@ -245,8 +265,10 @@ async fn get_contract_handler(
 
 async fn list_contracts_handler(
     State(state): State<Arc<AppState>>,
+    req: axum::extract::Request,
 ) -> AppResult<Json<Vec<ContractSummary>>> {
-    let contracts = storage::list_contracts(&state.db).await?;
+    let org_id = org_id_from_req(&req);
+    let contracts = storage::list_contracts(&state.db, org_id).await?;
     Ok(Json(contracts))
 }
 
@@ -397,17 +419,21 @@ fn default_limit() -> i64 {
 async fn audit_log_handler(
     State(state): State<Arc<AppState>>,
     Query(q): Query<AuditQuery>,
+    req: axum::extract::Request,
 ) -> AppResult<Json<Vec<storage::AuditEntry>>> {
+    let org_id = org_id_from_req(&req);
     let entries =
-        storage::recent_audit_entries(&state.db, q.contract_id, q.limit.min(500), q.offset)
+        storage::recent_audit_entries(&state.db, org_id, q.contract_id, q.limit.min(500), q.offset)
             .await?;
     Ok(Json(entries))
 }
 
 async fn global_stats_handler(
     State(state): State<Arc<AppState>>,
+    req: axum::extract::Request,
 ) -> AppResult<Json<storage::IngestionStats>> {
-    let stats = storage::ingestion_stats(&state.db, None).await?;
+    let org_id = org_id_from_req(&req);
+    let stats = storage::ingestion_stats(&state.db, org_id, None).await?;
     Ok(Json(stats))
 }
 
@@ -484,7 +510,7 @@ async fn playground_handler(
 
 async fn require_api_key(
     State(state): State<Arc<AppState>>,
-    request: Request,
+    mut request: Request,
     next: Next,
 ) -> Result<axum::response::Response, error::AppError> {
     let provided = request
@@ -508,9 +534,10 @@ async fn require_api_key(
     // DB-backed key: validate via cache (60-second TTL).
     if !provided.is_empty() {
         match state.key_cache.validate(&provided, &state.db).await {
-            Ok(_validated) => {
-                // TODO: inject _validated.user_id into request extensions
-                // so downstream handlers can scope audit rows per-user.
+            Ok(validated) => {
+                // Inject the validated key into request extensions so
+                // downstream handlers can scope queries to the correct org.
+                request.extensions_mut().insert(validated);
                 return Ok(next.run(request).await);
             }
             Err(()) => {
