@@ -1,7 +1,13 @@
 import type { Metadata } from "next";
 import "./globals.css";
 import Sidebar from "@/components/Sidebar";
-import OrgProvider from "@/components/OrgProvider";
+import dynamic from "next/dynamic";
+
+// OrgProvider calls createBrowserClient (Supabase) on mount — it must never
+// run during SSR or static prerendering, where Supabase env vars are absent.
+const OrgProvider = dynamic(() => import("@/components/OrgProvider"), {
+  ssr: false,
+});
 
 export const metadata: Metadata = {
   title: "ContractGate — Semantic Contract Enforcement",
