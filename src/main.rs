@@ -518,7 +518,8 @@ fn build_router(state: Arc<AppState>) -> Router {
         .route("/demo/start", post(stream_demo::start_handler))
         .route("/demo/stop", post(stream_demo::stop_handler))
         .route("/demo/stream", get(stream_demo::stream_handler))
-        .route("/demo/events", get(stream_demo::events_handler));
+        .route("/demo/events", get(stream_demo::events_handler))
+        .route("/demo/contract", get(stream_demo::contract_handler));
 
     // Protected routes — require x-api-key header
     let protected = Router::new()
