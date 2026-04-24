@@ -7,6 +7,7 @@ import { playgroundValidate, listContracts, getLatestStableVersion, listVersions
 import type { PlaygroundResponse, ContractSummary, Violation } from "@/lib/api";
 import clsx from "clsx";
 import AuthGate from "@/components/AuthGate";
+import { useOrg } from "@/lib/org";
 
 const DEFAULT_YAML = `version: "1.0"
 name: "user_events"
@@ -465,8 +466,13 @@ function PlaygroundContent() {
   // Parse contract rules from the YAML editor (live, debounced by React render)
   const parsedContract = useMemo(() => parseContractRules(yaml_), [yaml_]);
 
-  // Load stored contracts for the "Load from store" dropdown
-  const { data: contracts } = useSWR<ContractSummary[]>("contracts", listContracts);
+  // Load stored contracts for the "Load from store" dropdown.
+  // Gate on org resolving so x-org-id is set before the first fetch fires.
+  const { org } = useOrg();
+  const { data: contracts } = useSWR<ContractSummary[]>(
+    org ? "contracts" : null,
+    listContracts
+  );
 
   // On mount: check if we were sent here from the Contracts page via "Test in Playground"
   useEffect(() => {
