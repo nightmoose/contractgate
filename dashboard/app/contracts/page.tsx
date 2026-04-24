@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import useSWR, { mutate } from "swr";
 import AuthGate from "@/components/AuthGate";
+import { useOrg } from "@/lib/org";
 import {
   listContracts,
   getContract,
@@ -1030,8 +1031,10 @@ type Tab = "list" | "build" | "generate";
 
 function ContractsContent() {
   const router = useRouter();
+  const { org } = useOrg();
+  // Gate on org resolving so x-org-id is set before the first fetch fires.
   const { data: contracts, isLoading } = useSWR<ContractSummary[]>(
-    "contracts",
+    org ? "contracts" : null,
     listContracts
   );
   const [tab, setTab] = useState<Tab>("list");
