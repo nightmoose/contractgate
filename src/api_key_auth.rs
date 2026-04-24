@@ -3,10 +3,10 @@
 //! # Key format
 //! Keys are generated client-side in the form `cg_live_<48 hex chars>` (56
 //! chars total).  Only two things are stored in the database:
-//!   - `key_prefix`  — first 12 characters of the raw key (not secret on its
-//!                     own; used as a cheap discriminator to narrow the DB
-//!                     lookup to a single candidate row)
-//!   - `key_hash`    — SHA-256 of the raw key, base64-encoded
+//!   - `key_prefix` — first 12 characters of the raw key (not secret on its
+//!     own; used as a cheap discriminator to narrow the DB lookup to a single
+//!     candidate row)
+//!   - `key_hash` — SHA-256 of the raw key, base64-encoded
 //!
 //! The raw key is **never** stored anywhere.
 //!
