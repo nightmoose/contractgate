@@ -97,7 +97,7 @@ function ContractsIllustration() {
         </div>
         {/* YAML preview */}
         <div className="flex-1 bg-[#111827] border border-[#1f2937] rounded-lg p-3 font-mono text-xs leading-relaxed">
-          <div className="text-slate-500">version: <span className="text-green-400">"1.2.0"</span></div>
+          <div className="text-slate-500">version: <span className="text-green-400">&quot;1.2.0&quot;</span></div>
           <div className="text-slate-500">ontology:</div>
           <div className="text-slate-500 pl-2">entities:</div>
           <div className="text-slate-500 pl-4">- name: <span className="text-blue-400">user_id</span></div>
@@ -152,8 +152,8 @@ function PlaygroundIllustration() {
           <div className="text-xs text-slate-500 mb-1 mt-2">Test Event</div>
           <div className="bg-[#111827] border border-[#1f2937] rounded-lg p-3 font-mono text-xs text-slate-500">
             <div>{"{"}</div>
-            <div className="pl-2">"event_type": <span className="text-green-400">"click"</span>,</div>
-            <div className="pl-2">"amount": <span className="text-orange-400">-5</span></div>
+            <div className="pl-2">&quot;event_type&quot;: <span className="text-green-400">&quot;click&quot;</span>,</div>
+            <div className="pl-2">&quot;amount&quot;: <span className="text-orange-400">-5</span></div>
             <div>{"}"}</div>
           </div>
         </div>
