@@ -217,15 +217,25 @@ async fn identity_to_response(
 // ---------------------------------------------------------------------------
 // Helper: extract org_id from request extensions.
 //
-// Returns Some(org_id) when the request was authenticated with a DB-backed
-// API key (the normal production path).  Returns None in dev-mode (no auth
-// configured) or legacy-env-key mode, where we skip org scoping.
+// Priority:
+//   1. DB-backed API key (ValidatedKey in extensions) — most secure; org_id
+//      is authoritative from the database row.
+//   2. `x-org-id` request header — trusted fallback when using the legacy
+//      env-var key or in dev mode (no key).  The dashboard passes this header
+//      so the user's personal org is used even before they've created a
+//      DB-backed key.  Not trusted when a DB-backed key is already present.
 // ---------------------------------------------------------------------------
 
 fn org_id_from_req(req: &axum::extract::Request) -> Option<uuid::Uuid> {
-    req.extensions()
-        .get::<api_key_auth::ValidatedKey>()
-        .map(|k| k.org_id)
+    // 1. DB-backed key wins unconditionally.
+    if let Some(k) = req.extensions().get::<api_key_auth::ValidatedKey>() {
+        return Some(k.org_id);
+    }
+    // 2. Fallback: client-supplied header (legacy/dev mode only).
+    req.headers()
+        .get("x-org-id")
+        .and_then(|v| v.to_str().ok())
+        .and_then(|s| uuid::Uuid::parse_str(s).ok())
 }
 
 // ---------------------------------------------------------------------------
