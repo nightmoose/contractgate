@@ -42,6 +42,7 @@ use uuid::Uuid;
 // continue to resolve unchanged.
 pub use contractgate::{contract, transform, validation};
 
+mod api_key_auth;
 mod error;
 mod ingest;
 mod replay;
@@ -72,7 +73,11 @@ pub struct AppState {
     pub db: PgPool,
     /// (contract_id, version) → compiled contract.
     contract_cache: RwLock<HashMap<(Uuid, String), Arc<CompiledContract>>>,
+    /// Legacy single env-var key (empty = disabled).  Kept for zero-downtime
+    /// migration: if set, it still grants access alongside DB-issued keys.
     pub api_key: String,
+    /// DB-backed API key cache with 60-second TTL.
+    pub key_cache: Arc<api_key_auth::ApiKeyCache>,
     /// In-process stream demo state (no Kafka, no DB writes).
     pub stream_demo: std::sync::Arc<stream_demo::StreamDemoState>,
 }
@@ -83,6 +88,7 @@ impl AppState {
             db,
             contract_cache: RwLock::new(HashMap::new()),
             api_key,
+            key_cache: Arc::new(api_key_auth::ApiKeyCache::default()),
             stream_demo: std::sync::Arc::new(stream_demo::StreamDemoState::new()),
         }
     }
@@ -481,22 +487,41 @@ async fn require_api_key(
     request: Request,
     next: Next,
 ) -> Result<axum::response::Response, error::AppError> {
-    if state.api_key.is_empty() {
-        return Ok(next.run(request).await);
-    }
-
     let provided = request
         .headers()
         .get("x-api-key")
         .and_then(|v| v.to_str().ok())
-        .unwrap_or("");
+        .unwrap_or("")
+        .to_owned();
 
-    if provided == state.api_key {
-        Ok(next.run(request).await)
-    } else {
-        tracing::warn!("Rejected request: missing or invalid x-api-key");
-        Err(error::AppError::Unauthorized)
+    // Dev mode: no auth configured at all — pass through.
+    if state.api_key.is_empty() {
+        return Ok(next.run(request).await);
     }
+
+    // Legacy env-var key: still accepted for zero-downtime migration.
+    // Remove this branch once all connectors are issuing DB-backed keys.
+    if !provided.is_empty() && provided == state.api_key {
+        return Ok(next.run(request).await);
+    }
+
+    // DB-backed key: validate via cache (60-second TTL).
+    if !provided.is_empty() {
+        match state.key_cache.validate(&provided, &state.db).await {
+            Ok(_validated) => {
+                // TODO: inject _validated.user_id into request extensions
+                // so downstream handlers can scope audit rows per-user.
+                return Ok(next.run(request).await);
+            }
+            Err(()) => {
+                // Evict so the next retry re-checks the DB immediately.
+                state.key_cache.evict(&provided);
+            }
+        }
+    }
+
+    tracing::warn!("Rejected request: missing or invalid x-api-key");
+    Err(error::AppError::Unauthorized)
 }
 
 // ---------------------------------------------------------------------------

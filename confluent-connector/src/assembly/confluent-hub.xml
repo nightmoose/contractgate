@@ -1,0 +1,33 @@
+<assembly xmlns="http://maven.apache.org/ASSEMBLY/2.1.0"
+          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+          xsi:schemaLocation="http://maven.apache.org/ASSEMBLY/2.1.0
+                              https://maven.apache.org/xsd/assembly-2.1.0.xsd">
+  <id>confluent-hub</id>
+  <formats><format>zip</format></formats>
+  <includeBaseDirectory>true</includeBaseDirectory>
+
+  <!-- Connector JAR (compile-scope only; provided deps are in the runtime) -->
+  <fileSets>
+    <fileSet>
+      <directory>${project.build.directory}</directory>
+      <includes>
+        <include>${project.artifactId}-${project.version}.jar</include>
+      </includes>
+      <outputDirectory>lib</outputDirectory>
+    </fileSet>
+    <fileSet>
+      <directory>${project.basedir}</directory>
+      <includes><include>manifest.json</include></includes>
+      <outputDirectory>.</outputDirectory>
+    </fileSet>
+    <fileSet>
+      <directory>${project.basedir}/config</directory>
+      <outputDirectory>etc</outputDirectory>
+    </fileSet>
+    <fileSet>
+      <directory>${project.basedir}</directory>
+      <includes><include>README.md</include></includes>
+      <outputDirectory>doc</outputDirectory>
+    </fileSet>
+  </fileSets>
+</assembly>
