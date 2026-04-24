@@ -7,6 +7,7 @@ import { getAuditLog, listContracts } from "@/lib/api";
 import type { AuditEntry, ContractSummary } from "@/lib/api";
 import clsx from "clsx";
 import AuthGate from "@/components/AuthGate";
+import { useOrg } from "@/lib/org";
 
 // ---------------------------------------------------------------------------
 // Raw-event drawer (RFC-004 surfacing)
@@ -260,9 +261,14 @@ function AuditContent() {
     }
   }, [searchParams]);
 
-  const { data: contracts } = useSWR<ContractSummary[]>("contracts", listContracts);
+  const { org } = useOrg();
+  // Gate on org resolving so x-org-id is set before the first fetch fires.
+  const { data: contracts } = useSWR<ContractSummary[]>(
+    org ? "contracts" : null,
+    listContracts
+  );
   const { data: allEntries, isLoading } = useSWR<AuditEntry[]>(
-    ["audit", contractFilter, page],
+    org ? ["audit", contractFilter, page] : null,
     () =>
       getAuditLog({
         contract_id: contractFilter || undefined,
