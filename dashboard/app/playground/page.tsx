@@ -450,6 +450,7 @@ function TransformPreviewPanel({
 function PlaygroundContent() {
   const [yaml_, setYaml] = useState(DEFAULT_YAML);
   const [eventJson, setEventJson] = useState(DEFAULT_EVENT);
+  const [atomic, setAtomic] = useState(false);
   const [result, setResult] = useState<PlaygroundResponse | null>(null);
   /**
    * Snapshot of the event body that produced `result`, captured at submit
@@ -534,7 +535,7 @@ function PlaygroundContent() {
 
     setLoading(true);
     try {
-      const r = await playgroundValidate(yaml_, parsed);
+      const r = await playgroundValidate(yaml_, parsed, { atomic });
       setResult(r);
       setSubmittedEvent(parsed);
     } catch (e: unknown) {
@@ -634,6 +635,36 @@ function PlaygroundContent() {
               {parseError}
             </p>
           )}
+
+          {/* Atomic toggle */}
+          <label className="flex items-center gap-3 cursor-pointer select-none group w-fit">
+            <div className="relative">
+              <input
+                type="checkbox"
+                className="sr-only"
+                checked={atomic}
+                onChange={(e) => setAtomic(e.target.checked)}
+              />
+              <div
+                className={clsx(
+                  "w-9 h-5 rounded-full transition-colors",
+                  atomic ? "bg-green-600" : "bg-[#374151]"
+                )}
+              />
+              <div
+                className={clsx(
+                  "absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform",
+                  atomic && "translate-x-4"
+                )}
+              />
+            </div>
+            <div>
+              <span className="text-sm font-medium text-slate-300">Atomic</span>
+              <span className="ml-2 text-xs text-slate-600">
+                fail entire batch on any single violation
+              </span>
+            </div>
+          </label>
 
           <button
             onClick={handleValidate}
