@@ -50,6 +50,33 @@ function extractYamlMeta(
   }
 }
 
+/**
+ * Extract a human-useful error message from a non-OK Response.  Tries the
+ * JSON `{error}` shape the Rust API always emits, then falls back to the
+ * raw text body (truncated for sanity), then to `statusText`.  Never
+ * throws — even `.text()` errors collapse to `Request failed: <status>`.
+ */
+async function extractErrorMessage(res: Response): Promise<string> {
+  try {
+    const body = await res.clone().json();
+    if (body && typeof body === "object" && typeof body.error === "string") {
+      return body.error;
+    }
+  } catch {
+    // not JSON — fall through
+  }
+  try {
+    const text = (await res.text()).trim();
+    if (text) {
+      const snippet = text.length > 500 ? `${text.slice(0, 500)}…` : text;
+      return `Request failed: ${res.status} ${res.statusText}: ${snippet}`;
+    }
+  } catch {
+    // body already consumed or network read failed — fall through
+  }
+  return `Request failed: ${res.status} ${res.statusText || ""}`.trim();
+}
+
 async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
@@ -65,8 +92,12 @@ async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`${BASE}${path}`, { ...init, headers });
   // 207 Multi-Status is a valid success response from the ingest endpoint
   if (!res.ok && res.status !== 207) {
-    const body = await res.json().catch(() => ({ error: res.statusText }));
-    throw new Error(body?.error ?? `Request failed: ${res.status}`);
+    // Try JSON first (the Rust API always returns `{error, status}` on
+    // failure).  If that fails — e.g. the server returned an HTML error
+    // page from a proxy, or an empty body — fall back to the raw text so
+    // the thrown Error carries something more useful than `statusText`.
+    const message = await extractErrorMessage(res);
+    throw new Error(message);
   }
   // 204 No Content — typed as void by callers
   if (res.status === 204) return undefined as T;

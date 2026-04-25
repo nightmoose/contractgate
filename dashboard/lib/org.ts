@@ -25,6 +25,16 @@ export interface OrgInfo {
   role: "owner" | "admin" | "member";
 }
 
+/**
+ * Shape of the joined `orgs(name, slug)` cell.  Supabase's generated
+ * types render foreign-key joins as either `T | null` (one-to-one) or
+ * `T[]` (one-to-many) depending on schema introspection — and since we
+ * read it as `data.orgs` with `.single()` either flavour can land at
+ * runtime.  Local type so the unwrap below stays narrow and removes the
+ * `as unknown` double-cast that was here previously.
+ */
+type OrgJoinCell = { name: string; slug: string } | { name: string; slug: string }[] | null;
+
 interface UseOrgResult {
   org: OrgInfo | null;
   /** True while the membership query is in-flight. */
@@ -80,11 +90,10 @@ export function useOrg(): UseOrgResult {
           return;
         }
 
-        // Supabase types the join as an array even with .single(); take first elem.
-        const rawOrgs = data.orgs as unknown;
-        const orgsRow: { name: string; slug: string } | null = Array.isArray(rawOrgs)
-          ? (rawOrgs[0] ?? null)
-          : (rawOrgs as { name: string; slug: string } | null);
+        // Normalize the `orgs` join cell — see OrgJoinCell above for why
+        // it can be either an object or an array.
+        const rawOrgs = data.orgs as OrgJoinCell;
+        const orgsRow = Array.isArray(rawOrgs) ? (rawOrgs[0] ?? null) : rawOrgs;
         setOrg({
           org_id: data.org_id as string,
           org_name: orgsRow?.name ?? "My Org",
