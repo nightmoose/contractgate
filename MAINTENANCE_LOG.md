@@ -2,6 +2,22 @@
 
 ---
 
+## Deferred work
+
+- **sqlx 0.7 → 0.8 upgrade.** Builds currently emit
+  `warning: the following packages contain code that will be rejected
+  by a future version of Rust: sqlx-postgres v0.7.4`. This is a
+  forward-compat warning from the dependency, not our crate, and does
+  not fail the build today. The fix is bumping `sqlx` to 0.8, which is
+  a breaking upgrade (Encode/Decode trait reshape, `query_as!` macro
+  signature change, `sqlx::types::JsonValue` removed, etc.) and touches
+  every call site in `src/storage.rs` (~1300 lines). Defer until either
+  (a) the rustc deprecation actually lands and the warning becomes a
+  hard error, or (b) we want a feature in 0.8 badly enough to justify
+  the verification pass. Scope this as its own RFC when picked up.
+
+---
+
 ## Run 2026-04-20 (prod-DB rescue: migrations 003–005 were never applied)
 
 Triaged a Fly runtime error

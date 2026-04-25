@@ -7,6 +7,106 @@
 //! directory and require `DATABASE_URL` to be set.
 
 // ---------------------------------------------------------------------------
+// Shared test fixtures
+//
+// `FieldDefinition` is a 12-field struct where the typical test only cares
+// about 1–3 fields; the remaining 9–11 are `None`.  These helpers cut the
+// boilerplate so a new test reads as "what's special about this field" rather
+// than "spell out every defaulted field one more time."
+//
+// In-file scope only.  Sharing fixtures with `transform.rs`'s inner test mod
+// would require pub-exporting them across the lib/bin crate boundary or a
+// `test-fixtures` Cargo feature — neither warranted for the current overlap.
+// `transform.rs` already has its own small `entity()` helper that fits its
+// needs.
+// ---------------------------------------------------------------------------
+
+#[cfg(test)]
+mod fixtures {
+    use crate::contract::{
+        Contract, FieldDefinition, FieldType, GlossaryEntry, MetricDefinition, Ontology,
+    };
+
+    /// A minimum-defaults `FieldDefinition`.  Use when a test only cares
+    /// about `name` and `type`; tweak further fields with `entity_with`.
+    /// `dead_code` is allowed because today every test reaches this
+    /// indirectly through `entity_with`, but we want the bare-defaults
+    /// primitive available for tests that don't need any tweaks.
+    #[allow(dead_code)]
+    pub fn entity(name: &str, field_type: FieldType) -> FieldDefinition {
+        FieldDefinition {
+            name: name.to_string(),
+            field_type,
+            required: false,
+            pattern: None,
+            allowed_values: None,
+            min: None,
+            max: None,
+            min_length: None,
+            max_length: None,
+            properties: None,
+            items: None,
+            transform: None,
+        }
+    }
+
+    /// `entity` + a closure that mutates the result.  Lets each test set
+    /// only the fields it cares about while keeping the call site one line:
+    ///
+    /// ```ignore
+    /// entity_with("user_id", FieldType::String, |f| {
+    ///     f.required = true;
+    ///     f.pattern = Some(r"^[a-z0-9_]+$".into());
+    /// })
+    /// ```
+    pub fn entity_with(
+        name: &str,
+        field_type: FieldType,
+        tweak: impl FnOnce(&mut FieldDefinition),
+    ) -> FieldDefinition {
+        let mut f = entity(name, field_type);
+        tweak(&mut f);
+        f
+    }
+
+    /// Wrap a vec of entities in a minimum-defaults `Contract`.  Empty
+    /// glossary + metrics; pass `compliance_mode = false`.  For richer
+    /// shapes, build the `Contract` literal in the test directly.
+    pub fn contract(name: &str, entities: Vec<FieldDefinition>) -> Contract {
+        Contract {
+            version: "1.0".into(),
+            name: name.to_string(),
+            description: None,
+            compliance_mode: false,
+            ontology: Ontology { entities },
+            glossary: vec![],
+            metrics: vec![],
+        }
+    }
+
+    /// `contract` + glossary + metrics.  Used by the `playground` module's
+    /// `user_events_contract` fixture, which mirrors the canonical YAML
+    /// example in CLAUDE.md and needs both supplemental sections present.
+    pub fn contract_with(
+        name: &str,
+        description: Option<&str>,
+        entities: Vec<FieldDefinition>,
+        glossary: Vec<GlossaryEntry>,
+        metrics: Vec<MetricDefinition>,
+    ) -> Contract {
+        Contract {
+            version: "1.0".into(),
+            name: name.to_string(),
+            description: description.map(str::to_string),
+            compliance_mode: false,
+            ontology: Ontology { entities },
+            glossary,
+            metrics,
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Batch validation tests (RFC-001)
 //
 // These exercise the *validation layer* of the batch pipeline — order
@@ -17,52 +117,26 @@
 
 #[cfg(test)]
 mod batch {
-    use crate::contract::{Contract, FieldDefinition, FieldType, Ontology};
+    use super::fixtures::{contract, entity_with};
+    use crate::contract::{Contract, FieldType};
     use crate::validation::{validate, CompiledContract, ViolationKind};
     use rayon::prelude::*;
     use serde_json::{json, Value};
 
     fn tiny_contract() -> Contract {
-        Contract {
-            version: "1.0".into(),
-            name: "batch_test".into(),
-            description: None,
-            compliance_mode: false,
-            ontology: Ontology {
-                entities: vec![
-                    FieldDefinition {
-                        name: "user_id".into(),
-                        field_type: FieldType::String,
-                        required: true,
-                        pattern: Some(r"^[a-z0-9_]+$".into()),
-                        allowed_values: None,
-                        min: None,
-                        max: None,
-                        min_length: None,
-                        max_length: None,
-                        properties: None,
-                        items: None,
-                        transform: None,
-                    },
-                    FieldDefinition {
-                        name: "event_type".into(),
-                        field_type: FieldType::String,
-                        required: true,
-                        pattern: None,
-                        allowed_values: Some(vec![json!("click"), json!("view")]),
-                        min: None,
-                        max: None,
-                        min_length: None,
-                        max_length: None,
-                        properties: None,
-                        items: None,
-                        transform: None,
-                    },
-                ],
-            },
-            glossary: vec![],
-            metrics: vec![],
-        }
+        contract(
+            "batch_test",
+            vec![
+                entity_with("user_id", FieldType::String, |f| {
+                    f.required = true;
+                    f.pattern = Some(r"^[a-z0-9_]+$".into());
+                }),
+                entity_with("event_type", FieldType::String, |f| {
+                    f.required = true;
+                    f.allowed_values = Some(vec![json!("click"), json!("view")]);
+                }),
+            ],
+        )
     }
 
     fn events_with_one_bad_at(bad_index: usize, total: usize) -> Vec<Value> {
@@ -201,9 +275,8 @@ mod batch {
 
 #[cfg(test)]
 mod playground {
-    use crate::contract::{
-        Contract, FieldDefinition, FieldType, GlossaryEntry, MetricDefinition, Ontology,
-    };
+    use super::fixtures::{contract_with, entity_with};
+    use crate::contract::{Contract, FieldType, GlossaryEntry, MetricDefinition};
     use crate::validation::{validate, CompiledContract, ViolationKind};
     use serde_json::json;
 
@@ -212,83 +285,37 @@ mod playground {
     // -----------------------------------------------------------------------
 
     fn user_events_contract() -> Contract {
-        Contract {
-            version: "1.0".into(),
-            name: "user_events".into(),
-            description: Some("Contract for user interaction events".into()),
-            compliance_mode: false,
-            ontology: Ontology {
-                entities: vec![
-                    FieldDefinition {
-                        name: "user_id".into(),
-                        field_type: FieldType::String,
-                        required: true,
-                        pattern: Some(r"^[a-zA-Z0-9_-]+$".into()),
-                        allowed_values: None,
-                        min: None,
-                        max: None,
-                        min_length: None,
-                        max_length: None,
-                        properties: None,
-                        items: None,
-                        transform: None,
-                    },
-                    FieldDefinition {
-                        name: "event_type".into(),
-                        field_type: FieldType::String,
-                        required: true,
-                        pattern: None,
-                        allowed_values: Some(vec![
-                            json!("click"),
-                            json!("view"),
-                            json!("purchase"),
-                            json!("login"),
-                        ]),
-                        min: None,
-                        max: None,
-                        min_length: None,
-                        max_length: None,
-                        properties: None,
-                        items: None,
-                        transform: None,
-                    },
-                    FieldDefinition {
-                        name: "timestamp".into(),
-                        field_type: FieldType::Integer,
-                        required: true,
-                        pattern: None,
-                        allowed_values: None,
-                        min: None,
-                        max: None,
-                        min_length: None,
-                        max_length: None,
-                        properties: None,
-                        items: None,
-                        transform: None,
-                    },
-                    FieldDefinition {
-                        name: "amount".into(),
-                        field_type: FieldType::Float,
-                        required: false,
-                        pattern: None,
-                        allowed_values: None,
-                        min: Some(0.0),
-                        max: None,
-                        min_length: None,
-                        max_length: None,
-                        properties: None,
-                        items: None,
-                        transform: None,
-                    },
-                ],
-            },
-            glossary: vec![GlossaryEntry {
+        contract_with(
+            "user_events",
+            Some("Contract for user interaction events"),
+            vec![
+                entity_with("user_id", FieldType::String, |f| {
+                    f.required = true;
+                    f.pattern = Some(r"^[a-zA-Z0-9_-]+$".into());
+                }),
+                entity_with("event_type", FieldType::String, |f| {
+                    f.required = true;
+                    f.allowed_values = Some(vec![
+                        json!("click"),
+                        json!("view"),
+                        json!("purchase"),
+                        json!("login"),
+                    ]);
+                }),
+                entity_with("timestamp", FieldType::Integer, |f| {
+                    f.required = true;
+                }),
+                entity_with("amount", FieldType::Float, |f| {
+                    f.min = Some(0.0);
+                }),
+            ],
+            vec![GlossaryEntry {
                 field: "amount".into(),
                 description: "Monetary amount in USD".into(),
                 constraints: Some("must be non-negative".into()),
                 synonyms: None,
             }],
-            metrics: vec![MetricDefinition {
+            vec![MetricDefinition {
                 name: "total_revenue".into(),
                 field: None,
                 metric_type: None,
@@ -296,7 +323,7 @@ mod playground {
                 min: None,
                 max: None,
             }],
-        }
+        )
     }
 
     // -----------------------------------------------------------------------
