@@ -543,22 +543,22 @@ mod versioning {
     #[test]
     fn version_state_string_roundtrip() {
         for s in ["draft", "stable", "deprecated"] {
-            let parsed = VersionState::parse(s).expect("valid state");
+            let parsed: VersionState = s.parse().expect("valid state");
             assert_eq!(parsed.as_str(), s);
         }
     }
 
     #[test]
     fn version_state_rejects_unknown() {
-        assert!(VersionState::parse("retired").is_none());
-        assert!(VersionState::parse("").is_none());
-        assert!(VersionState::parse("DRAFT").is_none()); // case-sensitive on purpose
+        assert!("retired".parse::<VersionState>().is_err());
+        assert!("".parse::<VersionState>().is_err());
+        assert!("DRAFT".parse::<VersionState>().is_err()); // case-sensitive on purpose
     }
 
     #[test]
     fn multi_stable_resolution_roundtrip() {
         for s in ["strict", "fallback"] {
-            let parsed = MultiStableResolution::parse(s).expect("valid policy");
+            let parsed: MultiStableResolution = s.parse().expect("valid policy");
             assert_eq!(parsed.as_str(), s);
         }
     }

@@ -139,3 +139,38 @@ impl IntoResponse for AppError {
 }
 
 pub type AppResult<T> = Result<T, AppError>;
+
+// ---------------------------------------------------------------------------
+// DB error context helper
+// ---------------------------------------------------------------------------
+
+/// Extension trait to attach an operation label to a `sqlx::Error` before it
+/// is propagated as `AppError::Database`.  Bare `?` on a `sqlx::Result`
+/// preserves the underlying SQL detail (constraint, query, etc.) but loses
+/// the application context — operators reading prod logs see "Database
+/// error" without knowing whether it came from a contract create, an ingest
+/// read, or an audit write.
+///
+/// Use:
+///
+/// ```ignore
+/// let row = sqlx::query_as::<_, Row>("...")
+///     .fetch_one(pool)
+///     .await
+///     .db_op("get_contract_identity")?;
+/// ```
+///
+/// The HTTP status mapping is unchanged (still `AppError::Database` → 500);
+/// only the `tracing::error!` line in the logs gains the operation label.
+pub trait DbOpContext<T> {
+    fn db_op(self, op: &'static str) -> AppResult<T>;
+}
+
+impl<T> DbOpContext<T> for Result<T, sqlx::Error> {
+    fn db_op(self, op: &'static str) -> AppResult<T> {
+        self.map_err(|e| {
+            tracing::error!("Database error during {}: {:?}", op, e);
+            AppError::Database(e)
+        })
+    }
+}

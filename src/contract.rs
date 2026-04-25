@@ -8,6 +8,7 @@
 //! Contracts are stored as YAML and versioned in Supabase.
 
 use serde::{Deserialize, Serialize};
+use std::str::FromStr;
 
 // ---------------------------------------------------------------------------
 // Top-level contract
@@ -274,13 +275,20 @@ impl VersionState {
             VersionState::Deprecated => "deprecated",
         }
     }
+}
 
-    pub fn parse(s: &str) -> Option<Self> {
+/// Parsing is intentionally case-sensitive: DB enum values and YAML are always
+/// lowercase, and accepting "DRAFT" would mask producer bugs that we'd rather
+/// surface loudly.  See the `version_state_parse_*` tests in `src/tests.rs`.
+impl FromStr for VersionState {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s {
-            "draft" => Some(Self::Draft),
-            "stable" => Some(Self::Stable),
-            "deprecated" => Some(Self::Deprecated),
-            _ => None,
+            "draft" => Ok(Self::Draft),
+            "stable" => Ok(Self::Stable),
+            "deprecated" => Ok(Self::Deprecated),
+            _ => Err(format!("invalid VersionState: {s:?}")),
         }
     }
 }
@@ -307,12 +315,16 @@ impl MultiStableResolution {
             MultiStableResolution::Fallback => "fallback",
         }
     }
+}
 
-    pub fn parse(s: &str) -> Option<Self> {
+impl FromStr for MultiStableResolution {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s {
-            "strict" => Some(Self::Strict),
-            "fallback" => Some(Self::Fallback),
-            _ => None,
+            "strict" => Ok(Self::Strict),
+            "fallback" => Ok(Self::Fallback),
+            _ => Err(format!("invalid MultiStableResolution: {s:?}")),
         }
     }
 }

@@ -1,0 +1,12 @@
+# ContractGate rustfmt configuration.
+#
+# Locks formatting so future contributors don't churn diffs with local
+# editor defaults. Matches the existing style in the tree as of this
+# branch — running `cargo fmt` against this file should be a no-op on
+# the current code.
+edition = "2021"
+max_width = 100
+hard_tabs = false
+tab_spaces = 4
+newline_style = "Unix"
+use_field_init_shorthand = true
