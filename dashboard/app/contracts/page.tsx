@@ -18,12 +18,20 @@ import {
   deprecateVersion,
   deleteVersion,
   suggestNextVersion,
+  listNameHistory,
+  listQuarantinedEvents,
+  replayEvents,
+  getReplayHistory,
 } from "@/lib/api";
 import type {
   ContractSummary,
   ContractResponse,
   VersionSummary,
   VersionResponse,
+  NameHistoryEntry,
+  QuarantinedEvent,
+  ReplayOutcome,
+  ReplayResponse,
 } from "@/lib/api";
 import VisualBuilder from "./VisualBuilder";
 import { EXAMPLE_YAML, EXAMPLE_SAMPLE } from "./examples";
@@ -211,6 +219,12 @@ function EditContractModal({
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+
+  // Modal-level tab state
+  type ModalTab = "yaml" | "versions";
+  const [modalTab, setModalTab] = useState<ModalTab>("yaml");
+  const [nameHistory, setNameHistory] = useState<NameHistoryEntry[] | null>(null);
+  const [loadingNameHistory, setLoadingNameHistory] = useState(false);
 
   const BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001";
   const ingestUrl = `${BASE}/ingest/${contractId}`;
@@ -417,6 +431,64 @@ function EditContractModal({
     return () => window.removeEventListener("keydown", handler);
   }, [onClose]);
 
+  // Load name history the first time the Versions tab is opened
+  useEffect(() => {
+    if (modalTab !== "versions") return;
+    if (nameHistory !== null) return;
+    let cancelled = false;
+    setLoadingNameHistory(true);
+    listNameHistory(contractId)
+      .then((h) => { if (!cancelled) setNameHistory(h); })
+      .catch(() => { if (!cancelled) setNameHistory([]); })
+      .finally(() => { if (!cancelled) setLoadingNameHistory(false); });
+    return () => { cancelled = true; };
+  }, [contractId, modalTab, nameHistory]);
+
+  /** Promote a specific version by string — used by the Versions tab row buttons. */
+  const handlePromoteVersion = async (version: string) => {
+    if (!confirm(`Promote v${version} to stable? This freezes the YAML forever.`)) return;
+    setSaving(true);
+    setError(null);
+    try {
+      const v = await promoteVersion(contractId, version);
+      if (currentVersion?.version === version) {
+        setCurrentVersion(v);
+        setYamlDraft(v.yaml_content);
+      }
+      await refreshVersions();
+      await mutate("contracts");
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  /** Deprecate a specific version by string — used by the Versions tab row buttons. */
+  const handleDeprecateVersion = async (version: string) => {
+    if (!confirm(
+      `Deprecate v${version}?\n\n` +
+      `Pinned traffic will still validate against this version. New ` +
+      `unpinned traffic routes to the next stable (or fails closed if ` +
+      `none remains, depending on policy).`
+    )) return;
+    setSaving(true);
+    setError(null);
+    try {
+      const v = await deprecateVersion(contractId, version);
+      if (currentVersion?.version === version) {
+        setCurrentVersion(v);
+        setYamlDraft(v.yaml_content);
+      }
+      await refreshVersions();
+      await mutate("contracts");
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setSaving(false);
+    }
+  };
+
   return (
     /* Backdrop */
     <div
@@ -477,13 +549,46 @@ function EditContractModal({
           </div>
         )}
 
+        {/* Modal tab bar — shown once contract metadata has loaded */}
+        {!loading && contract && (
+          <div className="flex gap-1 px-6 pt-4 border-b border-[#1f2937] bg-[#0f1623]">
+            <button
+              onClick={() => setModalTab("yaml")}
+              className={clsx(
+                "px-4 py-2 text-sm font-medium rounded-t-lg transition-colors border-b-2 -mb-px",
+                modalTab === "yaml"
+                  ? "text-slate-100 border-green-600"
+                  : "text-slate-500 hover:text-slate-300 border-transparent"
+              )}
+            >
+              YAML
+            </button>
+            <button
+              onClick={() => setModalTab("versions")}
+              className={clsx(
+                "px-4 py-2 text-sm font-medium rounded-t-lg transition-colors border-b-2 -mb-px flex items-center gap-2",
+                modalTab === "versions"
+                  ? "text-slate-100 border-indigo-500"
+                  : "text-slate-500 hover:text-slate-300 border-transparent"
+              )}
+            >
+              Versions
+              {versions.length > 0 && (
+                <span className="text-[10px] bg-slate-700 text-slate-400 px-1.5 py-0.5 rounded-full">
+                  {versions.length}
+                </span>
+              )}
+            </button>
+          </div>
+        )}
+
         {/* Body */}
         <div className="flex-1 overflow-auto p-6 space-y-5">
           {loading ? (
             <div className="flex items-center justify-center h-48 text-slate-500 text-sm">
               Loading contract…
             </div>
-          ) : (
+          ) : modalTab === "yaml" ? (
             <>
               {/* Version picker */}
               <div>
@@ -589,65 +694,186 @@ function EditContractModal({
                 </div>
               ) : null}
             </>
+          ) : (
+            /* ── Versions tab ── */
+            <div className="space-y-8">
+              {/* All versions table */}
+              <div>
+                <h3 className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-3">
+                  All Versions
+                </h3>
+                {versions.length === 0 ? (
+                  <p className="text-xs text-slate-500 italic">No versions yet.</p>
+                ) : (
+                  <div className="space-y-2">
+                    {[...versions]
+                      .sort((a, b) => b.created_at.localeCompare(a.created_at))
+                      .map((v) => (
+                        <div
+                          key={v.version}
+                          className="flex items-center justify-between bg-[#0a0d12] border border-[#1f2937] rounded-xl px-4 py-3 gap-4"
+                        >
+                          {/* Left: version + state + timestamps */}
+                          <div className="flex items-center gap-3 min-w-0">
+                            <span className="font-mono text-sm text-slate-200 shrink-0">
+                              v{v.version}
+                            </span>
+                            <span
+                              className={clsx(
+                                "shrink-0 px-1.5 py-0.5 rounded text-[10px] uppercase tracking-wider font-sans",
+                                v.state === "stable" && "bg-green-900/40 text-green-400",
+                                v.state === "draft" && "bg-amber-900/40 text-amber-400",
+                                v.state === "deprecated" && "bg-slate-800 text-slate-500"
+                              )}
+                            >
+                              {v.state}
+                            </span>
+                            <span className="text-xs text-slate-600 truncate">
+                              Created {new Date(v.created_at).toLocaleString()}
+                              {v.promoted_at &&
+                                ` · promoted ${new Date(v.promoted_at).toLocaleString()}`}
+                              {v.deprecated_at &&
+                                ` · deprecated ${new Date(v.deprecated_at).toLocaleString()}`}
+                            </span>
+                          </div>
+
+                          {/* Right: actions */}
+                          <div className="flex items-center gap-2 shrink-0">
+                            {v.state === "draft" && (
+                              <button
+                                onClick={() => handlePromoteVersion(v.version)}
+                                disabled={saving}
+                                className="px-3 py-1 text-xs bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 text-white rounded-lg transition-colors"
+                              >
+                                Promote
+                              </button>
+                            )}
+                            {v.state === "stable" && (
+                              <button
+                                onClick={() => handleDeprecateVersion(v.version)}
+                                disabled={saving}
+                                className="px-3 py-1 text-xs bg-amber-900/30 hover:bg-amber-900/50 disabled:opacity-40 text-amber-300 rounded-lg transition-colors"
+                              >
+                                Deprecate
+                              </button>
+                            )}
+                            <button
+                              onClick={() => {
+                                setSelectedVersion(v.version);
+                                setModalTab("yaml");
+                              }}
+                              className="px-3 py-1 text-xs bg-[#1f2937] hover:bg-[#374151] text-slate-300 rounded-lg transition-colors"
+                            >
+                              View YAML →
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Name history */}
+              <div>
+                <h3 className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-3">
+                  Name History
+                </h3>
+                {loadingNameHistory ? (
+                  <p className="text-xs text-slate-500 animate-pulse">Loading…</p>
+                ) : !nameHistory || nameHistory.length === 0 ? (
+                  <p className="text-xs text-slate-500 italic">
+                    No name changes recorded — the contract has always been called &ldquo;
+                    {contract?.name ?? "…"}&rdquo;.
+                  </p>
+                ) : (
+                  <div className="space-y-2">
+                    {[...nameHistory]
+                      .sort((a, b) => b.changed_at.localeCompare(a.changed_at))
+                      .map((h) => (
+                        <div
+                          key={h.id}
+                          className="flex items-center gap-3 text-xs bg-[#0a0d12] border border-[#1f2937] rounded-lg px-4 py-2.5"
+                        >
+                          <span className="font-mono text-slate-500 line-through">
+                            {h.old_name}
+                          </span>
+                          <span className="text-slate-600">→</span>
+                          <span className="font-mono text-slate-200">{h.new_name}</span>
+                          <span className="ml-auto text-slate-600">
+                            {new Date(h.changed_at).toLocaleString()}
+                          </span>
+                        </div>
+                      ))}
+                  </div>
+                )}
+              </div>
+
+              {error && (
+                <p className="text-sm text-red-400 bg-red-900/20 border border-red-800/40 rounded p-2">
+                  {error}
+                </p>
+              )}
+            </div>
           )}
         </div>
 
         {/* Footer actions */}
-        {!loading && currentVersion && (
+        {!loading && (currentVersion || modalTab === "versions") && (
           <div className="flex items-center gap-3 p-6 border-t border-[#1f2937] flex-wrap">
-            {isDraft ? (
-              <>
-                <button
-                  onClick={handleSaveDraft}
-                  disabled={saving || !dirty}
-                  className="px-4 py-2 bg-green-600 hover:bg-green-500 disabled:opacity-40 disabled:cursor-not-allowed text-white text-sm font-medium rounded-lg transition-colors"
-                >
-                  {saving ? "Saving…" : dirty ? "Save Draft" : "Saved"}
-                </button>
-                <button
-                  onClick={handlePromote}
-                  disabled={saving || dirty}
-                  title={
-                    dirty
-                      ? "Save draft changes before promoting"
-                      : "Promote this draft to stable (irreversible)"
-                  }
-                  className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 disabled:cursor-not-allowed text-white text-sm font-medium rounded-lg transition-colors"
-                >
-                  Promote to Stable
-                </button>
-                <button
-                  onClick={handleDeleteDraft}
-                  disabled={saving}
-                  className="px-4 py-2 bg-red-900/30 hover:bg-red-900/50 disabled:opacity-40 text-red-400 text-sm font-medium rounded-lg transition-colors"
-                >
-                  Delete Draft
-                </button>
-              </>
-            ) : (
-              <>
-                <button
-                  onClick={handleForkAsDraft}
-                  disabled={saving}
-                  className="px-4 py-2 bg-green-600 hover:bg-green-500 disabled:opacity-40 text-white text-sm font-medium rounded-lg transition-colors"
-                >
-                  {saving ? "Forking…" : "Fork as New Draft"}
-                </button>
-                {currentVersion.state === "stable" && (
+            {/* YAML-tab-only actions */}
+            {modalTab === "yaml" && currentVersion && (
+              isDraft ? (
+                <>
                   <button
-                    onClick={handleDeprecate}
-                    disabled={saving}
-                    className="px-4 py-2 bg-amber-900/30 hover:bg-amber-900/50 disabled:opacity-40 text-amber-300 text-sm font-medium rounded-lg transition-colors"
+                    onClick={handleSaveDraft}
+                    disabled={saving || !dirty}
+                    className="px-4 py-2 bg-green-600 hover:bg-green-500 disabled:opacity-40 disabled:cursor-not-allowed text-white text-sm font-medium rounded-lg transition-colors"
                   >
-                    Deprecate
+                    {saving ? "Saving…" : dirty ? "Save Draft" : "Saved"}
                   </button>
-                )}
-              </>
+                  <button
+                    onClick={handlePromote}
+                    disabled={saving || dirty}
+                    title={
+                      dirty
+                        ? "Save draft changes before promoting"
+                        : "Promote this draft to stable (irreversible)"
+                    }
+                    className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 disabled:cursor-not-allowed text-white text-sm font-medium rounded-lg transition-colors"
+                  >
+                    Promote to Stable
+                  </button>
+                  <button
+                    onClick={handleDeleteDraft}
+                    disabled={saving}
+                    className="px-4 py-2 bg-red-900/30 hover:bg-red-900/50 disabled:opacity-40 text-red-400 text-sm font-medium rounded-lg transition-colors"
+                  >
+                    Delete Draft
+                  </button>
+                </>
+              ) : (
+                <>
+                  <button
+                    onClick={handleForkAsDraft}
+                    disabled={saving}
+                    className="px-4 py-2 bg-green-600 hover:bg-green-500 disabled:opacity-40 text-white text-sm font-medium rounded-lg transition-colors"
+                  >
+                    {saving ? "Forking…" : "Fork as New Draft"}
+                  </button>
+                  {currentVersion.state === "stable" && (
+                    <button
+                      onClick={handleDeprecate}
+                      disabled={saving}
+                      className="px-4 py-2 bg-amber-900/30 hover:bg-amber-900/50 disabled:opacity-40 text-amber-300 text-sm font-medium rounded-lg transition-colors"
+                    >
+                      Deprecate
+                    </button>
+                  )}
+                </>
+              )
             )}
             <button
-              onClick={() => {
-                onSaved();
-              }}
+              onClick={() => { onSaved(); }}
               className="px-4 py-2 bg-[#1f2937] hover:bg-[#374151] text-slate-300 text-sm font-medium rounded-lg transition-colors"
             >
               Close
@@ -735,6 +961,443 @@ function ContractList({
           </div>
         </div>
       ))}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Quarantine tab
+// ---------------------------------------------------------------------------
+
+function QuarantineTab({ contracts }: { contracts?: ContractSummary[] }) {
+  // Filters
+  const [contractFilter, setContractFilter] = useState<string>("");
+
+  // Multi-select
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+
+  // Replay
+  const [replayVersion, setReplayVersion] = useState<string>("");
+  const [replaying, setReplaying] = useState(false);
+  const [replayResult, setReplayResult] = useState<ReplayResponse | null>(null);
+  const [replayError, setReplayError] = useState<string | null>(null);
+
+  // Version list for the replay version picker
+  const [pickerVersions, setPickerVersions] = useState<VersionSummary[]>([]);
+
+  // Replay-history drawer
+  const [drawerEventId, setDrawerEventId] = useState<string | null>(null);
+  const [drawerHistory, setDrawerHistory] = useState<ReplayOutcome[] | null>(null);
+  const [loadingHistory, setLoadingHistory] = useState(false);
+
+  // Fetch versions when the contract filter changes (for the replay version picker)
+  useEffect(() => {
+    if (!contractFilter) {
+      setPickerVersions([]);
+      setReplayVersion("");
+      return;
+    }
+    let cancelled = false;
+    listVersions(contractFilter)
+      .then((vs) => {
+        if (cancelled) return;
+        setPickerVersions(vs);
+        // Default to the latest stable, falling back to the newest draft
+        const stables = vs.filter((v) => v.state === "stable");
+        const defaultV =
+          stables.length > 0
+            ? [...stables].sort((a, b) =>
+                (b.promoted_at ?? "").localeCompare(a.promoted_at ?? "")
+              )[0].version
+            : vs[0]?.version ?? "";
+        setReplayVersion(defaultV);
+      })
+      .catch(() => { if (!cancelled) setPickerVersions([]); });
+    return () => { cancelled = true; };
+  }, [contractFilter]);
+
+  // Fetch quarantined events via SWR
+  const swrKey = contractFilter ? `quarantine:${contractFilter}` : "quarantine:all";
+  const { data: events, isLoading, mutate: mutateEvents } = useSWR<QuarantinedEvent[]>(
+    swrKey,
+    () => listQuarantinedEvents(contractFilter ? { contract_id: contractFilter, limit: 100 } : { limit: 100 }),
+    { refreshInterval: 30_000 }
+  );
+
+  // Selection helpers
+  const allIds = events?.map((e) => e.id) ?? [];
+  const allSelected = allIds.length > 0 && allIds.every((id) => selected.has(id));
+  const someSelected = selected.size > 0;
+
+  const toggleAll = () =>
+    setSelected(allSelected ? new Set() : new Set(allIds));
+
+  const toggleOne = (id: string) => {
+    const next = new Set(selected);
+    if (next.has(id)) next.delete(id);
+    else next.add(id);
+    setSelected(next);
+  };
+
+  const handleReplay = async () => {
+    if (selected.size === 0) return;
+    setReplaying(true);
+    setReplayError(null);
+    setReplayResult(null);
+    try {
+      const r = await replayEvents(Array.from(selected), {
+        ...(replayVersion ? { version: replayVersion } : {}),
+        ...(contractFilter ? { contract_id: contractFilter } : {}),
+      });
+      setReplayResult(r);
+      await mutateEvents();
+      setSelected(new Set());
+    } catch (e: unknown) {
+      setReplayError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setReplaying(false);
+    }
+  };
+
+  const handleOpenDrawer = async (eventId: string) => {
+    setDrawerEventId(eventId);
+    setDrawerHistory(null);
+    setLoadingHistory(true);
+    try {
+      const history = await getReplayHistory({ event_id: eventId, limit: 20 });
+      setDrawerHistory(history);
+    } catch {
+      setDrawerHistory([]);
+    } finally {
+      setLoadingHistory(false);
+    }
+  };
+
+  const closeDrawer = () => {
+    setDrawerEventId(null);
+    setDrawerHistory(null);
+  };
+
+  return (
+    <div className="space-y-5">
+      {/* Filter bar */}
+      <div className="flex items-center gap-3 flex-wrap">
+        <span className="text-xs text-slate-500 uppercase tracking-wider whitespace-nowrap">
+          Filter:
+        </span>
+        <select
+          value={contractFilter}
+          onChange={(e) => {
+            setContractFilter(e.target.value);
+            setSelected(new Set());
+            setReplayResult(null);
+          }}
+          className="bg-[#111827] border border-[#1f2937] text-slate-300 text-sm rounded-lg px-3 py-1.5 outline-none focus:border-indigo-600"
+        >
+          <option value="">All contracts</option>
+          {contracts?.map((c) => (
+            <option key={c.id} value={c.id}>
+              {c.name}
+            </option>
+          ))}
+        </select>
+        {contractFilter && (
+          <button
+            onClick={() => { setContractFilter(""); setSelected(new Set()); }}
+            className="text-xs text-slate-500 hover:text-slate-300 transition-colors"
+          >
+            ✕ Clear filter
+          </button>
+        )}
+      </div>
+
+      {/* Replay action bar — shown when events are selected */}
+      {someSelected && (
+        <div className="flex items-center gap-3 flex-wrap bg-[#111827] border border-indigo-700/40 rounded-xl px-4 py-3">
+          <span className="text-sm font-medium text-indigo-300">
+            {selected.size} event{selected.size !== 1 ? "s" : ""} selected
+          </span>
+
+          {/* Version picker */}
+          {pickerVersions.length > 0 && (
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-slate-500 whitespace-nowrap">Replay against:</span>
+              <select
+                value={replayVersion}
+                onChange={(e) => setReplayVersion(e.target.value)}
+                className="bg-[#0a0d12] border border-[#1f2937] text-slate-300 text-xs rounded-lg px-2 py-1.5 outline-none focus:border-indigo-600"
+              >
+                {pickerVersions.map((v) => (
+                  <option key={v.version} value={v.version}>
+                    v{v.version} · {v.state}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
+
+          <button
+            onClick={handleReplay}
+            disabled={replaying}
+            className="px-4 py-1.5 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white text-sm font-medium rounded-lg transition-colors"
+          >
+            {replaying ? "Replaying…" : "▶ Replay"}
+          </button>
+          <button
+            onClick={() => setSelected(new Set())}
+            className="px-3 py-1.5 bg-[#1f2937] hover:bg-[#374151] text-slate-400 text-sm rounded-lg transition-colors"
+          >
+            Deselect all
+          </button>
+        </div>
+      )}
+
+      {/* Replay result card */}
+      {replayResult && (
+        <div className="bg-[#111827] border border-[#1f2937] rounded-xl p-4 flex items-start gap-4">
+          <span className="text-xl">
+            {replayResult.outcomes.every((o) => o.passed) ? "✅" : "⚠️"}
+          </span>
+          <div>
+            <p className="text-sm font-medium text-slate-200">
+              Replayed {replayResult.replayed} event{replayResult.replayed !== 1 ? "s" : ""}
+            </p>
+            <p className="text-xs text-slate-500 mt-0.5">
+              {replayResult.outcomes.filter((o) => o.passed).length} passed ·{" "}
+              {replayResult.outcomes.filter((o) => !o.passed).length} failed
+            </p>
+          </div>
+          <button
+            onClick={() => setReplayResult(null)}
+            className="ml-auto text-slate-500 hover:text-slate-300 transition-colors text-sm"
+          >
+            ✕
+          </button>
+        </div>
+      )}
+
+      {replayError && (
+        <p className="text-sm text-red-400 bg-red-900/20 border border-red-800/40 rounded p-2">
+          {replayError}
+        </p>
+      )}
+
+      {/* Events table */}
+      {isLoading ? (
+        <div className="flex items-center justify-center h-48 text-slate-500 text-sm">
+          Loading quarantined events…
+        </div>
+      ) : !events || events.length === 0 ? (
+        <div className="flex flex-col items-center justify-center h-64 text-slate-600">
+          <p className="text-4xl mb-4">🔒</p>
+          <p className="text-sm">
+            No quarantined events
+            {contractFilter ? " for this contract" : ""}.
+          </p>
+          <p className="text-xs mt-1">
+            Events only land here when the backend quarantines on violation.
+          </p>
+        </div>
+      ) : (
+        <div className="bg-[#111827] border border-[#1f2937] rounded-xl overflow-hidden">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-[#1f2937] text-left">
+                <th className="w-10 px-4 py-3">
+                  <input
+                    type="checkbox"
+                    checked={allSelected}
+                    onChange={toggleAll}
+                    className="rounded border-[#374151] bg-[#0a0d12] accent-indigo-500 cursor-pointer"
+                  />
+                </th>
+                <th className="px-3 py-3 text-xs font-medium text-slate-500 uppercase tracking-wider">
+                  Time
+                </th>
+                <th className="px-3 py-3 text-xs font-medium text-slate-500 uppercase tracking-wider">
+                  Contract
+                </th>
+                <th className="px-3 py-3 text-xs font-medium text-slate-500 uppercase tracking-wider">
+                  Version
+                </th>
+                <th className="px-3 py-3 text-xs font-medium text-slate-500 uppercase tracking-wider">
+                  Violations
+                </th>
+                <th className="px-3 py-3 text-xs font-medium text-slate-500 uppercase tracking-wider">
+                  Source IP
+                </th>
+                <th className="px-3 py-3 text-xs font-medium text-slate-500 uppercase tracking-wider">
+                  Replays
+                </th>
+                <th className="px-3 py-3 text-xs font-medium text-slate-500 uppercase tracking-wider">
+                  History
+                </th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-[#1f2937]">
+              {events.map((ev) => {
+                const contractName =
+                  contracts?.find((c) => c.id === ev.contract_id)?.name ??
+                  ev.contract_id.slice(0, 8) + "…";
+                return (
+                  <tr
+                    key={ev.id}
+                    className={clsx(
+                      "transition-colors",
+                      selected.has(ev.id)
+                        ? "bg-indigo-900/10"
+                        : "hover:bg-[#1f2937]/30"
+                    )}
+                  >
+                    <td className="px-4 py-3">
+                      <input
+                        type="checkbox"
+                        checked={selected.has(ev.id)}
+                        onChange={() => toggleOne(ev.id)}
+                        className="rounded border-[#374151] bg-[#0a0d12] accent-indigo-500 cursor-pointer"
+                      />
+                    </td>
+                    <td className="px-3 py-3 text-xs text-slate-400 whitespace-nowrap">
+                      {new Date(ev.quarantined_at).toLocaleString()}
+                    </td>
+                    <td className="px-3 py-3 text-xs text-slate-300 max-w-[140px] truncate">
+                      {contractName}
+                    </td>
+                    <td className="px-3 py-3 text-xs font-mono text-slate-500">
+                      {ev.contract_version ? `v${ev.contract_version}` : "—"}
+                    </td>
+                    <td className="px-3 py-3">
+                      <span className="inline-flex items-center gap-1 text-xs bg-red-900/30 text-red-400 border border-red-800/30 rounded-full px-2 py-0.5">
+                        {ev.violation_count}
+                      </span>
+                    </td>
+                    <td className="px-3 py-3 text-xs text-slate-500 font-mono">
+                      {ev.source_ip ?? "—"}
+                    </td>
+                    <td className="px-3 py-3 text-xs text-slate-500">
+                      {ev.replay_count > 0 ? (
+                        <span
+                          className={clsx(
+                            "font-medium",
+                            ev.last_replay_passed === true
+                              ? "text-green-400"
+                              : ev.last_replay_passed === false
+                              ? "text-red-400"
+                              : "text-slate-400"
+                          )}
+                        >
+                          {ev.replay_count}×
+                        </span>
+                      ) : (
+                        <span className="text-slate-700">—</span>
+                      )}
+                    </td>
+                    <td className="px-3 py-3">
+                      <button
+                        onClick={() => handleOpenDrawer(ev.id)}
+                        className="text-xs text-indigo-400 hover:text-indigo-300 transition-colors"
+                      >
+                        History →
+                      </button>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {/* Replay-history drawer */}
+      {drawerEventId && (
+        <>
+          {/* Backdrop */}
+          <div
+            className="fixed inset-0 z-40 bg-black/40"
+            onClick={closeDrawer}
+          />
+          {/* Drawer */}
+          <div className="fixed top-0 right-0 h-full w-full md:w-[480px] bg-[#0d1117] border-l border-[#1f2937] z-50 shadow-2xl flex flex-col">
+            {/* Drawer header */}
+            <div className="flex items-center justify-between p-5 border-b border-[#1f2937]">
+              <div>
+                <h3 className="font-semibold text-slate-100">Replay History</h3>
+                <p className="text-xs text-slate-600 font-mono mt-0.5">
+                  {drawerEventId}
+                </p>
+              </div>
+              <button
+                onClick={closeDrawer}
+                className="text-slate-500 hover:text-slate-300 transition-colors text-xl leading-none"
+                aria-label="Close"
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Drawer body */}
+            <div className="flex-1 overflow-auto p-5">
+              {loadingHistory ? (
+                <div className="flex items-center justify-center h-32 text-slate-500 text-sm">
+                  Loading history…
+                </div>
+              ) : !drawerHistory || drawerHistory.length === 0 ? (
+                <div className="flex flex-col items-center justify-center h-32 text-slate-600">
+                  <p className="text-3xl mb-3">📭</p>
+                  <p className="text-sm">No replay attempts for this event yet.</p>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {drawerHistory.map((h, i) => (
+                    <div
+                      key={i}
+                      className={clsx(
+                        "rounded-xl border p-4",
+                        h.passed
+                          ? "bg-green-900/20 border-green-800/30"
+                          : "bg-red-900/20 border-red-800/30"
+                      )}
+                    >
+                      <div className="flex items-center justify-between mb-2">
+                        <span
+                          className={clsx(
+                            "text-sm font-semibold",
+                            h.passed ? "text-green-400" : "text-red-400"
+                          )}
+                        >
+                          {h.passed ? "✅ PASSED" : "❌ FAILED"}
+                        </span>
+                        <span className="text-xs text-slate-500 font-mono">
+                          v{h.version}
+                        </span>
+                      </div>
+                      <p className="text-xs text-slate-500">
+                        {new Date(h.replayed_at).toLocaleString()}
+                      </p>
+                      {h.violations.length > 0 && (
+                        <ul className="mt-3 space-y-1.5">
+                          {h.violations.map((v, j) => (
+                            <li
+                              key={j}
+                              className="text-xs bg-red-900/20 border border-red-800/30 rounded-lg px-3 py-2"
+                            >
+                              <span className="font-mono text-red-400">
+                                {v.field}
+                              </span>
+                              <span className="text-slate-500 mx-1">·</span>
+                              <span className="text-slate-300">{v.message}</span>
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        </>
+      )}
     </div>
   );
 }
@@ -978,7 +1641,7 @@ function ManualCreatePanel({ onCancel, onCreated }: { onCancel: () => void; onCr
 // Page
 // ---------------------------------------------------------------------------
 
-type Tab = "list" | "build" | "generate";
+type Tab = "list" | "build" | "generate" | "quarantine";
 
 function ContractsContent() {
   const router = useRouter();
@@ -1070,6 +1733,17 @@ function ContractsContent() {
         >
           <span>✦</span> Generate from Sample
         </button>
+        <button
+          onClick={() => { setTab("quarantine"); setShowCreate(false); }}
+          className={clsx(
+            "px-4 py-2 text-sm font-medium rounded-lg transition-colors flex items-center gap-2",
+            tab === "quarantine"
+              ? "bg-[#1f2937] text-slate-100"
+              : "text-slate-500 hover:text-slate-300"
+          )}
+        >
+          🔒 Quarantine
+        </button>
       </div>
 
       {/* Tab content */}
@@ -1097,6 +1771,18 @@ function ContractsContent() {
       {tab === "generate" && (
         <div className="bg-[#111827] border border-[#1f2937] rounded-xl p-6">
           <GeneratorTab onSaved={() => setTab("list")} />
+        </div>
+      )}
+
+      {tab === "quarantine" && (
+        <div className="bg-[#111827] border border-[#1f2937] rounded-xl p-6">
+          <div className="mb-5">
+            <h2 className="text-base font-semibold text-slate-100">Quarantine</h2>
+            <p className="text-sm text-slate-500 mt-1">
+              Events that failed validation and were held for review. Select one or more to replay against any contract version.
+            </p>
+          </div>
+          <QuarantineTab contracts={contracts} />
         </div>
       )}
     </div>

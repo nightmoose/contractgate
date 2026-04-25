@@ -223,7 +223,10 @@ export interface BatchIngestResponse {
   passed: number;
   failed: number;
   dry_run: boolean;
-  atomic: boolean;
+  /** When true the backend treats every event in the batch atomically:
+   *  any single failure causes the entire batch to fail and nothing is
+   *  forwarded.  Optional for backwards compatibility with older deploys. */
+  atomic?: boolean;
   resolved_version: string;
   version_pin_source: string;
   results: IngestEventResult[];
@@ -252,6 +255,42 @@ export interface AuditEntry {
   validation_us: number;
   source_ip: string | null;
   created_at: string;
+}
+
+// ---------------------------------------------------------------------------
+// Quarantine — failed events held for inspection and optional replay.
+// ---------------------------------------------------------------------------
+
+/** A failed event held in the quarantine store for manual review / replay. */
+export interface QuarantinedEvent {
+  id: string;
+  contract_id: string;
+  contract_version: string | null;
+  raw_event: unknown;
+  violation_details: Violation[];
+  violation_count: number;
+  source_ip: string | null;
+  quarantined_at: string;
+  /** How many times this event has been replayed so far. */
+  replay_count: number;
+  last_replayed_at: string | null;
+  /** Result of the most recent replay attempt, or null if never replayed. */
+  last_replay_passed: boolean | null;
+}
+
+/** One outcome row written by the replay engine for a single event. */
+export interface ReplayOutcome {
+  event_id: string;
+  version: string;
+  passed: boolean;
+  violations: Violation[];
+  replayed_at: string;
+}
+
+/** Response body for `POST /quarantine/replay`. */
+export interface ReplayResponse {
+  replayed: number;
+  outcomes: ReplayOutcome[];
 }
 
 // ---------------------------------------------------------------------------
@@ -401,13 +440,60 @@ export const getAuditLog = (params?: {
 };
 
 // ---------------------------------------------------------------------------
+// Quarantine
+// ---------------------------------------------------------------------------
+
+export const listQuarantinedEvents = (params?: {
+  contract_id?: string;
+  limit?: number;
+  offset?: number;
+}) => {
+  const qs = new URLSearchParams();
+  if (params?.contract_id) qs.set("contract_id", params.contract_id);
+  if (params?.limit != null) qs.set("limit", String(params.limit));
+  if (params?.offset != null) qs.set("offset", String(params.offset));
+  return apiFetch<QuarantinedEvent[]>(`/quarantine?${qs}`);
+};
+
+export const replayEvents = (
+  eventIds: string[],
+  opts?: { version?: string; contract_id?: string }
+) =>
+  apiFetch<ReplayResponse>("/quarantine/replay", {
+    method: "POST",
+    body: JSON.stringify({
+      event_ids: eventIds,
+      ...(opts?.version ? { version: opts.version } : {}),
+      ...(opts?.contract_id ? { contract_id: opts.contract_id } : {}),
+    }),
+  });
+
+export const getReplayHistory = (params?: {
+  event_id?: string;
+  limit?: number;
+}) => {
+  const qs = new URLSearchParams();
+  if (params?.event_id) qs.set("event_id", params.event_id);
+  if (params?.limit != null) qs.set("limit", String(params.limit));
+  return apiFetch<ReplayOutcome[]>(`/quarantine/replay-history?${qs}`);
+};
+
+// ---------------------------------------------------------------------------
 // Playground
 // ---------------------------------------------------------------------------
 
-export const playgroundValidate = (yaml_content: string, event: unknown) =>
+export const playgroundValidate = (
+  yaml_content: string,
+  event: unknown,
+  opts?: { atomic?: boolean }
+) =>
   apiFetch<PlaygroundResponse>("/playground/validate", {
     method: "POST",
-    body: JSON.stringify({ yaml_content, event }),
+    body: JSON.stringify({
+      yaml_content,
+      event,
+      ...(opts?.atomic != null ? { atomic: opts.atomic } : {}),
+    }),
   });
 
 // ---------------------------------------------------------------------------
