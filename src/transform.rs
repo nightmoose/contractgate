@@ -103,11 +103,15 @@ pub fn apply_transforms(compiled: &CompiledContract, raw: Value) -> TransformedP
     // Apply each entity's transform, if any.  Only top-level fields are
     // supported in v1; nested transforms are a future RFC.
     for entity in &compiled.contract.ontology.entities {
-        let Some(transform) = &entity.transform else { continue };
+        let Some(transform) = &entity.transform else {
+            continue;
+        };
 
         // Entity missing from this event — nothing to rewrite.  If the
         // field was required, the validator already raised a violation.
-        let Some(existing) = obj.get(&entity.name) else { continue };
+        let Some(existing) = obj.get(&entity.name) else {
+            continue;
+        };
 
         // Transforms only operate on strings; compile-time check in
         // validation::validate_transform_types guarantees the entity is
@@ -134,7 +138,10 @@ pub fn apply_transforms(compiled: &CompiledContract, raw: Value) -> TransformedP
                 }
             }
             TransformKind::Hash => {
-                json!(format!("hmac-sha256:{}", hmac_sha256_hex(&compiled.pii_salt, s.as_bytes())))
+                json!(format!(
+                    "hmac-sha256:{}",
+                    hmac_sha256_hex(&compiled.pii_salt, s.as_bytes())
+                ))
             }
         };
 
@@ -186,8 +193,7 @@ pub(crate) fn format_preserving_mask(input: &str, salt: &[u8], field_name: &str)
     // (rather than plain concat-and-hash) guarantees the seed is well-
     // distributed across all (salt, field_name) pairs.
     let seed_bytes = {
-        let mut mac = HmacSha256::new_from_slice(salt)
-            .expect("HMAC-SHA256 accepts any key length");
+        let mut mac = HmacSha256::new_from_slice(salt).expect("HMAC-SHA256 accepts any key length");
         mac.update(field_name.as_bytes());
         mac.finalize().into_bytes()
     };
@@ -229,9 +235,7 @@ pub(crate) fn format_preserving_mask(input: &str, salt: &[u8], field_name: &str)
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::contract::{
-        Contract, FieldDefinition, FieldType, Ontology, Transform,
-    };
+    use crate::contract::{Contract, FieldDefinition, FieldType, Ontology, Transform};
 
     fn entity(name: &str, transform: Option<Transform>) -> FieldDefinition {
         FieldDefinition {
@@ -274,7 +278,10 @@ mod tests {
         let cc = compile(
             vec![entity(
                 "email",
-                Some(Transform { kind: TransformKind::Hash, style: None }),
+                Some(Transform {
+                    kind: TransformKind::Hash,
+                    style: None,
+                }),
             )],
             b"salt-A".to_vec(),
             false,
@@ -292,7 +299,10 @@ mod tests {
         let a = compile(
             vec![entity(
                 "email",
-                Some(Transform { kind: TransformKind::Hash, style: None }),
+                Some(Transform {
+                    kind: TransformKind::Hash,
+                    style: None,
+                }),
             )],
             b"salt-A".to_vec(),
             false,
@@ -300,7 +310,10 @@ mod tests {
         let b = compile(
             vec![entity(
                 "email",
-                Some(Transform { kind: TransformKind::Hash, style: None }),
+                Some(Transform {
+                    kind: TransformKind::Hash,
+                    style: None,
+                }),
             )],
             b"salt-B".to_vec(),
             false,
@@ -350,7 +363,10 @@ mod tests {
         assert_eq!(masked.len(), original.len());
         for (orig, new) in original.chars().zip(masked.chars()) {
             if orig.is_ascii_digit() {
-                assert!(new.is_ascii_digit(), "digit at position lost class: {orig} -> {new}");
+                assert!(
+                    new.is_ascii_digit(),
+                    "digit at position lost class: {orig} -> {new}"
+                );
             } else if orig.is_ascii_uppercase() {
                 assert!(new.is_ascii_uppercase());
             } else if orig.is_ascii_lowercase() {
@@ -385,7 +401,10 @@ mod tests {
         let cc = compile(
             vec![entity(
                 "ssn",
-                Some(Transform { kind: TransformKind::Mask, style: None }),
+                Some(Transform {
+                    kind: TransformKind::Mask,
+                    style: None,
+                }),
             )],
             b"any".to_vec(),
             false,
@@ -401,7 +420,10 @@ mod tests {
         let cc = compile(
             vec![entity(
                 "debug",
-                Some(Transform { kind: TransformKind::Drop, style: None }),
+                Some(Transform {
+                    kind: TransformKind::Drop,
+                    style: None,
+                }),
             )],
             b"any".to_vec(),
             false,
@@ -416,7 +438,10 @@ mod tests {
         let cc = compile(
             vec![entity(
                 "secret",
-                Some(Transform { kind: TransformKind::Redact, style: None }),
+                Some(Transform {
+                    kind: TransformKind::Redact,
+                    style: None,
+                }),
             )],
             b"any".to_vec(),
             false,
@@ -429,11 +454,7 @@ mod tests {
 
     #[test]
     fn no_transforms_is_identity() {
-        let cc = compile(
-            vec![entity("plain", None)],
-            b"any".to_vec(),
-            false,
-        );
+        let cc = compile(vec![entity("plain", None)], b"any".to_vec(), false);
         let input = json!({"plain": "value", "extra": 42});
         let out = apply_transforms(&cc, input.clone()).into_inner();
         assert_eq!(out, input);
@@ -446,11 +467,8 @@ mod tests {
             b"any".to_vec(),
             true, // compliance_mode on
         );
-        let out = apply_transforms(
-            &cc,
-            json!({"declared": "yes", "stowaway": "leaked"}),
-        )
-        .into_inner();
+        let out =
+            apply_transforms(&cc, json!({"declared": "yes", "stowaway": "leaked"})).into_inner();
         assert_eq!(out.get("declared").unwrap().as_str().unwrap(), "yes");
         assert!(
             out.get("stowaway").is_none(),
@@ -460,16 +478,9 @@ mod tests {
 
     #[test]
     fn compliance_mode_off_keeps_undeclared_fields() {
-        let cc = compile(
-            vec![entity("declared", None)],
-            b"any".to_vec(),
-            false,
-        );
-        let out = apply_transforms(
-            &cc,
-            json!({"declared": "yes", "stowaway": "kept"}),
-        )
-        .into_inner();
+        let cc = compile(vec![entity("declared", None)], b"any".to_vec(), false);
+        let out =
+            apply_transforms(&cc, json!({"declared": "yes", "stowaway": "kept"})).into_inner();
         assert_eq!(out.get("stowaway").unwrap().as_str().unwrap(), "kept");
     }
 
@@ -480,7 +491,10 @@ mod tests {
         let cc = compile(
             vec![entity(
                 "optional_email",
-                Some(Transform { kind: TransformKind::Hash, style: None }),
+                Some(Transform {
+                    kind: TransformKind::Hash,
+                    style: None,
+                }),
             )],
             b"any".to_vec(),
             false,
@@ -495,7 +509,10 @@ mod tests {
         let cc = compile(
             vec![entity(
                 "email",
-                Some(Transform { kind: TransformKind::Hash, style: None }),
+                Some(Transform {
+                    kind: TransformKind::Hash,
+                    style: None,
+                }),
             )],
             b"any".to_vec(),
             false,
@@ -509,14 +526,22 @@ mod tests {
 
     #[test]
     fn compile_rejects_transform_on_non_string_entity() {
-        let mut bad = entity("amount", Some(Transform { kind: TransformKind::Hash, style: None }));
+        let mut bad = entity(
+            "amount",
+            Some(Transform {
+                kind: TransformKind::Hash,
+                style: None,
+            }),
+        );
         bad.field_type = FieldType::Float;
         let contract = Contract {
             version: "1.0".into(),
             name: "bad".into(),
             description: None,
             compliance_mode: false,
-            ontology: Ontology { entities: vec![bad] },
+            ontology: Ontology {
+                entities: vec![bad],
+            },
             glossary: vec![],
             metrics: vec![],
         };

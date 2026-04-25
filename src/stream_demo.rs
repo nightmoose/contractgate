@@ -41,8 +41,8 @@ use serde_json::{json, Value};
 use tokio::sync::{broadcast, RwLock};
 use tokio_stream::{wrappers::BroadcastStream, StreamExt as _};
 
-use crate::validation::{validate, CompiledContract, Violation};
 use crate::contract::Contract;
+use crate::validation::{validate, CompiledContract, Violation};
 
 // Scenario YAML files are embedded at compile time — same approach as the
 // Kafka demo binary so they're always in sync.
@@ -328,7 +328,11 @@ pub async fn start_handler(
 ) -> Result<Json<Value>, (axum::http::StatusCode, String)> {
     let cfg = cfg.clamp();
 
-    if !state.stream_demo.contracts.contains_key(cfg.scenario.as_str()) {
+    if !state
+        .stream_demo
+        .contracts
+        .contains_key(cfg.scenario.as_str())
+    {
         return Err((
             axum::http::StatusCode::BAD_REQUEST,
             format!("unknown scenario '{}'", cfg.scenario),
@@ -354,12 +358,12 @@ pub async fn start_handler(
     tokio::spawn(stats_broadcaster(demo));
 
     tracing::info!(scenario = %cfg.scenario, fail_ratio = %cfg.fail_ratio, "stream demo started");
-    Ok(Json(json!({ "status": "started", "scenario": cfg.scenario })))
+    Ok(Json(
+        json!({ "status": "started", "scenario": cfg.scenario }),
+    ))
 }
 
-pub async fn stop_handler(
-    State(state): State<Arc<crate::AppState>>,
-) -> Json<Value> {
+pub async fn stop_handler(State(state): State<Arc<crate::AppState>>) -> Json<Value> {
     stop_run(&state.stream_demo).await;
     tracing::info!("stream demo stopped");
     Json(json!({ "status": "stopped" }))
@@ -388,7 +392,9 @@ pub struct ContractQuery {
     #[serde(default = "default_scenario")]
     pub scenario: String,
 }
-fn default_scenario() -> String { "simple".into() }
+fn default_scenario() -> String {
+    "simple".into()
+}
 
 pub async fn contract_handler(
     Query(q): Query<ContractQuery>,
@@ -445,8 +451,8 @@ async fn run_loop(state: Arc<StreamDemoState>, cfg: RunConfig) {
 
     let mut rng = SmallRng::from_entropy();
     let started = Instant::now();
-    let deadline = (cfg.duration_secs > 0)
-        .then(|| started + Duration::from_secs(cfg.duration_secs));
+    let deadline =
+        (cfg.duration_secs > 0).then(|| started + Duration::from_secs(cfg.duration_secs));
 
     // Rate-limit: pace over 1-second windows when target_rate is set.
     let target_per_sec = cfg.target_rate.filter(|&r| r > 0);
@@ -477,8 +483,14 @@ async fn run_loop(state: Arc<StreamDemoState>, cfg: RunConfig) {
         let v_us = v_start.elapsed().as_micros() as u64;
 
         let v_seq = state.validator.consumed.fetch_add(1, Ordering::Relaxed);
-        state.validator.produced_downstream.fetch_add(1, Ordering::Relaxed);
-        state.validator.bytes_in.fetch_add(byte_len, Ordering::Relaxed);
+        state
+            .validator
+            .produced_downstream
+            .fetch_add(1, Ordering::Relaxed);
+        state
+            .validator
+            .bytes_in
+            .fetch_add(byte_len, Ordering::Relaxed);
         if result.passed {
             state.validator.passed.fetch_add(1, Ordering::Relaxed);
         } else {
@@ -519,7 +531,10 @@ async fn run_loop(state: Arc<StreamDemoState>, cfg: RunConfig) {
         let c_us = c_start.elapsed().as_micros() as u64;
 
         let c_seq = state.copy.consumed.fetch_add(1, Ordering::Relaxed);
-        state.copy.produced_downstream.fetch_add(1, Ordering::Relaxed);
+        state
+            .copy
+            .produced_downstream
+            .fetch_add(1, Ordering::Relaxed);
         state.copy.bytes_in.fetch_add(byte_len, Ordering::Relaxed);
         state.copy.passed.fetch_add(1, Ordering::Relaxed);
         if c_seq.is_multiple_of(8) {
@@ -541,7 +556,11 @@ async fn run_loop(state: Arc<StreamDemoState>, cfg: RunConfig) {
             }
         } else {
             // Unbounded: yield periodically so the reactor stays responsive.
-            if state.producer_sent.load(Ordering::Relaxed).is_multiple_of(5_000) {
+            if state
+                .producer_sent
+                .load(Ordering::Relaxed)
+                .is_multiple_of(5_000)
+            {
                 tokio::task::yield_now().await;
             }
         }
@@ -600,11 +619,21 @@ fn generate_simple_event(rng: &mut SmallRng, fail: bool) -> Value {
 
     if fail {
         match rng.gen_range(0..5u8) {
-            0 => { event.as_object_mut().unwrap().remove("session_id"); }
-            1 => { event["user_id"] = json!("NOT A VALID ID!!"); }
-            2 => { event["event_type"] = json!("unknown_action"); }
-            3 => { event["timestamp"] = json!("not-a-number"); }
-            _ => { event["amount"] = json!(-5.0); }
+            0 => {
+                event.as_object_mut().unwrap().remove("session_id");
+            }
+            1 => {
+                event["user_id"] = json!("NOT A VALID ID!!");
+            }
+            2 => {
+                event["event_type"] = json!("unknown_action");
+            }
+            3 => {
+                event["timestamp"] = json!("not-a-number");
+            }
+            _ => {
+                event["amount"] = json!(-5.0);
+            }
         }
     }
     event
@@ -623,25 +652,34 @@ fn generate_nested_event(rng: &mut SmallRng, fail: bool) -> Value {
         (0..16)
             .map(|_| {
                 let n = rng.gen_range(0..36u8);
-                if n < 10 { (b'0' + n) as char } else { (b'a' + (n - 10)) as char }
+                if n < 10 {
+                    (b'0' + n) as char
+                } else {
+                    (b'a' + (n - 10)) as char
+                }
             })
             .collect::<String>()
     );
 
     let num_items = rng.gen_range(1..5usize);
     let items: Vec<Value> = (0..num_items)
-        .map(|_| json!({
-            "sku": format!("SKU-{:06X}", rng.gen::<u32>() & 0xFF_FFFF),
-            "quantity": rng.gen_range(1..20u32),
-            "unit_price": (rng.gen::<f64>() * 99_999.0 * 100.0).round() / 100.0,
-        }))
+        .map(|_| {
+            json!({
+                "sku": format!("SKU-{:06X}", rng.gen::<u32>() & 0xFF_FFFF),
+                "quantity": rng.gen_range(1..20u32),
+                "unit_price": (rng.gen::<f64>() * 99_999.0 * 100.0).round() / 100.0,
+            })
+        })
         .collect();
 
-    let total: f64 = items.iter().map(|it| {
-        let q = it["quantity"].as_f64().unwrap_or(0.0);
-        let p = it["unit_price"].as_f64().unwrap_or(0.0);
-        q * p
-    }).sum();
+    let total: f64 = items
+        .iter()
+        .map(|it| {
+            let q = it["quantity"].as_f64().unwrap_or(0.0);
+            let p = it["unit_price"].as_f64().unwrap_or(0.0);
+            q * p
+        })
+        .sum();
 
     let currency = CURRENCIES[rng.gen_range(0..CURRENCIES.len())];
     let city = CITIES[rng.gen_range(0..CITIES.len())];
@@ -671,10 +709,21 @@ fn generate_nested_event(rng: &mut SmallRng, fail: bool) -> Value {
 
     if fail {
         match rng.gen_range(0..6u8) {
-            0 => { event["customer"]["address"].as_object_mut().unwrap().remove("country"); }
-            1 => { event["channel"] = json!("carrier_pigeon"); }
-            2 => { event["order_id"] = json!("not-an-order"); }
-            3 => { event["customer"]["email"] = json!("not-an-email"); }
+            0 => {
+                event["customer"]["address"]
+                    .as_object_mut()
+                    .unwrap()
+                    .remove("country");
+            }
+            1 => {
+                event["channel"] = json!("carrier_pigeon");
+            }
+            2 => {
+                event["order_id"] = json!("not-an-order");
+            }
+            3 => {
+                event["customer"]["email"] = json!("not-an-email");
+            }
             4 => {
                 if let Some(items) = event["items"].as_array_mut() {
                     if let Some(first) = items.first_mut() {
@@ -682,7 +731,9 @@ fn generate_nested_event(rng: &mut SmallRng, fail: bool) -> Value {
                     }
                 }
             }
-            _ => { event["total_amount"] = json!(20_000_000.0); }
+            _ => {
+                event["total_amount"] = json!(20_000_000.0);
+            }
         }
     }
     event

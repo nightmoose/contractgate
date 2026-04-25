@@ -179,8 +179,9 @@ fn compile_field_patterns(
         };
 
         if let Some(pattern) = &field.pattern {
-            let re = Regex::new(pattern)
-                .map_err(|e| anyhow::anyhow!("Invalid regex '{}' for field '{}': {}", pattern, path, e))?;
+            let re = Regex::new(pattern).map_err(|e| {
+                anyhow::anyhow!("Invalid regex '{}' for field '{}': {}", pattern, path, e)
+            })?;
             out.insert(path.clone(), re);
         }
 
@@ -200,10 +201,7 @@ fn compile_field_patterns(
 /// produce surprises in prod — reject at contract-compile time instead.
 /// Numeric PII (account numbers, etc.) should be typed as `string` in the
 /// contract.
-fn validate_transform_types(
-    fields: &[FieldDefinition],
-    prefix: &str,
-) -> anyhow::Result<()> {
+fn validate_transform_types(fields: &[FieldDefinition], prefix: &str) -> anyhow::Result<()> {
     for field in fields {
         let path = if prefix.is_empty() {
             field.name.clone()
@@ -483,11 +481,7 @@ fn validate_value(
 /// Formula-style metrics (no `field`) are skipped at ingestion time —
 /// they are informational / for downstream aggregation systems only.
 /// Field-bound metrics (with `field` set) are checked against `min`/`max`.
-fn validate_metric(
-    metric: &MetricDefinition,
-    event: &Value,
-    violations: &mut Vec<Violation>,
-) {
+fn validate_metric(metric: &MetricDefinition, event: &Value, violations: &mut Vec<Violation>) {
     // Formula-only metrics have no field — nothing to validate per-event.
     let field_path = match &metric.field {
         Some(f) => f,
@@ -663,7 +657,11 @@ mod tests {
             "timestamp": 1712000000
         });
         let result = validate(&compiled, &event);
-        assert!(result.passed, "Expected pass but got violations: {:?}", result.violations);
+        assert!(
+            result.passed,
+            "Expected pass but got violations: {:?}",
+            result.violations
+        );
     }
 
     #[test]
@@ -673,7 +671,10 @@ mod tests {
         let event = json!({ "user_id": "alice_01", "event_type": "click" }); // missing timestamp
         let result = validate(&compiled, &event);
         assert!(!result.passed);
-        assert!(result.violations.iter().any(|v| v.kind == ViolationKind::MissingRequiredField));
+        assert!(result
+            .violations
+            .iter()
+            .any(|v| v.kind == ViolationKind::MissingRequiredField));
     }
 
     #[test]
@@ -687,7 +688,10 @@ mod tests {
         });
         let result = validate(&compiled, &event);
         assert!(!result.passed);
-        assert!(result.violations.iter().any(|v| v.kind == ViolationKind::EnumViolation));
+        assert!(result
+            .violations
+            .iter()
+            .any(|v| v.kind == ViolationKind::EnumViolation));
     }
 
     #[test]
@@ -701,7 +705,10 @@ mod tests {
         });
         let result = validate(&compiled, &event);
         assert!(!result.passed);
-        assert!(result.violations.iter().any(|v| v.kind == ViolationKind::PatternMismatch));
+        assert!(result
+            .violations
+            .iter()
+            .any(|v| v.kind == ViolationKind::PatternMismatch));
     }
 
     #[test]
@@ -715,7 +722,10 @@ mod tests {
         });
         let result = validate(&compiled, &event);
         assert!(!result.passed);
-        assert!(result.violations.iter().any(|v| v.kind == ViolationKind::RangeViolation));
+        assert!(result
+            .violations
+            .iter()
+            .any(|v| v.kind == ViolationKind::RangeViolation));
     }
 
     #[test]
