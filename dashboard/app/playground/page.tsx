@@ -105,6 +105,89 @@ function parseContractRules(yamlStr: string): ParsedContract {
 }
 
 // ---------------------------------------------------------------------------
+// Sample event generator
+// ---------------------------------------------------------------------------
+
+/**
+ * Produce a conforming sample JSON event from parsed contract entities.
+ * Includes all required fields and optional fields that have an enum (so the
+ * tester can see the allowed values right away). Uses the field name and type
+ * as semantic hints to emit realistic placeholder values.
+ */
+function generateSampleEvent(entities: ParsedEntity[]): Record<string, unknown> {
+  const event: Record<string, unknown> = {};
+
+  for (const e of entities) {
+    const include = e.required || e.enum != null;
+    if (!include) continue;
+
+    const name = e.name.toLowerCase();
+
+    switch (e.type) {
+      case "string": {
+        if (e.enum && e.enum.length > 0) {
+          event[e.name] = e.enum[0];
+        } else if (e.pattern) {
+          if (/uuid|[0-9a-f]\{8\}/.test(e.pattern)) {
+            event[e.name] = "a1b2c3d4-e5f6-7890-abcd-ef1234567890";
+          } else if (/@/.test(e.pattern)) {
+            event[e.name] = "user@example.com";
+          } else if (/https?/.test(e.pattern)) {
+            event[e.name] = "https://example.com";
+          } else if (/\\d\{4\}-\\d\{2\}/.test(e.pattern)) {
+            event[e.name] = new Date().toISOString().slice(0, 10);
+          } else {
+            event[e.name] = `example_${e.name}`;
+          }
+        } else {
+          if (name.includes("email")) event[e.name] = "user@example.com";
+          else if (name.includes("url") || name.includes("uri")) event[e.name] = "https://example.com";
+          else if (name.includes("phone")) event[e.name] = "+15550001234";
+          else if (name.endsWith("_id") || name === "id") event[e.name] = "user_01";
+          else if (name.includes("name")) event[e.name] = "Alice";
+          else if (name.includes("token") || name.includes("key")) event[e.name] = "tok_example";
+          else event[e.name] = `example_${e.name}`;
+        }
+        break;
+      }
+      case "integer": {
+        if (name.includes("timestamp") || name.includes("time") || name.endsWith("_at")) {
+          event[e.name] = Math.floor(Date.now() / 1000);
+        } else if (name.includes("count") || name.includes("quantity") || name.includes("qty")) {
+          event[e.name] = 1;
+        } else if (name.includes("age")) {
+          event[e.name] = 30;
+        } else {
+          event[e.name] = e.min !== undefined ? Math.max(e.min, 0) : 0;
+        }
+        break;
+      }
+      case "number": {
+        if (name.includes("price") || name.includes("amount") || name.includes("cost")) {
+          event[e.name] = 9.99;
+        } else if (name.includes("lat")) {
+          event[e.name] = 37.7749;
+        } else if (name.includes("lon") || name.includes("lng")) {
+          event[e.name] = -122.4194;
+        } else {
+          event[e.name] = e.min !== undefined ? Math.max(e.min, 0) : 0.0;
+        }
+        break;
+      }
+      case "boolean": {
+        event[e.name] = true;
+        break;
+      }
+      default: {
+        event[e.name] = null;
+      }
+    }
+  }
+
+  return event;
+}
+
+// ---------------------------------------------------------------------------
 // Contract Rules panel
 // ---------------------------------------------------------------------------
 
@@ -480,6 +563,12 @@ function PlaygroundContent() {
       if (storedId) setPrefilledFrom(storedId);
       sessionStorage.removeItem("playground_yaml");
       sessionStorage.removeItem("playground_contract_id");
+      // Generate a sample event from the pre-filled contract so the user
+      // doesn't arrive to a stale/mismatched default event.
+      const parsed = parseContractRules(storedYaml);
+      if (parsed.entities.length > 0) {
+        setEventJson(JSON.stringify(generateSampleEvent(parsed.entities), null, 2));
+      }
     }
   }, []);
 
@@ -510,6 +599,14 @@ function PlaygroundContent() {
       setYaml(yaml_content);
       setResult(null);
       setSubmittedEvent(null);
+
+      // Auto-generate a conforming sample event from the loaded contract's schema
+      // so the user can hit Validate immediately without writing JSON by hand.
+      const parsed = parseContractRules(yaml_content);
+      if (parsed.entities.length > 0) {
+        const sample = generateSampleEvent(parsed.entities);
+        setEventJson(JSON.stringify(sample, null, 2));
+      }
     } catch (e: unknown) {
       setParseError(e instanceof Error ? e.message : String(e));
     } finally {
