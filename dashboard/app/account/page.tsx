@@ -91,6 +91,25 @@ function AccountContent() {
   // Revocation state
   const [revoking, setRevoking] = useState<string | null>(null);
 
+  // GitHub integration state
+  interface GitHubConfig {
+    id?: string;
+    repo: string;
+    path_prefix: string;
+    branch: string;
+    has_token: boolean;
+  }
+  const [ghConfig, setGhConfig] = useState<GitHubConfig | null>(null);
+  const [ghLoadError, setGhLoadError] = useState<string | null>(null);
+  const [ghRepo, setGhRepo] = useState("");
+  const [ghPrefix, setGhPrefix] = useState("contracts/");
+  const [ghBranch, setGhBranch] = useState("main");
+  const [ghToken, setGhToken] = useState("");
+  const [ghSaving, setGhSaving] = useState(false);
+  const [ghSaveError, setGhSaveError] = useState<string | null>(null);
+  const [ghSaveOk, setGhSaveOk] = useState(false);
+  const [ghDeleting, setGhDeleting] = useState(false);
+
   // Org members + invites state
   const [members, setMembers] = useState<OrgMember[]>([]);
   const [invites, setInvites] = useState<OrgInvite[]>([]);
@@ -101,6 +120,25 @@ function AccountContent() {
   const [inviteError, setInviteError] = useState<string | null>(null);
   const [inviteSent, setInviteSent] = useState<string | null>(null);
   const [revokingInvite, setRevokingInvite] = useState<string | null>(null);
+
+  const loadGitHubConfig = useCallback(async () => {
+    setGhLoadError(null);
+    try {
+      const res = await fetch("/api/github/config");
+      if (!res.ok) { setGhLoadError("Failed to load GitHub config"); return; }
+      const data = await res.json();
+      if (data) {
+        setGhConfig(data);
+        setGhRepo(data.repo ?? "");
+        setGhPrefix(data.path_prefix ?? "contracts/");
+        setGhBranch(data.branch ?? "main");
+      } else {
+        setGhConfig(null);
+      }
+    } catch {
+      setGhLoadError("Failed to load GitHub config");
+    }
+  }, []);
 
   const loadKeys = useCallback(async () => {
     const { data, error } = await supabase
@@ -114,9 +152,9 @@ function AccountContent() {
     supabase.auth.getUser().then(({ data: { user } }) => {
       if (!user) { router.push("/auth/login"); return; }
       setUser(user);
-      loadKeys().finally(() => setLoading(false));
+      Promise.all([loadKeys(), loadGitHubConfig()]).finally(() => setLoading(false));
     });
-  }, [supabase, router, loadKeys]);
+  }, [supabase, router, loadKeys, loadGitHubConfig]);
 
   async function handleCreateKey(e: React.FormEvent) {
     e.preventDefault();
@@ -219,6 +257,51 @@ function AccountContent() {
       .eq("id", inviteId);
     await loadOrgData(org.org_id);
     setRevokingInvite(null);
+  }
+
+  async function handleSaveGitHubConfig(e: React.FormEvent) {
+    e.preventDefault();
+    setGhSaving(true);
+    setGhSaveError(null);
+    setGhSaveOk(false);
+    try {
+      const body: Record<string, string> = {
+        repo: ghRepo.trim(),
+        path_prefix: ghPrefix.trim(),
+        branch: ghBranch.trim() || "main",
+      };
+      if (ghToken.trim()) body.github_token = ghToken.trim();
+      const res = await fetch("/api/github/config", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setGhSaveError(data.error ?? "Failed to save");
+      } else {
+        setGhConfig(data);
+        setGhToken(""); // clear — token is never returned
+        setGhSaveOk(true);
+        setTimeout(() => setGhSaveOk(false), 3000);
+      }
+    } catch {
+      setGhSaveError("Network error — please try again");
+    } finally {
+      setGhSaving(false);
+    }
+  }
+
+  async function handleDeleteGitHubConfig() {
+    if (!confirm("Remove GitHub integration? Contracts will no longer sync to GitHub.")) return;
+    setGhDeleting(true);
+    try {
+      await fetch("/api/github/config", { method: "DELETE" });
+      setGhConfig(null);
+      setGhRepo(""); setGhPrefix("contracts/"); setGhBranch("main"); setGhToken("");
+    } finally {
+      setGhDeleting(false);
+    }
   }
 
   async function handleSignOut() {
@@ -581,6 +664,143 @@ function AccountContent() {
           )}
         </section>
       )}
+
+      {/* ── GitHub Integration ─────────────────────────────────────────────── */}
+      <section className="mt-10">
+        <div className="flex items-center justify-between mb-4">
+          <div>
+            <h2 className="text-base font-semibold text-slate-100 flex items-center gap-2">
+              {/* GitHub mark */}
+              <svg height="16" viewBox="0 0 16 16" width="16" fill="currentColor" className="text-slate-400" aria-hidden="true">
+                <path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z" />
+              </svg>
+              GitHub Integration
+            </h2>
+            <p className="text-xs text-slate-500 mt-0.5">
+              Sync contract YAML to a GitHub repo when you promote a version.
+            </p>
+          </div>
+          {ghConfig && (
+            <span className="text-xs px-2 py-1 bg-green-900/20 text-green-400 border border-green-700/30 rounded-full">
+              Connected
+            </span>
+          )}
+        </div>
+
+        {ghLoadError && (
+          <div className="mb-4 bg-red-900/20 border border-red-700/40 rounded-lg px-3 py-2.5 text-sm text-red-400">
+            {ghLoadError}
+          </div>
+        )}
+
+        {ghConfig && (
+          <div className="mb-4 bg-[#0d1117] border border-[#1f2937] rounded-xl px-4 py-3 flex items-center justify-between gap-4">
+            <div className="min-w-0">
+              <p className="text-sm text-slate-200 font-mono truncate">{ghConfig.repo}</p>
+              <p className="text-xs text-slate-500 mt-0.5">
+                Branch: <span className="text-slate-400">{ghConfig.branch}</span>
+                {" · "}
+                Prefix: <span className="text-slate-400 font-mono">{ghConfig.path_prefix || "/"}</span>
+                {" · "}
+                Token: <span className={ghConfig.has_token ? "text-green-400" : "text-red-400"}>
+                  {ghConfig.has_token ? "Set" : "Not set"}
+                </span>
+              </p>
+            </div>
+          </div>
+        )}
+
+        <form onSubmit={handleSaveGitHubConfig} className="bg-[#111827] border border-[#1f2937] rounded-xl p-5 space-y-4">
+          <div>
+            <label className="block text-sm text-slate-400 mb-1.5">
+              Repository <span className="text-slate-600">(owner/repo)</span>
+            </label>
+            <input
+              type="text"
+              required
+              value={ghRepo}
+              onChange={(e) => setGhRepo(e.target.value)}
+              placeholder="acme-corp/data-contracts"
+              className="w-full bg-[#0a0d12] border border-[#374151] rounded-lg px-3 py-2 text-sm text-slate-200 placeholder-slate-600 focus:outline-none focus:border-green-600 focus:ring-1 focus:ring-green-600/50 transition-colors font-mono"
+            />
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-sm text-slate-400 mb-1.5">Path prefix</label>
+              <input
+                type="text"
+                value={ghPrefix}
+                onChange={(e) => setGhPrefix(e.target.value)}
+                placeholder="contracts/"
+                className="w-full bg-[#0a0d12] border border-[#374151] rounded-lg px-3 py-2 text-sm text-slate-200 placeholder-slate-600 focus:outline-none focus:border-green-600 focus:ring-1 focus:ring-green-600/50 transition-colors font-mono"
+              />
+              <p className="text-xs text-slate-600 mt-1">Directory inside the repo</p>
+            </div>
+            <div>
+              <label className="block text-sm text-slate-400 mb-1.5">Branch</label>
+              <input
+                type="text"
+                value={ghBranch}
+                onChange={(e) => setGhBranch(e.target.value)}
+                placeholder="main"
+                className="w-full bg-[#0a0d12] border border-[#374151] rounded-lg px-3 py-2 text-sm text-slate-200 placeholder-slate-600 focus:outline-none focus:border-green-600 focus:ring-1 focus:ring-green-600/50 transition-colors font-mono"
+              />
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-sm text-slate-400 mb-1.5">
+              GitHub Personal Access Token
+              {ghConfig?.has_token && (
+                <span className="ml-2 text-xs text-slate-600">(leave blank to keep existing token)</span>
+              )}
+            </label>
+            <input
+              type="password"
+              value={ghToken}
+              onChange={(e) => setGhToken(e.target.value)}
+              placeholder={ghConfig?.has_token ? "••••••••  (already set)" : "github_pat_…"}
+              className="w-full bg-[#0a0d12] border border-[#374151] rounded-lg px-3 py-2 text-sm text-slate-200 placeholder-slate-600 focus:outline-none focus:border-green-600 focus:ring-1 focus:ring-green-600/50 transition-colors font-mono"
+            />
+            <p className="text-xs text-slate-600 mt-1">
+              Needs <span className="font-mono text-slate-500">contents:write</span> scope. Stored server-side, never sent to the browser.
+            </p>
+          </div>
+
+          {ghSaveError && (
+            <div className="bg-red-900/20 border border-red-700/40 rounded-lg px-3 py-2.5 text-sm text-red-400">
+              {ghSaveError}
+            </div>
+          )}
+          {ghSaveOk && (
+            <div className="bg-green-900/20 border border-green-700/40 rounded-lg px-3 py-2.5 text-sm text-green-400">
+              ✓ GitHub integration saved
+            </div>
+          )}
+
+          <div className="flex items-center justify-between pt-1">
+            <button
+              type="submit"
+              disabled={ghSaving}
+              className="bg-green-600 hover:bg-green-500 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg px-4 py-2 text-sm font-medium transition-colors"
+            >
+              {ghSaving ? "Saving…" : ghConfig ? "Update" : "Save"}
+            </button>
+
+            {ghConfig && (
+              <button
+                type="button"
+                onClick={handleDeleteGitHubConfig}
+                disabled={ghDeleting}
+                className="text-xs text-slate-600 hover:text-red-400 disabled:opacity-40 transition-colors"
+              >
+                {ghDeleting ? "Removing…" : "Remove integration"}
+              </button>
+            )}
+          </div>
+        </form>
+      </section>
 
       {/* Quick-reference box */}
       <section className="mt-10 p-5 bg-[#111827] border border-[#1f2937] rounded-xl">
