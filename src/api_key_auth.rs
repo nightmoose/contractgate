@@ -22,7 +22,7 @@
 
 use std::{
     collections::HashMap,
-    sync::Mutex,
+    sync::{Mutex, MutexGuard},
     time::{Duration, Instant},
 };
 use base64::{engine::general_purpose::STANDARD as B64, Engine as _};
@@ -82,12 +82,23 @@ impl Default for ApiKeyCache {
 // ---------------------------------------------------------------------------
 
 impl ApiKeyCache {
+    /// Acquire the cache mutex.  Centralized so the `.expect` message is
+    /// uniform and a poisoning panic surfaces with clear provenance instead
+    /// of `Result::unwrap` on a `PoisonError` from somewhere in this file.
+    /// Poisoning would only happen if a thread panicked while holding the
+    /// lock — which would itself be a bug — so we treat it as fatal.
+    fn lock_cache(&self) -> MutexGuard<'_, HashMap<String, CachedEntry>> {
+        self.inner
+            .lock()
+            .expect("ApiKeyCache mutex poisoned (a prior holder panicked)")
+    }
+
     /// Returns `Ok(ValidatedKey)` if the key is valid and active,
     /// `Err(())` if it is missing, malformed, invalid, or revoked.
     pub async fn validate(&self, raw_key: &str, db: &PgPool) -> Result<ValidatedKey, ()> {
         // 1. Fast path: in-cache and not stale.
         {
-            let map = self.inner.lock().unwrap();
+            let map = self.lock_cache();
             if let Some(entry) = map.get(raw_key) {
                 if entry.inserted_at.elapsed() < TTL {
                     return entry.result.clone();
@@ -101,7 +112,7 @@ impl ApiKeyCache {
 
         // 3. Update cache (store both hits and misses to avoid stampedes).
         {
-            let mut map = self.inner.lock().unwrap();
+            let mut map = self.lock_cache();
             // Opportunistic eviction: remove one stale entry while we're holding the lock.
             let stale_key = map
                 .iter()
@@ -140,7 +151,7 @@ impl ApiKeyCache {
     /// Immediately evicts a key from the cache (e.g. after a 401 response so
     /// the next request re-verifies rather than serving a stale miss).
     pub fn evict(&self, raw_key: &str) {
-        self.inner.lock().unwrap().remove(raw_key);
+        self.lock_cache().remove(raw_key);
     }
 }
 

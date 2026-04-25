@@ -29,7 +29,7 @@ jobs:
       - name: Install Rust stable
         uses: dtolnay/rust-toolchain@stable
         with:
-          components: clippy
+          components: clippy, rustfmt
 
       - name: Cache cargo registry + build artefacts
         uses: actions/cache@v4
@@ -40,6 +40,10 @@ jobs:
             target
           key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: ${{ runner.os }}-cargo-
+
+      # Style gate runs first — cheap, fails fast, anchors `rustfmt.toml`.
+      - name: cargo fmt --check
+        run: cargo fmt --all -- --check
 
       - name: cargo check
         run: cargo check --all-targets
