@@ -100,7 +100,9 @@ impl IntoResponse for AppError {
     fn into_response(self) -> Response {
         let (status, message) = match &self {
             AppError::ContractNotFound(_) => (StatusCode::NOT_FOUND, self.to_string()),
-            AppError::InvalidContractYaml(_) => (StatusCode::UNPROCESSABLE_ENTITY, self.to_string()),
+            AppError::InvalidContractYaml(_) => {
+                (StatusCode::UNPROCESSABLE_ENTITY, self.to_string())
+            }
             AppError::BadRequest(_) => (StatusCode::BAD_REQUEST, self.to_string()),
             AppError::Unauthorized => (StatusCode::UNAUTHORIZED, self.to_string()),
 
@@ -125,7 +127,10 @@ impl IntoResponse for AppError {
             }
             AppError::Internal(msg) => {
                 tracing::error!("Internal error: {}", msg);
-                (StatusCode::INTERNAL_SERVER_ERROR, "Internal server error".into())
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "Internal server error".into(),
+                )
             }
         };
 

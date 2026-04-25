@@ -27,7 +27,20 @@ create table if not exists public.user_profiles (
 comment on table public.user_profiles is
     'One row per authenticated user. Created automatically on first sign-in via trigger.';
 
--- Auto-create profile on new Supabase Auth sign-up
+-- Auto-create profile on new Supabase Auth sign-up.
+--
+-- SECURITY DEFINER rationale: this trigger fires on `auth.users` INSERT and
+-- needs to write into `public.user_profiles`, but Supabase Auth runs as the
+-- `supabase_auth_admin` role which has no direct GRANT on the `public`
+-- schema.  Running the function with the *definer's* privileges (the
+-- migration role, which owns `public`) lets the insert succeed without
+-- giving the auth role broad write access.
+--
+-- `set search_path = public` is the standard SECURITY DEFINER hardening:
+-- it pins the schema lookup so a malicious caller cannot shadow
+-- `user_profiles` with an object in a higher-priority schema.  Do not drop
+-- this clause.  See migration 007 for the org-membership trigger that
+-- follows the same pattern.
 create or replace function public.handle_new_user()
 returns trigger
 language plpgsql

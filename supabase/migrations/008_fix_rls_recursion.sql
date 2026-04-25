@@ -1,13 +1,26 @@
 -- ─────────────────────────────────────────────────────────────────────────────
 -- Migration 008: Fix infinite-recursion RLS on org_memberships (error 42P17)
 --
--- The policies created in 007 check `org_memberships` from within
--- `org_memberships` policies, causing PostgreSQL to recurse forever.
+-- ### Relationship to migration 007
 --
--- Fix: introduce a SECURITY DEFINER helper function that reads
--- org_memberships bypassing RLS.  All policies that need "what orgs does
--- this user belong to?" call the function instead of querying the table
--- directly.
+-- This migration is a *strict follow-up* to `007_org_scoped_tenancy.sql`,
+-- which introduced org-scoped RLS but landed with a self-referential policy
+-- bug.  The policies created in 007 evaluate `org_memberships` from within
+-- their own `USING` clauses (e.g. "user can SELECT memberships where the
+-- org_id is one of *their* memberships"), and PostgreSQL re-applies the
+-- same RLS to that inner read — recursing until it errors out with 42P17.
+--
+-- The fix lives entirely in this file: a SECURITY DEFINER helper
+-- (`public.get_my_org_ids`) reads `org_memberships` once with the definer's
+-- privileges, bypassing RLS, and every rebuilt policy in this migration
+-- calls the helper instead of querying the table directly.  All other
+-- 007 schema (tables, columns, FKs, the `handle_new_user_org` trigger)
+-- remains in force unchanged — only the recursive policies are dropped
+-- and recreated.
+--
+-- Treat 007 + 008 as a single logical unit: rolling back 008 without also
+-- reverting 007's policies will reintroduce the recursion error and break
+-- every authenticated read.
 -- ─────────────────────────────────────────────────────────────────────────────
 
 -- ── 1. Helper: returns the set of org_ids the current user is a member of ────

@@ -20,14 +20,14 @@
 //! Cache poisoning is not a concern: an attacker who knows a valid key already
 //! has access; the cache only stores *validated* keys.
 
+use base64::{engine::general_purpose::STANDARD as B64, Engine as _};
+use sha2::{Digest, Sha256};
+use sqlx::{FromRow, PgPool};
 use std::{
     collections::HashMap,
     sync::{Mutex, MutexGuard},
     time::{Duration, Instant},
 };
-use base64::{engine::general_purpose::STANDARD as B64, Engine as _};
-use sha2::{Digest, Sha256};
-use sqlx::{FromRow, PgPool};
 use uuid::Uuid;
 
 /// Raw DB row returned by the key-lookup query.
@@ -136,12 +136,10 @@ impl ApiKeyCache {
             let key_id = validated.api_key_id;
             let db2 = db.clone();
             tokio::spawn(async move {
-                let _ = sqlx::query(
-                    "UPDATE api_keys SET last_used_at = now() WHERE id = $1",
-                )
-                .bind(key_id)
-                .execute(&db2)
-                .await;
+                let _ = sqlx::query("UPDATE api_keys SET last_used_at = now() WHERE id = $1")
+                    .bind(key_id)
+                    .execute(&db2)
+                    .await;
             });
         }
 

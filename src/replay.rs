@@ -387,14 +387,10 @@ pub async fn replay_handler(
     // the returned `stamped` set and we downgrade its response slot to
     // `AlreadyReplayed`.
     let stamped: std::collections::HashSet<Uuid> =
-        storage::mark_quarantine_replayed_batch(
-            &state.db,
-            &replay_pairs,
-            chrono::Utc::now(),
-        )
-        .await?
-        .into_iter()
-        .collect();
+        storage::mark_quarantine_replayed_batch(&state.db, &replay_pairs, chrono::Utc::now())
+            .await?
+            .into_iter()
+            .collect();
 
     // ----- 7. Fold per-item outcomes into the response slots --------------
     for p in pending {

@@ -146,8 +146,8 @@ pub struct LaneStats {
     // Counters
     pub consumed: AtomicU64,
     pub produced_downstream: AtomicU64,
-    pub passed: AtomicU64,     // validator-only; stays 0 for the copy lane
-    pub failed: AtomicU64,     // validator-only
+    pub passed: AtomicU64, // validator-only; stays 0 for the copy lane
+    pub failed: AtomicU64, // validator-only
     pub bytes_in: AtomicU64,
 
     // End-to-end latency histogram (producer-timestamp → "done" in this lane),
@@ -169,7 +169,9 @@ impl LaneStats {
             failed: AtomicU64::new(0),
             bytes_in: AtomicU64::new(0),
             // 1us..60_000_000us with 3 significant digits.  ~40KB allocation.
-            latency_hist_us: Mutex::new(Histogram::<u64>::new_with_bounds(1, 60_000_000, 3).unwrap()),
+            latency_hist_us: Mutex::new(
+                Histogram::<u64>::new_with_bounds(1, 60_000_000, 3).unwrap(),
+            ),
             started_at: Mutex::new(None),
         }
     }
@@ -294,8 +296,8 @@ async fn main() -> anyhow::Result<()> {
     for (name, yaml) in [("simple", SCENARIO_SIMPLE), ("nested", SCENARIO_NESTED)] {
         let parsed: Contract =
             serde_yaml::from_str(yaml).with_context(|| format!("parsing {name} scenario YAML"))?;
-        let compiled =
-            CompiledContract::compile(parsed).with_context(|| format!("compiling {name} contract"))?;
+        let compiled = CompiledContract::compile(parsed)
+            .with_context(|| format!("compiling {name} contract"))?;
         contracts.insert(name.to_string(), Arc::new(compiled));
     }
 
@@ -530,7 +532,11 @@ async fn producer_loop(state: Arc<DemoState>, cfg: RunConfig) {
         // Fire and forget — we await the queue (not the broker ack) so we stay fast
         let key = format!("k{}", state.producer_sent.load(Ordering::Relaxed));
         let record = FutureRecord::to(TOPIC_IN).payload(&payload).key(&key);
-        match state.producer.send(record, Timeout::After(Duration::from_secs(5))).await {
+        match state
+            .producer
+            .send(record, Timeout::After(Duration::from_secs(5)))
+            .await
+        {
             Ok(_) => {
                 state.producer_sent.fetch_add(1, Ordering::Relaxed);
             }
@@ -616,8 +622,7 @@ async fn validator_lane(state: Arc<DemoState>) {
 
                 // Capture the producer timestamp *before* we potentially move
                 // `event` into the quarantine JSON below.
-                let produced_at_ns =
-                    event.get("_produced_at_ns").and_then(|v| v.as_u64());
+                let produced_at_ns = event.get("_produced_at_ns").and_then(|v| v.as_u64());
 
                 // Pick the contract from the current run config
                 let scenario = {
@@ -727,7 +732,10 @@ async fn copy_lane(state: Arc<DemoState>) {
                     Some(p) => p,
                     None => continue,
                 };
-                state.copy.bytes_in.fetch_add(payload.len() as u64, Ordering::Relaxed);
+                state
+                    .copy
+                    .bytes_in
+                    .fetch_add(payload.len() as u64, Ordering::Relaxed);
 
                 {
                     let mut s = state.copy.started_at.lock().await;
@@ -746,7 +754,10 @@ async fn copy_lane(state: Arc<DemoState>) {
                     .await
                     .is_ok()
                 {
-                    state.copy.produced_downstream.fetch_add(1, Ordering::Relaxed);
+                    state
+                        .copy
+                        .produced_downstream
+                        .fetch_add(1, Ordering::Relaxed);
                 }
 
                 state.copy.consumed.fetch_add(1, Ordering::Relaxed);
@@ -1038,7 +1049,10 @@ fn generate_nested_event(rng: &mut SmallRng, fail: bool) -> Value {
         match rng.gen_range(0..6u8) {
             0 => {
                 // Missing nested required field
-                event["customer"]["address"].as_object_mut().unwrap().remove("country");
+                event["customer"]["address"]
+                    .as_object_mut()
+                    .unwrap()
+                    .remove("country");
             }
             1 => {
                 // Enum violation at top level

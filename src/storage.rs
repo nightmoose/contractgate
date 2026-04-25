@@ -213,10 +213,7 @@ pub async fn create_contract(
 }
 
 /// Fetch a contract identity by id.
-pub async fn get_contract_identity(
-    pool: &PgPool,
-    id: Uuid,
-) -> AppResult<ContractIdentity> {
+pub async fn get_contract_identity(pool: &PgPool, id: Uuid) -> AppResult<ContractIdentity> {
     let row = sqlx::query_as::<_, ContractIdentityRow>(
         r#"
         SELECT id, name, description, multi_stable_resolution, created_at, updated_at, pii_salt
@@ -236,7 +233,10 @@ pub async fn get_contract_identity(
 /// List contracts with aggregated version info — suitable for the dashboard
 /// list view.  When `org_id` is Some, results are scoped to that org.
 /// Pass `None` only in dev-mode (no auth configured).
-pub async fn list_contracts(pool: &PgPool, org_id: Option<Uuid>) -> AppResult<Vec<ContractSummary>> {
+pub async fn list_contracts(
+    pool: &PgPool,
+    org_id: Option<Uuid>,
+) -> AppResult<Vec<ContractSummary>> {
     // Subquery picks the most recently promoted stable version per contract.
     let rows = if let Some(oid) = org_id {
         sqlx::query_as::<_, ContractSummaryRow>(
@@ -508,11 +508,7 @@ pub async fn deprecate_version(
 /// Delete a draft version.  Postgres trigger enforces the draft-only rule
 /// as well — so even a direct SQL hit cannot remove a stable/deprecated
 /// row.
-pub async fn delete_version(
-    pool: &PgPool,
-    contract_id: Uuid,
-    version: &str,
-) -> AppResult<()> {
+pub async fn delete_version(pool: &PgPool, contract_id: Uuid, version: &str) -> AppResult<()> {
     let current = get_version(pool, contract_id, version).await?;
     if current.state != VersionState::Draft {
         return Err(AppError::VersionImmutable {
@@ -521,13 +517,11 @@ pub async fn delete_version(
         });
     }
 
-    sqlx::query(
-        r#"DELETE FROM contract_versions WHERE contract_id = $1 AND version = $2"#,
-    )
-    .bind(contract_id)
-    .bind(version)
-    .execute(pool)
-    .await?;
+    sqlx::query(r#"DELETE FROM contract_versions WHERE contract_id = $1 AND version = $2"#)
+        .bind(contract_id)
+        .bind(version)
+        .execute(pool)
+        .await?;
 
     Ok(())
 }
@@ -558,10 +552,7 @@ pub async fn get_version(
     row.into_version()
 }
 
-pub async fn list_versions(
-    pool: &PgPool,
-    contract_id: Uuid,
-) -> AppResult<Vec<VersionSummary>> {
+pub async fn list_versions(pool: &PgPool, contract_id: Uuid) -> AppResult<Vec<VersionSummary>> {
     // Ensure contract exists so callers get a clean 404.
     let _ = get_contract_identity(pool, contract_id).await?;
 
@@ -645,20 +636,16 @@ pub async fn list_stable_versions(
 pub async fn load_all_pii_salts(
     pool: &PgPool,
 ) -> AppResult<std::collections::HashMap<Uuid, Vec<u8>>> {
-    let rows: Vec<(Uuid, Vec<u8>)> = sqlx::query_as(
-        r#"SELECT id, pii_salt FROM contracts"#,
-    )
-    .fetch_all(pool)
-    .await?;
+    let rows: Vec<(Uuid, Vec<u8>)> = sqlx::query_as(r#"SELECT id, pii_salt FROM contracts"#)
+        .fetch_all(pool)
+        .await?;
 
     Ok(rows.into_iter().collect())
 }
 
 /// Load every stable + deprecated version across all contracts — used at
 /// boot to warm the in-memory cache.  Drafts are loaded lazily on pin.
-pub async fn load_all_non_draft_versions(
-    pool: &PgPool,
-) -> AppResult<Vec<ContractVersion>> {
+pub async fn load_all_non_draft_versions(pool: &PgPool) -> AppResult<Vec<ContractVersion>> {
     let rows = sqlx::query_as::<_, ContractVersionRow>(
         r#"
         SELECT id, contract_id, version, state, yaml_content,
@@ -815,8 +802,12 @@ pub async fn recent_audit_entries(
                 LIMIT $3 OFFSET $4
                 "#,
             )
-            .bind(oid).bind(cid).bind(limit).bind(offset)
-            .fetch_all(pool).await?
+            .bind(oid)
+            .bind(cid)
+            .bind(limit)
+            .bind(offset)
+            .fetch_all(pool)
+            .await?
         }
         (Some(oid), None) => {
             sqlx::query_as::<_, AuditEntry>(
@@ -829,8 +820,11 @@ pub async fn recent_audit_entries(
                 LIMIT $2 OFFSET $3
                 "#,
             )
-            .bind(oid).bind(limit).bind(offset)
-            .fetch_all(pool).await?
+            .bind(oid)
+            .bind(limit)
+            .bind(offset)
+            .fetch_all(pool)
+            .await?
         }
         (None, Some(cid)) => {
             // Dev-mode: no org, but still filter by contract
@@ -844,8 +838,11 @@ pub async fn recent_audit_entries(
                 LIMIT $2 OFFSET $3
                 "#,
             )
-            .bind(cid).bind(limit).bind(offset)
-            .fetch_all(pool).await?
+            .bind(cid)
+            .bind(limit)
+            .bind(offset)
+            .fetch_all(pool)
+            .await?
         }
         (None, None) => {
             // Dev-mode: no scoping at all
@@ -858,8 +855,10 @@ pub async fn recent_audit_entries(
                 LIMIT $1 OFFSET $2
                 "#,
             )
-            .bind(limit).bind(offset)
-            .fetch_all(pool).await?
+            .bind(limit)
+            .bind(offset)
+            .fetch_all(pool)
+            .await?
         }
     };
 
@@ -879,30 +878,50 @@ pub async fn ingestion_stats(
     // Query 1: aggregate counts + average latency
     // -----------------------------------------------------------------------
     let stats: StatsRow = match (org_id, contract_id) {
-        (Some(oid), Some(cid)) => sqlx::query_as::<_, StatsRow>(
-            r#"SELECT COUNT(*)::bigint AS total,
+        (Some(oid), Some(cid)) => {
+            sqlx::query_as::<_, StatsRow>(
+                r#"SELECT COUNT(*)::bigint AS total,
                       COALESCE(SUM(CASE WHEN passed THEN 1 ELSE 0 END), 0)::bigint AS passed,
                       COALESCE(AVG(validation_us::float8), 0.0) AS avg_us
-               FROM audit_log WHERE org_id = $1 AND contract_id = $2"#)
-            .bind(oid).bind(cid).fetch_one(pool).await?,
-        (Some(oid), None) => sqlx::query_as::<_, StatsRow>(
-            r#"SELECT COUNT(*)::bigint AS total,
+               FROM audit_log WHERE org_id = $1 AND contract_id = $2"#,
+            )
+            .bind(oid)
+            .bind(cid)
+            .fetch_one(pool)
+            .await?
+        }
+        (Some(oid), None) => {
+            sqlx::query_as::<_, StatsRow>(
+                r#"SELECT COUNT(*)::bigint AS total,
                       COALESCE(SUM(CASE WHEN passed THEN 1 ELSE 0 END), 0)::bigint AS passed,
                       COALESCE(AVG(validation_us::float8), 0.0) AS avg_us
-               FROM audit_log WHERE org_id = $1"#)
-            .bind(oid).fetch_one(pool).await?,
-        (None, Some(cid)) => sqlx::query_as::<_, StatsRow>(
-            r#"SELECT COUNT(*)::bigint AS total,
+               FROM audit_log WHERE org_id = $1"#,
+            )
+            .bind(oid)
+            .fetch_one(pool)
+            .await?
+        }
+        (None, Some(cid)) => {
+            sqlx::query_as::<_, StatsRow>(
+                r#"SELECT COUNT(*)::bigint AS total,
                       COALESCE(SUM(CASE WHEN passed THEN 1 ELSE 0 END), 0)::bigint AS passed,
                       COALESCE(AVG(validation_us::float8), 0.0) AS avg_us
-               FROM audit_log WHERE contract_id = $1"#)
-            .bind(cid).fetch_one(pool).await?,
-        (None, None) => sqlx::query_as::<_, StatsRow>(
-            r#"SELECT COUNT(*)::bigint AS total,
+               FROM audit_log WHERE contract_id = $1"#,
+            )
+            .bind(cid)
+            .fetch_one(pool)
+            .await?
+        }
+        (None, None) => {
+            sqlx::query_as::<_, StatsRow>(
+                r#"SELECT COUNT(*)::bigint AS total,
                       COALESCE(SUM(CASE WHEN passed THEN 1 ELSE 0 END), 0)::bigint AS passed,
                       COALESCE(AVG(validation_us::float8), 0.0) AS avg_us
-               FROM audit_log"#)
-            .fetch_one(pool).await?,
+               FROM audit_log"#,
+            )
+            .fetch_one(pool)
+            .await?
+        }
     };
 
     let total = stats.total.unwrap_or(0);
@@ -913,30 +932,50 @@ pub async fn ingestion_stats(
     // Query 2: percentile latencies (p50 / p95 / p99)
     // -----------------------------------------------------------------------
     let perc: PercRow = match (org_id, contract_id) {
-        (Some(oid), Some(cid)) => sqlx::query_as::<_, PercRow>(
-            r#"SELECT percentile_disc(0.50) WITHIN GROUP (ORDER BY validation_us) AS p50,
+        (Some(oid), Some(cid)) => {
+            sqlx::query_as::<_, PercRow>(
+                r#"SELECT percentile_disc(0.50) WITHIN GROUP (ORDER BY validation_us) AS p50,
                       percentile_disc(0.95) WITHIN GROUP (ORDER BY validation_us) AS p95,
                       percentile_disc(0.99) WITHIN GROUP (ORDER BY validation_us) AS p99
-               FROM audit_log WHERE org_id = $1 AND contract_id = $2"#)
-            .bind(oid).bind(cid).fetch_one(pool).await?,
-        (Some(oid), None) => sqlx::query_as::<_, PercRow>(
-            r#"SELECT percentile_disc(0.50) WITHIN GROUP (ORDER BY validation_us) AS p50,
+               FROM audit_log WHERE org_id = $1 AND contract_id = $2"#,
+            )
+            .bind(oid)
+            .bind(cid)
+            .fetch_one(pool)
+            .await?
+        }
+        (Some(oid), None) => {
+            sqlx::query_as::<_, PercRow>(
+                r#"SELECT percentile_disc(0.50) WITHIN GROUP (ORDER BY validation_us) AS p50,
                       percentile_disc(0.95) WITHIN GROUP (ORDER BY validation_us) AS p95,
                       percentile_disc(0.99) WITHIN GROUP (ORDER BY validation_us) AS p99
-               FROM audit_log WHERE org_id = $1"#)
-            .bind(oid).fetch_one(pool).await?,
-        (None, Some(cid)) => sqlx::query_as::<_, PercRow>(
-            r#"SELECT percentile_disc(0.50) WITHIN GROUP (ORDER BY validation_us) AS p50,
+               FROM audit_log WHERE org_id = $1"#,
+            )
+            .bind(oid)
+            .fetch_one(pool)
+            .await?
+        }
+        (None, Some(cid)) => {
+            sqlx::query_as::<_, PercRow>(
+                r#"SELECT percentile_disc(0.50) WITHIN GROUP (ORDER BY validation_us) AS p50,
                       percentile_disc(0.95) WITHIN GROUP (ORDER BY validation_us) AS p95,
                       percentile_disc(0.99) WITHIN GROUP (ORDER BY validation_us) AS p99
-               FROM audit_log WHERE contract_id = $1"#)
-            .bind(cid).fetch_one(pool).await?,
-        (None, None) => sqlx::query_as::<_, PercRow>(
-            r#"SELECT percentile_disc(0.50) WITHIN GROUP (ORDER BY validation_us) AS p50,
+               FROM audit_log WHERE contract_id = $1"#,
+            )
+            .bind(cid)
+            .fetch_one(pool)
+            .await?
+        }
+        (None, None) => {
+            sqlx::query_as::<_, PercRow>(
+                r#"SELECT percentile_disc(0.50) WITHIN GROUP (ORDER BY validation_us) AS p50,
                       percentile_disc(0.95) WITHIN GROUP (ORDER BY validation_us) AS p95,
                       percentile_disc(0.99) WITHIN GROUP (ORDER BY validation_us) AS p99
-               FROM audit_log"#)
-            .fetch_one(pool).await?,
+               FROM audit_log"#,
+            )
+            .fetch_one(pool)
+            .await?
+        }
     };
 
     Ok(IngestionStats {
@@ -1080,10 +1119,7 @@ pub struct ForwardEventInsert {
 /// Uses `UNNEST` of typed arrays so one SQL statement handles the whole batch
 /// regardless of size.  Rows in the input slice keep their order; the
 /// database assigns each a fresh UUID via `uuid_generate_v4()`.
-pub async fn log_audit_entries_batch(
-    pool: &PgPool,
-    entries: &[AuditEntryInsert],
-) -> AppResult<()> {
+pub async fn log_audit_entries_batch(pool: &PgPool, entries: &[AuditEntryInsert]) -> AppResult<()> {
     if entries.is_empty() {
         return Ok(());
     }
@@ -1096,14 +1132,14 @@ pub async fn log_audit_entries_batch(
         .iter()
         .map(|e| e.org_id.unwrap_or(Uuid::nil()))
         .collect();
-    let contract_versions: Vec<String> = entries
-        .iter()
-        .map(|e| e.contract_version.clone())
-        .collect();
+    let contract_versions: Vec<String> =
+        entries.iter().map(|e| e.contract_version.clone()).collect();
     let passed: Vec<bool> = entries.iter().map(|e| e.passed).collect();
     let violation_counts: Vec<i32> = entries.iter().map(|e| e.violation_count).collect();
-    let violation_details: Vec<serde_json::Value> =
-        entries.iter().map(|e| e.violation_details.clone()).collect();
+    let violation_details: Vec<serde_json::Value> = entries
+        .iter()
+        .map(|e| e.violation_details.clone())
+        .collect();
     // RFC-004 §6: extract the underlying JSON only at the SQL bind boundary.
     let raw_events: Vec<serde_json::Value> = entries
         .iter()
@@ -1175,10 +1211,8 @@ pub async fn quarantine_events_batch(
     }
 
     let contract_ids: Vec<Uuid> = entries.iter().map(|e| e.contract_id).collect();
-    let contract_versions: Vec<String> = entries
-        .iter()
-        .map(|e| e.contract_version.clone())
-        .collect();
+    let contract_versions: Vec<String> =
+        entries.iter().map(|e| e.contract_version.clone()).collect();
     // RFC-004 §6: same pattern as `log_audit_entries_batch` — unwrap to
     // `Value` only at the SQL boundary.
     let payloads: Vec<serde_json::Value> = entries
@@ -1186,8 +1220,10 @@ pub async fn quarantine_events_batch(
         .map(|e| e.payload.as_value().clone())
         .collect();
     let violation_counts: Vec<i32> = entries.iter().map(|e| e.violation_count).collect();
-    let violation_details: Vec<serde_json::Value> =
-        entries.iter().map(|e| e.violation_details.clone()).collect();
+    let violation_details: Vec<serde_json::Value> = entries
+        .iter()
+        .map(|e| e.violation_details.clone())
+        .collect();
     let validation_us: Vec<i64> = entries.iter().map(|e| e.validation_us).collect();
     let source_ips: Vec<String> = entries
         .iter()
@@ -1241,19 +1277,14 @@ pub async fn quarantine_events_batch(
 ///
 /// Unlike the other two helpers this one is awaited inline from the ingest
 /// handler so the response can mark individual events as `forwarded: true`.
-pub async fn forward_events_batch(
-    pool: &PgPool,
-    entries: &[ForwardEventInsert],
-) -> AppResult<()> {
+pub async fn forward_events_batch(pool: &PgPool, entries: &[ForwardEventInsert]) -> AppResult<()> {
     if entries.is_empty() {
         return Ok(());
     }
 
     let contract_ids: Vec<Uuid> = entries.iter().map(|e| e.contract_id).collect();
-    let contract_versions: Vec<String> = entries
-        .iter()
-        .map(|e| e.contract_version.clone())
-        .collect();
+    let contract_versions: Vec<String> =
+        entries.iter().map(|e| e.contract_version.clone()).collect();
     // RFC-004 §6: forward destination only ever sees post-transform payloads.
     let payloads: Vec<serde_json::Value> = entries
         .iter()
@@ -1338,10 +1369,7 @@ impl From<QuarantineRowRaw> for QuarantineRow {
 /// subset that exists.
 ///
 /// Preserves no particular order; the handler re-keys by ID.
-pub async fn list_quarantine_by_ids(
-    pool: &PgPool,
-    ids: &[Uuid],
-) -> AppResult<Vec<QuarantineRow>> {
+pub async fn list_quarantine_by_ids(pool: &PgPool, ids: &[Uuid]) -> AppResult<Vec<QuarantineRow>> {
     if ids.is_empty() {
         return Ok(vec![]);
     }

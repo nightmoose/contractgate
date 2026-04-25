@@ -87,14 +87,14 @@ mod batch {
 
         let sequential: Vec<bool> = events.iter().map(|e| validate(&cc, e).passed).collect();
 
-        let parallel: Vec<bool> = events
-            .par_iter()
-            .map(|e| validate(&cc, e).passed)
-            .collect();
+        let parallel: Vec<bool> = events.par_iter().map(|e| validate(&cc, e).passed).collect();
 
         assert_eq!(sequential, parallel);
         assert!(!parallel[17], "bad event should be at index 17");
-        assert!(parallel[16] && parallel[18], "neighbouring events should pass");
+        assert!(
+            parallel[16] && parallel[18],
+            "neighbouring events should pass"
+        );
     }
 
     /// Ordering guarantee: `par_iter().map().collect()` preserves input order.
@@ -110,10 +110,7 @@ mod batch {
             .map(|i| json!({ "user_id": format!("USER_{}", i), "event_type": "click" }))
             .collect();
 
-        let results: Vec<_> = events
-            .par_iter()
-            .map(|e| validate(&cc, e))
-            .collect();
+        let results: Vec<_> = events.par_iter().map(|e| validate(&cc, e)).collect();
 
         assert_eq!(results.len(), 200);
         for (i, vr) in results.iter().enumerate() {
@@ -163,7 +160,11 @@ mod batch {
 
         assert_eq!(failing.len(), 1);
         assert_eq!(failing[0].0, 3);
-        assert!(failing[0].1.violations.iter().any(|v| v.kind == ViolationKind::PatternMismatch));
+        assert!(failing[0]
+            .1
+            .violations
+            .iter()
+            .any(|v| v.kind == ViolationKind::PatternMismatch));
     }
 
     /// Throughput sanity: validating a 1 000-event batch in parallel completes
@@ -200,7 +201,9 @@ mod batch {
 
 #[cfg(test)]
 mod playground {
-    use crate::contract::{Contract, FieldDefinition, FieldType, GlossaryEntry, MetricDefinition, Ontology};
+    use crate::contract::{
+        Contract, FieldDefinition, FieldType, GlossaryEntry, MetricDefinition, Ontology,
+    };
     use crate::validation::{validate, CompiledContract, ViolationKind};
     use serde_json::json;
 
@@ -364,8 +367,10 @@ mod playground {
         let event = json!({ "event_type": "click", "timestamp": 1712000000 });
         let r = validate(&cc, &event);
         assert!(!r.passed);
-        assert!(r.violations.iter().any(|v| v.kind == ViolationKind::MissingRequiredField
-            && v.field == "user_id"));
+        assert!(r
+            .violations
+            .iter()
+            .any(|v| v.kind == ViolationKind::MissingRequiredField && v.field == "user_id"));
     }
 
     #[test]
@@ -378,7 +383,10 @@ mod playground {
         });
         let r = validate(&cc, &event);
         assert!(!r.passed);
-        assert!(r.violations.iter().any(|v| v.kind == ViolationKind::EnumViolation));
+        assert!(r
+            .violations
+            .iter()
+            .any(|v| v.kind == ViolationKind::EnumViolation));
     }
 
     #[test]
@@ -391,7 +399,10 @@ mod playground {
         });
         let r = validate(&cc, &event);
         assert!(!r.passed);
-        assert!(r.violations.iter().any(|v| v.kind == ViolationKind::PatternMismatch));
+        assert!(r
+            .violations
+            .iter()
+            .any(|v| v.kind == ViolationKind::PatternMismatch));
     }
 
     #[test]
@@ -405,7 +416,10 @@ mod playground {
         });
         let r = validate(&cc, &event);
         assert!(!r.passed);
-        assert!(r.violations.iter().any(|v| v.kind == ViolationKind::RangeViolation));
+        assert!(r
+            .violations
+            .iter()
+            .any(|v| v.kind == ViolationKind::RangeViolation));
     }
 
     #[test]
@@ -418,7 +432,10 @@ mod playground {
         });
         let r = validate(&cc, &event);
         assert!(!r.passed);
-        assert!(r.violations.iter().any(|v| v.kind == ViolationKind::TypeMismatch));
+        assert!(r
+            .violations
+            .iter()
+            .any(|v| v.kind == ViolationKind::TypeMismatch));
     }
 
     #[test]
@@ -433,7 +450,11 @@ mod playground {
         });
         let r = validate(&cc, &event);
         assert!(!r.passed);
-        assert!(r.violations.len() >= 3, "Expected ≥3 violations, got: {:?}", r.violations);
+        assert!(
+            r.violations.len() >= 3,
+            "Expected ≥3 violations, got: {:?}",
+            r.violations
+        );
     }
 
     #[test]
@@ -441,7 +462,10 @@ mod playground {
         let cc = CompiledContract::compile(user_events_contract()).unwrap();
         let r = validate(&cc, &json!(["not", "an", "object"]));
         assert!(!r.passed);
-        assert!(r.violations.iter().any(|v| v.kind == ViolationKind::TypeMismatch));
+        assert!(r
+            .violations
+            .iter()
+            .any(|v| v.kind == ViolationKind::TypeMismatch));
     }
 
     // -----------------------------------------------------------------------
@@ -509,7 +533,10 @@ metrics: []
         let bad = json!({ "id": "abc123", "value": 999 });
         let r = validate(&cc, &bad);
         assert!(!r.passed);
-        assert!(r.violations.iter().any(|v| v.kind == ViolationKind::RangeViolation));
+        assert!(r
+            .violations
+            .iter()
+            .any(|v| v.kind == ViolationKind::RangeViolation));
     }
 }
 
@@ -567,7 +594,10 @@ mod versioning {
     fn multi_stable_resolution_default_is_strict() {
         // Defaulting to `fallback` would weaken the product pitch; RFC-002
         // §2b calls out `strict` as the intentional default.
-        assert_eq!(MultiStableResolution::default(), MultiStableResolution::Strict);
+        assert_eq!(
+            MultiStableResolution::default(),
+            MultiStableResolution::Strict
+        );
     }
 
     #[test]
@@ -592,7 +622,10 @@ mod versioning {
             "multi_stable_resolution": "fallback"
         });
         let req: CreateContractRequest = serde_json::from_value(body).unwrap();
-        assert_eq!(req.multi_stable_resolution, Some(MultiStableResolution::Fallback));
+        assert_eq!(
+            req.multi_stable_resolution,
+            Some(MultiStableResolution::Fallback)
+        );
     }
 
     #[test]

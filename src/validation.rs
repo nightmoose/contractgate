@@ -4,11 +4,55 @@
 //! returns either `ValidationResult::Pass` or `ValidationResult::Fail` with a
 //! detailed list of `Violation` structs.
 //!
-//! Design goals:
+//! ### Two-stage shape
+//!
+//! Validation is split into a **compile-once** stage and a **validate-many**
+//! stage so per-event work stays cheap:
+//!
+//!   1. [`CompiledContract::compile_with_salt`] runs at contract-load time.
+//!      It parses every `pattern` regex, indexes the declared top-level field
+//!      names (for compliance-mode O(1) lookup), and binds the per-contract
+//!      `pii_salt` so transforms have keying material.  This is the only stage
+//!      that can fail with a contract-error; once compiled, [`validate`]
+//!      cannot panic.
+//!   2. [`validate`] runs per inbound event.  It does no I/O, no allocation
+//!      of regexes, and no parsing of contract YAML.  The compiled contract
+//!      is shared by `Arc`, so callers can fan out parallel validations
+//!      across rayon (see `ingest.rs`) without contention.
+//!
+//! ### Per-event pipeline order
+//!
+//! Within a single [`validate`] call, checks run in this fixed order so the
+//! resulting `violations` vec is stable and operator-triagable:
+//!
+//!   1. **Ontology fields** — required/type/pattern/enum/range/length, walked
+//!      recursively for nested object fields.
+//!   2. **Metric definitions** — declared in `metrics:`, currently only the
+//!      `min`/`max` envelope (formula evaluation lands later).
+//!   3. **Compliance-mode undeclared fields** (RFC-004) — only runs when the
+//!      resolved contract version opted in, and is intentionally last so the
+//!      "fix your ontology errors first" violations come before the "stray
+//!      field" violations in the response.
+//!
+//! ### What lives elsewhere
+//!
+//! - **PII transforms** (`hash`, `mask:format_preserving`, etc.) live in
+//!   `transform.rs`.  Validation is read-only; transforms are applied to a
+//!   *clone* of the event on the ingest side and are what gets persisted.
+//!   Compile-time only: this module rejects contracts that put a transform
+//!   on a non-string field (see [`validate_transform_types`]).
+//! - **Version resolution + fallback** lives in `ingest.rs`.  The validator
+//!   sees a single `CompiledContract` and has no notion of "is this stable
+//!   or deprecated"; that decision is made before we get here.
+//!
+//! ### Design goals
+//!
 //!   - Zero heap allocations in the hot path wherever possible
 //!   - All regex compiled once at contract load time (cached via `CompiledContract`)
 //!   - Sub-15 ms p99 for typical event sizes on modest hardware
 //!   - Clear, actionable violation messages for data engineers
+//!   - `validate()` is total: any input shape produces a `ValidationResult`,
+//!     never a panic or `Result::Err`.
 
 use crate::contract::{Contract, FieldDefinition, FieldType, MetricDefinition};
 use regex::Regex;
@@ -135,8 +179,9 @@ fn compile_field_patterns(
         };
 
         if let Some(pattern) = &field.pattern {
-            let re = Regex::new(pattern)
-                .map_err(|e| anyhow::anyhow!("Invalid regex '{}' for field '{}': {}", pattern, path, e))?;
+            let re = Regex::new(pattern).map_err(|e| {
+                anyhow::anyhow!("Invalid regex '{}' for field '{}': {}", pattern, path, e)
+            })?;
             out.insert(path.clone(), re);
         }
 
@@ -156,10 +201,7 @@ fn compile_field_patterns(
 /// produce surprises in prod — reject at contract-compile time instead.
 /// Numeric PII (account numbers, etc.) should be typed as `string` in the
 /// contract.
-fn validate_transform_types(
-    fields: &[FieldDefinition],
-    prefix: &str,
-) -> anyhow::Result<()> {
+fn validate_transform_types(fields: &[FieldDefinition], prefix: &str) -> anyhow::Result<()> {
     for field in fields {
         let path = if prefix.is_empty() {
             field.name.clone()
@@ -439,11 +481,7 @@ fn validate_value(
 /// Formula-style metrics (no `field`) are skipped at ingestion time —
 /// they are informational / for downstream aggregation systems only.
 /// Field-bound metrics (with `field` set) are checked against `min`/`max`.
-fn validate_metric(
-    metric: &MetricDefinition,
-    event: &Value,
-    violations: &mut Vec<Violation>,
-) {
+fn validate_metric(metric: &MetricDefinition, event: &Value, violations: &mut Vec<Violation>) {
     // Formula-only metrics have no field — nothing to validate per-event.
     let field_path = match &metric.field {
         Some(f) => f,
@@ -619,7 +657,11 @@ mod tests {
             "timestamp": 1712000000
         });
         let result = validate(&compiled, &event);
-        assert!(result.passed, "Expected pass but got violations: {:?}", result.violations);
+        assert!(
+            result.passed,
+            "Expected pass but got violations: {:?}",
+            result.violations
+        );
     }
 
     #[test]
@@ -629,7 +671,10 @@ mod tests {
         let event = json!({ "user_id": "alice_01", "event_type": "click" }); // missing timestamp
         let result = validate(&compiled, &event);
         assert!(!result.passed);
-        assert!(result.violations.iter().any(|v| v.kind == ViolationKind::MissingRequiredField));
+        assert!(result
+            .violations
+            .iter()
+            .any(|v| v.kind == ViolationKind::MissingRequiredField));
     }
 
     #[test]
@@ -643,7 +688,10 @@ mod tests {
         });
         let result = validate(&compiled, &event);
         assert!(!result.passed);
-        assert!(result.violations.iter().any(|v| v.kind == ViolationKind::EnumViolation));
+        assert!(result
+            .violations
+            .iter()
+            .any(|v| v.kind == ViolationKind::EnumViolation));
     }
 
     #[test]
@@ -657,7 +705,10 @@ mod tests {
         });
         let result = validate(&compiled, &event);
         assert!(!result.passed);
-        assert!(result.violations.iter().any(|v| v.kind == ViolationKind::PatternMismatch));
+        assert!(result
+            .violations
+            .iter()
+            .any(|v| v.kind == ViolationKind::PatternMismatch));
     }
 
     #[test]
@@ -671,7 +722,10 @@ mod tests {
         });
         let result = validate(&compiled, &event);
         assert!(!result.passed);
-        assert!(result.violations.iter().any(|v| v.kind == ViolationKind::RangeViolation));
+        assert!(result
+            .violations
+            .iter()
+            .any(|v| v.kind == ViolationKind::RangeViolation));
     }
 
     #[test]

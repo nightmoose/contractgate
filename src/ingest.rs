@@ -5,6 +5,35 @@
 //! are forwarded to the configured destination.  On failure, clear violation
 //! details are returned and the event is quarantined in the audit log.
 //!
+//! ### Where this fits
+//!
+//! This module is the **request-shaped wrapper** around the pure validator in
+//! `validation.rs`.  Responsibilities split as follows:
+//!
+//!   - `main.rs` owns routing, the auth middleware, and the
+//!     `(contract_id, version) → Arc<CompiledContract>` cache on `AppState`.
+//!   - `ingest.rs` (this file) owns version resolution, parallel fan-out,
+//!     transform application, audit + quarantine + forward bookkeeping, and
+//!     the HTTP status-code shape (200 / 207 / 422 / etc.).
+//!   - `validation.rs` owns the per-event check itself; it does no I/O and
+//!     never panics.
+//!   - `storage.rs` owns the SQL.  The handler issues exactly the writes that
+//!     the audit-honesty memory requires — `contract_version` is always the
+//!     version that actually matched, never a default.
+//!
+//! ### Per-request pipeline order
+//!
+//!   1. Parse the path + headers, resolve a single `(contract_id, version)`
+//!      pin (see "Version resolution" below).
+//!   2. Look up the compiled contract via `AppState::get_compiled` — fast
+//!      path is a read lock on the cache.
+//!   3. Run `validation::validate` over each event.  Batches >1 event use
+//!      rayon inside `spawn_blocking` to keep the async reactor responsive.
+//!   4. Apply RFC-004 PII transforms to passing events (the post-transform
+//!      payload is what gets persisted/forwarded; the original is dropped).
+//!   5. Persist audit rows for every event, quarantine rows for failures,
+//!      and forward passing events to the configured sink — all batched.
+//!
 //! ### Version resolution (RFC-002)
 //! Order of precedence for picking which `contract_versions` row to use:
 //!
@@ -49,13 +78,13 @@
 //! validation is done in a `spawn_blocking` worker so the async reactor
 //! stays responsive (see RFC-001).
 
+use crate::api_key_auth::ValidatedKey;
 use axum::{
     extract::{Extension, Path, Query, State},
     http::{HeaderMap, StatusCode},
     response::IntoResponse,
     Json,
 };
-use crate::api_key_auth::ValidatedKey;
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
@@ -143,11 +172,8 @@ fn parse_ingest_path(raw: &str) -> AppResult<(Uuid, Option<String>)> {
         Some((id, _)) => (id, None),
         None => (raw, None),
     };
-    let uuid = Uuid::parse_str(uuid_part).map_err(|_| {
-        AppError::BadRequest(format!(
-            "invalid contract_id in path: {uuid_part}"
-        ))
-    })?;
+    let uuid = Uuid::parse_str(uuid_part)
+        .map_err(|_| AppError::BadRequest(format!("invalid contract_id in path: {uuid_part}")))?;
     Ok((uuid, path_version))
 }
 
@@ -192,14 +218,12 @@ pub async fn ingest_handler(
     Json(body): Json<Value>,
 ) -> AppResult<axum::response::Response> {
     // DB-backed key wins; fall back to x-org-id header in legacy/dev mode.
-    let org_id: Option<Uuid> = key_ext
-        .map(|Extension(k)| k.org_id)
-        .or_else(|| {
-            headers
-                .get("x-org-id")
-                .and_then(|v| v.to_str().ok())
-                .and_then(|s| Uuid::parse_str(s).ok())
-        });
+    let org_id: Option<Uuid> = key_ext.map(|Extension(k)| k.org_id).or_else(|| {
+        headers
+            .get("x-org-id")
+            .and_then(|v| v.to_str().ok())
+            .and_then(|s| Uuid::parse_str(s).ok())
+    });
     // --- Parse path + headers -----------------------------------------------
     let (contract_id, path_version) = parse_ingest_path(&raw_id)?;
     let header_version = headers
@@ -209,16 +233,14 @@ pub async fn ingest_handler(
         .filter(|s| !s.is_empty());
 
     // --- Load contract identity (404 if unknown) ---------------------------
-    let identity: ContractIdentity =
-        storage::get_contract_identity(&state.db, contract_id).await?;
+    let identity: ContractIdentity = storage::get_contract_identity(&state.db, contract_id).await?;
 
     // --- Resolve which version to use --------------------------------------
     let (resolved_version, pin_source) =
         resolve_version(&state, contract_id, header_version, path_version).await?;
 
     // --- Fetch version row so we know its state (draft/stable/deprecated) --
-    let version_row =
-        storage::get_version(&state.db, contract_id, &resolved_version).await?;
+    let version_row = storage::get_version(&state.db, contract_id, &resolved_version).await?;
 
     tracing::debug!(
         contract_id = %contract_id,
@@ -264,8 +286,7 @@ pub async fn ingest_handler(
         let latest_stable = storage::get_latest_stable_version(&state.db, contract_id)
             .await?
             .map(|v| v.version);
-        let deprecated_compiled =
-            state.get_compiled(contract_id, &resolved_version).await?;
+        let deprecated_compiled = state.get_compiled(contract_id, &resolved_version).await?;
         return deprecated_pin_quarantine(
             &state,
             contract_id,
@@ -281,9 +302,7 @@ pub async fn ingest_handler(
     }
 
     // --- Compile (or pull from cache) the resolved version -----------------
-    let compiled = state
-        .get_compiled(contract_id, &resolved_version)
-        .await?;
+    let compiled = state.get_compiled(contract_id, &resolved_version).await?;
 
     // RFC-004: keep a version-keyed index of every compiled contract we
     // might consult so post-validation transforms can be applied with the
@@ -303,8 +322,7 @@ pub async fn ingest_handler(
     //   - this was an *unpinned* request (default_stable) — RFC §2b
     //   - there are other stables to try
     //   - there was at least one failure in the first pass
-    let mut per_event_versions: Vec<String> =
-        vec![resolved_version.clone(); events.len()];
+    let mut per_event_versions: Vec<String> = vec![resolved_version.clone(); events.len()];
     let mut effective_results = validation_results;
 
     let fallback_eligible = identity.multi_stable_resolution == MultiStableResolution::Fallback
@@ -354,9 +372,8 @@ pub async fn ingest_handler(
                     .map(|(ver, cc)| (ver.clone(), validate(cc, event)))
                     .collect();
 
-                if let Some((winning_version, winning_vr)) = candidate_results
-                    .into_iter()
-                    .find(|(_, vr)| vr.passed)
+                if let Some((winning_version, winning_vr)) =
+                    candidate_results.into_iter().find(|(_, vr)| vr.passed)
                 {
                     // Replace this event's result + recorded version.
                     *result = winning_vr;
@@ -502,9 +519,7 @@ pub async fn ingest_handler(
         if !quarantine_rows.is_empty() {
             let pool = state.db.clone();
             tokio::spawn(async move {
-                if let Err(e) =
-                    storage::quarantine_events_batch(&pool, &quarantine_rows).await
-                {
+                if let Err(e) = storage::quarantine_events_batch(&pool, &quarantine_rows).await {
                     tracing::warn!("Failed to batch-quarantine events: {:?}", e);
                 }
             });
@@ -518,8 +533,7 @@ pub async fn ingest_handler(
             if !forward_ok {
                 tracing::warn!("Failed to batch-forward {} events", row_count);
             } else {
-                for (result, vr) in per_event_results.iter_mut().zip(effective_results.iter())
-                {
+                for (result, vr) in per_event_results.iter_mut().zip(effective_results.iter()) {
                     if vr.passed {
                         result.forwarded = true;
                     }
@@ -562,11 +576,9 @@ async fn parallel_validate(
     events: &[Value],
 ) -> AppResult<Vec<ValidationResult>> {
     let events = events.to_vec();
-    tokio::task::spawn_blocking(move || {
-        events.par_iter().map(|e| validate(&compiled, e)).collect()
-    })
-    .await
-    .map_err(|e| AppError::Internal(format!("Validation task join error: {e}")))
+    tokio::task::spawn_blocking(move || events.par_iter().map(|e| validate(&compiled, e)).collect())
+        .await
+        .map_err(|e| AppError::Internal(format!("Validation task join error: {e}")))
 }
 
 // ---------------------------------------------------------------------------
@@ -654,13 +666,12 @@ async fn deprecated_pin_quarantine(
             "pinned_version": pinned_version,
             "latest_stable": latest_stable,
         });
-        let violation_details =
-            Value::Array(vec![json!({
-                "kind": "deprecated_contract_version",
-                "batch_size": total,
-                "pinned_version": pinned_version,
-                "latest_stable": latest_stable,
-            })]);
+        let violation_details = Value::Array(vec![json!({
+            "kind": "deprecated_contract_version",
+            "batch_size": total,
+            "pinned_version": pinned_version,
+            "latest_stable": latest_stable,
+        })]);
         // RFC-004 §6: this row carries synthetic bookkeeping JSON, not a user
         // event, so there is no PII to transform.  `from_stored` is the
         // documented escape hatch for this case (see transform.rs docstring).

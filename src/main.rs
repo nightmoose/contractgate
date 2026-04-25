@@ -13,6 +13,7 @@
 //! Version resolution + fallback semantics live in `ingest.rs`; this module
 //! is just wiring.
 
+use axum::extract::Request;
 use axum::{
     extract::{FromRequest, Path, Query, State},
     http::StatusCode,
@@ -21,17 +22,16 @@ use axum::{
     routing::{get, post},
     Router,
 };
-use axum::extract::Request;
 use sqlx::PgPool;
 use std::{
     collections::HashMap,
     net::SocketAddr,
-    sync::{Arc, RwLock},
+    sync::{Arc, RwLock, RwLockReadGuard, RwLockWriteGuard},
 };
 use tower_http::{
     cors::{Any, CorsLayer},
-    trace::TraceLayer,
     timeout::TimeoutLayer,
+    trace::TraceLayer,
 };
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 use uuid::Uuid;
@@ -93,6 +93,28 @@ impl AppState {
         }
     }
 
+    // ---- contract_cache lock helpers -------------------------------------
+    //
+    // The cache is wrapped in `RwLock`, which can be poisoned if a holder
+    // panics.  We've never seen this in practice (the hot paths are tiny
+    // map ops with no allocation between the lock guard and the return), but
+    // calling `.unwrap()` everywhere obscures that invariant.  These helpers
+    // centralize the assumption — and the panic message identifies the cache
+    // by name if the contract ever does break — so future call sites stay
+    // one-liners and the rationale lives in exactly one place.
+
+    fn cache_read(&self) -> RwLockReadGuard<'_, HashMap<(Uuid, String), Arc<CompiledContract>>> {
+        self.contract_cache
+            .read()
+            .expect("contract cache RwLock poisoned (a prior holder panicked)")
+    }
+
+    fn cache_write(&self) -> RwLockWriteGuard<'_, HashMap<(Uuid, String), Arc<CompiledContract>>> {
+        self.contract_cache
+            .write()
+            .expect("contract cache RwLock poisoned (a prior holder panicked)")
+    }
+
     /// Load every stable + deprecated version into the cache.  Drafts are
     /// loaded lazily — they're rare, mutable, and not usually pinned.
     ///
@@ -102,7 +124,7 @@ impl AppState {
     pub async fn warm_cache(&self) -> AppResult<()> {
         let versions = storage::load_all_non_draft_versions(&self.db).await?;
         let salts = storage::load_all_pii_salts(&self.db).await?;
-        let mut cache = self.contract_cache.write().unwrap();
+        let mut cache = self.cache_write();
         for v in versions {
             // Missing salt would only happen if a contract row vanished
             // between the two queries.  Fall back to an empty salt and
@@ -137,7 +159,7 @@ impl AppState {
     ) -> AppResult<Arc<CompiledContract>> {
         // Fast path: read lock
         {
-            let cache = self.contract_cache.read().unwrap();
+            let cache = self.cache_read();
             if let Some(cc) = cache.get(&(contract_id, version.to_string())) {
                 return Ok(Arc::clone(cc));
             }
@@ -158,7 +180,7 @@ impl AppState {
         let arc = Arc::new(compiled);
 
         {
-            let mut cache = self.contract_cache.write().unwrap();
+            let mut cache = self.cache_write();
             cache.insert((contract_id, version.to_string()), Arc::clone(&arc));
         }
 
@@ -168,13 +190,13 @@ impl AppState {
     /// Drop a single (contract_id, version) entry from the cache.  Call on
     /// draft edits — the YAML has changed, so the compiled form is stale.
     pub fn invalidate_version(&self, contract_id: Uuid, version: &str) {
-        let mut cache = self.contract_cache.write().unwrap();
+        let mut cache = self.cache_write();
         cache.remove(&(contract_id, version.to_string()));
     }
 
     /// Drop every cached version for a contract.  Call on delete.
     pub fn invalidate_contract_all(&self, contract_id: Uuid) {
-        let mut cache = self.contract_cache.write().unwrap();
+        let mut cache = self.cache_write();
         cache.retain(|(cid, _), _| *cid != contract_id);
     }
 }
@@ -183,8 +205,7 @@ impl AppState {
 /// seeded with the contract's per-contract `pii_salt` for RFC-004
 /// transforms (`kind: hash`, `mask:format_preserving`).
 fn compile_version(v: &ContractVersion, salt: Vec<u8>) -> Result<CompiledContract, String> {
-    let parsed: Contract =
-        serde_yaml::from_str(&v.yaml_content).map_err(|e| e.to_string())?;
+    let parsed: Contract = serde_yaml::from_str(&v.yaml_content).map_err(|e| e.to_string())?;
     CompiledContract::compile_with_salt(parsed, salt).map_err(|e| e.to_string())
 }
 
@@ -193,10 +214,7 @@ fn compile_version(v: &ContractVersion, salt: Vec<u8>) -> Result<CompiledContrac
 // ---------------------------------------------------------------------------
 
 /// Merge an identity row with aggregated version info into a response.
-async fn identity_to_response(
-    db: &PgPool,
-    id: ContractIdentity,
-) -> AppResult<ContractResponse> {
+async fn identity_to_response(db: &PgPool, id: ContractIdentity) -> AppResult<ContractResponse> {
     let summaries = storage::list_versions(db, id.id).await?;
     let version_count = summaries.len() as i64;
     let latest_stable_version = storage::get_latest_stable_version(db, id.id)
@@ -248,9 +266,10 @@ async fn create_contract_handler(
 ) -> AppResult<(StatusCode, Json<ContractResponse>)> {
     let org_id = org_id_from_req(&req);
     // Extract JSON body after reading extensions
-    let Json(body_req): Json<CreateContractRequest> = axum::Json::from_request(req, &state)
-        .await
-        .map_err(|e| AppError::BadRequest(e.to_string()))?;
+    let Json(body_req): Json<CreateContractRequest> =
+        axum::Json::from_request(req, &state)
+            .await
+            .map_err(|e| AppError::BadRequest(e.to_string()))?;
     let (identity, _first_version) = storage::create_contract(
         &state.db,
         &body_req.name,
@@ -317,8 +336,8 @@ async fn create_version_handler(
     Path(contract_id): Path<Uuid>,
     Json(req): Json<CreateVersionRequest>,
 ) -> AppResult<(StatusCode, Json<VersionResponse>)> {
-    let v = storage::create_version(&state.db, contract_id, &req.version, &req.yaml_content)
-        .await?;
+    let v =
+        storage::create_version(&state.db, contract_id, &req.version, &req.yaml_content).await?;
     // Drafts are cached lazily on first pin — no eager insert.
     Ok((StatusCode::CREATED, Json(VersionResponse::from(&v))))
 }
@@ -356,13 +375,8 @@ async fn patch_version_handler(
     Path((contract_id, version)): Path<(Uuid, String)>,
     Json(req): Json<PatchVersionRequest>,
 ) -> AppResult<Json<VersionResponse>> {
-    let v = storage::patch_version_yaml(
-        &state.db,
-        contract_id,
-        &version,
-        &req.yaml_content,
-    )
-    .await?;
+    let v =
+        storage::patch_version_yaml(&state.db, contract_id, &version, &req.yaml_content).await?;
     // Evict: a draft edit changes its compiled form.
     state.invalidate_version(contract_id, &version);
     Ok(Json(VersionResponse::from(&v)))
@@ -505,8 +519,7 @@ async fn playground_handler(
     // RFC-004: always run transforms so the dashboard can surface the
     // diff — even failing events are informative ("look what we were
     // about to write to quarantine").
-    let transformed_event = transform::apply_transforms(&compiled, req.event.clone())
-        .into_inner();
+    let transformed_event = transform::apply_transforms(&compiled, req.event.clone()).into_inner();
 
     Ok(Json(PlaygroundResponse {
         validation,
@@ -641,7 +654,10 @@ fn build_router(state: Arc<AppState>) -> Router {
         // Audit + stats
         .route("/audit", get(audit_log_handler))
         .route("/stats", get(global_stats_handler))
-        .layer(middleware::from_fn_with_state(state.clone(), require_api_key));
+        .layer(middleware::from_fn_with_state(
+            state.clone(),
+            require_api_key,
+        ));
 
     Router::new()
         .merge(public)
@@ -668,8 +684,7 @@ async fn main() -> anyhow::Result<()> {
         .with(tracing_subscriber::fmt::layer())
         .init();
 
-    let database_url =
-        std::env::var("DATABASE_URL").expect("DATABASE_URL must be set");
+    let database_url = std::env::var("DATABASE_URL").expect("DATABASE_URL must be set");
 
     let pool = PgPool::connect(&database_url).await?;
     tracing::info!("Connected to database");
