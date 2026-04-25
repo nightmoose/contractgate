@@ -5,6 +5,35 @@
 //! are forwarded to the configured destination.  On failure, clear violation
 //! details are returned and the event is quarantined in the audit log.
 //!
+//! ### Where this fits
+//!
+//! This module is the **request-shaped wrapper** around the pure validator in
+//! `validation.rs`.  Responsibilities split as follows:
+//!
+//!   - `main.rs` owns routing, the auth middleware, and the
+//!     `(contract_id, version) → Arc<CompiledContract>` cache on `AppState`.
+//!   - `ingest.rs` (this file) owns version resolution, parallel fan-out,
+//!     transform application, audit + quarantine + forward bookkeeping, and
+//!     the HTTP status-code shape (200 / 207 / 422 / etc.).
+//!   - `validation.rs` owns the per-event check itself; it does no I/O and
+//!     never panics.
+//!   - `storage.rs` owns the SQL.  The handler issues exactly the writes that
+//!     the audit-honesty memory requires — `contract_version` is always the
+//!     version that actually matched, never a default.
+//!
+//! ### Per-request pipeline order
+//!
+//!   1. Parse the path + headers, resolve a single `(contract_id, version)`
+//!      pin (see "Version resolution" below).
+//!   2. Look up the compiled contract via `AppState::get_compiled` — fast
+//!      path is a read lock on the cache.
+//!   3. Run `validation::validate` over each event.  Batches >1 event use
+//!      rayon inside `spawn_blocking` to keep the async reactor responsive.
+//!   4. Apply RFC-004 PII transforms to passing events (the post-transform
+//!      payload is what gets persisted/forwarded; the original is dropped).
+//!   5. Persist audit rows for every event, quarantine rows for failures,
+//!      and forward passing events to the configured sink — all batched.
+//!
 //! ### Version resolution (RFC-002)
 //! Order of precedence for picking which `contract_versions` row to use:
 //!

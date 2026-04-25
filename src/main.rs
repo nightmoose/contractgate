@@ -26,7 +26,7 @@ use sqlx::PgPool;
 use std::{
     collections::HashMap,
     net::SocketAddr,
-    sync::{Arc, RwLock},
+    sync::{Arc, RwLock, RwLockReadGuard, RwLockWriteGuard},
 };
 use tower_http::{
     cors::{Any, CorsLayer},
@@ -93,6 +93,32 @@ impl AppState {
         }
     }
 
+    // ---- contract_cache lock helpers -------------------------------------
+    //
+    // The cache is wrapped in `RwLock`, which can be poisoned if a holder
+    // panics.  We've never seen this in practice (the hot paths are tiny
+    // map ops with no allocation between the lock guard and the return), but
+    // calling `.unwrap()` everywhere obscures that invariant.  These helpers
+    // centralize the assumption — and the panic message identifies the cache
+    // by name if the contract ever does break — so future call sites stay
+    // one-liners and the rationale lives in exactly one place.
+
+    fn cache_read(
+        &self,
+    ) -> RwLockReadGuard<'_, HashMap<(Uuid, String), Arc<CompiledContract>>> {
+        self.contract_cache
+            .read()
+            .expect("contract cache RwLock poisoned (a prior holder panicked)")
+    }
+
+    fn cache_write(
+        &self,
+    ) -> RwLockWriteGuard<'_, HashMap<(Uuid, String), Arc<CompiledContract>>> {
+        self.contract_cache
+            .write()
+            .expect("contract cache RwLock poisoned (a prior holder panicked)")
+    }
+
     /// Load every stable + deprecated version into the cache.  Drafts are
     /// loaded lazily — they're rare, mutable, and not usually pinned.
     ///
@@ -102,7 +128,7 @@ impl AppState {
     pub async fn warm_cache(&self) -> AppResult<()> {
         let versions = storage::load_all_non_draft_versions(&self.db).await?;
         let salts = storage::load_all_pii_salts(&self.db).await?;
-        let mut cache = self.contract_cache.write().unwrap();
+        let mut cache = self.cache_write();
         for v in versions {
             // Missing salt would only happen if a contract row vanished
             // between the two queries.  Fall back to an empty salt and
@@ -137,7 +163,7 @@ impl AppState {
     ) -> AppResult<Arc<CompiledContract>> {
         // Fast path: read lock
         {
-            let cache = self.contract_cache.read().unwrap();
+            let cache = self.cache_read();
             if let Some(cc) = cache.get(&(contract_id, version.to_string())) {
                 return Ok(Arc::clone(cc));
             }
@@ -158,7 +184,7 @@ impl AppState {
         let arc = Arc::new(compiled);
 
         {
-            let mut cache = self.contract_cache.write().unwrap();
+            let mut cache = self.cache_write();
             cache.insert((contract_id, version.to_string()), Arc::clone(&arc));
         }
 
@@ -168,13 +194,13 @@ impl AppState {
     /// Drop a single (contract_id, version) entry from the cache.  Call on
     /// draft edits — the YAML has changed, so the compiled form is stale.
     pub fn invalidate_version(&self, contract_id: Uuid, version: &str) {
-        let mut cache = self.contract_cache.write().unwrap();
+        let mut cache = self.cache_write();
         cache.remove(&(contract_id, version.to_string()));
     }
 
     /// Drop every cached version for a contract.  Call on delete.
     pub fn invalidate_contract_all(&self, contract_id: Uuid) {
-        let mut cache = self.contract_cache.write().unwrap();
+        let mut cache = self.cache_write();
         cache.retain(|(cid, _), _| *cid != contract_id);
     }
 }
