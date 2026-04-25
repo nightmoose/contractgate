@@ -103,17 +103,13 @@ impl AppState {
     // by name if the contract ever does break — so future call sites stay
     // one-liners and the rationale lives in exactly one place.
 
-    fn cache_read(
-        &self,
-    ) -> RwLockReadGuard<'_, HashMap<(Uuid, String), Arc<CompiledContract>>> {
+    fn cache_read(&self) -> RwLockReadGuard<'_, HashMap<(Uuid, String), Arc<CompiledContract>>> {
         self.contract_cache
             .read()
             .expect("contract cache RwLock poisoned (a prior holder panicked)")
     }
 
-    fn cache_write(
-        &self,
-    ) -> RwLockWriteGuard<'_, HashMap<(Uuid, String), Arc<CompiledContract>>> {
+    fn cache_write(&self) -> RwLockWriteGuard<'_, HashMap<(Uuid, String), Arc<CompiledContract>>> {
         self.contract_cache
             .write()
             .expect("contract cache RwLock poisoned (a prior holder panicked)")
