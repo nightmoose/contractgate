@@ -10,7 +10,7 @@ use crate::contract::{
     Contract, ContractIdentity, ContractSummary, ContractVersion, MultiStableResolution,
     NameHistoryEntry, VersionState, VersionSummary,
 };
-use crate::error::{AppError, AppResult};
+use crate::error::{AppError, AppResult, DbOpContext};
 use crate::transform::TransformedPayload;
 use sqlx::PgPool;
 use uuid::Uuid;
@@ -35,12 +35,11 @@ struct ContractIdentityRow {
 
 impl ContractIdentityRow {
     fn into_identity(self) -> AppResult<ContractIdentity> {
-        let resolution = MultiStableResolution::parse(&self.multi_stable_resolution)
-            .ok_or_else(|| {
-                AppError::Internal(format!(
-                    "invalid multi_stable_resolution in DB: {}",
-                    self.multi_stable_resolution
-                ))
+        let resolution = self
+            .multi_stable_resolution
+            .parse::<MultiStableResolution>()
+            .map_err(|e| {
+                AppError::Internal(format!("invalid multi_stable_resolution in DB: {e}"))
             })?;
         Ok(ContractIdentity {
             id: self.id,
@@ -72,11 +71,8 @@ struct ContractVersionRow {
 
 impl ContractVersionRow {
     fn into_version(self) -> AppResult<ContractVersion> {
-        let state = VersionState::parse(&self.state).ok_or_else(|| {
-            AppError::Internal(format!(
-                "invalid contract_versions.state in DB: {}",
-                self.state
-            ))
+        let state = self.state.parse::<VersionState>().map_err(|e| {
+            AppError::Internal(format!("invalid contract_versions.state in DB: {e}"))
         })?;
         Ok(ContractVersion {
             id: self.id,
@@ -103,12 +99,11 @@ struct ContractSummaryRow {
 
 impl ContractSummaryRow {
     fn into_summary(self) -> AppResult<ContractSummary> {
-        let resolution = MultiStableResolution::parse(&self.multi_stable_resolution)
-            .ok_or_else(|| {
-                AppError::Internal(format!(
-                    "invalid multi_stable_resolution in DB: {}",
-                    self.multi_stable_resolution
-                ))
+        let resolution = self
+            .multi_stable_resolution
+            .parse::<MultiStableResolution>()
+            .map_err(|e| {
+                AppError::Internal(format!("invalid multi_stable_resolution in DB: {e}"))
             })?;
         Ok(ContractSummary {
             id: self.id,
@@ -176,7 +171,7 @@ pub async fn create_contract(
     let contract_id = Uuid::new_v4();
     let version_id = Uuid::new_v4();
 
-    let mut tx = pool.begin().await?;
+    let mut tx = pool.begin().await.db_op("create_contract:begin")?;
 
     let identity_row = sqlx::query_as::<_, ContractIdentityRow>(
         r#"
@@ -192,7 +187,8 @@ pub async fn create_contract(
     .bind(description)
     .bind(resolution.as_str())
     .fetch_one(&mut *tx)
-    .await?;
+    .await
+    .db_op("create_contract:insert_identity")?;
 
     let version_row = sqlx::query_as::<_, ContractVersionRow>(
         r#"
@@ -208,9 +204,10 @@ pub async fn create_contract(
     .bind(yaml_content)
     .bind(compliance_mode)
     .fetch_one(&mut *tx)
-    .await?;
+    .await
+    .db_op("create_contract:insert_initial_version")?;
 
-    tx.commit().await?;
+    tx.commit().await.db_op("create_contract:commit")?;
 
     Ok((identity_row.into_identity()?, version_row.into_version()?))
 }
@@ -229,7 +226,8 @@ pub async fn get_contract_identity(
     )
     .bind(id)
     .fetch_optional(pool)
-    .await?
+    .await
+    .db_op("get_contract_identity")?
     .ok_or(AppError::ContractNotFound(id))?;
 
     row.into_identity()
@@ -550,7 +548,8 @@ pub async fn get_version(
     .bind(contract_id)
     .bind(version)
     .fetch_optional(pool)
-    .await?
+    .await
+    .db_op("get_version")?
     .ok_or_else(|| AppError::VersionNotFound {
         contract_id,
         version: version.to_string(),
@@ -610,7 +609,8 @@ pub async fn get_latest_stable_version(
     )
     .bind(contract_id)
     .fetch_optional(pool)
-    .await?;
+    .await
+    .db_op("get_latest_stable_version")?;
 
     row.map(|r| r.into_version()).transpose()
 }
@@ -632,7 +632,8 @@ pub async fn list_stable_versions(
     )
     .bind(contract_id)
     .fetch_all(pool)
-    .await?;
+    .await
+    .db_op("list_stable_versions")?;
 
     rows.into_iter().map(|r| r.into_version()).collect()
 }
@@ -1158,7 +1159,8 @@ pub async fn log_audit_entries_batch(
     .bind(&pre_assigned_ids)
     .bind(&replay_of)
     .execute(pool)
-    .await?;
+    .await
+    .db_op("log_audit_entries_batch")?;
 
     Ok(())
 }
@@ -1229,7 +1231,8 @@ pub async fn quarantine_events_batch(
     .bind(&source_ips)
     .bind(&replay_of)
     .execute(pool)
-    .await?;
+    .await
+    .db_op("quarantine_events_batch")?;
 
     Ok(())
 }
@@ -1270,7 +1273,8 @@ pub async fn forward_events_batch(
     .bind(&contract_versions)
     .bind(&payloads)
     .execute(pool)
-    .await?;
+    .await
+    .db_op("forward_events_batch")?;
 
     Ok(())
 }

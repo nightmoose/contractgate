@@ -122,9 +122,10 @@ pub struct BatchIngestResponse {
     /// Resolved version the request was dispatched against (before any
     /// fallback).  Mirrors what got logged to tracing.
     pub resolved_version: String,
-    /// Where the resolved version came from: `"header"`, `"path"`, or
-    /// `"default_stable"`.
-    pub version_pin_source: String,
+    /// Where the resolved version came from: `"header"`, `"path"`,
+    /// `"default_stable"`, or `"pinned_deprecated"`.  Always one of a
+    /// closed set of `&'static str` constants — no per-request allocation.
+    pub version_pin_source: &'static str,
     pub results: Vec<IngestEventResult>,
 }
 
@@ -535,7 +536,7 @@ pub async fn ingest_handler(
         dry_run: query.dry_run,
         atomic: query.atomic,
         resolved_version: resolved_version.clone(),
-        version_pin_source: pin_source.to_string(),
+        version_pin_source: pin_source,
         results: per_event_results,
     };
 
@@ -696,7 +697,7 @@ async fn deprecated_pin_quarantine(
         dry_run: query.dry_run,
         atomic: query.atomic,
         resolved_version: pinned_version.to_string(),
-        version_pin_source: "pinned_deprecated".to_string(),
+        version_pin_source: "pinned_deprecated",
         results: per_event_results,
     };
 
