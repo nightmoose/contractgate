@@ -100,6 +100,12 @@ interface GitHubFileResponse {
 /**
  * Fetch the current file from GitHub to get its SHA (needed for updates).
  * Returns null if the file doesn't exist yet (new file creation).
+ *
+ * Throws a descriptive error for auth failures (401/403) and repo-not-found
+ * (404 on the repo itself, as opposed to a missing file within a valid repo).
+ * We distinguish the two by also hitting the repo metadata endpoint when we
+ * get a 404 — if the repo itself is unreachable that confirms a config/auth
+ * problem rather than simply "this file hasn't been created yet".
  */
 async function getExistingFileSha(
   token: string,
@@ -107,8 +113,8 @@ async function getExistingFileSha(
   filePath: string,
   branch: string
 ): Promise<string | null> {
-  const url = `${GITHUB_API}/repos/${repo}/contents/${filePath}?ref=${encodeURIComponent(branch)}`;
-  const res = await fetch(url, {
+  const fileUrl = `${GITHUB_API}/repos/${repo}/contents/${filePath}?ref=${encodeURIComponent(branch)}`;
+  const res = await fetch(fileUrl, {
     headers: {
       Authorization: `Bearer ${token}`,
       Accept: "application/vnd.github+json",
@@ -116,10 +122,47 @@ async function getExistingFileSha(
     },
   });
 
-  if (res.status === 404) return null; // File doesn't exist yet
+  if (res.status === 401) {
+    throw new Error(
+      `GitHub token rejected (401 Unauthorized). Check that the PAT is valid and hasn't expired. ` +
+      `Requested: GET ${fileUrl}`
+    );
+  }
+  if (res.status === 403) {
+    throw new Error(
+      `GitHub token lacks permission (403 Forbidden). The PAT needs the "contents:write" scope ` +
+      `and must have access to "${repo}". ` +
+      `Requested: GET ${fileUrl}`
+    );
+  }
+
+  if (res.status === 404) {
+    // Could mean (a) the file doesn't exist yet — normal for a new file, or
+    // (b) the repo/branch doesn't exist, or the token can't see this repo
+    // (GitHub returns 404 instead of 403 for private repos to hide existence).
+    // Verify by probing the repo root so we can give a better error.
+    const repoRes = await fetch(`${GITHUB_API}/repos/${repo}`, {
+      headers: {
+        Authorization: `Bearer ${token}`,
+        Accept: "application/vnd.github+json",
+        "X-GitHub-Api-Version": "2022-11-28",
+      },
+    });
+    if (!repoRes.ok) {
+      throw new Error(
+        `Repository "${repo}" not found or token has no access to it ` +
+        `(repo probe returned ${repoRes.status}). ` +
+        `Check the repo field in Account → GitHub Integration and ensure the PAT has "contents:write" ` +
+        `access to this specific repository.`
+      );
+    }
+    // Repo is accessible — so this is a genuine "file doesn't exist yet".
+    return null;
+  }
+
   if (!res.ok) {
     const body = await res.text();
-    throw new Error(`GitHub GET file failed (${res.status}): ${body}`);
+    throw new Error(`GitHub GET file failed (${res.status}): ${body} — URL: ${fileUrl}`);
   }
 
   const data = (await res.json()) as { sha?: string };
@@ -168,17 +211,28 @@ async function commitFile(
 
   if (res.status === 409) {
     // SHA mismatch — the file was modified externally between our GET and PUT.
-    // This is rare since we always fetch the SHA immediately before writing,
-    // but it can happen under concurrent edits. Return a structured conflict error.
     const errBody = await res.text();
     return Promise.reject(
       Object.assign(new Error(`GitHub conflict: ${errBody}`), { code: "conflict" })
     );
   }
 
+  if (res.status === 422) {
+    const errBody = await res.text();
+    // 422 most commonly means the branch doesn't exist.
+    throw new Error(
+      `GitHub rejected the commit (422 Unprocessable Entity) — the branch "${branch}" ` +
+      `may not exist in "${repo}". Create it first, or update the branch name in ` +
+      `Account → GitHub Integration. Raw: ${errBody}`
+    );
+  }
+
   if (!res.ok) {
     const errBody = await res.text();
-    throw new Error(`GitHub PUT file failed (${res.status}): ${errBody}`);
+    throw new Error(
+      `GitHub PUT file failed (${res.status}) for path "${filePath}" in "${repo}" ` +
+      `on branch "${branch}": ${errBody}`
+    );
   }
 
   const data = (await res.json()) as GitHubFileResponse;
@@ -257,7 +311,10 @@ export async function POST(request: Request) {
     const msg = err instanceof Error ? err.message : String(err);
     console.error("[github/sync] getExistingFileSha error:", msg);
     return NextResponse.json(
-      { error: `Failed to check existing file on GitHub: ${msg}` },
+      {
+        error: msg,
+        debug: { repo: integration.repo, branch: integration.branch, path: filePath },
+      },
       { status: 502 }
     );
   }
@@ -291,7 +348,10 @@ export async function POST(request: Request) {
     }
     console.error("[github/sync] commitFile error:", e.message);
     return NextResponse.json(
-      { error: `GitHub commit failed: ${e.message}` },
+      {
+        error: e.message,
+        debug: { repo: integration.repo, branch: integration.branch, path: filePath },
+      },
       { status: 502 }
     );
   }
