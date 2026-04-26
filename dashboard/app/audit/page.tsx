@@ -1,10 +1,10 @@
 "use client";
 
-import { Suspense, useState, useEffect, useCallback } from "react";
+import { Suspense, useState, useEffect, useCallback, useMemo } from "react";
 import { useSearchParams } from "next/navigation";
 import useSWR from "swr";
-import { getAuditLog, listContracts } from "@/lib/api";
-import type { AuditEntry, ContractSummary } from "@/lib/api";
+import { getAuditLog, listContracts, getGlobalStats, getContractStats } from "@/lib/api";
+import type { AuditEntry, ContractSummary, IngestionStats } from "@/lib/api";
 import clsx from "clsx";
 import AuthGate from "@/components/AuthGate";
 import { useOrg } from "@/lib/org";
@@ -239,6 +239,88 @@ function exportToCSV(entries: AuditEntry[]) {
 }
 
 // ---------------------------------------------------------------------------
+// Stats summary bar
+// ---------------------------------------------------------------------------
+
+function StatBar({ stats, loading }: { stats?: IngestionStats; loading: boolean }) {
+  if (loading) {
+    return (
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
+        {[...Array(4)].map((_, i) => (
+          <div key={i} className="bg-[#111827] border border-[#1f2937] rounded-xl px-4 py-3 animate-pulse">
+            <div className="h-3 w-16 bg-[#1f2937] rounded mb-2" />
+            <div className="h-5 w-12 bg-[#1f2937] rounded" />
+          </div>
+        ))}
+      </div>
+    );
+  }
+
+  if (!stats || stats.total_events === 0) return null;
+
+  const passRate = stats.pass_rate * 100;
+  const passRateStr = passRate.toFixed(1) + "%";
+  const latencyStr = stats.avg_validation_us >= 1000
+    ? (stats.avg_validation_us / 1000).toFixed(1) + "ms"
+    : stats.avg_validation_us + "µs";
+  const p99Str = stats.p99_validation_us >= 1000
+    ? (stats.p99_validation_us / 1000).toFixed(1) + "ms"
+    : stats.p99_validation_us + "µs";
+
+  return (
+    <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
+      <div className="bg-[#111827] border border-[#1f2937] rounded-xl px-4 py-3">
+        <p className="text-xs text-slate-500 uppercase tracking-wider mb-1">Total Events</p>
+        <p className="text-xl font-semibold text-slate-100">
+          {stats.total_events.toLocaleString()}
+        </p>
+        <p className="text-xs text-slate-600 mt-0.5">
+          <span className="text-green-500">{stats.passed_events.toLocaleString()} passed</span>
+          {" · "}
+          <span className="text-red-500">{stats.failed_events.toLocaleString()} failed</span>
+        </p>
+      </div>
+
+      <div className="bg-[#111827] border border-[#1f2937] rounded-xl px-4 py-3">
+        <p className="text-xs text-slate-500 uppercase tracking-wider mb-1">Pass Rate</p>
+        <p className={clsx(
+          "text-xl font-semibold",
+          passRate >= 99 ? "text-green-400" : passRate >= 95 ? "text-amber-400" : "text-red-400"
+        )}>
+          {passRateStr}
+        </p>
+        <div className="mt-1.5 h-1 bg-[#1f2937] rounded-full overflow-hidden">
+          <div
+            className={clsx(
+              "h-full rounded-full transition-all",
+              passRate >= 99 ? "bg-green-500" : passRate >= 95 ? "bg-amber-500" : "bg-red-500"
+            )}
+            style={{ width: `${Math.min(100, passRate)}%` }}
+          />
+        </div>
+      </div>
+
+      <div className="bg-[#111827] border border-[#1f2937] rounded-xl px-4 py-3">
+        <p className="text-xs text-slate-500 uppercase tracking-wider mb-1">Avg Latency</p>
+        <p className="text-xl font-semibold text-slate-100">{latencyStr}</p>
+        <p className="text-xs text-slate-600 mt-0.5">per validation</p>
+      </div>
+
+      <div className="bg-[#111827] border border-[#1f2937] rounded-xl px-4 py-3">
+        <p className="text-xs text-slate-500 uppercase tracking-wider mb-1">p99 Latency</p>
+        <p className={clsx(
+          "text-xl font-semibold",
+          stats.p99_validation_us <= 15000 ? "text-green-400" : stats.p99_validation_us <= 50000 ? "text-amber-400" : "text-red-400"
+        )}>
+          {p99Str}
+        </p>
+        <p className="text-xs text-slate-600 mt-0.5">target &lt;15ms</p>
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Inner page content (needs Suspense for useSearchParams in Next.js 15)
 // ---------------------------------------------------------------------------
 
@@ -267,6 +349,20 @@ function AuditContent() {
     org ? "contracts" : null,
     listContracts
   );
+
+  // Stats — scoped to the selected contract when filtered, global otherwise.
+  const { data: stats, isLoading: statsLoading } = useSWR<IngestionStats>(
+    org ? ["stats", contractFilter] : null,
+    () => contractFilter ? getContractStats(contractFilter) : getGlobalStats(),
+    { refreshInterval: 30_000 }
+  );
+
+  // Build an id→name lookup so the table can show contract names.
+  const contractNames = useMemo(
+    () => new Map(contracts?.map((c) => [c.id, c.name]) ?? []),
+    [contracts]
+  );
+
   const { data: allEntries, isLoading } = useSWR<AuditEntry[]>(
     org ? ["audit", contractFilter, page] : null,
     () =>
@@ -291,11 +387,11 @@ function AuditContent() {
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-8">
+      <div className="flex items-center justify-between mb-6">
         <div>
           <h1 className="text-2xl font-bold">Audit Log</h1>
           <p className="text-sm text-slate-500 mt-1">
-            Full history of every ingestion event and its validation outcome
+            Every validation attempt — pass and fail — recorded at ingestion time
           </p>
         </div>
         <button
@@ -308,6 +404,8 @@ function AuditContent() {
           Export CSV
         </button>
       </div>
+
+      <StatBar stats={stats} loading={statsLoading} />
 
       {/* Filters */}
       <div className="flex flex-wrap gap-3 mb-6">
@@ -399,10 +497,14 @@ function AuditContent() {
                         setContractFilter(e.contract_id);
                         setPage(0);
                       }}
-                      className="text-slate-500 font-mono text-xs hover:text-green-400 transition-colors"
-                      title="Filter by this contract"
+                      className="text-slate-300 text-sm hover:text-green-400 transition-colors text-left"
+                      title={`Filter by this contract · ${e.contract_id}`}
                     >
-                      {e.contract_id.slice(0, 12)}…
+                      {contractNames.get(e.contract_id) ?? (
+                        <span className="font-mono text-xs text-slate-500">
+                          {e.contract_id.slice(0, 12)}…
+                        </span>
+                      )}
                     </button>
                   </td>
                   <td className="px-4 py-3">
@@ -448,10 +550,43 @@ function AuditContent() {
               ))
             ) : (
               <tr>
-                <td colSpan={6} className="px-4 py-16 text-center text-slate-600">
-                  {statusFilter !== "all"
-                    ? `No ${statusFilter === "pass" ? "passing" : "failing"} entries on this page`
-                    : "No audit entries yet"}
+                <td colSpan={6} className="px-4 py-10">
+                  {statusFilter !== "all" ? (
+                    <p className="text-center text-slate-600 text-sm">
+                      No {statusFilter === "pass" ? "passing" : "failing"} entries on this page
+                      {statusFilter === "fail" && (
+                        <span className="block text-xs text-slate-700 mt-1">
+                          The pass/fail filter applies to the current page only — try a different page or clear the filter to see all events.
+                        </span>
+                      )}
+                    </p>
+                  ) : (
+                    <div className="max-w-lg mx-auto text-center space-y-4 py-4">
+                      <p className="text-slate-500 text-sm">
+                        No events recorded yet. The audit log fills automatically once events start flowing through your ingest endpoint.
+                      </p>
+                      {contracts && contracts.length > 0 ? (
+                        <div className="text-left bg-[#0a0d12] border border-[#1f2937] rounded-lg p-4">
+                          <p className="text-xs text-slate-500 uppercase tracking-wider mb-2">Send a test event</p>
+                          <pre className="text-xs text-green-300 font-mono whitespace-pre-wrap break-all leading-relaxed">{`curl -X POST ${process.env.NEXT_PUBLIC_API_URL ?? "https://contractgate-api.fly.dev"}/ingest/${contracts[0].id} \\
+  -H "Content-Type: application/json" \\
+  -H "x-api-key: <your-api-key>" \\
+  -d '{"user_id": "alice", "event_type": "click"}'`}</pre>
+                        </div>
+                      ) : (
+                        <p className="text-xs text-slate-600">
+                          Create a contract first, then send events to{" "}
+                          <code className="text-slate-500">POST /ingest/{"<contract-id>"}</code>
+                        </p>
+                      )}
+                      <a
+                        href="/playground"
+                        className="inline-block text-xs text-green-400 hover:text-green-300 transition-colors"
+                      >
+                        Or test a contract in the Playground →
+                      </a>
+                    </div>
+                  )}
                 </td>
               </tr>
             )}
