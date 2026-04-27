@@ -24,7 +24,6 @@ pub struct PullArgs {
 struct ContractSummary {
     id: uuid::Uuid,
     name: String,
-    latest_stable_version: Option<String>,
 }
 
 #[derive(Deserialize)]
