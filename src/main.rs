@@ -45,6 +45,10 @@ pub use contractgate::{contract, transform, validation};
 mod api_key_auth;
 mod error;
 mod infer;
+mod infer_avro;
+mod infer_diff;
+mod infer_openapi;
+mod infer_proto;
 mod ingest;
 mod replay;
 mod storage;
@@ -599,8 +603,23 @@ fn build_router(state: Arc<AppState>) -> Router {
 
     // Protected routes — require x-api-key header
     let protected = Router::new()
-        // Contract inference — derive a draft contract from JSON samples
+        // Contract inference — JSON samples
         .route("/contracts/infer", post(infer::infer_handler))
+        // Contract inference — format-specific routes (RFC-006)
+        .route(
+            "/contracts/infer/avro",
+            post(infer_avro::infer_avro_handler),
+        )
+        .route(
+            "/contracts/infer/proto",
+            post(infer_proto::infer_proto_handler),
+        )
+        .route(
+            "/contracts/infer/openapi",
+            post(infer_openapi::infer_openapi_handler),
+        )
+        // Evolution diff summarizer (RFC-006)
+        .route("/contracts/diff", post(infer_diff::diff_handler))
         // Contract identity CRUD
         .route(
             "/contracts",

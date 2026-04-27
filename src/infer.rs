@@ -102,6 +102,12 @@ pub async fn infer_handler(Json(req): Json<InferRequest>) -> AppResult<Json<Infe
 // Core inference
 // ---------------------------------------------------------------------------
 
+/// Public re-export for reuse by format-specific inference modules.
+#[inline]
+pub fn infer_fields_from_objects_pub(samples: &[Value]) -> Vec<FieldDefinition> {
+    infer_fields_from_objects(samples)
+}
+
 /// Collect all values for each key across an object array, then build a
 /// `FieldDefinition` per key.  Key order follows first-appearance.
 fn infer_fields_from_objects(samples: &[Value]) -> Vec<FieldDefinition> {
