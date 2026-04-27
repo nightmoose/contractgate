@@ -1,0 +1,17 @@
+version: "1.0"
+name: "orders"
+description: "Order event contract"
+
+ontology:
+  entities:
+    - name: order_id
+      type: string
+      required: true
+    - name: status
+      type: string
+      required: true
+      enum: ["pending", "confirmed", "shipped", "cancelled"]
+    - name: total
+      type: number
+      required: true
+      min: 0

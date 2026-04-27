@@ -1,6 +1,6 @@
 # RFC-014: CLI Core + Reference GitHub Actions Workflow
 
-| Status        | Draft — awaiting sign-off                                              |
+| Status        | Accepted (2026-04-27) — sign-off on Q1..Q6 (recommendations)          |
 |---------------|------------------------------------------------------------------------|
 | Author        | ContractGate team                                                      |
 | Created       | 2026-04-27                                                             |
@@ -152,17 +152,17 @@ This is what users copy into their own repos.
 
 ## Rollout
 
-1. Sign-off this RFC.
-2. `src/bin/contractgate.rs` + `src/cli/` scaffold.
-3. `push` (forces auth + error + output plumbing into existence).
-4. `pull` (round-trip with `push`).
-5. `validate` (local-only).
-6. `.contractgate.yml` parser + walk-up.
-7. `tests/cli_*.rs`.
-8. Cross-compile job in `.github/workflows/release.yml`.
-9. Reference workflow `.github/workflows/contractgate.yml`.
-10. `cargo check && cargo test`.
-11. Update `MAINTENANCE_LOG.md`.
+1. ✅ Sign-off this RFC.
+2. ✅ `src/bin/contractgate.rs` + `src/cli/` scaffold.
+3. ✅ `push` (forces auth + error + output plumbing into existence).
+4. ✅ `pull` (round-trip with `push`).
+5. ✅ `validate` (local-only).
+6. ✅ `.contractgate.yml` parser + walk-up.
+7. ✅ `tests/cli_*.rs`.
+8. ✅ Cross-compile job in `.github/workflows/ci.yml` (`cli-cross-compile` matrix job).
+9. ✅ Reference workflow `.github/workflows/contractgate.yml`.
+10. ⏳ `cargo check && cargo test` — cargo not available in sandbox; CI will verify.
+11. ✅ Update `MAINTENANCE_LOG.md`.
 
 ## Deferred
 

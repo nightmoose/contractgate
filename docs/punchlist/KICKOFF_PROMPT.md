@@ -60,6 +60,7 @@ DO NOT:
 - Refactor unrelated code while you're in there. Note debt; defer it.
 - Mock the database in integration tests.
 - Use bullet points or headers in chat. Caveman style.
+- Attempt to use Cargo, it is not available to you.  Prompt the user to run Cargo.
 
 Begin by reading the five documents above and reporting back, in
 under 200 words, your understanding of the scope and any decision in

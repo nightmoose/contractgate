@@ -9,6 +9,7 @@
 //! inside submodules (`error.rs`, `ingest.rs`, `storage.rs`) continue to
 //! resolve unchanged.
 
+pub mod cli;
 pub mod contract;
 pub mod transform;
 pub mod validation;

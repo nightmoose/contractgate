@@ -18,6 +18,122 @@
 
 ---
 
+## Run 2026-04-27 (CLI core — RFC-014 landed)
+
+Shipped the `contractgate` CLI binary (v0.1) per RFC-014. Three subcommands:
+`validate` (local-only), `push` (create contract or add version), `pull`
+(download latest-stable YAML per contract). Gateway binary renamed to
+`contractgate-server` to free the `contractgate` name for the CLI.
+Branch: `nightly-maintenance-2026-04-27` (git checkout blocked by index.lock
+— same issue as prior runs; files durable on disk).
+
+• Fixed/Added/Improved: 13 changes
+
+  1. **`docs/rfcs/014-cli-core.md` — Accepted (2026-04-27)**: Q1–Q6 signed off.
+     Decision surface: Q1 = `src/bin/contractgate.rs` in gateway crate (no
+     workspace split); Q2 = `CONTRACTGATE_API_KEY` env var + `--api-key` flag;
+     Q3 = human default, `--json` flag per-command; Q4 = walk-up config
+     discovery stopping at git root; Q5 = `cargo install --git` + GH Releases
+     tarballs; Q6 = workflow YAML in this repo. One pre-sign-off flag raised and
+     resolved: gateway binary name conflict (both were "contractgate") → Option A
+     chosen: gateway renamed `contractgate-server`, CLI keeps the bare name.
+
+  2. **`Cargo.toml` — gateway binary renamed + CLI binary added**: `[[bin]]
+     name = "contractgate-server" path = "src/main.rs"` (gateway). `[[bin]]
+     name = "contractgate" path = "src/bin/contractgate.rs"` (CLI). Added
+     `reqwest = "0.12"` (blocking + json + rustls-tls, no default-features),
+     `glob = "0.3"` (contract-dir walking), `tempfile = "3"` (dev-dep for CLI
+     tests).
+
+  3. **`src/lib.rs` — `pub mod cli` added**: CLI modules now compile as part of
+     the library crate so both the CLI binary and integration tests can import
+     from `contractgate::cli::*`.
+
+  4. **`src/cli/mod.rs`**: Declares `client`, `commands`, `config`, `output`.
+
+  5. **`src/cli/config.rs` — `.contractgate.yml` parser + walk-up**: `CliConfig`
+     (serde YAML) with `GatewayConfig.url`, `ContractsConfig.{dir, pattern}`,
+     `DefaultsConfig.format`. `discover(start)` walks up from cwd, stops at the
+     directory containing `.git`, falls back to `Default` if no file found.
+     `load(path)` for explicit `--config` override.
+
+  6. **`src/cli/client.rs` — blocking reqwest wrapper**: `GatewayClient` with
+     `post<B,R>` and `get<R>` generics. Auth via `x-api-key` header. Error
+     mapping: 401 → auth message, 404 → not found, other non-2xx → server error
+     with body. Exit-code constants `EXIT_CLIENT_ERROR = 10`, `EXIT_AUTH_ERROR
+     = 11`, `EXIT_NOT_FOUND = 12`.
+
+  7. **`src/cli/output.rs` — human/JSON render switch**: `Mode::Human` /
+     `Mode::Json`. `ok(mode, human, payload)` and `err(mode, human, payload)`
+     — in JSON mode both serialize the payload via `serde_json`; in human mode
+     `ok` writes stdout, `err` writes stderr.
+
+  8. **`src/cli/commands/validate.rs` — local-only validate**: Glob-walks
+     `--dir` (or config `contracts.dir`) for `*.yaml`, parses each with
+     `serde_yaml::from_str::<Contract>` then `CompiledContract::compile`.
+     Per-file PASS/FAIL output. Exit 0 all pass, 1 any failure. `--json` emits
+     per-file `{"file","status","error?"}` objects.
+
+  9. **`src/cli/commands/push.rs` — push contracts to gateway**: Glob-walks
+     contracts dir. `--dry-run` short-circuits before any network call. For each
+     file: if contract name already exists on gateway → `POST
+     /contracts/:id/versions`; otherwise → `POST /contracts`. Per-file result
+     with `contract_id`, `version`, `action` (created / version_added). Exit 0
+     all success, 1 any failure.
+
+  10. **`src/cli/commands/pull.rs` — pull contracts from gateway**: Lists all
+      contracts (or filters by `--name`). For each, fetches `GET
+      /contracts/:id/versions/latest-stable` to retrieve YAML. Writes
+      `<name>.yaml` under `--out` dir (or config `contracts.dir`). Idempotent.
+      Exit 0 all success, 1 any failure.
+
+  11. **`src/bin/contractgate.rs` — clap entry point**: `clap::Parser` with
+      global `--api-key` (env: `CONTRACTGATE_API_KEY`) and `--config` flags.
+      Subcommands: `push`, `pull`, `validate`, hidden `config schema` (emits
+      hand-written JSON Schema for `.contractgate.yml`). Missing API key exits
+      11 before any subcommand runs. Config load errors exit 10.
+
+  12. **`tests/cli_validate.rs` — 7 unit tests (DB-free)**: `validate_valid_contracts_exits_0`,
+      `validate_single_valid_file_exits_0`, `validate_bad_yaml_exits_1`,
+      `validate_missing_required_field_exits_1`, `validate_mixed_valid_invalid_exits_1`,
+      `validate_empty_dir_exits_1`, `validate_json_flag_does_not_panic`.
+      Fixtures in `tests/fixtures/cli/{valid_user_events,valid_orders,
+      invalid_bad_yaml,invalid_missing_name}.yaml`.
+
+  13. **`tests/cli_push_pull.rs` — 3 tests (2 DB-free, 1 ignored)**: `push_dry_run_exits_0_no_network`
+      and `push_dry_run_invalid_yaml_exits_1` run without any network. `push_and_pull_round_trip`
+      is `#[ignore]` — requires live gateway + DB, run with `cargo test --test
+      cli_push_pull -- --ignored`. Full in-process `tokio::test + axum::serve`
+      variant deferred until the shared DB integration harness (tracked since
+      RFC-002) is available.
+
+  14. **`.github/workflows/contractgate.yml` — reference GH Actions workflow**:
+      `validate` job (all PRs touching `contracts/**`), `publish` job (main
+      push only, after validate passes). Users copy this file into their own
+      repos.
+
+  15. **`.github/workflows/ci.yml` — `cli-cross-compile` matrix job**: Builds
+      `--bin contractgate` for `x86_64-unknown-linux-gnu`, `aarch64-unknown-linux-gnu`
+      (via `cross`), `x86_64-apple-darwin`, `aarch64-apple-darwin`. Runs on
+      ubuntu-latest / macos-latest per target.
+
+• Verification: `cargo check && cargo test` not runnable in sandbox (cargo
+  unavailable — same constraint as prior runs). All logic cross-checked by
+  inspection: crate paths resolve through `lib.rs → pub mod cli`; struct fields
+  match between commands and tests; `CompiledContract::compile` signature (takes
+  `Contract` by value) matched correctly; `reqwest 0.12` `use_rustls_tls()`
+  available under `rustls-tls` feature; `glob::glob` pattern construction
+  matches `ContractsConfig` defaults. CI (`rust-check` job) will run full
+  `cargo check --all-targets && cargo test` on push.
+
+• Tech debt noted: full in-process axum integration tests for push/pull (RFC-014
+  §Test plan, DB-backed path) deferred to the shared harness RFC that has been
+  pending since RFC-002. Pick up with RFC-015 or as a standalone harness RFC.
+
+• Tech debt noted: `release.yml` workflow (produces actual release tarballs for
+  the four cross-compile targets) not yet written. The `cli-cross-compile` job
+  added to `ci.yml` is a smoke-test only. Release tarball workflow needed before
+  the reference `contractgate.yml` GH Actions workflow is usable end-to-end.
 ## Run 2026-04-27 (Inference family — RFC-006, Punchlist Chunk 1)
 
 Completed all four items in Punchlist Chunk 1. RFC-006 written and accepted

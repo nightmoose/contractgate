@@ -1,0 +1,54 @@
+---
+# Reference ContractGate CI workflow.
+# Copy this file into your own repo and set CONTRACTGATE_API_KEY in your
+# repository secrets.
+#
+# What it does:
+#   validate job — parse + compile every contract YAML locally (no network).
+#   publish job  — push validated contracts to the ContractGate gateway
+#                  (runs only on pushes to main).
+
+name: contractgate
+
+on:
+  pull_request:
+    paths:
+      - 'contracts/**'
+  push:
+    branches:
+      - main
+    paths:
+      - 'contracts/**'
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install contractgate
+        run: |
+          curl -sSL \
+            https://github.com/contractgate/contractgate/releases/latest/download/contractgate-linux-x86_64.tar.gz \
+            | tar xz -C /usr/local/bin
+
+      - name: Validate contracts
+        run: contractgate validate
+
+  publish:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: validate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install contractgate
+        run: |
+          curl -sSL \
+            https://github.com/contractgate/contractgate/releases/latest/download/contractgate-linux-x86_64.tar.gz \
+            | tar xz -C /usr/local/bin
+
+      - name: Push contracts
+        run: contractgate push
+        env:
+          CONTRACTGATE_API_KEY: ${{ secrets.CONTRACTGATE_API_KEY }}
