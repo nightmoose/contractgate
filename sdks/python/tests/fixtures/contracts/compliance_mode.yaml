@@ -1,0 +1,14 @@
+version: "1.0"
+name: "user_events_strict"
+description: "User events with compliance mode on"
+compliance_mode: true
+
+ontology:
+  entities:
+    - name: user_id
+      type: string
+      required: true
+    - name: event_type
+      type: string
+      required: true
+      enum: ["click", "view"]

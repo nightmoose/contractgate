@@ -1,0 +1,31 @@
+version: "1.0"
+name: "user_events"
+description: "Contract for user interaction events"
+
+ontology:
+  entities:
+    - name: user_id
+      type: string
+      required: true
+      pattern: "^[a-zA-Z0-9_-]+$"
+    - name: event_type
+      type: string
+      required: true
+      enum: ["click", "view", "purchase", "login"]
+    - name: timestamp
+      type: integer
+      required: true
+      min: 0
+    - name: amount
+      type: number
+      required: false
+      min: 0
+
+glossary:
+  - field: amount
+    description: "Monetary amount in USD"
+    constraints: "must be non-negative"
+
+metrics:
+  - name: total_revenue
+    formula: "sum(amount) where event_type = 'purchase'"
