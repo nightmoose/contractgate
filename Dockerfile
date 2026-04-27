@@ -29,7 +29,9 @@ RUN rm -f target/release/contractgate* target/release/deps/contractgate*
 # scenario YAML files at compile time via include_str!("../demo/scenarios/…").
 COPY demo ./demo
 COPY src ./src
-RUN cargo build --release
+#RUN cargo build --release
+# Build only the web server binary (explicit name)
+RUN cargo build --release --bin contractgate   # or whatever your server binary is named
 
 # ── Stage 2: runtime ────────────────────────────────────────
 FROM debian:bookworm-slim AS runtime
