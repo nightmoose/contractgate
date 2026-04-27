@@ -147,10 +147,10 @@ fn dry_run_files(files: &[PathBuf], mode: output::Mode) -> Result<i32> {
 
 /// Parse a YAML file, returning `(yaml_content, contract_name, version)`.
 fn parse_file(path: &Path) -> Result<(String, String, String)> {
-    let yaml = std::fs::read_to_string(path)
-        .map_err(|e| anyhow::anyhow!("cannot read file: {e}"))?;
-    let contract: Contract = serde_yaml::from_str(&yaml)
-        .map_err(|e| anyhow::anyhow!("YAML parse error: {e}"))?;
+    let yaml =
+        std::fs::read_to_string(path).map_err(|e| anyhow::anyhow!("cannot read file: {e}"))?;
+    let contract: Contract =
+        serde_yaml::from_str(&yaml).map_err(|e| anyhow::anyhow!("YAML parse error: {e}"))?;
     Ok((yaml, contract.name.clone(), contract.version.clone()))
 }
 
@@ -217,23 +217,22 @@ fn push_file(
                 "version": version,
                 "yaml_content": yaml,
             });
-            let _resp: VersionIdResponse =
-                client.post(&path_str, &body).map_err(|e| {
-                    let msg = format!("{e:#}");
-                    output::err(
-                        mode,
-                        &format!("FAIL  {file}\n      {msg}"),
-                        &FileResult {
-                            file: file.clone(),
-                            status: "fail",
-                            contract_id: Some(id.to_string()),
-                            version: None,
-                            action: None,
-                            error: Some(msg.clone()),
-                        },
-                    );
-                    anyhow::anyhow!("{msg}")
-                })?;
+            let _resp: VersionIdResponse = client.post(&path_str, &body).map_err(|e| {
+                let msg = format!("{e:#}");
+                output::err(
+                    mode,
+                    &format!("FAIL  {file}\n      {msg}"),
+                    &FileResult {
+                        file: file.clone(),
+                        status: "fail",
+                        contract_id: Some(id.to_string()),
+                        version: None,
+                        action: None,
+                        error: Some(msg.clone()),
+                    },
+                );
+                anyhow::anyhow!("{msg}")
+            })?;
             (id, "version_added")
         }
     };

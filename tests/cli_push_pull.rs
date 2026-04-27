@@ -15,8 +15,8 @@
 
 use contractgate::cli::{
     commands::{
-        pull::{PullArgs, run as pull_run},
-        push::{PushArgs, run as push_run},
+        pull::{run as pull_run, PullArgs},
+        push::{run as push_run, PushArgs},
     },
     config::{CliConfig, GatewayConfig},
 };
@@ -30,8 +30,7 @@ fn fixtures_dir() -> PathBuf {
 }
 
 fn live_cfg() -> CliConfig {
-    let url = std::env::var("CONTRACTGATE_URL")
-        .unwrap_or_else(|_| "http://localhost:3000".into());
+    let url = std::env::var("CONTRACTGATE_URL").unwrap_or_else(|_| "http://localhost:3000".into());
     let mut cfg = CliConfig::default();
     cfg.gateway = GatewayConfig { url };
     cfg
@@ -86,13 +85,15 @@ fn push_and_pull_round_trip() {
         .filter(|e| e.path().extension().map(|x| x == "yaml").unwrap_or(false))
         .collect();
 
-    assert!(!pulled.is_empty(), "pull should write at least one YAML file");
+    assert!(
+        !pulled.is_empty(),
+        "pull should write at least one YAML file"
+    );
 
     for entry in pulled {
         let path = entry.path();
         let yaml = std::fs::read_to_string(&path).unwrap();
-        let _contract: contractgate::contract::Contract =
-            serde_yaml::from_str(&yaml)
+        let _contract: contractgate::contract::Contract = serde_yaml::from_str(&yaml)
             .unwrap_or_else(|e| panic!("pulled file {} failed to parse: {e}", path.display()));
     }
 }

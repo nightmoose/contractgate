@@ -89,11 +89,10 @@ pub fn run(args: &ValidateArgs, cfg: &CliConfig) -> Result<i32> {
 }
 
 fn validate_file(path: &Path) -> Result<()> {
-    let src = std::fs::read_to_string(path)
-        .map_err(|e| anyhow::anyhow!("cannot read file: {e}"))?;
-    let contract: Contract = serde_yaml::from_str(&src)
-        .map_err(|e| anyhow::anyhow!("YAML parse error: {e}"))?;
-    CompiledContract::compile(contract)
-        .map_err(|e| anyhow::anyhow!("compile error: {e}"))?;
+    let src =
+        std::fs::read_to_string(path).map_err(|e| anyhow::anyhow!("cannot read file: {e}"))?;
+    let contract: Contract =
+        serde_yaml::from_str(&src).map_err(|e| anyhow::anyhow!("YAML parse error: {e}"))?;
+    CompiledContract::compile(contract).map_err(|e| anyhow::anyhow!("compile error: {e}"))?;
     Ok(())
 }

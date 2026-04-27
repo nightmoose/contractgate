@@ -4,7 +4,7 @@
 //! directly with fixture files from `tests/fixtures/cli/`.
 
 use contractgate::cli::{
-    commands::validate::{ValidateArgs, run},
+    commands::validate::{run, ValidateArgs},
     config::CliConfig,
 };
 use std::path::PathBuf;

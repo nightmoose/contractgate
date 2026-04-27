@@ -51,7 +51,9 @@ fn main() {
     // Load config (explicit path or walk-up).
     let cfg = match &cli.config {
         Some(p) => CliConfig::load(p),
-        None => CliConfig::discover(&std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."))),
+        None => {
+            CliConfig::discover(&std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")))
+        }
     }
     .unwrap_or_else(|e| {
         eprintln!("error loading config: {e:#}");
@@ -90,9 +92,7 @@ fn main() {
 
 fn require_api_key(key: &Option<String>) -> String {
     key.clone().unwrap_or_else(|| {
-        eprintln!(
-            "error: API key required. Set CONTRACTGATE_API_KEY or pass --api-key."
-        );
+        eprintln!("error: API key required. Set CONTRACTGATE_API_KEY or pass --api-key.");
         process::exit(11);
     })
 }

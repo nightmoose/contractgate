@@ -53,7 +53,10 @@ pub fn run(args: &PullArgs, cfg: &CliConfig, api_key: &str) -> Result<i32> {
         output::Mode::Human
     };
 
-    let out_dir = args.out.clone().unwrap_or_else(|| cfg.contracts.dir.clone());
+    let out_dir = args
+        .out
+        .clone()
+        .unwrap_or_else(|| cfg.contracts.dir.clone());
     std::fs::create_dir_all(&out_dir).ok();
 
     let client = GatewayClient::new(&cfg.gateway.url, api_key)?;
