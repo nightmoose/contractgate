@@ -381,12 +381,11 @@ fn parse_message_body(body: &str, proto: &mut ParsedProto) -> Result<Vec<ProtoFi
     Ok(fields)
 }
 
-/// Parse an enum body and return the symbol names (ignoring numeric values).
 fn parse_enum_body(body: &str) -> Vec<String> {
     body.lines()
         .filter_map(|line| {
             let line = line.trim();
-            if line.is_empty() || line.starts_with("option") {
+            if line.is_empty() || line.split_whitespace().next() == Some("option") {
                 return None;
             }
             // Format: SYMBOL_NAME = N;
@@ -410,7 +409,7 @@ fn parse_field_lines(body: &str, force_optional: bool) -> Vec<ProtoField> {
         let line = line.trim();
         if line.is_empty()
             || line.starts_with('}')
-            || line.starts_with("option")
+            || line.split_whitespace().next() == Some("option")  // ← FIXED
             || line.starts_with("reserved")
             || line.starts_with("syntax")
             || line.starts_with("package")
