@@ -176,16 +176,6 @@ fn parse_block(src: &str, proto: &mut ParsedProto) -> Result<(), String> {
     // Build a char-level cursor for brace matching.
     let chars: Vec<char> = src.chars().collect();    
 
-    // Advance `char_pos` past whitespace tokens we've consumed.
-    // We track token boundaries by scanning for each token in `chars`.
-    fn skip_to_next_char(chars: &[char], pos: usize) -> usize {
-        let mut p = pos;
-        while p < chars.len() && (chars[p].is_whitespace()) {
-            p += 1;
-        }
-        p
-    }
-
     fn match_word(chars: &[char], pos: usize, word: &str) -> Option<usize> {
         let p = {
             let mut p = pos;
@@ -418,7 +408,6 @@ fn parse_field_lines(body: &str, force_optional: bool) -> Vec<ProtoField> {
 
     for line in body.lines() {
         let line = line.trim();
-        // Skip empty, closing braces, option lines, reserved lines.
         if line.is_empty()
             || line.starts_with('}')
             || line.starts_with("option")
@@ -431,31 +420,25 @@ fn parse_field_lines(body: &str, force_optional: bool) -> Vec<ProtoField> {
         }
 
         let parts: Vec<&str> = line.trim_end_matches(';').split_whitespace().collect();
-
-        if parts.len() < 4 {
-            // Not enough tokens for `[label] type name = tag`.
+        if parts.len() < 3 {
             continue;
         }
 
-        // Detect `repeated` / `optional` label.
-        let (label, rest) = match parts[0] {
-            "repeated" | "optional" => (parts[0], &parts[1..]),
-            _ => ("", &parts[..]),
+        // Handle optional / repeated label
+        let (label, type_idx) = match parts[0] {
+            "optional" | "repeated" => (parts[0], 1usize),
+            _ => ("", 0usize),
         };
 
-        if rest.len() < 4 {
-            // Need at least: type name = tag
-            // But skip if it doesn't match (could be a nested block remnant).
-            if rest.len() < 3 {
-                continue;
-            }
+        if type_idx + 2 >= parts.len() {
+            continue;
         }
 
-        let type_name = rest[0].to_string();
-        let field_name = rest[1].to_string();
+        let type_name = parts[type_idx].to_string();
+        let field_name = parts[type_idx + 1].to_string();
 
-        // `rest[2]` should be `=` and `rest[3]` the tag number.
-        if rest.get(2) != Some(&"=") {
+        // Check for "=" before the tag number
+        if parts.get(type_idx + 2) != Some(&"=") {
             continue;
         }
 
