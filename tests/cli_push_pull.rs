@@ -31,8 +31,10 @@ fn fixtures_dir() -> PathBuf {
 
 fn live_cfg() -> CliConfig {
     let url = std::env::var("CONTRACTGATE_URL").unwrap_or_else(|_| "http://localhost:3000".into());
-    let mut cfg = CliConfig::default();
-    cfg.gateway = GatewayConfig { url };
+    let cfg = CliConfig {
+        gateway: GatewayConfig { url },
+        ..Default::default()
+    };
     cfg
 }
 
@@ -115,8 +117,10 @@ fn push_dry_run_exits_0_no_network() {
         json: false,
     };
     // Use a bogus URL — dry-run must not make network calls.
-    let mut cfg = CliConfig::default();
-    cfg.gateway.url = "http://127.0.0.1:1".into();
+    let cfg = CliConfig {
+        gateway: GatewayConfig { url: "http://127.0.0.1:1".into() },
+        ..Default::default()
+    };
 
     let code = push_run(&push_args, &cfg, "no-key").expect("push::run dry-run");
     assert_eq!(code, 0, "dry-run of valid contract → exit 0");
@@ -137,8 +141,10 @@ fn push_dry_run_invalid_yaml_exits_1() {
         dry_run: true,
         json: false,
     };
-    let mut cfg = CliConfig::default();
-    cfg.gateway.url = "http://127.0.0.1:1".into();
+    let cfg = CliConfig {
+        gateway: GatewayConfig { url: "http://127.0.0.1:1".into() },
+        ..Default::default()
+    };
 
     let code = push_run(&push_args, &cfg, "no-key").expect("push::run dry-run invalid");
     assert_eq!(code, 1, "dry-run of invalid contract → exit 1");
