@@ -1,6 +1,6 @@
 # RFC-012: Templates + Marketplace
 
-| Status        | Draft — awaiting sign-off                                              |
+| Status        | **Superseded** by RFC-017 (3 starters only); rest deferred (2026-04-27)|
 |---------------|------------------------------------------------------------------------|
 | Author        | ContractGate team                                                      |
 | Created       | 2026-04-27                                                             |

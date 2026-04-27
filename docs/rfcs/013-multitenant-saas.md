@@ -1,6 +1,6 @@
 # RFC-013: Multi-Tenant SaaS
 
-| Status        | Draft — **gated on RFC-001 sign-off; do not start until signed**       |
+| Status        | **Deferred entirely** (2026-04-27) — no tenants, no signup flow needed pre-customer |
 |---------------|------------------------------------------------------------------------|
 | Author        | ContractGate team                                                      |
 | Created       | 2026-04-27                                                             |

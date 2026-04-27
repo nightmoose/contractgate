@@ -1,6 +1,6 @@
 # RFC-010: Self-Hosted Basics
 
-| Status        | Draft — awaiting sign-off                                              |
+| Status        | **Superseded** by RFC-017 (Compose only); rest deferred (2026-04-27)   |
 |---------------|------------------------------------------------------------------------|
 | Author        | ContractGate team                                                      |
 | Created       | 2026-04-27                                                             |

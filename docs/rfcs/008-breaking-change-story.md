@@ -1,6 +1,6 @@
 # RFC-008: Breaking-Change Story
 
-| Status        | Draft — awaiting sign-off                                              |
+| Status        | **Superseded** by RFC-015 (2026-04-27) — kept for design context       |
 |---------------|------------------------------------------------------------------------|
 | Author        | ContractGate team                                                      |
 | Created       | 2026-04-27                                                             |
