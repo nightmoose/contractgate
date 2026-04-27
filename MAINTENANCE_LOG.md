@@ -134,6 +134,65 @@ Branch: `nightly-maintenance-2026-04-27` (git checkout blocked by index.lock
   the four cross-compile targets) not yet written. The `cli-cross-compile` job
   added to `ci.yml` is a smoke-test only. Release tarball workflow needed before
   the reference `contractgate.yml` GH Actions workflow is usable end-to-end.
+## Run 2026-04-27 (Inference family — RFC-006, Punchlist Chunk 1)
+
+Completed all four items in Punchlist Chunk 1. RFC-006 written and accepted
+before any code landed.
+
+• Fixed/Added/Improved: 6 changes
+
+  1. **`docs/rfcs/006-inference-formats.md` — Accepted (2026-04-27)**:
+     Decisions signed off: per-format routes, schema-driven primary for
+     Avro/Proto (JSON sample fallback on Avro), rule-based diff summarizer
+     with `DiffSummarizer` trait reserved for a future LLM backend.
+
+  2. **`src/infer.rs` — `infer_fields_from_objects_pub` exported**: Added
+     thin public wrapper so format-specific modules can reuse the JSON
+     inference path without duplicating logic.
+
+  3. **`src/infer_avro.rs` — `POST /contracts/infer/avro`**: Schema-driven
+     path parses `.avsc` JSON directly (no extra crate — Avro schemas are
+     JSON). Handles records, nested records, arrays, maps, enums
+     (`allowed_values`), and `["null", T]` unions (marks field optional).
+     Multi-non-null unions fall back to `Any`. Sample-driven path delegates
+     to the existing `infer_fields_from_objects` logic. 9 unit tests.
+
+  4. **`src/infer_proto.rs` — `POST /contracts/infer/proto`**: Hand-written
+     line-oriented proto3 parser (no external dep). Strips comments,
+     brace-matches `message`/`enum`/`oneof` blocks, parses field lines with
+     `optional`/`repeated` labels. Maps all proto3 scalar types, nested
+     message refs (→ Object), enum refs (→ String + allowed_values), and
+     `repeated T` (→ Array). Unknown/map types fall back to `Any`. 5 unit
+     tests.
+
+  5. **`src/infer_openapi.rs` — `POST /contracts/infer/openapi`**: Walks
+     `components/schemas` in OpenAPI 3.x or AsyncAPI YAML/JSON. JSON Schema
+     → FieldType mapping covers all common types; passes through `enum`,
+     `pattern`, `minimum`/`maximum`, `minLength`/`maxLength`. `required`
+     array at the object level drives per-field required flags. 5 unit
+     tests including a full YAML round-trip.
+
+  6. **`src/infer_diff.rs` — `POST /contracts/diff`**: Rule-based evolution
+     diff summarizer. Produces structured `DiffChange` list (8 change kinds:
+     field_added, field_removed, type_changed, required_changed,
+     enum_value_added, enum_value_removed, pattern_changed,
+     constraint_changed) plus a plain-English summary sentence.
+     `DiffSummarizer` trait allows a future LLM backend to be injected via
+     `Arc<dyn DiffSummarizer>` — handler needs no changes. Recurses into
+     nested `properties`. 7 unit tests.
+
+• Route wiring: 4 new protected routes registered in `main.rs`. Literal
+  path segments (`/contracts/infer/avro` etc.) take Axum/matchit priority
+  over `:id` wildcards — no conflicts.
+
+• Validation: `cargo check` could not run in the maintenance sandbox (macOS
+  `target/` artifacts lock the build dir; `/tmp` exhausts disk space
+  compiling `ring`). Code reviewed manually: all imports verified, public
+  symbols confirmed, route precedence checked. **Run `cargo check && cargo
+  test` locally before merging.**
+
+• Tech debt deferred: cross-format parity fixture corpus
+  (`tests/fixtures/infer/`) — noted in RFC-006 rollout step 9.
 
 ---
 
