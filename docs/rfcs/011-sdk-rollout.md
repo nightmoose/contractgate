@@ -1,6 +1,6 @@
 # RFC-011: SDK Rollout (TS, Go, Java)
 
-| Status        | Draft — awaiting sign-off                                              |
+| Status        | **Superseded** by RFC-018 (TS only); Go + Java deferred (2026-04-27)   |
 |---------------|------------------------------------------------------------------------|
 | Author        | ContractGate team                                                      |
 | Created       | 2026-04-27                                                             |

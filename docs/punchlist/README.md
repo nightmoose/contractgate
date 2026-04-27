@@ -1,12 +1,17 @@
 # Punchlist Chunks
 
+> **Active plan: [v2.md](v2.md)** (pre-customer trim, 2026-04-27).
+> RFCs 007–013 superseded; see v2 for current 5-chunk plan.
+> Tables below are historical context only.
+
 Source: `contractgate-upgrade-punchlist.md` (2026-04-26).
 
-JSON inference shipped 2026-04-27 morning (`src/infer.rs`). Strike that line.
+JSON + Avro + Proto + OpenAPI + Diff inference shipped to `main`
+(2026-04-27, RFC-006). Strike chunk 1.
 
-Each chunk = one conversation. RFC pre-written for chunks 2–8 (Draft,
-awaiting sign-off). Use [KICKOFF_PROMPT.md](KICKOFF_PROMPT.md) to start
-a chunk — paste it verbatim, replace placeholders.
+Each chunk = one conversation. Use [KICKOFF_PROMPT.md](KICKOFF_PROMPT.md)
+to start a chunk — paste it verbatim, replace placeholders. The kickoff
+prompt's chunk table now points at the v2 RFCs (014–018).
 
 | # | Chunk | RFC | Why now |
 |---|---|---|---|

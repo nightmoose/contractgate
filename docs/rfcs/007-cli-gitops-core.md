@@ -1,6 +1,6 @@
 # RFC-007: CLI + GitOps Core
 
-| Status        | Draft — awaiting sign-off                                              |
+| Status        | **Superseded** by RFC-014 (2026-04-27) — kept for design context       |
 |---------------|------------------------------------------------------------------------|
 | Author        | ContractGate team                                                      |
 | Created       | 2026-04-27                                                             |

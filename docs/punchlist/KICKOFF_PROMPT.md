@@ -68,15 +68,15 @@ the RFC's Decisions table you'd flag for review before starting.
 
 ---
 
-## Chunk → RFC quick reference
+## Chunk → RFC quick reference (v2 — pre-customer trim, 2026-04-27)
 
-| Chunk | Punchlist file | RFC |
+**Use these RFCs.** RFCs 007–013 are Superseded; do not implement from them.
+See [`docs/punchlist/v2.md`](v2.md) for the trim rationale.
+
+| Chunk | RFC | Depends on |
 |---|---|---|
-| 1 | `docs/punchlist/01-inference-family.md` | `docs/rfcs/006-inference-formats.md` *(landed)* |
-| 2 | `docs/punchlist/02-cli-gitops-core.md` | `docs/rfcs/007-cli-gitops-core.md` |
-| 3 | `docs/punchlist/03-breaking-change-story.md` | `docs/rfcs/008-breaking-change-story.md` |
-| 4 | `docs/punchlist/04-observability-quick-wins.md` | `docs/rfcs/009-observability-quick-wins.md` |
-| 5 | `docs/punchlist/05-self-hosted-basics.md` | `docs/rfcs/010-self-hosted-basics.md` |
-| 6 | `docs/punchlist/06-sdk-rollout.md` | `docs/rfcs/011-sdk-rollout.md` |
-| 7 | `docs/punchlist/07-templates-marketplace.md` | `docs/rfcs/012-templates-marketplace.md` |
-| 8 | `docs/punchlist/08-multitenant-saas.md` | `docs/rfcs/013-multitenant-saas.md` *(gated on RFC-001)* |
+| 1 | [014 — CLI core + ref workflow](../rfcs/014-cli-core.md) | RFC-006 (landed) |
+| 2 | [015 — Breaking-change demo arc](../rfcs/015-breaking-change-demo.md) | RFC-002, RFC-006, RFC-014 |
+| 3 | [016 — Observability v1](../rfcs/016-observability-v1.md) | none |
+| 4 | [017 — Onboarding stack](../rfcs/017-onboarding-stack.md) | RFC-016 (Grafana JSON) |
+| 5 | [018 — TypeScript SDK](../rfcs/018-typescript-sdk.md) | RFC-005 (Python parity), RFC-014 |
