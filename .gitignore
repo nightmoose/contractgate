@@ -21,3 +21,5 @@ dashboard/.env
 .vscode/
 .idea/
 dashboard/tsconfig.tsbuildinfo
+# Added by code-review-graph
+.code-review-graph/
