@@ -97,10 +97,16 @@ impl DiffSummarizer for RuleBasedSummarizer {
         let total = changes.len();
         let mut parts: Vec<String> = Vec::new();
         if added > 0 {
-            parts.push(format!("{added} field{} added", if added == 1 { "" } else { "s" }));
+            parts.push(format!(
+                "{added} field{} added",
+                if added == 1 { "" } else { "s" }
+            ));
         }
         if removed > 0 {
-            parts.push(format!("{removed} field{} removed", if removed == 1 { "" } else { "s" }));
+            parts.push(format!(
+                "{removed} field{} removed",
+                if removed == 1 { "" } else { "s" }
+            ));
         }
         if type_changed > 0 {
             parts.push(format!(
@@ -154,12 +160,7 @@ pub async fn diff_handler(Json(req): Json<DiffRequest>) -> AppResult<Json<DiffRe
 /// Compare two contracts and produce a flat list of `DiffChange`s.
 pub fn diff_contracts(a: &Contract, b: &Contract) -> Vec<DiffChange> {
     let mut changes = Vec::new();
-    diff_field_lists(
-        &a.ontology.entities,
-        &b.ontology.entities,
-        "",
-        &mut changes,
-    );
+    diff_field_lists(&a.ontology.entities, &b.ontology.entities, "", &mut changes);
     changes
 }
 
@@ -350,7 +351,11 @@ fn field_path(prefix: &str, name: &str) -> String {
 }
 
 fn required_label(required: bool) -> &'static str {
-    if required { "required" } else { "optional" }
+    if required {
+        "required"
+    } else {
+        "optional"
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -399,7 +404,9 @@ mod tests {
             simple_field("session_id", FieldType::String, false),
         ]);
         let changes = diff_contracts(&a, &b);
-        assert!(changes.iter().any(|c| c.kind == "field_added" && c.field == "session_id"));
+        assert!(changes
+            .iter()
+            .any(|c| c.kind == "field_added" && c.field == "session_id"));
     }
 
     #[test]
@@ -410,7 +417,9 @@ mod tests {
         ]);
         let b = make_contract(vec![simple_field("user_id", FieldType::String, true)]);
         let changes = diff_contracts(&a, &b);
-        assert!(changes.iter().any(|c| c.kind == "field_removed" && c.field == "legacy_id"));
+        assert!(changes
+            .iter()
+            .any(|c| c.kind == "field_removed" && c.field == "legacy_id"));
     }
 
     #[test]
@@ -418,7 +427,9 @@ mod tests {
         let a = make_contract(vec![simple_field("amount", FieldType::Integer, true)]);
         let b = make_contract(vec![simple_field("amount", FieldType::Float, true)]);
         let changes = diff_contracts(&a, &b);
-        assert!(changes.iter().any(|c| c.kind == "type_changed" && c.field == "amount"));
+        assert!(changes
+            .iter()
+            .any(|c| c.kind == "type_changed" && c.field == "amount"));
         let change = changes.iter().find(|c| c.kind == "type_changed").unwrap();
         assert_eq!(change.detail, "Integer → Float");
     }
@@ -428,7 +439,9 @@ mod tests {
         let a = make_contract(vec![simple_field("amount", FieldType::Float, true)]);
         let b = make_contract(vec![simple_field("amount", FieldType::Float, false)]);
         let changes = diff_contracts(&a, &b);
-        assert!(changes.iter().any(|c| c.kind == "required_changed" && c.field == "amount"));
+        assert!(changes
+            .iter()
+            .any(|c| c.kind == "required_changed" && c.field == "amount"));
     }
 
     #[test]
@@ -443,8 +456,12 @@ mod tests {
         let a = make_contract(vec![fa]);
         let b = make_contract(vec![fb]);
         let changes = diff_contracts(&a, &b);
-        assert!(changes.iter().any(|c| c.kind == "enum_value_added" && c.detail.contains("pending")));
-        assert!(changes.iter().any(|c| c.kind == "enum_value_removed" && c.detail.contains("inactive")));
+        assert!(changes
+            .iter()
+            .any(|c| c.kind == "enum_value_added" && c.detail.contains("pending")));
+        assert!(changes
+            .iter()
+            .any(|c| c.kind == "enum_value_removed" && c.detail.contains("inactive")));
     }
 
     #[test]
@@ -461,9 +478,7 @@ mod tests {
         let b = make_contract(vec![fb]);
         let changes = diff_contracts(&a, &b);
         assert!(changes.iter().any(|c| {
-            c.kind == "constraint_changed"
-                && c.field == "amount"
-                && c.detail.contains("max")
+            c.kind == "constraint_changed" && c.field == "amount" && c.detail.contains("max")
         }));
     }
 
@@ -477,9 +492,21 @@ mod tests {
     #[test]
     fn summarizer_correct_totals() {
         let changes = vec![
-            DiffChange { kind: "field_added".to_string(),   field: "x".to_string(), detail: "".to_string() },
-            DiffChange { kind: "field_removed".to_string(), field: "y".to_string(), detail: "".to_string() },
-            DiffChange { kind: "type_changed".to_string(),  field: "z".to_string(), detail: "".to_string() },
+            DiffChange {
+                kind: "field_added".to_string(),
+                field: "x".to_string(),
+                detail: "".to_string(),
+            },
+            DiffChange {
+                kind: "field_removed".to_string(),
+                field: "y".to_string(),
+                detail: "".to_string(),
+            },
+            DiffChange {
+                kind: "type_changed".to_string(),
+                field: "z".to_string(),
+                detail: "".to_string(),
+            },
         ];
         let s = RuleBasedSummarizer.summarize(&changes);
         assert!(s.starts_with("3 changes"));

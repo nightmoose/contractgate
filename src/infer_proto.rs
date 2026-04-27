@@ -59,14 +59,10 @@ pub async fn infer_proto_handler(
     let parsed = parse_proto_source(&req.proto_source)
         .map_err(|e| AppError::BadRequest(format!("proto parse error: {e}")))?;
 
-    let message_name = req.message.clone().unwrap_or_else(|| {
-        parsed
-            .messages
-            .keys()
-            .next()
-            .cloned()
-            .unwrap_or_default()
-    });
+    let message_name = req
+        .message
+        .clone()
+        .unwrap_or_else(|| parsed.messages.keys().next().cloned().unwrap_or_default());
 
     if message_name.is_empty() {
         return Err(AppError::BadRequest(
@@ -199,10 +195,7 @@ fn parse_block(src: &str, proto: &mut ParsedProto) -> Result<(), String> {
         }
     }
 
-    fn extract_name_and_block(
-        chars: &[char],
-        pos: usize,
-    ) -> Option<(String, String, usize)> {
+    fn extract_name_and_block(chars: &[char], pos: usize) -> Option<(String, String, usize)> {
         // After keyword, skip whitespace, read name, skip to '{', extract block.
         let mut p = pos;
         while p < chars.len() && chars[p].is_whitespace() {
@@ -225,7 +218,7 @@ fn parse_block(src: &str, proto: &mut ParsedProto) -> Result<(), String> {
             return None;
         }
         p += 1; // consume '{'
-        // Extract matching block content.
+                // Extract matching block content.
         let mut depth = 1usize;
         let block_start = p;
         while p < chars.len() && depth > 0 {
@@ -260,9 +253,7 @@ fn parse_block(src: &str, proto: &mut ParsedProto) -> Result<(), String> {
 
         // Try to match keywords.
         if let Some(after_kw) = match_word(&chars, p, "message") {
-            if let Some((name, block, after_block)) =
-                extract_name_and_block(&chars, after_kw)
-            {
+            if let Some((name, block, after_block)) = extract_name_and_block(&chars, after_kw) {
                 let fields = parse_message_body(&block, proto)?;
                 proto.messages.insert(name, fields);
                 p = after_block;
@@ -271,9 +262,7 @@ fn parse_block(src: &str, proto: &mut ParsedProto) -> Result<(), String> {
         }
 
         if let Some(after_kw) = match_word(&chars, p, "enum") {
-            if let Some((name, block, after_block)) =
-                extract_name_and_block(&chars, after_kw)
-            {
+            if let Some((name, block, after_block)) = extract_name_and_block(&chars, after_kw) {
                 let symbols = parse_enum_body(&block);
                 proto.enums.insert(name, symbols);
                 p = after_block;
@@ -314,10 +303,7 @@ fn parse_message_body(body: &str, proto: &mut ParsedProto) -> Result<Vec<ProtoFi
         }
     }
 
-    fn extract_name_and_block_inner(
-        chars: &[char],
-        pos: usize,
-    ) -> Option<(String, String, usize)> {
+    fn extract_name_and_block_inner(chars: &[char], pos: usize) -> Option<(String, String, usize)> {
         let mut p = pos;
         while p < chars.len() && chars[p].is_whitespace() {
             p += 1;
@@ -362,9 +348,7 @@ fn parse_message_body(body: &str, proto: &mut ParsedProto) -> Result<Vec<ProtoFi
 
         // Nested message.
         if let Some(after_kw) = match_word_inner(&chars, p, "message") {
-            if let Some((name, block, after)) =
-                extract_name_and_block_inner(&chars, after_kw)
-            {
+            if let Some((name, block, after)) = extract_name_and_block_inner(&chars, after_kw) {
                 let nested = parse_message_body(&block, proto)?;
                 proto.messages.insert(name, nested);
                 p = after;
@@ -374,9 +358,7 @@ fn parse_message_body(body: &str, proto: &mut ParsedProto) -> Result<Vec<ProtoFi
 
         // Nested enum.
         if let Some(after_kw) = match_word_inner(&chars, p, "enum") {
-            if let Some((name, block, after)) =
-                extract_name_and_block_inner(&chars, after_kw)
-            {
+            if let Some((name, block, after)) = extract_name_and_block_inner(&chars, after_kw) {
                 let symbols = parse_enum_body(&block);
                 proto.enums.insert(name, symbols);
                 p = after;
@@ -386,9 +368,7 @@ fn parse_message_body(body: &str, proto: &mut ParsedProto) -> Result<Vec<ProtoFi
 
         // oneof block — collect field names from branches as optional.
         if let Some(after_kw) = match_word_inner(&chars, p, "oneof") {
-            if let Some((_name, block, after)) =
-                extract_name_and_block_inner(&chars, after_kw)
-            {
+            if let Some((_name, block, after)) = extract_name_and_block_inner(&chars, after_kw) {
                 // Parse oneof branches — same as message fields but all optional.
                 let oneof_fields = parse_field_lines(&block, true);
                 fields.extend(oneof_fields);
@@ -446,10 +426,7 @@ fn parse_field_lines(body: &str, force_optional: bool) -> Vec<ProtoField> {
             continue;
         }
 
-        let parts: Vec<&str> = line
-            .trim_end_matches(';')
-            .split_whitespace()
-            .collect();
+        let parts: Vec<&str> = line.trim_end_matches(';').split_whitespace().collect();
 
         if parts.len() < 4 {
             // Not enough tokens for `[label] type name = tag`.
@@ -550,8 +527,7 @@ fn resolve_proto_type(
             optional: false,
             repeated: false,
         };
-        let (item_ft, item_av, item_props, item_items) =
-            resolve_proto_type(&inner, proto);
+        let (item_ft, item_av, item_props, item_items) = resolve_proto_type(&inner, proto);
         let items_def = FieldDefinition {
             name: "item".to_string(),
             field_type: item_ft,
@@ -578,10 +554,7 @@ fn resolve_proto_type(
 
     // Enum reference → String + allowed_values.
     if let Some(symbols) = proto.enums.get(type_name) {
-        let av: Vec<Value> = symbols
-            .iter()
-            .map(|s| Value::String(s.clone()))
-            .collect();
+        let av: Vec<Value> = symbols.iter().map(|s| Value::String(s.clone())).collect();
         return (FieldType::String, Some(av), None, None);
     }
 
@@ -597,8 +570,8 @@ fn resolve_proto_type(
 fn proto_scalar_type(t: &str) -> Option<FieldType> {
     match t {
         "string" | "bytes" => Some(FieldType::String),
-        "int32" | "int64" | "uint32" | "uint64" | "sint32" | "sint64" | "fixed32"
-        | "fixed64" | "sfixed32" | "sfixed64" => Some(FieldType::Integer),
+        "int32" | "int64" | "uint32" | "uint64" | "sint32" | "sint64" | "fixed32" | "fixed64"
+        | "sfixed32" | "sfixed64" => Some(FieldType::Integer),
         "float" | "double" => Some(FieldType::Float),
         "bool" => Some(FieldType::Boolean),
         _ => None,

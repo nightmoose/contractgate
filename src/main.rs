@@ -606,9 +606,18 @@ fn build_router(state: Arc<AppState>) -> Router {
         // Contract inference — JSON samples
         .route("/contracts/infer", post(infer::infer_handler))
         // Contract inference — format-specific routes (RFC-006)
-        .route("/contracts/infer/avro",    post(infer_avro::infer_avro_handler))
-        .route("/contracts/infer/proto",   post(infer_proto::infer_proto_handler))
-        .route("/contracts/infer/openapi", post(infer_openapi::infer_openapi_handler))
+        .route(
+            "/contracts/infer/avro",
+            post(infer_avro::infer_avro_handler),
+        )
+        .route(
+            "/contracts/infer/proto",
+            post(infer_proto::infer_proto_handler),
+        )
+        .route(
+            "/contracts/infer/openapi",
+            post(infer_openapi::infer_openapi_handler),
+        )
         // Evolution diff summarizer (RFC-006)
         .route("/contracts/diff", post(infer_diff::diff_handler))
         // Contract identity CRUD

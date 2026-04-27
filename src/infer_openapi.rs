@@ -70,9 +70,7 @@ pub async fn infer_openapi_handler(
 
     // Find `components/schemas`.  Handles both OpenAPI and AsyncAPI layouts.
     let schemas = find_component_schemas(&doc)
-        .ok_or_else(|| AppError::BadRequest(
-            "no `components.schemas` found in document".into(),
-        ))?;
+        .ok_or_else(|| AppError::BadRequest("no `components.schemas` found in document".into()))?;
 
     let schema_name = if let Some(ref name) = req.schema_name {
         name.clone()
@@ -80,18 +78,16 @@ pub async fn infer_openapi_handler(
         schemas
             .as_object()
             .and_then(|m| m.keys().next().cloned())
-            .ok_or_else(|| AppError::BadRequest(
-                "no schemas found under `components.schemas`".into(),
-            ))?
+            .ok_or_else(|| {
+                AppError::BadRequest("no schemas found under `components.schemas`".into())
+            })?
     };
 
-    let schema_val = schemas
-        .get(&schema_name)
-        .ok_or_else(|| {
-            AppError::BadRequest(format!(
-                "schema `{schema_name}` not found under `components.schemas`"
-            ))
-        })?;
+    let schema_val = schemas.get(&schema_name).ok_or_else(|| {
+        AppError::BadRequest(format!(
+            "schema `{schema_name}` not found under `components.schemas`"
+        ))
+    })?;
 
     let entities = walk_json_schema_object(schema_val)
         .map_err(|e| AppError::BadRequest(format!("schema walk error: {e}")))?;
@@ -152,11 +148,7 @@ pub fn walk_json_schema_object(schema_val: &Value) -> Result<Vec<FieldDefinition
     let required_fields: HashSet<&str> = obj
         .get("required")
         .and_then(|r| r.as_array())
-        .map(|arr| {
-            arr.iter()
-                .filter_map(|v| v.as_str())
-                .collect()
-        })
+        .map(|arr| arr.iter().filter_map(|v| v.as_str()).collect())
         .unwrap_or_default();
 
     properties
@@ -174,9 +166,9 @@ fn json_schema_to_definition(
     schema: &Value,
     required: bool,
 ) -> Result<FieldDefinition, String> {
-    let obj = schema.as_object().ok_or_else(|| {
-        format!("property `{name}` schema must be a JSON object")
-    })?;
+    let obj = schema
+        .as_object()
+        .ok_or_else(|| format!("property `{name}` schema must be a JSON object"))?;
 
     let type_tag = obj.get("type").and_then(|v| v.as_str()).unwrap_or("");
     let has_properties = obj.contains_key("properties");
@@ -197,10 +189,7 @@ fn json_schema_to_definition(
             let items_schema = obj.get("items");
             let items_def = if let Some(items_s) = items_schema {
                 let (item_ft, item_props, item_items) = resolve_schema_type(items_s);
-                let item_av = items_s
-                    .get("enum")
-                    .and_then(|e| e.as_array())
-                    .cloned();
+                let item_av = items_s.get("enum").and_then(|e| e.as_array()).cloned();
                 FieldDefinition {
                     name: "item".to_string(),
                     field_type: item_ft,
@@ -282,11 +271,12 @@ fn json_schema_to_definition(
 /// without the full required/name context.
 fn resolve_schema_type(
     schema: &Value,
-) -> (FieldType, Option<Vec<FieldDefinition>>, Option<Box<FieldDefinition>>) {
-    let type_tag = schema
-        .get("type")
-        .and_then(|v| v.as_str())
-        .unwrap_or("");
+) -> (
+    FieldType,
+    Option<Vec<FieldDefinition>>,
+    Option<Box<FieldDefinition>>,
+) {
+    let type_tag = schema.get("type").and_then(|v| v.as_str()).unwrap_or("");
     let has_properties = schema.get("properties").is_some();
 
     match type_tag {

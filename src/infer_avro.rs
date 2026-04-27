@@ -157,8 +157,7 @@ fn avro_field_to_definition(field: &Value) -> Result<FieldDefinition, String> {
 
     let type_val = obj.get("type").ok_or("field missing `type`")?;
 
-    let (field_type, required, allowed_values, properties, items) =
-        resolve_avro_type(type_val)?;
+    let (field_type, required, allowed_values, properties, items) = resolve_avro_type(type_val)?;
 
     Ok(FieldDefinition {
         name,
@@ -215,8 +214,7 @@ fn resolve_avro_type(
                 }
                 "array" => {
                     // Avro array: {"type": "array", "items": <type>}
-                    let items_val =
-                        obj.get("items").ok_or("array schema missing `items`")?;
+                    let items_val = obj.get("items").ok_or("array schema missing `items`")?;
                     let (item_ft, item_req, item_av, item_props, item_items) =
                         resolve_avro_type(items_val)?;
                     let items_def = FieldDefinition {
@@ -233,7 +231,13 @@ fn resolve_avro_type(
                         items: item_items,
                         transform: None,
                     };
-                    Ok((FieldType::Array, true, None, None, Some(Box::new(items_def))))
+                    Ok((
+                        FieldType::Array,
+                        true,
+                        None,
+                        None,
+                        Some(Box::new(items_def)),
+                    ))
                 }
                 "map" => {
                     // Avro map: string-keyed object.
