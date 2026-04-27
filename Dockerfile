@@ -31,7 +31,7 @@ COPY demo ./demo
 COPY src ./src
 #RUN cargo build --release
 # Build only the web server binary (explicit name)
-RUN cargo build --release --bin contractgate   # or whatever your server binary is named
+RUN cargo build --release --bin contractgate-server
 
 # ── Stage 2: runtime ────────────────────────────────────────
 FROM debian:bookworm-slim AS runtime
@@ -45,7 +45,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy only the compiled binary
-COPY --from=builder /app/target/release/contractgate /usr/local/bin/contractgate
+#COPY --from=builder /app/target/release/contractgate /usr/local/bin/contractgate
+COPY --from=builder /app/target/release/contractgate-server /usr/local/bin/contractgate
 
 # Non-root user for security
 RUN adduser --disabled-password --gecos "" --uid 1001 appuser
