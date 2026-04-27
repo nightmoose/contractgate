@@ -266,7 +266,7 @@ fn resolve_avro_type(
             // Separate nulls from non-null variants.
             let non_null: Vec<&Value> = variants
                 .iter()
-                .filter(|v| v.as_str() != Some("null") && v != &&&Value::Null)
+                .filter(|v| v.as_str() != Some("null") && !v.is_null())
                 .collect();
 
             let has_null = non_null.len() < variants.len();
