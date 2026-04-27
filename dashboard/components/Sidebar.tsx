@@ -7,6 +7,7 @@ import clsx from "clsx";
 const PUBLIC_NAV = [
   { href: "/stream-demo",        label: "Stream Demo",  icon: "⚡" },
   { href: "/docs/kafka-connect", label: "Kafka Connect", icon: "🔗" },
+  { href: "/docs/python-sdk",    label: "Python SDK",    icon: "🐍" },
   { href: "/pricing",            label: "Pricing",       icon: "💳" },
 ];
 

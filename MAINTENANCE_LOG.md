@@ -18,6 +18,76 @@
 
 ---
 
+## Run 2026-04-26 (Python SDK v0.1 — RFC-005 landed)
+
+Shipped the first-party Python SDK as `sdks/python/` (PyPI name
+`contractgate`). Three capabilities per RFC-005: HTTP client (sync +
+async via httpx), pure-Python local validator with strict parity to
+`src/validation.rs`, and audit/contract read helpers. Branch:
+`nightly-maintenance-2026-04-26`.
+
+• Fixed/Added/Improved: 4 changes
+
+  1. **`docs/rfcs/005-python-sdk.md` — Accepted (2026-04-26)**: Q1–Q6
+     signed off (package name `contractgate`, separate `Client` +
+     `AsyncClient`, `httpx>=0.25,<1.0`, strict validator parity, MIT
+     license, no transforms in local validator). Followed RFC-004's
+     structure top-to-bottom.
+
+  2. **`sdks/python/` package scaffold**: PEP 621 `pyproject.toml`
+     (hatchling build, `httpx` + `PyYAML` deps, `dev` extras for
+     pytest + asyncio + ruff + mypy), README with quickstarts,
+     CHANGELOG, MIT LICENSE. Layout: `src/contractgate/` with
+     `client.py`, `async_client.py`, `_transport.py`, `models.py`,
+     `contract.py`, `validator.py`, `exceptions.py`.
+
+  3. **Local validator — strict Rust parity**: pure-Python port of
+     `src/validation.rs` and `src/contract.rs`. Same per-event check
+     order (ontology → metrics → compliance-mode undeclared), same
+     `ViolationKind` snake_case values (so a violation produced
+     server-side and a violation produced locally deserialize into
+     the same Python value), same field-path format, same error
+     wording (including the Rust `{:?}` PascalCase rendering of
+     `FieldType` in the transform-on-non-string error). Audited the
+     array-items pattern handling: Rust's `compile_field_patterns`
+     only recurses into `Object` properties, not `Array.items`, so
+     the SDK does the same — documented in `tests/test_validator.py`
+     so we don't accidentally diverge if we wire it up on one side
+     later.
+
+  4. **HTTP client — sync + async share the wire**: `_transport.py`
+     centralizes URL building, headers (`x-api-key`, `x-org-id`,
+     `User-Agent: contractgate-python/0.1.0`), request shaping
+     (`build_ingest_request` etc.), and response decode + error
+     mapping. `Client`/`AsyncClient` differ only in dispatch
+     (sync vs `await`). RFC-002 invariants honored: `version=` kwarg
+     becomes the `X-Contract-Version` header (header > path-suffix >
+     default-stable). RFC-004 invariants honored: per-event
+     `transformed_event` is surfaced verbatim, never re-derived in
+     the SDK. Audit-honesty invariant honored: per-event
+     `contract_version` from the response is what callers see —
+     never substituted.
+
+• Validation: `pytest` runs 43 tests, all green
+  (`tests/test_contract_parse.py`, `test_validator.py`,
+  `test_client_sync.py`, `test_client_async.py`). Mock transport via
+  `httpx.MockTransport` covers the full status-code matrix
+  (200 / 207 / 400 / 401 / 404 / 409 / 422 / 5xx) and asserts on
+  URL shape, headers, and JSON body. No live gateway needed.
+
+• Tech debt deferred: cross-language parity fixture corpus
+  (`tests/fixtures/parity/*.json` + a Rust-side integration test
+  consuming the same files) is in the RFC's rollout list as step 6.
+  Local-only tests already lock the Python side to Rust's behavior
+  via wording assertions; the shared corpus elevates that to a
+  CI-enforced contract on both sides. Pick up next nightly.
+
+• Tech debt deferred: PyPI publish. v0.1 ships as source under
+  `sdks/python/` only — separate ops PR will reserve the
+  `contractgate` name and wire publish-on-tag.
+
+---
+
 ## Run 2026-04-20 (prod-DB rescue: migrations 003–005 were never applied)
 
 Triaged a Fly runtime error

@@ -1,25 +1,21 @@
-# CLAUDE.md - Autonomous Code Guardian Instructions
+# CLAUDE.md - ContractGate Maintenance
 
-**Project Name:** ContractGate  
-**Description:** High-performance semantic contract enforcement gateway (Patent Pending). Validates incoming data events in real-time against a full semantic contract before they reach storage or AI systems.
+**Project:** ContractGate - High-performance semantic contract enforcement gateway (Patent Pending)
 
-**Current Status:** Basic Next.js frontend with Playground page exists. Now we must build the real Rust validation engine and API backend.
+**Current Phase:** Fully built. Now iterating on missing functions + eliminating tech debt. Performance and correctness are non-negotiable.
 
-## Tech Stack
-- **Core Validation Engine:** Rust (must be fast, <15ms p99 latency target)
-- **API Framework:** Axum (Rust)
-- **Frontend:** Existing Next.js 15 + TypeScript + Tailwind (do not overhaul unless necessary)
-- **Database:** Supabase (for contracts, audit logs, quarantined events)
-- **Deployment:** Rust service on Fly.io/Railway + Next.js on Vercel
+**Tech Stack**
+- Rust (Axum) backend – validation engine must stay <15ms p99
+- Next.js 15 + TS + Tailwind frontend (do not overhaul)
+- Supabase (contracts, audit logs, quarantined events)
 
-## Priority Order (Strict)
-1. Build robust Rust validation engine (this is the heart of the patent)
-2. Create Axum API with /ingest/{contract_id} endpoint
-3. Connect frontend Playground to call the real backend
-4. Add contract CRUD + audit logging
-5. Polish dashboard and audit log pages
+**Strict Priorities**
+1. Fix missing functions
+2. Eliminate tech debt (refactor, clean, optimize)
+3. Preserve all existing functionality
+4. Keep validation engine fast, correct, and patent-core
 
-## Semantic Contract Format (Lock This In)
+**Semantic Contract Format (locked)**
 Use this clean YAML structure:
 
 ```
@@ -55,13 +51,14 @@ metrics:
     formula: "sum(amount) where event_type = 'purchase'"
 ```
 
-## Rules for This Run
-- Focus heavily on the Rust validation engine first
-- Make validation fast, extensible, and well-commented
-- Support reject + quarantine actions on violation
-- Return clear, structured error messages with violation details
-- Keep API simple but production-ready (proper error handling, JSON responses)
-- Do not spend time beautifying the frontend yet — just make the Playground actually work with the backend
+## Rules (always obey)
+- Be ultra-concise. Result first. Short sentences. No fluff, no explanations unless asked.
+- One issue or refactor at a time unless told otherwise.
+- Always test changes (cargo test, cargo check).
+- Never break existing behavior.
+- Prefer simple, idiomatic Rust. Comment only when it adds real value.
+- Create branch: maintenance-$(date +%Y-%m-%d) for all changes.
+- Use only necessary files. Minimize context.
 
 ## Important Commands
 ```
@@ -75,10 +72,6 @@ cargo run
 cd dashboard
 npm run build
 ```
-
-Start by creating a proper Rust project structure if not present (src/main.rs, lib for validation, etc.).
-
-You are now building the core patented technology. Make the validation engine fast, correct, and clearly superior to post-ingestion tools.
 
 Create branch: nightly-maintenance-$(date +%Y-%m-%d) for changes.
 
