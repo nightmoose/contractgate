@@ -35,13 +35,16 @@ use axum::Json;
 use serde_json::Value;
 
 // Type alias to keep Clippy happy (complex return type)
-type AvroTypeResolution = Result<(
-    FieldType,
-    bool,
-    Option<Vec<Value>>,
-    Option<Vec<FieldDefinition>>,
-    Option<Box<FieldDefinition>>,
-), String>;
+type AvroTypeResolution = Result<
+    (
+        FieldType,
+        bool,
+        Option<Vec<Value>>,
+        Option<Vec<FieldDefinition>>,
+        Option<Box<FieldDefinition>>,
+    ),
+    String,
+>;
 
 // ---------------------------------------------------------------------------
 // Request / response
@@ -186,9 +189,7 @@ fn avro_field_to_definition(field: &Value) -> Result<FieldDefinition, String> {
 
 /// Resolve an Avro type value (string, object, or union array) into
 /// `(FieldType, required, allowed_values, properties, items)`.
-fn resolve_avro_type(
-    type_val: &Value,
-) -> AvroTypeResolution {
+fn resolve_avro_type(type_val: &Value) -> AvroTypeResolution {
     match type_val {
         // Primitive string names: "string", "int", "long", etc.
         Value::String(s) => {

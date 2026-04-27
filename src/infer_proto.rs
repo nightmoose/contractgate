@@ -518,10 +518,7 @@ fn proto_field_to_definition(
     })
 }
 
-fn resolve_proto_type(
-    f: &ProtoField,
-    proto: &ParsedProto,
-) -> ProtoTypeResolution {
+fn resolve_proto_type(f: &ProtoField, proto: &ParsedProto) -> ProtoTypeResolution {
     // `repeated T` → Array with items: T.
     if f.repeated {
         let inner = ProtoField {
