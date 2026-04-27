@@ -330,7 +330,7 @@ fn refine_string(def: &mut FieldDefinition, strings: &[&str], total_samples: usi
             .into_iter()
             .map(|s| Value::String(s.to_string()))
             .collect();
-        sorted.sort_by(|a, b| a.to_string().cmp(&b.to_string()));
+        sorted.sort_by_key(|v| v.to_string());
         def.allowed_values = Some(sorted);
         // Clear length bounds — they're redundant when an enum is set.
         def.min_length = None;
