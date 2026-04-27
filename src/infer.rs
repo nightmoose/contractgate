@@ -60,9 +60,7 @@ pub struct InferResponse {
 // Handler
 // ---------------------------------------------------------------------------
 
-pub async fn infer_handler(
-    Json(req): Json<InferRequest>,
-) -> AppResult<Json<InferResponse>> {
+pub async fn infer_handler(Json(req): Json<InferRequest>) -> AppResult<Json<InferResponse>> {
     if req.samples.is_empty() {
         return Err(AppError::BadRequest(
             "at least one sample is required".into(),
@@ -141,8 +139,7 @@ fn infer_fields_from_objects(samples: &[Value]) -> Vec<FieldDefinition> {
 /// `total_samples` — total number of samples (to detect missing occurrences).
 fn infer_field(name: &str, values: &[&Value], total_samples: usize) -> FieldDefinition {
     // A field is required only if it appears in every sample AND is never null.
-    let required =
-        values.len() == total_samples && values.iter().all(|v| !v.is_null());
+    let required = values.len() == total_samples && values.iter().all(|v| !v.is_null());
 
     // Strip nulls before type inference — null is the "absent" sentinel.
     let non_null: Vec<&Value> = values.iter().copied().filter(|v| !v.is_null()).collect();
@@ -166,8 +163,7 @@ fn infer_field(name: &str, values: &[&Value], total_samples: usize) -> FieldDefi
 
     match &field_type {
         FieldType::String => {
-            let strings: Vec<&str> =
-                non_null.iter().filter_map(|v| v.as_str()).collect();
+            let strings: Vec<&str> = non_null.iter().filter_map(|v| v.as_str()).collect();
             refine_string(&mut def, &strings, total_samples);
         }
         FieldType::Integer => {
@@ -309,9 +305,8 @@ fn refine_string(def: &mut FieldDefinition, strings: &[&str], total_samples: usi
     // Pattern detection — checked in priority order.  Only emitted when
     // *all* observed non-null values match; a single outlier disables it.
     if strings.iter().all(|s| looks_like_uuid(s)) {
-        def.pattern = Some(
-            "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$".to_string(),
-        );
+        def.pattern =
+            Some("^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$".to_string());
         // UUID pattern supersedes enum — cardinality is always high.
         return;
     }
@@ -450,10 +445,7 @@ mod tests {
 
     #[test]
     fn optional_when_null_in_some_samples() {
-        let samples = vec![
-            json!({"x": 1, "y": null}),
-            json!({"x": 2, "y": 3}),
-        ];
+        let samples = vec![json!({"x": 1, "y": null}), json!({"x": 2, "y": 3})];
         let contract = run_infer("test", samples);
         let fields: HashMap<&str, &FieldDefinition> = contract
             .ontology
@@ -474,7 +466,12 @@ mod tests {
             json!({"status": "active"}),
         ];
         let contract = run_infer("test", samples);
-        let status = contract.ontology.entities.iter().find(|f| f.name == "status").unwrap();
+        let status = contract
+            .ontology
+            .entities
+            .iter()
+            .find(|f| f.name == "status")
+            .unwrap();
         assert!(status.allowed_values.is_some());
         let vals = status.allowed_values.as_ref().unwrap();
         assert_eq!(vals.len(), 2); // "active", "inactive"
@@ -487,20 +484,26 @@ mod tests {
             json!({"id": "6ba7b810-9dad-11d1-80b4-00c04fd430c8"}),
         ];
         let contract = run_infer("test", samples);
-        let id_field = contract.ontology.entities.iter().find(|f| f.name == "id").unwrap();
+        let id_field = contract
+            .ontology
+            .entities
+            .iter()
+            .find(|f| f.name == "id")
+            .unwrap();
         assert!(id_field.pattern.is_some());
         assert!(id_field.pattern.as_ref().unwrap().contains("9a-f"));
     }
 
     #[test]
     fn detects_integer_min_max() {
-        let samples = vec![
-            json!({"n": 5}),
-            json!({"n": 15}),
-            json!({"n": 10}),
-        ];
+        let samples = vec![json!({"n": 5}), json!({"n": 15}), json!({"n": 10})];
         let contract = run_infer("test", samples);
-        let n = contract.ontology.entities.iter().find(|f| f.name == "n").unwrap();
+        let n = contract
+            .ontology
+            .entities
+            .iter()
+            .find(|f| f.name == "n")
+            .unwrap();
         assert_eq!(n.min, Some(5.0));
         assert_eq!(n.max, Some(15.0));
     }
@@ -512,7 +515,12 @@ mod tests {
             json!({"meta": {"env": "staging", "region": "eu-west"}}),
         ];
         let contract = run_infer("test", samples);
-        let meta = contract.ontology.entities.iter().find(|f| f.name == "meta").unwrap();
+        let meta = contract
+            .ontology
+            .entities
+            .iter()
+            .find(|f| f.name == "meta")
+            .unwrap();
         assert_eq!(meta.field_type, FieldType::Object);
         assert!(meta.properties.is_some());
         let props = meta.properties.as_ref().unwrap();
