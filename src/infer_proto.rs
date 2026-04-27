@@ -174,7 +174,7 @@ fn parse_block(src: &str, proto: &mut ParsedProto) -> Result<(), String> {
 
     // We also work on the original `src` for brace extraction.
     // Build a char-level cursor for brace matching.
-    let chars: Vec<char> = src.chars().collect();    
+    let chars: Vec<char> = src.chars().collect();
 
     fn match_word(chars: &[char], pos: usize, word: &str) -> Option<usize> {
         let p = {
@@ -270,7 +270,7 @@ fn parse_block(src: &str, proto: &mut ParsedProto) -> Result<(), String> {
             p += 1;
         }
     }
-    
+
     Ok(())
 }
 
