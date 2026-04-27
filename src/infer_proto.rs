@@ -174,8 +174,7 @@ fn parse_block(src: &str, proto: &mut ParsedProto) -> Result<(), String> {
 
     // We also work on the original `src` for brace extraction.
     // Build a char-level cursor for brace matching.
-    let chars: Vec<char> = src.chars().collect();
-    let char_pos = 0; // current char index in `chars`
+    let chars: Vec<char> = src.chars().collect();    
 
     // Advance `char_pos` past whitespace tokens we've consumed.
     // We track token boundaries by scanning for each token in `chars`.
@@ -241,8 +240,6 @@ fn parse_block(src: &str, proto: &mut ParsedProto) -> Result<(), String> {
         Some((name, block, p))
     }
 
-    char_pos = skip_to_next_char(&chars, 0);
-
     // Scan for `message` and `enum` keywords anywhere in the source.
     // We do a simple scan rather than token-by-token to avoid the complexity
     // of a full AST.
@@ -283,8 +280,7 @@ fn parse_block(src: &str, proto: &mut ParsedProto) -> Result<(), String> {
             p += 1;
         }
     }
-
-    let _ = char_pos; // suppress unused warning
+    
     Ok(())
 }
 
