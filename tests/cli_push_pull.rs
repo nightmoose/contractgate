@@ -118,7 +118,9 @@ fn push_dry_run_exits_0_no_network() {
     };
     // Use a bogus URL — dry-run must not make network calls.
     let cfg = CliConfig {
-        gateway: GatewayConfig { url: "http://127.0.0.1:1".into() },
+        gateway: GatewayConfig {
+            url: "http://127.0.0.1:1".into(),
+        },
         ..Default::default()
     };
 
@@ -142,7 +144,9 @@ fn push_dry_run_invalid_yaml_exits_1() {
         json: false,
     };
     let cfg = CliConfig {
-        gateway: GatewayConfig { url: "http://127.0.0.1:1".into() },
+        gateway: GatewayConfig {
+            url: "http://127.0.0.1:1".into(),
+        },
         ..Default::default()
     };
 
