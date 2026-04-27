@@ -31,11 +31,11 @@ fn fixtures_dir() -> PathBuf {
 
 fn live_cfg() -> CliConfig {
     let url = std::env::var("CONTRACTGATE_URL").unwrap_or_else(|_| "http://localhost:3000".into());
-    let cfg = CliConfig {
+
+    CliConfig {
         gateway: GatewayConfig { url },
         ..Default::default()
-    };
-    cfg
+    }
 }
 
 fn api_key() -> String {
@@ -143,6 +143,7 @@ fn push_dry_run_invalid_yaml_exits_1() {
         dry_run: true,
         json: false,
     };
+
     let cfg = CliConfig {
         gateway: GatewayConfig {
             url: "http://127.0.0.1:1".into(),
