@@ -21,6 +21,14 @@ use axum::Json;
 use serde_json::Value;
 use std::collections::HashMap;
 
+// Type alias to keep Clippy happy (complex return type)
+type ProtoTypeResolution = (
+    FieldType,
+    Option<Vec<Value>>,
+    Option<Vec<FieldDefinition>>,
+    Option<Box<FieldDefinition>>,
+);
+
 // ---------------------------------------------------------------------------
 // Request / response
 // ---------------------------------------------------------------------------
@@ -162,12 +170,12 @@ fn strip_comments(src: &str) -> String {
 /// Recursively parse message and enum blocks in `src`.
 fn parse_block(src: &str, proto: &mut ParsedProto) -> Result<(), String> {
     let tokens: Vec<&str> = src.split_whitespace().collect();
-    let mut i = 0;
+    let i = 0;
 
     // We also work on the original `src` for brace extraction.
     // Build a char-level cursor for brace matching.
     let chars: Vec<char> = src.chars().collect();
-    let mut char_pos = 0; // current char index in `chars`
+    let char_pos = 0; // current char index in `chars`
 
     // Advance `char_pos` past whitespace tokens we've consumed.
     // We track token boundaries by scanning for each token in `chars`.
@@ -513,12 +521,7 @@ fn proto_field_to_definition(
 fn resolve_proto_type(
     f: &ProtoField,
     proto: &ParsedProto,
-) -> (
-    FieldType,
-    Option<Vec<Value>>,
-    Option<Vec<FieldDefinition>>,
-    Option<Box<FieldDefinition>>,
-) {
+) -> ProtoTypeResolution {
     // `repeated T` → Array with items: T.
     if f.repeated {
         let inner = ProtoField {
