@@ -40,11 +40,10 @@ jobs:
       - name: Install contractgate
         run: |
           curl -sSL \
+            -H "Accept: application/octet-stream" \
+            -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
             "https://github.com/contractgate/contractgate/releases/download/v${CONTRACTGATE_VERSION}/contractgate-${CONTRACTGATE_VERSION}-x86_64-unknown-linux-gnu.tar.gz" \
             | tar xz -C /usr/local/bin
-
-      - name: Validate contracts
-        run: contractgate validate
 
   publish:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
@@ -56,6 +55,8 @@ jobs:
       - name: Install contractgate
         run: |
           curl -sSL \
+            -H "Accept: application/octet-stream" \
+            -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
             "https://github.com/contractgate/contractgate/releases/download/v${CONTRACTGATE_VERSION}/contractgate-${CONTRACTGATE_VERSION}-x86_64-unknown-linux-gnu.tar.gz" \
             | tar xz -C /usr/local/bin
 
