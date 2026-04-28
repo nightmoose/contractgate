@@ -16,6 +16,14 @@
 --     key-usage dashboards.
 -- ─────────────────────────────────────────────────────────────────────────────
 
+-- Supabase auth schema compatibility for local/CI Postgres
+-- (real Supabase projects create this schema + tables automatically)
+DO $$
+BEGIN
+    CREATE SCHEMA IF NOT EXISTS auth;
+EXCEPTION WHEN duplicate_schema THEN null;
+END $$;
+
 -- ── user_profiles ─────────────────────────────────────────────────────────────
 create table if not exists public.user_profiles (
     id            uuid        primary key references auth.users(id) on delete cascade,
