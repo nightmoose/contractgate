@@ -2,8 +2,6 @@
 
 ---
 
-<<<<<<< Updated upstream
-=======
 ## Run 2026-04-28 (Onboarding Stack — RFC-017)
 
 Punchlist v2 #4. Branch: `nightly-maintenance-2026-04-28`.
@@ -63,7 +61,6 @@ First public release. Tag `v0.1.0` pushed from `main`. Release workflow fired on
 
 ---
 
->>>>>>> Stashed changes
 ## Run 2026-04-28 (Dashboard Polish — RFC-020)
 
 Four-workstream dashboard polish pass per RFC-020. Branch: `nightly-maintenance-2026-04-28`.
