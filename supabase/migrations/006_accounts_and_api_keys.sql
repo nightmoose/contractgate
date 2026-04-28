@@ -28,7 +28,9 @@ END $$;
 DO $$
 BEGIN
     CREATE TABLE IF NOT EXISTS auth.users (
-        id uuid PRIMARY KEY DEFAULT gen_random_uuid()
+        id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+        email text,
+        raw_user_meta_data jsonb
     );
 EXCEPTION WHEN duplicate_table THEN null;
 END $$;
