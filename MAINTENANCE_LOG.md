@@ -2,6 +2,34 @@
 
 ---
 
+## Run 2026-04-28 (Dashboard Polish — RFC-020)
+
+Four-workstream dashboard polish pass per RFC-020. Branch: `nightly-maintenance-2026-04-28`.
+
+⚠️ `npm install && npm run build` required before testing — bash workspace unavailable during this run. Build verification pending.
+
+• Added/Changed: 7 files
+
+  1. **`dashboard/package.json`**: Added `@radix-ui/react-tooltip ^1.1.6` (new dep) and `@playwright/test ^1.44.0` (new devDep).
+
+  2. **`dashboard/app/contracts/_lib.tsx` — NEW**: Shared helpers and primitives extracted from page.tsx. Exports: `pickDefaultVersion`, `newestVersionString`, `inferFields`, `buildYaml`, `sniffPattern`, `PATTERNS`, `InferredField`. React components: `TooltipWrap` (Radix UI tooltip primitive with RFC link support), `ConfirmActionModal` (replaces all `window.confirm` calls for promote/deprecate), `ConfirmReplayModal` (pre-replay confirmation), `ReplaySummaryModal` (post-replay counts + audit log link).
+
+  3. **`dashboard/app/contracts/_tabs/yaml.tsx` — NEW**: YAML tab body extracted from EditContractModal. Adds `TooltipWrap` on state badges (stable/draft/deprecated) and on ontology/glossary/metrics/compliance-mode section labels visible in the YAML.
+
+  4. **`dashboard/app/contracts/_tabs/versions.tsx` — NEW**: Versions tab body with all RFC-020 enhancements: visual state ladder (`Draft → Stable → Deprecated`) with per-state Radix tooltips; `ConfirmActionModal` replacing all four `window.confirm` promote/deprecate calls; Compare checkbox column (max 2, replaces oldest on third check); `DiffDrawer` calling `POST /contracts/diff` — table of kind/field/detail/severity(placeholder); latest-stable resolver badge showing `→ vX.Y.Z (strict|fallback)` with tooltip explaining resolution logic; name-history de-emphasized when empty (collapsed to single italic line).
+
+  5. **`dashboard/app/contracts/_tabs/quarantine.tsx` — NEW**: QuarantineTab fully rewritten with all RFC-020 enhancements: four-control filter bar (contract, kind, time window, free-text payload search — all client-side, composing with AND); `status` column per event using extended `QuarantinedEventEx` type (RFC-020 D10); per-row payload preview drawer (read-only, click row body to open); per-row `▶` Replay button disabled when `status=purged` with tooltip; all replay actions now go through `ConfirmReplayModal` before firing; `ReplaySummaryModal` replaces inline result card; four distinct replay outcome styles in history drawer (pass=green, fail=red, already_replayed=indigo, purged/skipped=slate); inline transform diff placeholder; RFC-017 empty-state with `make stack-up-demo` hint.
+
+  6. **`dashboard/app/contracts/page.tsx` — REWRITE**: Reduced from 1860 lines to ~420 lines. Now the orchestrating shell only — tab bodies imported from `_tabs/`. All helpers imported from `_lib.tsx`. `EditContractModal` shell preserved. `ContractList`, `GeneratorTab`, `ManualCreatePanel`, `ContractsContent`, `ContractsPage` preserved identically. All existing behavior intact.
+
+  7. **`dashboard/e2e/rfc020-dashboard-polish.spec.ts` — NEW** + **`dashboard/playwright.config.ts` — NEW**: Six Playwright tests covering all RFC-020 test-plan items: filter reduction, promote cancel/confirm, outcome color matching, tooltip layout-shift check, compare + diff drawer, bulk replay confirmation gate.
+
+• Also created: `docs/rfcs/020-dashboard-polish.md` (RFC accepted before this run).
+
+• Verification pending: `cd dashboard && npm install && npm run build` must pass with zero TS/ESLint errors. Playwright tests require `npx playwright install chromium` then `npx playwright test`.
+
+---
+
 ## Run 2026-04-27 (CI + Release Pipeline — RFC-019 landed)
 
 Wired the full release + CI pipeline per RFC-019. Three workstreams:
