@@ -1,7 +1,18 @@
 ---
-# Reference ContractGate CI workflow.
-# Copy this file into your own repo and set CONTRACTGATE_API_KEY in your
-# repository secrets.
+# ─────────────────────────────────────────────────────────────────────────────
+# REFERENCE WORKFLOW — NOT ACTIVE IN THIS REPO.
+#
+# This file is documentation: an example users can copy into their own repo
+# to validate + publish their contracts/ directory against a ContractGate
+# gateway. It does NOT live under .github/workflows/ on purpose — putting it
+# there would trigger on every PR touching contracts/** and fail until the
+# referenced CLI release tarball exists.
+#
+# To use:
+#   1. Copy this file to your repo at .github/workflows/contractgate.yml
+#   2. Set CONTRACTGATE_API_KEY in repository secrets
+#   3. Bump CONTRACTGATE_VERSION below to a published release tag
+# ─────────────────────────────────────────────────────────────────────────────
 #
 # What it does:
 #   validate job — parse + compile every contract YAML locally (no network).
@@ -41,7 +52,7 @@ jobs:
         run: |
           curl -sSL \
             "https://github.com/contractgate/contractgate/releases/download/v${CONTRACTGATE_VERSION}/contractgate-${CONTRACTGATE_VERSION}-x86_64-unknown-linux-gnu.tar.gz" \
-            | tar xz -C /usr/local/bin
+            | sudo tar xz -C /usr/local/bin
 
       - name: Validate contracts
         run: contractgate validate
@@ -57,7 +68,7 @@ jobs:
         run: |
           curl -sSL \
             "https://github.com/contractgate/contractgate/releases/download/v${CONTRACTGATE_VERSION}/contractgate-${CONTRACTGATE_VERSION}-x86_64-unknown-linux-gnu.tar.gz" \
-            | tar xz -C /usr/local/bin
+            | sudo tar xz -C /usr/local/bin
 
       - name: Push contracts
         run: contractgate push
