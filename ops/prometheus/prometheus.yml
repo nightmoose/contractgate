@@ -1,0 +1,27 @@
+# Prometheus scrape configuration for ContractGate (RFC-017).
+#
+# NOTE: /metrics is not yet implemented — it ships with RFC-016 (Observability v1).
+# Until RFC-016 lands, Prometheus will scrape this target and receive a 404.
+# That is expected and harmless — Prometheus will show the target as "UP" once
+# the endpoint exists and data starts flowing.  No action required.
+#
+# Metric names to expect after RFC-016 lands:
+#   contractgate_requests_total          (counter)
+#   contractgate_validation_duration_seconds (histogram)
+#   contractgate_violations_total        (counter)
+#   contractgate_quarantined_total       (counter)
+#   contractgate_contracts_active        (gauge)
+#   contractgate_audit_log_rows          (gauge)
+
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+scrape_configs:
+  - job_name: contractgate-gateway
+    static_configs:
+      - targets: ["gateway:8080"]
+    metrics_path: /metrics
+    # Uncomment and set if METRICS_AUTH_TOKEN is configured on the gateway:
+    # authorization:
+    #   credentials: <your-token-here>

@@ -1,0 +1,82 @@
+# Self-contained Kafka transport for the ContractGate speed demo.
+#
+# Uses Redpanda (Kafka wire-protocol compatible, single-binary, no ZooKeeper).
+# Bring it up before running `cargo run --features demo --bin demo`:
+#
+#     docker compose -f docker-compose.kafka-demo.yml up -d
+#
+# The demo connects to `localhost:9092` by default.  Shut it down with
+# `docker compose -f docker-compose.kafka-demo.yml down` — all state is held
+# in the named volume `redpanda-data` so re-runs start from a clean slate if
+# you `docker compose -f docker-compose.kafka-demo.yml down -v`.
+#
+# NOTE: this file was renamed from `docker-compose.yml` (2026-04-28) when
+# RFC-017 introduced the full gateway stack at `docker-compose.yml`.
+# See README for both compose files.
+
+services:
+  redpanda:
+    image: redpandadata/redpanda:v24.2.4
+    container_name: contractgate-redpanda
+    # Two listeners:
+    #  - `external` on :9092 advertises `localhost:9092` for clients on the host
+    #    (the demo binary connects here).
+    #  - `internal` on :29092 advertises `redpanda:29092` for sidecar containers
+    #    (Redpanda Console uses it).
+    command:
+      - redpanda
+      - start
+      - --kafka-addr
+      - internal://0.0.0.0:29092,external://0.0.0.0:9092
+      # NOTE: advertise 127.0.0.1 (not localhost) — macOS resolves `localhost`
+      # to both ::1 and 127.0.0.1, and Docker Desktop on Mac advertises a v6
+      # listener it can't actually forward.  Pinning to the v4 literal here
+      # means librdkafka's post-bootstrap reconnect uses the address that
+      # actually works.
+      - --advertise-kafka-addr
+      - internal://redpanda:29092,external://127.0.0.1:9092
+      - --pandaproxy-addr
+      - internal://0.0.0.0:8082,external://0.0.0.0:18082
+      - --advertise-pandaproxy-addr
+      - internal://redpanda:8082,external://localhost:18082
+      - --schema-registry-addr
+      - internal://0.0.0.0:8081,external://0.0.0.0:18081
+      - --rpc-addr
+      - redpanda:33145
+      - --advertise-rpc-addr
+      - redpanda:33145
+      - --mode
+      - dev-container
+      - --smp
+      - "1"
+      - --default-log-level=info
+    ports:
+      - "9092:9092"        # Kafka API — external listener, reachable from host as localhost:9092
+      - "18081:18081"      # Schema registry
+      - "18082:18082"      # HTTP proxy
+      - "9644:9644"        # Admin API
+    volumes:
+      - redpanda-data:/var/lib/redpanda/data
+    healthcheck:
+      test: ["CMD-SHELL", "rpk cluster health | grep -q 'Healthy:.*true'"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+      start_period: 10s
+
+  # Optional: a lightweight web UI for inspecting topics while the demo is
+  # running.  Browse http://localhost:8080 after bringing the stack up.
+  redpanda-console:
+    image: redpandadata/console:v2.7.2
+    container_name: contractgate-redpanda-console
+    depends_on:
+      redpanda:
+        condition: service_healthy
+    environment:
+      KAFKA_BROKERS: "redpanda:29092"
+    ports:
+      - "8080:8080"
+    restart: unless-stopped
+
+volumes:
+  redpanda-data:

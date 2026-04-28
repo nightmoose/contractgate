@@ -1,0 +1,46 @@
+version: "1.0"
+name: rest_event
+description: "Generic REST event — request_id, method, path, status, latency."
+
+ontology:
+  entities:
+    - name: request_id
+      type: string
+      required: true
+      pattern: "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+    - name: method
+      type: string
+      required: true
+      enum: ["GET", "POST", "PUT", "PATCH", "DELETE"]
+    - name: path
+      type: string
+      required: true
+    - name: status
+      type: integer
+      required: true
+      min: 100
+      max: 599
+    - name: latency_ms
+      type: integer
+      required: true
+      min: 0
+    - name: timestamp
+      type: integer
+      required: true
+
+glossary:
+  - field: request_id
+    description: "UUID v4 uniquely identifying this HTTP request"
+    constraints: "must be lowercase UUID v4 format"
+  - field: status
+    description: "HTTP response status code"
+    constraints: "must be a valid HTTP status code (100–599)"
+  - field: latency_ms
+    description: "End-to-end request latency in milliseconds"
+    constraints: "must be non-negative"
+
+metrics:
+  - name: error_rate
+    formula: "count(status >= 400) / count(status) where timestamp > now() - 3600"
+  - name: p99_latency_ms
+    formula: "percentile(latency_ms, 0.99)"

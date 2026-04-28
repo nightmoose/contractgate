@@ -1,6 +1,6 @@
 # RFC-017: Onboarding Stack (Compose + Starter Templates + Demo Seeder)
 
-| Status        | Draft — awaiting sign-off                                              |
+| Status        | Accepted (2026-04-28) — sign-off on Q1..Q10 (recommendations)         |
 |---------------|------------------------------------------------------------------------|
 | Author        | ContractGate team                                                      |
 | Created       | 2026-04-27                                                             |
@@ -278,18 +278,18 @@ ontology:
 
 ## Rollout
 
-1. Sign-off this RFC.
-2. Three starter YAMLs + `contracts/starters/README.md`.
-3. `tests/starters_*.rs`.
-4. `docker-compose.yml` + `ops/prometheus/prometheus.yml` +
+1. ✅ Sign-off this RFC. (2026-04-28)
+2. ✅ Three starter YAMLs + `contracts/starters/README.md`.
+3. ✅ `tests/starters_*.rs`.
+4. ✅ `docker-compose.yml` + `ops/prometheus/prometheus.yml` +
    `ops/grafana/provisioning/`. Dogfood on a fresh laptop (without
    demo profile yet).
-5. `src/bin/demo-seeder.rs` + `src/demo_seed/` module.
-6. Compose `demo-seeder` service under `profiles: [demo]`.
-7. CI smoke lanes (both default and demo profiles).
-8. README snapshots: dashboard with seeded data, audit search with rows.
-9. `cargo check && cargo test`.
-10. Update `MAINTENANCE_LOG.md`.
+5. ✅ `src/bin/demo-seeder.rs` + `src/demo_seed/` module.
+6. ✅ Compose `demo-seeder` service under `profiles: [demo]`.
+7. ✅ CI smoke lanes (both default and demo profiles).
+8. ⬜ README snapshots: dashboard with seeded data, audit search with rows.
+9. ⬜ `cargo check && cargo test`.
+10. ✅ Update `MAINTENANCE_LOG.md`.
 
 ## Deferred
 

@@ -1,77 +1,151 @@
-# Self-contained Kafka transport for the ContractGate speed demo.
+# ContractGate reference stack (RFC-017).
 #
-# Uses Redpanda (Kafka wire-protocol compatible, single-binary, no ZooKeeper).
-# Bring it up before running `cargo run --bin demo`:
+# Default profile boots: gateway + dashboard + Postgres + Prometheus + Grafana.
+# Optional profiles:
+#   --profile demo   additionally publishes starter contracts + runs demo-seeder
+#                    (posts ~3000 realistic events so dashboards look populated)
+#   --profile kafka  additionally starts a Kafka broker (Bitnami Kafka 3.7)
 #
-#     docker compose up -d
+# Quick start:
+#   docker compose up                        # gateway stack, no seed data
+#   docker compose --profile demo up         # gateway stack + seeded data
+#   make stack-up                            # alias for docker compose up
+#   make stack-up-demo                       # alias for docker compose --profile demo up
 #
-# The demo connects to `localhost:9092` by default.  Shut it down with
-# `docker compose down` — all state is held in the named volume `redpanda-data`
-# so re-runs start from a clean slate if you `docker compose down -v`.
+# Grafana:    http://localhost:3001  (admin / admin)
+# Dashboard:  http://localhost:3000
+# Gateway:    http://localhost:8080
+#
+# NOTE: The Kafka speed-demo binary (cargo run --features demo --bin demo) uses
+# a separate compose file: docker-compose.kafka-demo.yml
+# See README for both files.
 
 services:
-  redpanda:
-    image: redpandadata/redpanda:v24.2.4
-    container_name: contractgate-redpanda
-    # Two listeners:
-    #  - `external` on :9092 advertises `localhost:9092` for clients on the host
-    #    (the demo binary connects here).
-    #  - `internal` on :29092 advertises `redpanda:29092` for sidecar containers
-    #    (Redpanda Console uses it).
-    command:
-      - redpanda
-      - start
-      - --kafka-addr
-      - internal://0.0.0.0:29092,external://0.0.0.0:9092
-      # NOTE: advertise 127.0.0.1 (not localhost) — macOS resolves `localhost`
-      # to both ::1 and 127.0.0.1, and Docker Desktop on Mac advertises a v6
-      # listener it can't actually forward.  Pinning to the v4 literal here
-      # means librdkafka's post-bootstrap reconnect uses the address that
-      # actually works.
-      - --advertise-kafka-addr
-      - internal://redpanda:29092,external://127.0.0.1:9092
-      - --pandaproxy-addr
-      - internal://0.0.0.0:8082,external://0.0.0.0:18082
-      - --advertise-pandaproxy-addr
-      - internal://redpanda:8082,external://localhost:18082
-      - --schema-registry-addr
-      - internal://0.0.0.0:8081,external://0.0.0.0:18081
-      - --rpc-addr
-      - redpanda:33145
-      - --advertise-rpc-addr
-      - redpanda:33145
-      - --mode
-      - dev-container
-      - --smp
-      - "1"
-      - --default-log-level=info
-    ports:
-      - "9092:9092"        # Kafka API — external listener, reachable from host as localhost:9092
-      - "18081:18081"      # Schema registry
-      - "18082:18082"      # HTTP proxy
-      - "9644:9644"        # Admin API
-    volumes:
-      - redpanda-data:/var/lib/redpanda/data
-    healthcheck:
-      test: ["CMD-SHELL", "rpk cluster health | grep -q 'Healthy:.*true'"]
-      interval: 3s
-      timeout: 3s
-      retries: 20
-      start_period: 10s
-
-  # Optional: a lightweight web UI for inspecting topics while the demo is
-  # running.  Browse http://localhost:8080 after `docker compose up -d`.
-  redpanda-console:
-    image: redpandadata/console:v2.7.2
-    container_name: contractgate-redpanda-console
-    depends_on:
-      redpanda:
-        condition: service_healthy
-    environment:
-      KAFKA_BROKERS: "redpanda:29092"
+  # ---------------------------------------------------------------------------
+  # Gateway — the validation engine HTTP server
+  # ---------------------------------------------------------------------------
+  gateway:
+    image: ghcr.io/contractgate/gateway:${TAG:-latest}
     ports:
       - "8080:8080"
+    environment:
+      DATABASE_URL: postgres://cg:cg@postgres/contractgate
+      # Leave blank to disable metrics auth (Prometheus scrapes unauthenticated).
+      # Set to a non-empty string to require `Authorization: Bearer <token>`.
+      METRICS_AUTH_TOKEN: ""
+    depends_on:
+      - postgres
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 10s
     restart: unless-stopped
 
+  # ---------------------------------------------------------------------------
+  # Dashboard — Next.js frontend
+  # ---------------------------------------------------------------------------
+  dashboard:
+    image: ghcr.io/contractgate/dashboard:${TAG:-latest}
+    ports:
+      - "3000:3000"
+    environment:
+      NEXT_PUBLIC_API_BASE: http://localhost:8080
+    depends_on:
+      - gateway
+    restart: unless-stopped
+
+  # ---------------------------------------------------------------------------
+  # Postgres — primary data store
+  # ---------------------------------------------------------------------------
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: cg
+      POSTGRES_PASSWORD: cg
+      POSTGRES_DB: contractgate
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U cg -d contractgate"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+
+  # ---------------------------------------------------------------------------
+  # Prometheus — metrics scraper
+  # NOTE: /metrics endpoint is not yet implemented (RFC-016 ships it).
+  # Prometheus will scrape and receive 404 until RFC-016 lands.
+  # See ops/prometheus/prometheus.yml for the scrape config.
+  # ---------------------------------------------------------------------------
+  prometheus:
+    image: prom/prometheus:latest
+    volumes:
+      - ./ops/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    ports:
+      - "9090:9090"
+    restart: unless-stopped
+
+  # ---------------------------------------------------------------------------
+  # Grafana — dashboard viewer
+  # Pre-imports the RFC-016 dashboard via provisioning.
+  # Dashboard JSON stub at ops/grafana/contractgate.json — will be populated
+  # when RFC-016 lands.
+  # ---------------------------------------------------------------------------
+  grafana:
+    image: grafana/grafana:latest
+    ports:
+      - "3001:3000"
+    volumes:
+      - ./ops/grafana/provisioning/dashboards:/etc/grafana/provisioning/dashboards:ro
+      - ./ops/grafana/contractgate.json:/var/lib/grafana/dashboards/contractgate.json:ro
+      - grafana_data:/var/lib/grafana
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: admin
+      GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH: /var/lib/grafana/dashboards/contractgate.json
+    restart: unless-stopped
+
+  # ---------------------------------------------------------------------------
+  # Demo seeder (profile: demo)
+  # Publishes the three starter contracts to the gateway and posts ~3 000
+  # synthetic events (80% pass / 15% fail / 5% quarantine) at 10 events/sec
+  # for 5 minutes.  Exits when done.
+  # ---------------------------------------------------------------------------
+  demo-seeder:
+    image: ghcr.io/contractgate/gateway:${TAG:-latest}
+    profiles: [demo]
+    command:
+      - /usr/local/bin/demo-seeder
+      - --rate
+      - "10"
+      - --duration
+      - "300s"
+    environment:
+      GATEWAY_URL: http://gateway:8080
+      CONTRACTGATE_API_KEY: ${CONTRACTGATE_API_KEY:-cg_demo_key}
+    depends_on:
+      gateway:
+        condition: service_healthy
+
+  # ---------------------------------------------------------------------------
+  # Kafka broker (profile: kafka) — Bitnami KRaft-mode single node
+  # ---------------------------------------------------------------------------
+  kafka:
+    image: bitnami/kafka:3.7
+    profiles: [kafka]
+    ports:
+      - "9093:9092"
+    environment:
+      KAFKA_CFG_NODE_ID: 1
+      KAFKA_CFG_PROCESS_ROLES: controller,broker
+      KAFKA_CFG_LISTENERS: PLAINTEXT://:9092,CONTROLLER://:9093
+      KAFKA_CFG_ADVERTISED_LISTENERS: PLAINTEXT://localhost:9093
+      KAFKA_CFG_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT
+      KAFKA_CFG_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      KAFKA_CFG_CONTROLLER_LISTENER_NAMES: CONTROLLER
+
 volumes:
-  redpanda-data:
+  pg_data:
+  grafana_data:
