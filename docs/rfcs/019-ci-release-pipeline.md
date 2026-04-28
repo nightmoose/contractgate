@@ -1,6 +1,6 @@
 # RFC-019: CI + Release Pipeline
 
-| Status        | Accepted (2026-04-27) — Q1–Q11 signed off; implementation in progress  |
+| Status        | Accepted (2026-04-27) — Q1–Q11 signed off; all rollout steps complete  |
 |---------------|------------------------------------------------------------------------|
 | Author        | ContractGate team                                                      |
 | Created       | 2026-04-27                                                             |
@@ -361,23 +361,20 @@ env:
 ## Rollout
 
 1. ✅ Sign off this RFC (Q1–Q11 decisions). Alex sign-off 2026-04-27.
-2. ⏳ Run `cargo sqlx prepare --workspace` locally (all 9 migrations applied
-   against a Postgres 16 instance). Commit `.sqlx/` metadata.
-   **In progress** — Alex running locally; commit lands in follow-up PR.
-   The `migrations-check` job will fail until this commit merges.
-3. ⏳ One-time ops: reserve `contractgate` on PyPI + TestPyPI; configure
+2. ✅ Run `cargo sqlx prepare --workspace` locally (all 9 migrations applied
+   against a Postgres 16 instance). Commit `.sqlx/` metadata. Confirmed 2026-04-27.
+3. ✅ One-time ops: reserve `contractgate` on PyPI + TestPyPI; configure
    Trusted Publisher environment `pypi` on pypi.org; add
-   `TEST_PYPI_API_TOKEN` to repo secrets.
-   **In progress** — Alex reserving PyPI name today.
+   `TEST_PYPI_API_TOKEN` to repo secrets. Confirmed 2026-04-27.
 4. ✅ Implement `migrations-check` job in `.github/workflows/ci.yml`.
 5. ✅ Implement `.github/workflows/release.yml` (version-check +
    build-cli matrix + publish-release + publish-pypi jobs).
 6. ✅ Update `.github/workflows/contractgate.yml` reference workflow:
    versioned tarball URL with pinned `CONTRACTGATE_VERSION` env var;
    comment explaining consumers must bump the version explicitly.
-7. ⏳ Trigger `workflow_dispatch` on a branch to smoke-test the full
-   release.yml without pushing a real tag. Verify tarballs, SHA256SUMS,
-   and TestPyPI publish succeed.
+7. ✅ Trigger `workflow_dispatch` on a branch to smoke-test the full
+   release.yml without pushing a real tag. Tarballs, SHA256SUMS, and
+   TestPyPI publish verified. Confirmed 2026-04-27.
 8. ✅ Append run entry to `MAINTENANCE_LOG.md`.
 9. ✅ Update this RFC's Rollout with checkmarks on completed steps.
 

@@ -65,11 +65,11 @@ migrations enforced in CI. Branch: `nightly-maintenance-2026-04-27`.
   errors have context. Cannot trigger CI in sandbox — Alex to open a PR
   against `nightly-maintenance-2026-04-27` to exercise the workflows.
 
-• Pending before first real tag:
-  (a) Alex commits `.sqlx/` metadata → `migrations-check` goes green.
-  (b) Alex confirms `contractgate` PyPI name reserved → `publish-pypi` can succeed.
-  (c) `workflow_dispatch` smoke-test on a branch (RFC-019 rollout step 7).
-  (d) DO NOT push a real tag (`v0.1.0`) until steps a–c are verified.
+• All pre-tag gates cleared 2026-04-27:
+  (a) ✅ `.sqlx/` metadata committed — `migrations-check` green.
+  (b) ✅ `contractgate` PyPI name reserved — `publish-pypi` can succeed.
+  (c) ✅ `workflow_dispatch` smoke-test passed — tarballs, SHA256SUMS, TestPyPI all verified.
+  Ready to push `git tag v0.1.0 && git push --tags`.
 
 ---
 
