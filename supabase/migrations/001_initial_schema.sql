@@ -2,6 +2,12 @@
 -- Migration: 001_initial_schema
 -- Run this against your Supabase project via the SQL editor or psql.
 
+-- Supabase role compatibility for local/CI Postgres
+-- (real Supabase projects already have these roles)
+CREATE ROLE IF NOT EXISTS "anon";
+CREATE ROLE IF NOT EXISTS "authenticated";
+CREATE ROLE IF NOT EXISTS "service_role";
+
 -- Enable UUID extension (usually already enabled in Supabase)
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 
