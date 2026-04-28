@@ -16,12 +16,20 @@
 --     key-usage dashboards.
 -- ─────────────────────────────────────────────────────────────────────────────
 
--- Supabase auth schema compatibility for local/CI Postgres
--- (real Supabase projects create this schema + tables automatically)
+-- Supabase auth compatibility for local/CI Postgres
+-- (real Supabase projects create these automatically)
 DO $$
 BEGIN
     CREATE SCHEMA IF NOT EXISTS auth;
 EXCEPTION WHEN duplicate_schema THEN null;
+END $$;
+
+DO $$
+BEGIN
+    CREATE TABLE IF NOT EXISTS auth.users (
+        id uuid PRIMARY KEY DEFAULT gen_random_uuid()
+    );
+EXCEPTION WHEN duplicate_table THEN null;
 END $$;
 
 -- ── user_profiles ─────────────────────────────────────────────────────────────
