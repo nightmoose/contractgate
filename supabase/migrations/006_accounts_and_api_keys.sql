@@ -18,6 +18,7 @@
 
 -- Supabase auth compatibility for local/CI Postgres
 -- (real Supabase projects create these automatically)
+
 DO $$
 BEGIN
     CREATE SCHEMA IF NOT EXISTS auth;
@@ -31,6 +32,15 @@ BEGIN
     );
 EXCEPTION WHEN duplicate_table THEN null;
 END $$;
+
+-- Stub for Supabase's auth.uid() helper function
+CREATE OR REPLACE FUNCTION auth.uid()
+RETURNS uuid
+LANGUAGE sql
+STABLE
+AS $$
+    SELECT NULL::uuid;
+$$;
 
 -- ── user_profiles ─────────────────────────────────────────────────────────────
 create table if not exists public.user_profiles (
