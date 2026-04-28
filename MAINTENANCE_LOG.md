@@ -2,6 +2,29 @@
 
 ---
 
+## Run 2026-04-28 (v0.1.0 cut)
+
+First public release. Tag `v0.1.0` pushed from `main`. Release workflow fired on tag push; all four jobs completed.
+
+• Artifacts produced:
+
+  1. `contractgate-0.1.0-x86_64-unknown-linux-gnu.tar.gz`
+  2. `contractgate-0.1.0-aarch64-unknown-linux-gnu.tar.gz`
+  3. `contractgate-0.1.0-x86_64-apple-darwin.tar.gz`
+  4. `contractgate-0.1.0-aarch64-apple-darwin.tar.gz`
+  5. `SHA256SUMS` — all four tarballs listed; verified via `sha256sum -c SHA256SUMS`.
+  6. Python wheel (`contractgate-0.1.0-py3-none-any.whl`) + sdist (`contractgate-0.1.0.tar.gz`) published via `python -m build`.
+
+• TestPyPI publish: confirmed via `publish-pypi` job (`TEST_PYPI_API_TOKEN` secret).
+
+• PyPI publish: confirmed — https://pypi.org/project/contractgate/ live. OIDC Trusted Publisher (environment `pypi`, no stored prod secret).
+
+• Binary `--version` smoke: ✅ `contractgate-0.1.0-aarch64-apple-darwin.tar.gz` extracted and run — `./contractgate --version` printed `contractgate 0.1.0`. Confirmed 2026-04-28.
+
+• Pre-flight gates all green before tag push: clean tree on `main`, `Cargo.toml` + `pyproject.toml` both at `0.1.0`, no prior `v*` tag, `.sqlx/` committed, `cargo test` 107 passed / 0 failed, `npm run build` 21 pages / 0 errors.
+
+---
+
 ## Run 2026-04-28 (Dashboard Polish — RFC-020)
 
 Four-workstream dashboard polish pass per RFC-020. Branch: `nightly-maintenance-2026-04-28`.
