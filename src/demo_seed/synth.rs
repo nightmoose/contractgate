@@ -10,7 +10,7 @@
 //! guaranteed to pass or fail accordingly:
 //!   - `Pass`       — all fields valid per the starter contract
 //!   - `Fail`       — one field violates a constraint (wrong enum value,
-//!                    out-of-range int, bad pattern match)
+//!     out-of-range int, bad pattern match)
 //!   - `Quarantine` — a required field is absent entirely (guaranteed miss)
 
 use super::outcome::Outcome;
@@ -51,8 +51,7 @@ pub fn rest_event(rng: &mut SmallRng, outcome: Outcome) -> Value {
     match outcome {
         Outcome::Pass => {
             let status: u16 = *[200u16, 200, 200, 201, 204, 400, 404, 500]
-                .iter()
-                .nth(rng.gen_range(0..8))
+                .get(rng.gen_range(0..8))
                 .unwrap();
             json!({
                 "request_id": request_id,

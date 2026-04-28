@@ -25,11 +25,6 @@ struct ContractSummary {
 }
 
 #[derive(Debug, Deserialize)]
-struct ListContractsResponse {
-    pub contracts: Vec<ContractSummary>,
-}
-
-#[derive(Debug, Deserialize)]
 struct BatchIngestResponse {
     #[allow(dead_code)]
     pub passed: usize,

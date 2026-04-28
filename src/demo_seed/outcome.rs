@@ -5,6 +5,7 @@
 //! in `quarantine_events`.  The distinction is in the *payload shape*:
 //!   - `Fail`       — a constraint violation (wrong type, out-of-range, bad enum)
 //!   - `Quarantine` — a more severe violation (missing required field entirely)
+//!
 //! This split is cosmetic for demo purposes; the gateway treats both as failures.
 
 use rand::{rngs::SmallRng, Rng};
