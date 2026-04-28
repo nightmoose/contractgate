@@ -82,6 +82,19 @@ See how ContractGate stacks up
 
 **ContractGate is the only tool that validates semantically rich contracts *at ingest time* with sub-millisecond latency and delightful builder + inference UX.**
 
+## Hosted vs Self-Hosted
+
+**ContractGate is open-core (MIT licensed).**
+
+- **Self-host** (Docker / Kubernetes) — great for local dev, experimentation, or air-gapped environments.
+- **Use our hosted SaaS** (recommended for production) — managed scaling, enterprise features, SLA, and support.
+
+**Free tier**: 1M events/month forever  
+**Enterprise**: Unlimited + VPC/on-prem + SSO + custom SLAs
+
+[Try the hosted demo →](https://app.datacontractgate.com/stream-demo)  
+[Talk to sales for production](mailto:datacontractgate@nightmoose.com)
+
 ## Private Beta
 Free tier: 1M events/month
 [Get early access](https://www.datacontractgate.com/) or email alex.suarez@nightmoose.com

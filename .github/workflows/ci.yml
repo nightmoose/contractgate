@@ -94,6 +94,102 @@ jobs:
       - name: Build Docker image
         run: docker build -t contractgate-api:ci .
 
+  # ── Migrations + sqlx metadata check (RFC-019) ───────────
+  # 1. Spins a Postgres 16 service container.
+  # 2. Applies every file in supabase/migrations/ in numeric order (ls -v).
+  # 3. Asserts `cargo sqlx prepare --check` still matches the committed
+  #    .sqlx/ query metadata — catches storage.rs changes that add/change
+  #    queries without regenerating .sqlx/.
+  # 4. Sentinel column check: confirms migration 009 applied cleanly.
+  #
+  # Contract: migration files must be named NNN_description.sql with no
+  # gaps in the numeric prefix. A missing file means ls -v silently skips
+  # it; the sentinel check below will catch the resulting schema gap.
+  #
+  # Prerequisites:
+  #   .sqlx/ metadata must be committed (run `cargo sqlx prepare --workspace`
+  #   locally against a Postgres 16 DB with all migrations applied, then
+  #   commit the generated files). See RFC-019 rollout step 2.
+  migrations-check:
+    name: Migrations — apply + sqlx metadata check
+    runs-on: ubuntu-latest
+    # Override the global SQLX_OFFLINE=true so sqlx can connect to the
+    # service container and verify query metadata against the live schema.
+    env:
+      SQLX_OFFLINE: "false"
+      DATABASE_URL: postgres://contractgate:contractgate@localhost:5432/contractgate_test
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: contractgate
+          POSTGRES_PASSWORD: contractgate
+          POSTGRES_DB: contractgate_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install PostgreSQL client
+        run: sudo apt-get install -y --no-install-recommends postgresql-client
+
+      - name: Apply migrations in order
+        run: |
+          echo "Applying migrations from supabase/migrations/ in numeric order..."
+          for f in $(ls -v supabase/migrations/*.sql); do
+            echo "  → $f"
+            psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f "$f"
+          done
+          echo "All migrations applied."
+
+      - name: Assert migration 009 sentinel (github_integrations table)
+        run: |
+          RESULT=$(psql "$DATABASE_URL" -Atc \
+            "SELECT to_regclass('public.github_integrations')::text")
+          if [[ "$RESULT" != "github_integrations" ]]; then
+            echo "::error::Migration 009 sentinel check failed — table github_integrations not found."
+            echo "Expected all 9 migrations to apply cleanly. Check supabase/migrations/ for errors."
+            exit 1
+          fi
+          echo "Sentinel OK: github_integrations table exists."
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo + sqlx-cli
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            ~/.cargo/bin/cargo-sqlx
+            target
+          key: ${{ runner.os }}-migrations-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-migrations-cargo-
+
+      - name: Install sqlx-cli (matches sqlx 0.7 dep)
+        run: |
+          # Only install if not already cached.
+          if ! command -v cargo-sqlx &> /dev/null; then
+            cargo install sqlx-cli \
+              --version 0.7.4 \
+              --no-default-features \
+              --features postgres,rustls \
+              --locked
+          fi
+
+      - name: Assert .sqlx/ metadata is up-to-date
+        run: cargo sqlx prepare --check --workspace
+        # Fails if:
+        #   (a) .sqlx/ directory is missing — run `cargo sqlx prepare --workspace` locally
+        #   (b) a sqlx::query! in storage.rs was added/changed without regenerating .sqlx/
+        #   (c) schema changes caused query types to drift from the cached metadata
+
   # ── CLI cross-compile smoke (RFC-014) ─────────────────────
   # Builds the `contractgate` CLI binary for all four release targets.
   # This job runs before tagging to confirm the cross-compile is healthy.
