@@ -11,5 +11,6 @@
 
 pub mod cli;
 pub mod contract;
+pub mod demo_seed;
 pub mod transform;
 pub mod validation;

@@ -1,0 +1,45 @@
+version: "1.0"
+name: kafka_event
+description: "Generic Kafka event with partition key + payload metadata."
+
+ontology:
+  entities:
+    - name: topic
+      type: string
+      required: true
+    - name: partition
+      type: integer
+      required: true
+      min: 0
+    - name: offset
+      type: integer
+      required: true
+      min: 0
+    - name: key
+      type: string
+      required: false
+    - name: producer_id
+      type: string
+      required: true
+      pattern: "^[a-zA-Z0-9_-]+$"
+    - name: timestamp
+      type: integer
+      required: true
+
+glossary:
+  - field: topic
+    description: "Kafka topic name this event was published to"
+    constraints: "must be a non-empty string"
+  - field: partition
+    description: "Kafka partition number (zero-indexed)"
+    constraints: "must be non-negative integer"
+  - field: offset
+    description: "Monotonically increasing offset within the partition"
+    constraints: "must be non-negative integer"
+  - field: producer_id
+    description: "Identifier of the producing service or client"
+    constraints: "alphanumeric, underscores, and hyphens only"
+
+metrics:
+  - name: throughput_per_topic
+    formula: "count(offset) group by topic"

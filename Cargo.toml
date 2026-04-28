@@ -30,6 +30,10 @@ name = "demo"
 path = "src/bin/demo.rs"
 required-features = ["demo"]
 
+[[bin]]
+name = "demo-seeder"
+path = "src/bin/demo-seeder.rs"
+
 [features]
 # Default build is lean: just the library + main binary.  The `demo` feature
 # pulls in rdkafka (and its librdkafka build-time deps) and enables the demo

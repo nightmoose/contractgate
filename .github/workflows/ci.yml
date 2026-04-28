@@ -1,9 +1,14 @@
 # ContractGate CI — runs on every push and pull request to main.
 #
 # Jobs:
-#   rust-check  — cargo check + clippy + unit tests (no DB needed)
-#   dashboard   — Next.js type-check + lint
-#   docker      — verify the Dockerfile builds (no push)
+#   rust-check         — cargo fmt/check/clippy/test (no DB needed)
+#   dashboard          — Next.js type-check + lint + build
+#   docker             — Dockerfile builds (buildx + GHA layer cache, no push)
+#   migrations-check   — apply migrations to Postgres 16, sqlx prepare --check
+#   compose-smoke      — default compose stack end-to-end smoke
+#   compose-demo-smoke — demo-profile compose stack + seeder assertion
+#
+# Cross-compile of the CLI is NOT in CI — it runs in release.yml on tag pushes.
 
 name: CI
 
@@ -12,6 +17,11 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+
+# Cancel stale runs when a new commit lands on the same branch/PR.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 env:
   CARGO_TERM_COLOR: always
@@ -68,9 +78,11 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: "22"
+          cache: "npm"
+          cache-dependency-path: dashboard/package-lock.json
 
-      - name: npm install
-        run: npm install
+      - name: npm ci
+        run: npm ci
 
       - name: TypeScript type-check
         run: npm run type-check
@@ -91,8 +103,18 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Build Docker image
-        run: docker build -t contractgate-api:ci .
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build Docker image (with GHA layer cache)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: false
+          load: true
+          tags: contractgate-api:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
 
   # ── Migrations + sqlx metadata check (RFC-019) ───────────
   # 1. Spins a Postgres 16 service container.
@@ -190,52 +212,49 @@ jobs:
         #   (b) a sqlx::query! in storage.rs was added/changed without regenerating .sqlx/
         #   (c) schema changes caused query types to drift from the cached metadata
 
-  # ── CLI cross-compile smoke (RFC-014) ─────────────────────
-  # Builds the `contractgate` CLI binary for all four release targets.
-  # This job runs before tagging to confirm the cross-compile is healthy.
-  # Full release tarballs are produced by the release.yml workflow.
-  cli-cross-compile:
-    name: CLI — cross-compile smoke (${{ matrix.target }})
-    runs-on: ${{ matrix.runner }}
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - target: x86_64-unknown-linux-gnu
-            runner: ubuntu-latest
-          - target: aarch64-unknown-linux-gnu
-            runner: ubuntu-latest
-            cross: true
-          - target: x86_64-apple-darwin
-            runner: macos-latest
-          - target: aarch64-apple-darwin
-            runner: macos-latest
+  # ── Compose stack smoke test (RFC-017) ────────────────────
+  # Builds the gateway image, spins up the default Compose stack
+  # (gateway + Postgres + Prometheus + Grafana), and verifies that a
+  # contract can be created and an event validated end-to-end.
+  compose-smoke:
+    name: Compose — stack smoke test
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install Rust stable + target
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: ${{ matrix.target }}
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
 
-      - name: Install cross (for Linux ARM64)
-        if: matrix.cross == true
-        run: cargo install cross --git https://github.com/cross-rs/cross
+      - name: Install jq
+        run: sudo apt-get install -y --no-install-recommends jq
 
-      - name: Cache cargo
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            target
-          key: ${{ runner.os }}-${{ matrix.target }}-cargo-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: ${{ runner.os }}-${{ matrix.target }}-cargo-
+      - name: Run compose smoke test
+        run: bash tests/compose_smoke.sh
+        env:
+          TAG: ci
 
-      - name: Build CLI (cross)
-        if: matrix.cross == true
-        run: cross build --release --bin contractgate --target ${{ matrix.target }}
+  # ── Compose demo profile smoke test (RFC-017) ─────────────
+  # Builds the gateway image (including demo-seeder binary), spins up the
+  # stack with --profile demo, waits for the seeder to exit, and asserts
+  # that > 500 audit_log rows were written and the three starter contracts
+  # are published.  Seeder runs at 50/sec for 30s (≈1500 events) to keep
+  # CI wall-clock time short.
+  compose-demo-smoke:
+    name: Compose — demo profile smoke test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
 
-      - name: Build CLI (native)
-        if: matrix.cross != true
-        run: cargo build --release --bin contractgate --target ${{ matrix.target }}
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Install jq
+        run: sudo apt-get install -y --no-install-recommends jq
+
+      - name: Run compose demo smoke test
+        run: bash tests/compose_demo_smoke.sh
+        env:
+          TAG: ci
+          SEEDER_RATE: "50"
+          SEEDER_DURATION: "30s"
+          MIN_AUDIT_ROWS: "500"

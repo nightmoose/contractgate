@@ -2,6 +2,42 @@
 
 ---
 
+## Run 2026-04-28 (Onboarding Stack — RFC-017)
+
+Punchlist v2 #4. Branch: `nightly-maintenance-2026-04-28`.
+
+⚠️ `cargo check && cargo test` required before merging — bash workspace unavailable during this run.
+
+Files added / changed: 17
+
+1. **`docs/rfcs/017-onboarding-stack.md`** — Status flipped to `Accepted (2026-04-28)`. Rollout steps 1–7 + 10 checked.
+2. **`contracts/starters/rest_event.yaml`** — NEW. Generic REST event starter (6 fields, UUID pattern, HTTP method enum, status range).
+3. **`contracts/starters/kafka_event.yaml`** — NEW. Generic Kafka event starter (6 fields, producer_id pattern).
+4. **`contracts/starters/dbt_model.yaml`** — NEW. dbt model row starter (5 fields, source_system enum).
+5. **`contracts/starters/README.md`** — NEW. Copy-and-modify guide; references `make stack-up-demo`.
+6. **`tests/starters_validate.rs`** — NEW. Parses + compiles each starter; asserts zero errors + field counts.
+7. **`tests/starters_demo_event.rs`** — NEW. Passes representative valid events through each starter (asserts pass); passes deliberately invalid events (asserts fail). 12 tests total.
+8. **`docker-compose.yml`** — REPLACED with RFC-017 reference stack: gateway + dashboard + Postgres + Prometheus + Grafana + demo-seeder (`--profile demo`) + Kafka (`--profile kafka`).
+9. **`docker-compose.kafka-demo.yml`** — NEW (renamed from old `docker-compose.yml`). Redpanda + console for `cargo run --features demo --bin demo`. Comment updated to reference new filename.
+10. **`ops/prometheus/prometheus.yml`** — NEW. Scrapes `gateway:8080/metrics`. Comment documents that `/metrics` returns 404 until RFC-016 lands.
+11. **`ops/grafana/provisioning/dashboards/contractgate.yaml`** — NEW. Grafana provisioning config pointing at `ops/grafana/contractgate.json`.
+12. **`ops/grafana/contractgate.json`** — NEW (stub `{}`). RFC-016 replaces with real dashboard JSON.
+13. **`src/demo_seed/mod.rs`** — NEW. Public re-export of `client`, `outcome`, `synth`.
+14. **`src/demo_seed/outcome.rs`** — NEW. `Outcome` enum + `roll()` dice function.
+15. **`src/demo_seed/synth.rs`** — NEW. Per-contract payload generators (pass/fail/quarantine variants per starter).
+16. **`src/demo_seed/client.rs`** — NEW. Blocking reqwest client: `ensure_contract_published` (idempotent create+promote) + `post_event`.
+17. **`src/bin/demo-seeder.rs`** — NEW. One-shot seeder binary: clap flags, health wait, contract publish, event loop, summary on exit. Embeds starter YAMLs at compile time.
+18. **`src/lib.rs`** — Added `pub mod demo_seed`.
+19. **`Cargo.toml`** — Added `[[bin]] name = "demo-seeder"`.
+20. **`Dockerfile`** — Added `contracts/` COPY, `demo-seeder` build + runtime COPY, `curl` install.
+21. **`tests/compose_smoke.sh`** — NEW. Builds image, starts default stack, health-checks gateway, posts contract + event, asserts pass/fail.
+22. **`tests/compose_demo_smoke.sh`** — NEW. Builds image, starts `--profile demo`, waits for seeder exit, asserts starter contracts present + audit_log ≥ MIN_AUDIT_ROWS.
+23. **`.github/workflows/ci.yml`** — Added `compose-smoke` and `compose-demo-smoke` jobs.
+
+`make stack-up-demo` produces: gateway on :8080, dashboard on :3000, Grafana on :3001, ~3000 audit rows (10/sec × 5m), three starter contracts published. Grafana dashboard slot wired; JSON stub awaits RFC-016.
+
+---
+
 ## Run 2026-04-28 (v0.1.0 cut)
 
 First public release. Tag `v0.1.0` pushed from `main`. Release workflow fired on tag push; all four jobs completed.

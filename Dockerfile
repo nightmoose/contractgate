@@ -27,26 +27,32 @@ RUN rm -f target/release/contractgate* target/release/deps/contractgate*
 # Now copy real source and build.
 # demo/ must be present alongside src/ because stream_demo.rs embeds the
 # scenario YAML files at compile time via include_str!("../demo/scenarios/…").
+# contracts/ must be present because demo-seeder embeds starter YAMLs via
+# include_str!("../../contracts/starters/…") (RFC-017).
 COPY demo ./demo
+COPY contracts ./contracts
 COPY src ./src
 #RUN cargo build --release
-# Build only the web server binary (explicit name)
+# Build the web server and demo-seeder binaries (explicit names)
 RUN cargo build --release --bin contractgate-server
+RUN cargo build --release --bin demo-seeder
 
 # ── Stage 2: runtime ────────────────────────────────────────
 FROM debian:bookworm-slim AS runtime
 
 WORKDIR /app
 
-# Install CA certificates and libssl for TLS (required by sqlx / native-tls)
+# Install CA certificates, libssl, and curl (used by Compose healthcheck)
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
+    curl \
     libssl3 \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy only the compiled binary
+# Copy compiled binaries
 #COPY --from=builder /app/target/release/contractgate /usr/local/bin/contractgate
 COPY --from=builder /app/target/release/contractgate-server /usr/local/bin/contractgate
+COPY --from=builder /app/target/release/demo-seeder /usr/local/bin/demo-seeder
 
 # Non-root user for security
 RUN adduser --disabled-password --gecos "" --uid 1001 appuser

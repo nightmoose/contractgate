@@ -1,0 +1,22 @@
+# Grafana dashboard provisioning config (RFC-017).
+#
+# Tells Grafana to load dashboards from the specified path on startup.
+# The ContractGate dashboard JSON is at ops/grafana/contractgate.json.
+#
+# NOTE: contractgate.json is currently a stub ({}) until RFC-016 (Observability v1)
+# ships the real Grafana dashboard panels.  The provisioning slot is wired now
+# so RFC-016 only needs to replace the JSON file — no Compose or provisioning
+# changes required.
+
+apiVersion: 1
+
+providers:
+  - name: ContractGate
+    orgId: 1
+    type: file
+    disableDeletion: false
+    updateIntervalSeconds: 30
+    allowUiUpdates: true
+    options:
+      path: /var/lib/grafana/dashboards
+      foldersFromFilesStructure: false

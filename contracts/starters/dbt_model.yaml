@@ -1,0 +1,45 @@
+version: "1.0"
+name: dbt_model_row
+description: "Row-level contract for a dbt model — id, audit timestamps, soft-delete."
+
+ontology:
+  entities:
+    - name: id
+      type: string
+      required: true
+    - name: created_at
+      type: integer
+      required: true
+    - name: updated_at
+      type: integer
+      required: true
+    - name: deleted_at
+      type: integer
+      required: false
+    - name: source_system
+      type: string
+      required: true
+      enum: ["postgres", "mysql", "snowflake", "bigquery"]
+
+glossary:
+  - field: id
+    description: "Unique row identifier (UUID or surrogate key)"
+    constraints: "must be non-empty string"
+  - field: created_at
+    description: "Unix epoch seconds when the row was first inserted"
+    constraints: "must be positive integer; must be <= updated_at"
+  - field: updated_at
+    description: "Unix epoch seconds of the most recent update"
+    constraints: "must be >= created_at"
+  - field: deleted_at
+    description: "Unix epoch seconds when the row was soft-deleted; null if active"
+    constraints: "optional; when present must be >= updated_at"
+  - field: source_system
+    description: "Upstream system that owns this row's source of truth"
+    constraints: "must be one of: postgres, mysql, snowflake, bigquery"
+
+metrics:
+  - name: soft_delete_rate
+    formula: "count(deleted_at is not null) / count(id)"
+  - name: rows_per_source
+    formula: "count(id) group by source_system"
