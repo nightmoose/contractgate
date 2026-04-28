@@ -1,0 +1,230 @@
+# ContractGate Release Workflow
+#
+# Triggered by: tag push matching v*.*.* OR manual workflow_dispatch.
+#
+# Jobs:
+#   version-check     — asserts Cargo.toml version == tag; exports VERSION
+#   build-cli         — cross-compiles CLI for 4 targets, uploads tarballs
+#   publish-release   — assembles GitHub Release (tag pushes only)
+#   publish-pypi      — publishes Python SDK to TestPyPI (always) + PyPI (tags only)
+#
+# Non-goals for v0.1:
+#   No Windows targets.
+#   No code-signing / notarization.
+#   No Homebrew tap.
+
+name: Release
+
+on:
+  push:
+    tags: ['v*.*.*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Semver tag to build (e.g. v0.1.0). Must match Cargo.toml version.'
+        required: true
+
+env:
+  CARGO_TERM_COLOR: always
+
+# ─────────────────────────────────────────────────────────────────────────────
+jobs:
+
+  # ── 1. Version gate ────────────────────────────────────────────────────────
+  # Fails fast if the pushed tag doesn't match [package].version in Cargo.toml.
+  # Exports `version` (stripped of leading `v`) for downstream jobs.
+  version-check:
+    name: Version check
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.check.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Resolve tag
+        id: tag
+        run: |
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            echo "tag=${{ github.event.inputs.tag }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "tag=${{ github.ref_name }}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Assert Cargo.toml version matches tag
+        id: check
+        run: |
+          TAG="${{ steps.tag.outputs.tag }}"
+          TAG_VERSION="${TAG#v}"
+          CARGO_VERSION=$(grep -m1 '^version' Cargo.toml | sed 's/.*"\(.*\)".*/\1/')
+          echo "Tag version  : ${TAG_VERSION}"
+          echo "Cargo version: ${CARGO_VERSION}"
+          if [[ "${TAG_VERSION}" != "${CARGO_VERSION}" ]]; then
+            echo "::error::Tag ${TAG} does not match Cargo.toml version ${CARGO_VERSION}."
+            echo "Bump [package].version in Cargo.toml and sdks/python/pyproject.toml, then re-tag."
+            exit 1
+          fi
+          echo "version=${TAG_VERSION}" >> "$GITHUB_OUTPUT"
+
+  # ── 2. CLI cross-compile + tarball ─────────────────────────────────────────
+  # Builds the `contractgate` binary for each target and packages it as:
+  #   contractgate-<VERSION>-<TARGET>.tar.gz
+  # Contents: contractgate (binary), LICENSE, README.md
+  build-cli:
+    name: Build CLI (${{ matrix.target }})
+    needs: version-check
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: x86_64-unknown-linux-gnu
+            runner: ubuntu-latest
+          - target: aarch64-unknown-linux-gnu
+            runner: ubuntu-latest
+            cross: true
+          - target: x86_64-apple-darwin
+            runner: macos-latest
+          - target: aarch64-apple-darwin
+            runner: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust stable + target
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Install cross (Linux ARM64 only)
+        if: matrix.cross == true
+        run: cargo install cross --git https://github.com/cross-rs/cross
+
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: release-${{ runner.os }}-${{ matrix.target }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: release-${{ runner.os }}-${{ matrix.target }}-cargo-
+
+      - name: Build CLI (cross — Linux ARM64)
+        if: matrix.cross == true
+        run: cross build --release --bin contractgate --target ${{ matrix.target }}
+        env:
+          SQLX_OFFLINE: "true"
+
+      - name: Build CLI (native)
+        if: matrix.cross != true
+        run: cargo build --release --bin contractgate --target ${{ matrix.target }}
+        env:
+          SQLX_OFFLINE: "true"
+
+      - name: Package tarball
+        run: |
+          VERSION="${{ needs.version-check.outputs.version }}"
+          TARGET="${{ matrix.target }}"
+          TARBALL="contractgate-${VERSION}-${TARGET}.tar.gz"
+          cp "target/${TARGET}/release/contractgate" contractgate
+          tar czf "${TARBALL}" contractgate LICENSE README.md
+          echo "TARBALL=${TARBALL}" >> "$GITHUB_ENV"
+
+      - name: Upload tarball artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: tarball-${{ matrix.target }}
+          path: contractgate-${{ needs.version-check.outputs.version }}-${{ matrix.target }}.tar.gz
+          if-no-files-found: error
+
+  # ── 3. Publish GitHub Release ──────────────────────────────────────────────
+  # Downloads all four tarballs, generates SHA256SUMS, creates a GitHub Release
+  # with auto-generated release notes. Runs on tag pushes only.
+  publish-release:
+    name: Publish GitHub Release
+    if: startsWith(github.ref, 'refs/tags/')
+    needs: [version-check, build-cli]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download all tarballs
+        uses: actions/download-artifact@v4
+        with:
+          pattern: tarball-*
+          merge-multiple: true
+          path: dist/
+
+      - name: Generate SHA256SUMS
+        working-directory: dist
+        run: sha256sum *.tar.gz > SHA256SUMS
+
+      - name: List release assets
+        run: ls -lh dist/
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG="${{ github.ref_name }}"
+          gh release create "${TAG}" dist/*.tar.gz dist/SHA256SUMS \
+            --title "ContractGate ${TAG}" \
+            --generate-notes
+
+  # ── 4. Publish Python SDK ──────────────────────────────────────────────────
+  # Publishes contractgate Python SDK (sdks/python/).
+  # Always publishes to TestPyPI for smoke-test visibility.
+  # Publishes to PyPI only on tag pushes (via OIDC Trusted Publisher).
+  #
+  # One-time setup required:
+  #   - PyPI:     Add Trusted Publisher: repo=contractgate/contractgate,
+  #               workflow=release.yml, environment=pypi
+  #   - TestPyPI: Store TEST_PYPI_API_TOKEN in repository secrets
+  #               (OIDC support on TestPyPI incomplete as of 2026-04)
+  publish-pypi:
+    name: Publish Python SDK
+    needs: version-check
+    runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      id-token: write   # required for PyPI OIDC Trusted Publisher
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Assert pyproject.toml version matches tag
+        run: |
+          SDK_VERSION=$(grep -m1 '^version' sdks/python/pyproject.toml | sed 's/.*"\(.*\)".*/\1/')
+          TAG_VERSION="${{ needs.version-check.outputs.version }}"
+          echo "SDK pyproject.toml: ${SDK_VERSION}"
+          echo "Tag version       : ${TAG_VERSION}"
+          if [[ "${SDK_VERSION}" != "${TAG_VERSION}" ]]; then
+            echo "::error::SDK version ${SDK_VERSION} != tag ${TAG_VERSION}."
+            echo "Bump version in sdks/python/pyproject.toml to match Cargo.toml."
+            exit 1
+          fi
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install build
+        run: pip install build
+
+      - name: Build sdist + wheel
+        working-directory: sdks/python
+        run: python -m build
+
+      - name: Publish to TestPyPI (smoke-test — always)
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          repository-url: https://test.pypi.org/legacy/
+          packages-dir: sdks/python/dist/
+          password: ${{ secrets.TEST_PYPI_API_TOKEN }}
+
+      - name: Publish to PyPI (tags only — OIDC Trusted Publisher)
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: sdks/python/dist/
+          # No `password` field — authentication via id-token OIDC grant above.

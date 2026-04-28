@@ -7,6 +7,13 @@
 #   validate job — parse + compile every contract YAML locally (no network).
 #   publish job  — push validated contracts to the ContractGate gateway
 #                  (runs only on pushes to main).
+#
+# ── Upgrading the CLI version ──────────────────────────────────────────────
+# Pin CONTRACTGATE_VERSION to a specific release tag (e.g. v0.1.0).
+# When a new ContractGate release is available, bump this value and review
+# the release notes for breaking changes before merging.
+# Do NOT use "latest" in the download URL — silent upgrades can break
+# validate/push behaviour without warning.
 
 name: contractgate
 
@@ -20,6 +27,10 @@ on:
     paths:
       - 'contracts/**'
 
+env:
+  # Bump this to upgrade the CLI. Must match an existing release tag.
+  CONTRACTGATE_VERSION: "0.1.0"
+
 jobs:
   validate:
     runs-on: ubuntu-latest
@@ -29,7 +40,7 @@ jobs:
       - name: Install contractgate
         run: |
           curl -sSL \
-            https://github.com/contractgate/contractgate/releases/latest/download/contractgate-linux-x86_64.tar.gz \
+            "https://github.com/contractgate/contractgate/releases/download/v${CONTRACTGATE_VERSION}/contractgate-${CONTRACTGATE_VERSION}-x86_64-unknown-linux-gnu.tar.gz" \
             | tar xz -C /usr/local/bin
 
       - name: Validate contracts
@@ -45,7 +56,7 @@ jobs:
       - name: Install contractgate
         run: |
           curl -sSL \
-            https://github.com/contractgate/contractgate/releases/latest/download/contractgate-linux-x86_64.tar.gz \
+            "https://github.com/contractgate/contractgate/releases/download/v${CONTRACTGATE_VERSION}/contractgate-${CONTRACTGATE_VERSION}-x86_64-unknown-linux-gnu.tar.gz" \
             | tar xz -C /usr/local/bin
 
       - name: Push contracts

@@ -16,6 +16,34 @@
 --     key-usage dashboards.
 -- ─────────────────────────────────────────────────────────────────────────────
 
+-- Supabase auth compatibility for local/CI Postgres
+-- (real Supabase projects create these automatically)
+
+DO $$
+BEGIN
+    CREATE SCHEMA IF NOT EXISTS auth;
+EXCEPTION WHEN duplicate_schema THEN null;
+END $$;
+
+DO $$
+BEGIN
+    CREATE TABLE IF NOT EXISTS auth.users (
+        id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+        email text,
+        raw_user_meta_data jsonb
+    );
+EXCEPTION WHEN duplicate_table THEN null;
+END $$;
+
+-- Stub for Supabase's auth.uid() helper function
+CREATE OR REPLACE FUNCTION auth.uid()
+RETURNS uuid
+LANGUAGE sql
+STABLE
+AS $$
+    SELECT NULL::uuid;
+$$;
+
 -- ── user_profiles ─────────────────────────────────────────────────────────────
 create table if not exists public.user_profiles (
     id            uuid        primary key references auth.users(id) on delete cascade,
