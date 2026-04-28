@@ -8,8 +8,8 @@ Stop bad data **before** it reaches your warehouse, lakehouse, or ML pipeline.
 ContractGate is a high-performance validation gateway that enforces rich semantic data contracts in real time. Built in Rust for extreme speed (<10 µs p99 latency, 86k+ events/sec/core), it goes far beyond JSON Schema or basic type checks with ontology, glossary, patterns, enums, computed metrics, and automatic inference.
 
 ![Stream Demo Stats](/screenshots/stream-demo-stats.png)
-![Records Tab](https://github.com/nightmoose/contractgate/blob/main/screenshots/stream-demo-records.png)
-![Visual Contract Builder](https://github.com/nightmoose/contractgate/blob/main/screenshots/visual-builder.png)
+![Records Tab](/screenshots/stream-demo-records.png)
+![Visual Contract Builder](/screenshots/visual-builder.png)
 
 ## ✨ Key Features
 
