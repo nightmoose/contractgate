@@ -92,7 +92,9 @@ echo "  demo-seeder exited cleanly ✓"
 echo "=== compose_demo_smoke: checking starter contracts published ==="
 CONTRACTS=$(curl -sf -H "x-org-id: $DEMO_ORG_ID" "http://localhost:8080/contracts")
 for name in "rest_event" "kafka_event" "dbt_model_row"; do
-    count=$(echo "$CONTRACTS" | jq --arg n "$name" '[.contracts[] | select(.name == $n)] | length' 2>/dev/null || echo "0")
+    # Gateway returns either a bare array or `{"contracts": [...]}`
+    # depending on version — handle both with `(.contracts // .)`.
+    count=$(echo "$CONTRACTS" | jq --arg n "$name" '[(.contracts // .)[] | select(.name == $n)] | length' 2>/dev/null || echo "0")
     if [[ "$count" -lt "1" ]]; then
         echo "ERROR: contract '$name' not found in gateway"
         echo "Contracts: $CONTRACTS"
