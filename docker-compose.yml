@@ -138,16 +138,23 @@ services:
   # ---------------------------------------------------------------------------
   demo-seeder:
     image: ghcr.io/contractgate/gateway:${TAG:-latest}
+    # Stable name so smoke scripts can `docker inspect` it without going
+    # through `docker compose ps -q`, which has been flaky across compose
+    # versions when the service is in a profile.
+    container_name: cg-demo-seeder
     profiles: [demo]
     # Override Dockerfile ENTRYPOINT (= the gateway binary) so this service
     # actually runs the seeder. Otherwise `command:` becomes args to
     # `contractgate` and the gateway panics on missing DATABASE_URL.
     entrypoint: ["/usr/local/bin/demo-seeder"]
+    # Compose substitutes ${VAR:-default} from the environment that invoked
+    # `docker compose up`, so the smoke scripts can override rate/duration
+    # via env vars (CI uses a 30s run to keep wall-clock short).
     command:
       - --rate
-      - "10"
+      - "${SEEDER_RATE:-10}"
       - --duration
-      - "300s"
+      - "${SEEDER_DURATION:-300s}"
     environment:
       GATEWAY_URL: http://gateway:8080
       CONTRACTGATE_API_KEY: ${CONTRACTGATE_API_KEY:-cg_demo_key}

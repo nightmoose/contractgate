@@ -37,6 +37,16 @@ Compose `command:` becomes its args, not a replacement. Added
 `entrypoint: ["/usr/local/bin/demo-seeder"]` to the service so flags pass
 to the seeder and gateway no longer panics on missing `DATABASE_URL`.
 
+Third follow-up: the wait loop in `compose_demo_smoke.sh` used
+`docker compose --profile demo ps -q demo-seeder` to discover the
+container, which returned empty in some compose versions and made
+`docker inspect` error out. Pinned the seeder to `container_name:
+cg-demo-seeder` and rewrote the loop to inspect the container by name.
+Same change made `--rate` / `--duration` env-driven via Compose's
+`${VAR:-default}` interpolation so the CI overrides
+(`SEEDER_RATE=50 SEEDER_DURATION=30s`) actually reach the seeder
+instead of being silently ignored alongside a hardcoded `300s`.
+
 ---
 
 ## Run 2026-04-28 (Onboarding Stack — RFC-017)

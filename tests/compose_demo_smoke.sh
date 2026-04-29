@@ -61,12 +61,12 @@ echo "=== compose_demo_smoke: waiting for demo-seeder to exit ==="
 duration_secs="${SEEDER_DURATION%s}"
 duration_secs="${duration_secs%m}"  # strip trailing m if present
 seeder_timeout=$(( ${duration_secs:-30} + 60 ))
+SEEDER_CONTAINER="cg-demo-seeder"  # matches container_name in docker-compose.yml
 seeder_exit=1
 for i in $(seq 1 "$seeder_timeout"); do
-    status=$(docker inspect --format='{{.State.Status}}' "$(docker compose -f "$ROOT/docker-compose.yml" --profile demo ps -q demo-seeder 2>/dev/null || echo '')" 2>/dev/null || echo "")
+    status=$(docker inspect --format='{{.State.Status}}' "$SEEDER_CONTAINER" 2>/dev/null || echo "")
     if [[ "$status" == "exited" ]]; then
-        exit_code=$(docker inspect --format='{{.State.ExitCode}}' \
-            "$(docker compose -f "$ROOT/docker-compose.yml" --profile demo ps -q demo-seeder)")
+        exit_code=$(docker inspect --format='{{.State.ExitCode}}' "$SEEDER_CONTAINER" 2>/dev/null || echo "1")
         if [[ "$exit_code" != "0" ]]; then
             echo "ERROR: demo-seeder exited with code $exit_code"
             docker compose -f "$ROOT/docker-compose.yml" --profile demo logs demo-seeder
