@@ -31,6 +31,12 @@ avoid the very common conflict with the local dev gateway (Dockerfile
 default `PORT=3001`) and the dashboard dev server, both of which Alex hit
 when running the smoke scripts locally. RFC-017 snippet updated to match.
 
+Second follow-up: `demo-seeder` service was actually running the gateway
+binary because the Dockerfile sets `ENTRYPOINT ["contractgate"]` and
+Compose `command:` becomes its args, not a replacement. Added
+`entrypoint: ["/usr/local/bin/demo-seeder"]` to the service so flags pass
+to the seeder and gateway no longer panics on missing `DATABASE_URL`.
+
 ---
 
 ## Run 2026-04-28 (Onboarding Stack — RFC-017)
