@@ -139,8 +139,11 @@ services:
   demo-seeder:
     image: ghcr.io/contractgate/gateway:${TAG:-latest}
     profiles: [demo]
+    # Override Dockerfile ENTRYPOINT (= the gateway binary) so this service
+    # actually runs the seeder. Otherwise `command:` becomes args to
+    # `contractgate` and the gateway panics on missing DATABASE_URL.
+    entrypoint: ["/usr/local/bin/demo-seeder"]
     command:
-      - /usr/local/bin/demo-seeder
       - --rate
       - "10"
       - --duration
