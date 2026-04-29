@@ -2,6 +2,32 @@
 
 ---
 
+## Run 2026-04-28 (Compose smoke fixes — post-merge CI failures)
+
+Two of six CI checks failed on `main` after the RFC-017 merge: `compose-smoke`
+(gateway never became healthy; cache-warm hit missing `contract_versions`) and
+`compose-demo-smoke` (denied pulling `ghcr.io/contractgate/dashboard:ci`,
+which CI never builds).
+
+Files changed: 1.
+
+1. **`docker-compose.yml`** —
+   - Added `PORT: "8080"` to `gateway.environment` so the server binds the
+     port Compose maps + healthchecks (Dockerfile default is `3001`).
+   - Mounted `./supabase/migrations` into the postgres
+     `/docker-entrypoint-initdb.d` so the schema is applied on first boot;
+     gateway's `depends_on` now waits for `service_healthy` to avoid the
+     cache-warm vs schema race.
+   - Moved `dashboard` behind `profiles: [ui]`. CI builds only `gateway:ci`,
+     so the default stack no longer attempts to pull a non-existent image.
+     Local UI users opt in via `docker compose --profile ui up`.
+   - Header comment updated to reflect the new profile + dashboard URL.
+
+No code or RFC changes. Both compose smoke scripts unchanged. Awaiting
+re-run of the CI lanes to confirm green.
+
+---
+
 ## Run 2026-04-28 (Onboarding Stack — RFC-017)
 
 Punchlist v2 #4. Branch: `nightly-maintenance-2026-04-28`.
