@@ -23,6 +23,10 @@ TAG="${TAG:-ci}"
 SEEDER_RATE="${SEEDER_RATE:-50}"
 SEEDER_DURATION="${SEEDER_DURATION:-30s}"
 MIN_AUDIT_ROWS="${MIN_AUDIT_ROWS:-500}"
+# Same fixed-UUID demo org used by the seeder + the postgres init seed.
+# Required because /contracts and /audit are org-scoped — without it
+# the post-seed assertions would query a different (empty) scope.
+DEMO_ORG_ID="${DEMO_ORG_ID:-cccccccc-cccc-cccc-cccc-cccccccccccc}"
 
 cleanup() {
     echo "--- teardown ---"
@@ -86,7 +90,7 @@ fi
 echo "  demo-seeder exited cleanly ✓"
 
 echo "=== compose_demo_smoke: checking starter contracts published ==="
-CONTRACTS=$(curl -sf "http://localhost:8080/contracts")
+CONTRACTS=$(curl -sf -H "x-org-id: $DEMO_ORG_ID" "http://localhost:8080/contracts")
 for name in "rest_event" "kafka_event" "dbt_model_row"; do
     count=$(echo "$CONTRACTS" | jq --arg n "$name" '[.contracts[] | select(.name == $n)] | length' 2>/dev/null || echo "0")
     if [[ "$count" -lt "1" ]]; then
@@ -98,16 +102,17 @@ for name in "rest_event" "kafka_event" "dbt_model_row"; do
 done
 
 echo "=== compose_demo_smoke: checking audit_log row count >= $MIN_AUDIT_ROWS ==="
-# Query through the gateway's audit endpoint (limited to 100 rows per page,
-# so we check the total count from the response header or paginate).
-# Simpler: check the total field if the gateway returns it.
-AUDIT=$(curl -sf "http://localhost:8080/audit?limit=1")
-TOTAL=$(echo "$AUDIT" | jq -r '.total // 0')
+# /audit returns a JSON array (no `total` field), so we can't count from it
+# directly.  /stats returns IngestionStats { total_events, ... } scoped to
+# the caller's org — perfect for this assertion.
+STATS=$(curl -sf -H "x-org-id: $DEMO_ORG_ID" "http://localhost:8080/stats")
+TOTAL=$(echo "$STATS" | jq -r '.total_events // 0')
 if [[ "$TOTAL" -lt "$MIN_AUDIT_ROWS" ]]; then
     echo "ERROR: audit_log has $TOTAL rows, expected >= $MIN_AUDIT_ROWS"
     echo "Seeder may not have completed or rate was too low."
+    echo "Stats response: $STATS"
     exit 1
 fi
-echo "  audit_log total=$TOTAL rows ✓"
+echo "  audit_log total_events=$TOTAL ✓"
 
 echo "=== compose_demo_smoke: PASS ==="

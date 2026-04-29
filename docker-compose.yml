@@ -82,11 +82,15 @@ services:
       POSTGRES_DB: contractgate
     volumes:
       - pg_data:/var/lib/postgresql/data
-      # Apply ContractGate migrations on first boot. Postgres entrypoint
-      # runs *.sql files in lexical order — our NNN_ prefix keeps that
-      # equivalent to numeric order. Only runs when pg_data is empty
-      # (fresh volume); re-runs require `docker compose down -v`.
-      - ./supabase/migrations:/docker-entrypoint-initdb.d:ro
+      # First-boot init: a single shell wrapper applies every file in
+      # /migrations/ and then every file in /seed/, in numeric order.
+      # Keeps supabase/migrations/ pure schema (it never sees compose-only
+      # seed data) while still letting us insert a fixed-UUID demo org so
+      # POST /contracts succeeds without a real sign-up flow.
+      # Only runs when pg_data is empty; re-run via `docker compose down -v`.
+      - ./ops/postgres/initdb-wrapper.sh:/docker-entrypoint-initdb.d/00-init.sh:ro
+      - ./supabase/migrations:/migrations:ro
+      - ./ops/postgres/seed:/seed:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U cg -d contractgate"]
       interval: 5s
@@ -158,6 +162,10 @@ services:
     environment:
       GATEWAY_URL: http://gateway:8080
       CONTRACTGATE_API_KEY: ${CONTRACTGATE_API_KEY:-cg_demo_key}
+      # Fixed-UUID demo org seeded by ops/postgres/seed/099_demo_org.sql.
+      # Sent as `x-org-id` so POST /contracts succeeds in dev mode where
+      # `contracts.org_id` is NOT NULL but no API key is configured.
+      CONTRACTGATE_ORG_ID: ${CONTRACTGATE_ORG_ID:-cccccccc-cccc-cccc-cccc-cccccccccccc}
     depends_on:
       gateway:
         condition: service_healthy

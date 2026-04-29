@@ -47,6 +47,41 @@ Same change made `--rate` / `--duration` env-driven via Compose's
 (`SEEDER_RATE=50 SEEDER_DURATION=30s`) actually reach the seeder
 instead of being silently ignored alongside a hardcoded `300s`.
 
+Fourth follow-up (the real one): post-RFC-007 `contracts.org_id` is
+NOT NULL, but neither smoke script nor the demo seeder were sending an
+`x-org-id` header — every POST /contracts hit a 500. Fix:
+- New `ops/postgres/initdb-wrapper.sh` runs `/migrations/*.sql` then
+  `/seed/*.sql` on first boot, keeping `supabase/migrations/` pure
+  schema (it never sees compose-only data) while letting us drop seed
+  files into `ops/postgres/seed/`.
+- `ops/postgres/seed/099_demo_org.sql` inserts a fixed-UUID demo org
+  (`cccccccc-cccc-cccc-cccc-cccccccccccc`) with `ON CONFLICT DO NOTHING`.
+- `docker-compose.yml` now mounts the wrapper, migrations, and seed
+  dirs; gateway's `depends_on` already waits for postgres `service_healthy`.
+- `src/demo_seed/client.rs`: `GatewayClient` gained an `org_id: Option<Uuid>`
+  field that injects `x-org-id` on every request.
+- `src/bin/demo-seeder.rs`: new `--org-id` flag (env `CONTRACTGATE_ORG_ID`).
+  Compose service passes the demo UUID by default.
+- `tests/compose_smoke.sh` + `tests/compose_demo_smoke.sh`: send
+  `x-org-id: $DEMO_ORG_ID` on every gateway call. Audit-count assertion
+  switched from `/audit` (returns a bare array, no `total`) to `/stats`
+  (`total_events`), which has actually existed all along.
+
+Touched files in this run, full list:
+- `docker-compose.yml`
+- `ops/postgres/initdb-wrapper.sh` (new)
+- `ops/postgres/seed/099_demo_org.sql` (new)
+- `src/demo_seed/client.rs`
+- `src/bin/demo-seeder.rs`
+- `tests/compose_smoke.sh`
+- `tests/compose_demo_smoke.sh`
+- `docs/rfcs/017-onboarding-stack.md` (Grafana port note only)
+- `MAINTENANCE_LOG.md`
+
+⚠️ `cargo check && cargo test` required before pushing — the
+`GatewayClient::new` signature changed (added `org_id` arg) and
+demo-seeder's `Cli` gained a flag. Run locally before re-triggering CI.
+
 ---
 
 ## Run 2026-04-28 (Onboarding Stack — RFC-017)
