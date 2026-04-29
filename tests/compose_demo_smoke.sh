@@ -90,17 +90,39 @@ fi
 echo "  demo-seeder exited cleanly ✓"
 
 echo "=== compose_demo_smoke: checking starter contracts published ==="
-CONTRACTS=$(curl -sf -H "x-org-id: $DEMO_ORG_ID" "http://localhost:8080/contracts")
+
+# Small buffer after seeder exits (helps with any internal indexing delay)
+sleep 3
+
 for name in "rest_event" "kafka_event" "dbt_model_row"; do
-    # Gateway returns either a bare array or `{"contracts": [...]}`
-    # depending on version — handle both with `(.contracts // .)`.
-    count=$(echo "$CONTRACTS" | jq --arg n "$name" '[(.contracts // .)[] | select(.name == $n)] | length' 2>/dev/null || echo "0")
-    if [[ "$count" -lt "1" ]]; then
-        echo "ERROR: contract '$name' not found in gateway"
-        echo "Contracts: $CONTRACTS"
+    success=0
+    for attempt in {1..10}; do
+        CONTRACTS=$(curl -sf -H "x-org-id: $DEMO_ORG_ID" "http://localhost:8080/contracts" || echo '{"error":"curl failed"}')
+        
+        # Debug what we actually received
+        echo "  Attempt $attempt for '$name' — contracts JSON length: $(echo "$CONTRACTS" | jq 'length' 2>/dev/null || echo '??')"
+        
+        count=$(echo "$CONTRACTS" | jq --arg n "$name" '[(.contracts // .)[] | select(.name == $n)] | length' 2>/dev/null || echo "0")
+        
+        if [[ "$count" -ge 1 ]]; then
+            echo "  contract '$name' present ✓"
+            success=1
+            break
+        fi
+        
+        echo "  ... not visible yet (attempt $attempt/10), retrying in 2s..."
+        sleep 2
+    done
+    
+    if [[ $success -eq 0 ]]; then
+        echo "ERROR: contract '$name' not found in gateway after 10 attempts"
+        echo "Final Contracts: $CONTRACTS"
+        echo "--- gateway logs (last 100 lines) ---"
+        docker compose -f "$ROOT/docker-compose.yml" --profile demo logs gateway --tail=100 || true
+        echo "--- demo-seeder logs (last 50 lines) ---"
+        docker compose -f "$ROOT/docker-compose.yml" --profile demo logs demo-seeder --tail=50 || true
         exit 1
     fi
-    echo "  contract '$name' present ✓"
 done
 
 echo "=== compose_demo_smoke: checking audit_log row count >= $MIN_AUDIT_ROWS ==="
