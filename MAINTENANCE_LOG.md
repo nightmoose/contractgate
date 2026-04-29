@@ -26,6 +26,11 @@ Files changed: 1.
 No code or RFC changes. Both compose smoke scripts unchanged. Awaiting
 re-run of the CI lanes to confirm green.
 
+Follow-up edit (same run): Grafana host port remapped from 3001 → 3002 to
+avoid the very common conflict with the local dev gateway (Dockerfile
+default `PORT=3001`) and the dashboard dev server, both of which Alex hit
+when running the smoke scripts locally. RFC-017 snippet updated to match.
+
 ---
 
 ## Run 2026-04-28 (Onboarding Stack — RFC-017)

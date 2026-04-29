@@ -106,7 +106,9 @@ services:
 
   grafana:
     image: grafana/grafana:latest
-    ports: ["3001:3000"]
+    # Host port 3002 to avoid conflict with local dev gateway (default 3001)
+    # and the dashboard dev server.
+    ports: ["3002:3000"]
     volumes:
       - ./ops/grafana:/etc/grafana/provisioning/dashboards
 

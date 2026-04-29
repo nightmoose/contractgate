@@ -15,7 +15,7 @@
 #   make stack-up                            # alias for docker compose up
 #   make stack-up-demo                       # alias for docker compose --profile demo up
 #
-# Grafana:    http://localhost:3001  (admin / admin)
+# Grafana:    http://localhost:3002  (admin / admin)
 # Dashboard:  http://localhost:3000  (only with --profile ui)
 # Gateway:    http://localhost:8080
 #
@@ -117,7 +117,10 @@ services:
   grafana:
     image: grafana/grafana:latest
     ports:
-      - "3001:3000"
+      # Host port 3002 → container 3000. Avoids the common conflict with
+      # local dev gateways (Dockerfile default PORT=3001) and dashboard
+      # dev servers that grab 3001. Update README/RFC if you change this.
+      - "3002:3000"
     volumes:
       - ./ops/grafana/provisioning/dashboards:/etc/grafana/provisioning/dashboards:ro
       - ./ops/grafana/contractgate.json:/var/lib/grafana/dashboards/contractgate.json:ro
