@@ -102,6 +102,13 @@ struct Cli {
     #[arg(long, env = "CONTRACTGATE_API_KEY", default_value = "")]
     api_key: String,
 
+    /// Org id sent as `x-org-id` header.  Required in dev mode (no API
+    /// key) because `contracts.org_id` is NOT NULL post-RFC-007 — without
+    /// it, POST /contracts returns 500.  When using a DB-backed API key
+    /// the gateway derives org_id server-side and this is ignored.
+    #[arg(long, env = "CONTRACTGATE_ORG_ID", default_value = "")]
+    org_id: String,
+
     /// Events per second.
     #[arg(long, default_value_t = 10)]
     rate: u64,
@@ -147,7 +154,17 @@ fn main() -> Result<()> {
     } else {
         Some(cli.api_key.clone())
     };
-    let client = GatewayClient::new(cli.gateway_url.clone(), api_key);
+
+    let org_id = if cli.org_id.is_empty() {
+        None
+    } else {
+        Some(
+            Uuid::parse_str(&cli.org_id)
+                .with_context(|| format!("invalid --org-id '{}'", cli.org_id))?,
+        )
+    };
+
+    let client = GatewayClient::new(cli.gateway_url.clone(), api_key, org_id);
 
     // --- Wait for gateway to be ready (retries for up to 60s) ----------------
     wait_for_health(&client, &cli.gateway_url)?;

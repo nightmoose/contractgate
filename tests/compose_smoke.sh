@@ -13,6 +13,10 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 TAG="${TAG:-ci}"
+# Fixed-UUID demo org seeded by ops/postgres/seed/099_demo_org.sql.  Sent
+# as `x-org-id` because `contracts.org_id` is NOT NULL post-RFC-007 and
+# the smoke stack runs in dev mode (no API key).
+DEMO_ORG_ID="${DEMO_ORG_ID:-cccccccc-cccc-cccc-cccc-cccccccccccc}"
 
 cleanup() {
     echo "--- teardown ---"
@@ -44,6 +48,7 @@ echo "  gateway healthy ✓"
 echo "=== compose_smoke: posting starter contract ==="
 CREATE_RESP=$(curl -sf -X POST "http://localhost:8080/contracts" \
     -H "Content-Type: application/json" \
+    -H "x-org-id: $DEMO_ORG_ID" \
     -d '{
         "name": "smoke_test_contract",
         "yaml_content": "version: \"1.0\"\nname: smoke_test\ndescription: \"CI smoke test\"\nontology:\n  entities:\n    - name: id\n      type: string\n      required: true\n    - name: ts\n      type: integer\n      required: true\n"
@@ -52,12 +57,14 @@ CONTRACT_ID=$(echo "$CREATE_RESP" | jq -r '.id')
 echo "  created contract id=$CONTRACT_ID ✓"
 
 echo "=== compose_smoke: promoting contract to stable ==="
-curl -sf -X POST "http://localhost:8080/contracts/$CONTRACT_ID/versions/1.0.0/promote" > /dev/null
+curl -sf -X POST "http://localhost:8080/contracts/$CONTRACT_ID/versions/1.0.0/promote" \
+    -H "x-org-id: $DEMO_ORG_ID" > /dev/null
 echo "  promoted ✓"
 
 echo "=== compose_smoke: posting valid event — expecting pass ==="
 INGEST_RESP=$(curl -sf -X POST "http://localhost:8080/ingest/$CONTRACT_ID" \
     -H "Content-Type: application/json" \
+    -H "x-org-id: $DEMO_ORG_ID" \
     -d '{"id": "abc123", "ts": 1700000000}')
 PASSED=$(echo "$INGEST_RESP" | jq -r '.passed')
 if [[ "$PASSED" != "1" ]]; then
@@ -69,6 +76,7 @@ echo "  event passed ✓"
 echo "=== compose_smoke: posting invalid event — expecting fail ==="
 FAIL_RESP=$(curl -s -X POST "http://localhost:8080/ingest/$CONTRACT_ID" \
     -H "Content-Type: application/json" \
+    -H "x-org-id: $DEMO_ORG_ID" \
     -d '{"ts": 1700000000}')
 FAILED=$(echo "$FAIL_RESP" | jq -r '.failed')
 if [[ "$FAILED" != "1" ]]; then

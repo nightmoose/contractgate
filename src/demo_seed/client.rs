@@ -38,11 +38,18 @@ struct BatchIngestResponse {
 pub struct GatewayClient {
     pub base_url: String,
     pub api_key: Option<String>,
+    /// Optional org scoping for dev-mode (no API_KEY) deployments.  When
+    /// set, the seeder sends `x-org-id: <uuid>` on every request so that
+    /// gateway writes hit a real `orgs` row (post-RFC-007 the
+    /// `contracts.org_id` column is `NOT NULL`).  Production seeders
+    /// would use a DB-issued API key instead, in which case the gateway
+    /// derives `org_id` server-side and this header is ignored.
+    pub org_id: Option<Uuid>,
     client: Client,
 }
 
 impl GatewayClient {
-    pub fn new(base_url: String, api_key: Option<String>) -> Self {
+    pub fn new(base_url: String, api_key: Option<String>, org_id: Option<Uuid>) -> Self {
         let client = Client::builder()
             .timeout(std::time::Duration::from_secs(10))
             .build()
@@ -50,27 +57,32 @@ impl GatewayClient {
         GatewayClient {
             base_url,
             api_key,
+            org_id,
             client,
         }
     }
 
     fn get(&self, path: &str) -> reqwest::blocking::RequestBuilder {
         let req = self.client.get(format!("{}{}", self.base_url, path));
-        self.with_auth(req)
+        self.with_headers(req)
     }
 
     fn post(&self, path: &str) -> reqwest::blocking::RequestBuilder {
         let req = self.client.post(format!("{}{}", self.base_url, path));
-        self.with_auth(req)
+        self.with_headers(req)
     }
 
-    fn with_auth(
+    fn with_headers(
         &self,
         req: reqwest::blocking::RequestBuilder,
     ) -> reqwest::blocking::RequestBuilder {
-        match &self.api_key {
+        let req = match &self.api_key {
             Some(k) if !k.is_empty() => req.header("x-api-key", k),
             _ => req,
+        };
+        match &self.org_id {
+            Some(id) => req.header("x-org-id", id.to_string()),
+            None => req,
         }
     }
 

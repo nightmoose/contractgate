@@ -23,6 +23,10 @@ TAG="${TAG:-ci}"
 SEEDER_RATE="${SEEDER_RATE:-50}"
 SEEDER_DURATION="${SEEDER_DURATION:-30s}"
 MIN_AUDIT_ROWS="${MIN_AUDIT_ROWS:-500}"
+# Same fixed-UUID demo org used by the seeder + the postgres init seed.
+# Required because /contracts and /audit are org-scoped — without it
+# the post-seed assertions would query a different (empty) scope.
+DEMO_ORG_ID="${DEMO_ORG_ID:-cccccccc-cccc-cccc-cccc-cccccccccccc}"
 
 cleanup() {
     echo "--- teardown ---"
@@ -61,12 +65,12 @@ echo "=== compose_demo_smoke: waiting for demo-seeder to exit ==="
 duration_secs="${SEEDER_DURATION%s}"
 duration_secs="${duration_secs%m}"  # strip trailing m if present
 seeder_timeout=$(( ${duration_secs:-30} + 60 ))
+SEEDER_CONTAINER="cg-demo-seeder"  # matches container_name in docker-compose.yml
 seeder_exit=1
 for i in $(seq 1 "$seeder_timeout"); do
-    status=$(docker inspect --format='{{.State.Status}}' "$(docker compose -f "$ROOT/docker-compose.yml" --profile demo ps -q demo-seeder 2>/dev/null || echo '')" 2>/dev/null || echo "")
+    status=$(docker inspect --format='{{.State.Status}}' "$SEEDER_CONTAINER" 2>/dev/null || echo "")
     if [[ "$status" == "exited" ]]; then
-        exit_code=$(docker inspect --format='{{.State.ExitCode}}' \
-            "$(docker compose -f "$ROOT/docker-compose.yml" --profile demo ps -q demo-seeder)")
+        exit_code=$(docker inspect --format='{{.State.ExitCode}}' "$SEEDER_CONTAINER" 2>/dev/null || echo "1")
         if [[ "$exit_code" != "0" ]]; then
             echo "ERROR: demo-seeder exited with code $exit_code"
             docker compose -f "$ROOT/docker-compose.yml" --profile demo logs demo-seeder
@@ -86,28 +90,53 @@ fi
 echo "  demo-seeder exited cleanly ✓"
 
 echo "=== compose_demo_smoke: checking starter contracts published ==="
-CONTRACTS=$(curl -sf "http://localhost:8080/contracts")
+
+# Small buffer after seeder exits (helps with any internal indexing delay)
+sleep 3
+
 for name in "rest_event" "kafka_event" "dbt_model_row"; do
-    count=$(echo "$CONTRACTS" | jq --arg n "$name" '[.contracts[] | select(.name == $n)] | length' 2>/dev/null || echo "0")
-    if [[ "$count" -lt "1" ]]; then
-        echo "ERROR: contract '$name' not found in gateway"
-        echo "Contracts: $CONTRACTS"
+    success=0
+    for attempt in {1..10}; do
+        CONTRACTS=$(curl -sf -H "x-org-id: $DEMO_ORG_ID" "http://localhost:8080/contracts" || echo '{"error":"curl failed"}')
+        
+        # Debug what we actually received
+        echo "  Attempt $attempt for '$name' — contracts JSON length: $(echo "$CONTRACTS" | jq 'length' 2>/dev/null || echo '??')"
+        
+        count=$(echo "$CONTRACTS" | jq --arg n "$name" '[(.contracts // .)[] | select(.name == $n)] | length' 2>/dev/null || echo "0")
+        
+        if [[ "$count" -ge 1 ]]; then
+            echo "  contract '$name' present ✓"
+            success=1
+            break
+        fi
+        
+        echo "  ... not visible yet (attempt $attempt/10), retrying in 2s..."
+        sleep 2
+    done
+    
+    if [[ $success -eq 0 ]]; then
+        echo "ERROR: contract '$name' not found in gateway after 10 attempts"
+        echo "Final Contracts: $CONTRACTS"
+        echo "--- gateway logs (last 100 lines) ---"
+        docker compose -f "$ROOT/docker-compose.yml" --profile demo logs gateway --tail=100 || true
+        echo "--- demo-seeder logs (last 50 lines) ---"
+        docker compose -f "$ROOT/docker-compose.yml" --profile demo logs demo-seeder --tail=50 || true
         exit 1
     fi
-    echo "  contract '$name' present ✓"
 done
 
 echo "=== compose_demo_smoke: checking audit_log row count >= $MIN_AUDIT_ROWS ==="
-# Query through the gateway's audit endpoint (limited to 100 rows per page,
-# so we check the total count from the response header or paginate).
-# Simpler: check the total field if the gateway returns it.
-AUDIT=$(curl -sf "http://localhost:8080/audit?limit=1")
-TOTAL=$(echo "$AUDIT" | jq -r '.total // 0')
+# /audit returns a JSON array (no `total` field), so we can't count from it
+# directly.  /stats returns IngestionStats { total_events, ... } scoped to
+# the caller's org — perfect for this assertion.
+STATS=$(curl -sf -H "x-org-id: $DEMO_ORG_ID" "http://localhost:8080/stats")
+TOTAL=$(echo "$STATS" | jq -r '.total_events // 0')
 if [[ "$TOTAL" -lt "$MIN_AUDIT_ROWS" ]]; then
     echo "ERROR: audit_log has $TOTAL rows, expected >= $MIN_AUDIT_ROWS"
     echo "Seeder may not have completed or rate was too low."
+    echo "Stats response: $STATS"
     exit 1
 fi
-echo "  audit_log total=$TOTAL rows ✓"
+echo "  audit_log total_events=$TOTAL ✓"
 
 echo "=== compose_demo_smoke: PASS ==="
