@@ -713,6 +713,8 @@ mod versioning {
             promoted_at: promoted,
             deprecated_at: None,
             compliance_mode: false,
+            import_source: crate::contract::ImportSource::Native,
+            requires_review: false,
         };
         let resp = VersionResponse::from(&v);
         assert_eq!(resp.id, vid);
@@ -724,5 +726,352 @@ mod versioning {
         assert_eq!(resp.promoted_at, promoted);
         assert_eq!(resp.deprecated_at, None);
         assert!(!resp.compliance_mode);
+        assert_eq!(resp.import_source, crate::contract::ImportSource::Native);
+        assert!(!resp.requires_review);
+    }
+}
+
+// ---------------------------------------------------------------------------
+// ODCS import / export tests
+// ---------------------------------------------------------------------------
+
+#[cfg(test)]
+mod odcs_tests {
+    use super::fixtures::{contract_with, entity_with};
+    use crate::contract::{
+        ContractIdentity, ContractVersion, FieldType, GlossaryEntry, ImportSource, MetricDefinition,
+        MultiStableResolution, VersionState,
+    };
+    use crate::odcs;
+    use chrono::Utc;
+    use serde_json::json;
+    use uuid::Uuid;
+
+    fn make_identity(name: &str) -> ContractIdentity {
+        ContractIdentity {
+            id: Uuid::new_v4(),
+            name: name.to_string(),
+            description: Some("test contract".to_string()),
+            multi_stable_resolution: MultiStableResolution::Strict,
+            created_at: Utc::now(),
+            updated_at: Utc::now(),
+            pii_salt: vec![0u8; 32],
+        }
+    }
+
+    fn make_version(contract_id: Uuid, ver: &str, yaml: &str) -> ContractVersion {
+        ContractVersion {
+            id: Uuid::new_v4(),
+            contract_id,
+            version: ver.to_string(),
+            state: VersionState::Stable,
+            yaml_content: yaml.to_string(),
+            created_at: Utc::now(),
+            promoted_at: Some(Utc::now()),
+            deprecated_at: None,
+            compliance_mode: false,
+            import_source: ImportSource::Native,
+            requires_review: false,
+        }
+    }
+
+    /// A stable CG contract with multiple field types and glossary / metrics.
+    fn user_events_contract() -> crate::contract::Contract {
+        contract_with(
+            "user_events",
+            Some("User interaction events"),
+            vec![
+                entity_with("user_id", FieldType::String, |f| {
+                    f.required = true;
+                    f.pattern = Some(r"^[a-zA-Z0-9_-]+$".into());
+                }),
+                entity_with("event_type", FieldType::String, |f| {
+                    f.required = true;
+                    f.allowed_values =
+                        Some(vec![json!("click"), json!("view"), json!("purchase")]);
+                }),
+                entity_with("timestamp", FieldType::Integer, |f| {
+                    f.required = true;
+                }),
+                entity_with("amount", FieldType::Float, |f| {
+                    f.min = Some(0.0);
+                }),
+            ],
+            vec![GlossaryEntry {
+                field: "amount".into(),
+                description: "Monetary amount in USD".into(),
+                constraints: Some("must be non-negative".into()),
+                synonyms: None,
+            }],
+            vec![MetricDefinition {
+                name: "total_revenue".into(),
+                field: None,
+                metric_type: None,
+                formula: Some("sum(amount) where event_type = 'purchase'".into()),
+                min: None,
+                max: None,
+            }],
+        )
+    }
+
+    // ---- export -------------------------------------------------------------
+
+    #[test]
+    fn export_produces_valid_odcs_mandatory_fields() {
+        let contract = user_events_contract();
+        let identity = make_identity("user_events");
+        let yaml_content = serde_yaml::to_string(&contract).unwrap();
+        let cv = make_version(identity.id, "1.0.0", &yaml_content);
+
+        let odcs_yaml = odcs::export_odcs(odcs::OdcsExportInput {
+            identity: &identity,
+            version: &cv,
+            contract: &contract,
+        })
+        .expect("export must succeed");
+
+        let doc: serde_yaml::Value = serde_yaml::from_str(&odcs_yaml).expect("valid YAML");
+        let m = doc.as_mapping().unwrap();
+
+        assert_eq!(m.get("apiVersion").and_then(|v| v.as_str()), Some("v3.1.0"));
+        assert_eq!(m.get("kind").and_then(|v| v.as_str()), Some("DataContract"));
+        assert!(m.contains_key("id"), "must have id");
+        assert_eq!(m.get("version").and_then(|v| v.as_str()), Some("1.0.0"));
+        assert_eq!(m.get("status").and_then(|v| v.as_str()), Some("active"));
+    }
+
+    #[test]
+    fn export_writes_cg_extensions() {
+        let contract = user_events_contract();
+        let identity = make_identity("user_events");
+        let yaml_content = serde_yaml::to_string(&contract).unwrap();
+        let cv = make_version(identity.id, "1.0.0", &yaml_content);
+
+        let odcs_yaml = odcs::export_odcs(odcs::OdcsExportInput {
+            identity: &identity,
+            version: &cv,
+            contract: &contract,
+        })
+        .unwrap();
+
+        let doc: serde_yaml::Value = serde_yaml::from_str(&odcs_yaml).unwrap();
+        let m = doc.as_mapping().unwrap();
+
+        assert!(
+            m.contains_key("x-contractgate-version"),
+            "must write x-contractgate-version (D-003)"
+        );
+        assert!(
+            m.contains_key("x-contractgate-ontology"),
+            "must write x-contractgate-ontology (D-003)"
+        );
+        assert!(
+            m.contains_key("x-contractgate-glossary"),
+            "must write x-contractgate-glossary when non-empty"
+        );
+        assert!(
+            m.contains_key("x-contractgate-metrics"),
+            "must write x-contractgate-metrics when non-empty"
+        );
+    }
+
+    #[test]
+    fn export_never_includes_pii_salt() {
+        let contract = user_events_contract();
+        let mut identity = make_identity("user_events");
+        identity.pii_salt = vec![0xDE, 0xAD, 0xBE, 0xEF]; // sentinel
+        let yaml_content = serde_yaml::to_string(&contract).unwrap();
+        let cv = make_version(identity.id, "1.0.0", &yaml_content);
+
+        let odcs_yaml = odcs::export_odcs(odcs::OdcsExportInput {
+            identity: &identity,
+            version: &cv,
+            contract: &contract,
+        })
+        .unwrap();
+
+        // The sentinel bytes must not appear in any form.
+        assert!(
+            !odcs_yaml.contains("deadbeef"),
+            "pii_salt sentinel leaked into ODCS export"
+        );
+        assert!(
+            !odcs_yaml.contains("pii_salt"),
+            "pii_salt field name leaked into ODCS export"
+        );
+    }
+
+    #[test]
+    fn export_d004_name_in_data_product_and_schema() {
+        let contract = user_events_contract();
+        let identity = make_identity("user_events");
+        let yaml_content = serde_yaml::to_string(&contract).unwrap();
+        let cv = make_version(identity.id, "1.0.0", &yaml_content);
+
+        let odcs_yaml = odcs::export_odcs(odcs::OdcsExportInput {
+            identity: &identity,
+            version: &cv,
+            contract: &contract,
+        })
+        .unwrap();
+
+        let doc: serde_yaml::Value = serde_yaml::from_str(&odcs_yaml).unwrap();
+        let m = doc.as_mapping().unwrap();
+
+        // D-004: name must appear in dataProduct
+        assert_eq!(
+            m.get("dataProduct").and_then(|v| v.as_str()),
+            Some("user_events")
+        );
+
+        // D-004: name must also appear in schema[0].name
+        let schema0 = m
+            .get("schema")
+            .and_then(|v| v.as_sequence())
+            .and_then(|s| s.first())
+            .and_then(|v| v.as_mapping())
+            .unwrap();
+        assert_eq!(
+            schema0.get("name").and_then(|v| v.as_str()),
+            Some("user_events")
+        );
+    }
+
+    // ---- import Mode A (lossless) -------------------------------------------
+
+    #[test]
+    fn import_mode_a_is_lossless_roundtrip() {
+        let original = user_events_contract();
+        let identity = make_identity("user_events");
+        let yaml_content = serde_yaml::to_string(&original).unwrap();
+        let cv = make_version(identity.id, "1.0.0", &yaml_content);
+
+        // Export → ODCS
+        let odcs_yaml = odcs::export_odcs(odcs::OdcsExportInput {
+            identity: &identity,
+            version: &cv,
+            contract: &original,
+        })
+        .unwrap();
+
+        // Import the ODCS back
+        let result = odcs::import_odcs(&odcs_yaml).expect("import must succeed");
+
+        assert_eq!(result.import_source, ImportSource::Odcs);
+        assert_eq!(result.version, "1.0.0");
+
+        // Recovered contract must be functionally identical to the original.
+        let recovered: crate::contract::Contract =
+            serde_yaml::from_str(&result.yaml_content).expect("yaml must be valid");
+
+        assert_eq!(recovered.name, original.name);
+        assert_eq!(recovered.ontology.entities.len(), original.ontology.entities.len());
+        assert_eq!(recovered.glossary.len(), original.glossary.len());
+        assert_eq!(recovered.metrics.len(), original.metrics.len());
+
+        // Spot-check field constraints are preserved
+        let uid = recovered
+            .ontology
+            .entities
+            .iter()
+            .find(|f| f.name == "user_id")
+            .expect("user_id must survive round-trip");
+        assert!(uid.required);
+        assert!(uid.pattern.is_some());
+    }
+
+    // ---- import Mode B (stripped) -------------------------------------------
+
+    #[test]
+    fn import_mode_b_stripped_sets_requires_review() {
+        // Minimal foreign ODCS document — no x-contractgate-* extensions.
+        let odcs_yaml = r#"
+apiVersion: v3.1.0
+kind: DataContract
+id: "some-foreign-id"
+version: "2.0.0"
+status: active
+dataProduct: external_events
+schema:
+  - name: external_events
+    properties:
+      - name: event_id
+        logicalType: string
+        required: true
+      - name: ts
+        logicalType: integer
+        required: true
+"#;
+
+        let result = odcs::import_odcs(odcs_yaml).expect("stripped import must succeed");
+
+        assert_eq!(result.import_source, ImportSource::OdcsStripped);
+        assert_eq!(result.version, "2.0.0");
+
+        // Recovered contract must parse
+        let contract: crate::contract::Contract =
+            serde_yaml::from_str(&result.yaml_content).expect("yaml must be valid");
+
+        assert_eq!(contract.ontology.entities.len(), 2);
+        let event_id = contract
+            .ontology
+            .entities
+            .iter()
+            .find(|f| f.name == "event_id")
+            .expect("event_id must be present");
+        assert_eq!(event_id.field_type, FieldType::String);
+        assert!(event_id.required);
+    }
+
+    #[test]
+    fn import_mode_b_recovers_x_cg_constraints() {
+        // Foreign ODCS document with our customProperties written by a prior export.
+        let odcs_yaml = r#"
+apiVersion: v3.1.0
+kind: DataContract
+id: "test"
+version: "1.0.0"
+status: active
+dataProduct: test_contract
+schema:
+  - name: test_contract
+    properties:
+      - name: amount
+        logicalType: double
+        required: false
+        customProperties:
+          - property: x-cg-min
+            value: 0.0
+          - property: x-cg-max
+            value: 9999.99
+"#;
+
+        let result = odcs::import_odcs(odcs_yaml).unwrap();
+        let contract: crate::contract::Contract =
+            serde_yaml::from_str(&result.yaml_content).unwrap();
+
+        let amount = contract
+            .ontology
+            .entities
+            .iter()
+            .find(|f| f.name == "amount")
+            .unwrap();
+        assert_eq!(amount.min, Some(0.0));
+        assert_eq!(amount.max, Some(9999.99));
+    }
+
+    #[test]
+    fn import_rejects_missing_version() {
+        let bad_yaml = r#"
+apiVersion: v3.1.0
+kind: DataContract
+id: "no-version"
+status: active
+schema:
+  - name: empty
+    properties: []
+"#;
+        let result = odcs::import_odcs(bad_yaml);
+        assert!(result.is_err(), "import must fail when version is absent");
     }
 }

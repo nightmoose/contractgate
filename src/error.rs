@@ -77,6 +77,23 @@ pub enum AppError {
     },
 
     // -----------------------------------------------------------------------
+    // ODCS import
+    // -----------------------------------------------------------------------
+    /// Attempt to promote a version that was imported from a stripped ODCS
+    /// document (no `x-contractgate-*` extensions).  PII transforms or
+    /// validation constraints may be missing.  Clear the flag via
+    /// `POST /contracts/{id}/versions/{version}/approve-import`.  409.
+    #[error(
+        "Version {version} was imported from ODCS without ContractGate extensions and requires \
+         review before promotion. Use \
+         POST /contracts/{contract_id}/versions/{version}/approve-import to clear this flag."
+    )]
+    OdcsReviewRequired {
+        contract_id: uuid::Uuid,
+        version: String,
+    },
+
+    // -----------------------------------------------------------------------
     // Generic
     // -----------------------------------------------------------------------
     #[error("Database error: {0}")]
@@ -120,6 +137,7 @@ impl IntoResponse for AppError {
             AppError::DeprecatedVersionPinned { .. } => {
                 (StatusCode::UNPROCESSABLE_ENTITY, self.to_string())
             }
+            AppError::OdcsReviewRequired { .. } => (StatusCode::CONFLICT, self.to_string()),
 
             AppError::Database(e) => {
                 tracing::error!("Database error: {:?}", e);

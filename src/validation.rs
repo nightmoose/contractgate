@@ -54,7 +54,7 @@
 //!   - `validate()` is total: any input shape produces a `ValidationResult`,
 //!     never a panic or `Result::Err`.
 
-use crate::contract::{Contract, FieldDefinition, FieldType, MetricDefinition};
+use crate::contract::{Contract, FieldDefinition, FieldType, MetricDefinition, QualityRule, QualityRuleType};
 use regex::Regex;
 use serde_json::Value;
 use std::collections::{HashMap, HashSet};
@@ -100,6 +100,15 @@ pub enum ViolationKind {
     /// field name that is not declared in the contract's ontology.  Only
     /// raised when the resolved version has `compliance_mode = true`.
     UndeclaredField,
+    /// Quality rule: field is null, missing when expected, or (for strings)
+    /// an empty string.  Emitted by `rule_type: completeness` checks.
+    CompletenessViolation,
+    /// Quality rule: field value is older than `max_age_seconds` relative to
+    /// the ingest wall-clock time.  Emitted by `rule_type: freshness` checks.
+    FreshnessViolation,
+    /// Quality rule: field value appears more than once in the same ingest
+    /// batch.  Emitted by `rule_type: uniqueness` checks.
+    UniquenessViolation,
 }
 
 // ---------------------------------------------------------------------------
@@ -266,7 +275,28 @@ pub fn validate(compiled: &CompiledContract, event: &Value) -> ValidationResult 
         validate_metric(metric, event, &mut violations);
     }
 
-    // 3. RFC-004: compliance-mode undeclared-field check.  Runs last so
+    // 3. Per-event quality rules (completeness, validity, freshness).
+    //    Uniqueness is batch-level and handled separately in ingest.rs.
+    for rule in &compiled.contract.quality {
+        match rule.rule_type {
+            QualityRuleType::Completeness => {
+                check_completeness(rule, event, &mut violations);
+            }
+            QualityRuleType::Validity => {
+                // Validity is already covered by the ontology field checks above.
+                // No extra violation is emitted — this rule type is purely
+                // declarative / scoring.
+            }
+            QualityRuleType::Freshness => {
+                check_freshness(rule, event, &mut violations);
+            }
+            QualityRuleType::Uniqueness => {
+                // Batch-level — skip in per-event path.
+            }
+        }
+    }
+
+    // 4. RFC-004: compliance-mode undeclared-field check.  Runs last so
     //    undeclared-field violations appear after the standard
     //    missing/mismatched-field violations in the response — which
     //    matches how operators typically triage ("fix my ontology
@@ -574,6 +604,155 @@ fn json_type_name(value: &Value) -> &'static str {
         Value::Array(_) => "array",
         Value::Object(_) => "object",
     }
+}
+
+// ---------------------------------------------------------------------------
+// Quality rule helpers (per-event)
+// ---------------------------------------------------------------------------
+
+/// Walk a dot-notation path and return the value at that path, or None.
+fn get_nested_value<'a>(event: &'a Value, path: &str) -> Option<&'a Value> {
+    let mut cur = event;
+    for segment in path.split('.') {
+        cur = cur.as_object()?.get(segment)?;
+    }
+    Some(cur)
+}
+
+/// `rule_type: completeness` — field must be present, non-null, non-empty string.
+fn check_completeness(rule: &QualityRule, event: &Value, violations: &mut Vec<Violation>) {
+    match get_nested_value(event, &rule.field) {
+        None | Some(Value::Null) => {
+            violations.push(Violation {
+                field: rule.field.clone(),
+                message: format!(
+                    "Quality completeness: field '{}' is absent or null",
+                    rule.field
+                ),
+                kind: ViolationKind::CompletenessViolation,
+            });
+        }
+        Some(Value::String(s)) if s.is_empty() => {
+            violations.push(Violation {
+                field: rule.field.clone(),
+                message: format!(
+                    "Quality completeness: field '{}' is an empty string",
+                    rule.field
+                ),
+                kind: ViolationKind::CompletenessViolation,
+            });
+        }
+        _ => {} // present and non-empty — passes
+    }
+}
+
+/// `rule_type: freshness` — field must be a Unix epoch within `max_age_seconds`.
+///
+/// Detection heuristic: if the value is > 1_700_000_000_000 it is treated as
+/// milliseconds and divided by 1000 first.  This covers both second-precision
+/// and millisecond-precision timestamps without requiring a schema annotation.
+fn check_freshness(rule: &QualityRule, event: &Value, violations: &mut Vec<Violation>) {
+    let Some(max_age) = rule.max_age_seconds else {
+        // No max_age_seconds configured — nothing to check.
+        return;
+    };
+    let Some(val) = get_nested_value(event, &rule.field) else {
+        // Field absent — completeness rule handles this; skip here.
+        return;
+    };
+
+    let ts_secs: Option<i64> = match val {
+        Value::Number(n) => n.as_i64().map(|v| {
+            // Heuristic: ms epoch if value is larger than ~year 2023 in seconds
+            if v > 1_700_000_000_000 { v / 1000 } else { v }
+        }),
+        _ => None,
+    };
+
+    let Some(ts) = ts_secs else {
+        violations.push(Violation {
+            field: rule.field.clone(),
+            message: format!(
+                "Quality freshness: field '{}' is not a numeric Unix timestamp",
+                rule.field
+            ),
+            kind: ViolationKind::FreshnessViolation,
+        });
+        return;
+    };
+
+    let now_secs = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs() as i64;
+
+    let age_secs = now_secs - ts;
+    if age_secs < 0 || age_secs > max_age as i64 {
+        violations.push(Violation {
+            field: rule.field.clone(),
+            message: format!(
+                "Quality freshness: field '{}' timestamp is {}s old (max {}s)",
+                rule.field, age_secs, max_age
+            ),
+            kind: ViolationKind::FreshnessViolation,
+        });
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Quality rule helpers (batch-level)
+// ---------------------------------------------------------------------------
+
+/// `rule_type: uniqueness` — detect duplicate values for a field across
+/// a batch of events.  Returns a `Vec<(event_index, Violation)>` so the
+/// caller can annotate individual event results.
+///
+/// Only the *second and subsequent* occurrences of a value are flagged;
+/// the first occurrence is always clean.
+pub fn check_uniqueness_batch(
+    rules: &[QualityRule],
+    events: &[Value],
+) -> Vec<(usize, Violation)> {
+    let mut out = Vec::new();
+
+    let unique_rules: Vec<&QualityRule> = rules
+        .iter()
+        .filter(|r| r.rule_type == QualityRuleType::Uniqueness)
+        .collect();
+
+    if unique_rules.is_empty() {
+        return out;
+    }
+
+    for rule in unique_rules {
+        let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
+        for (idx, event) in events.iter().enumerate() {
+            let Some(val) = get_nested_value(event, &rule.field) else {
+                continue; // absent — completeness rule covers this
+            };
+            if val.is_null() {
+                continue; // null values are not deduplicated
+            }
+            // Use JSON serialisation as the canonical key so arrays / objects
+            // are compared by value, not identity.
+            let key = val.to_string();
+            if !seen.insert(key.clone()) {
+                out.push((
+                    idx,
+                    Violation {
+                        field: rule.field.clone(),
+                        message: format!(
+                            "Quality uniqueness: duplicate value {:?} for field '{}' in batch",
+                            key, rule.field
+                        ),
+                        kind: ViolationKind::UniquenessViolation,
+                    },
+                ));
+            }
+        }
+    }
+
+    out
 }
 
 // ---------------------------------------------------------------------------

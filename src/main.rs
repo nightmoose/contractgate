@@ -18,7 +18,7 @@ use axum::{
     extract::{FromRequest, Path, Query, State},
     http::StatusCode,
     middleware::{self, Next},
-    response::Json,
+    response::{IntoResponse, Json},
     routing::{get, post},
     Router,
 };
@@ -50,6 +50,7 @@ mod infer_diff;
 mod infer_openapi;
 mod infer_proto;
 mod ingest;
+mod odcs;
 mod replay;
 mod storage;
 mod stream_demo;
@@ -58,8 +59,8 @@ mod tests;
 
 use contract::{
     Contract, ContractIdentity, ContractResponse, ContractSummary, ContractVersion,
-    CreateContractRequest, CreateVersionRequest, NameHistoryEntry, PatchContractRequest,
-    PatchVersionRequest, VersionResponse, VersionSummary,
+    CreateContractRequest, CreateVersionRequest, NameHistoryEntry,
+    PatchContractRequest, PatchVersionRequest, VersionResponse, VersionSummary,
 };
 use error::{AppError, AppResult};
 use validation::CompiledContract;
@@ -429,6 +430,107 @@ async fn list_name_history_handler(
 }
 
 // ---------------------------------------------------------------------------
+// ODCS import / export / approve-import handlers
+// ---------------------------------------------------------------------------
+
+/// `POST /contracts/import` — accept an ODCS v3.1.0 document, create a new
+/// contract identity + draft version.
+///
+/// Mode A (lossless): document carries `x-contractgate-*` extensions.
+/// Mode B (stripped): best-effort reconstruction; `requires_review = true`.
+///
+/// Flow:
+///   1. Parse ODCS → `ImportResult { version, yaml_content, import_source }`
+///   2. Create identity + a throwaway v1.0.0 native draft via `create_contract`
+///      (the only transactional identity-create helper we have).
+///   3. Delete the throwaway draft.
+///   4. Create the real versioned draft with correct import provenance.
+async fn import_odcs_handler(
+    State(state): State<Arc<AppState>>,
+    req: axum::extract::Request,
+) -> AppResult<(StatusCode, Json<VersionResponse>)> {
+    let org_id = org_id_from_req(&req);
+    let Json(body): Json<odcs::ImportOdcsRequest> =
+        axum::Json::from_request(req, &state)
+            .await
+            .map_err(|e| AppError::BadRequest(e.to_string()))?;
+
+    let result = odcs::import_odcs(&body.odcs_yaml).map_err(AppError::BadRequest)?;
+
+    // Name override from request body wins over the ODCS-parsed name.
+    let name_in_yaml: Contract = serde_yaml::from_str(&result.yaml_content)
+        .map_err(|e| AppError::InvalidContractYaml(e.to_string()))?;
+    let name = body
+        .name_override
+        .as_deref()
+        .unwrap_or(&name_in_yaml.name)
+        .to_string();
+
+    // Step 2: create identity + throwaway v1.0.0 draft.
+    let (identity, _) = storage::create_contract(
+        &state.db,
+        &name,
+        name_in_yaml.description.as_deref(),
+        &result.yaml_content,
+        Default::default(),
+        org_id,
+    )
+    .await?;
+
+    // Step 3: remove the throwaway native draft.
+    storage::delete_version(&state.db, identity.id, "1.0.0").await?;
+
+    // Step 4: create the real versioned draft with correct import provenance.
+    let cv = storage::create_version_from_import(
+        &state.db,
+        identity.id,
+        &result.version,
+        &result.yaml_content,
+        result.import_source,
+    )
+    .await?;
+
+    Ok((StatusCode::CREATED, Json(VersionResponse::from(&cv))))
+}
+
+/// `GET /contracts/:id/versions/:version/export` — return the contract version
+/// serialized as ODCS v3.1.0 YAML.
+async fn export_odcs_handler(
+    State(state): State<Arc<AppState>>,
+    Path((contract_id, version)): Path<(Uuid, String)>,
+) -> AppResult<axum::response::Response> {
+    let identity = storage::get_contract_identity(&state.db, contract_id).await?;
+    let cv = storage::get_version(&state.db, contract_id, &version).await?;
+    let contract: Contract = serde_yaml::from_str(&cv.yaml_content)
+        .map_err(|e| AppError::InvalidContractYaml(e.to_string()))?;
+
+    let odcs_yaml = odcs::export_odcs(odcs::OdcsExportInput {
+        identity: &identity,
+        version: &cv,
+        contract: &contract,
+    })
+    .map_err(|e| AppError::Internal(e))?;
+
+    Ok((
+        StatusCode::OK,
+        [("content-type", "application/yaml")],
+        odcs_yaml,
+    )
+        .into_response())
+}
+
+/// `POST /contracts/:id/versions/:version/approve-import` — clear the
+/// `requires_review` flag set on a stripped ODCS import (D-002).  Only legal
+/// on draft versions.
+async fn approve_import_handler(
+    State(state): State<Arc<AppState>>,
+    Path((contract_id, version)): Path<(Uuid, String)>,
+) -> AppResult<Json<VersionResponse>> {
+    let cv = storage::clear_requires_review(&state.db, contract_id, &version).await?;
+    Ok(Json(VersionResponse::from(&cv)))
+}
+
+// ---------------------------------------------------------------------------
 // Audit log handler
 // ---------------------------------------------------------------------------
 
@@ -603,6 +705,16 @@ fn build_router(state: Arc<AppState>) -> Router {
 
     // Protected routes — require x-api-key header
     let protected = Router::new()
+        // ODCS import / export / approve-import
+        .route("/contracts/import", post(import_odcs_handler))
+        .route(
+            "/contracts/:id/versions/:version/export",
+            get(export_odcs_handler),
+        )
+        .route(
+            "/contracts/:id/versions/:version/approve-import",
+            post(approve_import_handler),
+        )
         // Contract inference — JSON samples
         .route("/contracts/infer", post(infer::infer_handler))
         // Contract inference — format-specific routes (RFC-006)

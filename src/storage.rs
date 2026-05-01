@@ -7,8 +7,8 @@
 //! directory, then switch to `query!` / `query_as!` macros.
 
 use crate::contract::{
-    Contract, ContractIdentity, ContractSummary, ContractVersion, MultiStableResolution,
-    NameHistoryEntry, VersionState, VersionSummary,
+    Contract, ContractIdentity, ContractSummary, ContractVersion, ImportSource,
+    MultiStableResolution, NameHistoryEntry, VersionState, VersionSummary,
 };
 use crate::error::{AppError, AppResult, DbOpContext};
 use crate::transform::TransformedPayload;
@@ -67,12 +67,19 @@ struct ContractVersionRow {
     /// remains the single source of truth — this column is synced to
     /// `Contract::compliance_mode` at INSERT / UPDATE time.
     compliance_mode: bool,
+    /// Migration 010: ODCS import provenance.
+    import_source: String,
+    /// Migration 010: blocks promotion until human review clears it.
+    requires_review: bool,
 }
 
 impl ContractVersionRow {
     fn into_version(self) -> AppResult<ContractVersion> {
         let state = self.state.parse::<VersionState>().map_err(|e| {
             AppError::Internal(format!("invalid contract_versions.state in DB: {e}"))
+        })?;
+        let import_source = self.import_source.parse::<ImportSource>().map_err(|e| {
+            AppError::Internal(format!("invalid import_source in DB: {e}"))
         })?;
         Ok(ContractVersion {
             id: self.id,
@@ -84,6 +91,8 @@ impl ContractVersionRow {
             promoted_at: self.promoted_at,
             deprecated_at: self.deprecated_at,
             compliance_mode: self.compliance_mode,
+            import_source,
+            requires_review: self.requires_review,
         })
     }
 }
@@ -193,10 +202,12 @@ pub async fn create_contract(
     let version_row = sqlx::query_as::<_, ContractVersionRow>(
         r#"
         INSERT INTO contract_versions
-            (id, contract_id, version, state, yaml_content, created_at, compliance_mode)
-        VALUES ($1, $2, '1.0.0', 'draft', $3, NOW(), $4)
+            (id, contract_id, version, state, yaml_content, created_at, compliance_mode,
+             import_source, requires_review)
+        VALUES ($1, $2, '1.0.0', 'draft', $3, NOW(), $4, 'native', FALSE)
         RETURNING id, contract_id, version, state, yaml_content,
-                  created_at, promoted_at, deprecated_at, compliance_mode
+                  created_at, promoted_at, deprecated_at, compliance_mode,
+                  import_source, requires_review
         "#,
     )
     .bind(version_id)
@@ -368,10 +379,12 @@ pub async fn create_version(
     let row = sqlx::query_as::<_, ContractVersionRow>(
         r#"
         INSERT INTO contract_versions
-            (id, contract_id, version, state, yaml_content, created_at, compliance_mode)
-        VALUES ($1, $2, $3, 'draft', $4, NOW(), $5)
+            (id, contract_id, version, state, yaml_content, created_at, compliance_mode,
+             import_source, requires_review)
+        VALUES ($1, $2, $3, 'draft', $4, NOW(), $5, 'native', FALSE)
         RETURNING id, contract_id, version, state, yaml_content,
-                  created_at, promoted_at, deprecated_at, compliance_mode
+                  created_at, promoted_at, deprecated_at, compliance_mode,
+                  import_source, requires_review
         "#,
     )
     .bind(id)
@@ -428,7 +441,8 @@ pub async fn patch_version_yaml(
             compliance_mode = $4
         WHERE contract_id = $1 AND version = $2
         RETURNING id, contract_id, version, state, yaml_content,
-                  created_at, promoted_at, deprecated_at, compliance_mode
+                  created_at, promoted_at, deprecated_at, compliance_mode,
+                  import_source, requires_review
         "#,
     )
     .bind(contract_id)
@@ -455,6 +469,13 @@ pub async fn promote_version(
             version: version.to_string(),
         });
     }
+    // D-002: block stripped ODCS imports until a human approves them.
+    if current.requires_review {
+        return Err(AppError::OdcsReviewRequired {
+            contract_id,
+            version: version.to_string(),
+        });
+    }
 
     let row = sqlx::query_as::<_, ContractVersionRow>(
         r#"
@@ -462,7 +483,8 @@ pub async fn promote_version(
         SET state = 'stable', promoted_at = NOW()
         WHERE contract_id = $1 AND version = $2 AND state = 'draft'
         RETURNING id, contract_id, version, state, yaml_content,
-                  created_at, promoted_at, deprecated_at, compliance_mode
+                  created_at, promoted_at, deprecated_at, compliance_mode,
+                  import_source, requires_review
         "#,
     )
     .bind(contract_id)
@@ -494,7 +516,8 @@ pub async fn deprecate_version(
         SET state = 'deprecated', deprecated_at = NOW()
         WHERE contract_id = $1 AND version = $2 AND state = 'stable'
         RETURNING id, contract_id, version, state, yaml_content,
-                  created_at, promoted_at, deprecated_at, compliance_mode
+                  created_at, promoted_at, deprecated_at, compliance_mode,
+                  import_source, requires_review
         "#,
     )
     .bind(contract_id)
@@ -534,7 +557,8 @@ pub async fn get_version(
     let row = sqlx::query_as::<_, ContractVersionRow>(
         r#"
         SELECT id, contract_id, version, state, yaml_content,
-               created_at, promoted_at, deprecated_at, compliance_mode
+               created_at, promoted_at, deprecated_at, compliance_mode,
+               import_source, requires_review
         FROM contract_versions
         WHERE contract_id = $1 AND version = $2
         "#,
@@ -559,7 +583,8 @@ pub async fn list_versions(pool: &PgPool, contract_id: Uuid) -> AppResult<Vec<Ve
     let rows = sqlx::query_as::<_, ContractVersionRow>(
         r#"
         SELECT id, contract_id, version, state, yaml_content,
-               created_at, promoted_at, deprecated_at, compliance_mode
+               created_at, promoted_at, deprecated_at, compliance_mode,
+               import_source, requires_review
         FROM contract_versions
         WHERE contract_id = $1
         ORDER BY created_at DESC
@@ -578,6 +603,8 @@ pub async fn list_versions(pool: &PgPool, contract_id: Uuid) -> AppResult<Vec<Ve
                 created_at: v.created_at,
                 promoted_at: v.promoted_at,
                 deprecated_at: v.deprecated_at,
+                import_source: v.import_source,
+                requires_review: v.requires_review,
             })
         })
         .collect()
@@ -591,7 +618,8 @@ pub async fn get_latest_stable_version(
     let row = sqlx::query_as::<_, ContractVersionRow>(
         r#"
         SELECT id, contract_id, version, state, yaml_content,
-               created_at, promoted_at, deprecated_at, compliance_mode
+               created_at, promoted_at, deprecated_at, compliance_mode,
+               import_source, requires_review
         FROM contract_versions
         WHERE contract_id = $1 AND state = 'stable'
         ORDER BY promoted_at DESC
@@ -615,7 +643,8 @@ pub async fn list_stable_versions(
     let rows = sqlx::query_as::<_, ContractVersionRow>(
         r#"
         SELECT id, contract_id, version, state, yaml_content,
-               created_at, promoted_at, deprecated_at, compliance_mode
+               created_at, promoted_at, deprecated_at, compliance_mode,
+               import_source, requires_review
         FROM contract_versions
         WHERE contract_id = $1 AND state = 'stable'
         ORDER BY promoted_at DESC
@@ -649,7 +678,8 @@ pub async fn load_all_non_draft_versions(pool: &PgPool) -> AppResult<Vec<Contrac
     let rows = sqlx::query_as::<_, ContractVersionRow>(
         r#"
         SELECT id, contract_id, version, state, yaml_content,
-               created_at, promoted_at, deprecated_at, compliance_mode
+               created_at, promoted_at, deprecated_at, compliance_mode,
+               import_source, requires_review
         FROM contract_versions
         WHERE state IN ('stable', 'deprecated')
         "#,
@@ -658,6 +688,93 @@ pub async fn load_all_non_draft_versions(pool: &PgPool) -> AppResult<Vec<Contrac
     .await?;
 
     rows.into_iter().map(|r| r.into_version()).collect()
+}
+
+/// Create a new draft version from an ODCS import.  Functionally identical to
+/// [`create_version`] but accepts an explicit `import_source` and sets
+/// `requires_review` when the source is `odcs_stripped` (D-002).
+pub async fn create_version_from_import(
+    pool: &PgPool,
+    contract_id: Uuid,
+    version: &str,
+    yaml_content: &str,
+    import_source: ImportSource,
+) -> AppResult<ContractVersion> {
+    let parsed: Contract = serde_yaml::from_str(yaml_content)
+        .map_err(|e| AppError::InvalidContractYaml(e.to_string()))?;
+    let compliance_mode = parsed.compliance_mode;
+    let requires_review = import_source == ImportSource::OdcsStripped;
+
+    let _ = get_contract_identity(pool, contract_id).await?;
+
+    let id = Uuid::new_v4();
+
+    let row = sqlx::query_as::<_, ContractVersionRow>(
+        r#"
+        INSERT INTO contract_versions
+            (id, contract_id, version, state, yaml_content, created_at, compliance_mode,
+             import_source, requires_review)
+        VALUES ($1, $2, $3, 'draft', $4, NOW(), $5, $6, $7)
+        RETURNING id, contract_id, version, state, yaml_content,
+                  created_at, promoted_at, deprecated_at, compliance_mode,
+                  import_source, requires_review
+        "#,
+    )
+    .bind(id)
+    .bind(contract_id)
+    .bind(version)
+    .bind(yaml_content)
+    .bind(compliance_mode)
+    .bind(import_source.as_str())
+    .bind(requires_review)
+    .fetch_one(pool)
+    .await
+    .map_err(|e| match &e {
+        sqlx::Error::Database(db) if db.code().as_deref() == Some("23505") => {
+            AppError::VersionConflict {
+                contract_id,
+                version: version.to_string(),
+            }
+        }
+        _ => AppError::from(e),
+    })?;
+
+    row.into_version()
+}
+
+/// Clear the `requires_review` flag set by a stripped ODCS import (D-002).
+/// Called by the `POST /contracts/:id/versions/:version/approve-import` handler.
+/// Only valid on draft versions; stable/deprecated versions are immutable.
+pub async fn clear_requires_review(
+    pool: &PgPool,
+    contract_id: Uuid,
+    version: &str,
+) -> AppResult<ContractVersion> {
+    let current = get_version(pool, contract_id, version).await?;
+    if current.state != VersionState::Draft {
+        return Err(AppError::VersionImmutable {
+            version: version.to_string(),
+            state: current.state.as_str().to_string(),
+        });
+    }
+
+    let row = sqlx::query_as::<_, ContractVersionRow>(
+        r#"
+        UPDATE contract_versions
+        SET requires_review = FALSE
+        WHERE contract_id = $1 AND version = $2
+        RETURNING id, contract_id, version, state, yaml_content,
+                  created_at, promoted_at, deprecated_at, compliance_mode,
+                  import_source, requires_review
+        "#,
+    )
+    .bind(contract_id)
+    .bind(version)
+    .fetch_one(pool)
+    .await
+    .db_op("clear_requires_review")?;
+
+    row.into_version()
 }
 
 // ---------------------------------------------------------------------------
