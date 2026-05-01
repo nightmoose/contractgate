@@ -24,7 +24,7 @@
 #[cfg(test)]
 mod fixtures {
     use crate::contract::{
-        Contract, FieldDefinition, FieldType, GlossaryEntry, MetricDefinition, Ontology,
+        Contract, FieldDefinition, FieldType, GlossaryEntry, MetricDefinition, Ontology, QualityRule,
     };
 
     /// A minimum-defaults `FieldDefinition`.  Use when a test only cares
