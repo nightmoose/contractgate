@@ -330,7 +330,7 @@ mod playground {
                 name: "valid_event".into(),
                 description: "Event must have a valid event_type".into(),
                 check: "event_type in ['click', 'view', 'purchase', 'login']".into(),
-            }]
+            }],
         )
     }
 
@@ -822,7 +822,7 @@ mod odcs_tests {
                 name: "valid_event".into(),
                 description: "Event must have a valid event_type".into(),
                 check: "event_type in ['click', 'view', 'purchase', 'login']".into(),
-            }]
+            }],
         )
     }
 
