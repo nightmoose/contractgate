@@ -749,7 +749,7 @@ mod odcs_tests {
     use super::fixtures::{contract_with, entity_with};
     use crate::contract::{
         ContractIdentity, ContractVersion, FieldType, GlossaryEntry, ImportSource,
-        MetricDefinition, MultiStableResolution, VersionState,
+        MetricDefinition, MultiStableResolution, QualityRule, VersionState,
     };
     use crate::odcs;
     use chrono::Utc;
