@@ -408,6 +408,7 @@ mod tests {
             ontology: Ontology { entities },
             glossary: vec![],
             metrics: vec![],
+            quality: vec![],
         }
     }
 

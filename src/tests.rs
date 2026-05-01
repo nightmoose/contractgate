@@ -81,6 +81,7 @@ mod fixtures {
             ontology: Ontology { entities },
             glossary: vec![],
             metrics: vec![],
+            quality: vec![],
         }
     }
 
@@ -93,6 +94,7 @@ mod fixtures {
         entities: Vec<FieldDefinition>,
         glossary: Vec<GlossaryEntry>,
         metrics: Vec<MetricDefinition>,
+        quality: Vec<QualityDefinition>,
     ) -> Contract {
         Contract {
             version: "1.0".into(),
@@ -102,6 +104,7 @@ mod fixtures {
             ontology: Ontology { entities },
             glossary,
             metrics,
+            quality,
         }
     }
 }
