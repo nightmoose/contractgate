@@ -94,7 +94,7 @@ mod fixtures {
         entities: Vec<FieldDefinition>,
         glossary: Vec<GlossaryEntry>,
         metrics: Vec<MetricDefinition>,
-        quality: Vec<QualityDefinition>,
+        quality: Vec<QualityRule>,
     ) -> Contract {
         Contract {
             version: "1.0".into(),
@@ -326,7 +326,7 @@ mod playground {
                 min: None,
                 max: None,
             }],
-            vec![QualityDefinition {
+            vec![QualityRule {
                 name: "valid_event".into(),
                 description: "Event must have a valid event_type".into(),
                 check: "event_type in ['click', 'view', 'purchase', 'login']".into(),
@@ -818,7 +818,7 @@ mod odcs_tests {
                 min: None,
                 max: None,
             }],
-            vec![QualityDefinition {
+            vec![QualityRule {
                 name: "valid_event".into(),
                 description: "Event must have a valid event_type".into(),
                 check: "event_type in ['click', 'view', 'purchase', 'login']".into(),
