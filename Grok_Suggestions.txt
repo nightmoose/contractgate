@@ -1,0 +1,23 @@
+Phase 1: Next 4–6 Weeks (Ship These Before First Big Confluent Meeting)
+
+Confluent Hub SMT approval + “Built for Confluent” docs (you’re already submitted — huge)
+Full Kafka Connect Source + Sink connectors (beyond just SMT) — lets teams use ContractGate as a native first-class citizen
+Enterprise SSO/SAML + audit log export (SOC2 prep) — table-stakes for any platform team
+Prometheus + OpenTelemetry metrics out-of-the-box
+
+Phase 2: 6–12 Weeks (Differentiators That Win Deals)
+
+VPC / Private Link / Air-gapped self-hosted option
+Advanced PII transforms (custom regex + ML-based detection) + data classification
+Multi-contract orchestration (e.g., “apply Contract A then B” for complex pipelines)
+Improved AI contract inference (now with natural-language prompts: “enforce GDPR rules for EU customers”)
+
+Phase 3: 3–6 Months (Moat Builders)
+
+Fivetran / Airbyte / dbt native integrations
+Computed business metrics dashboard in the Next.js UI (real-time KPI monitoring)
+Contract testing framework (like Pact but for data contracts)
+Mobile / low-code contract builder (for non-engineers)
+
+My top recommendation for you right now:
+Prioritize #2 (full source/sink) and #3 (SSO + audit) — those are the two questions every Confluent sales rep will ask in the first call.

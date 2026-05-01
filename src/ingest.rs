@@ -95,7 +95,7 @@ use crate::contract::{ContractIdentity, MultiStableResolution, VersionState};
 use crate::error::{AppError, AppResult};
 use crate::storage;
 use crate::transform::{apply_transforms, TransformedPayload};
-use crate::validation::{validate, CompiledContract, ValidationResult};
+use crate::validation::{check_uniqueness_batch, validate, CompiledContract, ValidationResult};
 use crate::AppState;
 use std::collections::HashMap;
 
@@ -382,6 +382,18 @@ pub async fn ingest_handler(
                 // If nothing matched, leave the original (latest-stable)
                 // failure in place — audit records the default.
             }
+        }
+    }
+
+    // --- Quality: batch-level uniqueness check --------------------------------
+    // Runs after fallback resolution so each event is tagged with the version
+    // that will be used for the audit row.  Uniqueness violations are merged
+    // into the effective_results so they flow through the normal quarantine path.
+    let uniqueness_violations = check_uniqueness_batch(&compiled.contract.quality, &events);
+    for (idx, violation) in uniqueness_violations {
+        if let Some(vr) = effective_results.get_mut(idx) {
+            vr.violations.push(violation);
+            vr.passed = false;
         }
     }
 

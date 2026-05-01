@@ -38,6 +38,12 @@ pub struct Contract {
     /// Metric / measure definitions
     #[serde(default)]
     pub metrics: Vec<MetricDefinition>,
+    /// Data quality rules — enforced at ingest time.
+    /// Completeness, validity, freshness, and uniqueness checks declared here
+    /// are evaluated per-event (or per-batch for uniqueness) and produce
+    /// structured violations just like ontology checks.
+    #[serde(default)]
+    pub quality: Vec<QualityRule>,
 }
 
 // ---------------------------------------------------------------------------
@@ -151,6 +157,17 @@ pub enum TransformKind {
     Redact,
 }
 
+impl TransformKind {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            TransformKind::Mask => "mask",
+            TransformKind::Hash => "hash",
+            TransformKind::Drop => "drop",
+            TransformKind::Redact => "redact",
+        }
+    }
+}
+
 /// Sub-setting for `TransformKind::Mask`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -164,6 +181,15 @@ pub enum MaskStyle {
     /// deterministically per (contract salt, field name).  Not reversible,
     /// not a formal FPE scheme — see RFC-004 non-goals.
     FormatPreserving,
+}
+
+impl MaskStyle {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            MaskStyle::Opaque => "opaque",
+            MaskStyle::FormatPreserving => "format_preserving",
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -250,6 +276,77 @@ pub enum MetricType {
 }
 
 // ---------------------------------------------------------------------------
+// Data quality rules
+// ---------------------------------------------------------------------------
+
+/// A single data-quality rule evaluated at ingest time.
+///
+/// Quality rules are a superset of ontology-level constraints: they add
+/// *semantic* checks (freshness, uniqueness) and make *explicit* the
+/// completeness and validity expectations that ontology constraints only
+/// imply.  Violations are reported with the same `Violation` struct as
+/// ontology checks and included in the overall `ValidationResult`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct QualityRule {
+    /// Field path to check (dot-notation, e.g. `"user.id"`).
+    pub field: String,
+    /// Which check to apply.
+    #[serde(rename = "type")]
+    pub rule_type: QualityRuleType,
+    /// Human-readable description (informational; included in ODCS export).
+    #[serde(default)]
+    pub description: Option<String>,
+    // ── Freshness params ───────────────────────────────────────────────────
+    /// Maximum age of a timestamp value, in seconds.  The field must hold
+    /// a Unix epoch (integer seconds or milliseconds — detected by magnitude).
+    /// Only used when `rule_type == Freshness`.
+    #[serde(default)]
+    pub max_age_seconds: Option<u64>,
+    // ── Uniqueness params ──────────────────────────────────────────────────
+    /// Scope for uniqueness deduplication.  Only `"batch"` is supported today.
+    /// Only used when `rule_type == Uniqueness`.
+    #[serde(default)]
+    pub scope: Option<UniqueScope>,
+    // ── Validity threshold ─────────────────────────────────────────────────
+    /// Fraction of events in a batch that must pass this rule (0.0 – 1.0).
+    /// Useful for validity and completeness rules where a small tail of
+    /// missing/malformed values is acceptable in practice.  Default `1.0`
+    /// (all events must pass).  Per-event violations are still reported
+    /// even when the threshold is not exceeded — this controls whether the
+    /// *batch* is considered failed.  `null` means strict (= 1.0).
+    #[serde(default)]
+    pub threshold: Option<f64>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum QualityRuleType {
+    /// Field must be present, non-null, and (for strings) non-empty.
+    Completeness,
+    /// Field value must satisfy the ontology-declared constraints (pattern,
+    /// enum, min/max range, length).  This is an explicit overlay on top of
+    /// ontology validation — violations are also reported via the standard
+    /// ontology check path, but this rule makes the *intent* explicit and
+    /// participates in the quality-coverage conformance score.
+    Validity,
+    /// Field must hold a Unix epoch timestamp no older than `max_age_seconds`
+    /// relative to the ingest wall-clock time.  Detects stale / replayed events.
+    Freshness,
+    /// Field value must be unique across all events in the same ingest batch.
+    /// Detects duplicate events before they land in downstream sinks.
+    Uniqueness,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum UniqueScope {
+    /// Deduplicate within the current ingest batch only.  Cross-batch
+    /// deduplication requires an external store (not yet supported).
+    #[default]
+    Batch,
+}
+
+// ---------------------------------------------------------------------------
 // DB row types — identity vs version split (RFC-002)
 // ---------------------------------------------------------------------------
 
@@ -329,6 +426,54 @@ impl FromStr for MultiStableResolution {
     }
 }
 
+// ---------------------------------------------------------------------------
+// Import provenance (ODCS import tracking)
+// ---------------------------------------------------------------------------
+
+/// Where a contract version originated.
+///
+/// Used to track ODCS import fidelity and to gate promotion on human review
+/// when a stripped ODCS document (no `x-contractgate-*` extensions) was
+/// imported — validation constraints and PII transforms may not have been
+/// fully recoverable.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ImportSource {
+    /// Created natively in ContractGate (default).
+    #[default]
+    Native,
+    /// Imported from an ODCS document with `x-contractgate-*` extensions —
+    /// full round-trip fidelity preserved.
+    Odcs,
+    /// Imported from an ODCS document without `x-contractgate-*` extensions.
+    /// Validation constraints, PII transforms, glossary, and metrics may be
+    /// partially or fully unrecoverable.  `requires_review` is set to `true`
+    /// and promotion to stable is blocked until explicitly cleared.
+    OdcsStripped,
+}
+
+impl ImportSource {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            ImportSource::Native => "native",
+            ImportSource::Odcs => "odcs",
+            ImportSource::OdcsStripped => "odcs_stripped",
+        }
+    }
+}
+
+impl FromStr for ImportSource {
+    type Err = String;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "native" => Ok(Self::Native),
+            "odcs" => Ok(Self::Odcs),
+            "odcs_stripped" => Ok(Self::OdcsStripped),
+            _ => Err(format!("invalid ImportSource: {s:?}")),
+        }
+    }
+}
+
 /// Identity row — one per `contract_id`.  Mutable: `name`, `description`,
 /// `multi_stable_resolution`.  Renames are mirrored to
 /// `contract_name_history` via the `contracts_record_rename` trigger.
@@ -371,6 +516,14 @@ pub struct ContractVersion {
     /// the ontology (RFC-004).  Default `false`.
     #[serde(default)]
     pub compliance_mode: bool,
+    /// Where this version originated (native / odcs / odcs_stripped).
+    #[serde(default)]
+    pub import_source: ImportSource,
+    /// When `true`, the version was imported from a stripped ODCS document
+    /// (no `x-contractgate-*` extensions) and requires human review before
+    /// it may be promoted to stable.
+    #[serde(default)]
+    pub requires_review: bool,
 }
 
 /// One row of `contract_name_history`.
@@ -470,6 +623,10 @@ pub struct VersionResponse {
     /// RFC-004 compliance mode flag — exposed so the dashboard can render
     /// the toggle state without re-parsing YAML.
     pub compliance_mode: bool,
+    /// Import provenance.
+    pub import_source: ImportSource,
+    /// When `true`, human review is required before promotion to stable.
+    pub requires_review: bool,
 }
 
 impl From<&ContractVersion> for VersionResponse {
@@ -484,6 +641,8 @@ impl From<&ContractVersion> for VersionResponse {
             promoted_at: v.promoted_at,
             deprecated_at: v.deprecated_at,
             compliance_mode: v.compliance_mode,
+            import_source: v.import_source,
+            requires_review: v.requires_review,
         }
     }
 }
@@ -497,4 +656,6 @@ pub struct VersionSummary {
     pub created_at: chrono::DateTime<chrono::Utc>,
     pub promoted_at: Option<chrono::DateTime<chrono::Utc>>,
     pub deprecated_at: Option<chrono::DateTime<chrono::Utc>>,
+    pub import_source: ImportSource,
+    pub requires_review: bool,
 }
