@@ -15,7 +15,7 @@
 
 use crate::contract::{
     Contract, ContractIdentity, ContractVersion, FieldDefinition, FieldType, ImportSource,
-    Ontology, VersionState,
+    Ontology, QualityRule, QualityRuleType, UniqueScope, VersionState,
 };
 use serde_yaml::{Mapping, Value};
 
@@ -66,7 +66,13 @@ fn logical_to_field_type(s: &str) -> FieldType {
 /// Nested objects are expanded to dot-notation names, e.g.
 /// `user.address.street`.  The extension data (`customProperties`) carries
 /// all scalar constraints so an import can reconstruct the original.
-fn flatten_to_odcs_properties(prefix: &str, fields: &[FieldDefinition]) -> Vec<Value> {
+/// Quality rules are matched by dot-notation field name and written into
+/// each property's `quality[]` array for ODCS-native consumers.
+fn flatten_to_odcs_properties(
+    prefix: &str,
+    fields: &[FieldDefinition],
+    quality_rules: &[QualityRule],
+) -> Vec<Value> {
     let mut out = Vec::new();
     for f in fields {
         let name = if prefix.is_empty() {
@@ -78,16 +84,20 @@ fn flatten_to_odcs_properties(prefix: &str, fields: &[FieldDefinition]) -> Vec<V
         if let (FieldType::Object, Some(nested)) = (&f.field_type, &f.properties) {
             // Recurse — the parent "object" node is omitted from ODCS; only
             // leaves appear as properties (D-001).
-            out.extend(flatten_to_odcs_properties(&name, nested));
+            out.extend(flatten_to_odcs_properties(&name, nested, quality_rules));
         } else {
-            out.push(build_odcs_property(&name, f));
+            // Collect only the quality rules that target this exact field path.
+            let prop_quality: Vec<&QualityRule> =
+                quality_rules.iter().filter(|r| r.field == name).collect();
+            out.push(build_odcs_property(&name, f, &prop_quality));
         }
     }
     out
 }
 
 /// Build one ODCS property entry for a leaf field.
-fn build_odcs_property(name: &str, f: &FieldDefinition) -> Value {
+/// `prop_quality` contains only the quality rules that target this property.
+fn build_odcs_property(name: &str, f: &FieldDefinition, prop_quality: &[&QualityRule]) -> Value {
     let mut prop = Mapping::new();
     prop.insert(v_str("name"), v_str(name));
     prop.insert(
@@ -101,8 +111,12 @@ fn build_odcs_property(name: &str, f: &FieldDefinition) -> Value {
         prop.insert(v_str("classification"), v_str("pii"));
     }
 
-    // quality: empty list (placeholder for ODCS-native consumers)
-    prop.insert(v_str("quality"), Value::Sequence(vec![]));
+    // quality[]: ODCS-native quality entries for this property.
+    let quality_entries: Vec<Value> = prop_quality
+        .iter()
+        .map(|r| quality_rule_to_odcs(r))
+        .collect();
+    prop.insert(v_str("quality"), Value::Sequence(quality_entries));
 
     // customProperties: scalar constraints (round-trip safe)
     let mut custom: Vec<Value> = Vec::new();
@@ -152,6 +166,94 @@ fn build_odcs_property(name: &str, f: &FieldDefinition) -> Value {
     }
 
     Value::Mapping(prop)
+}
+
+// ---------------------------------------------------------------------------
+// Quality rule ↔ ODCS quality[] mapping
+// ---------------------------------------------------------------------------
+
+/// Serialize a CG `QualityRule` to an ODCS `quality[]` entry.
+///
+/// ODCS quality entries use:
+/// - `type`: one of `completeness | validity | freshness | uniqueness`
+/// - `description`: optional human label
+/// - `attributes`: type-specific parameters (e.g. `maxAgeSeconds`)
+fn quality_rule_to_odcs(rule: &QualityRule) -> Value {
+    let mut m = Mapping::new();
+    m.insert(
+        v_str("type"),
+        v_str(match rule.rule_type {
+            QualityRuleType::Completeness => "completeness",
+            QualityRuleType::Validity => "validity",
+            QualityRuleType::Freshness => "freshness",
+            QualityRuleType::Uniqueness => "uniqueness",
+        }),
+    );
+    if let Some(desc) = &rule.description {
+        m.insert(v_str("description"), v_str(desc));
+    }
+
+    let mut attrs = Mapping::new();
+    if let Some(max_age) = rule.max_age_seconds {
+        attrs.insert(
+            v_str("maxAgeSeconds"),
+            serde_yaml::to_value(max_age).unwrap_or(Value::Null),
+        );
+    }
+    if let Some(threshold) = rule.threshold {
+        attrs.insert(
+            v_str("threshold"),
+            serde_yaml::to_value(threshold).unwrap_or(Value::Null),
+        );
+    }
+    if !attrs.is_empty() {
+        m.insert(v_str("attributes"), Value::Mapping(attrs));
+    }
+
+    Value::Mapping(m)
+}
+
+/// Parse the ODCS `quality[]` array on a single property back into CG
+/// `QualityRule` structs.  Used by Mode B import.
+///
+/// `field_name` is the dot-notation property path (e.g. `"user.email"`) and
+/// becomes `QualityRule::field`.
+fn odcs_quality_to_rules(field_name: &str, quality_seq: &[Value]) -> Vec<QualityRule> {
+    quality_seq
+        .iter()
+        .filter_map(|q| {
+            let m = q.as_mapping()?;
+            let type_str = m.get("type").and_then(|v| v.as_str())?;
+            let rule_type = match type_str {
+                "completeness" => QualityRuleType::Completeness,
+                "validity" => QualityRuleType::Validity,
+                "freshness" => QualityRuleType::Freshness,
+                "uniqueness" => QualityRuleType::Uniqueness,
+                _ => return None, // unrecognised type — skip
+            };
+            let description = m
+                .get("description")
+                .and_then(|v| v.as_str())
+                .map(String::from);
+            let attrs = m.get("attributes").and_then(|v| v.as_mapping());
+            let max_age_seconds = attrs
+                .and_then(|a| a.get("maxAgeSeconds"))
+                .and_then(|v| v.as_u64());
+            let threshold = attrs
+                .and_then(|a| a.get("threshold"))
+                .and_then(|v| v.as_f64());
+            let scope =
+                matches!(rule_type, QualityRuleType::Uniqueness).then_some(UniqueScope::Batch);
+            Some(QualityRule {
+                field: field_name.to_string(),
+                rule_type,
+                description,
+                max_age_seconds,
+                scope,
+                threshold,
+            })
+        })
+        .collect()
 }
 
 // ---------------------------------------------------------------------------
@@ -208,7 +310,7 @@ pub fn export_odcs(input: OdcsExportInput<'_>) -> Result<String, String> {
     if let Some(desc) = &contract.description {
         schema_entry.insert(v_str("description"), v_str(desc));
     }
-    let properties = flatten_to_odcs_properties("", &contract.ontology.entities);
+    let properties = flatten_to_odcs_properties("", &contract.ontology.entities, &contract.quality);
     schema_entry.insert(v_str("properties"), Value::Sequence(properties));
 
     doc.insert(
@@ -361,12 +463,16 @@ fn import_mode_b(doc: &Mapping, version: String) -> Result<ImportResult, String>
         .or_else(|| schema0.get("description").and_then(|v| v.as_str()))
         .map(String::from);
 
-    // Reconstruct field definitions from schema[0].properties[].
-    let entities = if let Some(props) = schema0.get("properties").and_then(|v| v.as_sequence()) {
-        unflatten_odcs_properties(props)?
-    } else {
-        vec![]
-    };
+    // Reconstruct field definitions and quality rules from schema[0].properties[].
+    let (entities, quality) =
+        if let Some(props) = schema0.get("properties").and_then(|v| v.as_sequence()) {
+            let fields = unflatten_odcs_properties(props)?;
+            // Collect quality rules from every property's quality[] array.
+            let rules = extract_quality_rules_from_props(props);
+            (fields, rules)
+        } else {
+            (vec![], vec![])
+        };
 
     let contract = Contract {
         version: "1.0".to_string(),
@@ -376,7 +482,7 @@ fn import_mode_b(doc: &Mapping, version: String) -> Result<ImportResult, String>
         ontology: Ontology { entities },
         glossary: vec![],
         metrics: vec![],
-        quality: vec![],
+        quality,
     };
 
     let yaml_content = serde_yaml::to_string(&contract)
@@ -387,6 +493,23 @@ fn import_mode_b(doc: &Mapping, version: String) -> Result<ImportResult, String>
         yaml_content,
         import_source: ImportSource::OdcsStripped,
     })
+}
+
+/// Walk `schema[0].properties[]` and collect all quality rules across every
+/// property entry.  Each property's `quality[]` array is parsed and the field
+/// name (dot-notation) is stamped onto each rule.
+fn extract_quality_rules_from_props(props: &[Value]) -> Vec<QualityRule> {
+    let mut all_rules: Vec<QualityRule> = Vec::new();
+    for p in props {
+        let Some(m) = p.as_mapping() else { continue };
+        let Some(name) = m.get("name").and_then(|v| v.as_str()) else {
+            continue;
+        };
+        if let Some(quality_seq) = m.get("quality").and_then(|v| v.as_sequence()) {
+            all_rules.extend(odcs_quality_to_rules(name, quality_seq));
+        }
+    }
+    all_rules
 }
 
 /// Reverse D-001 flattening: convert ODCS dot-notation property list back to a

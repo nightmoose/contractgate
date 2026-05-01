@@ -6,10 +6,10 @@
  * latest-stable resolver badge, name-history de-emphasis.
  */
 
-import { useState } from "react";
+import { useState, useCallback, useEffect } from "react";
 import clsx from "clsx";
-import { getVersion } from "@/lib/api";
-import type { ContractResponse, VersionSummary, VersionResponse, NameHistoryEntry } from "@/lib/api";
+import { getVersion, exportOdcs, approveImport, getConformanceReport } from "@/lib/api";
+import type { ContractResponse, VersionSummary, VersionResponse, NameHistoryEntry, ConformanceReport } from "@/lib/api";
 import { ConfirmActionModal, TooltipWrap } from "../_lib";
 
 // ---------------------------------------------------------------------------
@@ -77,6 +77,56 @@ export function VersionsTab({
   const [diffError, setDiffError] = useState<string | null>(null);
 
   const BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001";
+
+  // ODCS export loading map: version → loading state
+  const [exportingVersion, setExportingVersion] = useState<string | null>(null);
+  // Approve-import loading map: version → loading state
+  const [approvingVersion, setApprovingVersion] = useState<string | null>(null);
+  // Conformance scores: version → report (lazy-loaded on hover/click)
+  const [conformanceMap, setConformanceMap] = useState<Record<string, ConformanceReport | "loading" | "error">>({});
+
+  const handleExportOdcs = useCallback(async (version: string) => {
+    setExportingVersion(version);
+    try {
+      const yaml = await exportOdcs(contractId, version);
+      // Trigger browser download
+      const blob = new Blob([yaml], { type: "text/yaml" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${contractId}_${version}_odcs.yaml`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (e: unknown) {
+      alert(e instanceof Error ? e.message : String(e));
+    } finally {
+      setExportingVersion(null);
+    }
+  }, [contractId]);
+
+  const handleApproveImport = useCallback(async (version: string) => {
+    setApprovingVersion(version);
+    try {
+      await approveImport(contractId, version);
+      // Reload versions list via parent re-fetch
+      window.dispatchEvent(new CustomEvent("contractgate:versions-changed", { detail: { contractId } }));
+    } catch (e: unknown) {
+      alert(e instanceof Error ? e.message : String(e));
+    } finally {
+      setApprovingVersion(null);
+    }
+  }, [contractId]);
+
+  const loadConformance = useCallback(async (version: string) => {
+    if (conformanceMap[version]) return; // already loaded or loading
+    setConformanceMap((m) => ({ ...m, [version]: "loading" }));
+    try {
+      const report = await getConformanceReport(contractId, version);
+      setConformanceMap((m) => ({ ...m, [version]: report }));
+    } catch {
+      setConformanceMap((m) => ({ ...m, [version]: "error" }));
+    }
+  }, [contractId, conformanceMap]);
 
   // Sorted list — newest first
   const sortedVersions = [...versions].sort((a, b) =>
@@ -307,6 +357,42 @@ export function VersionsTab({
                       </span>
                     </TooltipWrap>
                   )}
+                  {/* ODCS source badge */}
+                  {v.import_source && v.import_source !== "native" && (
+                    <TooltipWrap
+                      content={
+                        v.import_source === "odcs"
+                          ? "Imported from a full ODCS v3.1.0 document (lossless round-trip)."
+                          : "Imported from a foreign ODCS document without ContractGate extensions. Best-effort reconstruction — review required before promotion."
+                      }
+                      rfc="D-003"
+                    >
+                      <span className={clsx(
+                        "text-[10px] px-1.5 py-0.5 rounded border cursor-default",
+                        v.import_source === "odcs"
+                          ? "bg-blue-900/30 text-blue-400 border-blue-800/40"
+                          : "bg-orange-900/30 text-orange-400 border-orange-800/40"
+                      )}>
+                        {v.import_source === "odcs" ? "ODCS" : "ODCS ⚠"}
+                      </span>
+                    </TooltipWrap>
+                  )}
+                  {/* requires_review warning */}
+                  {v.requires_review && (
+                    <TooltipWrap
+                      content="This version was imported from a foreign ODCS document without ContractGate extensions. A human must review the reconstructed contract before it can be promoted. Click 'Approve' to clear this flag."
+                      rfc="D-002"
+                    >
+                      <span className="text-[10px] px-1.5 py-0.5 rounded bg-orange-900/30 text-orange-300 border border-orange-800/40 cursor-default animate-pulse">
+                        review required
+                      </span>
+                    </TooltipWrap>
+                  )}
+                  {/* Conformance score chip — loads on mount */}
+                  <ConformanceChip
+                    report={conformanceMap[v.version]}
+                    onLoad={() => loadConformance(v.version)}
+                  />
                   <span className="text-xs text-slate-600 truncate">
                     Created {new Date(v.created_at).toLocaleString()}
                     {v.promoted_at &&
@@ -318,11 +404,22 @@ export function VersionsTab({
 
                 {/* Actions */}
                 <div className="flex items-center gap-2 shrink-0">
-                  {v.state === "draft" && (
+                  {/* Approve import — only for drafts that need review */}
+                  {v.state === "draft" && v.requires_review && (
+                    <button
+                      onClick={() => handleApproveImport(v.version)}
+                      disabled={approvingVersion === v.version}
+                      className="px-3 py-1 text-xs bg-orange-700 hover:bg-orange-600 disabled:opacity-40 text-white rounded-lg transition-colors"
+                    >
+                      {approvingVersion === v.version ? "Approving…" : "Approve ✓"}
+                    </button>
+                  )}
+                  {v.state === "draft" && !v.requires_review && (
                     <button
                       onClick={() => handlePromoteClick(v.version)}
                       disabled={saving}
                       className="px-3 py-1 text-xs bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 text-white rounded-lg transition-colors"
+                      title="Promote this draft to stable"
                     >
                       Promote
                     </button>
@@ -336,6 +433,15 @@ export function VersionsTab({
                       Deprecate
                     </button>
                   )}
+                  {/* Export ODCS YAML */}
+                  <button
+                    onClick={() => handleExportOdcs(v.version)}
+                    disabled={exportingVersion === v.version}
+                    className="px-3 py-1 text-xs bg-blue-900/30 hover:bg-blue-900/50 disabled:opacity-40 text-blue-300 rounded-lg transition-colors"
+                    title="Export as ODCS v3.1.0 YAML"
+                  >
+                    {exportingVersion === v.version ? "…" : "↓ ODCS"}
+                  </button>
                   <button
                     onClick={() => onViewYaml(v.version)}
                     className="px-3 py-1 text-xs bg-[#1f2937] hover:bg-[#374151] text-slate-300 rounded-lg transition-colors"
@@ -387,6 +493,59 @@ export function VersionsTab({
         </p>
       )}
     </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// ConformanceChip — lazy-loaded ODCS conformance score badge per version
+// ---------------------------------------------------------------------------
+
+function ConformanceChip({
+  report,
+  onLoad,
+}: {
+  report: ConformanceReport | "loading" | "error" | undefined;
+  onLoad: () => void;
+}) {
+  // Trigger load on first render
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => { onLoad(); }, []);
+
+  if (!report || report === "loading") {
+    return (
+      <span className="text-[10px] px-1.5 py-0.5 rounded bg-[#111827] text-slate-600 border border-[#1f2937] cursor-default animate-pulse">
+        score…
+      </span>
+    );
+  }
+  if (report === "error") {
+    return null; // silently skip — conformance is optional
+  }
+
+  const pct = Math.round(report.overall_score * 100);
+  const color =
+    pct >= 90 ? "bg-green-900/40 text-green-400 border-green-800/40" :
+    pct >= 70 ? "bg-blue-900/40 text-blue-400 border-blue-800/40" :
+    pct >= 50 ? "bg-amber-900/40 text-amber-400 border-amber-800/40" :
+    "bg-red-900/40 text-red-400 border-red-800/40";
+
+  const tooltip = [
+    `ODCS v3.1.0 Conformance: ${pct}%`,
+    `Mandatory fields: ${Math.round(report.mandatory_fields_score * 100)}%`,
+    `Extensions: ${Math.round(report.extensions_score * 100)}%`,
+    `Round-trip fidelity: ${Math.round(report.round_trip_fidelity_score * 100)}%`,
+    `Quality coverage: ${Math.round(report.quality_coverage_pct * 100)}% (${report.quality_covered_fields}/${report.total_fields} fields)`,
+  ].join("\n");
+
+  return (
+    <TooltipWrap content={tooltip} rfc="ODCS">
+      <span className={clsx(
+        "text-[10px] px-1.5 py-0.5 rounded border cursor-default font-mono",
+        color
+      )}>
+        {pct}%
+      </span>
+    </TooltipWrap>
   );
 }
 

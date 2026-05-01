@@ -43,6 +43,7 @@ use uuid::Uuid;
 pub use contractgate::{contract, transform, validation};
 
 mod api_key_auth;
+mod conformance;
 mod error;
 mod infer;
 mod infer_avro;
@@ -530,6 +531,25 @@ async fn approve_import_handler(
 }
 
 // ---------------------------------------------------------------------------
+// Conformance report handler
+// ---------------------------------------------------------------------------
+
+/// `GET /contracts/:id/versions/:version/odcs-conformance`
+///
+/// Returns a `ConformanceReport` with four ODCS v3.1.0 dimension scores.
+async fn odcs_conformance_handler(
+    State(state): State<Arc<AppState>>,
+    Path((contract_id, version)): Path<(Uuid, String)>,
+) -> AppResult<Json<conformance::ConformanceReport>> {
+    let identity = storage::get_contract_identity(&state.db, contract_id).await?;
+    let cv = storage::get_version(&state.db, contract_id, &version).await?;
+    let contract: Contract = serde_yaml::from_str(&cv.yaml_content)
+        .map_err(|e| AppError::BadRequest(format!("stored yaml_content is invalid: {e}")))?;
+    let report = conformance::compute_conformance(&identity, &cv, &contract);
+    Ok(Json(report))
+}
+
+// ---------------------------------------------------------------------------
 // Audit log handler
 // ---------------------------------------------------------------------------
 
@@ -713,6 +733,10 @@ fn build_router(state: Arc<AppState>) -> Router {
         .route(
             "/contracts/:id/versions/:version/approve-import",
             post(approve_import_handler),
+        )
+        .route(
+            "/contracts/:id/versions/:version/odcs-conformance",
+            get(odcs_conformance_handler),
         )
         // Contract inference — JSON samples
         .route("/contracts/infer", post(infer::infer_handler))

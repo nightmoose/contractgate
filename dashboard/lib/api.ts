@@ -143,6 +143,9 @@ export interface ContractResponse {
   latest_stable_version: string | null;
 }
 
+/** Source of a contract version's YAML content. */
+export type ImportSource = "native" | "odcs" | "odcs_stripped";
+
 /** One row for `GET /contracts/:id/versions`. */
 export interface VersionSummary {
   version: string;
@@ -150,6 +153,10 @@ export interface VersionSummary {
   created_at: string;
   promoted_at: string | null;
   deprecated_at: string | null;
+  /** Where the YAML originated. */
+  import_source: ImportSource;
+  /** True when the version needs human review before promotion (D-002). */
+  requires_review: boolean;
 }
 
 /** Full response for a single version — includes YAML. */
@@ -164,6 +171,10 @@ export interface VersionResponse {
   deprecated_at: string | null;
   /** RFC-004: when true, undeclared inbound fields fail validation. */
   compliance_mode: boolean;
+  /** Where the YAML originated. */
+  import_source: ImportSource;
+  /** True when the version needs human review before promotion (D-002). */
+  requires_review: boolean;
 }
 
 /** Row in the append-only rename log for `GET /contracts/:id/name-history`. */
@@ -495,6 +506,101 @@ export const playgroundValidate = (
       ...(opts?.atomic != null ? { atomic: opts.atomic } : {}),
     }),
   });
+
+// ---------------------------------------------------------------------------
+// ODCS — import, export, approve-import, conformance
+// ---------------------------------------------------------------------------
+
+/** Response from `POST /contracts/import`. */
+export interface OdcsImportResponse {
+  id: string;
+  version: string;
+  import_source: ImportSource;
+  requires_review: boolean;
+}
+
+/** Breakdown of which ODCS mandatory fields are present. */
+export interface MandatoryFieldsDetail {
+  api_version: boolean;
+  kind: boolean;
+  id: boolean;
+  version: boolean;
+  status: boolean;
+}
+
+/** Breakdown of which CG extensions are present. */
+export interface ExtensionsDetail {
+  x_contractgate_version: boolean;
+  x_contractgate_ontology: boolean;
+}
+
+/** Four-dimensional ODCS v3.1.0 conformance report. */
+export interface ConformanceReport {
+  version: string;
+  mandatory_fields_score: number;
+  mandatory_fields_detail: MandatoryFieldsDetail;
+  extensions_score: number;
+  extensions_detail: ExtensionsDetail;
+  round_trip_fidelity_score: number;
+  round_trip_note: string;
+  quality_coverage_pct: number;
+  quality_covered_fields: number;
+  total_fields: number;
+  overall_score: number;
+}
+
+/**
+ * Import an ODCS v3.1.0 YAML document, creating a new contract + draft version.
+ * Returns the newly-created VersionResponse (or a minimal OdcsImportResponse shape).
+ */
+export const importOdcs = (
+  odcs_yaml: string,
+  name_override?: string
+) =>
+  apiFetch<VersionResponse>("/contracts/import", {
+    method: "POST",
+    body: JSON.stringify({
+      odcs_yaml,
+      ...(name_override ? { name_override } : {}),
+    }),
+  });
+
+/**
+ * Export a contract version as ODCS v3.1.0 YAML.  Returns raw YAML text.
+ */
+export const exportOdcs = async (
+  contractId: string,
+  version: string
+): Promise<string> => {
+  const headers: Record<string, string> = {};
+  if (API_KEY) headers["x-api-key"] = API_KEY;
+  if (_apiOrgId) headers["x-org-id"] = _apiOrgId;
+  const res = await fetch(
+    `${BASE}/contracts/${contractId}/versions/${encodeURIComponent(version)}/export`,
+    { headers }
+  );
+  if (!res.ok) {
+    const message = await extractErrorMessage(res);
+    throw new Error(message);
+  }
+  return res.text();
+};
+
+/**
+ * Clear the `requires_review` flag on a stripped ODCS import draft,
+ * allowing it to be promoted.
+ */
+export const approveImport = (contractId: string, version: string) =>
+  apiFetch<VersionResponse>(
+    `/contracts/${contractId}/versions/${encodeURIComponent(version)}/approve-import`,
+    { method: "POST" }
+  );
+
+/** Fetch the ODCS conformance report for a specific version. */
+export const getConformanceReport = (contractId: string, version: string) =>
+  apiFetch<ConformanceReport>(
+    `/contracts/${contractId}/versions/${encodeURIComponent(version)}/odcs-conformance`
+  );
 
 // ---------------------------------------------------------------------------
 // Helpers

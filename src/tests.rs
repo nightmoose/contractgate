@@ -1091,4 +1091,179 @@ schema:
         let result = odcs::import_odcs(bad_yaml);
         assert!(result.is_err(), "import must fail when version is absent");
     }
+
+    // ---- quality round-trip -------------------------------------------------
+
+    #[test]
+    fn export_quality_rules_appear_in_odcs_property_quality_array() {
+        use crate::contract::{QualityRule, QualityRuleType};
+
+        let contract = contract_with(
+            "qtest",
+            None,
+            vec![
+                entity_with("user_id", FieldType::String, |f| {
+                    f.required = true;
+                }),
+                entity_with("created_at", FieldType::Integer, |f| {
+                    f.required = true;
+                }),
+            ],
+            vec![],
+            vec![],
+            vec![
+                QualityRule {
+                    field: "user_id".into(),
+                    rule_type: QualityRuleType::Completeness,
+                    description: Some("must be present".into()),
+                    max_age_seconds: None,
+                    scope: None,
+                    threshold: None,
+                },
+                QualityRule {
+                    field: "created_at".into(),
+                    rule_type: QualityRuleType::Freshness,
+                    description: None,
+                    max_age_seconds: Some(3600),
+                    scope: None,
+                    threshold: None,
+                },
+            ],
+        );
+
+        let identity = make_identity("qtest");
+        let yaml_content = serde_yaml::to_string(&contract).unwrap();
+        let cv = make_version(identity.id, "1.0.0", &yaml_content);
+
+        let odcs_yaml = odcs::export_odcs(odcs::OdcsExportInput {
+            identity: &identity,
+            version: &cv,
+            contract: &contract,
+        })
+        .unwrap();
+
+        let doc: serde_yaml::Value = serde_yaml::from_str(&odcs_yaml).unwrap();
+        let schema0 = doc
+            .as_mapping()
+            .unwrap()
+            .get("schema")
+            .and_then(|v| v.as_sequence())
+            .and_then(|s| s.first())
+            .and_then(|v| v.as_mapping())
+            .unwrap();
+        let props = schema0
+            .get("properties")
+            .and_then(|v| v.as_sequence())
+            .unwrap();
+
+        // user_id property must have quality[0].type == "completeness"
+        let uid_prop = props
+            .iter()
+            .find(|p| {
+                p.as_mapping()
+                    .and_then(|m| m.get("name"))
+                    .and_then(|v| v.as_str())
+                    == Some("user_id")
+            })
+            .and_then(|p| p.as_mapping())
+            .unwrap();
+        let uid_quality = uid_prop
+            .get("quality")
+            .and_then(|v| v.as_sequence())
+            .unwrap();
+        assert_eq!(uid_quality.len(), 1, "user_id should have 1 quality rule");
+        assert_eq!(
+            uid_quality[0]
+                .as_mapping()
+                .unwrap()
+                .get("type")
+                .and_then(|v| v.as_str()),
+            Some("completeness")
+        );
+
+        // created_at must have freshness + attributes.maxAgeSeconds == 3600
+        let ts_prop = props
+            .iter()
+            .find(|p| {
+                p.as_mapping()
+                    .and_then(|m| m.get("name"))
+                    .and_then(|v| v.as_str())
+                    == Some("created_at")
+            })
+            .and_then(|p| p.as_mapping())
+            .unwrap();
+        let ts_quality = ts_prop
+            .get("quality")
+            .and_then(|v| v.as_sequence())
+            .unwrap();
+        assert_eq!(ts_quality.len(), 1);
+        let ts_q0 = ts_quality[0].as_mapping().unwrap();
+        assert_eq!(
+            ts_q0.get("type").and_then(|v| v.as_str()),
+            Some("freshness")
+        );
+        let max_age = ts_q0
+            .get("attributes")
+            .and_then(|v| v.as_mapping())
+            .and_then(|m| m.get("maxAgeSeconds"))
+            .and_then(|v| v.as_u64());
+        assert_eq!(max_age, Some(3600));
+    }
+
+    #[test]
+    fn import_mode_b_recovers_quality_rules_from_odcs_quality_array() {
+        // Foreign ODCS document with quality[] populated on properties.
+        let odcs_yaml = r#"
+apiVersion: v3.1.0
+kind: DataContract
+id: "qtest-b"
+version: "2.0.0"
+status: active
+dataProduct: quality_import
+schema:
+  - name: quality_import
+    properties:
+      - name: order_id
+        logicalType: string
+        required: true
+        quality:
+          - type: completeness
+            description: "must be present"
+          - type: uniqueness
+      - name: created_at
+        logicalType: integer
+        required: true
+        quality:
+          - type: freshness
+            attributes:
+              maxAgeSeconds: 7200
+"#;
+
+        let result = odcs::import_odcs(odcs_yaml).unwrap();
+        assert_eq!(result.import_source, ImportSource::OdcsStripped);
+
+        let contract: crate::contract::Contract =
+            serde_yaml::from_str(&result.yaml_content).unwrap();
+
+        // 3 quality rules total: 2 on order_id + 1 on created_at
+        assert_eq!(
+            contract.quality.len(),
+            3,
+            "should recover 3 quality rules; got: {:?}",
+            contract
+                .quality
+                .iter()
+                .map(|r| (&r.field, &r.rule_type))
+                .collect::<Vec<_>>()
+        );
+
+        // Freshness rule must carry max_age_seconds
+        let freshness = contract
+            .quality
+            .iter()
+            .find(|r| matches!(r.rule_type, crate::contract::QualityRuleType::Freshness))
+            .expect("freshness rule must be recovered");
+        assert_eq!(freshness.max_age_seconds, Some(7200));
+        assert_eq!(freshness.field, "created_at");
+    }
 }
