@@ -54,7 +54,9 @@
 //!   - `validate()` is total: any input shape produces a `ValidationResult`,
 //!     never a panic or `Result::Err`.
 
-use crate::contract::{Contract, FieldDefinition, FieldType, MetricDefinition, QualityRule, QualityRuleType};
+use crate::contract::{
+    Contract, FieldDefinition, FieldType, MetricDefinition, QualityRule, QualityRuleType,
+};
 use regex::Regex;
 use serde_json::Value;
 use std::collections::{HashMap, HashSet};
@@ -664,7 +666,11 @@ fn check_freshness(rule: &QualityRule, event: &Value, violations: &mut Vec<Viola
     let ts_secs: Option<i64> = match val {
         Value::Number(n) => n.as_i64().map(|v| {
             // Heuristic: ms epoch if value is larger than ~year 2023 in seconds
-            if v > 1_700_000_000_000 { v / 1000 } else { v }
+            if v > 1_700_000_000_000 {
+                v / 1000
+            } else {
+                v
+            }
         }),
         _ => None,
     };
@@ -709,10 +715,7 @@ fn check_freshness(rule: &QualityRule, event: &Value, violations: &mut Vec<Viola
 ///
 /// Only the *second and subsequent* occurrences of a value are flagged;
 /// the first occurrence is always clean.
-pub fn check_uniqueness_batch(
-    rules: &[QualityRule],
-    events: &[Value],
-) -> Vec<(usize, Violation)> {
+pub fn check_uniqueness_batch(rules: &[QualityRule], events: &[Value]) -> Vec<(usize, Violation)> {
     let mut out = Vec::new();
 
     let unique_rules: Vec<&QualityRule> = rules

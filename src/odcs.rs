@@ -244,10 +244,7 @@ pub fn export_odcs(input: OdcsExportInput<'_>) -> Result<String, String> {
 
     // x-contractgate-compliance-mode (only written when true to keep docs tidy)
     if contract.compliance_mode {
-        doc.insert(
-            v_str("x-contractgate-compliance-mode"),
-            Value::Bool(true),
-        );
+        doc.insert(v_str("x-contractgate-compliance-mode"), Value::Bool(true));
     }
 
     serde_yaml::to_string(&Value::Mapping(doc))
@@ -284,8 +281,7 @@ pub struct ImportResult {
 /// is the reason the caller must set `requires_review = true` (D-002) and
 /// block promotion until human review clears it.
 pub fn import_odcs(yaml: &str) -> Result<ImportResult, String> {
-    let doc: Value =
-        serde_yaml::from_str(yaml).map_err(|e| format!("invalid ODCS YAML: {e}"))?;
+    let doc: Value = serde_yaml::from_str(yaml).map_err(|e| format!("invalid ODCS YAML: {e}"))?;
 
     let mapping = doc
         .as_mapping()
@@ -399,9 +395,7 @@ fn import_mode_b(doc: &Mapping, version: String) -> Result<ImportResult, String>
 /// Strategy: collect all property entries, then group by the first dot-segment.
 /// Entries without a dot are leaf fields.  Entries sharing a common prefix are
 /// collected as children of an implicit Object parent.
-fn unflatten_odcs_properties(
-    props: &[Value],
-) -> Result<Vec<FieldDefinition>, String> {
+fn unflatten_odcs_properties(props: &[Value]) -> Result<Vec<FieldDefinition>, String> {
     // Parse all entries into (name, FieldDefinition) pairs first.
     let mut pairs: Vec<(String, FieldDefinition)> = Vec::new();
     for p in props {
@@ -480,10 +474,7 @@ fn odcs_prop_to_field(m: &Mapping, full_name: &str) -> Result<FieldDefinition, S
         .unwrap_or("string");
     let field_type = logical_to_field_type(logical);
 
-    let required = m
-        .get("required")
-        .and_then(|v| v.as_bool())
-        .unwrap_or(false);
+    let required = m.get("required").and_then(|v| v.as_bool()).unwrap_or(false);
 
     // Parse x-cg-* customProperties back to CG constraints.
     let mut pattern: Option<String> = None;
@@ -583,4 +574,3 @@ fn custom_prop(key: &str, value: Value) -> Value {
     m.insert(v_str("value"), value);
     Value::Mapping(m)
 }
-

@@ -739,8 +739,8 @@ mod versioning {
 mod odcs_tests {
     use super::fixtures::{contract_with, entity_with};
     use crate::contract::{
-        ContractIdentity, ContractVersion, FieldType, GlossaryEntry, ImportSource, MetricDefinition,
-        MultiStableResolution, VersionState,
+        ContractIdentity, ContractVersion, FieldType, GlossaryEntry, ImportSource,
+        MetricDefinition, MultiStableResolution, VersionState,
     };
     use crate::odcs;
     use chrono::Utc;
@@ -787,8 +787,7 @@ mod odcs_tests {
                 }),
                 entity_with("event_type", FieldType::String, |f| {
                     f.required = true;
-                    f.allowed_values =
-                        Some(vec![json!("click"), json!("view"), json!("purchase")]);
+                    f.allowed_values = Some(vec![json!("click"), json!("view"), json!("purchase")]);
                 }),
                 entity_with("timestamp", FieldType::Integer, |f| {
                     f.required = true;
@@ -965,7 +964,10 @@ mod odcs_tests {
             serde_yaml::from_str(&result.yaml_content).expect("yaml must be valid");
 
         assert_eq!(recovered.name, original.name);
-        assert_eq!(recovered.ontology.entities.len(), original.ontology.entities.len());
+        assert_eq!(
+            recovered.ontology.entities.len(),
+            original.ontology.entities.len()
+        );
         assert_eq!(recovered.glossary.len(), original.glossary.len());
         assert_eq!(recovered.metrics.len(), original.metrics.len());
 

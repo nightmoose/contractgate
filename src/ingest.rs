@@ -389,8 +389,7 @@ pub async fn ingest_handler(
     // Runs after fallback resolution so each event is tagged with the version
     // that will be used for the audit row.  Uniqueness violations are merged
     // into the effective_results so they flow through the normal quarantine path.
-    let uniqueness_violations =
-        check_uniqueness_batch(&compiled.contract.quality, &events);
+    let uniqueness_violations = check_uniqueness_batch(&compiled.contract.quality, &events);
     for (idx, violation) in uniqueness_violations {
         if let Some(vr) = effective_results.get_mut(idx) {
             vr.violations.push(violation);

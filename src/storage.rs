@@ -78,9 +78,10 @@ impl ContractVersionRow {
         let state = self.state.parse::<VersionState>().map_err(|e| {
             AppError::Internal(format!("invalid contract_versions.state in DB: {e}"))
         })?;
-        let import_source = self.import_source.parse::<ImportSource>().map_err(|e| {
-            AppError::Internal(format!("invalid import_source in DB: {e}"))
-        })?;
+        let import_source = self
+            .import_source
+            .parse::<ImportSource>()
+            .map_err(|e| AppError::Internal(format!("invalid import_source in DB: {e}")))?;
         Ok(ContractVersion {
             id: self.id,
             contract_id: self.contract_id,

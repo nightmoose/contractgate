@@ -59,8 +59,8 @@ mod tests;
 
 use contract::{
     Contract, ContractIdentity, ContractResponse, ContractSummary, ContractVersion,
-    CreateContractRequest, CreateVersionRequest, NameHistoryEntry,
-    PatchContractRequest, PatchVersionRequest, VersionResponse, VersionSummary,
+    CreateContractRequest, CreateVersionRequest, NameHistoryEntry, PatchContractRequest,
+    PatchVersionRequest, VersionResponse, VersionSummary,
 };
 use error::{AppError, AppResult};
 use validation::CompiledContract;
@@ -450,10 +450,9 @@ async fn import_odcs_handler(
     req: axum::extract::Request,
 ) -> AppResult<(StatusCode, Json<VersionResponse>)> {
     let org_id = org_id_from_req(&req);
-    let Json(body): Json<odcs::ImportOdcsRequest> =
-        axum::Json::from_request(req, &state)
-            .await
-            .map_err(|e| AppError::BadRequest(e.to_string()))?;
+    let Json(body): Json<odcs::ImportOdcsRequest> = axum::Json::from_request(req, &state)
+        .await
+        .map_err(|e| AppError::BadRequest(e.to_string()))?;
 
     let result = odcs::import_odcs(&body.odcs_yaml).map_err(AppError::BadRequest)?;
 
