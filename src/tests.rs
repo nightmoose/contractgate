@@ -25,7 +25,7 @@
 mod fixtures {
     use crate::contract::{
         Contract, FieldDefinition, FieldType, GlossaryEntry, MetricDefinition, Ontology,
-        QualityRule, QualityRuleType,
+        QualityRule,
     };
 
     /// A minimum-defaults `FieldDefinition`.  Use when a test only cares
@@ -754,7 +754,7 @@ mod odcs_tests {
     use super::fixtures::{contract_with, entity_with};
     use crate::contract::{
         ContractIdentity, ContractVersion, FieldType, GlossaryEntry, ImportSource,
-        MetricDefinition, MultiStableResolution, QualityRule, QualityRuleType, VersionState,
+        MetricDefinition, MultiStableResolution, VersionState,
     };
     use crate::odcs;
     use chrono::Utc;
@@ -776,7 +776,7 @@ mod odcs_tests {
     fn make_version(contract_id: Uuid, ver: &str, yaml: &str) -> ContractVersion {
         ContractVersion {
             id: Uuid::new_v4(),
-            contract_id: contract_id,
+            contract_id,
             version: ver.to_string(),
             state: VersionState::Stable,
             yaml_content: yaml.to_string(),
@@ -1020,7 +1020,7 @@ schema:
         required: true
 "#;
 
-        let result = odcs::import_odcs(&odcs_yaml).expect("stripped import must succeed");
+        let result = odcs::import_odcs(odcs_yaml).unwrap();
 
         assert_eq!(result.import_source, ImportSource::OdcsStripped);
         assert_eq!(result.version, "2.0.0");
@@ -1063,7 +1063,7 @@ schema:
             value: 9999.99
 "#;
 
-        let result = odcs::import_odcs(&odcs_yaml).unwrap();
+        let result = odcs::import_odcs(odcs_yaml).unwrap();
         let contract: crate::contract::Contract =
             serde_yaml::from_str(&result.yaml_content).unwrap();
 

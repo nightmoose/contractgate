@@ -508,7 +508,7 @@ async fn export_odcs_handler(
         version: &cv,
         contract: &contract,
     })
-    .map_err(|e| AppError::Internal(e))?;
+    .map_err(AppError::Internal)?;
 
     Ok((
         StatusCode::OK,
