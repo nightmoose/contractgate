@@ -328,9 +328,10 @@ mod playground {
                 max: None,
             }],
             vec![QualityRule {
-                name: "valid_event".into(),
-                description: "Event must have a valid event_type".into(),
-                check: "event_type in ['click', 'view', 'purchase', 'login']".into(),
+                field: "event_type".into(),
+                rule_type: QualityRuleType::Validity, // or whatever type you need
+                description: Some("Event must have a valid event_type".into()),
+                // max_age_seconds, scope, threshold as needed
             }],
         )
     }
@@ -820,9 +821,10 @@ mod odcs_tests {
                 max: None,
             }],
             vec![QualityRule {
-                name: "valid_event".into(),
-                description: "Event must have a valid event_type".into(),
-                check: "event_type in ['click', 'view', 'purchase', 'login']".into(),
+                field: "event_type".into(),
+                rule_type: QualityRuleType::Validity, // or whatever type you need
+                description: Some("Event must have a valid event_type".into()),
+                // max_age_seconds, scope, threshold as needed
             }],
         )
     }
