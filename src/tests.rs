@@ -25,7 +25,7 @@
 mod fixtures {
     use crate::contract::{
         Contract, FieldDefinition, FieldType, GlossaryEntry, MetricDefinition, Ontology,
-        QualityRule,
+        QualityRule, QualityRuleType,
     };
 
     /// A minimum-defaults `FieldDefinition`.  Use when a test only cares
@@ -280,7 +280,9 @@ mod batch {
 #[cfg(test)]
 mod playground {
     use super::fixtures::{contract_with, entity_with};
-    use crate::contract::{Contract, FieldType, GlossaryEntry, MetricDefinition};
+    use crate::contract::{
+        Contract, FieldType, GlossaryEntry, MetricDefinition, QualityRule, QualityRuleType,
+    };
     use crate::validation::{validate, CompiledContract, ViolationKind};
     use serde_json::json;
 
@@ -327,12 +329,7 @@ mod playground {
                 min: None,
                 max: None,
             }],
-            vec![QualityRule {
-                field: "event_type".into(),
-                rule_type: QualityRuleType::Validity, // or whatever type you need
-                description: Some("Event must have a valid event_type".into()),
-                // max_age_seconds, scope, threshold as needed
-            }],
+            vec![],
         )
     }
 
@@ -750,7 +747,7 @@ mod odcs_tests {
     use super::fixtures::{contract_with, entity_with};
     use crate::contract::{
         ContractIdentity, ContractVersion, FieldType, GlossaryEntry, ImportSource,
-        MetricDefinition, MultiStableResolution, QualityRule, VersionState,
+        MetricDefinition, MultiStableResolution, QualityRule, QualityRuleType, VersionState,
     };
     use crate::odcs;
     use chrono::Utc;
@@ -772,7 +769,7 @@ mod odcs_tests {
     fn make_version(contract_id: Uuid, ver: &str, yaml: &str) -> ContractVersion {
         ContractVersion {
             id: Uuid::new_v4(),
-            contract_id,
+            contract_id: contract_id,
             version: ver.to_string(),
             state: VersionState::Stable,
             yaml_content: yaml.to_string(),
@@ -820,12 +817,7 @@ mod odcs_tests {
                 min: None,
                 max: None,
             }],
-            vec![QualityRule {
-                field: "event_type".into(),
-                rule_type: QualityRuleType::Validity, // or whatever type you need
-                description: Some("Event must have a valid event_type".into()),
-                // max_age_seconds, scope, threshold as needed
-            }],
+            vec![], // quality rules not needed for this test
         )
     }
 
@@ -1021,7 +1013,7 @@ schema:
         required: true
 "#;
 
-        let result = odcs::import_odcs(odcs_yaml).expect("stripped import must succeed");
+        let result = odcs::import_odcs(&odcs_yaml).expect("stripped import must succeed");
 
         assert_eq!(result.import_source, ImportSource::OdcsStripped);
         assert_eq!(result.version, "2.0.0");
@@ -1064,7 +1056,7 @@ schema:
             value: 9999.99
 "#;
 
-        let result = odcs::import_odcs(odcs_yaml).unwrap();
+        let result = odcs::import_odcs(&odcs_yaml).unwrap();
         let contract: crate::contract::Contract =
             serde_yaml::from_str(&result.yaml_content).unwrap();
 
