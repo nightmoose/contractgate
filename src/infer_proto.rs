@@ -90,6 +90,7 @@ pub async fn infer_proto_handler(
         ontology: Ontology { entities },
         glossary: vec![],
         metrics: vec![],
+        quality: vec![],
     };
 
     let yaml_content = serde_yaml::to_string(&contract)

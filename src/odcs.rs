@@ -380,6 +380,7 @@ fn import_mode_b(doc: &Mapping, version: String) -> Result<ImportResult, String>
         ontology: Ontology { entities },
         glossary: vec![],
         metrics: vec![],
+        quality: vec![],
     };
 
     let yaml_content = serde_yaml::to_string(&contract)
