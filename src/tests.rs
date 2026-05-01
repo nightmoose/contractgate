@@ -329,7 +329,14 @@ mod playground {
                 min: None,
                 max: None,
             }],
-            vec![],
+            vec![QualityRule {
+                field: "event_type".into(),
+                rule_type: QualityRuleType::Validity,
+                description: Some("Event must have a valid event_type".into()),
+                max_age_seconds: None,
+                scope: None,
+                threshold: None,
+            }],
         )
     }
 
