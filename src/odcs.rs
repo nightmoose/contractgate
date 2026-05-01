@@ -87,10 +87,8 @@ fn flatten_to_odcs_properties(
             out.extend(flatten_to_odcs_properties(&name, nested, quality_rules));
         } else {
             // Collect only the quality rules that target this exact field path.
-            let prop_quality: Vec<&QualityRule> = quality_rules
-                .iter()
-                .filter(|r| r.field == name)
-                .collect();
+            let prop_quality: Vec<&QualityRule> =
+                quality_rules.iter().filter(|r| r.field == name).collect();
             out.push(build_odcs_property(&name, f, &prop_quality));
         }
     }
@@ -244,8 +242,8 @@ fn odcs_quality_to_rules(field_name: &str, quality_seq: &[Value]) -> Vec<Quality
             let threshold = attrs
                 .and_then(|a| a.get("threshold"))
                 .and_then(|v| v.as_f64());
-            let scope = matches!(rule_type, QualityRuleType::Uniqueness)
-                .then_some(UniqueScope::Batch);
+            let scope =
+                matches!(rule_type, QualityRuleType::Uniqueness).then_some(UniqueScope::Batch);
             Some(QualityRule {
                 field: field_name.to_string(),
                 rule_type,

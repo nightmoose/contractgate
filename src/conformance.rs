@@ -291,7 +291,10 @@ fn check_round_trip(odcs_yaml: &str) -> (f64, String) {
 }
 
 /// Recursively collect dot-notation paths of all leaf fields in the ontology.
-fn collect_leaf_field_names(fields: &[crate::contract::FieldDefinition], prefix: &str) -> Vec<String> {
+fn collect_leaf_field_names(
+    fields: &[crate::contract::FieldDefinition],
+    prefix: &str,
+) -> Vec<String> {
     let mut names = Vec::new();
     for f in fields {
         let path = if prefix.is_empty() {
