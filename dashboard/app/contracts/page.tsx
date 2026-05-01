@@ -33,6 +33,7 @@ import {
   deleteVersion,
   suggestNextVersion,
   listNameHistory,
+  importOdcs,
 } from "@/lib/api";
 import type {
   ContractSummary,
@@ -693,6 +694,170 @@ function GeneratorTab({ onSaved }: { onSaved: () => void }) {
 }
 
 // ---------------------------------------------------------------------------
+// OdcsImportModal
+// ---------------------------------------------------------------------------
+
+type ImportTab = "paste" | "upload";
+
+function OdcsImportModal({
+  onClose,
+  onImported,
+}: {
+  onClose: () => void;
+  onImported: () => void;
+}) {
+  const [activeTab, setActiveTab] = useState<ImportTab>("paste");
+  const [pasteYaml, setPasteYaml] = useState("");
+  const [fileYaml, setFileYaml] = useState<string | null>(null);
+  const [fileName, setFileName] = useState<string | null>(null);
+  const [importing, setImporting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState<string | null>(null);
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setFileName(file.name);
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      setFileYaml(ev.target?.result as string);
+    };
+    reader.readAsText(file);
+  };
+
+  const handleImport = async () => {
+    const yaml = activeTab === "paste" ? pasteYaml : fileYaml;
+    if (!yaml?.trim()) {
+      setError("Please provide ODCS YAML before importing.");
+      return;
+    }
+    setImporting(true);
+    setError(null);
+    setSuccess(null);
+    try {
+      const result = await importOdcs(yaml);
+      await mutate("contracts");
+      const reviewNote =
+        result.requires_review
+          ? " — review required before promotion (stripped ODCS import)."
+          : ".";
+      setSuccess(`Imported v${result.version}${reviewNote}`);
+      setTimeout(() => {
+        onImported();
+      }, 1800);
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setImporting(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
+      <div className="w-full max-w-2xl bg-[#0f1117] border border-[#1f2937] rounded-2xl shadow-2xl overflow-hidden">
+        {/* Header */}
+        <div className="flex items-center justify-between px-6 py-4 border-b border-[#1f2937]">
+          <div>
+            <h2 className="text-base font-semibold text-slate-100">Import ODCS Contract</h2>
+            <p className="text-xs text-slate-500 mt-0.5">Paste or upload an ODCS v3.1.0 YAML document</p>
+          </div>
+          <button
+            onClick={onClose}
+            className="text-slate-500 hover:text-slate-300 text-xl leading-none"
+            aria-label="Close"
+          >
+            ×
+          </button>
+        </div>
+
+        {/* Tabs */}
+        <div className="flex border-b border-[#1f2937]">
+          {(["paste", "upload"] as ImportTab[]).map((t) => (
+            <button
+              key={t}
+              onClick={() => setActiveTab(t)}
+              className={clsx(
+                "px-6 py-3 text-sm font-medium border-b-2 transition-colors",
+                activeTab === t
+                  ? "border-blue-500 text-blue-400"
+                  : "border-transparent text-slate-500 hover:text-slate-300"
+              )}
+            >
+              {t === "paste" ? "📋 Paste YAML" : "📁 Upload File"}
+            </button>
+          ))}
+        </div>
+
+        {/* Body */}
+        <div className="p-6">
+          {activeTab === "paste" && (
+            <textarea
+              className="w-full h-72 bg-[#0a0d12] text-green-300 font-mono text-sm p-4 rounded-lg border border-[#1f2937] outline-none focus:border-blue-700 resize-y"
+              placeholder={"apiVersion: v3.1.0\nkind: DataContract\n…"}
+              value={pasteYaml}
+              onChange={(e) => setPasteYaml(e.target.value)}
+              spellCheck={false}
+            />
+          )}
+
+          {activeTab === "upload" && (
+            <div className="flex flex-col items-center justify-center h-72 border-2 border-dashed border-[#2d3748] rounded-lg bg-[#0a0d12] gap-3">
+              <span className="text-4xl">📄</span>
+              <p className="text-sm text-slate-400">
+                {fileName ? (
+                  <span className="text-green-400 font-mono">{fileName}</span>
+                ) : (
+                  "Select an ODCS YAML file"
+                )}
+              </p>
+              <label className="px-4 py-2 bg-[#1f2937] hover:bg-[#374151] text-slate-300 text-sm font-medium rounded-lg cursor-pointer transition-colors">
+                Browse…
+                <input
+                  type="file"
+                  accept=".yaml,.yml"
+                  className="hidden"
+                  onChange={handleFileChange}
+                />
+              </label>
+              {fileYaml && (
+                <p className="text-xs text-slate-500">{fileYaml.split("\n").length} lines loaded</p>
+              )}
+            </div>
+          )}
+
+          {error && (
+            <p className="mt-3 text-sm text-red-400 bg-red-900/20 border border-red-800/40 rounded p-2">
+              {error}
+            </p>
+          )}
+          {success && (
+            <p className="mt-3 text-sm text-green-400 bg-green-900/20 border border-green-800/40 rounded p-2">
+              ✓ {success}
+            </p>
+          )}
+        </div>
+
+        {/* Footer */}
+        <div className="flex justify-end gap-3 px-6 py-4 border-t border-[#1f2937]">
+          <button
+            onClick={onClose}
+            className="px-4 py-2 bg-[#1f2937] hover:bg-[#374151] text-slate-300 text-sm font-medium rounded-lg transition-colors"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={handleImport}
+            disabled={importing || !!success}
+            className="px-4 py-2 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white text-sm font-medium rounded-lg transition-colors"
+          >
+            {importing ? "Importing…" : "Import Contract"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ManualCreatePanel
 // ---------------------------------------------------------------------------
 
@@ -749,6 +914,7 @@ function ContractsContent() {
   );
   const [tab, setTab] = useState<Tab>("list");
   const [showCreate, setShowCreate] = useState(false);
+  const [showImport, setShowImport] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
 
   const handleDelete = async (id: string) => {
@@ -782,12 +948,20 @@ function ContractsContent() {
           </p>
         </div>
         {tab === "list" && (
-          <button
-            onClick={() => setShowCreate((v) => !v)}
-            className="px-4 py-2 bg-green-600 hover:bg-green-500 text-white text-sm font-medium rounded-lg transition-colors"
-          >
-            + New Contract
-          </button>
+          <div className="flex gap-2">
+            <button
+              onClick={() => { setShowImport(true); setShowCreate(false); }}
+              className="px-4 py-2 bg-blue-700 hover:bg-blue-600 text-white text-sm font-medium rounded-lg transition-colors"
+            >
+              ⬆ Import ODCS
+            </button>
+            <button
+              onClick={() => { setShowCreate((v) => !v); setShowImport(false); }}
+              className="px-4 py-2 bg-green-600 hover:bg-green-500 text-white text-sm font-medium rounded-lg transition-colors"
+            >
+              + New Contract
+            </button>
+          </div>
         )}
       </div>
 
@@ -795,7 +969,7 @@ function ContractsContent() {
         {(["list", "build", "generate", "quarantine"] as Tab[]).map((t) => (
           <button
             key={t}
-            onClick={() => { setTab(t); setShowCreate(false); }}
+            onClick={() => { setTab(t); setShowCreate(false); setShowImport(false); }}
             className={clsx(
               "px-4 py-2 text-sm font-medium rounded-lg transition-colors",
               tab === t ? "bg-[#1f2937] text-slate-100" : "text-slate-500 hover:text-slate-300"
@@ -836,6 +1010,14 @@ function ContractsContent() {
           </div>
           <QuarantineTab contracts={contracts} />
         </div>
+      )}
+
+      {/* ODCS import modal — fixed overlay, rendered outside tab flow */}
+      {showImport && (
+        <OdcsImportModal
+          onClose={() => setShowImport(false)}
+          onImported={() => { setShowImport(false); mutate("contracts"); }}
+        />
       )}
     </div>
   );
