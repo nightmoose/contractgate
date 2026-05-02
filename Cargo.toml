@@ -43,9 +43,9 @@ demo = ["rdkafka"]
 
 [dependencies]
 # Web framework
-axum = { version = "0.7", features = ["macros"] }
-tower = "0.4"
-tower-http = { version = "0.5", features = ["cors", "trace", "timeout", "limit"] }
+axum = { version = "0.8", features = ["macros"] }
+tower = "0.5"
+tower-http = { version = "0.6", features = ["cors", "trace", "timeout", "limit"] }
 
 # Async runtime
 tokio = { version = "1", features = ["full"] }
@@ -63,8 +63,8 @@ regex = "1"
 # PII transforms (RFC-004): HMAC-256 for `kind: hash`, seeded StdRng
 # for `mask: format_preserving`.  Pure-Rust, no system deps — portable
 # across CI + sandbox builds.
-sha2 = "0.10"
-hmac = "0.12"
+sha2 = "0.11"
+hmac = "0.13"
 hex = "0.4"
 base64 = "0.22"
 rand = { version = "0.8", features = ["small_rng"] }
@@ -76,7 +76,7 @@ rayon = "1"
 
 # Concurrent hashmap for per-key rate-limit buckets (RFC-021).  Lock-free
 # reads; no RwLock wrapping needed.
-dashmap = "5"
+dashmap = "6"
 
 # IDs & time
 uuid = { version = "1", features = ["v4", "serde"] }
