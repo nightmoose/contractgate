@@ -53,15 +53,6 @@ name = "windows_aarch64_gnullvm"
 name = "windows_aarch64_msvc"
 
 [[bans.skip]]
-name = "windows_i686_gnullvm"
-
-[[bans.skip]]
-name = "windows_i686_msvc"
-
-[[bans.skip]]
-name = "windows_i686_pc_windows_msvc"
-
-[[bans.skip]]
 name = "windows_x86_64_gnullvm"
 
 [[bans.skip]]
