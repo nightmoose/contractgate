@@ -23,3 +23,15 @@ dashboard/.env
 dashboard/tsconfig.tsbuildinfo
 # Added by code-review-graph
 .code-review-graph/
+
+# Python SDK build artifacts — built fresh by release.yml, never committed
+sdks/python/dist/
+sdks/python/*.egg-info/
+sdks/python/.eggs/
+sdks/python/__pycache__/
+sdks/python/**/__pycache__/
+sdks/python/**/*.pyc
+sdks/python/.pytest_cache/
+sdks/python/pytest-cache-files-*/
+sdks/python/.mypy_cache/
+sdks/python/.ruff_cache/
