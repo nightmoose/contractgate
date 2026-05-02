@@ -1,0 +1,78 @@
+[advisories]
+# Deny crates with known CVEs or unmaintained status.
+version = 2
+db-path = "~/.cargo/advisory-db"
+db-urls = ["https://github.com/rustsec/advisory-db"]
+ignore = []
+
+[bans]
+# Warn on duplicates — don't fail the build.  The duplicates in this tree
+# (base64, getrandom, hashbrown, rand_core, tower, tower-http, etc.) are all
+# transitive conflicts between axum 0.7, axum-test 20, sqlx 0.8, and reqwest
+# 0.12 pulling different major versions of shared crates.  None of them affect
+# correctness or introduce CVEs; they're normal Rust ecosystem churn.
+multiple-versions = "warn"
+wildcards = "allow"
+highlight = "simplest-path"
+
+# Known benign duplicates — allow explicitly so future duplicates still warn.
+[[bans.skip]]
+name = "base64"
+
+[[bans.skip]]
+name = "getrandom"
+
+[[bans.skip]]
+name = "hashbrown"
+
+[[bans.skip]]
+name = "rand_core"
+
+[[bans.skip]]
+name = "redox_syscall"
+
+[[bans.skip]]
+name = "tower"
+
+[[bans.skip]]
+name = "tower-http"
+
+[[bans.skip]]
+name = "webpki-roots"
+
+[[bans.skip]]
+name = "windows-sys"
+
+[[bans.skip]]
+name = "windows-targets"
+
+[[bans.skip]]
+name = "windows_aarch64_gnullvm"
+
+[[bans.skip]]
+name = "windows_aarch64_msvc"
+
+[[bans.skip]]
+name = "windows_i686_gnullvm"
+
+[[bans.skip]]
+name = "windows_i686_msvc"
+
+[[bans.skip]]
+name = "windows_i686_pc_windows_msvc"
+
+[[bans.skip]]
+name = "windows_x86_64_gnullvm"
+
+[[bans.skip]]
+name = "windows_x86_64_msvc"
+
+[licenses]
+# License check not included in the CI command (advisories bans sources only).
+version = 2
+
+[sources]
+# Only allow crates from crates.io.
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]
