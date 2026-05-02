@@ -81,8 +81,8 @@ jobs:
           cache: "npm"
           cache-dependency-path: dashboard/package.json
 
-      - name: npm ci
-        run: npm ci --legacy-peer-deps
+      - name: npm install
+        run: npm install --legacy-peer-deps
 
       - name: TypeScript type-check
         run: npm run type-check
