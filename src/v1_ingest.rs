@@ -459,7 +459,7 @@ pub async fn v1_ingest_handler(
         .and_then(|v| v.to_str().ok())
         .unwrap_or("application/json");
 
-    let mut events = parse_body(content_type, &body)?;
+    let events = parse_body(content_type, &body)?;
 
     // --- 5. Per-event size check (JSON path only — NDJSON checked inline) --
     if !content_type.contains("application/x-ndjson") {
@@ -731,7 +731,7 @@ pub async fn v1_ingest_handler(
     }
 
     // --- Build per-event result list --------------------------------------
-    let mut per_event_results: Vec<V1IngestEventResult> = validation_results
+    let per_event_results: Vec<V1IngestEventResult> = validation_results
         .iter()
         .enumerate()
         .map(|(idx, vr)| V1IngestEventResult {
@@ -814,7 +814,7 @@ pub async fn v1_ingest_handler(
 async fn deprecated_quarantine(
     state: &AppState,
     contract_id: Uuid,
-    org_id: Option<Uuid>,
+    _org_id: Option<Uuid>,
     pinned_version: &str,
     events: Vec<Value>,
     source_ip: Option<String>,

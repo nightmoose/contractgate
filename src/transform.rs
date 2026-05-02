@@ -24,8 +24,7 @@
 use crate::contract::{MaskStyle, TransformKind};
 use crate::validation::CompiledContract;
 use hmac::{Hmac, Mac};
-use rand_chacha::ChaCha20Rng;
-use rand_core::{RngCore, SeedableRng};
+use rand_core::SeedableRng;
 use serde_json::{json, Value};
 use sha2::Sha256;
 
@@ -189,9 +188,10 @@ pub(crate) fn hmac_sha256_hex(key: &[u8], msg: &[u8]) -> String {
 /// output.  Not reversible, not a formal FPE scheme.  Not intended to
 /// resist a motivated attacker with the salt — see RFC-004 non-goals.
 pub(crate) fn format_preserving_mask(input: &str, salt: &[u8], field_name: &str) -> String {
-    // 32-byte ChaCha20 seed = HMAC-SHA256(salt, field_name).  Using HMAC
-    // (rather than plain concat-and-hash) guarantees the seed is well-
-    // distributed across all (salt, field_name) pairs.
+    use rand::rngs::StdRng;
+    use rand::Rng;
+
+    // 32-byte seed = HMAC-SHA256(salt, field_name).
     let seed_bytes = {
         let mut mac = HmacSha256::new_from_slice(salt).expect("HMAC-SHA256 accepts any key length");
         mac.update(field_name.as_bytes());
@@ -199,32 +199,23 @@ pub(crate) fn format_preserving_mask(input: &str, salt: &[u8], field_name: &str)
     };
     let mut seed = [0u8; 32];
     seed.copy_from_slice(&seed_bytes);
-    let mut rng = ChaCha20Rng::from_seed(seed);
 
-    // Rewrite each byte per its character class.  We step through the
-    // input byte-by-byte: non-ASCII bytes (multi-byte UTF-8) fall
-    // through as-is, so this is safe for arbitrary UTF-8 input even
-    // though it operates on bytes.
+    let mut rng = StdRng::from_seed(seed);
+
     let mut out = Vec::with_capacity(input.len());
     for b in input.bytes() {
         let replacement = if b.is_ascii_digit() {
-            b'0' + (rng.next_u32() % 10) as u8
+            b'0' + (rng.gen_range(0..10)) as u8
         } else if b.is_ascii_uppercase() {
-            b'A' + (rng.next_u32() % 26) as u8
+            b'A' + (rng.gen_range(0..26)) as u8
         } else if b.is_ascii_lowercase() {
-            b'a' + (rng.next_u32() % 26) as u8
+            b'a' + (rng.gen_range(0..26)) as u8
         } else {
-            // Symbol / whitespace / non-ASCII — pass through.  Do NOT
-            // advance the PRNG for these positions; the mask for
-            // "abc-123" and "abcX123" should disagree only at positions
-            // that changed class.
             b
         };
         out.push(replacement);
     }
 
-    // Input was valid UTF-8; we only ever replaced ASCII positions with
-    // ASCII, so the output is still valid UTF-8.  `unwrap` is sound.
     String::from_utf8(out).expect("format-preserving mask produced invalid UTF-8")
 }
 

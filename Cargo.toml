@@ -60,15 +60,16 @@ serde_yaml = "0.9"
 # Validation
 regex = "1"
 
-# PII transforms (RFC-004): HMAC-SHA256 for `kind: hash`, seeded ChaCha20
+# PII transforms (RFC-004): HMAC-256 for `kind: hash`, seeded ChaCha20
 # PRNG for `mask: format_preserving`.  All three crates are pure-Rust, no
 # system deps — portable across CI + sandbox builds.
 sha2 = "0.10"
 hmac = "0.12"
 hex = "0.4"
 base64 = "0.22"
+rand = { version = "0.8", features = ["small_rng"] }
 rand_chacha = "0.3"
-rand_core = "0.6"
+rand_core = "0.10"
 
 # Data-parallel batch validation (RFC-001).  Used by the ingest handler to
 # fan out a batch of events across CPU cores while keeping the tokio reactor
@@ -90,7 +91,7 @@ chrono = { version = "0.4", features = ["serde"] }
 # removes the "need libssl-dev before `cargo check` will run" paper cut.
 # rustls is a pure-Rust TLS implementation and is fully compatible with
 # Postgres over TLS.  See MAINTENANCE_LOG.md for the 2026-04-17 rationale.
-sqlx = { version = "0.7", features = [
+sqlx = { version = "0.8", features = [
     "runtime-tokio-rustls",
     "postgres",
     "chrono",
@@ -100,7 +101,7 @@ sqlx = { version = "0.7", features = [
 
 # Error handling
 anyhow = "1"
-thiserror = "1"
+thiserror = "2"
 
 # Logging / tracing
 tracing = "0.1"
@@ -126,15 +127,15 @@ hdrhistogram = "7"
 # Kafka transport (bundles librdkafka via cmake — needs cmake + a C compiler
 # available on the build host).  Used only by the `demo` binary, and gated
 # behind the `demo` feature so it is not compiled for default builds.
-rdkafka = { version = "0.36", features = ["cmake-build"], optional = true }
+rdkafka = { version = "0.39", features = ["cmake-build"], optional = true }
 
 # Random sampling for the synthetic event generator.  `small_rng` gates the
 # `SmallRng` pRNG we use on the hot path (fast, no crypto guarantees — fine
 # for a demo generator).
-rand = { version = "0.8", features = ["small_rng"] }
+digest = "0.10"
 
 [dev-dependencies]
-axum-test = "14"
+axum-test = "20"
 tokio-test = "0.4"
 serde_json = "1"
 tempfile = "3"
