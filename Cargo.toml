@@ -45,7 +45,7 @@ demo = ["rdkafka"]
 # Web framework
 axum = { version = "0.7", features = ["macros"] }
 tower = "0.4"
-tower-http = { version = "0.5", features = ["cors", "trace", "timeout"] }
+tower-http = { version = "0.5", features = ["cors", "trace", "timeout", "limit"] }
 
 # Async runtime
 tokio = { version = "1", features = ["full"] }
@@ -74,6 +74,10 @@ rand_core = "0.6"
 # fan out a batch of events across CPU cores while keeping the tokio reactor
 # free (the parallel stage runs inside `spawn_blocking`).
 rayon = "1"
+
+# Concurrent hashmap for per-key rate-limit buckets (RFC-021).  Lock-free
+# reads; no RwLock wrapping needed.
+dashmap = "5"
 
 # IDs & time
 uuid = { version = "1", features = ["v4", "serde"] }
@@ -134,6 +138,9 @@ axum-test = "14"
 tokio-test = "0.4"
 serde_json = "1"
 tempfile = "3"
+# Integration tests for v1 ingest (RFC-021) — same flags as the main reqwest dep.
+reqwest = { version = "0.12", features = ["json", "rustls-tls"], default-features = false }
+uuid = { version = "1", features = ["v4"] }
 
 [profile.release]
 opt-level = 3

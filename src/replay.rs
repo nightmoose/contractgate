@@ -348,6 +348,7 @@ pub async fn replay_handler(
                 validation_us: vr.validation_us as i64,
                 source_ip: e.source_ip.clone(),
                 replay_of_quarantine_id: Some(e.id),
+                pre_assigned_id: None,
             });
             // Response-side: we don't have the new row's DB id since the
             // batch helper uses uuid_generate_v4() server-side.  To keep

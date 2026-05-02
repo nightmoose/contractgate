@@ -45,6 +45,7 @@ pub use contractgate::{contract, transform, validation};
 mod api_key_auth;
 mod conformance;
 mod error;
+mod idempotency;
 mod infer;
 mod infer_avro;
 mod infer_diff;
@@ -52,11 +53,13 @@ mod infer_openapi;
 mod infer_proto;
 mod ingest;
 mod odcs;
+mod rate_limit;
 mod replay;
 mod storage;
 mod stream_demo;
 #[cfg(test)]
 mod tests;
+mod v1_ingest;
 
 use contract::{
     Contract, ContractIdentity, ContractResponse, ContractSummary, ContractVersion,
@@ -85,6 +88,8 @@ pub struct AppState {
     pub api_key: String,
     /// DB-backed API key cache with 60-second TTL.
     pub key_cache: Arc<api_key_auth::ApiKeyCache>,
+    /// Per-API-key token-bucket rate limiter (RFC-021).
+    pub rate_limiter: Arc<rate_limit::RateLimitState>,
     /// In-process stream demo state (no Kafka, no DB writes).
     pub stream_demo: std::sync::Arc<stream_demo::StreamDemoState>,
 }
@@ -96,6 +101,7 @@ impl AppState {
             contract_cache: RwLock::new(HashMap::new()),
             api_key,
             key_cache: Arc::new(api_key_auth::ApiKeyCache::default()),
+            rate_limiter: Arc::new(rate_limit::RateLimitState::default()),
             stream_demo: std::sync::Arc::new(stream_demo::StreamDemoState::new()),
         }
     }
@@ -713,6 +719,7 @@ fn build_router(state: Arc<AppState>) -> Router {
     // Public routes — no auth required
     let public = Router::new()
         .route("/health", get(health_handler))
+        .route("/openapi.json", get(v1_ingest::openapi_handler))
         .route("/playground/validate", post(playground_handler))
         // Stream demo — public so the browser's EventSource can connect
         // without auth headers (no sensitive data, local demo only).
@@ -816,9 +823,27 @@ fn build_router(state: Arc<AppState>) -> Router {
             require_api_key,
         ));
 
+    // v1 ingest: own sub-router so the 10 MB RequestBodyLimitLayer is scoped
+    // to this route only and does not affect other routes.  Auth middleware
+    // must be applied here too (not just on `protected`) because Axum merges
+    // routers at the path level, not at the layer level.
+    let v1 = Router::new()
+        .route(
+            "/v1/ingest/:contract_id",
+            post(v1_ingest::v1_ingest_handler),
+        )
+        .layer(tower_http::limit::RequestBodyLimitLayer::new(
+            10 * 1024 * 1024, // 10 MB — RFC-021
+        ))
+        .layer(middleware::from_fn_with_state(
+            state.clone(),
+            require_api_key,
+        ));
+
     Router::new()
         .merge(public)
         .merge(protected)
+        .merge(v1)
         .layer(cors)
         .layer(TraceLayer::new_for_http())
         .layer(TimeoutLayer::new(std::time::Duration::from_secs(30)))

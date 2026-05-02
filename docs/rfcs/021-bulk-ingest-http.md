@@ -2,7 +2,7 @@
 
 | Field         | Value                                        |
 |---------------|----------------------------------------------|
-| Status        | **Proposed — awaiting Alex sign-off**        |
+| Status        | **Accepted — 2026-05-01**                    |
 | Author        | ContractGate team                            |
 | Created       | 2026-05-01                                   |
 | Target branch | `nightly-maintenance-2026-05-01`             |
@@ -518,11 +518,14 @@ rate-limit checks. No `RwLock` wrapping needed.
 
 ## Open questions (resolved)
 
-| Question                                | Decision                                    |
-|-----------------------------------------|---------------------------------------------|
-| Idempotency storage: Supabase vs memory | **Supabase table** — survives restarts      |
-| Rate limit overrides: where stored      | **`api_keys` table columns** — loaded on auth|
-| Endpoint path                           | **`/v1/ingest/{contract_id}`** — new prefix |
+| Question                                | Decision                                              |
+|-----------------------------------------|-------------------------------------------------------|
+| Idempotency storage: Supabase vs memory | **Supabase table** — survives restarts                |
+| Rate limit overrides: where stored      | **`api_keys` table columns** — loaded on auth         |
+| Endpoint path                           | **`/v1/ingest/{contract_id}`** — new prefix           |
+| `version_pin_source` label for `?version=` | **`"query_param"`**                                |
+| `dry_run=true` + idempotency key        | **Never stored** — dry-run skips `idempotency_keys`   |
+| Idempotency TTL sweep                   | **Supabase scheduled function** — no in-process sweep |
 
 ---
 
