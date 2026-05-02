@@ -24,9 +24,6 @@
 use crate::contract::{MaskStyle, TransformKind};
 use crate::validation::CompiledContract;
 use hmac::{Hmac, Mac};
-use rand::rngs::StdRng;
-use rand::Rng;
-use rand::SeedableRng;
 use rand_core::SeedableRng;
 use serde_json::{json, Value};
 use sha2::Sha256;
@@ -193,8 +190,8 @@ pub(crate) fn hmac_sha256_hex(key: &[u8], msg: &[u8]) -> String {
 pub(crate) fn format_preserving_mask(input: &str, salt: &[u8], field_name: &str) -> String {
     use rand::rngs::StdRng;
     use rand::Rng;
-    use rand::SeedableRng;
 
+    // 32-byte seed = HMAC-SHA256(salt, field_name).
     let seed_bytes = {
         let mut mac = HmacSha256::new_from_slice(salt).expect("HMAC-SHA256 accepts any key length");
         mac.update(field_name.as_bytes());
@@ -208,11 +205,11 @@ pub(crate) fn format_preserving_mask(input: &str, salt: &[u8], field_name: &str)
     let mut out = Vec::with_capacity(input.len());
     for b in input.bytes() {
         let replacement = if b.is_ascii_digit() {
-            b'0' + (rng.random_range(0..10)) as u8
+            b'0' + (rng.gen_range(0..10)) as u8
         } else if b.is_ascii_uppercase() {
-            b'A' + (rng.random_range(0..26)) as u8
+            b'A' + (rng.gen_range(0..26)) as u8
         } else if b.is_ascii_lowercase() {
-            b'a' + (rng.random_range(0..26)) as u8
+            b'a' + (rng.gen_range(0..26)) as u8
         } else {
             b
         };
