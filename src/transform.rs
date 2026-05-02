@@ -24,8 +24,9 @@
 use crate::contract::{MaskStyle, TransformKind};
 use crate::validation::CompiledContract;
 use hmac::{Hmac, Mac};
-use rand::RngCore;
-use rand_chacha::ChaCha20Rng;
+use rand::rngs::StdRng;
+use rand::Rng;
+use rand::SeedableRng;
 use rand_core::SeedableRng;
 use serde_json::{json, Value};
 use sha2::Sha256;
