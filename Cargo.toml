@@ -68,7 +68,7 @@ hmac = "0.12"
 hex = "0.4"
 base64 = "0.22"
 rand_chacha = "0.9"
-rand_core = "0.6"
+rand_core = "0.10"
 
 # Data-parallel batch validation (RFC-001).  Used by the ingest handler to
 # fan out a batch of events across CPU cores while keeping the tokio reactor
