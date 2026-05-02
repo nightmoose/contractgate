@@ -25,7 +25,7 @@ use crate::contract::{MaskStyle, TransformKind};
 use crate::validation::CompiledContract;
 use hmac::{Hmac, Mac};
 use rand_chacha::ChaCha20Rng;
-use rand_core::{RngCore, SeedableRng};
+use rand_core::SeedableRng;
 use serde_json::{json, Value};
 use sha2::Sha256;
 
@@ -199,7 +199,7 @@ pub(crate) fn format_preserving_mask(input: &str, salt: &[u8], field_name: &str)
     };
     let mut seed = [0u8; 32];
     seed.copy_from_slice(&seed_bytes);
-    let mut rng = ChaCha20Rng::from_seed(seed);
+    let mut rng = ChaCha20Rng::from_seed(seed.into());
 
     // Rewrite each byte per its character class.  We step through the
     // input byte-by-byte: non-ASCII bytes (multi-byte UTF-8) fall
