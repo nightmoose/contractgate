@@ -132,7 +132,6 @@ rdkafka = { version = "0.39", features = ["cmake-build"], optional = true }
 # Random sampling for the synthetic event generator.  `small_rng` gates the
 # `SmallRng` pRNG we use on the hot path (fast, no crypto guarantees — fine
 # for a demo generator).
-rand = { version = "0.8", features = ["small_rng"] }
 digest = "0.10"
 
 [dev-dependencies]
