@@ -2,6 +2,31 @@
 
 ---
 
+## 2026-05-01 – Repo Security Sprint (Phase 1 Complete)
+
+**Owner**: Alex + Grok
+
+### Changes
+- Added `SECURITY.md` with full vulnerability disclosure policy and current security controls
+- Added `.github/dependabot.yml` (weekly Cargo + npm + Docker updates)
+- Enhanced `.github/workflows/ci.yml` with dedicated `security` job:
+  - `cargo audit` (with temporary allow-list for known transitive issues)
+  - `cargo deny` (advisories + bans + sources)
+  - Trivy filesystem + SARIF upload to GitHub Security tab
+- Created `.cargo/audit.toml` to track known advisories while planning sqlx 0.8 upgrade
+- All checks now run on every PR targeting `main` + pushes to `main`
+
+### Status
+- Security posture: **Hardened** (visible in PR checks and GitHub Security tab)
+- Remaining: Enable Secret Scanning + Push Protection + CodeQL + Branch Protection in UI
+
+### Next
+- Complete GitHub UI security settings
+- Plan sqlx 0.8.x upgrade (removes multiple advisories)
+- Add security badge to README
+
+**Result**: ContractGate now has production-grade CI security gates and clear public security policy.
+
 ## Run 2026-04-28 (Compose smoke fixes — post-merge CI failures)
 
 Two of six CI checks failed on `main` after the RFC-017 merge: `compose-smoke`
