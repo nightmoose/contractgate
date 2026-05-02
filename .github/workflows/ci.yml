@@ -262,49 +262,49 @@ jobs:
         with:
           sarif_file: 'trivy-results.sarif'
           
-  # # ── Compose stack smoke test (RFC-017) ────────────────────
-  # # Builds the gateway image, spins up the default Compose stack
-  # # (gateway + Postgres + Prometheus + Grafana), and verifies that a
-  # # contract can be created and an event validated end-to-end.
-  # compose-smoke:
-  #   name: Compose — stack smoke test
-  #   runs-on: ubuntu-latest
-  #   steps:
-  #     - uses: actions/checkout@v4
+  # ── Compose stack smoke test (RFC-017) ────────────────────
+  # Builds the gateway image, spins up the default Compose stack
+  # (gateway + Postgres + Prometheus + Grafana), and verifies that a
+  # contract can be created and an event validated end-to-end.
+  compose-smoke:
+    name: Compose — stack smoke test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
 
-  #     - name: Set up Docker Buildx
-  #       uses: docker/setup-buildx-action@v3
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
 
-  #     - name: Install jq
-  #       run: sudo apt-get install -y --no-install-recommends jq
+      - name: Install jq
+        run: sudo apt-get install -y --no-install-recommends jq
 
-  #     - name: Run compose smoke test
-  #       run: bash tests/compose_smoke.sh
-  #       env:
-  #         TAG: ci
+      - name: Run compose smoke test
+        run: bash tests/compose_smoke.sh
+        env:
+          TAG: ci
 
-  # # ── Compose demo profile smoke test (RFC-017) ─────────────
-  # # Builds the gateway image (including demo-seeder binary), spins up the
-  # # stack with --profile demo, waits for the seeder to exit, and asserts
-  # # that > 500 audit_log rows were written and the three starter contracts
-  # # are published.  Seeder runs at 50/sec for 30s (≈1500 events) to keep
-  # # CI wall-clock time short.
-  # compose-demo-smoke:
-  #   name: Compose — demo profile smoke test
-  #   runs-on: ubuntu-latest
-  #   steps:
-  #     - uses: actions/checkout@v4
+  # ── Compose demo profile smoke test (RFC-017) ─────────────
+  # Builds the gateway image (including demo-seeder binary), spins up the
+  # stack with --profile demo, waits for the seeder to exit, and asserts
+  # that > 500 audit_log rows were written and the three starter contracts
+  # are published.  Seeder runs at 50/sec for 30s (≈1500 events) to keep
+  # CI wall-clock time short.
+  compose-demo-smoke:
+    name: Compose — demo profile smoke test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
 
-  #     - name: Set up Docker Buildx
-  #       uses: docker/setup-buildx-action@v3
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
 
-  #     - name: Install jq
-  #       run: sudo apt-get install -y --no-install-recommends jq
+      - name: Install jq
+        run: sudo apt-get install -y --no-install-recommends jq
 
-  #     - name: Run compose demo smoke test
-  #       run: bash tests/compose_demo_smoke.sh
-  #       env:
-  #         TAG: ci
-  #         SEEDER_RATE: "50"
-  #         SEEDER_DURATION: "30s"
-  #         MIN_AUDIT_ROWS: "500"
+      - name: Run compose demo smoke test
+        run: bash tests/compose_demo_smoke.sh
+        env:
+          TAG: ci
+          SEEDER_RATE: "50"
+          SEEDER_DURATION: "30s"
+          MIN_AUDIT_ROWS: "500"
