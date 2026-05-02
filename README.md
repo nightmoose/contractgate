@@ -27,7 +27,7 @@ ContractGate is a high-performance validation gateway that enforces rich semanti
 - **Supabase Backend** — auth, contracts, audit logs, quarantine out of the box
 
 **Live Demo** → [app.datacontractgate.com/stream-demo](https://app.datacontractgate.com/stream-demo)  
-**Marketing Site** → [datacontractgate.com](https://www.datacontractgate.com)
+**Marketing Site** → [datacontractgate.com](https://www.datacontractgate.com) *(source: [nightmoose/datacontractgate_website](https://github.com/nightmoose/datacontractgate_website))*
 
 ## Quickstart
 
