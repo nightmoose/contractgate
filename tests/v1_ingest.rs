@@ -33,9 +33,7 @@ mod unit {
     /// Placeholder confirming this test file compiles and is wired into the
     /// test runner.  Remove once real integration tests are added below.
     #[test]
-    fn placeholder_compiles() {
-        assert!(true);
-    }
+    fn placeholder_compiles() {}
 }
 
 // ---------------------------------------------------------------------------
