@@ -60,16 +60,14 @@ serde_yaml = "0.9"
 # Validation
 regex = "1"
 
-# PII transforms (RFC-004): HMAC-256 for `kind: hash`, seeded ChaCha20
-# PRNG for `mask: format_preserving`.  All three crates are pure-Rust, no
-# system deps — portable across CI + sandbox builds.
+# PII transforms (RFC-004): HMAC-256 for `kind: hash`, seeded StdRng
+# for `mask: format_preserving`.  Pure-Rust, no system deps — portable
+# across CI + sandbox builds.
 sha2 = "0.10"
 hmac = "0.12"
 hex = "0.4"
 base64 = "0.22"
-rand = { version = "0.8", features = ["small_rng"] }
-rand_chacha = "0.3"
-rand_core = "0.10"
+rand = "0.8"
 
 # Data-parallel batch validation (RFC-001).  Used by the ingest handler to
 # fan out a batch of events across CPU cores while keeping the tokio reactor
@@ -129,10 +127,6 @@ hdrhistogram = "7"
 # behind the `demo` feature so it is not compiled for default builds.
 rdkafka = { version = "0.39", features = ["cmake-build"], optional = true }
 
-# Random sampling for the synthetic event generator.  `small_rng` gates the
-# `SmallRng` pRNG we use on the hot path (fast, no crypto guarantees — fine
-# for a demo generator).
-digest = "0.10"
 
 [dev-dependencies]
 axum-test = "20"

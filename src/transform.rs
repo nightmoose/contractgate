@@ -24,7 +24,7 @@
 use crate::contract::{MaskStyle, TransformKind};
 use crate::validation::CompiledContract;
 use hmac::{Hmac, Mac};
-use rand_core::SeedableRng;
+use rand::SeedableRng;
 use serde_json::{json, Value};
 use sha2::Sha256;
 
@@ -175,7 +175,7 @@ pub(crate) fn hmac_sha256_hex(key: &[u8], msg: &[u8]) -> String {
     hex::encode(mac.finalize().into_bytes())
 }
 
-/// Format-preserving mask (RFC-004 Q6 = seeded ChaCha20 per-position
+/// Format-preserving mask (RFC-004 Q6 = seeded StdRng per-position
 /// scramble).  For every position in `input`:
 ///   - ASCII digit → random ASCII digit (0–9)
 ///   - ASCII upper → random ASCII upper (A–Z)
