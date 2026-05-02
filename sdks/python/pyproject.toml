@@ -37,7 +37,7 @@ dev = [
 ]
 
 [project.urls]
-Homepage = "https://contractgate.dev"
+Homepage = "https://datacontractgate.com"
 Source = "https://github.com/nightmoose/contractgate"
 
 [tool.hatch.build.targets.wheel]

@@ -35,8 +35,10 @@ ContractGate is a high-performance validation gateway that enforces rich semanti
 docker compose up
 Python SDK
 
-## pip install contractgate  # coming to PyPI this week
-from contractgate import validate
+pip install contractgate
+```
+```python
+from contractgate import Client
 
 ## CLI
 cargo install --git https://github.com/nightmoose/contractgate contractgate
