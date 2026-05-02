@@ -9,10 +9,12 @@ FROM rust:slim-bookworm AS builder
 
 WORKDIR /app
 
-# Install native TLS dependencies needed by sqlx
+# sqlx + reqwest both use runtime-tokio-rustls / rustls-tls (pure Rust TLS).
+# No OpenSSL headers needed — libssl-dev is intentionally absent.
+# pkg-config kept for any transitive crate that probes for system libs at
+# build time; it's a no-op if nothing uses it.
 RUN apt-get update && apt-get install -y --no-install-recommends \
     pkg-config \
-    libssl-dev \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy dependency manifests first to cache the crate fetch layer

@@ -2,7 +2,7 @@
 
 All notable changes to the `contractgate` Python SDK.
 
-## 0.1.0 — 2026-04-26 (unreleased)
+## 0.1.0 — 2026-04-28
 
 Initial scaffold per RFC-005.
 

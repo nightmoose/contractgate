@@ -27,7 +27,7 @@ ContractGate is a high-performance validation gateway that enforces rich semanti
 - **Supabase Backend** — auth, contracts, audit logs, quarantine out of the box
 
 **Live Demo** → [app.datacontractgate.com/stream-demo](https://app.datacontractgate.com/stream-demo)  
-**Marketing Site** → [datacontractgate.com](https://www.datacontractgate.com)
+**Marketing Site** → [datacontractgate.com](https://www.datacontractgate.com) *(source: [nightmoose/datacontractgate_website](https://github.com/nightmoose/datacontractgate_website))*
 
 ## Quickstart
 
@@ -35,8 +35,10 @@ ContractGate is a high-performance validation gateway that enforces rich semanti
 docker compose up
 Python SDK
 
-## pip install contractgate  # coming to PyPI this week
-from contractgate import validate
+pip install contractgate
+```
+```python
+from contractgate import Client
 
 ## CLI
 cargo install --git https://github.com/nightmoose/contractgate contractgate
@@ -47,14 +49,6 @@ contractgate validate --contract examples/nested-order.yaml events.json
 Visit app.datacontractgate.com/stream-demo
 Choose “nested — e-commerce order”
 Hit Start and watch 86k events/sec with real semantic violations in real time
-
-Screenshots
-(Upload these to a /screenshots/ folder in the repo)
-
-stream-demo-stats.png — 86k ev/s, 10 µs p99, 0% overhead
-stream-demo-records.png — PASS/FAIL events with full JSON + highlighted violations
-visual-builder.png — form-based contract editor with live YAML
-inference-generator.png — JSON → rich YAML contract in one click
 
 ## Architecture
 

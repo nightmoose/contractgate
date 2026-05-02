@@ -146,7 +146,7 @@ export function YamlTab({
               "w-full h-80 font-mono text-sm p-4 rounded-lg border outline-none resize-y transition-colors",
               isDraft
                 ? "bg-[#0a0d12] text-green-300 border-[#1f2937] focus:border-green-700"
-                : "bg-[#0a0d12]/70 text-slate-400 border-[#1f2937]/70 cursor-not-allowed"
+                : "bg-[#0d1117] text-slate-300 border-[#1f2937] cursor-not-allowed"
             )}
             value={yamlDraft}
             onChange={(e) => {
