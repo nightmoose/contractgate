@@ -12,10 +12,10 @@
   "dependencies": {
     "@radix-ui/react-tooltip": "^1.1.6",
     "@supabase/ssr": "^0.10.2",
-    "@supabase/supabase-js": "^2.104.1",
+    "@supabase/supabase-js": "^2.105.1",
     "clsx": "^2.1.1",
     "js-yaml": "^4.1.0",
-    "next": "15.2.8",
+    "next": "16.2.4",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "resend": "^6.12.2",
@@ -23,7 +23,7 @@
   },
   "devDependencies": {
     "@types/js-yaml": "^4.0.9",
-    "@types/node": "^22",
+    "@types/node": "^25",
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "autoprefixer": "^10",

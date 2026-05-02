@@ -11,6 +11,9 @@ ContractGate is a high-performance validation gateway that enforces rich semanti
 ![Records Tab](/screenshots/stream-demo-records.png)
 ![Visual Contract Builder](/screenshots/visual-builder.png)
 
+[![Security](https://img.shields.io/badge/security-hardened-brightgreen)](https://github.com/nightmoose/contractgate/security)
+[![Dependabot](https://img.shields.io/badge/Dependabot-enabled-brightgreen)](https://github.com/nightmoose/contractgate/security/dependabot)
+
 ## ✨ Key Features
 
 - **Semantic YAML Contracts** — entities, types, patterns, enums, required fields, glossary, and computed metrics

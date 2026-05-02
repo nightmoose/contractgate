@@ -1,0 +1,14 @@
+[advisories]
+ignore = [
+    "RUSTSEC-2023-0071",   # rsa Marvin Attack – no upgrade path yet
+    "RUSTSEC-2026-0104",   # rustls-webpki
+    "RUSTSEC-2026-0098",   # rustls-webpki
+    "RUSTSEC-2026-0099",   # rustls-webpki
+    "RUSTSEC-2024-0363",   # sqlx binary protocol
+    "RUSTSEC-2024-0436",   # paste unmaintained
+    "RUSTSEC-2025-0134",   # rustls-pemfile unmaintained
+    "RUSTSEC-2026-0097",   # rand unsound
+]
+
+[output]
+quiet = false
