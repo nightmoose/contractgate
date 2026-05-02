@@ -79,7 +79,7 @@ jobs:
         with:
           node-version: "22"
           cache: "npm"
-          cache-dependency-path: dashboard/package-lock.json
+          cache-dependency-path: dashboard/package.json
 
       - name: npm ci
         run: npm ci --legacy-peer-deps
