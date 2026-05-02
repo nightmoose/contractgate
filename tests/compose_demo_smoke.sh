@@ -102,7 +102,7 @@ for name in "rest_event" "kafka_event" "dbt_model_row"; do
         # Debug what we actually received
         echo "  Attempt $attempt for '$name' — contracts JSON length: $(echo "$CONTRACTS" | jq 'length' 2>/dev/null || echo '??')"
         
-        count=$(echo "$CONTRACTS" | jq --arg n "$name" '[(.contracts // .)[] | select(.name == $n)] | length' 2>/dev/null || echo "0")
+        count=$(echo "$CONTRACTS" | jq --arg n "$name" '[(if type == "array" then . else (.contracts // []) end)[] | select(.name == $n)] | length' 2>/dev/null || echo "0")
         
         if [[ "$count" -ge 1 ]]; then
             echo "  contract '$name' present ✓"
