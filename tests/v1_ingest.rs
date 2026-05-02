@@ -34,7 +34,7 @@ mod unit {
     /// test runner.  Remove once real integration tests are added below.
     #[test]
     fn placeholder_compiles() {
-        assert!(true);
+        // TODO: add real test assertions here
     }
 }
 
