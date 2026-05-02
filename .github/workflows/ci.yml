@@ -211,7 +211,56 @@ jobs:
         #   (a) .sqlx/ directory is missing — run `cargo sqlx prepare --workspace` locally
         #   (b) a sqlx::query! in storage.rs was added/changed without regenerating .sqlx/
         #   (c) schema changes caused query types to drift from the cached metadata
+  
+  # ──────────────────────────────────────────────────────────────
+  # NEW: Security job (runs on every push/PR)
+  # ──────────────────────────────────────────────────────────────
+  security:
+    name: Security — audit / deny / container scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
 
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo registry + build artefacts
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-cargo-
+
+      - name: Install cargo-audit + cargo-deny
+        run: |
+          cargo install cargo-audit --locked
+          cargo install cargo-deny --locked
+
+      - name: Run cargo audit (known vulnerabilities)
+        run: cargo audit --deny warnings
+
+      - name: Run cargo deny (advisories + licenses)
+        run: cargo deny check advisories bans sources
+
+      - name: Trivy filesystem scan (SARIF)
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: 'fs'
+          scan-ref: '.'
+          format: 'sarif'
+          output: 'trivy-results.sarif'
+          severity: 'CRITICAL,HIGH'
+          exit-code: '1'
+
+      - name: Upload Trivy results to GitHub Security tab
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: 'trivy-results.sarif'
+          
   # # ── Compose stack smoke test (RFC-017) ────────────────────
   # # Builds the gateway image, spins up the default Compose stack
   # # (gateway + Postgres + Prometheus + Grafana), and verifies that a
