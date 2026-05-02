@@ -192,8 +192,8 @@ pub(crate) fn hmac_sha256_hex(key: &[u8], msg: &[u8]) -> String {
 /// resist a motivated attacker with the salt — see RFC-004 non-goals.
 pub(crate) fn format_preserving_mask(input: &str, salt: &[u8], field_name: &str) -> String {
     use rand::rngs::StdRng;
-    use rand::SeedableRng;
     use rand::Rng;
+    use rand::SeedableRng;
 
     let seed_bytes = {
         let mut mac = HmacSha256::new_from_slice(salt).expect("HMAC-SHA256 accepts any key length");
