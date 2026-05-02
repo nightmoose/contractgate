@@ -50,14 +50,6 @@ Visit app.datacontractgate.com/stream-demo
 Choose “nested — e-commerce order”
 Hit Start and watch 86k events/sec with real semantic violations in real time
 
-Screenshots
-(Upload these to a /screenshots/ folder in the repo)
-
-stream-demo-stats.png — 86k ev/s, 10 µs p99, 0% overhead
-stream-demo-records.png — PASS/FAIL events with full JSON + highlighted violations
-visual-builder.png — form-based contract editor with live YAML
-inference-generator.png — JSON → rich YAML contract in one click
-
 ## Architecture
 
 - Core: Rust + Axum (validation engine)

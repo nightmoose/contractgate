@@ -1,13 +1,43 @@
 [advisories]
+# Each ignored advisory must have:
+#   - a reason (why we can't fix it now)
+#   - a suppressed date
+#   - a review trigger (what would unblock resolution)
+#
+# Review this list before every release tag.
 ignore = [
-    "RUSTSEC-2023-0071",   # rsa Marvin Attack – no upgrade path yet
-    "RUSTSEC-2026-0104",   # rustls-webpki
-    "RUSTSEC-2026-0098",   # rustls-webpki
-    "RUSTSEC-2026-0099",   # rustls-webpki
-    "RUSTSEC-2024-0363",   # sqlx binary protocol
-    "RUSTSEC-2024-0436",   # paste unmaintained
-    "RUSTSEC-2025-0134",   # rustls-pemfile unmaintained
-    "RUSTSEC-2026-0097",   # rand unsound
+    # rsa crate — Marvin Attack (timing side-channel in RSA decryption).
+    # ContractGate does not use RSA directly; this is a transitive dep.
+    # Suppressed: 2026-05-02. Revisit: when upstream rsa crate ships a fix.
+    "RUSTSEC-2023-0071",
+
+    # rustls-webpki — three related advisories (CVE details in each link).
+    # sqlx 0.8.x and reqwest 0.12.x both pull rustls-webpki transitively.
+    # No upstream patch available yet for the pinned versions we use.
+    # Suppressed: 2026-05-02. Revisit: when sqlx or reqwest bumps webpki.
+    "RUSTSEC-2026-0104",
+    "RUSTSEC-2026-0098",
+    "RUSTSEC-2026-0099",
+
+    # sqlx — binary protocol advisory. We use runtime queries (no query!
+    # macros) and rustls TLS; the attack surface described is minimal.
+    # Suppressed: 2026-05-02. Revisit: when sqlx 0.9 ships.
+    "RUSTSEC-2024-0363",
+
+    # paste crate — marked unmaintained. Transitive dep of sqlx macros.
+    # No active CVE; purely a maintenance signal.
+    # Suppressed: 2026-05-02. Revisit: if sqlx drops the dep.
+    "RUSTSEC-2024-0436",
+
+    # rustls-pemfile — marked unmaintained. Transitive dep of rustls stack.
+    # No active CVE.
+    # Suppressed: 2026-05-02. Revisit: when rustls ecosystem migrates.
+    "RUSTSEC-2025-0134",
+
+    # rand 0.8.x — unsound issue in SmallRng/StdRng seeding on some targets.
+    # We use rand for format-preserving masking (RFC-004) — non-cryptographic.
+    # Suppressed: 2026-05-02. Revisit: migrate to rand 0.9 (breaking API).
+    "RUSTSEC-2026-0097",
 ]
 
 [output]
