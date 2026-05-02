@@ -21,6 +21,10 @@ pub enum AppError {
     #[error("Invalid request: {0}")]
     BadRequest(String),
 
+    /// RFC-021: request body or per-event size limit exceeded.  413.
+    #[error("Payload too large: {0}")]
+    PayloadTooLarge(String),
+
     #[error("Unauthorized: missing or invalid API key")]
     Unauthorized,
 
@@ -121,6 +125,7 @@ impl IntoResponse for AppError {
                 (StatusCode::UNPROCESSABLE_ENTITY, self.to_string())
             }
             AppError::BadRequest(_) => (StatusCode::BAD_REQUEST, self.to_string()),
+            AppError::PayloadTooLarge(_) => (StatusCode::PAYLOAD_TOO_LARGE, self.to_string()),
             AppError::Unauthorized => (StatusCode::UNAUTHORIZED, self.to_string()),
 
             AppError::VersionConflict { .. } => (StatusCode::CONFLICT, self.to_string()),

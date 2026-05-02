@@ -44,8 +44,8 @@ demo = ["rdkafka"]
 [dependencies]
 # Web framework
 axum = { version = "0.7", features = ["macros"] }
-tower = "0.5"
-tower-http = { version = "0.6", features = ["cors", "trace", "timeout"] }
+tower = "0.4"
+tower-http = { version = "0.5", features = ["cors", "trace", "timeout", "limit"] }
 
 # Async runtime
 tokio = { version = "1", features = ["full"] }
@@ -60,20 +60,23 @@ serde_yaml = "0.9"
 # Validation
 regex = "1"
 
-# PII transforms (RFC-004): HMAC-SHA256 for `kind: hash`, seeded ChaCha20
-# PRNG for `mask: format_preserving`.  All three crates are pure-Rust, no
-# system deps — portable across CI + sandbox builds.
-sha2 = "0.11"
+# PII transforms (RFC-004): HMAC-256 for `kind: hash`, seeded StdRng
+# for `mask: format_preserving`.  Pure-Rust, no system deps — portable
+# across CI + sandbox builds.
+sha2 = "0.10"
 hmac = "0.12"
 hex = "0.4"
 base64 = "0.22"
-rand_chacha = "0.9"
-rand_core = "0.10"
+rand = { version = "0.8", features = ["small_rng"] }
 
 # Data-parallel batch validation (RFC-001).  Used by the ingest handler to
 # fan out a batch of events across CPU cores while keeping the tokio reactor
 # free (the parallel stage runs inside `spawn_blocking`).
 rayon = "1"
+
+# Concurrent hashmap for per-key rate-limit buckets (RFC-021).  Lock-free
+# reads; no RwLock wrapping needed.
+dashmap = "5"
 
 # IDs & time
 uuid = { version = "1", features = ["v4", "serde"] }
@@ -124,16 +127,15 @@ hdrhistogram = "7"
 # behind the `demo` feature so it is not compiled for default builds.
 rdkafka = { version = "0.39", features = ["cmake-build"], optional = true }
 
-# Random sampling for the synthetic event generator.  `small_rng` gates the
-# `SmallRng` pRNG we use on the hot path (fast, no crypto guarantees — fine
-# for a demo generator).
-rand = { version = "0.8", features = ["small_rng"] }
 
 [dev-dependencies]
 axum-test = "20"
 tokio-test = "0.4"
 serde_json = "1"
 tempfile = "3"
+# Integration tests for v1 ingest (RFC-021) — same flags as the main reqwest dep.
+reqwest = { version = "0.12", features = ["json", "rustls-tls"], default-features = false }
+uuid = { version = "1", features = ["v4"] }
 
 [profile.release]
 opt-level = 3

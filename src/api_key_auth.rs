@@ -38,6 +38,9 @@ struct ApiKeyRow {
     org_id: Uuid,
     key_hash: String,
     allowed_contract_ids: Option<Vec<Uuid>>,
+    /// RFC-021 rate-limit overrides.  NULL columns map to None.
+    rate_limit_rps: Option<i32>,
+    rate_limit_burst: Option<i32>,
 }
 
 /// How long a validated key stays in the cache before re-verification.
@@ -56,6 +59,10 @@ pub struct ValidatedKey {
     pub org_id: Uuid,
     /// NULL → unrestricted; Some → key only works for listed contract UUIDs.
     pub allowed_contract_ids: Option<Vec<Uuid>>,
+    /// Per-key rate-limit override (RFC-021). NULL → use default (100 rps).
+    pub rate_limit_rps: Option<u32>,
+    /// Per-key burst override (RFC-021). NULL → use default (1000).
+    pub rate_limit_burst: Option<u32>,
 }
 
 #[derive(Debug)]
@@ -170,7 +177,8 @@ async fn verify_against_db(raw_key: &str, db: &PgPool) -> Result<ValidatedKey, (
     // or .sqlx cache entry is required for this new table.
     let row = sqlx::query_as::<_, ApiKeyRow>(
         r#"
-        SELECT id, user_id, org_id, key_hash, allowed_contract_ids
+        SELECT id, user_id, org_id, key_hash, allowed_contract_ids,
+               rate_limit_rps, rate_limit_burst
         FROM   api_keys
         WHERE  key_prefix = $1
           AND  revoked_at IS NULL
@@ -203,5 +211,8 @@ async fn verify_against_db(raw_key: &str, db: &PgPool) -> Result<ValidatedKey, (
         user_id: row.user_id,
         org_id: row.org_id,
         allowed_contract_ids: row.allowed_contract_ids,
+        // Cast i32 → u32; the CHECK constraint guarantees > 0.
+        rate_limit_rps: row.rate_limit_rps.map(|v| v as u32),
+        rate_limit_burst: row.rate_limit_burst.map(|v| v as u32),
     })
 }

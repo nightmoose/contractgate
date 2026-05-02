@@ -1217,6 +1217,10 @@ pub struct QuarantineEventInsert {
     /// source quarantine row whose payload we re-validated.  NULL for
     /// ingest-time quarantine rows.  RFC-003.
     pub replay_of_quarantine_id: Option<Uuid>,
+    /// Pre-assigned UUID for the quarantine row.  `None` → Postgres generates
+    /// via `uuid_generate_v4()`.  Set by RFC-021 v1 ingest handler so callers
+    /// can return the quarantine ID in the response without a `SELECT` round-trip.
+    pub pre_assigned_id: Option<Uuid>,
 }
 
 /// One row to insert into `forwarded_events`.  Only passing events get one.
@@ -1353,6 +1357,13 @@ pub async fn quarantine_events_batch(
         .iter()
         .map(|e| e.replay_of_quarantine_id.unwrap_or(Uuid::nil()))
         .collect();
+    // RFC-021: pre-assigned IDs let the v1 handler return quarantine UUIDs
+    // in the HTTP response without a round-trip SELECT.  None → nil UUID →
+    // COALESCE picks uuid_generate_v4() (matches prior behaviour).
+    let pre_assigned_ids: Vec<Uuid> = entries
+        .iter()
+        .map(|e| e.pre_assigned_id.unwrap_or(Uuid::nil()))
+        .collect();
 
     sqlx::query(
         r#"
@@ -1361,7 +1372,8 @@ pub async fn quarantine_events_batch(
              violation_details, validation_us, source_ip,
              replay_of_quarantine_id, status, created_at)
         SELECT
-            uuid_generate_v4(),
+            COALESCE(NULLIF(pre_assigned_id, '00000000-0000-0000-0000-000000000000'::uuid),
+                     uuid_generate_v4()),
             contract_id, contract_version, payload, violation_count,
             violation_details, validation_us,
             NULLIF(source_ip, ''),
@@ -1370,10 +1382,10 @@ pub async fn quarantine_events_batch(
             NOW()
         FROM UNNEST(
             $1::uuid[], $2::text[], $3::jsonb[], $4::int[], $5::jsonb[],
-            $6::bigint[], $7::text[], $8::uuid[]
+            $6::bigint[], $7::text[], $8::uuid[], $9::uuid[]
         ) AS t(contract_id, contract_version, payload, violation_count,
                violation_details, validation_us, source_ip,
-               replay_of_quarantine_id)
+               replay_of_quarantine_id, pre_assigned_id)
         "#,
     )
     .bind(&contract_ids)
@@ -1384,6 +1396,7 @@ pub async fn quarantine_events_batch(
     .bind(&validation_us)
     .bind(&source_ips)
     .bind(&replay_of)
+    .bind(&pre_assigned_ids)
     .execute(pool)
     .await
     .db_op("quarantine_events_batch")?;
