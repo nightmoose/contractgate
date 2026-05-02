@@ -27,7 +27,7 @@
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "autoprefixer": "^10",
-    "eslint": "^9",
+    "eslint": "^10",
     "@playwright/test": "^1.44.0",
     "eslint-config-next": "15.2.4",
     "postcss": "^8",
