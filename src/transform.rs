@@ -199,7 +199,7 @@ pub(crate) fn format_preserving_mask(input: &str, salt: &[u8], field_name: &str)
     };
     let mut seed = [0u8; 32];
     seed.copy_from_slice(&seed_bytes);
-    let mut rng = ChaCha20Rng::from_seed(seed.into());
+    let mut rng = ChaCha20Rng::from_seed(seed);
 
     // Rewrite each byte per its character class.  We step through the
     // input byte-by-byte: non-ASCII bytes (multi-byte UTF-8) fall
