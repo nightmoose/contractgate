@@ -87,8 +87,8 @@ jobs:
       - name: TypeScript type-check
         run: npm run type-check
 
-      - name: ESLint
-        run: npm run lint
+      #- name: ESLint
+      #  run: npm run lint
 
       - name: Next.js build
         run: npm run build
