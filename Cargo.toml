@@ -67,6 +67,7 @@ sha2 = "0.10"
 hmac = "0.12"
 hex = "0.4"
 base64 = "0.22"
+rand = { version = "0.8", features = ["small_rng"] }
 rand_chacha = "0.3"
 rand_core = "0.10"
 
