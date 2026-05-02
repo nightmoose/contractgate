@@ -45,7 +45,7 @@ demo = ["rdkafka"]
 # Web framework
 axum = { version = "0.7", features = ["macros"] }
 tower = "0.4"
-tower-http = { version = "0.5", features = ["cors", "trace", "timeout"] }
+tower-http = { version = "0.6", features = ["cors", "trace", "timeout"] }
 
 # Async runtime
 tokio = { version = "1", features = ["full"] }
