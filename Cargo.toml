@@ -63,7 +63,7 @@ regex = "1"
 # PII transforms (RFC-004): HMAC-SHA256 for `kind: hash`, seeded ChaCha20
 # PRNG for `mask: format_preserving`.  All three crates are pure-Rust, no
 # system deps — portable across CI + sandbox builds.
-sha2 = "0.10"
+sha2 = "0.11"
 hmac = "0.12"
 hex = "0.4"
 base64 = "0.22"
