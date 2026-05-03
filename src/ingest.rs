@@ -322,7 +322,12 @@ pub async fn ingest_handler(
     //   - this was an *unpinned* request (default_stable) — RFC §2b
     //   - there are other stables to try
     //   - there was at least one failure in the first pass
-    let mut per_event_versions: Vec<String> = vec![resolved_version.clone(); events.len()];
+    // `.min(MAX_BATCH_SIZE)` makes the cap explicit at the allocation site so
+    // static analysis tools (CodeQL) can verify the bound without tracing
+    // through the early-return guard above.  The guard already enforces
+    // `events.len() <= MAX_BATCH_SIZE`, so this is a no-op at runtime.
+    let mut per_event_versions: Vec<String> =
+        vec![resolved_version.clone(); events.len().min(MAX_BATCH_SIZE)];
     let mut effective_results = validation_results;
 
     let fallback_eligible = identity.multi_stable_resolution == MultiStableResolution::Fallback
@@ -421,7 +426,8 @@ pub async fn ingest_handler(
     let total = events.len();
     let mut passed_count = 0usize;
     let mut failed_indices: Vec<usize> = Vec::new();
-    let mut per_event_results: Vec<IngestEventResult> = Vec::with_capacity(total);
+    let mut per_event_results: Vec<IngestEventResult> =
+        Vec::with_capacity(total.min(MAX_BATCH_SIZE));
 
     for (idx, vr) in effective_results.iter().enumerate() {
         if vr.passed {
