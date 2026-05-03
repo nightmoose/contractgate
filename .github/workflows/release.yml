@@ -36,6 +36,8 @@ jobs:
   version-check:
     name: Version check
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     outputs:
       version: ${{ steps.check.outputs.version }}
     steps:
@@ -73,6 +75,8 @@ jobs:
     name: Build CLI (${{ matrix.target }})
     needs: version-check
     runs-on: ${{ matrix.runner }}
+    permissions:
+      contents: read
     strategy:
       fail-fast: false
       matrix:

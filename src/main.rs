@@ -734,15 +734,15 @@ fn build_router(state: Arc<AppState>) -> Router {
         // ODCS import / export / approve-import
         .route("/contracts/import", post(import_odcs_handler))
         .route(
-            "/contracts/:id/versions/:version/export",
+            "/contracts/{id}/versions/{version}/export",
             get(export_odcs_handler),
         )
         .route(
-            "/contracts/:id/versions/:version/approve-import",
+            "/contracts/{id}/versions/{version}/approve-import",
             post(approve_import_handler),
         )
         .route(
-            "/contracts/:id/versions/:version/odcs-conformance",
+            "/contracts/{id}/versions/{version}/odcs-conformance",
             get(odcs_conformance_handler),
         )
         // Contract inference — JSON samples
@@ -768,51 +768,51 @@ fn build_router(state: Arc<AppState>) -> Router {
             get(list_contracts_handler).post(create_contract_handler),
         )
         .route(
-            "/contracts/:id",
+            "/contracts/{id}",
             get(get_contract_handler)
                 .patch(patch_contract_handler)
                 .delete(delete_contract_handler),
         )
         .route(
-            "/contracts/:id/name-history",
+            "/contracts/{id}/name-history",
             get(list_name_history_handler),
         )
         // Versions
         .route(
-            "/contracts/:id/versions",
+            "/contracts/{id}/versions",
             get(list_versions_handler).post(create_version_handler),
         )
         .route(
-            "/contracts/:id/versions/latest-stable",
+            "/contracts/{id}/versions/latest-stable",
             get(get_latest_stable_handler),
         )
         .route(
-            "/contracts/:id/versions/:version",
+            "/contracts/{id}/versions/{version}",
             get(get_version_handler)
                 .patch(patch_version_handler)
                 .delete(delete_version_handler),
         )
         .route(
-            "/contracts/:id/versions/:version/promote",
+            "/contracts/{id}/versions/{version}/promote",
             post(promote_version_handler),
         )
         .route(
-            "/contracts/:id/versions/:version/deprecate",
+            "/contracts/{id}/versions/{version}/deprecate",
             post(deprecate_version_handler),
         )
         // Ingestion — the path is String so we can accept `@version` suffix.
-        .route("/ingest/:raw_id", post(ingest::ingest_handler))
+        .route("/ingest/{raw_id}", post(ingest::ingest_handler))
         .route(
-            "/ingest/:contract_id/stats",
+            "/ingest/{contract_id}/stats",
             get(ingest::ingest_stats_handler),
         )
         // Replay Quarantine (RFC-003)
         .route(
-            "/contracts/:id/quarantine/replay",
+            "/contracts/{id}/quarantine/replay",
             post(replay::replay_handler),
         )
         .route(
-            "/contracts/:id/quarantine/:quar_id/replay-history",
+            "/contracts/{id}/quarantine/{quar_id}/replay-history",
             get(replay::replay_history_handler),
         )
         // Audit + stats
@@ -829,7 +829,7 @@ fn build_router(state: Arc<AppState>) -> Router {
     // routers at the path level, not at the layer level.
     let v1 = Router::new()
         .route(
-            "/v1/ingest/:contract_id",
+            "/v1/ingest/{contract_id}",
             post(v1_ingest::v1_ingest_handler),
         )
         .layer(tower_http::limit::RequestBodyLimitLayer::new(

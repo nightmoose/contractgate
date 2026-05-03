@@ -347,7 +347,7 @@ export function ReplaySummaryModal({
         <div className="flex gap-3 justify-end pt-2">
           {contractId && (
             <a
-              href={`/audit?contract_id=${contractId}`}
+              href={`/audit?contract_id=${encodeURIComponent(contractId)}`}
               className="px-4 py-2 bg-[#1f2937] hover:bg-[#374151] text-slate-300 text-sm font-medium rounded-lg transition-colors"
             >
               View in Audit Log →

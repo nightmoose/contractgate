@@ -33,6 +33,8 @@ jobs:
   rust-check:
     name: Rust — check / clippy / test
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@v4
 
@@ -68,6 +70,8 @@ jobs:
   dashboard:
     name: Dashboard — type-check / lint
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     defaults:
       run:
         working-directory: dashboard
@@ -100,6 +104,8 @@ jobs:
   docker:
     name: Docker — build smoke-test
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@v4
 
@@ -135,6 +141,8 @@ jobs:
   migrations-check:
     name: Migrations — apply + sqlx metadata check
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     # Override the global SQLX_OFFLINE=true so sqlx can connect to the
     # service container and verify query metadata against the live schema.
     env:
@@ -269,6 +277,8 @@ jobs:
   compose-smoke:
     name: Compose — stack smoke test
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@v4
 
@@ -292,6 +302,8 @@ jobs:
   compose-demo-smoke:
     name: Compose — demo profile smoke test
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@v4
 

@@ -39,6 +39,21 @@ import { NextResponse } from "next/server";
 
 const GITHUB_API = "https://api.github.com";
 
+/** Allowlist: owner/repo — only alphanumerics, hyphens, underscores, dots. */
+function isValidRepo(repo: string): boolean {
+  return /^[a-zA-Z0-9_.-]{1,100}\/[a-zA-Z0-9_.-]{1,100}$/.test(repo);
+}
+
+/** Allowlist: branch name — no path traversal, no whitespace. */
+function isValidBranch(branch: string): boolean {
+  return (
+    branch.length > 0 &&
+    branch.length <= 255 &&
+    /^[a-zA-Z0-9_./\-]+$/.test(branch) &&
+    !branch.includes("..")
+  );
+}
+
 function getServiceClient() {
   return createServiceClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -81,7 +96,9 @@ async function getIntegration(orgId: string): Promise<GitHubIntegration | null> 
  * e.g. "User Events v2" → "user-events-v2"
  */
 function toSlug(name: string): string {
+  // Truncate before regex to bound worst-case matching time on long inputs.
   return name
+    .slice(0, 200)
     .toLowerCase()
     .trim()
     .replace(/[^a-z0-9]+/g, "-")
@@ -290,6 +307,20 @@ export async function POST(request: Request) {
   if (!integration.github_token) {
     return NextResponse.json(
       { error: "GitHub token not set. Add a Personal Access Token in Account → GitHub Integration." },
+      { status: 422 }
+    );
+  }
+
+  // 3b. Validate repo + branch format to prevent SSRF via path traversal.
+  if (!isValidRepo(integration.repo)) {
+    return NextResponse.json(
+      { error: "Invalid repository format in GitHub integration config. Expected 'owner/repo'." },
+      { status: 422 }
+    );
+  }
+  if (!isValidBranch(integration.branch)) {
+    return NextResponse.json(
+      { error: "Invalid branch name in GitHub integration config." },
       { status: 422 }
     );
   }
