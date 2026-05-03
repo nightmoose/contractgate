@@ -478,16 +478,22 @@ function ContractTab({ scenario }: { scenario: "simple" | "nested" }) {
       {yaml && !loading && (
         <pre className="text-[12px] leading-relaxed text-slate-300 bg-[#0a0d12] border border-[#1f2937] rounded-xl p-5 overflow-x-auto font-mono whitespace-pre">
           {yaml.split("\n").map((line, i) => {
-            // Highlight keys, string values, booleans, and comments with colour
-            const isComment  = line.trimStart().startsWith("#");
-            const isKey      = /^\s+- name:/.test(line) || /^\w[\w_]*:/.test(line.trimStart());
-            const highlighted = line
+            // Highlight keys, string values, booleans, and comments with colour.
+            // HTML-escape first so user-supplied YAML content cannot inject tags.
+            const escaped = line
+              .replace(/&/g, "&amp;")
+              .replace(/</g, "&lt;")
+              .replace(/>/g, "&gt;")
+              .replace(/"/g, "&quot;");
+            const isComment = escaped.trimStart().startsWith("#");
+            const isKey     = /^\s+- name:/.test(escaped) || /^\w[\w_]*:/.test(escaped.trimStart());
+            const highlighted = escaped
               // comments
               .replace(/(#.*)$/, '<span style="color:#4b5563">$1</span>')
               // boolean values
               .replace(/:\s*(true|false)(\s*$)/g, ': <span style="color:#f59e0b">$1</span>$2')
-              // quoted strings
-              .replace(/"([^"]*)"/g, '"<span style="color:#86efac">$1</span>"')
+              // quoted strings (already &quot;-escaped — match literal &quot;)
+              .replace(/&quot;([^&]*)&quot;/g, '&quot;<span style="color:#86efac">$1</span>&quot;')
               // yaml keys (word followed by colon)
               .replace(/^(\s*)([\w_-]+)(:)/g, '$1<span style="color:#93c5fd">$2</span>$3')
               // list dashes
