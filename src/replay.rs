@@ -144,13 +144,14 @@ pub async fn replay_handler(
     let mut by_id: std::collections::HashMap<Uuid, storage::QuarantineRow> =
         rows.into_iter().map(|r| (r.id, r)).collect();
 
-    // Single bounded local drives every allocation derived from request input
-    // so CodeQL can verify the size is controlled without tracing through the
-    // validate_bounds() early-return above.  The guard already enforces
-    // `req.ids.len() <= MAX_REPLAY_IDS`, so `.min()` is a no-op at runtime.
+    // Allocations downstream are bounded by `validate_bounds()` (≤ MAX_REPLAY_IDS)
+    // but CodeQL's taint tracker can't follow that early-return guard.  Use the
+    // constant directly in `with_capacity` so the allocation size is provably
+    // independent of request input — the const reservation upper-bounds memory
+    // at MAX_REPLAY_IDS * sizeof(T) regardless of what the client sent.
     const MAX_REPLAY_IDS: usize = 1_000;
     let bounded_ids_len = req.ids.len().min(MAX_REPLAY_IDS);
-    let mut results: Vec<ReplayItemResult> = Vec::with_capacity(bounded_ids_len);
+    let mut results: Vec<ReplayItemResult> = Vec::with_capacity(MAX_REPLAY_IDS);
     // Collected for the eligible (need-to-validate) fork below.
     struct Eligible {
         id: Uuid,
