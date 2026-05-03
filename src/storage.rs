@@ -224,13 +224,14 @@ pub async fn create_contract(
     Ok((identity_row.into_identity()?, version_row.into_version()?))
 }
 
-/// Fetch a contract identity by id.
+/// Fetch a contract identity by id.  Soft-deleted contracts are not visible
+/// (RFC-001 sign-off #6: soft delete everywhere).
 pub async fn get_contract_identity(pool: &PgPool, id: Uuid) -> AppResult<ContractIdentity> {
     let row = sqlx::query_as::<_, ContractIdentityRow>(
         r#"
         SELECT id, name, description, multi_stable_resolution, created_at, updated_at, pii_salt
         FROM contracts
-        WHERE id = $1
+        WHERE id = $1 AND deleted_at IS NULL
         "#,
     )
     .bind(id)
@@ -270,7 +271,7 @@ pub async fn list_contracts(
                     WHERE cv.contract_id = c.id
                 ) AS version_count
             FROM contracts c
-            WHERE c.org_id = $1
+            WHERE c.org_id = $1 AND c.deleted_at IS NULL
             ORDER BY c.created_at DESC
             "#,
         )
@@ -297,6 +298,7 @@ pub async fn list_contracts(
                     WHERE cv.contract_id = c.id
                 ) AS version_count
             FROM contracts c
+            WHERE c.deleted_at IS NULL
             ORDER BY c.created_at DESC
             "#,
         )
@@ -343,12 +345,11 @@ pub async fn patch_contract_identity(
 }
 
 pub async fn delete_contract(pool: &PgPool, id: Uuid) -> AppResult<()> {
-    // ON DELETE CASCADE on contract_versions + quarantine + audit handles
-    // the rest — but draft-only-delete guard on contract_versions would
-    // abort this whenever any version is stable/deprecated.  This is
-    // intentional: once any version is non-draft, the contract is part of
-    // the audit trail forever.  Callers should deprecate instead.
-    sqlx::query("DELETE FROM contracts WHERE id = $1")
+    // RFC-001 sign-off #6: soft delete everywhere — never lose data.
+    // Stamps `deleted_at`; downstream queries filter `deleted_at IS NULL`,
+    // so the contract disappears from the dashboard but the audit trail and
+    // version history remain intact.  A future restore is just an UPDATE.
+    sqlx::query("UPDATE contracts SET deleted_at = NOW() WHERE id = $1 AND deleted_at IS NULL")
         .bind(id)
         .execute(pool)
         .await?;
@@ -666,9 +667,10 @@ pub async fn list_stable_versions(
 pub async fn load_all_pii_salts(
     pool: &PgPool,
 ) -> AppResult<std::collections::HashMap<Uuid, Vec<u8>>> {
-    let rows: Vec<(Uuid, Vec<u8>)> = sqlx::query_as(r#"SELECT id, pii_salt FROM contracts"#)
-        .fetch_all(pool)
-        .await?;
+    let rows: Vec<(Uuid, Vec<u8>)> =
+        sqlx::query_as(r#"SELECT id, pii_salt FROM contracts WHERE deleted_at IS NULL"#)
+            .fetch_all(pool)
+            .await?;
 
     Ok(rows.into_iter().collect())
 }
