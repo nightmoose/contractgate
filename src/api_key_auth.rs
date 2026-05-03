@@ -182,6 +182,7 @@ async fn verify_against_db(raw_key: &str, db: &PgPool) -> Result<ValidatedKey, (
         FROM   api_keys
         WHERE  key_prefix = $1
           AND  revoked_at IS NULL
+          AND  deleted_at IS NULL
         LIMIT  1
         "#,
     )

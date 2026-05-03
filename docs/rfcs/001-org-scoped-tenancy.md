@@ -1,7 +1,7 @@
 # RFC-001 — Org-Scoped Tenancy
 
-**Status:** Draft — awaiting sign-off  
-**Date:** 2026-04-24  
+**Status:** Accepted (2026-05-03) — finishing gaps in `nightly-maintenance-2026-05-03-rfc-001-finish`
+**Date:** 2026-04-24 (drafted) / 2026-05-03 (accepted)
 **Author:** Alex Suarez  
 
 ---
@@ -148,6 +148,37 @@ When an enterprise client arrives, the likely path is a dedicated ContractGate i
 
 ---
 
+## Sign-off Decisions (2026-05-03)
+
+Resolved before finishing implementation. Migration 007 + 008 already shipped;
+gaps below land in migration 012 and the `nightly-maintenance-2026-05-03-rfc-001-finish`
+branch.
+
+| # | Question | Decision |
+|---|----------|----------|
+| 1 | Existing-data migration | Not relevant — current data is all test; no backfill needed beyond what 007 already does. |
+| 2 | Role matrix | `owner` = full control inc. delete org. `admin` = manage members (cannot remove owner), full CRUD on contracts/keys. `member` = read all org data, create/edit contracts; cannot manage members or invite. |
+| 3 | Auto-provision mechanism | Postgres trigger (already in 007). Atomic with `auth.users` insert, idempotent. |
+| 4 | Slug collision strategy | UUID suffix (`<slug>-<8-char-uuid>`) instead of numeric. Eliminates collision-loop retries and information leak. |
+| 5 | Active-org resolution (multi-org user) | Personal-default — the auto-provisioned org is always the fallback active org. UI multi-org switching deferred. |
+| 6 | Deletion semantics | **Soft delete everywhere, never lose data.** Add `deleted_at` column to `orgs`, `org_memberships`, `contracts`, `api_keys`. RLS filters `deleted_at IS NULL`. Flip parent FK cascades from `ON DELETE CASCADE` → `ON DELETE RESTRICT` so a hard delete fails fast. |
+| 7 | API-key creation | Members keep create-own-keys (current policy). Simpler; per-user audit trail; org isolation already enforced via `org_id` on insert. |
+| 8 | Invite to existing user | Require explicit accept. `/auth/accept-invite?token=<uuid>` page sets `accepted_at` and inserts `org_memberships` row. No silent auto-join. |
+| 9 | Audit-log backfill | Not needed — prod is not real data. |
+| 10 | Plan-column quota enforcement | Defer. `plan` column stays for forward compat; no quota wiring this RFC. |
+
+## Implementation Status
+
+Step 1 (migration), Step 2 (Rust `ValidatedKey.org_id`), Step 4 (data migration)
+landed in migrations 007 + 008. Verification runbook
+(`docs/rfcs/001-org-scoped-tenancy-verification.md`) and gaps tracked there.
+
+**Remaining (this branch):**
+- Migration 012 — UUID-suffix slugs, soft-delete columns, cascade flips
+- Rust soft-delete filters in `src/storage.rs`
+- Dashboard `/auth/accept-invite` page + member-emails view
+- Cross-org isolation + soft-delete test pass
+
 ## Open Questions
 
-None blocking. Deferred questions (multi-org UI, enterprise ACLs) are noted above.
+None remaining. Deferred items (multi-org UI, enterprise ACLs, plan quotas) noted above.

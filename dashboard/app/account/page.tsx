@@ -20,6 +20,8 @@ interface ApiKey {
 
 interface OrgMember {
   user_id: string;
+  /** Resolved server-side via /api/org/members (auth.users is not in public schema). */
+  email: string | null;
   role: "owner" | "admin" | "member";
   joined_at: string;
 }
@@ -197,12 +199,12 @@ function AccountContent() {
 
   // Load org members and pending invites when org is resolved.
   const loadOrgData = useCallback(async (orgId: string) => {
-    const [{ data: membersData }, { data: invitesData }] = await Promise.all([
-      supabase
-        .from("org_memberships")
-        .select("user_id, role, joined_at")
-        .eq("org_id", orgId)
-        .order("joined_at", { ascending: true }),
+    // Members are fetched via the server route so we can join auth.users.email.
+    // Invites stay on the client (RLS lets owners/admins read them directly).
+    const [membersRes, { data: invitesData }] = await Promise.all([
+      fetch(`/api/org/members?org_id=${encodeURIComponent(orgId)}`).then((r) =>
+        r.ok ? (r.json() as Promise<{ members: OrgMember[] }>) : { members: [] }
+      ),
       supabase
         .from("org_invites")
         .select("id, email, role, expires_at, created_at")
@@ -212,7 +214,7 @@ function AccountContent() {
         .gt("expires_at", new Date().toISOString())
         .order("created_at", { ascending: false }),
     ]);
-    if (membersData) setMembers(membersData as OrgMember[]);
+    setMembers(membersRes.members ?? []);
     if (invitesData) setInvites(invitesData as OrgInvite[]);
   }, [supabase]);
 
@@ -594,15 +596,13 @@ function AccountContent() {
                   className="bg-[#111827] border border-[#1f2937] rounded-xl px-4 py-3 flex items-center gap-3"
                 >
                   <div className="w-8 h-8 rounded-full bg-indigo-900/50 border border-indigo-700/30 flex items-center justify-center text-xs text-indigo-300 font-medium shrink-0">
-                    {isYou ? (user?.email?.[0] ?? "?").toUpperCase() : "?"}
+                    {((isYou ? user?.email : m.email) ?? "?")[0]?.toUpperCase() ?? "?"}
                   </div>
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2">
-                      {isYou ? (
-                        <span className="text-sm text-slate-200">{user?.email}</span>
-                      ) : (
-                        <span className="text-sm text-slate-400 font-mono text-xs truncate">{m.user_id}</span>
-                      )}
+                      <span className="text-sm text-slate-200 truncate">
+                        {(isYou ? user?.email : m.email) ?? m.user_id}
+                      </span>
                       {isYou && (
                         <span className="text-xs text-slate-600 bg-[#1f2937] px-1.5 py-0.5 rounded">You</span>
                       )}
