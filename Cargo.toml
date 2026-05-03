@@ -43,8 +43,8 @@ demo = ["rdkafka"]
 
 [dependencies]
 # Web framework
-axum = { version = "0.7", features = ["macros"] }
-tower = "0.4"
+axum = { version = "0.8", features = ["macros"] }
+tower = "0.5"
 tower-http = { version = "0.5", features = ["cors", "trace", "timeout", "limit"] }
 
 # Async runtime
