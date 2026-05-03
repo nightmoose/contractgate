@@ -83,8 +83,7 @@ mod integration {
     #[ignore = "requires DATABASE_URL + two seeded orgs"]
     async fn cross_org_ingest_is_rejected() {
         let key_b = std::env::var("TEST_API_KEY_B").expect("TEST_API_KEY_B required");
-        let contract_a =
-            std::env::var("TEST_CONTRACT_ID_A").expect("TEST_CONTRACT_ID_A required");
+        let contract_a = std::env::var("TEST_CONTRACT_ID_A").expect("TEST_CONTRACT_ID_A required");
 
         let client = reqwest::Client::new();
         let resp = client
@@ -112,8 +111,7 @@ mod integration {
     #[ignore = "requires DATABASE_URL + a contract that can be deleted"]
     async fn soft_delete_hides_from_list() {
         let key_a = std::env::var("TEST_API_KEY_A").expect("TEST_API_KEY_A required");
-        let contract_a =
-            std::env::var("TEST_CONTRACT_ID_A").expect("TEST_CONTRACT_ID_A required");
+        let contract_a = std::env::var("TEST_CONTRACT_ID_A").expect("TEST_CONTRACT_ID_A required");
 
         let client = reqwest::Client::new();
 
@@ -186,10 +184,10 @@ mod integration {
     #[tokio::test]
     #[ignore = "requires Supabase service role + an expired invite seeded"]
     async fn expired_invite_rejected() {
-        let dashboard_base = std::env::var("DASHBOARD_BASE_URL")
-            .unwrap_or_else(|_| "http://localhost:3000".into());
-        let token = std::env::var("TEST_EXPIRED_INVITE_TOKEN")
-            .expect("TEST_EXPIRED_INVITE_TOKEN required");
+        let dashboard_base =
+            std::env::var("DASHBOARD_BASE_URL").unwrap_or_else(|_| "http://localhost:3000".into());
+        let token =
+            std::env::var("TEST_EXPIRED_INVITE_TOKEN").expect("TEST_EXPIRED_INVITE_TOKEN required");
 
         let client = reqwest::Client::new();
         let resp = client
