@@ -150,8 +150,7 @@ pub async fn replay_handler(
     // validate_bounds() early-return above.  The guard already enforces
     // `req.ids.len() <= MAX`, so this is a no-op at runtime.
     const MAX_REPLAY_IDS: usize = 1_000;
-    let mut results: Vec<ReplayItemResult> =
-        Vec::with_capacity(req.ids.len().min(MAX_REPLAY_IDS));
+    let mut results: Vec<ReplayItemResult> = Vec::with_capacity(req.ids.len().min(MAX_REPLAY_IDS));
     // Collected for the eligible (need-to-validate) fork below.
     struct Eligible {
         id: Uuid,
