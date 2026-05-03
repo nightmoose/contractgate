@@ -22,7 +22,9 @@
     "swr": "^2.3.3"
   },
   "overrides": {
-    "postcss": "^8.5.9"
+    "next": {
+      "postcss": "^8.5.9"
+    }
   },
   "devDependencies": {
     "@eslint/eslintrc": "^3.3.1",
