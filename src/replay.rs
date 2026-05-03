@@ -144,13 +144,13 @@ pub async fn replay_handler(
     let mut by_id: std::collections::HashMap<Uuid, storage::QuarantineRow> =
         rows.into_iter().map(|r| (r.id, r)).collect();
 
-    // Preserve caller-submitted order in the response.
-    // `.min(MAX)` makes the bound explicit at the allocation site so static
-    // analysis tools (CodeQL) can verify it without tracing through the
+    // Single bounded local drives every allocation derived from request input
+    // so CodeQL can verify the size is controlled without tracing through the
     // validate_bounds() early-return above.  The guard already enforces
-    // `req.ids.len() <= MAX`, so this is a no-op at runtime.
+    // `req.ids.len() <= MAX_REPLAY_IDS`, so `.min()` is a no-op at runtime.
     const MAX_REPLAY_IDS: usize = 1_000;
-    let mut results: Vec<ReplayItemResult> = Vec::with_capacity(req.ids.len().min(MAX_REPLAY_IDS));
+    let bounded_ids_len = req.ids.len().min(MAX_REPLAY_IDS);
+    let mut results: Vec<ReplayItemResult> = Vec::with_capacity(bounded_ids_len);
     // Collected for the eligible (need-to-validate) fork below.
     struct Eligible {
         id: Uuid,
@@ -161,9 +161,9 @@ pub async fn replay_handler(
     // Reserve a slot per input id so we can fill in the outcome after
     // the validation pass completes.  Initially every slot is `None`;
     // non-eligible items fill their slot immediately below.
-    let mut slot: Vec<Option<ReplayItemOutcome>> = (0..req.ids.len()).map(|_| None).collect();
+    let mut slot: Vec<Option<ReplayItemOutcome>> = (0..bounded_ids_len).map(|_| None).collect();
     let mut ordinal_for_id: std::collections::HashMap<Uuid, usize> =
-        std::collections::HashMap::with_capacity(req.ids.len().min(MAX_REPLAY_IDS));
+        std::collections::HashMap::with_capacity(bounded_ids_len);
 
     for (idx, id) in req.ids.iter().enumerate() {
         ordinal_for_id.insert(*id, idx);
