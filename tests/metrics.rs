@@ -66,7 +66,9 @@ fn install_global_recorder() -> metrics_exporter_prometheus::PrometheusHandle {
             PrometheusBuilder::new()
                 .set_buckets_for_metric(
                     Matcher::Full("contractgate_validation_duration_seconds".to_string()),
-                    &[0.001, 0.005, 0.01, 0.015, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 5.0],
+                    &[
+                        0.001, 0.005, 0.01, 0.015, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 5.0,
+                    ],
                 )
                 .expect("valid buckets")
                 .install_recorder()
@@ -85,19 +87,23 @@ fn all_metric_names_present() {
 
     metrics::counter!("contractgate_requests_total",
         "route" => "/health", "method" => "GET", "status" => "200"
-    ).increment(1);
+    )
+    .increment(1);
 
     metrics::histogram!("contractgate_validation_duration_seconds",
         "contract_id" => "names-test", "outcome" => "passed"
-    ).record(0.002);
+    )
+    .record(0.002);
 
     metrics::counter!("contractgate_violations_total",
         "contract_id" => "names-test", "kind" => "missing_required_field"
-    ).increment(1);
+    )
+    .increment(1);
 
     metrics::counter!("contractgate_quarantined_total",
         "contract_id" => "names-test"
-    ).increment(1);
+    )
+    .increment(1);
 
     metrics::gauge!("contractgate_contracts_active").set(5.0);
     metrics::gauge!("contractgate_audit_log_rows").set(42.0);
@@ -299,8 +305,7 @@ async fn metrics_endpoint_bearer_auth() {
 #[tokio::test]
 #[ignore = "requires live server at TEST_BASE_URL (default http://localhost:3001)"]
 async fn integration_metrics_endpoint_live() {
-    let base =
-        std::env::var("TEST_BASE_URL").unwrap_or_else(|_| "http://localhost:3001".into());
+    let base = std::env::var("TEST_BASE_URL").unwrap_or_else(|_| "http://localhost:3001".into());
     let resp = reqwest::Client::new()
         .get(format!("{base}/metrics"))
         .send()
@@ -316,6 +321,9 @@ async fn integration_metrics_endpoint_live() {
         "contractgate_contracts_active",
         "contractgate_audit_log_rows",
     ] {
-        assert!(body.contains(name), "missing metric `{name}` in live /metrics");
+        assert!(
+            body.contains(name),
+            "missing metric `{name}` in live /metrics"
+        );
     }
 }
