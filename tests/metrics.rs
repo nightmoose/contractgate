@@ -133,17 +133,21 @@ fn validation_histogram_moves() {
     const TEST_CONTRACT_ID: &str = "histogram-moves-test";
 
     let good_event = json!({ "user_id": "u1", "amount": 9.99 });
+
+    // Acquire handle ONCE — metrics 0.24: repeated macro calls with dynamic
+    // labels can re-register the metric (resetting the counter).  Reusing a
+    // single handle guarantees all 10 record() calls accumulate.
+    let hist = metrics::histogram!(
+        "contractgate_validation_duration_seconds",
+        "contract_id" => TEST_CONTRACT_ID,
+        "outcome" => "passed",
+    );
+
     for _ in 0..10 {
         let t = Instant::now();
-        let result = validate(&compiled, &good_event);
+        let _result = validate(&compiled, &good_event);
         let elapsed = t.elapsed().as_secs_f64();
-        let outcome = if result.passed { "passed" } else { "failed" };
-        metrics::histogram!(
-            "contractgate_validation_duration_seconds",
-            "contract_id" => TEST_CONTRACT_ID,
-            "outcome" => outcome,
-        )
-        .record(elapsed);
+        hist.record(elapsed);
     }
 
     let output = handle.render();
