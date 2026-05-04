@@ -1,0 +1,42 @@
+ContractGate
+Copyright (c) 2025-2026 nightmoose (Alex Suarez)
+
+------------------------------------------------------------------------------
+MIT License
+------------------------------------------------------------------------------
+
+This software is distributed under the MIT License. See LICENSE for the full
+text. You are free to use, copy, modify, merge, publish, distribute,
+sublicense, and/or sell copies of the software for any purpose, including
+commercial use.
+
+------------------------------------------------------------------------------
+Patent Notice
+------------------------------------------------------------------------------
+
+The semantic contract enforcement methodology implemented in this software —
+specifically the technique of enforcing ontology-scoped, glossary-annotated,
+metric-bearing data contracts at ingestion time with real-time violation
+routing — is the subject of a pending United States patent application filed
+by Alex Suarez / nightmoose.
+
+WHAT THIS MEANS FOR YOU
+  • Your right to use, copy, modify, and distribute the *code* under the
+    MIT License is unaffected by the patent filing.
+  • If you ship a product that directly competes with ContractGate by
+    re-implementing the patented enforcement methodology, please contact us
+    at legal@contractgate.io before doing so.
+  • Forking this repo to self-host ContractGate for your own data pipelines
+    is explicitly permitted and encouraged — that is what Self-Hosted Free
+    is for.
+
+If you have questions about patent scope, reach out at legal@contractgate.io.
+
+------------------------------------------------------------------------------
+Third-Party Components
+------------------------------------------------------------------------------
+
+This project uses third-party open-source libraries. Their licenses are
+listed in Cargo.lock (Rust crates) and dashboard/package-lock.json (npm
+packages). All dependencies are permissively licensed (MIT, Apache 2.0,
+BSD, ISC) unless otherwise noted in those lock files.
