@@ -123,8 +123,7 @@ pub async fn metrics_handler(req: Request<axum::body::Body>) -> Response {
 /// every response.
 ///
 /// Labels:
-/// - `route`  — Axum matched-path pattern (e.g. `/ingest/{raw_id}`), or the
-///              literal URI path for unmatched requests.
+/// - `route`  — Axum matched-path pattern (e.g. `/ingest/{raw_id}`), or the URI path
 /// - `method` — HTTP method string (`GET`, `POST`, …).
 /// - `status` — HTTP status code as a string (`200`, `404`, …).
 pub async fn track_requests(req: Request<axum::body::Body>, next: Next) -> Response {
