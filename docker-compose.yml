@@ -1,22 +1,24 @@
-# ContractGate reference stack (RFC-017).
+# ContractGate reference stack (RFC-017, RFC-023).
 #
 # Default profile boots: gateway + Postgres + Prometheus + Grafana.
 # Optional profiles:
-#   --profile ui     additionally starts the Next.js dashboard
-#                    (image not yet published to GHCR by CI; opt-in only)
-#   --profile demo   additionally publishes starter contracts + runs demo-seeder
-#                    (posts ~3000 realistic events so dashboards look populated)
+#   --profile ui     additionally starts the Next.js dashboard (non-demo build)
+#   --profile demo   zero-auth demo: builds dashboard from source + seeder runs forever
 #   --profile kafka  additionally starts a Kafka broker (Bitnami Kafka 3.7)
 #
-# Quick start:
+# Quick start (RFC-023):
+#   make demo          # git clone && make demo — full zero-auth stack
+#   make demo-down     # tear down + wipe volumes
+#   make demo-reset    # wipe volumes + restart fresh
+#   make demo-logs     # follow all logs
+#
+# Manual:
 #   docker compose up                        # gateway stack, no seed data
-#   docker compose --profile ui up           # + dashboard
-#   docker compose --profile demo up         # gateway stack + seeded data
-#   make stack-up                            # alias for docker compose up
-#   make stack-up-demo                       # alias for docker compose --profile demo up
+#   docker compose --profile ui up           # + dashboard (prod build, needs Supabase env)
+#   docker compose --profile demo up --build # zero-auth demo
 #
 # Grafana:    http://localhost:3002  (admin / admin)
-# Dashboard:  http://localhost:3000  (only with --profile ui)
+# Dashboard:  http://localhost:3000  (demo or ui profile)
 # Gateway:    http://localhost:8080
 #
 # NOTE: The Kafka speed-demo binary (cargo run --features demo --bin demo) uses
@@ -55,20 +57,27 @@ services:
     restart: unless-stopped
 
   # ---------------------------------------------------------------------------
-  # Dashboard — Next.js frontend (profile: ui)
-  # Behind a profile because the image is not yet published to GHCR by CI;
-  # CI smoke tests that build only `gateway:ci` would otherwise fail trying
-  # to pull `dashboard:ci`. Bring up locally with: `docker compose --profile ui up`.
+  # Dashboard — Next.js frontend
+  #
+  # profile: ui    — prod build (requires NEXT_PUBLIC_SUPABASE_* env vars at
+  #                  build time; image must be pre-built or GHCR-published).
+  # profile: demo  — zero-auth demo build via NEXT_PUBLIC_DEMO_MODE=1.
+  #                  Built from source so no GHCR pull needed. First build
+  #                  ~2-3 min; layer cache makes subsequent runs instant.
   # ---------------------------------------------------------------------------
   dashboard:
-    image: ghcr.io/contractgate/dashboard:${TAG:-latest}
-    profiles: [ui]
+    profiles: [ui, demo]
+    build:
+      context: ./dashboard
+      args:
+        NEXT_PUBLIC_DEMO_MODE: "1"
+        NEXT_PUBLIC_API_URL: http://localhost:8080
+        NEXT_PUBLIC_API_KEY: cg_demo_key
     ports:
       - "3000:3000"
-    environment:
-      NEXT_PUBLIC_API_BASE: http://localhost:8080
     depends_on:
-      - gateway
+      gateway:
+        condition: service_healthy
     restart: unless-stopped
 
   # ---------------------------------------------------------------------------
@@ -154,11 +163,13 @@ services:
     # Compose substitutes ${VAR:-default} from the environment that invoked
     # `docker compose up`, so the smoke scripts can override rate/duration
     # via env vars (CI uses a 30s run to keep wall-clock short).
+    # Demo: low rate, no duration → runs forever so dashboard is always live.
+    # CI overrides via env: SEEDER_RATE=50 SEEDER_DURATION=30s.
     command:
       - --rate
-      - "${SEEDER_RATE:-10}"
+      - "${SEEDER_RATE:-3}"
       - --duration
-      - "${SEEDER_DURATION:-300s}"
+      - "${SEEDER_DURATION:-}"
     environment:
       GATEWAY_URL: http://gateway:8080
       CONTRACTGATE_API_KEY: ${CONTRACTGATE_API_KEY:-cg_demo_key}

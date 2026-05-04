@@ -6,6 +6,7 @@ import { useOrg } from "@/lib/org";
 import { useRouter } from "next/navigation";
 import type { User } from "@supabase/supabase-js";
 import AuthGate from "@/components/AuthGate";
+import { DEMO_MODE } from "@/lib/demo";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 interface ApiKey {
@@ -827,6 +828,23 @@ transforms.contractgate.contractgate.contract.id=<your contract UUID>`}
 }
 
 export default function AccountPage() {
+  // Demo mode: API keys, GitHub sync, and member management require real auth.
+  // Phase 2 will replace this with a styled DemoFeatureUnavailable component.
+  if (DEMO_MODE) {
+    return (
+      <div className="max-w-2xl mx-auto py-16 px-4 text-center">
+        <p className="text-slate-400 text-sm">
+          Account settings are not available in Self-Hosted Free mode.
+        </p>
+        <p className="text-slate-600 text-xs mt-2">
+          API keys, GitHub sync, and team management are available in{" "}
+          <a href="https://contractgate.io/cloud" className="text-green-500 hover:text-green-400">
+            ContractGate Cloud →
+          </a>
+        </p>
+      </div>
+    );
+  }
   return (
     <AuthGate page="account">
       <AccountContent />
