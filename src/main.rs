@@ -52,6 +52,7 @@ mod infer_diff;
 mod infer_openapi;
 mod infer_proto;
 mod ingest;
+pub mod observability;
 mod odcs;
 mod rate_limit;
 mod replay;
@@ -721,6 +722,10 @@ fn build_router(state: Arc<AppState>) -> Router {
         .route("/health", get(health_handler))
         .route("/openapi.json", get(v1_ingest::openapi_handler))
         .route("/playground/validate", post(playground_handler))
+        // Prometheus metrics scrape endpoint (RFC-016).
+        // Open by default; Bearer-auth gated when METRICS_AUTH_TOKEN is set.
+        // Mounted as public so Prometheus can scrape without an x-api-key.
+        .route("/metrics", get(observability::metrics_handler))
         // Stream demo — public so the browser's EventSource can connect
         // without auth headers (no sensitive data, local demo only).
         .route("/demo/start", post(stream_demo::start_handler))
@@ -844,6 +849,11 @@ fn build_router(state: Arc<AppState>) -> Router {
         .merge(public)
         .merge(protected)
         .merge(v1)
+        // Metrics middleware sits inside CORS/trace/timeout so every routed
+        // request — including /health and /metrics itself — is counted.
+        // `from_fn` is zero-overhead on the happy path (one atomic increment
+        // after the response, off the critical validation path).
+        .layer(middleware::from_fn(observability::track_requests))
         .layer(cors)
         .layer(TraceLayer::new_for_http())
         .layer(TimeoutLayer::new(std::time::Duration::from_secs(30)))
@@ -866,6 +876,12 @@ async fn main() -> anyhow::Result<()> {
         .with(tracing_subscriber::fmt::layer())
         .init();
 
+    // Install the Prometheus recorder before any metrics macros fire.
+    // Must happen before the first request and before warm_cache (which
+    // could theoretically emit metrics in future).
+    observability::install_recorder();
+    tracing::info!("Prometheus metrics recorder installed");
+
     let database_url = std::env::var("DATABASE_URL").expect("DATABASE_URL must be set");
 
     let pool = PgPool::connect(&database_url).await?;
@@ -886,6 +902,11 @@ async fn main() -> anyhow::Result<()> {
         Ok(()) => tracing::info!("contract cache warmed"),
         Err(e) => tracing::warn!("failed to warm contract cache: {:?}", e),
     }
+
+    // Spawn background gauge-refresh tasks (RFC-016 §Decisions Q5).
+    // Must be spawned after the pool is created and the recorder is installed.
+    observability::spawn_gauge_tasks(state.db.clone());
+    tracing::info!("metrics gauge-refresh tasks spawned");
 
     let app = build_router(state);
 
