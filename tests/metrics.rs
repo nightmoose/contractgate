@@ -2,21 +2,23 @@
 //!
 //! ## What these tests cover (no live DB required)
 //!
-//! 1. `all_metric_names_present` — install a global Prometheus recorder, emit
-//!    one sample of every contractgate metric, render, assert every expected
-//!    name appears.
+//! 1. `all_metric_names_present` — emit one sample of every contractgate
+//!    metric, render, assert every expected name appears.
 //!
 //! 2. `validation_histogram_moves` — call `validation::validate` ten times
-//!    in-process, record a histogram observation each time, assert the
-//!    `_count` line increases by ≥ 10.
+//!    in-process, record a histogram observation each time; assert the count
+//!    for the specific label used by this test reaches ≥ 10.
+//!    (Scoped to a unique label so parallel tests sharing the global recorder
+//!    do not interfere.)
 //!
-//! 3. `metrics_endpoint_open` — spin up the `/metrics` handler via
-//!    `axum-test`, assert 200 + `text/plain` content-type (no auth).
+//! 3. `metrics_endpoint_open` — spin up the `/metrics` handler via axum-test
+//!    with auth disabled; assert 200 + `text/plain` content-type.
 //!
-//! 4. `metrics_endpoint_bearer_auth` — assert 401 on missing/wrong token,
-//!    200 on correct `METRICS_AUTH_TOKEN`.
+//! 4. `metrics_endpoint_bearer_auth` — spin up the handler with a hard-coded
+//!    auth token injected via Axum state (avoids env-var races in parallel
+//!    tests); assert 401 on missing/wrong token, 200 on correct token.
 //!
-//! None of these require `DATABASE_URL`.
+//! None of these tests require `DATABASE_URL`.
 //!
 //! ## Integration tests (require live server)
 //!
@@ -33,7 +35,7 @@ use std::time::Instant;
 // Helpers
 // ---------------------------------------------------------------------------
 
-/// Build a tiny compiled contract for in-process validation tests.
+/// Build a minimal compiled contract for in-process validation tests.
 fn simple_contract() -> CompiledContract {
     let raw = r#"
 version: "1.0"
@@ -52,10 +54,10 @@ ontology:
     CompiledContract::compile(parsed).expect("compiled ok")
 }
 
-/// Install a recorder as the *global* recorder (required for `metrics::*!` macros).
-///
-/// Uses `OnceLock` so repeated calls from different tests in the same process
-/// are no-ops that return the same handle.
+/// Install a Prometheus recorder as the global recorder (required for
+/// `metrics::*!` macros to fire).  Uses `OnceLock` so multiple tests in the
+/// same process share one recorder — subsequent calls are no-ops that return
+/// the same handle.
 fn install_global_recorder() -> metrics_exporter_prometheus::PrometheusHandle {
     static HANDLE: std::sync::OnceLock<metrics_exporter_prometheus::PrometheusHandle> =
         std::sync::OnceLock::new();
@@ -86,15 +88,15 @@ fn all_metric_names_present() {
     ).increment(1);
 
     metrics::histogram!("contractgate_validation_duration_seconds",
-        "contract_id" => "test-id", "outcome" => "passed"
+        "contract_id" => "names-test", "outcome" => "passed"
     ).record(0.002);
 
     metrics::counter!("contractgate_violations_total",
-        "contract_id" => "test-id", "kind" => "missing_required_field"
+        "contract_id" => "names-test", "kind" => "missing_required_field"
     ).increment(1);
 
     metrics::counter!("contractgate_quarantined_total",
-        "contract_id" => "test-id"
+        "contract_id" => "names-test"
     ).increment(1);
 
     metrics::gauge!("contractgate_contracts_active").set(5.0);
@@ -112,7 +114,7 @@ fn all_metric_names_present() {
     ] {
         assert!(
             output.contains(name),
-            "metric `{name}` missing from /metrics output.\nOutput:\n{output}"
+            "metric `{name}` missing from /metrics output.\nFull output:\n{output}"
         );
     }
 }
@@ -126,9 +128,9 @@ fn validation_histogram_moves() {
     let handle = install_global_recorder();
     let compiled = simple_contract();
 
-    let before = handle.render();
-    let before_count =
-        extract_histogram_count(&before, "contractgate_validation_duration_seconds");
+    // Use a label that is UNIQUE to this test so other parallel tests sharing
+    // the same global recorder cannot affect the assertion.
+    const TEST_CONTRACT_ID: &str = "histogram-moves-test";
 
     let good_event = json!({ "user_id": "u1", "amount": 9.99 });
     for _ in 0..10 {
@@ -138,27 +140,36 @@ fn validation_histogram_moves() {
         let outcome = if result.passed { "passed" } else { "failed" };
         metrics::histogram!(
             "contractgate_validation_duration_seconds",
-            "contract_id" => "histogram-test",
+            "contract_id" => TEST_CONTRACT_ID,
             "outcome" => outcome,
         )
         .record(elapsed);
     }
 
-    let after = handle.render();
-    let after_count =
-        extract_histogram_count(&after, "contractgate_validation_duration_seconds");
+    let output = handle.render();
+
+    // Count observations for THIS test's specific label set only.
+    let count = histogram_count_for_label(
+        &output,
+        "contractgate_validation_duration_seconds",
+        TEST_CONTRACT_ID,
+    );
 
     assert!(
-        after_count >= before_count + 10,
-        "histogram _count did not increase by ≥10: before={before_count} after={after_count}"
+        count >= 10,
+        "histogram count for contract_id={TEST_CONTRACT_ID} should be ≥10, got {count}.\n\
+         Output:\n{output}"
     );
 }
 
-/// Sum all `<metric_name>_count` lines (across label combos) in the text.
-fn extract_histogram_count(text: &str, metric_name: &str) -> u64 {
-    let key = format!("{metric_name}_count");
+/// Return the sum of all `<metric>_count` lines whose text contains
+/// `contract_id="<id>"`.  Uses a per-label scope so parallel tests that share
+/// the global recorder do not interfere.
+fn histogram_count_for_label(text: &str, metric: &str, contract_id: &str) -> u64 {
+    let count_key = format!("{metric}_count");
+    let label_fragment = format!("contract_id=\"{contract_id}\"");
     text.lines()
-        .filter(|l| l.starts_with(&key))
+        .filter(|l| l.starts_with(&count_key) && l.contains(&label_fragment))
         .filter_map(|l| l.split_whitespace().last())
         .filter_map(|v| v.parse::<f64>().ok())
         .map(|v| v as u64)
@@ -166,34 +177,45 @@ fn extract_histogram_count(text: &str, metric_name: &str) -> u64 {
 }
 
 // ---------------------------------------------------------------------------
-// Minimal metrics-only Axum app (no DB needed)
+// Minimal metrics-only Axum app
+//
+// Auth token injected via Axum state — avoids std::env races when tests
+// run in parallel (tests 3 and 4 would race on set_var / remove_var).
 // ---------------------------------------------------------------------------
 
-fn metrics_app() -> axum::Router {
-    axum::Router::new().route("/metrics", axum::routing::get(metrics_handler_test))
+/// Auth configuration passed as Axum state to the test handler.
+#[derive(Clone)]
+struct TestAuthState {
+    /// `Some(token)` → bearer auth required; `None` → open.
+    expected_token: Option<String>,
 }
 
-/// Inline re-implementation of the metrics handler for tests.
-/// Cannot import from the binary crate; mirrors the logic in observability.rs.
-async fn metrics_handler_test(req: axum::http::Request<axum::body::Body>) -> axum::response::Response {
+fn metrics_app(auth: TestAuthState) -> axum::Router {
+    use axum::routing::get;
+    axum::Router::new()
+        .route("/metrics", get(metrics_handler_test))
+        .with_state(auth)
+}
+
+async fn metrics_handler_test(
+    axum::extract::State(auth): axum::extract::State<TestAuthState>,
+    req: axum::http::Request<axum::body::Body>,
+) -> axum::response::Response {
     use axum::response::IntoResponse;
 
-    if let Ok(expected) = std::env::var("METRICS_AUTH_TOKEN") {
+    if let Some(expected) = &auth.expected_token {
         let provided = req
             .headers()
             .get(axum::http::header::AUTHORIZATION)
             .and_then(|v: &axum::http::HeaderValue| v.to_str().ok())
             .and_then(|v| v.strip_prefix("Bearer "))
             .unwrap_or("");
-        if provided != expected {
+        if provided != expected.as_str() {
             return (axum::http::StatusCode::UNAUTHORIZED, "Unauthorized").into_response();
         }
     }
 
-    // Render via the global recorder installed by install_global_recorder().
-    // If tests run in isolation and install_global_recorder() hasn't been
-    // called, build a fresh recorder just for this render (output will be empty
-    // but the endpoint will still return 200).
+    // Render the global recorder (installed by install_global_recorder).
     let body = install_global_recorder().render();
 
     (
@@ -213,11 +235,11 @@ async fn metrics_handler_test(req: axum::http::Request<axum::body::Body>) -> axu
 
 #[tokio::test]
 async fn metrics_endpoint_open() {
-    std::env::remove_var("METRICS_AUTH_TOKEN");
     install_global_recorder();
 
-    // axum-test v20: TestServer::new returns TestServer directly (not Result).
-    let server = axum_test::TestServer::new(metrics_app());
+    let server = axum_test::TestServer::new(metrics_app(TestAuthState {
+        expected_token: None,
+    }));
     let resp: axum_test::TestResponse = server.get("/metrics").await;
 
     assert_eq!(resp.status_code(), 200);
@@ -235,10 +257,11 @@ async fn metrics_endpoint_open() {
 
 #[tokio::test]
 async fn metrics_endpoint_bearer_auth() {
-    std::env::set_var("METRICS_AUTH_TOKEN", "supersecret");
     install_global_recorder();
 
-    let server = axum_test::TestServer::new(metrics_app());
+    let server = axum_test::TestServer::new(metrics_app(TestAuthState {
+        expected_token: Some("supersecret".into()),
+    }));
 
     // No token → 401.
     let resp: axum_test::TestResponse = server.get("/metrics").await;
@@ -263,8 +286,6 @@ async fn metrics_endpoint_bearer_auth() {
         )
         .await;
     assert_eq!(resp.status_code(), 200, "correct token should be 200");
-
-    std::env::remove_var("METRICS_AUTH_TOKEN");
 }
 
 // ---------------------------------------------------------------------------
