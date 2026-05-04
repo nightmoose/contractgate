@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
+import { DEMO_MODE } from "@/lib/demo";
 
 // ── Per-page preview content ───────────────────────────────────────────────
 
@@ -200,6 +201,9 @@ interface AuthGateProps {
 }
 
 export default function AuthGate({ page, children }: AuthGateProps) {
+  // Demo mode: no auth wall — render real content immediately.
+  if (DEMO_MODE) return <>{children}</>;
+
   const [authed, setAuthed] = useState<boolean | null>(null);
 
   useEffect(() => {

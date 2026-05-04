@@ -18,8 +18,9 @@
  */
 
 import * as yaml from "js-yaml";
+import { DEMO_MODE, DEMO_ORG_UUID } from "@/lib/demo";
 
-const BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001";
+const BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8080";
 const API_KEY = process.env.NEXT_PUBLIC_API_KEY ?? "";
 
 /**
@@ -28,8 +29,11 @@ const API_KEY = process.env.NEXT_PUBLIC_API_KEY ?? "";
  * scope queries even when using the legacy env-var key (which carries no
  * org context of its own).  A DB-backed key always takes precedence on the
  * Rust side — this header is only the fallback.
+ *
+ * In demo mode this is pre-populated at module init so the first API call
+ * (before any provider mounts) already carries the correct org header.
  */
-let _apiOrgId: string | null = null;
+let _apiOrgId: string | null = DEMO_MODE ? DEMO_ORG_UUID : null;
 
 export function setApiOrgId(orgId: string): void {
   _apiOrgId = orgId;

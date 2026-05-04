@@ -12,6 +12,11 @@ const nextConfig: NextConfig = {
 
   // Keep images unoptimized to avoid requiring a server image optimizer.
   images: { unoptimized: true },
+
+  // Standalone output bundles server + node_modules for minimal Docker images.
+  // Only active when NEXT_PUBLIC_DEMO_MODE is set (build arg from Dockerfile);
+  // Vercel deploys ignore this because it detects the Vercel environment.
+  ...(process.env.NEXT_PUBLIC_DEMO_MODE === "1" ? { output: "standalone" } : {}),
 };
 
 export default nextConfig;
