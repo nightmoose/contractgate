@@ -9,6 +9,7 @@ import clsx from "clsx";
 
 interface Feature {
   label: string;
+  selfHosted: string | boolean;
   free: string | boolean;
   growth: string | boolean;
   enterprise: string | boolean;
@@ -20,8 +21,20 @@ interface Feature {
 
 const TIERS = [
   {
+    key: "selfHosted",
+    name: "Self-Hosted Free",
+    tagline: "Run it yourself, forever",
+    price: { monthly: "Free", annual: "Free" },
+    priceSub: { monthly: "git clone && make demo", annual: "git clone && make demo" },
+    cta: "Get the repo",
+    ctaHref: "https://github.com/nightmoose/contractgate",
+    highlight: false,
+    color: "border-[#1f2937]",
+    badge: "OSS",
+  },
+  {
     key: "free",
-    name: "Free",
+    name: "Cloud Free",
     tagline: "Explore & prototype",
     price: { monthly: "$0", annual: "$0" },
     cta: "Start free",
@@ -57,26 +70,30 @@ const TIERS = [
 ];
 
 const FEATURES: Feature[] = [
-  { label: "Events validated / month",       free: "1M",         growth: "50M",      enterprise: "Unlimited" },
-  { label: "Active contracts",               free: "3",          growth: "Unlimited", enterprise: "Unlimited" },
-  { label: "Contract versions",              free: "3 per contract", growth: "Unlimited", enterprise: "Unlimited" },
-  { label: "Ingest API",                     free: true,         growth: true,       enterprise: true },
-  { label: "Playground (test without save)", free: true,         growth: true,       enterprise: true },
-  { label: "Audit log retention",            free: "7 days",     growth: "90 days",  enterprise: "Custom" },
-  { label: "PII transform rules (RFC-004)",  free: false,        growth: true,       enterprise: true },
-  { label: "Quarantine replay (RFC-003)",    free: false,        growth: true,       enterprise: true },
-  { label: "Visual contract builder",        free: false,        growth: true,       enterprise: true },
-  { label: "Contract generator (JSON → YAML)", free: false,     growth: true,       enterprise: true },
-  { label: "Stream demo dashboard",          free: true,         growth: true,       enterprise: true },
-  { label: "Semantic versioning + promotion",free: false,        growth: true,       enterprise: true },
-  { label: "Batch ingest (up to 100 events/call)", free: false, growth: true,       enterprise: true },
-  { label: "Data-parallel validation (Rayon)", free: false,     growth: true,       enterprise: true },
-  { label: "SSO / SAML",                     free: false,        growth: false,      enterprise: true },
-  { label: "Custom SLA",                     free: false,        growth: false,      enterprise: true },
-  { label: "Audit log export (S3 / GCS)",    free: false,        growth: false,      enterprise: true },
-  { label: "Dedicated deployment",           free: false,        growth: false,      enterprise: true },
-  { label: "Priority support + SRE on-call", free: false,       growth: false,      enterprise: true },
-  { label: "Custom contract templates",      free: false,        growth: false,      enterprise: true },
+  { label: "Events validated / month",         selfHosted: "Unlimited (local)", free: "1M",              growth: "50M",        enterprise: "Unlimited" },
+  { label: "Active contracts",                 selfHosted: "3 (starter)",       free: "3",               growth: "Unlimited",  enterprise: "Unlimited" },
+  { label: "Contract versions",                selfHosted: true,                free: "3 per contract",  growth: "Unlimited",  enterprise: "Unlimited" },
+  { label: "Ingest API",                       selfHosted: true,                free: true,              growth: true,         enterprise: true },
+  { label: "Playground (test without save)",   selfHosted: true,                free: true,              growth: true,         enterprise: true },
+  { label: "Audit log retention",              selfHosted: "Local Postgres",    free: "7 days",          growth: "90 days",    enterprise: "Custom" },
+  { label: "Stream demo dashboard",            selfHosted: true,                free: true,              growth: true,         enterprise: true },
+  { label: "Batch ingest",                     selfHosted: true,                free: false,             growth: true,         enterprise: true },
+  { label: "Data-parallel validation (Rayon)", selfHosted: true,                free: false,             growth: true,         enterprise: true },
+  { label: "Auth & API key management",        selfHosted: false,               free: true,              growth: true,         enterprise: true },
+  { label: "Multi-tenancy",                    selfHosted: false,               free: false,             growth: true,         enterprise: true },
+  { label: "PII transform rules (RFC-004)",    selfHosted: false,               free: false,             growth: true,         enterprise: true },
+  { label: "Quarantine replay (RFC-003)",      selfHosted: false,               free: false,             growth: true,         enterprise: true },
+  { label: "Visual contract builder",          selfHosted: false,               free: false,             growth: true,         enterprise: true },
+  { label: "Contract generator (JSON → YAML)", selfHosted: false,               free: false,             growth: true,         enterprise: true },
+  { label: "Semantic versioning + promotion",  selfHosted: false,               free: false,             growth: true,         enterprise: true },
+  { label: "GitHub sync",                      selfHosted: false,               free: false,             growth: true,         enterprise: true },
+  { label: "Team invites & roles",             selfHosted: false,               free: false,             growth: true,         enterprise: true },
+  { label: "SSO / SAML",                       selfHosted: false,               free: false,             growth: false,        enterprise: true },
+  { label: "Custom SLA",                       selfHosted: false,               free: false,             growth: false,        enterprise: true },
+  { label: "Audit log export (S3 / GCS)",      selfHosted: false,               free: false,             growth: false,        enterprise: true },
+  { label: "Dedicated deployment",             selfHosted: false,               free: false,             growth: false,        enterprise: true },
+  { label: "Priority support + SRE on-call",   selfHosted: false,               free: false,             growth: false,        enterprise: true },
+  { label: "Custom contract templates",        selfHosted: false,               free: false,             growth: false,        enterprise: true },
 ];
 
 // ---------------------------------------------------------------------------
@@ -154,8 +171,21 @@ export default function PricingPage() {
         </div>
       </div>
 
+      {/* Edition labels */}
+      <div className="flex items-center gap-4 -mb-6">
+        <div className="flex items-center gap-2">
+          <span className="w-2.5 h-2.5 rounded-full bg-slate-600" />
+          <span className="text-xs text-slate-500 font-medium uppercase tracking-wider">Self-Hosted</span>
+        </div>
+        <div className="flex-1 border-t border-dashed border-[#1f2937]" />
+        <div className="flex items-center gap-2">
+          <span className="w-2.5 h-2.5 rounded-full bg-green-600" />
+          <span className="text-xs text-slate-500 font-medium uppercase tracking-wider">Cloud</span>
+        </div>
+      </div>
+
       {/* Tier cards */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-5">
         {TIERS.map((tier) => (
           <div
             key={tier.key}
@@ -165,7 +195,14 @@ export default function PricingPage() {
               tier.highlight && "ring-1 ring-green-700/40"
             )}
           >
-            {tier.badge && (
+            {tier.badge === "OSS" && (
+              <div className="absolute -top-3 left-1/2 -translate-x-1/2">
+                <span className="bg-[#1f2937] border border-[#374151] text-slate-300 text-xs font-semibold px-3 py-1 rounded-full shadow">
+                  Open Source
+                </span>
+              </div>
+            )}
+            {tier.badge && tier.badge !== "OSS" && (
               <div className="absolute -top-3 left-1/2 -translate-x-1/2">
                 <span className="bg-green-600 text-white text-xs font-semibold px-3 py-1 rounded-full shadow">
                   {tier.badge}
@@ -229,11 +266,17 @@ export default function PricingPage() {
         <h2 className="text-xl font-semibold mb-6 text-center text-slate-300">Full feature comparison</h2>
         <div className="bg-[#111827] border border-[#1f2937] rounded-2xl overflow-hidden">
           {/* Table header */}
-          <div className="grid grid-cols-4 border-b border-[#1f2937]">
+          <div className="grid grid-cols-5 border-b border-[#1f2937]">
             <div className="px-5 py-4 text-xs text-slate-500 uppercase tracking-wider">Feature</div>
             {TIERS.map((t) => (
               <div key={t.key} className={clsx("px-4 py-4 text-center", t.highlight && "bg-green-900/10")}>
                 <p className="text-sm font-semibold">{t.name}</p>
+                {t.key === "selfHosted" && (
+                  <span className="inline-block mt-1 text-xs text-slate-500">self-hosted</span>
+                )}
+                {t.key !== "selfHosted" && (
+                  <span className="inline-block mt-1 text-xs text-slate-500">cloud</span>
+                )}
               </div>
             ))}
           </div>
@@ -243,7 +286,7 @@ export default function PricingPage() {
             <div
               key={f.label}
               className={clsx(
-                "grid grid-cols-4 border-b border-[#1f2937]/50 last:border-0",
+                "grid grid-cols-5 border-b border-[#1f2937]/50 last:border-0",
                 i % 2 === 1 && "bg-[#0a0d12]/40"
               )}
             >
@@ -284,6 +327,10 @@ export default function PricingPage() {
           {
             q: "What does 'patent pending' mean for my stack?",
             a: "The semantic contract enforcement methodology is patent pending (US filing). Your use is licensed; you are protected from third-party IP claims.",
+          },
+          {
+            q: "What's the difference between Self-Hosted Free and Cloud Free?",
+            a: "Self-Hosted Free runs the full gateway binary on your machine — unlimited local events, no account needed. Cloud Free is the managed SaaS tier with auth, API keys, and cloud retention. Self-Hosted Free has no Cloud features (multi-tenancy, GitHub sync, etc.).",
           },
         ].map((item) => (
           <div key={item.q} className="bg-[#111827] border border-[#1f2937] rounded-xl p-5">

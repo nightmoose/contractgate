@@ -6,6 +6,8 @@ import { useOrg } from "@/lib/org";
 import { useRouter } from "next/navigation";
 import type { User } from "@supabase/supabase-js";
 import AuthGate from "@/components/AuthGate";
+import { DEMO_MODE } from "@/lib/demo";
+import DemoFeatureUnavailable from "@/components/DemoFeatureUnavailable";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 interface ApiKey {
@@ -827,6 +829,14 @@ transforms.contractgate.contractgate.contract.id=<your contract UUID>`}
 }
 
 export default function AccountPage() {
+  if (DEMO_MODE) {
+    return (
+      <DemoFeatureUnavailable
+        feature="API Keys & Account"
+        reason="API key management, GitHub sync, and team invites require a real org. Available in ContractGate Cloud."
+      />
+    );
+  }
   return (
     <AuthGate page="account">
       <AccountContent />

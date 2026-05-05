@@ -1,5 +1,6 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
+import { DEMO_MODE } from "@/lib/demo";
 
 // Routes that don't require authentication at the middleware level.
 // Pages that use <AuthGate> for client-side gating are listed here so the
@@ -25,6 +26,11 @@ function isPublic(pathname: string) {
 }
 
 export async function middleware(request: NextRequest) {
+  // Demo mode: no Supabase env vars required — skip auth entirely.
+  if (DEMO_MODE) {
+    return NextResponse.next({ request });
+  }
+
   let supabaseResponse = NextResponse.next({ request });
 
   const supabase = createServerClient(

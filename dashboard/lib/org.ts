@@ -17,6 +17,7 @@
 
 import { useState, useEffect, useRef } from "react";
 import { createClient } from "@/lib/supabase/client";
+import { DEMO_MODE, DEMO_ORG_UUID, DEMO_ORG_NAME } from "@/lib/demo";
 
 export interface OrgInfo {
   org_id: string;
@@ -52,6 +53,20 @@ interface UseOrgResult {
  * single place to upgrade when that lands.
  */
 export function useOrg(): UseOrgResult {
+  // Demo mode: return fixed org synchronously — no Supabase session needed.
+  if (DEMO_MODE) {
+    return {
+      org: {
+        org_id: DEMO_ORG_UUID,
+        org_name: DEMO_ORG_NAME,
+        slug: "demo",
+        role: "owner",
+      },
+      loading: false,
+      error: null,
+    };
+  }
+
   const [org, setOrg] = useState<OrgInfo | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);

@@ -3,10 +3,9 @@
 # Tells Grafana to load dashboards from the specified path on startup.
 # The ContractGate dashboard JSON is at ops/grafana/contractgate.json.
 #
-# NOTE: contractgate.json is currently a stub ({}) until RFC-016 (Observability v1)
-# ships the real Grafana dashboard panels.  The provisioning slot is wired now
-# so RFC-016 only needs to replace the JSON file — no Compose or provisioning
-# changes required.
+# contractgate.json ships six panels (RFC-016): request rate, validation
+# latency p50/p95/p99, violation rate by kind, quarantine rate, active
+# contracts gauge, and top-10 noisiest contracts.
 
 apiVersion: 1
 

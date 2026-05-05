@@ -59,6 +59,7 @@ use crate::storage;
 use crate::transform::{apply_transforms, TransformedPayload};
 use crate::validation::{check_uniqueness_batch, validate, CompiledContract, ValidationResult};
 use crate::AppState;
+use std::time::Instant;
 
 // ---------------------------------------------------------------------------
 // Limits (RFC-021 §Size limits)
@@ -531,7 +532,23 @@ pub async fn v1_ingest_handler(
     let mut compiled_by_version: HashMap<String, Arc<CompiledContract>> = HashMap::new();
     compiled_by_version.insert(resolved_version.clone(), Arc::clone(&compiled));
 
+    // RFC-016: time the top-level validation call.
+    let _validation_start = Instant::now();
     let mut validation_results = parallel_validate(Arc::clone(&compiled), &events).await?;
+    {
+        let elapsed = _validation_start.elapsed().as_secs_f64();
+        let outcome = if validation_results.iter().all(|r| r.passed) {
+            "passed"
+        } else {
+            "failed"
+        };
+        metrics::histogram!(
+            "contractgate_validation_duration_seconds",
+            "contract_id" => contract_id.to_string(),
+            "outcome" => outcome,
+        )
+        .record(elapsed);
+    }
 
     // Fallback multi-stable resolution (RFC-002, same logic as ingest.rs).
     let mut per_event_versions = vec![resolved_version.clone(); events.len()];
@@ -664,6 +681,33 @@ pub async fn v1_ingest_handler(
                 payload: transformed_payloads[idx].clone(),
             })
             .collect();
+
+        // RFC-016: emit violation + quarantine counters at the audit write path.
+        // `serde_json::to_string` gives the snake_case label (rename_all = "snake_case").
+        {
+            let cid = contract_id.to_string();
+            for vr in &validation_results {
+                for violation in &vr.violations {
+                    let kind = serde_json::to_string(&violation.kind)
+                        .unwrap_or_default()
+                        .trim_matches('"')
+                        .to_string();
+                    metrics::counter!(
+                        "contractgate_violations_total",
+                        "contract_id" => cid.clone(),
+                        "kind" => kind,
+                    )
+                    .increment(1);
+                }
+            }
+            if !quarantine_rows.is_empty() {
+                metrics::counter!(
+                    "contractgate_quarantined_total",
+                    "contract_id" => cid,
+                )
+                .increment(quarantine_rows.len() as u64);
+            }
+        }
 
         if !audit_rows.is_empty() {
             let pool = state.db.clone();
