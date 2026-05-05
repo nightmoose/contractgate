@@ -33,7 +33,7 @@ That's it. Every record is now validated against your contract in real-time.
 | `contractgate.api.url` | *(required)* | Base URL of your ContractGate API server (no trailing slash) |
 | `contractgate.contract.id` | *(required)* | UUID of the contract to validate against |
 | `contractgate.api.key` | `""` | `x-api-key` header value. Leave blank for dev/no-auth mode |
-| `contractgate.contract.version` | `""` | Pin to a specific version, e.g. `"1.2.0"`. Blank = latest stable |
+| `contractgate.contract.version` | `""` | Pin to a specific version, e.g. `"1.2.0"`. Blank = latest stable. Sent as the `X-Contract-Version` request header (highest server precedence). |
 | `contractgate.dry.run` | `false` | Validate without writing to the audit log (reduces DB pressure at high throughput) |
 | `contractgate.on.failure` | `DLQ` | `DLQ` — throw DataException for DLQ routing. `TAG_AND_PASS` — add violation headers and pass through |
 | `contractgate.connect.timeout.ms` | `5000` | TCP connection timeout in ms |

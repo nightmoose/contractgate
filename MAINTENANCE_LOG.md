@@ -2,6 +2,46 @@
 
 ---
 
+## 2026-05-05 — Confluent connector: fix version-pin bug
+
+**Branch**: `nightly-maintenance-2026-05-05`
+
+### Problem
+
+`ContractGateClient.buildUrl()` appended `?version=<pin>` as a query
+parameter. The server's `IngestQuery` struct only deserialises `dry_run`
+and `atomic` — `version` is not a recognised query parameter. Version
+resolution uses the `X-Contract-Version` request header (highest
+precedence) or the `@version` path suffix. The `?version=` form was
+silently ignored, so `contractgate.contract.version` had no effect.
+
+### Fix
+
+- **`confluent-connector/src/main/java/.../ContractGateClient.java`**
+  - Removed `?version=` query-param logic from `buildUrl()`.
+  - Added `requestBuilder.header("X-Contract-Version", contractVersion)`
+    in `validate()` when a version pin is configured.
+  - Updated Javadoc on both `validate()` and `buildUrl()` to document
+    the correct wire format.
+
+### Docs updated
+
+- `confluent-connector/README.md` — config table now notes the header
+  mechanism.
+- `dashboard/app/docs/kafka-connect/page.tsx` — config row and FAQ
+  entry both clarified.
+
+### What the user must run
+
+No Rust changes — no `cargo` steps needed.
+
+Connector rebuild (user must run — `mvn` unavailable in sandbox):
+```bash
+cd confluent-connector && mvn package -q
+```
+
+---
+
 ## 2026-05-03 — RFC-016 Observability v1
 
 **Branch**: `nightly-maintenance-2026-05-03-rfc-016`
