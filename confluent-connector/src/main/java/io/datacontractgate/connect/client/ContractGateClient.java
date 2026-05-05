@@ -80,7 +80,11 @@ public class ContractGateClient {
      * Validates {@code recordJson} against the configured contract.
      *
      * <p>The record is wrapped in a JSON array and posted to
-     * {@code POST /ingest/{contractId}[?version=...][&dry_run=true]}.</p>
+     * {@code POST /ingest/{contractId}[?dry_run=true]}. When a version pin is
+     * configured it is sent as the {@code X-Contract-Version} request header —
+     * the server's version resolution order is: header &gt; {@code @version}
+     * path suffix &gt; latest stable. The {@code ?version=} query parameter is
+     * NOT recognised by the server and must not be used.</p>
      *
      * @param recordJson JSON string representing a single Kafka record value
      * @param requestTimeoutMs per-call override (same value used at construction time)
@@ -101,6 +105,12 @@ public class ContractGateClient {
 
         if (!apiKey.isEmpty()) {
             requestBuilder.header("x-api-key", apiKey);
+        }
+
+        // Version pin → X-Contract-Version header (highest server precedence).
+        // The server does not recognise a ?version= query parameter.
+        if (!contractVersion.isEmpty()) {
+            requestBuilder.header("X-Contract-Version", contractVersion);
         }
 
         HttpRequest request = requestBuilder
@@ -138,12 +148,17 @@ public class ContractGateClient {
     // ── Helpers ───────────────────────────────────────────────────────────────
 
     /**
-     * Builds the full ingest URL, appending query parameters as configured.
+     * Builds the ingest URL with any applicable query parameters.
+     *
+     * <p>Version pinning is handled via the {@code X-Contract-Version} request
+     * header, not a query parameter — the server only recognises the header and
+     * the {@code @version} path-suffix forms. This method therefore only
+     * appends {@code ?dry_run=true} when configured.</p>
      *
      * <p>Example outputs:
      * <ul>
      *   <li>{@code https://api.contractgate.io/ingest/abc-123}</li>
-     *   <li>{@code https://api.contractgate.io/ingest/abc-123?version=1.2.0&dry_run=true}</li>
+     *   <li>{@code https://api.contractgate.io/ingest/abc-123?dry_run=true}</li>
      * </ul>
      * </p>
      */
@@ -152,14 +167,8 @@ public class ContractGateClient {
             .append("/ingest/")
             .append(contractId);
 
-        boolean hasQuery = false;
-
-        if (!contractVersion.isEmpty()) {
-            sb.append("?version=").append(contractVersion);
-            hasQuery = true;
-        }
         if (dryRun) {
-            sb.append(hasQuery ? "&" : "?").append("dry_run=true");
+            sb.append("?dry_run=true");
         }
         return sb.toString();
     }

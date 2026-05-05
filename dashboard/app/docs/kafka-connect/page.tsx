@@ -245,6 +245,8 @@ plugin.path=/usr/share/confluent-hub-components`}</Code>
               <ConfigRow name="contractgate.contract.version" default='"" (latest)'>
                 Pin to a specific contract version, e.g. <code className="text-slate-300">1.2.0</code>.
                 Leave blank to always use the latest stable version — recommended for most pipelines.
+                When set, the version is sent as the <code className="text-slate-300">X-Contract-Version</code> request header,
+                which takes highest precedence in the server&apos;s resolution order.
               </ConfigRow>
               <ConfigRow name="contractgate.on.failure" default="DLQ">
                 What to do when a record fails.{" "}
@@ -443,7 +445,7 @@ errors.retry.delay.max.ms=5000`}</Code>
           },
           {
             q: "How do I pin a contract version?",
-            a: "Set contractgate.contract.version=1.2.0. Leave it blank (the default) to always resolve to the latest stable version — this lets you promote new contract versions without redeploying connectors.",
+            a: "Set contractgate.contract.version=1.2.0. The connector sends this as the X-Contract-Version request header, which the server treats with highest precedence. Leave it blank (the default) to always resolve to the latest stable version — this lets you promote new contract versions without redeploying connectors.",
           },
           {
             q: "Can I chain this with other SMTs?",

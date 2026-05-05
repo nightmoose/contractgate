@@ -2,6 +2,104 @@
 
 ---
 
+## 2026-05-05 — Confluent connector: fix version-pin bug
+
+**Branch**: `nightly-maintenance-2026-05-05`
+
+### Problem
+
+`ContractGateClient.buildUrl()` appended `?version=<pin>` as a query
+parameter. The server's `IngestQuery` struct only deserialises `dry_run`
+and `atomic` — `version` is not a recognised query parameter. Version
+resolution uses the `X-Contract-Version` request header (highest
+precedence) or the `@version` path suffix. The `?version=` form was
+silently ignored, so `contractgate.contract.version` had no effect.
+
+### Fix
+
+- **`confluent-connector/src/main/java/.../ContractGateClient.java`**
+  - Removed `?version=` query-param logic from `buildUrl()`.
+  - Added `requestBuilder.header("X-Contract-Version", contractVersion)`
+    in `validate()` when a version pin is configured.
+  - Updated Javadoc on both `validate()` and `buildUrl()` to document
+    the correct wire format.
+
+### Docs updated
+
+- `confluent-connector/README.md` — config table now notes the header
+  mechanism.
+- `dashboard/app/docs/kafka-connect/page.tsx` — config row and FAQ
+  entry both clarified.
+
+### What the user must run
+
+No Rust changes — no `cargo` steps needed.
+
+Connector rebuild (user must run — `mvn` unavailable in sandbox):
+```bash
+cd confluent-connector && mvn package -q
+```
+
+---
+
+## 2026-05-03 — RFC-016 Observability v1
+
+**Branch**: `nightly-maintenance-2026-05-03-rfc-016`
+
+### Summary
+
+Prometheus `/metrics` endpoint + Grafana dashboard. No schema changes.
+Validation engine p99 budget unaffected (<15 ms) — metric writes are
+post-response (counter) or a single `Instant::elapsed` call (histogram).
+
+### Files added
+
+| File | Purpose |
+|---|---|
+| `src/observability.rs` | Recorder install, `/metrics` handler, `track_requests` middleware, `spawn_gauge_tasks` (30 s / 60 s) |
+| `src/metrics.rs` | Empty placeholder (avoids shadowing the `metrics` extern crate) |
+| `ops/grafana/contractgate.json` | Six-panel Grafana dashboard (request rate, validation p50/p95/p99, violation rate by kind, quarantine rate, active contracts, top-10 noisiest contracts) |
+| `tests/metrics.rs` | In-process tests: metric name assertions, histogram count moves, bearer-auth gating |
+
+### Files modified
+
+| File | Change |
+|---|---|
+| `Cargo.toml` | `metrics = "0.24"`, `metrics-exporter-prometheus = "0.16"` |
+| `src/main.rs` | `mod observability`, `install_recorder()` at boot, `track_requests` middleware on all routes, `/metrics` public route, `spawn_gauge_tasks` after pool init |
+| `src/ingest.rs` | `histogram!` around `parallel_validate`, `counter!` for violations + quarantine at audit write path |
+| `src/v1_ingest.rs` | Same instrumentation as `ingest.rs` |
+| `ops/grafana/provisioning/dashboards/contractgate.yaml` | Updated stale stub comment |
+
+### Metrics surface
+
+| Metric | Type | Labels |
+|---|---|---|
+| `contractgate_requests_total` | counter | `route`, `method`, `status` |
+| `contractgate_validation_duration_seconds` | histogram | `contract_id`, `outcome` |
+| `contractgate_violations_total` | counter | `contract_id`, `kind` |
+| `contractgate_quarantined_total` | counter | `contract_id` |
+| `contractgate_contracts_active` | gauge | — |
+| `contractgate_audit_log_rows` | gauge | — |
+
+Histogram buckets (sec): 0.001, 0.005, 0.01, 0.015, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 5.0
+
+### What the user must run
+
+```bash
+cargo check && cargo test
+```
+
+Integration test with live server:
+```bash
+cargo test --test metrics -- --include-ignored
+```
+
+Load test to confirm p99 budget held with metrics middleware in place
+(see `ops/load/` for tooling).
+
+---
+
 ## 2026-05-01 – Repo Security Sprint (Phase 1 Complete)
 
 **Owner**: Alex + Grok
