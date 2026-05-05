@@ -40,7 +40,7 @@ function NavLink({ href, label, icon }: { href: string; label: string; icon: str
 
 export default function Sidebar() {
   return (
-    <aside className="fixed left-0 top-0 h-full w-64 bg-[#111827] border-r border-[#1f2937] flex flex-col z-50">
+    <aside className="hidden md:flex fixed left-0 top-0 h-full w-64 bg-[#111827] border-r border-[#1f2937] flex-col z-50">
       {/* Logo */}
       <div className="p-6 border-b border-[#1f2937]">
         <div className="flex items-center gap-2">
