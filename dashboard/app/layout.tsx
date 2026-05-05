@@ -23,7 +23,7 @@ export default function RootLayout({
         {DEMO_MODE && <DemoBanner />}
         <Sidebar />
         <ClientOrgProvider />
-        <main className={`flex-1 ml-64 p-8 min-h-screen${DEMO_MODE ? " pt-[calc(2rem+36px)]" : ""}`}>
+        <main className={`flex-1 ml-0 md:ml-64 p-8 min-h-screen${DEMO_MODE ? " pt-[calc(2rem+36px)]" : ""}`}>
           {children}
         </main>
       </body>
