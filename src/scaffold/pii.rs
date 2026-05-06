@@ -237,8 +237,16 @@ fn name_signal(field_name: &str) -> (f32, String) {
     let mut best_score = 0.0f32;
     let mut best_match = String::new();
     for &pii_tok in PII_NAME_TOKENS {
-        if field_lower.contains(pii_tok) || tokens.iter().any(|t| t == pii_tok) {
+        let full_token_match = tokens.iter().any(|t| t == pii_tok);
+        if field_lower.contains(pii_tok) || full_token_match {
             let score = pii_tok.len() as f32 / field_lower.len().max(1) as f32;
+            // Full token match: floor at 0.75 so compound names (e.g. "phone_number")
+            // are not penalised by unrelated suffixes.
+            let score = if full_token_match {
+                score.max(0.75)
+            } else {
+                score
+            };
             let score = score.min(0.9); // cap at 0.9 — only exact tokens reach 1.0
             if score > best_score {
                 best_score = score;
