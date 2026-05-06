@@ -35,3 +35,6 @@ sdks/python/.pytest_cache/
 sdks/python/pytest-cache-files-*/
 sdks/python/.mypy_cache/
 sdks/python/.ruff_cache/
+
+# Claude
+.claude/
