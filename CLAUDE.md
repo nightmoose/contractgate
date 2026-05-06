@@ -59,6 +59,7 @@ metrics:
 - Prefer simple, idiomatic Rust. Comment only when it adds real value.
 - Create branch: maintenance-$(date +%Y-%m-%d) for all changes.
 - Use only necessary files. Minimize context.
+- **When adding or changing user-facing functionality:** (1) check whether any existing `docs/` page covers that surface and update it for breaking changes; (2) add a new `docs/<feature>-reference.md` if no doc exists. User-facing = any CLI flag, API endpoint, contract field, or config key a user can read or write.
 
 ## Important Commands
 ```
