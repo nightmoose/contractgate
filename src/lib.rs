@@ -12,5 +12,10 @@
 pub mod cli;
 pub mod contract;
 pub mod demo_seed;
+pub mod error;
+pub mod infer;
+pub mod infer_avro;
+pub mod infer_proto;
+pub mod scaffold;
 pub mod transform;
 pub mod validation;

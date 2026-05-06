@@ -38,8 +38,13 @@ path = "src/bin/demo-seeder.rs"
 # Default build is lean: just the library + main binary.  The `demo` feature
 # pulls in rdkafka (and its librdkafka build-time deps) and enables the demo
 # binary.  See the `[[bin]] name = "demo"` stanza above for rationale.
+#
+# The `scaffold` feature enables live Kafka topic sampling for `cg scaffold
+# <topic>`.  It also bundles librdkafka.  The `--from-file` scaffold path
+# works without this feature.
 default = []
 demo = ["rdkafka"]
+scaffold = ["rdkafka"]
 
 [dependencies]
 # Web framework
@@ -142,6 +147,8 @@ tempfile = "3"
 # Integration tests for v1 ingest (RFC-021) — same flags as the main reqwest dep.
 reqwest = { version = "0.12", features = ["json", "rustls-tls"], default-features = false }
 uuid = { version = "1", features = ["v4"] }
+# Property-based tests for scaffold profiler + merge algorithm (RFC-024).
+proptest = "1"
 
 [profile.release]
 opt-level = 3

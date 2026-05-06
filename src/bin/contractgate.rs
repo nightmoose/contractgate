@@ -1,12 +1,12 @@
 //! `contractgate` CLI binary.
 //!
-//! Three subcommands: push, pull, validate.
+//! Subcommands: push, pull, validate, scaffold, enforce.
 //! Auth via CONTRACTGATE_API_KEY env var or --api-key flag.
 //! Config via .contractgate.yml (walk-up from cwd, stop at git root).
 
 use clap::{Parser, Subcommand};
 use contractgate::cli::{
-    commands::{pull, push, validate},
+    commands::{enforce, pull, push, scaffold, validate},
     config::CliConfig,
 };
 use std::{path::PathBuf, process};
@@ -40,6 +40,20 @@ enum Cmd {
     Pull(pull::PullArgs),
     /// Parse + compile each contract YAML locally. No network.
     Validate(validate::ValidateArgs),
+    /// Derive a draft contract from a Kafka topic or local file (RFC-024).
+    ///
+    /// Examples:
+    ///   cg scaffold orders --broker kafka:9092 --output contracts/orders.yaml
+    ///   cg scaffold --from-file samples.json --name user_events
+    ///   cg scaffold --from-file schema.avsc --name orders
+    ///   cg scaffold --from-file events.proto --output contracts/events.yaml
+    Scaffold(scaffold::ScaffoldArgs),
+    /// Shadow-enforce a contract against live Kafka traffic (RFC-024).
+    ///
+    /// Examples:
+    ///   cg enforce --mode shadow --contract contracts/orders.yaml --topic orders
+    ///   cg enforce --mode shadow --contract my.yaml --topic events --report json
+    Enforce(enforce::EnforceArgs),
     /// Emit the JSON Schema for .contractgate.yml.
     #[command(hide = true)]
     ConfigSchema,
@@ -72,6 +86,10 @@ fn main() {
             let key = require_api_key(&cli.api_key);
             pull::run(args, &cfg, &key)
         }
+
+        // Scaffold and enforce do not need gateway config or an API key.
+        Cmd::Scaffold(args) => scaffold::run(args),
+        Cmd::Enforce(args) => enforce::run(args),
 
         Cmd::ConfigSchema => {
             // Emit a minimal JSON Schema describing .contractgate.yml.

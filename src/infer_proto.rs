@@ -460,7 +460,7 @@ fn parse_field_lines(body: &str, force_optional: bool) -> Vec<ProtoField> {
 // Field builder
 // ---------------------------------------------------------------------------
 
-fn build_fields_for_message(
+pub fn build_fields_for_message(
     message_name: &str,
     proto: &ParsedProto,
 ) -> Result<Vec<FieldDefinition>, String> {
