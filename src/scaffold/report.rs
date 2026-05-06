@@ -80,7 +80,7 @@ impl ViolationReport {
             })
             .collect();
         // Sort by count desc for readability.
-        field_violations.sort_by(|a, b| b.count.cmp(&a.count));
+        field_violations.sort_by_key(|b| std::cmp::Reverse(b.count));
 
         Self {
             contract_name: contract_name.to_string(),
@@ -273,9 +273,11 @@ mod tests {
 
     #[test]
     fn markdown_output_contains_contract_name() {
-        let mut report = ViolationReport::default();
-        report.contract_name = "my_contract".to_string();
-        report.total_events = 5;
+        let report = ViolationReport {
+            contract_name: "my_contract".to_string(),
+            total_events: 5,
+            ..Default::default()
+        };
         let md = format_markdown(&report);
         assert!(md.contains("my_contract"));
         assert!(md.contains("No violations"));

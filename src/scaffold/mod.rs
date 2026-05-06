@@ -518,7 +518,7 @@ fn emit_field(
         out.push_str(&format!("{ipad}pattern: {}\n", yaml_quote(pat)));
     }
     if let Some(ref av) = field.allowed_values {
-        let items: Vec<String> = av.iter().map(|v| yaml_scalar(v)).collect();
+        let items: Vec<String> = av.iter().map(yaml_scalar).collect();
         out.push_str(&format!("{ipad}enum: [{}]\n", items.join(", ")));
     }
     if let Some(mn) = field.min {

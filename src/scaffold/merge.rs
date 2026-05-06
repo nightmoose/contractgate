@@ -97,10 +97,9 @@ pub fn three_way_merge(base: Option<&Contract>, ours: &Contract, theirs: &Contra
                     // Both diverged from base — conflict.
                     conflicts.push(MergeConflict {
                         field_name: name.clone(),
-                        description: format!(
-                            "both human edits and scaffold changes detected; \
+                        description: "both human edits and scaffold changes detected; \
                              preserving human version"
-                        ),
+                            .to_string(),
                     });
                     result_fields.push((*o).clone());
                 }
@@ -165,7 +164,7 @@ pub fn three_way_merge(base: Option<&Contract>, ours: &Contract, theirs: &Contra
 // Helpers
 // ---------------------------------------------------------------------------
 
-fn build_field_map<'a>(fields: &'a [FieldDefinition]) -> HashMap<&'a str, &'a FieldDefinition> {
+fn build_field_map(fields: &[FieldDefinition]) -> HashMap<&str, &FieldDefinition> {
     fields.iter().map(|f| (f.name.as_str(), f)).collect()
 }
 

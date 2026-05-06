@@ -240,7 +240,7 @@ impl FieldAccum {
 
         // Top-k: sort by count desc, take TOP_K_EMIT.
         let mut pairs: Vec<(String, u64)> = self.value_counts.into_iter().collect();
-        pairs.sort_unstable_by(|a, b| b.1.cmp(&a.1));
+        pairs.sort_unstable_by_key(|b| std::cmp::Reverse(b.1));
         pairs.truncate(TOP_K_EMIT);
 
         FieldStats {

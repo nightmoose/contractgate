@@ -228,7 +228,7 @@ fn run_kafka_topic(
              Rebuild with: cargo build --features scaffold --bin contractgate\n\
              Or use --from-file to scaffold from a local file."
         );
-        return Ok(2);
+        Ok(2)
     }
 }
 
