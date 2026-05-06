@@ -33,7 +33,9 @@ impl HyperLogLog {
 
     /// Add a string value to the sketch.
     pub fn insert(&mut self, value: &str) {
-        let hash = fnv64(value.as_bytes());
+        // Apply splitmix64 finalizer: FNV-1a has poor avalanche in the top bits
+        // for short sequential strings, causing register clustering.
+        let hash = cheap_hash(fnv64(value.as_bytes()));
         // Top P bits → register index.
         let idx = (hash >> (64 - HLL_P)) as usize;
         // Remaining 64-P bits; count position of leftmost 1-bit (+1).
