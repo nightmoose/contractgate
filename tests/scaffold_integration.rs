@@ -7,7 +7,6 @@ use contractgate::contract::Contract;
 use contractgate::scaffold::{scaffold_from_file, InputFormat, ScaffoldConfig};
 use std::io::Write;
 use std::path::{Path, PathBuf};
-use tempfile::NamedTempFile;
 
 // ---------------------------------------------------------------------------
 // Helpers

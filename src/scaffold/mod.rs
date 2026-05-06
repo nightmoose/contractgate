@@ -85,6 +85,7 @@ impl InputFormat {
 }
 
 /// Full result of a scaffold run.
+#[derive(Debug)]
 pub struct ScaffoldResult {
     pub contract_yaml: String,
     pub pii_candidates: Vec<PiiCandidate>,

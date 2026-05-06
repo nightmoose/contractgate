@@ -6,7 +6,6 @@
 //! Developer tooling — not part of the patent-core validation engine.
 
 use std::collections::HashMap;
-use std::hash::Hasher as _;
 
 // ---------------------------------------------------------------------------
 // HyperLogLog++ (precision 12 — ~4096 registers, ~1.6% error)

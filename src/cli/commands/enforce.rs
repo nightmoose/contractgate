@@ -150,6 +150,7 @@ fn load_contract(spec: &str) -> anyhow::Result<(String, CompiledContract)> {
 fn collect_events(args: &EnforceArgs) -> anyhow::Result<Vec<Value>> {
     // Phase 2: live Kafka consume.  For MVP, only --topic with the scaffold
     // feature works; otherwise read from a local NDJSON file.
+    #[allow(unused_variables)]
     if let Some(ref topic) = args.topic {
         #[cfg(feature = "scaffold")]
         {

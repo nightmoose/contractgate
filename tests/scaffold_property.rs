@@ -70,7 +70,7 @@ proptest! {
             prop_assert!(
                 (0.0..=1.0).contains(&rate),
                 "null_rate out of range for field {}: null={} total={}",
-                stat.field_name, stat.null_count, stat.total_count
+                stat.name, stat.null_count, stat.total_count
             );
         }
     }
@@ -88,7 +88,7 @@ proptest! {
             prop_assert!(
                 stat.null_count <= stat.total_count,
                 "null_count ({}) > total_count ({}) for field {}",
-                stat.null_count, stat.total_count, stat.field_name
+                stat.null_count, stat.total_count, stat.name
             );
         }
     }
@@ -108,8 +108,8 @@ proptest! {
         prop_assert_eq!(result.sample_count, n);
         for stat in &result.field_stats {
             prop_assert_eq!(
-                stat.total_count, n,
-                "total_count mismatch for field {}", stat.field_name
+                stat.total_count, n as u64,
+                "total_count mismatch for field {}", stat.name
             );
         }
     }
@@ -129,11 +129,11 @@ proptest! {
 
         for stat in &result.field_stats {
             // distinct estimate must not exceed total (plus 5% slack for HLL error).
-            let ceiling = (n as f64 * 1.05).ceil() as usize;
+            let ceiling = (n as f64 * 1.05).ceil() as u64;
             prop_assert!(
                 stat.distinct_estimate <= ceiling,
                 "distinct_estimate ({}) > ceiling ({}) for field {}",
-                stat.distinct_estimate, ceiling, stat.field_name
+                stat.distinct_estimate, ceiling, stat.name
             );
         }
     }
@@ -150,7 +150,7 @@ proptest! {
             &ScaffoldConfig { name: "prop_distinct_min".into(), fast: false, ..Default::default() },
         ).expect("scaffold ok");
 
-        let k_stat = result.field_stats.iter().find(|s| s.field_name == "k");
+        let k_stat = result.field_stats.iter().find(|s| s.name == "k");
         if let Some(stat) = k_stat {
             prop_assert!(
                 stat.distinct_estimate >= 1,

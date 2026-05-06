@@ -169,6 +169,7 @@ fn run_from_file(
     Ok(exit)
 }
 
+#[allow(unused_variables)]
 fn run_kafka_topic(
     topic: &str,
     config: &ScaffoldConfig,
