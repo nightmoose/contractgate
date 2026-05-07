@@ -100,6 +100,11 @@ pub enum AppError {
     // -----------------------------------------------------------------------
     // Generic
     // -----------------------------------------------------------------------
+
+    /// Generic 404 for resource types that don't have a dedicated variant.
+    #[error("Not found: {0}")]
+    NotFound(String),
+
     #[error("Database error: {0}")]
     Database(#[from] sqlx::Error),
 
@@ -143,6 +148,7 @@ impl IntoResponse for AppError {
                 (StatusCode::UNPROCESSABLE_ENTITY, self.to_string())
             }
             AppError::OdcsReviewRequired { .. } => (StatusCode::CONFLICT, self.to_string()),
+            AppError::NotFound(_) => (StatusCode::NOT_FOUND, self.to_string()),
 
             AppError::Database(e) => {
                 tracing::error!("Database error: {:?}", e);

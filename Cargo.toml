@@ -45,6 +45,10 @@ path = "src/bin/demo-seeder.rs"
 default = []
 demo = ["rdkafka"]
 scaffold = ["rdkafka"]
+# kafka-ingress: platform-side consumer pool for RFC-025.
+# Pulls in rdkafka (librdkafka) — needs cmake + C compiler at build time.
+# Not in default so `cargo check` / `cargo test` work without system deps.
+kafka-ingress = ["rdkafka", "aes-gcm"]
 
 [dependencies]
 # Web framework
@@ -134,9 +138,14 @@ metrics = "0.24"
 metrics-exporter-prometheus = { version = "0.16", default-features = false, features = ["http-listener"] }
 
 # Kafka transport (bundles librdkafka via cmake — needs cmake + a C compiler
-# available on the build host).  Used only by the `demo` binary, and gated
-# behind the `demo` feature so it is not compiled for default builds.
+# available on the build host).  Used by the `demo` binary and the
+# `kafka-ingress` consumer pool (RFC-025).  Gated behind feature flags so
+# `cargo check` / `cargo build` work on any host without system deps.
 rdkafka = { version = "0.39", features = ["cmake-build"], optional = true }
+
+# AES-256-GCM encryption for Confluent API secrets at rest (RFC-025).
+# Pure-Rust, no system deps.
+aes-gcm = { version = "0.10", optional = true }
 
 
 [dev-dependencies]

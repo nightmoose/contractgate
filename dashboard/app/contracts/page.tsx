@@ -47,6 +47,7 @@ import { EXAMPLE_YAML, EXAMPLE_SAMPLE } from "./examples";
 import { YamlTab } from "./_tabs/yaml";
 import { VersionsTab } from "./_tabs/versions";
 import { QuarantineTab } from "./_tabs/quarantine";
+import { KafkaTab } from "./_tabs/kafka";
 import {
   pickDefaultVersion,
   newestVersionString,
@@ -91,7 +92,7 @@ function EditContractModal({
   const [ghSyncError, setGhSyncError] = useState<string | null>(null);
 
   // Modal-level tab state
-  type ModalTab = "yaml" | "versions";
+  type ModalTab = "yaml" | "versions" | "kafka";
   const [modalTab, setModalTab] = useState<ModalTab>("yaml");
   const [nameHistory, setNameHistory] = useState<NameHistoryEntry[] | null>(null);
   const [loadingNameHistory, setLoadingNameHistory] = useState(false);
@@ -358,6 +359,17 @@ function EditContractModal({
                 </span>
               )}
             </button>
+            <button
+              onClick={() => setModalTab("kafka")}
+              className={clsx(
+                "px-4 py-2 text-sm font-medium rounded-t-lg transition-colors border-b-2 -mb-px",
+                modalTab === "kafka"
+                  ? "text-slate-100 border-emerald-500"
+                  : "text-slate-500 hover:text-slate-300 border-transparent"
+              )}
+            >
+              Kafka
+            </button>
           </div>
         )}
 
@@ -380,6 +392,8 @@ function EditContractModal({
               error={error}
               setError={setError}
             />
+          ) : modalTab === "kafka" ? (
+            <KafkaTab contractId={contractId} />
           ) : (
             <VersionsTab
               contractId={contractId}

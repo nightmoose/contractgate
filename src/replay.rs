@@ -303,6 +303,7 @@ pub async fn replay_handler(
                 raw_event: stored_payload.clone(),
                 validation_us: vr.validation_us as i64,
                 source_ip: e.source_ip.clone(),
+                source: "http".to_string(),
                 pre_assigned_id: Some(audit_id),
                 replay_of_quarantine_id: Some(e.id),
             });

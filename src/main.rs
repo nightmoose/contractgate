@@ -52,6 +52,8 @@ mod infer_diff;
 mod infer_openapi;
 mod infer_proto;
 mod ingest;
+mod kafka_consumer;
+mod kafka_ingress;
 pub mod observability;
 mod odcs;
 mod rate_limit;
@@ -93,6 +95,8 @@ pub struct AppState {
     pub rate_limiter: Arc<rate_limit::RateLimitState>,
     /// In-process stream demo state (no Kafka, no DB writes).
     pub stream_demo: std::sync::Arc<stream_demo::StreamDemoState>,
+    /// RFC-025: platform-side Kafka consumer pool (one task per enabled contract).
+    pub kafka_consumers: kafka_consumer::ConsumerPool,
 }
 
 impl AppState {
@@ -104,6 +108,7 @@ impl AppState {
             key_cache: Arc::new(api_key_auth::ApiKeyCache::default()),
             rate_limiter: Arc::new(rate_limit::RateLimitState::default()),
             stream_demo: std::sync::Arc::new(stream_demo::StreamDemoState::new()),
+            kafka_consumers: kafka_consumer::ConsumerPool::new(),
         }
     }
 
@@ -820,6 +825,19 @@ fn build_router(state: Arc<AppState>) -> Router {
             "/contracts/{id}/quarantine/{quar_id}/replay-history",
             get(replay::replay_history_handler),
         )
+        // Kafka Ingress (RFC-025)
+        .route(
+            "/contracts/{id}/kafka-ingress",
+            get(kafka_ingress::get_kafka_ingress_handler),
+        )
+        .route(
+            "/contracts/{id}/kafka-ingress/enable",
+            post(kafka_ingress::enable_kafka_ingress_handler),
+        )
+        .route(
+            "/contracts/{id}/kafka-ingress/disable",
+            axum::routing::delete(kafka_ingress::disable_kafka_ingress_handler),
+        )
         // Audit + stats
         .route("/audit", get(audit_log_handler))
         .route("/stats", get(global_stats_handler))
@@ -902,6 +920,11 @@ async fn main() -> anyhow::Result<()> {
         Ok(()) => tracing::info!("contract cache warmed"),
         Err(e) => tracing::warn!("failed to warm contract cache: {:?}", e),
     }
+
+    // RFC-025: restore Kafka consumers for all currently-enabled contracts.
+    // Runs in the background; boot is not blocked if Confluent is unavailable.
+    state.kafka_consumers.restore_all(Arc::clone(&state)).await;
+    tracing::info!("kafka consumer pool restored");
 
     // Spawn background gauge-refresh tasks (RFC-016 §Decisions Q5).
     // Must be spawned after the pool is created and the recorder is installed.

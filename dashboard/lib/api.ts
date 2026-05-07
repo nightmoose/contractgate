@@ -607,6 +607,38 @@ export const getConformanceReport = (contractId: string, version: string) =>
   );
 
 // ---------------------------------------------------------------------------
+// Kafka Ingress (RFC-025)
+// ---------------------------------------------------------------------------
+
+export interface KafkaIngressConfig {
+  id: string;
+  contract_id: string;
+  enabled: boolean;
+  bootstrap_servers: string;
+  sasl_username: string;
+  /** Only present immediately after enabling — shown once. */
+  sasl_password?: string;
+  topic_raw: string;
+  topic_clean: string;
+  topic_quarantine: string;
+  partition_count: number;
+  created_at: string;
+}
+
+export const getKafkaIngress = (contractId: string) =>
+  apiFetch<KafkaIngressConfig>(`/contracts/${contractId}/kafka-ingress`);
+
+export const enableKafkaIngress = (contractId: string) =>
+  apiFetch<KafkaIngressConfig>(`/contracts/${contractId}/kafka-ingress/enable`, {
+    method: "POST",
+  });
+
+export const disableKafkaIngress = (contractId: string) =>
+  apiFetch<void>(`/contracts/${contractId}/kafka-ingress/disable`, {
+    method: "DELETE",
+  });
+
+// ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 

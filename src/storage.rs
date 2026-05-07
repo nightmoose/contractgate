@@ -876,13 +876,14 @@ pub async fn log_audit_entry(
     raw_event: TransformedPayload,
     validation_us: i64,
     source_ip: Option<&str>,
+    source: &str,
 ) -> AppResult<()> {
     sqlx::query(
         r#"
         INSERT INTO audit_log
             (id, contract_id, org_id, contract_version, passed, violation_count,
-             violation_details, raw_event, validation_us, source_ip, created_at)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NOW())
+             violation_details, raw_event, validation_us, source_ip, source, created_at)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, NOW())
         "#,
     )
     .bind(Uuid::new_v4())
@@ -895,6 +896,7 @@ pub async fn log_audit_entry(
     .bind(raw_event.into_inner())
     .bind(validation_us)
     .bind(source_ip)
+    .bind(source)
     .execute(pool)
     .await?;
     Ok(())
@@ -1189,6 +1191,9 @@ pub struct AuditEntryInsert {
     pub raw_event: TransformedPayload,
     pub validation_us: i64,
     pub source_ip: Option<String>,
+    /// Ingestion source tag.  "http" for the REST ingest path; "kafka" for
+    /// the RFC-025 consumer pool.  Defaults to "http" for existing callers.
+    pub source: String,
     /// Optional app-generated UUID.  Replay uses this so the caller can
     /// link the source quarantine row to the exact audit row it produced
     /// *before* the INSERT round-trip completes.  Fresh ingest leaves
@@ -1274,6 +1279,8 @@ pub async fn log_audit_entries_batch(pool: &PgPool, entries: &[AuditEntryInsert]
         .iter()
         .map(|e| e.source_ip.clone().unwrap_or_default())
         .collect();
+    // RFC-025: 'http' for REST ingest, 'kafka' for platform-side consumer.
+    let sources: Vec<String> = entries.iter().map(|e| e.source.clone()).collect();
     let pre_assigned_ids: Vec<Uuid> = entries
         .iter()
         .map(|e| e.pre_assigned_id.unwrap_or(Uuid::nil()))
@@ -1287,7 +1294,7 @@ pub async fn log_audit_entries_batch(pool: &PgPool, entries: &[AuditEntryInsert]
         r#"
         INSERT INTO audit_log
             (id, contract_id, org_id, contract_version, passed, violation_count,
-             violation_details, raw_event, validation_us, source_ip,
+             violation_details, raw_event, validation_us, source_ip, source,
              replay_of_quarantine_id, created_at)
         SELECT
             COALESCE(NULLIF(pre_assigned_id, '00000000-0000-0000-0000-000000000000'::uuid),
@@ -1297,13 +1304,14 @@ pub async fn log_audit_entries_batch(pool: &PgPool, entries: &[AuditEntryInsert]
             contract_version, passed, violation_count,
             violation_details, raw_event, validation_us,
             NULLIF(source_ip, ''),
+            source,
             NULLIF(replay_of_quarantine_id, '00000000-0000-0000-0000-000000000000'::uuid),
             NOW()
         FROM UNNEST(
             $1::uuid[], $2::uuid[], $3::text[], $4::bool[], $5::int[], $6::jsonb[],
-            $7::jsonb[], $8::bigint[], $9::text[], $10::uuid[], $11::uuid[]
+            $7::jsonb[], $8::bigint[], $9::text[], $10::text[], $11::uuid[], $12::uuid[]
         ) AS t(contract_id, org_id, contract_version, passed, violation_count,
-               violation_details, raw_event, validation_us, source_ip,
+               violation_details, raw_event, validation_us, source_ip, source,
                pre_assigned_id, replay_of_quarantine_id)
         "#,
     )
@@ -1316,6 +1324,7 @@ pub async fn log_audit_entries_batch(pool: &PgPool, entries: &[AuditEntryInsert]
     .bind(&raw_events)
     .bind(&validation_us)
     .bind(&source_ips)
+    .bind(&sources)
     .bind(&pre_assigned_ids)
     .bind(&replay_of)
     .execute(pool)

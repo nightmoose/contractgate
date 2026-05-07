@@ -506,6 +506,7 @@ pub async fn ingest_handler(
                 raw_event: transformed_payloads[idx].clone(),
                 validation_us: vr.validation_us as i64,
                 source_ip: source_ip.clone(),
+                source: "http".to_string(),
                 // Fresh ingest: let Postgres generate the ID and no replay link.
                 pre_assigned_id: None,
                 replay_of_quarantine_id: None,
