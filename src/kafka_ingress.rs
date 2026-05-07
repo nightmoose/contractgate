@@ -59,17 +59,6 @@ fn confluent_api_secret() -> String {
     std::env::var("CONFLUENT_CLOUD_API_SECRET").unwrap_or_default()
 }
 
-/// Confluent Cloud control-plane API key (Cloud API key, not a cluster key).
-/// Used for IAM operations: creating service accounts, API keys.
-/// Set CONFLUENT_MGMT_API_KEY + CONFLUENT_MGMT_API_SECRET in Fly.io secrets.
-fn confluent_mgmt_key() -> String {
-    std::env::var("CONFLUENT_MGMT_API_KEY").unwrap_or_default()
-}
-
-fn confluent_mgmt_secret() -> String {
-    std::env::var("CONFLUENT_MGMT_API_SECRET").unwrap_or_default()
-}
-
 #[allow(dead_code)]
 fn confluent_environment_id() -> String {
     std::env::var("CONFLUENT_ENVIRONMENT_ID").unwrap_or_default()
@@ -278,16 +267,6 @@ fn confluent_create_topics(contract_id: Uuid, partition_count: i32) -> anyhow::R
 #[cfg(not(feature = "kafka-ingress"))]
 fn confluent_create_topics(_contract_id: Uuid, _partition_count: i32) -> anyhow::Result<()> {
     anyhow::bail!("Kafka ingress feature is not enabled at compile time");
-}
-
-/// Derive the Confluent Kafka REST proxy base URL from the bootstrap address.
-/// bootstrap: "pkc-xxx.region.cloud.confluent.cloud:9092"
-/// REST proxy: "https://pkc-xxx.region.cloud.confluent.cloud:443"
-#[cfg(feature = "kafka-ingress")]
-fn confluent_rest_proxy() -> String {
-    let bootstrap = confluent_bootstrap();
-    let host = bootstrap.split(':').next().unwrap_or(&bootstrap);
-    format!("https://{host}:443")
 }
 
 /// Create a per-contract Confluent service account + Kafka API key, then
