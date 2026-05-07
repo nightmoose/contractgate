@@ -674,13 +674,21 @@ async fn require_api_key(
     mut request: Request,
     next: Next,
 ) -> Result<axum::response::Response, error::AppError> {
-    // Minimal CORS preflight fix
+    // === IMPROVED CORS PREFLIGHT ===
     if request.method() == axum::http::Method::OPTIONS {
+        tracing::info!("CORS preflight OPTIONS request for {}", request.uri());
         return Ok(axum::response::Response::builder()
-            .status(200)
+            .status(204) // No Content is better for preflight
             .header("Access-Control-Allow-Origin", "*")
-            .header("Access-Control-Allow-Methods", "*")
-            .header("Access-Control-Allow-Headers", "*")
+            .header(
+                "Access-Control-Allow-Methods",
+                "GET, POST, PUT, DELETE, OPTIONS",
+            )
+            .header(
+                "Access-Control-Allow-Headers",
+                "Content-Type, x-api-key, Authorization",
+            )
+            .header("Access-Control-Max-Age", "3600")
             .body(axum::body::Body::empty())
             .unwrap());
     }
