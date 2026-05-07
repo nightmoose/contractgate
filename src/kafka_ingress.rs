@@ -295,111 +295,19 @@ fn confluent_rest_proxy() -> String {
 /// Returns (api_key_id, api_key_secret).
 #[cfg(feature = "kafka-ingress")]
 fn confluent_create_credentials(
-    client: &Client,
-    contract_id: Uuid,
+    _client: &Client,
+    _contract_id: Uuid,
 ) -> anyhow::Result<(String, String)> {
-    let base = confluent_base_url();
-    let mgmt_key = confluent_mgmt_key();
-    let mgmt_secret = confluent_mgmt_secret();
-    let cluster_key = confluent_api_key();
-    let cluster_secret = confluent_api_secret();
-    let cluster_id = confluent_cluster_id();
-    let environment_id = confluent_environment_id();
-    let rest = confluent_rest_proxy();
-    let raw = topic_raw(contract_id);
-
-    if mgmt_key.is_empty() {
-        anyhow::bail!(
-            "CONFLUENT_MGMT_API_KEY is not set (needs a Cloud API key, not a cluster key)"
-        );
+    // v1: return the platform cluster key as the producer credential.
+    // Per-contract SA provisioning deferred to RFC-026 — requires an
+    // OrganizationAdmin Cloud API key which is a separate setup step.
+    // The platform's cg-* PREFIXED ACLs already cover WRITE + DESCRIBE.
+    let key = confluent_api_key();
+    let secret = confluent_api_secret();
+    if key.is_empty() || secret.is_empty() {
+        anyhow::bail!("CONFLUENT_CLOUD_API_KEY / CONFLUENT_CLOUD_API_SECRET not set");
     }
-
-    // ── 1. Create a per-contract service account ────────────────────────────
-    let sa_display = format!("cg-ingress-{contract_id}");
-    let sa_resp: serde_json::Value = client
-        .post(format!("{base}/iam/v2/service-accounts"))
-        .basic_auth(&mgmt_key, Some(&mgmt_secret))
-        .timeout(std::time::Duration::from_secs(10))
-        .json(&serde_json::json!({
-            "display_name": sa_display,
-            "description": format!("ContractGate Kafka ingress for contract {contract_id}")
-        }))
-        .send()
-        .map_err(|e| anyhow::anyhow!("SA create request failed: {e}"))?
-        .json::<serde_json::Value>()
-        .map_err(|e| anyhow::anyhow!("SA response parse failed: {e}"))?;
-
-    let sa_id = sa_resp["id"]
-        .as_str()
-        .ok_or_else(|| anyhow::anyhow!("SA id missing in response: {sa_resp}"))?
-        .to_string();
-
-    // ── 2. Create a Kafka API key scoped to that SA + cluster ───────────────
-    let key_resp: serde_json::Value = client
-        .post(format!("{base}/iam/v2/api-keys"))
-        .basic_auth(&mgmt_key, Some(&mgmt_secret))
-        .timeout(std::time::Duration::from_secs(10))
-        .json(&serde_json::json!({
-            "spec": {
-                "display_name": sa_display,
-                "owner": {
-                    "id": &sa_id,
-                    "kind": "ServiceAccount",
-                    "api_version": "iam/v2"
-                },
-                "resource": {
-                    "id": &cluster_id,
-                    "kind": "Cluster",
-                    "api_version": "cmk/v2",
-                    "environment": &environment_id
-                }
-            }
-        }))
-        .send()
-        .map_err(|e| anyhow::anyhow!("API key create request failed: {e}"))?
-        .json::<serde_json::Value>()
-        .map_err(|e| anyhow::anyhow!("API key response parse failed: {e}"))?;
-
-    let key_id = key_resp["id"]
-        .as_str()
-        .ok_or_else(|| anyhow::anyhow!("key id missing in response: {key_resp}"))?
-        .to_string();
-    let key_secret = key_resp["spec"]["secret"]
-        .as_str()
-        .ok_or_else(|| anyhow::anyhow!("key secret missing in response: {key_resp}"))?
-        .to_string();
-
-    // ── 3. Grant WRITE + DESCRIBE on the raw topic via Kafka REST API ───────
-    // rdkafka 0.39 dropped ACL admin types; use the cluster REST proxy instead.
-    // Principal format for Confluent Cloud SASL_PLAIN: "User:{sa_id}"
-    let principal = format!("User:{sa_id}");
-    let acl_url = format!("{rest}/kafka/v3/clusters/{cluster_id}/acls");
-
-    for operation in ["WRITE", "DESCRIBE"] {
-        let resp = client
-            .post(&acl_url)
-            .basic_auth(&cluster_key, Some(&cluster_secret))
-            .timeout(std::time::Duration::from_secs(10))
-            .json(&serde_json::json!({
-                "resource_type": "TOPIC",
-                "resource_name": raw,
-                "pattern_type": "LITERAL",
-                "principal": principal,
-                "host": "*",
-                "operation": operation,
-                "permission": "ALLOW"
-            }))
-            .send()
-            .map_err(|e| anyhow::anyhow!("ACL {operation} request failed: {e}"))?;
-
-        if !resp.status().is_success() {
-            let status = resp.status();
-            let body = resp.text().unwrap_or_default();
-            anyhow::bail!("ACL {operation} failed ({status}): {body}");
-        }
-    }
-
-    Ok((key_id, key_secret))
+    Ok((key, secret))
 }
 
 #[cfg(not(feature = "kafka-ingress"))]
