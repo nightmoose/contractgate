@@ -269,28 +269,31 @@ fn confluent_create_topics(_contract_id: Uuid, _partition_count: i32) -> anyhow:
     anyhow::bail!("Kafka ingress feature is not enabled at compile time");
 }
 
+/// Derive the Confluent Kafka REST proxy base URL from the bootstrap address.
+/// bootstrap: "pkc-xxx.region.cloud.confluent.cloud:9092"
+/// REST proxy: "https://pkc-xxx.region.cloud.confluent.cloud:443"
+#[cfg(feature = "kafka-ingress")]
+fn confluent_rest_proxy() -> String {
+    let bootstrap = confluent_bootstrap();
+    let host = bootstrap.split(':').next().unwrap_or(&bootstrap);
+    format!("https://{host}:443")
+}
+
 /// Create a per-contract Confluent service account + Kafka API key, then
-/// grant WRITE + DESCRIBE ACLs on the raw input topic.
+/// grant WRITE + DESCRIBE ACLs on the raw input topic via the Kafka REST API.
 /// Returns (api_key_id, api_key_secret).
 #[cfg(feature = "kafka-ingress")]
 fn confluent_create_credentials(
     client: &Client,
     contract_id: Uuid,
 ) -> anyhow::Result<(String, String)> {
-    use rdkafka::admin::{
-        AclBinding, AclOperation, AclPermissionType, AdminClient, AdminOptions,
-        ResourcePatternType, ResourceType,
-    };
-    use rdkafka::client::DefaultClientContext;
-    use rdkafka::config::ClientConfig;
-    use tokio::runtime::Handle;
-
     let base = confluent_base_url();
     let cloud_key = confluent_api_key();
     let cloud_secret = confluent_api_secret();
     let cluster_id = confluent_cluster_id();
     let environment_id = confluent_environment_id();
-    let bootstrap = confluent_bootstrap();
+    let rest = confluent_rest_proxy();
+    let raw = topic_raw(contract_id);
 
     // ── 1. Create a per-contract service account ────────────────────────────
     let sa_display = format!("cg-ingress-{contract_id}");
@@ -347,48 +350,34 @@ fn confluent_create_credentials(
         .ok_or_else(|| anyhow::anyhow!("key secret missing in response: {key_resp}"))?
         .to_string();
 
-    // ── 3. Grant WRITE + DESCRIBE on the raw topic for this SA ─────────────
-    // Principal format for Confluent Cloud SASL_PLAIN: "User:{service_account_id}"
+    // ── 3. Grant WRITE + DESCRIBE on the raw topic via Kafka REST API ───────
+    // rdkafka 0.39 dropped ACL admin types; use the cluster REST proxy instead.
+    // Principal format for Confluent Cloud SASL_PLAIN: "User:{sa_id}"
     let principal = format!("User:{sa_id}");
-    let raw = topic_raw(contract_id);
+    let acl_url = format!("{rest}/kafka/v3/clusters/{cluster_id}/acls");
 
-    let admin: AdminClient<DefaultClientContext> = ClientConfig::new()
-        .set("bootstrap.servers", &bootstrap)
-        .set("security.protocol", "SASL_SSL")
-        .set("sasl.mechanisms", "PLAIN")
-        .set("sasl.username", &cloud_key)
-        .set("sasl.password", &cloud_secret)
-        .create()
-        .map_err(|e| anyhow::anyhow!("admin client create failed: {e}"))?;
+    for operation in ["WRITE", "DESCRIBE"] {
+        let resp = client
+            .post(&acl_url)
+            .basic_auth(&cloud_key, Some(&cloud_secret))
+            .timeout(std::time::Duration::from_secs(10))
+            .json(&serde_json::json!({
+                "resource_type": "TOPIC",
+                "resource_name": raw,
+                "pattern_type": "LITERAL",
+                "principal": principal,
+                "host": "*",
+                "operation": operation,
+                "permission": "ALLOW"
+            }))
+            .send()
+            .map_err(|e| anyhow::anyhow!("ACL {operation} request failed: {e}"))?;
 
-    let acls = vec![
-        AclBinding {
-            resource_type: ResourceType::Topic,
-            name: raw.clone(),
-            resource_pattern_type: ResourcePatternType::Literal,
-            principal: principal.clone(),
-            host: "*".to_string(),
-            operation: AclOperation::Write,
-            permission_type: AclPermissionType::Allow,
-        },
-        AclBinding {
-            resource_type: ResourceType::Topic,
-            name: raw.clone(),
-            resource_pattern_type: ResourcePatternType::Literal,
-            principal: principal.clone(),
-            host: "*".to_string(),
-            operation: AclOperation::Describe,
-            permission_type: AclPermissionType::Allow,
-        },
-    ];
-
-    let opts = AdminOptions::new().request_timeout(Some(std::time::Duration::from_secs(10)));
-    let results = Handle::current()
-        .block_on(admin.create_acls(acls.iter(), &opts))
-        .map_err(|e| anyhow::anyhow!("create_acls failed: {e}"))?;
-
-    for r in results {
-        r.map_err(|e| anyhow::anyhow!("ACL binding error: {e:?}"))?;
+        if !resp.status().is_success() {
+            let status = resp.status();
+            let body = resp.text().unwrap_or_default();
+            anyhow::bail!("ACL {operation} failed ({status}): {body}");
+        }
     }
 
     Ok((key_id, key_secret))
