@@ -860,6 +860,7 @@ fn build_router(state: Arc<AppState>) -> Router {
         // Audit + stats
         .route("/audit", get(audit_log_handler))
         .route("/stats", get(global_stats_handler))
+        .layer(cors.clone())
         .layer(middleware::from_fn_with_state(
             state.clone(),
             require_api_key,
