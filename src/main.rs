@@ -867,12 +867,8 @@ fn build_router(state: Arc<AppState>) -> Router {
         .merge(public)
         .merge(protected)
         .merge(v1)
-        // Metrics middleware sits inside CORS/trace/timeout so every routed
-        // request — including /health and /metrics itself — is counted.
-        // `from_fn` is zero-overhead on the happy path (one atomic increment
-        // after the response, off the critical validation path).
-        .layer(middleware::from_fn(observability::track_requests))
         .layer(cors)
+        .layer(middleware::from_fn(observability::track_requests))
         .layer(TraceLayer::new_for_http())
         .layer(TimeoutLayer::new(std::time::Duration::from_secs(30)))
         .with_state(state)
