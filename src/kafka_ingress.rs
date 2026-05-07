@@ -59,6 +59,7 @@ fn confluent_api_secret() -> String {
     std::env::var("CONFLUENT_CLOUD_API_SECRET").unwrap_or_default()
 }
 
+#[allow(dead_code)]
 fn confluent_environment_id() -> String {
     std::env::var("CONFLUENT_ENVIRONMENT_ID").unwrap_or_default()
 }
