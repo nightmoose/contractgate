@@ -180,7 +180,8 @@ mod inner {
             loop {
                 match consumer.recv().await {
                     Err(e) => {
-                        tracing::warn!(contract_id = %contract_id, "recv error: {e}; reconnecting");
+                        tracing::warn!(contract_id = %contract_id, "recv error: {e}; reconnecting in 10s");
+                        tokio::time::sleep(Duration::from_secs(10)).await;
                         break; // outer loop reconnects with fresh credentials
                     }
                     Ok(msg) => {

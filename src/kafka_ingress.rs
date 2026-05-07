@@ -59,6 +59,17 @@ fn confluent_api_secret() -> String {
     std::env::var("CONFLUENT_CLOUD_API_SECRET").unwrap_or_default()
 }
 
+/// Confluent Cloud control-plane API key (Cloud API key, not a cluster key).
+/// Used for IAM operations: creating service accounts, API keys.
+/// Set CONFLUENT_MGMT_API_KEY + CONFLUENT_MGMT_API_SECRET in Fly.io secrets.
+fn confluent_mgmt_key() -> String {
+    std::env::var("CONFLUENT_MGMT_API_KEY").unwrap_or_default()
+}
+
+fn confluent_mgmt_secret() -> String {
+    std::env::var("CONFLUENT_MGMT_API_SECRET").unwrap_or_default()
+}
+
 #[allow(dead_code)]
 fn confluent_environment_id() -> String {
     std::env::var("CONFLUENT_ENVIRONMENT_ID").unwrap_or_default()
@@ -288,18 +299,26 @@ fn confluent_create_credentials(
     contract_id: Uuid,
 ) -> anyhow::Result<(String, String)> {
     let base = confluent_base_url();
-    let cloud_key = confluent_api_key();
-    let cloud_secret = confluent_api_secret();
+    let mgmt_key = confluent_mgmt_key();
+    let mgmt_secret = confluent_mgmt_secret();
+    let cluster_key = confluent_api_key();
+    let cluster_secret = confluent_api_secret();
     let cluster_id = confluent_cluster_id();
     let environment_id = confluent_environment_id();
     let rest = confluent_rest_proxy();
     let raw = topic_raw(contract_id);
 
+    if mgmt_key.is_empty() {
+        anyhow::bail!(
+            "CONFLUENT_MGMT_API_KEY is not set (needs a Cloud API key, not a cluster key)"
+        );
+    }
+
     // ── 1. Create a per-contract service account ────────────────────────────
     let sa_display = format!("cg-ingress-{contract_id}");
     let sa_resp: serde_json::Value = client
         .post(format!("{base}/iam/v2/service-accounts"))
-        .basic_auth(&cloud_key, Some(&cloud_secret))
+        .basic_auth(&mgmt_key, Some(&mgmt_secret))
         .timeout(std::time::Duration::from_secs(10))
         .json(&serde_json::json!({
             "display_name": sa_display,
@@ -318,7 +337,7 @@ fn confluent_create_credentials(
     // ── 2. Create a Kafka API key scoped to that SA + cluster ───────────────
     let key_resp: serde_json::Value = client
         .post(format!("{base}/iam/v2/api-keys"))
-        .basic_auth(&cloud_key, Some(&cloud_secret))
+        .basic_auth(&mgmt_key, Some(&mgmt_secret))
         .timeout(std::time::Duration::from_secs(10))
         .json(&serde_json::json!({
             "spec": {
@@ -359,7 +378,7 @@ fn confluent_create_credentials(
     for operation in ["WRITE", "DESCRIBE"] {
         let resp = client
             .post(&acl_url)
-            .basic_auth(&cloud_key, Some(&cloud_secret))
+            .basic_auth(&cluster_key, Some(&cluster_secret))
             .timeout(std::time::Duration::from_secs(10))
             .json(&serde_json::json!({
                 "resource_type": "TOPIC",
