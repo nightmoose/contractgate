@@ -218,7 +218,7 @@ fn confluent_create_topics(contract_id: Uuid, partition_count: i32) -> anyhow::R
     config
         .set("bootstrap.servers", &bootstrap)
         .set("security.protocol", "SASL_SSL")
-        .set("sasl.mechanism", "SCRAM-SHA-256")
+        .set("sasl.mechanisms", "PLAIN")
         .set("sasl.username", &confluent_api_key())
         .set("sasl.password", &confluent_api_secret());
 
