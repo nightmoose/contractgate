@@ -141,12 +141,11 @@ metrics-exporter-prometheus = { version = "0.16", default-features = false, feat
 # available on the build host).  Used by the `demo` binary and the
 # `kafka-ingress` consumer pool (RFC-025).  Gated behind feature flags so
 # `cargo check` / `cargo build` work on any host without system deps.
-rdkafka = { version = "0.39", features = ["cmake-build"], optional = true }
+rdkafka = { version = "0.39", features = ["tokio", "sasl", "cmake-build"], optional = true }
 
 # AES-256-GCM encryption for Confluent API secrets at rest (RFC-025).
 # Pure-Rust, no system deps.
 aes-gcm = { version = "0.10", optional = true }
-
 
 [dev-dependencies]
 axum-test = "20"

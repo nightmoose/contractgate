@@ -14,6 +14,18 @@ WORKDIR /app
 # pkg-config kept for any transitive crate that probes for system libs at
 # build time; it's a no-op if nothing uses it.
 RUN apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates \
+    curl \
+    libssl3 \
+    libssl-dev \
+    libsasl2-dev \
+    libcurl4-openssl-dev \
+    zlib1g-dev \
+    libzstd-dev \
+    liblz4-dev \
+    libsnappy-dev \
+    cmake \
+    build-essential \
     pkg-config \
     && rm -rf /var/lib/apt/lists/*
 
@@ -36,7 +48,7 @@ COPY contracts ./contracts
 COPY src ./src
 #RUN cargo build --release
 # Build the web server and demo-seeder binaries (explicit names)
-RUN cargo build --release --bin contractgate-server
+RUN cargo build --release --bin contractgate-server --features kafka-ingress
 RUN cargo build --release --bin demo-seeder
 
 # ── Stage 2: runtime ────────────────────────────────────────

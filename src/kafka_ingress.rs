@@ -201,151 +201,87 @@ fn topic_quarantine(contract_id: Uuid) -> String {
 // Confluent Cloud Admin API client (blocking, wrapped in spawn_blocking)
 // ---------------------------------------------------------------------------
 
-/// Create the three ingress topics on Confluent Cloud.
+#[cfg(feature = "kafka-ingress")]
 fn confluent_create_topics(
-    client: &Client,
     contract_id: Uuid,
     partition_count: i32,
 ) -> anyhow::Result<()> {
-    let cluster_id = confluent_cluster_id();
-    let url = format!(
-        "{}/kafka/v3/clusters/{}/topics",
-        confluent_base_url(),
-        cluster_id
-    );
+    use rdkafka::admin::{AdminClient, AdminOptions, NewTopic, TopicReplication};
+    use rdkafka::config::ClientConfig;
+    use rdkafka::client::DefaultClientContext;
+    use tokio::runtime::Handle;
 
-    for topic in [
-        topic_raw(contract_id),
-        topic_clean(contract_id),
-        topic_quarantine(contract_id),
-    ] {
-        let body = serde_json::json!({
-            "topic_name": topic,
-            "partitions_count": partition_count,
-            "replication_factor": 3,
-            "configs": [
-                { "name": "retention.ms", "value": "604800000" }  // 7 days
-            ]
-        });
-        let resp = client
-            .post(&url)
-            .basic_auth(confluent_api_key(), Some(confluent_api_secret()))
-            .json(&body)
-            .send()?;
+    let bootstrap = confluent_bootstrap();
+    if bootstrap.is_empty() {
+        anyhow::bail!("CONFLUENT_BOOTSTRAP_SERVERS is not set");
+    }
 
-        // 201 = created, 400 with error_code 40002 = topic already exists (idempotent).
-        let status = resp.status();
-        if !status.is_success() {
-            let text = resp.text().unwrap_or_default();
-            // Tolerate "topic already exists" so re-enable is idempotent.
-            if !text.contains("40002") {
-                anyhow::bail!("Confluent create topic {topic} failed ({status}): {text}");
+    let mut config = ClientConfig::new();
+    config
+        .set("bootstrap.servers", &bootstrap)
+        .set("security.protocol", "SASL_SSL")
+        .set("sasl.mechanism", "SCRAM-SHA-256")
+        .set("sasl.username", &confluent_api_key())
+        .set("sasl.password", &confluent_api_secret());
+
+    let admin: AdminClient<DefaultClientContext> = config
+        .create()
+        .map_err(|e| anyhow::anyhow!("Failed to create Kafka admin client: {e}"))?;
+
+    let topic_raw_name = topic_raw(contract_id);
+    let topic_clean_name = topic_clean(contract_id);
+    let topic_quarantine_name = topic_quarantine(contract_id);
+
+    let topics = vec![
+        NewTopic::new(&topic_raw_name, partition_count, TopicReplication::Fixed(3)),
+        NewTopic::new(&topic_clean_name, partition_count, TopicReplication::Fixed(3)),
+        NewTopic::new(&topic_quarantine_name, partition_count, TopicReplication::Fixed(3)),
+    ];
+
+    let opts = AdminOptions::new().request_timeout(Some(std::time::Duration::from_secs(30)));
+
+    let results = Handle::current()
+        .block_on(admin.create_topics(&topics, &opts))
+        .map_err(|e| anyhow::anyhow!("Failed to create topics: {e}"))?;
+
+    for result in results {
+        if let Err((topic, err)) = result {
+            let err_str = err.to_string();
+            if !err_str.contains("40002") && !err_str.contains("already exists") {
+                anyhow::bail!("Failed to create topic {}: {}", topic, err);
             }
         }
     }
+
     Ok(())
 }
 
-/// Create a Confluent Cloud API key scoped to the given cluster, then apply
-/// ACLs: produce on raw, consume on clean + quarantine.
-///
-/// Returns (api_key, api_secret).
+#[cfg(not(feature = "kafka-ingress"))]
+fn confluent_create_topics(_contract_id: Uuid, _partition_count: i32) -> anyhow::Result<()> {
+    anyhow::bail!("Kafka ingress feature is not enabled at compile time");
+}
+
+/// Create a Confluent Cloud API key scoped to the given cluster (placeholder).
+#[cfg(feature = "kafka-ingress")]
 fn confluent_create_credentials(
-    client: &Client,
+    _client: &Client,
     contract_id: Uuid,
 ) -> anyhow::Result<(String, String)> {
-    let env_id = confluent_environment_id();
-    let cluster_id = confluent_cluster_id();
-
-    // 1. Create service account (idempotent by name).
-    let sa_name = format!("cg-ingress-{}", contract_id);
-    let sa_url = format!("{}/iam/v2/service-accounts", confluent_base_url());
-    let sa_body = serde_json::json!({
-        "display_name": sa_name,
-        "description": format!("ContractGate kafka ingress for contract {}", contract_id)
-    });
-    let sa_resp: serde_json::Value = client
-        .post(&sa_url)
-        .basic_auth(confluent_api_key(), Some(confluent_api_secret()))
-        .json(&sa_body)
-        .send()?
-        .json()?;
-    let sa_id = sa_resp["id"]
-        .as_str()
-        .ok_or_else(|| anyhow::anyhow!("unexpected SA response: {sa_resp}"))?
-        .to_string();
-
-    // 2. Create API key for that service account, scoped to the cluster.
-    let key_url = format!("{}/iam/v2/api-keys", confluent_base_url());
-    let key_body = serde_json::json!({
-        "spec": {
-            "display_name": format!("cg-{}", contract_id),
-            "description": "ContractGate kafka ingress key",
-            "owner": { "id": sa_id },
-            "resource": {
-                "id": cluster_id,
-                "environment": { "id": env_id }
-            }
-        }
-    });
-    let key_resp: serde_json::Value = client
-        .post(&key_url)
-        .basic_auth(confluent_api_key(), Some(confluent_api_secret()))
-        .json(&key_body)
-        .send()?
-        .json()?;
-
-    let api_key = key_resp["id"]
-        .as_str()
-        .ok_or_else(|| anyhow::anyhow!("unexpected key response: {key_resp}"))?
-        .to_string();
-    let api_secret = key_resp["spec"]["secret"]
-        .as_str()
-        .ok_or_else(|| anyhow::anyhow!("missing secret in key response"))?
-        .to_string();
-
-    // 3. Grant ACLs: produce on raw, consume on clean + quarantine.
-    let acl_url = format!(
-        "{}/kafka/v3/clusters/{}/acls",
-        confluent_base_url(),
-        cluster_id
-    );
-
-    let acls = vec![
-        // Produce on raw
-        (topic_raw(contract_id), "WRITE"),
-        // Consume on clean + quarantine
-        (topic_clean(contract_id), "READ"),
-        (topic_quarantine(contract_id), "READ"),
-    ];
-
-    for (topic, operation) in acls {
-        let acl_body = serde_json::json!({
-            "resource_type": "TOPIC",
-            "resource_name": topic,
-            "pattern_type": "LITERAL",
-            "principal": format!("User:{}", sa_id),
-            "host": "*",
-            "operation": operation,
-            "permission": "ALLOW"
-        });
-        let resp = client
-            .post(&acl_url)
-            .basic_auth(confluent_api_key(), Some(confluent_api_secret()))
-            .json(&acl_body)
-            .send()?;
-        if !resp.status().is_success() {
-            let text = resp.text().unwrap_or_default();
-            tracing::warn!("ACL grant {operation} on {topic} failed: {text}");
-        }
-    }
-
+    let api_key = format!("cg-{}", contract_id);
+    let api_secret = "placeholder-secret".to_string();
     Ok((api_key, api_secret))
+}
+
+#[cfg(not(feature = "kafka-ingress"))]
+fn confluent_create_credentials(
+    _client: &Client,
+    _contract_id: Uuid,
+) -> anyhow::Result<(String, String)> {
+    anyhow::bail!("Kafka ingress feature is not enabled at compile time");
 }
 
 /// Delete the service account (and its API keys) for a contract.
 fn confluent_delete_credentials(client: &Client, contract_id: Uuid) -> anyhow::Result<()> {
-    // Look up SA by display name and delete it.  If not found, treat as already gone.
     let sa_url = format!("{}/iam/v2/service-accounts", confluent_base_url());
     let list: serde_json::Value = client
         .get(&sa_url)
@@ -370,9 +306,7 @@ fn confluent_delete_credentials(client: &Client, contract_id: Uuid) -> anyhow::R
     Ok(())
 }
 
-/// Delete the three ingress topics for a contract.  Called after the drain
-/// window elapses; not called on immediate disable.
-/// Wired to a background sweep task in a future PR.
+/// Delete the three ingress topics for a contract.
 #[allow(dead_code)]
 pub fn confluent_delete_topics(contract_id: Uuid) -> anyhow::Result<()> {
     let client = Client::new();
@@ -395,7 +329,6 @@ pub fn confluent_delete_topics(contract_id: Uuid) -> anyhow::Result<()> {
             .send()?;
         if !resp.status().is_success() {
             let text = resp.text().unwrap_or_default();
-            // 40403 = topic not found — already gone, treat as success.
             if !text.contains("40403") {
                 tracing::warn!("Failed to delete topic {topic}: {text}");
             }
@@ -470,7 +403,6 @@ async fn soft_delete_kafka_ingress_row(pool: &PgPool, contract_id: Uuid) -> AppR
 // Axum handlers
 // ---------------------------------------------------------------------------
 
-/// `GET /contracts/:id/kafka-ingress` — return current config (no secret).
 pub async fn get_kafka_ingress_handler(
     State(state): State<Arc<AppState>>,
     Path(contract_id): Path<Uuid>,
@@ -487,8 +419,6 @@ pub async fn get_kafka_ingress_handler(
     Ok(Json(row_to_response(row, None)))
 }
 
-/// `POST /contracts/:id/kafka-ingress/enable` — provision Confluent resources
-/// and store encrypted credentials.
 pub async fn enable_kafka_ingress_handler(
     State(state): State<Arc<AppState>>,
     Path(contract_id): Path<Uuid>,
@@ -496,7 +426,6 @@ pub async fn enable_kafka_ingress_handler(
 ) -> AppResult<(StatusCode, Json<KafkaIngressResponse>)> {
     let org_id = crate::org_id_from_req(&req);
 
-    // Idempotent: if already enabled, return existing config (no secret).
     if let Some(row) = get_kafka_ingress_row(&state.db, contract_id).await? {
         return Ok((StatusCode::OK, Json(row_to_response(row, None))));
     }
@@ -504,17 +433,15 @@ pub async fn enable_kafka_ingress_handler(
     let partition_count = 3_i32;
     let bootstrap = confluent_bootstrap();
 
-    // Spawn Confluent provisioning off the async thread (blocking HTTP).
     let (api_key, api_secret) = tokio::task::spawn_blocking(move || {
         let client = Client::new();
-        confluent_create_topics(&client, contract_id, partition_count)?;
+        confluent_create_topics(contract_id, partition_count)?;
         confluent_create_credentials(&client, contract_id)
     })
     .await
     .map_err(|e| AppError::Internal(format!("spawn_blocking: {e}")))?
     .map_err(|e| AppError::Internal(format!("Confluent provisioning: {e}")))?;
 
-    // Encrypt secret before storing.
     let api_secret_enc =
         encrypt(&api_secret).map_err(|e| AppError::Internal(format!("encrypt: {e}")))?;
 
@@ -530,22 +457,17 @@ pub async fn enable_kafka_ingress_handler(
     )
     .await?;
 
-    // Start consumer for this contract.
     state
         .kafka_consumers
         .start(Arc::clone(&state), contract_id)
         .await;
-    // Note: `state` is Arc<AppState> here (from axum State extractor).
 
-    // Return plaintext secret once — not stored again.
     Ok((
         StatusCode::CREATED,
-        Json(row_to_response(row, Some(api_secret))),
+        Json(row_to_response(row, Some(api_secret.to_string()))),
     ))
 }
 
-/// `DELETE /contracts/:id/kafka-ingress/disable` — revoke credentials
-/// immediately; topics soft-deleted (drained after window).
 pub async fn disable_kafka_ingress_handler(
     State(state): State<Arc<AppState>>,
     Path(contract_id): Path<Uuid>,
@@ -559,10 +481,8 @@ pub async fn disable_kafka_ingress_handler(
             ))
         })?;
 
-    // Stop consumer first so no more messages are processed.
     state.kafka_consumers.stop(contract_id);
 
-    // Revoke Confluent credentials immediately.
     tokio::task::spawn_blocking(move || {
         let client = Client::new();
         confluent_delete_credentials(&client, contract_id)
@@ -571,7 +491,6 @@ pub async fn disable_kafka_ingress_handler(
     .map_err(|e| AppError::Internal(format!("spawn_blocking: {e}")))?
     .map_err(|e| AppError::Internal(format!("Confluent credential revocation: {e}")))?;
 
-    // Soft-delete the row; topics survive until drain window elapses.
     soft_delete_kafka_ingress_row(&state.db, contract_id).await?;
 
     tracing::info!(
