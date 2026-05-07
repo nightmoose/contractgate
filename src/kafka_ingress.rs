@@ -202,13 +202,10 @@ fn topic_quarantine(contract_id: Uuid) -> String {
 // ---------------------------------------------------------------------------
 
 #[cfg(feature = "kafka-ingress")]
-fn confluent_create_topics(
-    contract_id: Uuid,
-    partition_count: i32,
-) -> anyhow::Result<()> {
+fn confluent_create_topics(contract_id: Uuid, partition_count: i32) -> anyhow::Result<()> {
     use rdkafka::admin::{AdminClient, AdminOptions, NewTopic, TopicReplication};
-    use rdkafka::config::ClientConfig;
     use rdkafka::client::DefaultClientContext;
+    use rdkafka::config::ClientConfig;
     use tokio::runtime::Handle;
 
     let bootstrap = confluent_bootstrap();
@@ -234,8 +231,16 @@ fn confluent_create_topics(
 
     let topics = vec![
         NewTopic::new(&topic_raw_name, partition_count, TopicReplication::Fixed(3)),
-        NewTopic::new(&topic_clean_name, partition_count, TopicReplication::Fixed(3)),
-        NewTopic::new(&topic_quarantine_name, partition_count, TopicReplication::Fixed(3)),
+        NewTopic::new(
+            &topic_clean_name,
+            partition_count,
+            TopicReplication::Fixed(3),
+        ),
+        NewTopic::new(
+            &topic_quarantine_name,
+            partition_count,
+            TopicReplication::Fixed(3),
+        ),
     ];
 
     let opts = AdminOptions::new().request_timeout(Some(std::time::Duration::from_secs(30)));
