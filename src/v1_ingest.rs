@@ -767,6 +767,7 @@ pub async fn v1_ingest_handler(
                 summary,
                 0,
                 source_ip.as_deref(),
+                "http",
             )
             .await
             {

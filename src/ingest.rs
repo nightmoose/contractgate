@@ -756,6 +756,7 @@ async fn deprecated_pin_quarantine(
                 summary_payload,
                 0,
                 source_ip_owned.as_deref(),
+                "http",
             )
             .await
             {
@@ -844,6 +845,7 @@ fn write_batch_rejected_audit(
             summary_payload,
             0,
             source_ip_owned.as_deref(),
+            "http",
         )
         .await
         {

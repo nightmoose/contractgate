@@ -72,11 +72,13 @@ fn confluent_bootstrap() -> String {
 }
 
 /// AES-256-GCM key from ENCRYPTION_KEY env var (32-byte hex).
+/// Only used when the kafka-ingress feature is active (aes_gcm types in scope).
+#[cfg(feature = "kafka-ingress")]
 fn encryption_key() -> anyhow::Result<Key<Aes256Gcm>> {
     let hex = std::env::var("ENCRYPTION_KEY")
         .map_err(|_| anyhow::anyhow!("ENCRYPTION_KEY env var not set"))?;
-    let bytes = hex::decode(&hex)
-        .map_err(|e| anyhow::anyhow!("ENCRYPTION_KEY is not valid hex: {e}"))?;
+    let bytes =
+        hex::decode(&hex).map_err(|e| anyhow::anyhow!("ENCRYPTION_KEY is not valid hex: {e}"))?;
     if bytes.len() != 32 {
         anyhow::bail!("ENCRYPTION_KEY must be exactly 32 bytes (64 hex chars)");
     }
@@ -213,7 +215,11 @@ fn confluent_create_topics(
         cluster_id
     );
 
-    for topic in [topic_raw(contract_id), topic_clean(contract_id), topic_quarantine(contract_id)] {
+    for topic in [
+        topic_raw(contract_id),
+        topic_clean(contract_id),
+        topic_quarantine(contract_id),
+    ] {
         let body = serde_json::json!({
             "topic_name": topic,
             "partitions_count": partition_count,
@@ -339,10 +345,7 @@ fn confluent_create_credentials(
 }
 
 /// Delete the service account (and its API keys) for a contract.
-fn confluent_delete_credentials(
-    client: &Client,
-    contract_id: Uuid,
-) -> anyhow::Result<()> {
+fn confluent_delete_credentials(client: &Client, contract_id: Uuid) -> anyhow::Result<()> {
     // Look up SA by display name and delete it.  If not found, treat as already gone.
     let sa_url = format!("{}/iam/v2/service-accounts", confluent_base_url());
     let list: serde_json::Value = client
@@ -374,7 +377,11 @@ pub fn confluent_delete_topics(contract_id: Uuid) -> anyhow::Result<()> {
     let client = Client::new();
     let cluster_id = confluent_cluster_id();
 
-    for topic in [topic_raw(contract_id), topic_clean(contract_id), topic_quarantine(contract_id)] {
+    for topic in [
+        topic_raw(contract_id),
+        topic_clean(contract_id),
+        topic_quarantine(contract_id),
+    ] {
         let url = format!(
             "{}/kafka/v3/clusters/{}/topics/{}",
             confluent_base_url(),
@@ -469,9 +476,12 @@ pub async fn get_kafka_ingress_handler(
 ) -> AppResult<Json<KafkaIngressResponse>> {
     let row = get_kafka_ingress_row(&state.db, contract_id)
         .await?
-        .ok_or_else(|| AppError::NotFound(
-            format!("kafka ingress not enabled for contract {}", contract_id)
-        ))?;
+        .ok_or_else(|| {
+            AppError::NotFound(format!(
+                "kafka ingress not enabled for contract {}",
+                contract_id
+            ))
+        })?;
 
     Ok(Json(row_to_response(row, None)))
 }
@@ -520,11 +530,17 @@ pub async fn enable_kafka_ingress_handler(
     .await?;
 
     // Start consumer for this contract.
-    state.kafka_consumers.start(Arc::clone(&state), contract_id).await;
+    state
+        .kafka_consumers
+        .start(Arc::clone(&state), contract_id)
+        .await;
     // Note: `state` is Arc<AppState> here (from axum State extractor).
 
     // Return plaintext secret once — not stored again.
-    Ok((StatusCode::CREATED, Json(row_to_response(row, Some(api_secret)))))
+    Ok((
+        StatusCode::CREATED,
+        Json(row_to_response(row, Some(api_secret))),
+    ))
 }
 
 /// `DELETE /contracts/:id/kafka-ingress/disable` — revoke credentials
@@ -535,9 +551,12 @@ pub async fn disable_kafka_ingress_handler(
 ) -> AppResult<StatusCode> {
     let row = get_kafka_ingress_row(&state.db, contract_id)
         .await?
-        .ok_or_else(|| AppError::NotFound(
-            format!("kafka ingress not enabled for contract {}", contract_id)
-        ))?;
+        .ok_or_else(|| {
+            AppError::NotFound(format!(
+                "kafka ingress not enabled for contract {}",
+                contract_id
+            ))
+        })?;
 
     // Stop consumer first so no more messages are processed.
     state.kafka_consumers.stop(contract_id);
