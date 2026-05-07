@@ -132,17 +132,16 @@ pub fn decrypt_secret(encoded: &str) -> anyhow::Result<String> {
     Ok(String::from_utf8(plaintext)?)
 }
 
-#[cfg(not(feature = "kafka-ingress"))]
-pub fn decrypt_secret(encoded: &str) -> anyhow::Result<String> {
-    use base64::{engine::general_purpose::STANDARD as B64, Engine};
-    let bytes = B64.decode(encoded)?;
-    Ok(String::from_utf8(bytes)?)
-}
+// decrypt_secret is only called from kafka_consumer (feature = kafka-ingress).
+// No non-feature stub needed — the consumer mod is fully gated.
 
 // ---------------------------------------------------------------------------
 // DB types
 // ---------------------------------------------------------------------------
 
+// Fields are consumed inside #[cfg(feature = "kafka-ingress")] code in
+// kafka_consumer.rs; clippy's dead-code pass doesn't cross feature boundaries.
+#[allow(dead_code)]
 #[derive(Debug, sqlx::FromRow)]
 pub struct KafkaIngressRow {
     pub id: Uuid,
@@ -373,6 +372,8 @@ fn confluent_delete_credentials(client: &Client, contract_id: Uuid) -> anyhow::R
 
 /// Delete the three ingress topics for a contract.  Called after the drain
 /// window elapses; not called on immediate disable.
+/// Wired to a background sweep task in a future PR.
+#[allow(dead_code)]
 pub fn confluent_delete_topics(contract_id: Uuid) -> anyhow::Result<()> {
     let client = Client::new();
     let cluster_id = confluent_cluster_id();
