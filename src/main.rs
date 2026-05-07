@@ -674,6 +674,17 @@ async fn require_api_key(
     mut request: Request,
     next: Next,
 ) -> Result<axum::response::Response, error::AppError> {
+    // Minimal CORS preflight fix
+    if request.method() == axum::http::Method::OPTIONS {
+        return Ok(axum::response::Response::builder()
+            .status(200)
+            .header("Access-Control-Allow-Origin", "*")
+            .header("Access-Control-Allow-Methods", "*")
+            .header("Access-Control-Allow-Headers", "*")
+            .body(axum::body::Body::empty())
+            .unwrap());
+    }
+    
     let provided = request
         .headers()
         .get("x-api-key")
