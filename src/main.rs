@@ -878,6 +878,7 @@ fn build_router(state: Arc<AppState>) -> Router {
         .layer(tower_http::limit::RequestBodyLimitLayer::new(
             10 * 1024 * 1024, // 10 MB — RFC-021
         ))
+        .layer(cors.clone())
         .layer(middleware::from_fn_with_state(
             state.clone(),
             require_api_key,
