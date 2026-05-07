@@ -244,7 +244,9 @@ fn confluent_create_topics(contract_id: Uuid, partition_count: i32) -> anyhow::R
         ),
     ];
 
-    let opts = AdminOptions::new().request_timeout(Some(std::time::Duration::from_secs(30)));
+    // 10 s — well under the router's 30 s TimeoutLayer so we return a clean
+    // error instead of racing to a 408 Request Timeout.
+    let opts = AdminOptions::new().request_timeout(Some(std::time::Duration::from_secs(10)));
 
     let results = Handle::current()
         .block_on(admin.create_topics(&topics, &opts))
@@ -438,6 +440,13 @@ pub async fn enable_kafka_ingress_handler(
 
     let partition_count = 3_i32;
     let bootstrap = confluent_bootstrap();
+
+    // Fail fast: don't enter spawn_blocking if broker env vars are missing.
+    if bootstrap.is_empty() {
+        return Err(AppError::Internal(
+            "CONFLUENT_BOOTSTRAP_SERVERS is not configured on this server".to_string(),
+        ));
+    }
 
     let (api_key, api_secret) = tokio::task::spawn_blocking(move || {
         let client = Client::new();

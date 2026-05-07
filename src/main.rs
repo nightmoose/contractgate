@@ -674,25 +674,6 @@ async fn require_api_key(
     mut request: Request,
     next: Next,
 ) -> Result<axum::response::Response, error::AppError> {
-    // === IMPROVED CORS PREFLIGHT ===
-    if request.method() == axum::http::Method::OPTIONS {
-        tracing::info!("CORS preflight OPTIONS request for {}", request.uri());
-        return Ok(axum::response::Response::builder()
-            .status(204) // No Content is better for preflight
-            .header("Access-Control-Allow-Origin", "*")
-            .header(
-                "Access-Control-Allow-Methods",
-                "GET, POST, PUT, DELETE, OPTIONS",
-            )
-            .header(
-                "Access-Control-Allow-Headers",
-                "Content-Type, x-api-key, Authorization",
-            )
-            .header("Access-Control-Max-Age", "3600")
-            .body(axum::body::Body::empty())
-            .unwrap());
-    }
-
     let provided = request
         .headers()
         .get("x-api-key")
@@ -860,7 +841,6 @@ fn build_router(state: Arc<AppState>) -> Router {
         // Audit + stats
         .route("/audit", get(audit_log_handler))
         .route("/stats", get(global_stats_handler))
-        .layer(cors.clone())
         .layer(middleware::from_fn_with_state(
             state.clone(),
             require_api_key,
@@ -878,7 +858,6 @@ fn build_router(state: Arc<AppState>) -> Router {
         .layer(tower_http::limit::RequestBodyLimitLayer::new(
             10 * 1024 * 1024, // 10 MB — RFC-021
         ))
-        .layer(cors.clone())
         .layer(middleware::from_fn_with_state(
             state.clone(),
             require_api_key,
