@@ -684,7 +684,7 @@ async fn require_api_key(
             .body(axum::body::Body::empty())
             .unwrap());
     }
-    
+
     let provided = request
         .headers()
         .get("x-api-key")
