@@ -48,7 +48,7 @@ COPY contracts ./contracts
 COPY src ./src
 #RUN cargo build --release
 # Build the web server and demo-seeder binaries (explicit names)
-RUN cargo build --release --bin contractgate-server --features kafka-ingress
+RUN cargo build --release --bin contractgate-server --features kafka-ingress,scaffold
 RUN cargo build --release --bin demo-seeder
 
 # ── Stage 2: runtime ────────────────────────────────────────
