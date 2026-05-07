@@ -41,7 +41,7 @@ mod inner {
 
     use crate::{
         kafka_ingress::decrypt_secret,
-        storage::{AuditEntryInsert, log_audit_entries_batch},
+        storage::{log_audit_entries_batch, AuditEntryInsert},
         transform::{apply_transforms, TransformedPayload},
         validation::validate,
         AppState,
@@ -106,7 +106,9 @@ mod inner {
     async fn run_consumer(state: Arc<AppState>, contract_id: Uuid) {
         loop {
             // Reload config on each (re)start so credential rotations are picked up.
-            let row = match crate::kafka_ingress::get_kafka_ingress_row(&state.db, contract_id).await {
+            let row = match crate::kafka_ingress::get_kafka_ingress_row(&state.db, contract_id)
+                .await
+            {
                 Ok(Some(r)) => r,
                 Ok(None) => {
                     tracing::info!(contract_id = %contract_id, "kafka ingress row gone; consumer exiting");
@@ -327,16 +329,18 @@ mod inner {
 
 #[cfg(not(feature = "kafka-ingress"))]
 mod inner {
+    use crate::AppState;
     use std::sync::Arc;
     use uuid::Uuid;
-    use crate::AppState;
 
     /// Zero-cost stub — compiles without rdkafka.
     #[derive(Default, Clone)]
     pub struct ConsumerPool;
 
     impl ConsumerPool {
-        pub fn new() -> Self { Self }
+        pub fn new() -> Self {
+            Self
+        }
         pub async fn start(&self, _state: Arc<AppState>, _id: Uuid) {}
         pub fn stop(&self, _id: Uuid) {}
         pub async fn restore_all(&self, _state: Arc<AppState>) {}

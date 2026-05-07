@@ -100,7 +100,6 @@ pub enum AppError {
     // -----------------------------------------------------------------------
     // Generic
     // -----------------------------------------------------------------------
-
     /// Generic 404 for resource types that don't have a dedicated variant.
     #[error("Not found: {0}")]
     NotFound(String),
