@@ -943,7 +943,10 @@ async fn main() -> anyhow::Result<()> {
     // Runs in the background; boot is not blocked if Confluent is unavailable.
     state.kafka_consumers.restore_all(Arc::clone(&state)).await;
     tracing::info!("kafka consumer pool restored");
-    state.kinesis_consumers.restore_all(Arc::clone(&state)).await;
+    state
+        .kinesis_consumers
+        .restore_all(Arc::clone(&state))
+        .await;
     tracing::info!("kinesis consumer pool restored");
 
     // Spawn background gauge-refresh tasks (RFC-016 §Decisions Q5).

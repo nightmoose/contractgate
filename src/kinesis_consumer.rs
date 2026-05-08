@@ -27,11 +27,12 @@ mod inner {
     use std::sync::Arc;
     use std::time::{Duration, Instant};
 
-    use aws_config::Region;
     use aws_sdk_kinesis::{
-        types::{ShardIteratorType, _shard_iterator_type::ShardIteratorType as SIT},
+        config::{BehaviorVersion, Credentials, Region},
+        types::ShardIteratorType,
         Client as KinesisClient,
     };
+    use base64::{engine::general_purpose::STANDARD as B64, Engine};
     use dashmap::DashMap;
     use serde_json::{json, Value as JsonValue};
     use tokio::task::JoinHandle;
@@ -40,7 +41,7 @@ mod inner {
     use crate::{
         kinesis_ingress::{decrypt_secret, stream_clean, stream_quarantine, stream_raw},
         storage::{log_audit_entries_batch, AuditEntryInsert},
-        transform::{apply_transforms, TransformedPayload},
+        transform::apply_transforms,
         validation::validate,
         AppState,
     };
@@ -99,10 +100,13 @@ mod inner {
 
     // ── Consumer task ─────────────────────────────────────────────────────────
 
-    /// Main consumer loop for one contract.  Runs until the task is aborted.
     async fn run_consumer(state: Arc<AppState>, contract_id: Uuid) {
         if let Err(e) = consumer_loop(state, contract_id).await {
-            tracing::error!(contract_id = %contract_id, error = %e, "kinesis consumer exited with error");
+            tracing::error!(
+                contract_id = %contract_id,
+                error = %e,
+                "kinesis consumer exited with error"
+            );
         }
     }
 
@@ -120,20 +124,20 @@ mod inner {
         let clean_stream = stream_clean(contract_id);
         let quarantine_stream = stream_quarantine(contract_id);
 
-        // Build an AWS SDK client using the per-contract IAM credentials.
-        let creds = aws_sdk_kinesis::config::Credentials::new(
+        // Build a Kinesis client using the per-contract IAM credentials.
+        let creds = Credentials::new(
             access_key_id,
             &secret,
             None,
             None,
             "contractgate-kinesis-consumer",
         );
-        let sdk_config = aws_config::from_env()
+        let sdk_config = aws_sdk_kinesis::config::Builder::new()
+            .behavior_version(BehaviorVersion::latest())
             .region(Region::new(region.clone()))
             .credentials_provider(creds)
-            .load()
-            .await;
-        let kinesis = KinesisClient::new(&sdk_config);
+            .build();
+        let kinesis = KinesisClient::from_conf(sdk_config);
 
         // Discover shards.
         let shards = list_shards(&kinesis, &raw_stream).await?;
@@ -147,24 +151,28 @@ mod inner {
 
         let mut shard_iterators: HashMap<String, Option<String>> = HashMap::new();
         for shard_id in &shards {
-            let iter = get_shard_iterator(&kinesis, &raw_stream, shard_id, saved.get(shard_id.as_str()))
-                .await?;
+            let iter = get_shard_iterator(
+                &kinesis,
+                &raw_stream,
+                shard_id,
+                saved.get(shard_id.as_str()),
+            )
+            .await?;
             shard_iterators.insert(shard_id.clone(), Some(iter));
         }
 
         let idle_threshold = Duration::from_secs(300); // 5 min → slow-poll mode
-        let normal_poll = Duration::from_millis(200);  // ~5 reads/s per shard limit
-        let idle_poll = Duration::from_secs(60);       // 1 req/min when idle
+        let normal_poll = Duration::from_millis(200); // ~5 reads/s per-shard limit
+        let idle_poll = Duration::from_secs(60); // 1 req/min when idle
 
         let mut last_record_time = Instant::now();
-        let mut sequence_numbers: HashMap<String, String> = saved.clone();
+        let mut sequence_numbers: HashMap<String, String> = saved;
 
         loop {
             let any_records = poll_all_shards(
                 &state,
                 &kinesis,
                 contract_id,
-                &raw_stream,
                 &clean_stream,
                 &quarantine_stream,
                 &mut shard_iterators,
@@ -174,7 +182,6 @@ mod inner {
 
             if any_records {
                 last_record_time = Instant::now();
-                // Checkpoint sequence numbers to DB.
                 checkpoint(&state.db, contract_id, &sequence_numbers).await;
             }
 
@@ -189,7 +196,6 @@ mod inner {
         state: &AppState,
         kinesis: &KinesisClient,
         contract_id: Uuid,
-        raw_stream: &str,
         clean_stream: &str,
         quarantine_stream: &str,
         shard_iterators: &mut HashMap<String, Option<String>>,
@@ -197,19 +203,24 @@ mod inner {
     ) -> anyhow::Result<bool> {
         let mut any_records = false;
 
-        // Load the latest stable contract version once per poll cycle.
+        // Resolve latest stable version once per poll cycle.
         let version_row =
             match crate::storage::get_latest_stable_version(&state.db, contract_id).await {
-                Ok(v) => v,
-                Err(_) => {
+                Ok(Some(v)) => v,
+                Ok(None) => {
                     tracing::warn!(contract_id = %contract_id, "no stable version; skipping poll");
                     return Ok(false);
                 }
+                Err(e) => {
+                    tracing::error!(contract_id = %contract_id, "version lookup: {e}");
+                    return Ok(false);
+                }
             };
+
         let compiled = match state.get_compiled(contract_id, &version_row.version).await {
             Ok(c) => c,
             Err(e) => {
-                tracing::error!(contract_id = %contract_id, error = %e, "failed to load contract");
+                tracing::error!(contract_id = %contract_id, "compile: {e}");
                 return Ok(false);
             }
         };
@@ -235,7 +246,7 @@ mod inner {
                 }
             };
 
-            // Advance iterator.
+            // Advance iterator for next poll.
             *maybe_iter = resp.next_shard_iterator().map(|s| s.to_string());
 
             let records = resp.records();
@@ -250,7 +261,8 @@ mod inner {
                 let seq = record.sequence_number().to_string();
                 let data = record.data().as_ref();
 
-                let payload: JsonValue = match serde_json::from_slice(data) {
+                // Parse JSON; quarantine immediately on parse failure.
+                let event: JsonValue = match serde_json::from_slice(data) {
                     Ok(v) => v,
                     Err(e) => {
                         tracing::warn!(seq, error = %e, "non-JSON kinesis record; quarantining");
@@ -266,45 +278,47 @@ mod inner {
                     }
                 };
 
-                // Apply PII transforms (RFC-004) before validation.
-                let transformed = match apply_transforms(&compiled.contract, payload.clone()) {
-                    TransformedPayload::Transformed(v) => v,
-                    TransformedPayload::Passthrough(v) => v,
-                };
+                // Time + validate.
+                let t0 = std::time::Instant::now();
+                let result = validate(&compiled, &event);
+                let validation_us = t0.elapsed().as_micros() as i64;
 
-                let validation_result = validate(&compiled, &transformed);
+                // Apply PII transforms (RFC-004) after validation.
+                let transformed = apply_transforms(&compiled, event.clone());
 
-                if validation_result.valid {
-                    route_clean(kinesis, clean_stream, &transformed).await;
+                if result.passed {
+                    route_clean(kinesis, clean_stream, &transformed.as_value().clone()).await;
                 } else {
-                    let reason = validation_result
-                        .errors
+                    let reason = result
+                        .violations
                         .first()
-                        .map(|e| e.to_string())
-                        .unwrap_or_else(|| "validation failed".to_string());
+                        .map(|v| v.message.as_str())
+                        .unwrap_or("validation failed")
+                        .to_string();
                     route_quarantine(
                         kinesis,
                         quarantine_stream,
-                        &serde_json::to_vec(&payload).unwrap_or_default(),
+                        &serde_json::to_vec(&event).unwrap_or_default(),
                         &reason,
-                        &compiled.contract.version,
+                        &version_row.version,
                     )
                     .await;
                 }
 
-                // Build audit entry — contract_version reflects the version that
-                // actually matched (audit honesty rule).
+                // Audit entry — contract_version = matched version (audit honesty).
                 audit_entries.push(AuditEntryInsert {
                     contract_id,
-                    contract_version: compiled.contract.version.clone(),
+                    org_id: None, // consumer runs platform-side; no HTTP API key context
+                    contract_version: version_row.version.clone(),
+                    passed: result.passed,
+                    violation_count: result.violations.len() as i32,
+                    violation_details: serde_json::to_value(&result.violations).unwrap_or_default(),
+                    raw_event: transformed,
+                    validation_us,
+                    source_ip: None,
                     source: "kinesis".to_string(),
-                    valid: validation_result.valid,
-                    payload: payload.clone(),
-                    errors: if validation_result.valid {
-                        vec![]
-                    } else {
-                        validation_result.errors.iter().map(|e| e.to_string()).collect()
-                    },
+                    pre_assigned_id: None,
+                    replay_of_quarantine_id: None,
                 });
 
                 sequence_numbers.insert(shard_id.clone(), seq);
@@ -349,7 +363,7 @@ mod inner {
         contract_version: &str,
     ) {
         let original_raw = serde_json::from_slice::<JsonValue>(original_bytes)
-            .unwrap_or_else(|_| JsonValue::String(base64::engine::general_purpose::STANDARD.encode(original_bytes)));
+            .unwrap_or_else(|_| JsonValue::String(B64.encode(original_bytes)));
 
         let envelope = json!({
             "cg_violation_reason": violation_reason,
@@ -383,7 +397,8 @@ mod inner {
             }
         };
         let _ = sqlx::query(
-            "UPDATE kinesis_ingress SET last_sequence_numbers = $1, updated_at = NOW() \
+            "UPDATE kinesis_ingress \
+             SET last_sequence_numbers = $1, updated_at = NOW() \
              WHERE contract_id = $2 AND disabled_at IS NULL",
         )
         .bind(val)
@@ -443,20 +458,21 @@ mod inner {
 
 #[cfg(not(feature = "kinesis-ingress"))]
 mod inner {
+    use crate::AppState;
     use std::sync::Arc;
     use uuid::Uuid;
-    use crate::AppState;
 
     #[derive(Default, Clone)]
     pub struct ConsumerPool;
 
     impl ConsumerPool {
-        pub fn new() -> Self { Self }
+        pub fn new() -> Self {
+            Self
+        }
         pub async fn start(&self, _state: Arc<AppState>, _contract_id: Uuid) {}
         pub fn stop(&self, _contract_id: Uuid) {}
         pub async fn restore_all(&self, _state: Arc<AppState>) {}
     }
 }
 
-// Re-export so `main.rs` can use `kinesis_consumer::ConsumerPool` regardless of feature.
 pub use inner::ConsumerPool;

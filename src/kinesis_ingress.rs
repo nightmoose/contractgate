@@ -21,7 +21,7 @@ use axum::{
     response::Json,
 };
 use chrono::{DateTime, Utc};
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 use serde_json::Value as JsonValue;
 use sqlx::PgPool;
 use std::sync::Arc;
@@ -144,17 +144,23 @@ pub async fn provision_kinesis_ingress(
     shard_count: i32,
     region: &str,
 ) -> anyhow::Result<(String, String, String, String, String, String)> {
-    use aws_config::Region;
     use aws_sdk_iam::Client as IamClient;
+    use aws_sdk_kinesis::config::BehaviorVersion;
     use aws_sdk_kinesis::Client as KinesisClient;
 
-    let config = aws_config::from_env()
-        .region(Region::new(region.to_string()))
-        .load()
-        .await;
+    let config = aws_sdk_kinesis::config::Builder::new()
+        .behavior_version(BehaviorVersion::latest())
+        .region(aws_sdk_kinesis::config::Region::new(region.to_string()))
+        .build();
+    // Use separate SDK configs for Kinesis vs IAM since IAM is global.
+    let kinesis_conf = config;
+    let iam_conf = aws_sdk_iam::config::Builder::new()
+        .behavior_version(aws_sdk_iam::config::BehaviorVersion::latest())
+        .region(aws_sdk_iam::config::Region::new(region.to_string()))
+        .build();
 
-    let kinesis = KinesisClient::new(&config);
-    let iam = IamClient::new(&config);
+    let kinesis = KinesisClient::from_conf(kinesis_conf);
+    let iam = IamClient::from_conf(iam_conf);
 
     // 1. Create the three streams.
     let raw_name = stream_raw(contract_id);
@@ -189,9 +195,8 @@ pub async fn provision_kinesis_ingress(
         .map_err(|e| anyhow::anyhow!("create_user: {e}"))?;
     let iam_user_arn = user_resp
         .user()
-        .and_then(|u| u.arn())
-        .unwrap_or_default()
-        .to_string();
+        .map(|u| u.arn().to_string())
+        .unwrap_or_default();
 
     // 5. Attach inline policy: produce-only on raw, consume-only on clean+quarantine.
     let policy_doc = serde_json::json!({
@@ -291,8 +296,7 @@ async fn describe_stream_arn(
         .await
         .map_err(|e| anyhow::anyhow!("describe_stream_summary {name}: {e}"))?;
     resp.stream_description_summary()
-        .and_then(|s| s.stream_arn())
-        .map(|s| s.to_string())
+        .map(|s| s.stream_arn().to_string())
         .ok_or_else(|| anyhow::anyhow!("no ARN returned for stream {name}"))
 }
 
@@ -303,14 +307,13 @@ pub async fn rotate_iam_credentials(
     old_access_key_id: &str,
     region: &str,
 ) -> anyhow::Result<(String, String)> {
-    use aws_config::Region;
     use aws_sdk_iam::Client as IamClient;
 
-    let config = aws_config::from_env()
-        .region(Region::new(region.to_string()))
-        .load()
-        .await;
-    let iam = IamClient::new(&config);
+    let iam_conf = aws_sdk_iam::config::Builder::new()
+        .behavior_version(aws_sdk_iam::config::BehaviorVersion::latest())
+        .region(aws_sdk_iam::config::Region::new(region.to_string()))
+        .build();
+    let iam = IamClient::from_conf(iam_conf);
     let user_name = iam_user_name(contract_id);
 
     let key_resp = iam
@@ -343,16 +346,19 @@ pub async fn deprovision_kinesis_ingress(
     access_key_id: &str,
     region: &str,
 ) -> anyhow::Result<()> {
-    use aws_config::Region;
     use aws_sdk_iam::Client as IamClient;
     use aws_sdk_kinesis::Client as KinesisClient;
 
-    let config = aws_config::from_env()
-        .region(Region::new(region.to_string()))
-        .load()
-        .await;
-    let kinesis = KinesisClient::new(&config);
-    let iam = IamClient::new(&config);
+    let kinesis_conf = aws_sdk_kinesis::config::Builder::new()
+        .behavior_version(aws_sdk_kinesis::config::BehaviorVersion::latest())
+        .region(aws_sdk_kinesis::config::Region::new(region.to_string()))
+        .build();
+    let iam_conf = aws_sdk_iam::config::Builder::new()
+        .behavior_version(aws_sdk_iam::config::BehaviorVersion::latest())
+        .region(aws_sdk_iam::config::Region::new(region.to_string()))
+        .build();
+    let kinesis = KinesisClient::from_conf(kinesis_conf);
+    let iam = IamClient::from_conf(iam_conf);
     let user_name = iam_user_name(contract_id);
 
     // 1. Delete the access key (immediate revocation).
@@ -454,11 +460,6 @@ pub struct KinesisIngressResponse {
     pub iam_secret_access_key: Option<String>,
     pub shard_count: i32,
     pub created_at: DateTime<Utc>,
-}
-
-#[derive(Debug, Deserialize)]
-pub struct RotateCredentialsRequest {
-    // Empty body for now; kept as struct for future options (e.g. force_immediate).
 }
 
 // ---------------------------------------------------------------------------
@@ -592,8 +593,7 @@ pub async fn enable_kinesis_ingress_handler(
             .await
             .map_err(|e| AppError::Internal(format!("Kinesis provisioning: {e}")))?;
 
-    let secret_enc =
-        encrypt(&secret).map_err(|e| AppError::Internal(format!("encrypt: {e}")))?;
+    let secret_enc = encrypt(&secret).map_err(|e| AppError::Internal(format!("encrypt: {e}")))?;
 
     let org_id = org_id.ok_or(AppError::Unauthorized)?;
     let row = insert_kinesis_ingress_row(
@@ -697,7 +697,10 @@ pub async fn rotate_kinesis_credentials_handler(
 // Internal helper
 // ---------------------------------------------------------------------------
 
-fn row_to_response(row: KinesisIngressRow, plaintext_secret: Option<String>) -> KinesisIngressResponse {
+fn row_to_response(
+    row: KinesisIngressRow,
+    plaintext_secret: Option<String>,
+) -> KinesisIngressResponse {
     let contract_id = row.contract_id;
     KinesisIngressResponse {
         id: row.id,
