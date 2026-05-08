@@ -639,6 +639,48 @@ export const disableKafkaIngress = (contractId: string) =>
   });
 
 // ---------------------------------------------------------------------------
+// Kinesis Ingress (RFC-026)
+// ---------------------------------------------------------------------------
+
+export interface KinesisIngressConfig {
+  id: string;
+  contract_id: string;
+  enabled: boolean;
+  aws_region: string;
+  stream_raw: string;
+  stream_clean: string;
+  stream_quarantine: string;
+  raw_stream_arn: string | null;
+  clean_stream_arn: string | null;
+  quarantine_stream_arn: string | null;
+  iam_access_key_id: string | null;
+  /** Only present immediately after enabling or credential rotation — shown once. */
+  iam_secret_access_key?: string;
+  shard_count: number;
+  created_at: string;
+}
+
+export const getKinesisIngress = (contractId: string) =>
+  apiFetch<KinesisIngressConfig>(`/contracts/${contractId}/kinesis-ingress`);
+
+export const enableKinesisIngress = (contractId: string) =>
+  apiFetch<KinesisIngressConfig>(
+    `/contracts/${contractId}/kinesis-ingress/enable`,
+    { method: "POST" }
+  );
+
+export const disableKinesisIngress = (contractId: string) =>
+  apiFetch<void>(`/contracts/${contractId}/kinesis-ingress/disable`, {
+    method: "DELETE",
+  });
+
+export const rotateKinesisCredentials = (contractId: string) =>
+  apiFetch<KinesisIngressConfig>(
+    `/contracts/${contractId}/kinesis-ingress/rotate-credentials`,
+    { method: "POST" }
+  );
+
+// ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 

@@ -48,6 +48,7 @@ import { YamlTab } from "./_tabs/yaml";
 import { VersionsTab } from "./_tabs/versions";
 import { QuarantineTab } from "./_tabs/quarantine";
 import { KafkaTab } from "./_tabs/kafka";
+import { KinesisTab } from "./_tabs/kinesis";
 import {
   pickDefaultVersion,
   newestVersionString,
@@ -92,7 +93,7 @@ function EditContractModal({
   const [ghSyncError, setGhSyncError] = useState<string | null>(null);
 
   // Modal-level tab state
-  type ModalTab = "yaml" | "versions" | "kafka";
+  type ModalTab = "yaml" | "versions" | "kafka" | "kinesis";
   const [modalTab, setModalTab] = useState<ModalTab>("yaml");
   const [nameHistory, setNameHistory] = useState<NameHistoryEntry[] | null>(null);
   const [loadingNameHistory, setLoadingNameHistory] = useState(false);
@@ -370,6 +371,17 @@ function EditContractModal({
             >
               Kafka
             </button>
+            <button
+              onClick={() => setModalTab("kinesis")}
+              className={clsx(
+                "px-4 py-2 text-sm font-medium rounded-t-lg transition-colors border-b-2 -mb-px",
+                modalTab === "kinesis"
+                  ? "text-slate-100 border-emerald-500"
+                  : "text-slate-500 hover:text-slate-300 border-transparent"
+              )}
+            >
+              Kinesis
+            </button>
           </div>
         )}
 
@@ -394,6 +406,8 @@ function EditContractModal({
             />
           ) : modalTab === "kafka" ? (
             <KafkaTab contractId={contractId} />
+          ) : modalTab === "kinesis" ? (
+            <KinesisTab contractId={contractId} />
           ) : (
             <VersionsTab
               contractId={contractId}
