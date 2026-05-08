@@ -50,6 +50,11 @@ scaffold = ["rdkafka"]
 # Not in default so `cargo check` / `cargo test` work without system deps.
 kafka-ingress = ["rdkafka", "aes-gcm"]
 
+# kinesis-ingress: platform-side consumer loop for RFC-026.
+# Pure-Rust AWS SDK crates — no system deps beyond tokio.
+# Not in default so `cargo check` / `cargo test` work on any host.
+kinesis-ingress = ["dep:aws-sdk-kinesis", "dep:aws-sdk-iam", "dep:aws-config", "aes-gcm"]
+
 [dependencies]
 # Web framework
 axum = { version = "0.8", features = ["macros"] }
@@ -143,9 +148,15 @@ metrics-exporter-prometheus = { version = "0.16", default-features = false, feat
 # `cargo check` / `cargo build` work on any host without system deps.
 rdkafka = { version = "0.39", features = ["tokio", "sasl", "cmake-build"], optional = true }
 
-# AES-256-GCM encryption for Confluent API secrets at rest (RFC-025).
+# AES-256-GCM encryption for secrets at rest (RFC-025 Confluent, RFC-026 IAM).
 # Pure-Rust, no system deps.
 aes-gcm = { version = "0.10", optional = true }
+
+# AWS SDK for Kinesis ingress (RFC-026). Pure-Rust, no system deps.
+# Gated behind `kinesis-ingress` feature — not compiled in default builds.
+aws-sdk-kinesis = { version = "1", optional = true }
+aws-sdk-iam = { version = "1", optional = true }
+aws-config = { version = "1", optional = true }
 
 [dev-dependencies]
 axum-test = "20"

@@ -54,6 +54,8 @@ mod infer_proto;
 mod ingest;
 mod kafka_consumer;
 mod kafka_ingress;
+mod kinesis_consumer;
+mod kinesis_ingress;
 pub mod observability;
 mod odcs;
 mod rate_limit;
@@ -97,6 +99,8 @@ pub struct AppState {
     pub stream_demo: std::sync::Arc<stream_demo::StreamDemoState>,
     /// RFC-025: platform-side Kafka consumer pool (one task per enabled contract).
     pub kafka_consumers: kafka_consumer::ConsumerPool,
+    /// RFC-026: platform-side Kinesis consumer pool (one task per enabled contract).
+    pub kinesis_consumers: kinesis_consumer::ConsumerPool,
 }
 
 impl AppState {
@@ -109,6 +113,7 @@ impl AppState {
             rate_limiter: Arc::new(rate_limit::RateLimitState::default()),
             stream_demo: std::sync::Arc::new(stream_demo::StreamDemoState::new()),
             kafka_consumers: kafka_consumer::ConsumerPool::new(),
+            kinesis_consumers: kinesis_consumer::ConsumerPool::new(),
         }
     }
 
@@ -838,6 +843,23 @@ fn build_router(state: Arc<AppState>) -> Router {
             "/contracts/{id}/kafka-ingress/disable",
             axum::routing::delete(kafka_ingress::disable_kafka_ingress_handler),
         )
+        // Kinesis Ingress (RFC-026)
+        .route(
+            "/contracts/{id}/kinesis-ingress",
+            get(kinesis_ingress::get_kinesis_ingress_handler),
+        )
+        .route(
+            "/contracts/{id}/kinesis-ingress/enable",
+            post(kinesis_ingress::enable_kinesis_ingress_handler),
+        )
+        .route(
+            "/contracts/{id}/kinesis-ingress/disable",
+            axum::routing::delete(kinesis_ingress::disable_kinesis_ingress_handler),
+        )
+        .route(
+            "/contracts/{id}/kinesis-ingress/rotate-credentials",
+            post(kinesis_ingress::rotate_kinesis_credentials_handler),
+        )
         // Audit + stats
         .route("/audit", get(audit_log_handler))
         .route("/stats", get(global_stats_handler))
@@ -921,6 +943,8 @@ async fn main() -> anyhow::Result<()> {
     // Runs in the background; boot is not blocked if Confluent is unavailable.
     state.kafka_consumers.restore_all(Arc::clone(&state)).await;
     tracing::info!("kafka consumer pool restored");
+    state.kinesis_consumers.restore_all(Arc::clone(&state)).await;
+    tracing::info!("kinesis consumer pool restored");
 
     // Spawn background gauge-refresh tasks (RFC-016 §Decisions Q5).
     // Must be spawned after the pool is created and the recorder is installed.
