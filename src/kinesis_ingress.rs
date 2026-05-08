@@ -123,10 +123,12 @@ pub fn stream_quarantine(contract_id: Uuid) -> String {
     format!("cg-{contract_id}-quarantine")
 }
 
+#[cfg(feature = "kinesis-ingress")]
 fn iam_user_name(contract_id: Uuid) -> String {
     format!("cg-kinesis-{contract_id}")
 }
 
+#[cfg(feature = "kinesis-ingress")]
 fn iam_policy_name(contract_id: Uuid) -> String {
     format!("cg-kinesis-policy-{contract_id}")
 }
@@ -486,6 +488,7 @@ pub async fn get_kinesis_ingress_row(
     Ok(row)
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn insert_kinesis_ingress_row(
     pool: &PgPool,
     contract_id: Uuid,
