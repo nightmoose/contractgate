@@ -27,8 +27,9 @@ mod inner {
     use std::sync::Arc;
     use std::time::{Duration, Instant};
 
+    use aws_config::BehaviorVersion;
     use aws_sdk_kinesis::{
-        config::{BehaviorVersion, Credentials, Region},
+        config::{Credentials, Region},
         types::ShardIteratorType,
         Client as KinesisClient,
     };
