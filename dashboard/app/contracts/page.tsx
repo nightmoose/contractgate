@@ -14,11 +14,12 @@
  *                           ReplaySummaryModal, inferFields, buildYaml, etc.
  */
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import useSWR, { mutate } from "swr";
 import AuthGate from "@/components/AuthGate";
 import { useOrg } from "@/lib/org";
+import { createClient } from "@/lib/supabase/client";
 import {
   listContracts,
   getContract,
@@ -515,17 +516,63 @@ function EditContractModal({
 }
 
 // ---------------------------------------------------------------------------
+// Deploy metadata — sourced from active_contracts_public (RFC-028)
+// ---------------------------------------------------------------------------
+
+interface DeployMeta {
+  name: string;
+  version: string;
+  source: string | null;
+  deployed_at: string | null;
+  deployed_by: string | null;
+}
+
+/** Query active_contracts_public and return a map keyed by contract name. */
+function useDeployMeta(): Map<string, DeployMeta> {
+  const [meta, setMeta] = useState<Map<string, DeployMeta>>(new Map());
+
+  useEffect(() => {
+    const supabase = createClient();
+    supabase
+      .from("active_contracts_public")
+      .select("name, version, source, deployed_at, deployed_by")
+      .then(({ data }) => {
+        if (!data) return;
+        const m = new Map<string, DeployMeta>();
+        for (const row of data as DeployMeta[]) {
+          // Keep the newest deployed_at per name if multiple stable versions exist
+          const existing = m.get(row.name);
+          if (!existing || (row.deployed_at ?? "") > (existing.deployed_at ?? "")) {
+            m.set(row.name, row);
+          }
+        }
+        setMeta(m);
+      });
+  }, []);
+
+  return meta;
+}
+
+function fmtDeployedAt(iso: string | null): string {
+  if (!iso) return "";
+  const d = new Date(iso);
+  return d.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
+}
+
+// ---------------------------------------------------------------------------
 // ContractList
 // ---------------------------------------------------------------------------
 
 function ContractList({
   contracts,
   isLoading,
+  deployMeta,
   onDelete,
   onEdit,
 }: {
   contracts?: ContractSummary[];
   isLoading: boolean;
+  deployMeta: Map<string, DeployMeta>;
   onDelete: (id: string) => void;
   onEdit: (id: string) => void;
 }) {
@@ -540,53 +587,75 @@ function ContractList({
   }
   return (
     <div className="space-y-3">
-      {contracts.map((c) => (
-        <div
-          key={c.id}
-          className="bg-[#111827] border border-[#1f2937] rounded-xl p-5 flex items-center justify-between"
-        >
-          <div>
-            <div className="flex items-center gap-3 flex-wrap">
-              <h3 className="font-semibold text-slate-200">{c.name}</h3>
-              {c.latest_stable_version ? (
-                <span className="text-xs px-2 py-0.5 rounded-full font-medium bg-green-900/40 text-green-400">
-                  stable v{c.latest_stable_version}
+      {contracts.map((c) => {
+        const dm = deployMeta.get(c.name);
+        return (
+          <div
+            key={c.id}
+            className="bg-[#111827] border border-[#1f2937] rounded-xl p-5 flex items-center justify-between"
+          >
+            <div className="min-w-0 flex-1 mr-4">
+              <div className="flex items-center gap-3 flex-wrap">
+                <h3 className="font-semibold text-slate-200">{c.name}</h3>
+                {c.latest_stable_version ? (
+                  <span className="text-xs px-2 py-0.5 rounded-full font-medium bg-green-900/40 text-green-400">
+                    stable v{c.latest_stable_version}
+                  </span>
+                ) : (
+                  <span className="text-xs px-2 py-0.5 rounded-full font-medium bg-amber-900/40 text-amber-400">
+                    no stable yet
+                  </span>
+                )}
+                <span className="text-xs text-slate-500">
+                  {c.version_count} version{c.version_count === 1 ? "" : "s"}
                 </span>
-              ) : (
-                <span className="text-xs px-2 py-0.5 rounded-full font-medium bg-amber-900/40 text-amber-400">
-                  no stable yet
-                </span>
-              )}
-              <span className="text-xs text-slate-500">
-                {c.version_count} version{c.version_count === 1 ? "" : "s"}
-              </span>
-              {c.multi_stable_resolution === "fallback" && (
-                <span
-                  className="text-xs px-2 py-0.5 rounded-full bg-indigo-900/40 text-indigo-300"
-                  title="Unpinned traffic falls back across stables on failure"
-                >
-                  fallback
-                </span>
-              )}
+                {c.multi_stable_resolution === "fallback" && (
+                  <span
+                    className="text-xs px-2 py-0.5 rounded-full bg-indigo-900/40 text-indigo-300"
+                    title="Unpinned traffic falls back across stables on failure"
+                  >
+                    fallback
+                  </span>
+                )}
+                {/* RFC-028 deploy metadata badges */}
+                {dm?.source && (
+                  <span className="text-xs px-2 py-0.5 rounded-full bg-sky-900/40 text-sky-300 font-medium">
+                    {dm.source}
+                  </span>
+                )}
+              </div>
+              <div className="flex items-center gap-3 mt-1.5 flex-wrap">
+                <p className="text-xs text-slate-600 font-mono">{c.id}</p>
+                {dm?.deployed_at && (
+                  <span
+                    className="text-xs text-slate-500"
+                    title={`Deployed ${dm.deployed_at}${dm.deployed_by ? ` by ${dm.deployed_by}` : ""}`}
+                  >
+                    deployed {fmtDeployedAt(dm.deployed_at)}
+                    {dm.deployed_by && (
+                      <span className="text-slate-600"> · {dm.deployed_by}</span>
+                    )}
+                  </span>
+                )}
+              </div>
             </div>
-            <p className="text-xs text-slate-600 mt-1 font-mono">{c.id}</p>
+            <div className="flex items-center gap-2 shrink-0">
+              <button
+                onClick={() => onEdit(c.id)}
+                className="px-3 py-1.5 text-xs bg-indigo-900/30 hover:bg-indigo-900/50 text-indigo-400 rounded-lg transition-colors"
+              >
+                Edit / View
+              </button>
+              <button
+                onClick={() => onDelete(c.id)}
+                className="px-3 py-1.5 text-xs bg-red-900/30 hover:bg-red-900/50 text-red-400 rounded-lg transition-colors"
+              >
+                Delete
+              </button>
+            </div>
           </div>
-          <div className="flex items-center gap-2">
-            <button
-              onClick={() => onEdit(c.id)}
-              className="px-3 py-1.5 text-xs bg-indigo-900/30 hover:bg-indigo-900/50 text-indigo-400 rounded-lg transition-colors"
-            >
-              Edit / View
-            </button>
-            <button
-              onClick={() => onDelete(c.id)}
-              className="px-3 py-1.5 text-xs bg-red-900/30 hover:bg-red-900/50 text-red-400 rounded-lg transition-colors"
-            >
-              Delete
-            </button>
-          </div>
-        </div>
-      ))}
+        );
+      })}
     </div>
   );
 }
@@ -945,6 +1014,32 @@ function ContractsContent() {
   const [showImport, setShowImport] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
 
+  // RFC-028: search + source filter
+  const [query, setQuery] = useState("");
+  const [sourceFilter, setSourceFilter] = useState<string>("all");
+  const deployMeta = useDeployMeta();
+
+  // Unique sources from deploy metadata, sorted
+  const availableSources = useMemo(() => {
+    const s = new Set<string>();
+    deployMeta.forEach((dm) => { if (dm.source) s.add(dm.source); });
+    return Array.from(s).sort();
+  }, [deployMeta]);
+
+  // Filtered + searched contract list
+  const filteredContracts = useMemo(() => {
+    if (!contracts) return contracts;
+    let list = contracts;
+    if (query.trim()) {
+      const q = query.trim().toLowerCase();
+      list = list.filter((c) => c.name.toLowerCase().includes(q));
+    }
+    if (sourceFilter !== "all") {
+      list = list.filter((c) => deployMeta.get(c.name)?.source === sourceFilter);
+    }
+    return list;
+  }, [contracts, query, sourceFilter, deployMeta]);
+
   const handleDelete = async (id: string) => {
     if (!confirm("Delete this contract? This cannot be undone.")) return;
     await deleteContract(id);
@@ -1013,10 +1108,57 @@ function ContractsContent() {
 
       {tab === "list" && (
         <>
+          {/* RFC-028: search + source filter */}
+          <div className="flex items-center gap-3 mb-4 flex-wrap">
+            <div className="relative flex-1 min-w-[200px] max-w-sm">
+              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 text-sm pointer-events-none">
+                🔍
+              </span>
+              <input
+                type="text"
+                placeholder="Search contracts…"
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                className="w-full pl-8 pr-4 py-2 bg-[#111827] border border-[#1f2937] rounded-lg text-sm text-slate-200 placeholder-slate-600 outline-none focus:border-indigo-600 transition-colors"
+              />
+            </div>
+            {availableSources.length > 0 && (
+              <select
+                value={sourceFilter}
+                onChange={(e) => setSourceFilter(e.target.value)}
+                className="px-3 py-2 bg-[#111827] border border-[#1f2937] rounded-lg text-sm text-slate-300 outline-none focus:border-indigo-600 transition-colors"
+              >
+                <option value="all">All sources</option>
+                {availableSources.map((s) => (
+                  <option key={s} value={s}>{s}</option>
+                ))}
+              </select>
+            )}
+            {(query || sourceFilter !== "all") && (
+              <button
+                onClick={() => { setQuery(""); setSourceFilter("all"); }}
+                className="text-xs text-slate-500 hover:text-slate-300 transition-colors"
+              >
+                ✕ Clear
+              </button>
+            )}
+            {!isLoading && contracts && filteredContracts && filteredContracts.length !== contracts.length && (
+              <span className="text-xs text-slate-500 ml-auto">
+                {filteredContracts.length} of {contracts.length}
+              </span>
+            )}
+          </div>
+
           {showCreate && (
             <ManualCreatePanel onCancel={() => setShowCreate(false)} onCreated={() => setShowCreate(false)} />
           )}
-          <ContractList contracts={contracts} isLoading={isLoading} onDelete={handleDelete} onEdit={(id) => setEditingId(id)} />
+          <ContractList
+            contracts={filteredContracts}
+            isLoading={isLoading}
+            deployMeta={deployMeta}
+            onDelete={handleDelete}
+            onEdit={(id) => setEditingId(id)}
+          />
         </>
       )}
       {tab === "build" && <VisualBuilder onSaved={() => setTab("list")} />}
