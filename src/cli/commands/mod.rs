@@ -1,3 +1,4 @@
+pub mod deploy;
 pub mod enforce;
 pub mod pull;
 pub mod push;

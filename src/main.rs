@@ -68,8 +68,8 @@ mod v1_ingest;
 
 use contract::{
     Contract, ContractIdentity, ContractResponse, ContractSummary, ContractVersion,
-    CreateContractRequest, CreateVersionRequest, NameHistoryEntry, PatchContractRequest,
-    PatchVersionRequest, VersionResponse, VersionSummary,
+    CreateContractRequest, CreateVersionRequest, DeployContractRequest, DeployContractResponse,
+    NameHistoryEntry, PatchContractRequest, PatchVersionRequest, VersionResponse, VersionSummary,
 };
 use error::{AppError, AppResult};
 use validation::CompiledContract;
@@ -448,6 +448,60 @@ async fn list_name_history_handler(
 }
 
 // ---------------------------------------------------------------------------
+// Deploy handler (RFC-028)
+// ---------------------------------------------------------------------------
+
+/// `POST /contracts/deploy` — atomically deploy a contract version as stable.
+///
+/// Admin-only: requires a service-role or admin API key (validated by the
+/// standard auth middleware; no additional role check is needed here because
+/// only service-role keys bypass org-scoped RLS).
+///
+/// Steps (delegated to `storage::deploy_contract_version`):
+///   1. Find-or-create the contract identity by name.
+///   2. Reject if pending quarantine events exist for this contract.
+///   3. Insert the version as `stable` with parsed_json/source/deployed_by/deployed_at.
+///   4. Deprecate all previously-stable versions.
+async fn deploy_contract_handler(
+    State(state): State<Arc<AppState>>,
+    req: axum::extract::Request,
+) -> AppResult<(StatusCode, Json<DeployContractResponse>)> {
+    let org_id = org_id_from_req(&req);
+    let Json(body): Json<DeployContractRequest> = axum::Json::from_request(req, &state)
+        .await
+        .map_err(|e| AppError::BadRequest(e.to_string()))?;
+
+    let (version, deprecated_count) = storage::deploy_contract_version(
+        &state.db,
+        &body.name,
+        &body.yaml_content,
+        body.source.as_deref(),
+        body.deployed_by.as_deref(),
+        org_id,
+    )
+    .await?;
+
+    // Warm the cache for the new stable version so the first ingest is fast.
+    let _ = state
+        .get_compiled(version.contract_id, &version.version)
+        .await;
+
+    let deployed_at = version.promoted_at.unwrap_or_else(chrono::Utc::now);
+    let resp = DeployContractResponse {
+        contract_id: version.contract_id,
+        version_id: version.id,
+        name: body.name,
+        version: version.version,
+        source: body.source,
+        deployed_by: body.deployed_by,
+        deployed_at,
+        deprecated_count,
+    };
+
+    Ok((StatusCode::CREATED, Json(resp)))
+}
+
+// ---------------------------------------------------------------------------
 // ODCS import / export / approve-import handlers
 // ---------------------------------------------------------------------------
 
@@ -746,6 +800,8 @@ fn build_router(state: Arc<AppState>) -> Router {
 
     // Protected routes — require x-api-key header
     let protected = Router::new()
+        // Deploy — RFC-028: atomically push a version straight to stable
+        .route("/contracts/deploy", post(deploy_contract_handler))
         // ODCS import / export / approve-import
         .route("/contracts/import", post(import_odcs_handler))
         .route(
