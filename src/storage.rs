@@ -530,6 +530,150 @@ pub async fn deprecate_version(
     row.into_version()
 }
 
+/// Atomically deploy a contract version (RFC-028).
+///
+/// Steps (in one transaction):
+///   1. Find or create the contract identity by name.
+///   2. Guard: reject if any pending quarantine events exist for this contract.
+///   3. Insert a new `stable` version with `parsed_json`, `source`,
+///      `deployed_by`, and `deployed_at` populated.
+///   4. Deprecate all other `stable` versions for this contract.
+///
+/// Returns the new version row and the count of versions deprecated.
+///
+/// Admin-only at the API layer — this function does not enforce roles itself.
+pub async fn deploy_contract_version(
+    pool: &PgPool,
+    name: &str,
+    yaml_content: &str,
+    source: Option<&str>,
+    deployed_by: Option<&str>,
+    org_id: Option<Uuid>,
+) -> AppResult<(ContractVersion, i64)> {
+    // Parse YAML and extract version — fail fast before touching the DB.
+    let parsed: crate::contract::Contract = serde_yaml::from_str(yaml_content)
+        .map_err(|e| AppError::InvalidContractYaml(e.to_string()))?;
+    let version = parsed.version.clone();
+    let compliance_mode = parsed.compliance_mode;
+    let parsed_json = serde_json::to_value(&parsed)
+        .map_err(|e| AppError::Internal(format!("contract json serialization: {e}")))?;
+
+    let mut tx = pool.begin().await?;
+
+    // ── 1. Find or create contract identity by name ───────────────────────────
+    let maybe_identity = sqlx::query_as::<_, ContractIdentityRow>(
+        r#"
+        SELECT id, name, description, multi_stable_resolution, created_at, updated_at, pii_salt
+        FROM contracts
+        WHERE name = $1
+        "#,
+    )
+    .bind(name)
+    .fetch_optional(&mut *tx)
+    .await?;
+
+    let contract_id = match maybe_identity {
+        Some(row) => row.id,
+        None => {
+            // Create a new contract identity.  pii_salt uses DB default gen_random_bytes(32).
+            let id = Uuid::new_v4();
+            sqlx::query(
+                r#"
+                INSERT INTO contracts (id, name, org_id)
+                VALUES ($1, $2, $3)
+                "#,
+            )
+            .bind(id)
+            .bind(name)
+            .bind(org_id)
+            .execute(&mut *tx)
+            .await
+            .db_op("deploy_contract:create_identity")?;
+            id
+        }
+    };
+
+    // ── 2. Quarantine guard — refuse if pending events exist ──────────────────
+    let pending_count: i64 = sqlx::query_scalar(
+        r#"
+        SELECT COUNT(*)
+        FROM quarantine_events
+        WHERE contract_id = $1
+          AND status = 'pending'
+        "#,
+    )
+    .bind(contract_id)
+    .fetch_one(&mut *tx)
+    .await
+    .unwrap_or(0);
+
+    if pending_count > 0 {
+        return Err(AppError::BadRequest(format!(
+            "contract '{}' has {} pending quarantine event(s); resolve them before deploying a new version",
+            name, pending_count
+        )));
+    }
+
+    // ── 3. Insert the new version as stable ───────────────────────────────────
+    let version_id = Uuid::new_v4();
+    let now = chrono::Utc::now();
+
+    let row = sqlx::query_as::<_, ContractVersionRow>(
+        r#"
+        INSERT INTO contract_versions
+            (id, contract_id, version, state, yaml_content, created_at,
+             promoted_at, compliance_mode, import_source, requires_review,
+             source, deployed_by, deployed_at, parsed_json)
+        VALUES ($1, $2, $3, 'stable', $4, $5,
+                $5, $6, 'native', FALSE,
+                $7, $8, $5, $9)
+        RETURNING id, contract_id, version, state, yaml_content,
+                  created_at, promoted_at, deprecated_at, compliance_mode,
+                  import_source, requires_review
+        "#,
+    )
+    .bind(version_id)
+    .bind(contract_id)
+    .bind(&version)
+    .bind(yaml_content)
+    .bind(now)
+    .bind(compliance_mode)
+    .bind(source)
+    .bind(deployed_by)
+    .bind(parsed_json)
+    .fetch_one(&mut *tx)
+    .await
+    .map_err(|e| match &e {
+        sqlx::Error::Database(db) if db.code().as_deref() == Some("23505") => {
+            AppError::VersionConflict {
+                contract_id,
+                version: version.clone(),
+            }
+        }
+        _ => AppError::from(e),
+    })?;
+
+    // ── 4. Deprecate all other stable versions for this contract ──────────────
+    let deprecated_result = sqlx::query(
+        r#"
+        UPDATE contract_versions
+        SET state = 'deprecated', deprecated_at = NOW()
+        WHERE contract_id = $1
+          AND state = 'stable'
+          AND id <> $2
+        "#,
+    )
+    .bind(contract_id)
+    .bind(version_id)
+    .execute(&mut *tx)
+    .await?;
+    let deprecated_count = deprecated_result.rows_affected() as i64;
+
+    tx.commit().await?;
+
+    Ok((row.into_version()?, deprecated_count))
+}
+
 /// Delete a draft version.  Postgres trigger enforces the draft-only rule
 /// as well — so even a direct SQL hit cannot remove a stable/deprecated
 /// row.

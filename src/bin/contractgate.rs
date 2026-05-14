@@ -6,7 +6,7 @@
 
 use clap::{Parser, Subcommand};
 use contractgate::cli::{
-    commands::{enforce, pull, push, scaffold, validate},
+    commands::{deploy, enforce, pull, push, scaffold, validate},
     config::CliConfig,
 };
 use std::{path::PathBuf, process};
@@ -34,6 +34,17 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Cmd {
+    /// Atomically deploy a contract YAML directly to stable (RFC-028).
+    ///
+    /// Finds-or-creates the contract by name, inserts the version as stable,
+    /// and deprecates all prior stable versions.  Rejected if pending
+    /// quarantine events exist.  Admin / service-role key required.
+    ///
+    /// Examples:
+    ///   cg deploy-contract contracts/orders.yaml --source yardi --deployed-by ci-job-42
+    ///   cg deploy-contract contracts/events.yaml --dry-run
+    #[command(name = "deploy-contract")]
+    DeployContract(deploy::DeployArgs),
     /// Walk contracts dir, parse YAML, push to gateway.
     Push(push::PushArgs),
     /// Pull contracts from gateway and write as YAML files.
@@ -76,6 +87,11 @@ fn main() {
 
     let exit_code = match &cli.command {
         Cmd::Validate(args) => validate::run(args, &cfg),
+
+        Cmd::DeployContract(args) => {
+            let key = require_api_key(&cli.api_key);
+            deploy::run(args, &cfg, &key)
+        }
 
         Cmd::Push(args) => {
             let key = require_api_key(&cli.api_key);

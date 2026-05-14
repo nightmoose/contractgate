@@ -540,6 +540,42 @@ pub struct NameHistoryEntry {
 // API request / response models
 // ---------------------------------------------------------------------------
 
+/// Request body for `POST /contracts/deploy` (RFC-028).
+///
+/// Atomically: find-or-create the contract identity by name, insert the
+/// version as `stable` (parsed_json generated at call time), and deprecate
+/// all prior stable versions — unless pending quarantine events exist, in
+/// which case the call is rejected to preserve the causal audit chain.
+///
+/// Admin-only: the endpoint requires a service-role API key.
+#[derive(Debug, Deserialize)]
+pub struct DeployContractRequest {
+    /// Contract name — matches `Contract.name` in the YAML.
+    pub name: String,
+    /// Raw YAML.  Parsed server-side; version extracted from the YAML itself.
+    pub yaml_content: String,
+    /// PMS vendor or logical feed name (e.g. "yardi", "realpage", "entrata").
+    #[serde(default)]
+    pub source: Option<String>,
+    /// CI job ID or username that triggered the deploy.
+    #[serde(default)]
+    pub deployed_by: Option<String>,
+}
+
+/// Response for `POST /contracts/deploy` — the newly stable version.
+#[derive(Debug, Serialize)]
+pub struct DeployContractResponse {
+    pub contract_id: uuid::Uuid,
+    pub version_id: uuid::Uuid,
+    pub name: String,
+    pub version: String,
+    pub source: Option<String>,
+    pub deployed_by: Option<String>,
+    pub deployed_at: chrono::DateTime<chrono::Utc>,
+    /// How many prior stable versions were deprecated.
+    pub deprecated_count: i64,
+}
+
 /// Request body for `POST /contracts` — identity + initial v1.0.0 draft in
 /// a single transactional call.
 #[derive(Debug, Deserialize)]
