@@ -24,8 +24,8 @@
 #[cfg(test)]
 mod fixtures {
     use crate::contract::{
-        Contract, FieldDefinition, FieldType, GlossaryEntry, MetricDefinition, Ontology,
-        QualityRule,
+        Contract, EgressLeakageMode, FieldDefinition, FieldType, GlossaryEntry, MetricDefinition,
+        Ontology, QualityRule,
     };
 
     /// A minimum-defaults `FieldDefinition`.  Use when a test only cares
@@ -79,6 +79,7 @@ mod fixtures {
             name: name.to_string(),
             description: None,
             compliance_mode: false,
+            egress_leakage_mode: EgressLeakageMode::Off,
             ontology: Ontology { entities },
             glossary: vec![],
             metrics: vec![],
@@ -102,6 +103,7 @@ mod fixtures {
             name: name.to_string(),
             description: description.map(str::to_string),
             compliance_mode: false,
+            egress_leakage_mode: EgressLeakageMode::Off,
             ontology: Ontology { entities },
             glossary,
             metrics,
@@ -601,8 +603,9 @@ metrics: []
 #[cfg(test)]
 mod versioning {
     use crate::contract::{
-        ContractVersion, CreateContractRequest, CreateVersionRequest, MultiStableResolution,
-        PatchContractRequest, PatchVersionRequest, VersionResponse, VersionState,
+        ContractVersion, CreateContractRequest, CreateVersionRequest, EgressLeakageMode,
+        MultiStableResolution, PatchContractRequest, PatchVersionRequest, VersionResponse,
+        VersionState,
     };
     use chrono::Utc;
     use serde_json::json;
@@ -727,6 +730,7 @@ mod versioning {
             promoted_at: promoted,
             deprecated_at: None,
             compliance_mode: false,
+            egress_leakage_mode: EgressLeakageMode::Off,
             import_source: crate::contract::ImportSource::Native,
             requires_review: false,
         };
@@ -753,8 +757,8 @@ mod versioning {
 mod odcs_tests {
     use super::fixtures::{contract_with, entity_with};
     use crate::contract::{
-        ContractIdentity, ContractVersion, FieldType, GlossaryEntry, ImportSource,
-        MetricDefinition, MultiStableResolution, VersionState,
+        ContractIdentity, ContractVersion, EgressLeakageMode, FieldType, GlossaryEntry,
+        ImportSource, MetricDefinition, MultiStableResolution, VersionState,
     };
     use crate::odcs;
     use chrono::Utc;
@@ -784,6 +788,7 @@ mod odcs_tests {
             promoted_at: Some(Utc::now()),
             deprecated_at: None,
             compliance_mode: false,
+            egress_leakage_mode: EgressLeakageMode::Off,
             import_source: ImportSource::Native,
             requires_review: false,
         }

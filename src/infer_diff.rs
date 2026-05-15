@@ -365,7 +365,7 @@ fn required_label(required: bool) -> &'static str {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::contract::{FieldType, Ontology};
+    use crate::contract::{EgressLeakageMode, FieldType, Ontology};
 
     fn make_contract(fields: Vec<FieldDefinition>) -> Contract {
         Contract {
@@ -373,6 +373,7 @@ mod tests {
             name: "test".to_string(),
             description: None,
             compliance_mode: false,
+            egress_leakage_mode: EgressLeakageMode::Off,
             ontology: Ontology { entities: fields },
             glossary: vec![],
             metrics: vec![],

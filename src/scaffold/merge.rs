@@ -8,7 +8,7 @@
 //!
 //! Developer tooling — not part of the patent-core validation engine.
 
-use crate::contract::{Contract, EgressLeakageMode, FieldDefinition, Ontology};
+use crate::contract::{Contract, FieldDefinition, Ontology};
 use std::collections::HashMap;
 
 // ---------------------------------------------------------------------------
@@ -199,7 +199,7 @@ fn ordered_f64_eq(a: Option<f64>, b: Option<f64>) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::contract::{FieldType, Ontology};
+    use crate::contract::{EgressLeakageMode, FieldType, Ontology};
 
     fn make_field(name: &str, ft: FieldType) -> FieldDefinition {
         FieldDefinition {

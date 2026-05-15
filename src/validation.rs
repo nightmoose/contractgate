@@ -55,8 +55,7 @@
 //!     never a panic or `Result::Err`.
 
 use crate::contract::{
-    Contract, EgressLeakageMode, FieldDefinition, FieldType, MetricDefinition, QualityRule,
-    QualityRuleType,
+    Contract, FieldDefinition, FieldType, MetricDefinition, QualityRule, QualityRuleType,
 };
 use regex::Regex;
 use serde_json::Value;
@@ -771,7 +770,7 @@ pub fn check_uniqueness_batch(rules: &[QualityRule], events: &[Value]) -> Vec<(u
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::contract::{FieldDefinition, FieldType, Ontology};
+    use crate::contract::{EgressLeakageMode, FieldDefinition, FieldType, Ontology};
     use serde_json::json;
 
     fn make_simple_contract() -> Contract {

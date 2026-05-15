@@ -14,8 +14,8 @@
 //! `name`; callers must NOT pass the salt to any outbound serializer.
 
 use crate::contract::{
-    Contract, ContractIdentity, ContractVersion, FieldDefinition, FieldType, ImportSource,
-    Ontology, QualityRule, QualityRuleType, UniqueScope, VersionState,
+    Contract, ContractIdentity, ContractVersion, EgressLeakageMode, FieldDefinition, FieldType,
+    ImportSource, Ontology, QualityRule, QualityRuleType, UniqueScope, VersionState,
 };
 use serde_yaml::{Mapping, Value};
 
@@ -479,6 +479,7 @@ fn import_mode_b(doc: &Mapping, version: String) -> Result<ImportResult, String>
         name,
         description,
         compliance_mode: false,
+        egress_leakage_mode: EgressLeakageMode::Off,
         ontology: Ontology { entities },
         glossary: vec![],
         metrics: vec![],

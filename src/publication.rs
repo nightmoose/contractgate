@@ -16,9 +16,9 @@
 //!   - `org`:    scoped to RFC-033 (not yet enforced; treated as `link` for now).
 
 use axum::{
-    extract::{Path, Query, State},
+    extract::{FromRequest, Path, Query, State},
     http::StatusCode,
-    response::{IntoResponse, Json},
+    response::Json,
 };
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
@@ -26,7 +26,7 @@ use uuid::Uuid;
 
 use crate::contract::{ImportMode, PublicationVisibility};
 use crate::error::{AppError, AppResult};
-use crate::storage::{self, ImportStatusResult, PublicationRow};
+use crate::storage::{self, ImportStatusResult};
 use crate::AppState;
 
 // ---------------------------------------------------------------------------

@@ -24,11 +24,11 @@
 //! It is never stored in `contract_collaborators`.
 
 use axum::{
-    extract::{Path, State},
+    extract::{FromRequest, Path, State},
     http::StatusCode,
     response::Json,
 };
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use std::sync::Arc;
 use uuid::Uuid;
 
@@ -50,6 +50,7 @@ pub enum CallerRole {
 }
 
 impl CallerRole {
+    #[allow(dead_code)]
     pub fn from_str(s: &str) -> Option<Self> {
         match s {
             "owner" => Some(Self::Owner),

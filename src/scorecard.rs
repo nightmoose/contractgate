@@ -556,8 +556,9 @@ mod tests {
 
     #[test]
     fn csv_value_with_quotes() {
-        // Inner " → "" per RFC 4180.
-        assert_eq!(escape_csv(r#"say "hi""#), r#""say ""hi"""#);
+        // Inner " → "" per RFC 4180; result is wrapped in quotes.
+        // say "hi"  →  "say ""hi"""
+        assert_eq!(escape_csv(r#"say "hi""#), "\"say \"\"hi\"\"\"");
     }
 
     #[test]
