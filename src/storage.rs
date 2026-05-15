@@ -2288,10 +2288,7 @@ pub struct ProposalRow {
 
 /// Return the `org_id` of the org that owns a contract by name.
 /// Returns `None` if no such contract exists (or it is deleted).
-pub async fn get_contract_owner_org(
-    pool: &PgPool,
-    contract_name: &str,
-) -> AppResult<Option<Uuid>> {
+pub async fn get_contract_owner_org(pool: &PgPool, contract_name: &str) -> AppResult<Option<Uuid>> {
     let row: Option<(Uuid,)> = sqlx::query_as(
         r#"
         SELECT org_id FROM contracts

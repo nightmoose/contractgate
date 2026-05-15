@@ -237,8 +237,10 @@ pub async fn query_drift_signals(pool: &PgPool, source: &str) -> AppResult<Vec<D
         .collect();
 
     // Build lookup: contract_name → total events.
-    let totals_map: std::collections::HashMap<String, i64> =
-        totals.into_iter().map(|r| (r.contract_name, r.total_events)).collect();
+    let totals_map: std::collections::HashMap<String, i64> = totals
+        .into_iter()
+        .map(|r| (r.contract_name, r.total_events))
+        .collect();
 
     // Step 4 — compare current rates to baseline; emit signals.
     let mut signals: Vec<DriftSignal> = Vec::new();
@@ -247,8 +249,8 @@ pub async fn query_drift_signals(pool: &PgPool, source: &str) -> AppResult<Vec<D
         let total = *totals_map.get(&fc.contract_name).unwrap_or(&1).max(&1);
         let current_rate = fc.cnt as f64 / total as f64;
 
-        if let Some(&baseline_rate) = baseline_map
-            .get(&(fc.contract_name.clone(), fc.field.clone()))
+        if let Some(&baseline_rate) =
+            baseline_map.get(&(fc.contract_name.clone(), fc.field.clone()))
         {
             let delta_pct = (current_rate - baseline_rate) * 100.0;
             if delta_pct.abs() >= DRIFT_THRESHOLD_PCT {
@@ -416,7 +418,10 @@ fn escape_csv(s: &str) -> String {
 /// The job is idempotent: re-running for the same date is safe (ON CONFLICT DO
 /// UPDATE).
 pub async fn run_baseline_rollup(pool: &PgPool) -> AppResult<()> {
-    tracing::info!("scorecard: starting daily baseline rollup ({}d window)", BASELINE_WINDOW_DAYS);
+    tracing::info!(
+        "scorecard: starting daily baseline rollup ({}d window)",
+        BASELINE_WINDOW_DAYS
+    );
 
     let upserted = sqlx::query(
         r#"INSERT INTO provider_field_baseline

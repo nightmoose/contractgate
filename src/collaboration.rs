@@ -52,11 +52,11 @@ pub enum CallerRole {
 impl CallerRole {
     pub fn from_str(s: &str) -> Option<Self> {
         match s {
-            "owner"    => Some(Self::Owner),
-            "editor"   => Some(Self::Editor),
+            "owner" => Some(Self::Owner),
+            "editor" => Some(Self::Editor),
             "reviewer" => Some(Self::Reviewer),
-            "viewer"   => Some(Self::Viewer),
-            _          => None,
+            "viewer" => Some(Self::Viewer),
+            _ => None,
         }
     }
 
@@ -65,10 +65,10 @@ impl CallerRole {
     /// Order: owner > reviewer > editor > viewer
     pub fn satisfies(self, min: CallerRole) -> bool {
         let rank = |r: CallerRole| match r {
-            CallerRole::Owner    => 4,
+            CallerRole::Owner => 4,
             CallerRole::Reviewer => 3,
-            CallerRole::Editor   => 2,
-            CallerRole::Viewer   => 1,
+            CallerRole::Editor => 2,
+            CallerRole::Viewer => 1,
         };
         rank(self) >= rank(min)
     }
@@ -93,10 +93,10 @@ async fn resolve_role(
     // Check collaborator table.
     let role_str = storage::get_collaborator_role(&state.db, contract_name, caller_org).await?;
     match role_str.as_deref() {
-        Some("editor")   => Ok(CallerRole::Editor),
+        Some("editor") => Ok(CallerRole::Editor),
         Some("reviewer") => Ok(CallerRole::Reviewer),
-        Some("viewer")   => Ok(CallerRole::Viewer),
-        _                => Err(AppError::Unauthorized),
+        Some("viewer") => Ok(CallerRole::Viewer),
+        _ => Err(AppError::Unauthorized),
     }
 }
 
@@ -177,10 +177,9 @@ pub async fn grant_collaborator_handler(
     let org_id = crate::org_id_from_req(&req);
     require_role(&state, &contract_name, org_id, CallerRole::Owner).await?;
 
-    let Json(body): Json<GrantCollaboratorRequest> =
-        axum::Json::from_request(req, &state)
-            .await
-            .map_err(|e| AppError::BadRequest(e.to_string()))?;
+    let Json(body): Json<GrantCollaboratorRequest> = axum::Json::from_request(req, &state)
+        .await
+        .map_err(|e| AppError::BadRequest(e.to_string()))?;
 
     validate_collaborator_role(&body.role)?;
     let granted_by = org_id.expect("owner check guarantees org_id is set");
@@ -207,15 +206,13 @@ pub async fn patch_collaborator_handler(
     let org_id = crate::org_id_from_req(&req);
     require_role(&state, &contract_name, org_id, CallerRole::Owner).await?;
 
-    let Json(body): Json<PatchCollaboratorRequest> =
-        axum::Json::from_request(req, &state)
-            .await
-            .map_err(|e| AppError::BadRequest(e.to_string()))?;
+    let Json(body): Json<PatchCollaboratorRequest> = axum::Json::from_request(req, &state)
+        .await
+        .map_err(|e| AppError::BadRequest(e.to_string()))?;
 
     validate_collaborator_role(&body.role)?;
-    let row =
-        storage::update_collaborator_role(&state.db, &contract_name, target_org, &body.role)
-            .await?;
+    let row = storage::update_collaborator_role(&state.db, &contract_name, target_org, &body.role)
+        .await?;
     Ok(Json(row))
 }
 
@@ -262,10 +259,9 @@ pub async fn add_comment_handler(
     require_role(&state, &contract_name, org_id, CallerRole::Viewer).await?;
 
     let caller_org = org_id.expect("viewer check guarantees org_id is set");
-    let Json(body): Json<AddCommentRequest> =
-        axum::Json::from_request(req, &state)
-            .await
-            .map_err(|e| AppError::BadRequest(e.to_string()))?;
+    let Json(body): Json<AddCommentRequest> = axum::Json::from_request(req, &state)
+        .await
+        .map_err(|e| AppError::BadRequest(e.to_string()))?;
 
     if body.body.trim().is_empty() {
         return Err(AppError::BadRequest("comment body cannot be empty".into()));
@@ -330,18 +326,16 @@ pub async fn create_proposal_handler(
     require_role(&state, &contract_name, org_id, CallerRole::Editor).await?;
 
     let caller_org = org_id.expect("editor check guarantees org_id is set");
-    let Json(body): Json<CreateProposalRequest> =
-        axum::Json::from_request(req, &state)
-            .await
-            .map_err(|e| AppError::BadRequest(e.to_string()))?;
+    let Json(body): Json<CreateProposalRequest> = axum::Json::from_request(req, &state)
+        .await
+        .map_err(|e| AppError::BadRequest(e.to_string()))?;
 
     if body.proposed_yaml.trim().is_empty() {
         return Err(AppError::BadRequest("proposed_yaml cannot be empty".into()));
     }
 
-    let row =
-        storage::create_proposal(&state.db, &contract_name, caller_org, &body.proposed_yaml)
-            .await?;
+    let row = storage::create_proposal(&state.db, &contract_name, caller_org, &body.proposed_yaml)
+        .await?;
     Ok((StatusCode::CREATED, Json(row)))
 }
 
@@ -359,10 +353,9 @@ pub async fn decide_proposal_handler(
     require_role(&state, &contract_name, org_id, CallerRole::Reviewer).await?;
 
     let caller_org = org_id.expect("reviewer check guarantees org_id is set");
-    let Json(body): Json<DecideProposalRequest> =
-        axum::Json::from_request(req, &state)
-            .await
-            .map_err(|e| AppError::BadRequest(e.to_string()))?;
+    let Json(body): Json<DecideProposalRequest> = axum::Json::from_request(req, &state)
+        .await
+        .map_err(|e| AppError::BadRequest(e.to_string()))?;
 
     let new_status = match body.decision.as_str() {
         "approved" => "approved",
@@ -374,8 +367,7 @@ pub async fn decide_proposal_handler(
         }
     };
 
-    let row =
-        storage::decide_proposal(&state.db, proposal_id, new_status, caller_org).await?;
+    let row = storage::decide_proposal(&state.db, proposal_id, new_status, caller_org).await?;
     Ok(Json(row))
 }
 
@@ -456,12 +448,12 @@ mod tests {
 
     #[test]
     fn caller_role_from_str_all_variants() {
-        assert_eq!(CallerRole::from_str("owner"),    Some(CallerRole::Owner));
-        assert_eq!(CallerRole::from_str("editor"),   Some(CallerRole::Editor));
+        assert_eq!(CallerRole::from_str("owner"), Some(CallerRole::Owner));
+        assert_eq!(CallerRole::from_str("editor"), Some(CallerRole::Editor));
         assert_eq!(CallerRole::from_str("reviewer"), Some(CallerRole::Reviewer));
-        assert_eq!(CallerRole::from_str("viewer"),   Some(CallerRole::Viewer));
-        assert_eq!(CallerRole::from_str("admin"),    None);
-        assert_eq!(CallerRole::from_str(""),         None);
+        assert_eq!(CallerRole::from_str("viewer"), Some(CallerRole::Viewer));
+        assert_eq!(CallerRole::from_str("admin"), None);
+        assert_eq!(CallerRole::from_str(""), None);
     }
 
     #[test]

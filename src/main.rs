@@ -963,8 +963,7 @@ fn build_router(state: Arc<AppState>) -> Router {
         // Comments — any collaborator/owner can read and write.
         .route(
             "/contracts/{name}/comments",
-            get(collaboration::list_comments_handler)
-                .post(collaboration::add_comment_handler),
+            get(collaboration::list_comments_handler).post(collaboration::add_comment_handler),
         )
         .route(
             "/contracts/{name}/comments/{id}/resolve",
@@ -973,8 +972,7 @@ fn build_router(state: Arc<AppState>) -> Router {
         // Change proposals — editor+ creates, reviewer+ decides, owner applies.
         .route(
             "/contracts/{name}/proposals",
-            get(collaboration::list_proposals_handler)
-                .post(collaboration::create_proposal_handler),
+            get(collaboration::list_proposals_handler).post(collaboration::create_proposal_handler),
         )
         .route(
             "/contracts/{name}/proposals/{id}/decide",

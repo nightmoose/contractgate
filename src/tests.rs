@@ -1295,7 +1295,9 @@ mod rfc032_publication_tests {
             ("odcs_stripped", ImportSource::OdcsStripped),
             ("publication", ImportSource::Publication),
         ] {
-            let parsed: ImportSource = s.parse().unwrap_or_else(|e| panic!("parse({s:?}) failed: {e}"));
+            let parsed: ImportSource = s
+                .parse()
+                .unwrap_or_else(|e| panic!("parse({s:?}) failed: {e}"));
             assert_eq!(parsed, expected, "variant mismatch for {s:?}");
             assert_eq!(parsed.as_str(), s, "as_str mismatch for {s:?}");
         }
@@ -1315,8 +1317,9 @@ mod rfc032_publication_tests {
             ("link", PublicationVisibility::Link),
             ("org", PublicationVisibility::Org),
         ] {
-            let parsed: PublicationVisibility =
-                s.parse().unwrap_or_else(|e| panic!("parse({s:?}) failed: {e}"));
+            let parsed: PublicationVisibility = s
+                .parse()
+                .unwrap_or_else(|e| panic!("parse({s:?}) failed: {e}"));
             assert_eq!(parsed, expected, "variant mismatch for {s:?}");
             assert_eq!(parsed.as_str(), s, "as_str mismatch for {s:?}");
         }
@@ -1336,8 +1339,9 @@ mod rfc032_publication_tests {
             ("snapshot", ImportMode::Snapshot),
             ("subscribe", ImportMode::Subscribe),
         ] {
-            let parsed: ImportMode =
-                s.parse().unwrap_or_else(|e| panic!("parse({s:?}) failed: {e}"));
+            let parsed: ImportMode = s
+                .parse()
+                .unwrap_or_else(|e| panic!("parse({s:?}) failed: {e}"));
             assert_eq!(parsed, expected, "variant mismatch for {s:?}");
             assert_eq!(parsed.as_str(), s, "as_str mismatch for {s:?}");
         }
@@ -1444,7 +1448,9 @@ mod rfc032_publication_tests {
         // all in [0-9a-f].
         let sample_token = "a3f1b2c4d5e6f7081920a1b2c3d4e5f6";
         assert_eq!(sample_token.len(), 32);
-        assert!(sample_token.chars().all(|c| c.is_ascii_hexdigit() && (c.is_ascii_digit() || c.is_ascii_lowercase())));
+        assert!(sample_token
+            .chars()
+            .all(|c| c.is_ascii_hexdigit() && (c.is_ascii_digit() || c.is_ascii_lowercase())));
     }
 }
 
@@ -1503,14 +1509,14 @@ mod rfc033_collaboration_tests {
     #[test]
     fn caller_role_from_str_all_variants_roundtrip() {
         let cases = [
-            ("owner",    CallerRole::Owner),
-            ("editor",   CallerRole::Editor),
+            ("owner", CallerRole::Owner),
+            ("editor", CallerRole::Editor),
             ("reviewer", CallerRole::Reviewer),
-            ("viewer",   CallerRole::Viewer),
+            ("viewer", CallerRole::Viewer),
         ];
         for (s, expected) in cases {
-            let got = CallerRole::from_str(s)
-                .unwrap_or_else(|| panic!("from_str({s:?}) returned None"));
+            let got =
+                CallerRole::from_str(s).unwrap_or_else(|| panic!("from_str({s:?}) returned None"));
             assert_eq!(got, expected, "mismatch for {s:?}");
         }
     }
@@ -1592,7 +1598,7 @@ mod rfc033_collaboration_tests {
         use uuid::Uuid;
 
         let pid = Uuid::new_v4();
-        let pb  = Uuid::new_v4();
+        let pb = Uuid::new_v4();
         let row = ProposalRow {
             id: pid,
             contract_name: "user_events".into(),
@@ -1607,7 +1613,10 @@ mod rfc033_collaboration_tests {
 
         assert_eq!(val["status"], "open");
         assert_eq!(val["decided_by"], serde_json::Value::Null);
-        assert!(val["proposed_yaml"].as_str().unwrap().contains("user_events"));
+        assert!(val["proposed_yaml"]
+            .as_str()
+            .unwrap()
+            .contains("user_events"));
     }
 
     #[test]
@@ -1794,7 +1803,10 @@ mod rfc028_tests {
         assert_eq!(val["deployed_by"], "alice");
         assert_eq!(val["deprecated_count"], 2);
         // pii_salt must not appear in the response
-        assert!(val.get("pii_salt").is_none(), "pii_salt must never be serialized");
+        assert!(
+            val.get("pii_salt").is_none(),
+            "pii_salt must never be serialized"
+        );
     }
 
     #[test]
@@ -1888,7 +1900,12 @@ mod rfc028_tests {
         let c2: Contract = serde_json::from_value(json_val).expect("must deserialize");
         assert_eq!(c2.name, "rent_events");
         assert_eq!(c2.ontology.entities.len(), 2);
-        let rent2 = c2.ontology.entities.iter().find(|e| e.name == "monthly_rent").unwrap();
+        let rent2 = c2
+            .ontology
+            .entities
+            .iter()
+            .find(|e| e.name == "monthly_rent")
+            .unwrap();
         assert_eq!(rent2.min, Some(0.0));
     }
 
@@ -1946,7 +1963,8 @@ mod rfc028_tests {
             ("strip", EgressLeakageMode::Strip),
             ("fail", EgressLeakageMode::Fail),
         ] {
-            let parsed: EgressLeakageMode = s.parse()
+            let parsed: EgressLeakageMode = s
+                .parse()
                 .unwrap_or_else(|e| panic!("parse({s:?}) failed: {e}"));
             assert_eq!(parsed, expected);
             assert_eq!(parsed.as_str(), s);
@@ -2307,8 +2325,7 @@ mod rfc031_tests {
                 violations: (25 - i) as i64,
             })
             .collect();
-        let top_violations: Vec<FieldHealthRow> =
-            field_health.iter().take(20).cloned().collect();
+        let top_violations: Vec<FieldHealthRow> = field_health.iter().take(20).cloned().collect();
 
         let resp = ScorecardResponse {
             source: "yardi".into(),

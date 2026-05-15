@@ -328,7 +328,12 @@ fn apply_egress_pii_pipeline(
         vec![]
     };
 
-    (for_storage, Value::Object(obj), undeclared, leakage_violations)
+    (
+        for_storage,
+        Value::Object(obj),
+        undeclared,
+        leakage_violations,
+    )
 }
 
 // ---------------------------------------------------------------------------
@@ -600,8 +605,7 @@ async fn resolve_version(
 mod tests {
     use super::*;
     use crate::contract::{
-        Contract, EgressLeakageMode, FieldDefinition, FieldType, Ontology, Transform,
-        TransformKind,
+        Contract, EgressLeakageMode, FieldDefinition, FieldType, Ontology, Transform, TransformKind,
     };
     use crate::validation::{CompiledContract, ValidationResult, Violation, ViolationKind};
     use serde_json::json;
@@ -666,7 +670,10 @@ mod tests {
         let (_for_storage, for_response, stripped, violations) =
             apply_egress_pii_pipeline(&c, event);
 
-        assert_eq!(for_response["user_email"], "****", "email must be masked in response");
+        assert_eq!(
+            for_response["user_email"], "****",
+            "email must be masked in response"
+        );
         assert!(stripped.is_empty());
         assert!(violations.is_empty());
     }
@@ -699,7 +706,10 @@ mod tests {
         let (_for_storage, for_response, stripped, violations) =
             apply_egress_pii_pipeline(&c, event);
 
-        assert!(for_response.get("internal_key").is_none(), "dropped field absent");
+        assert!(
+            for_response.get("internal_key").is_none(),
+            "dropped field absent"
+        );
         assert_eq!(for_response["user_id"], "u1");
         assert!(stripped.is_empty());
         assert!(violations.is_empty());
@@ -730,10 +740,8 @@ mod tests {
     #[test]
     fn leakage_fail_multiple_undeclared_fields() {
         let c = compiled(EgressLeakageMode::Fail, vec![bare_field("event_type")]);
-        let event =
-            json!({ "event_type": "click", "risk_score": 0.8, "debug_trace": "xyz" });
-        let (_tp, cleaned, mut stripped, violations) =
-            apply_egress_pii_pipeline(&c, event);
+        let event = json!({ "event_type": "click", "risk_score": 0.8, "debug_trace": "xyz" });
+        let (_tp, cleaned, mut stripped, violations) = apply_egress_pii_pipeline(&c, event);
 
         stripped.sort();
         assert_eq!(stripped, vec!["debug_trace", "risk_score"]);
@@ -753,9 +761,15 @@ mod tests {
         let event = json!({ "user_id": "u123", "internal_cost": 42 });
         let (_tp, cleaned, stripped, violations) = apply_egress_pii_pipeline(&c, event);
 
-        assert!(cleaned.get("internal_cost").is_none(), "undeclared field stripped");
+        assert!(
+            cleaned.get("internal_cost").is_none(),
+            "undeclared field stripped"
+        );
         assert_eq!(stripped, vec!["internal_cost"]);
-        assert!(violations.is_empty(), "strip mode must not produce violations");
+        assert!(
+            violations.is_empty(),
+            "strip mode must not produce violations"
+        );
     }
 
     // -----------------------------------------------------------------------
@@ -768,7 +782,10 @@ mod tests {
         let event = json!({ "user_id": "u123", "extra": "harmless" });
         let (_tp, cleaned, stripped, violations) = apply_egress_pii_pipeline(&c, event);
 
-        assert_eq!(cleaned["extra"], "harmless", "undeclared field passes through in off mode");
+        assert_eq!(
+            cleaned["extra"], "harmless",
+            "undeclared field passes through in off mode"
+        );
         assert!(stripped.is_empty());
         assert!(violations.is_empty());
     }
@@ -786,8 +803,7 @@ mod tests {
             EgressLeakageMode::Fail, // egress set to fail, ingest must be unaffected
             vec![field_with_transform("user_email", TransformKind::Redact)],
         );
-        let event =
-            json!({ "user_email": "bob@example.com", "extra_ingest_field": "present" });
+        let event = json!({ "user_email": "bob@example.com", "extra_ingest_field": "present" });
         let tp = apply_transforms(&c, event);
         let val = tp.into_inner();
 
@@ -820,7 +836,10 @@ mod tests {
         let (_tp, for_response, _, _) = apply_egress_pii_pipeline(&c, event);
         let egress_val = for_response["user_id"].as_str().unwrap();
 
-        assert_eq!(ingest_val, egress_val, "hash must be identical on ingest and egress");
+        assert_eq!(
+            ingest_val, egress_val,
+            "hash must be identical on ingest and egress"
+        );
         assert!(ingest_val.starts_with("hmac-sha256:"), "hash format check");
     }
 
@@ -885,10 +904,7 @@ mod tests {
     #[test]
     fn block_all_fail() {
         let events = vec![make_event(0), make_event(1)];
-        let results = vec![
-            make_validation_result(false),
-            make_validation_result(false),
-        ];
+        let results = vec![make_validation_result(false), make_validation_result(false)];
         let (payload, outcomes) = apply_disposition(&events, &results, DispositionMode::Block);
 
         assert_eq!(payload.len(), 0, "no records in payload");

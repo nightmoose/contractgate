@@ -276,9 +276,9 @@ pub async fn import_published_handler(
     }
 
     // Validate link token when required.
-    let vis = pub_row
-        .visibility_parsed()
-        .ok_or_else(|| AppError::Internal(format!("unknown visibility '{}'", pub_row.visibility)))?;
+    let vis = pub_row.visibility_parsed().ok_or_else(|| {
+        AppError::Internal(format!("unknown visibility '{}'", pub_row.visibility))
+    })?;
 
     match vis {
         PublicationVisibility::Public => {}
@@ -296,8 +296,7 @@ pub async fn import_published_handler(
         }
     }
 
-    let cv =
-        storage::import_published_contract(&state.db, &pub_row, import_mode, org_id).await?;
+    let cv = storage::import_published_contract(&state.db, &pub_row, import_mode, org_id).await?;
 
     Ok((
         StatusCode::CREATED,
