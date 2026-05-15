@@ -50,6 +50,7 @@ mod error;
 mod idempotency;
 mod infer;
 mod infer_avro;
+mod infer_csv;
 mod infer_diff;
 mod infer_openapi;
 mod infer_proto;
@@ -827,7 +828,7 @@ fn build_router(state: Arc<AppState>) -> Router {
         )
         // Contract inference — JSON samples
         .route("/contracts/infer", post(infer::infer_handler))
-        // Contract inference — format-specific routes (RFC-006)
+        // Contract inference — format-specific routes (RFC-006, RFC-035)
         .route(
             "/contracts/infer/avro",
             post(infer_avro::infer_avro_handler),
@@ -839,6 +840,11 @@ fn build_router(state: Arc<AppState>) -> Router {
         .route(
             "/contracts/infer/openapi",
             post(infer_openapi::infer_openapi_handler),
+        )
+        // CSV inference (RFC-035)
+        .route(
+            "/contracts/infer/csv",
+            post(infer_csv::infer_csv_handler),
         )
         // Evolution diff summarizer (RFC-006)
         .route("/contracts/diff", post(infer_diff::diff_handler))
