@@ -48,12 +48,14 @@ mod conformance;
 mod egress;
 mod error;
 mod idempotency;
+mod fork_filter;
 mod infer;
 mod infer_avro;
 mod infer_csv;
 mod infer_diff;
 mod infer_openapi;
 mod infer_proto;
+mod public_catalog;
 mod ingest;
 mod kafka_consumer;
 mod kafka_ingress;
@@ -806,6 +808,15 @@ fn build_router(state: Arc<AppState>) -> Router {
         .route(
             "/published/{publication_ref}",
             get(publication::fetch_published_handler),
+        )
+        // RFC-034: Public Catalog (no auth — readable by anyone)
+        .route(
+            "/public-contracts",
+            get(public_catalog::list_public_contracts_handler),
+        )
+        .route(
+            "/public-contracts/{id}",
+            get(public_catalog::get_public_contract_handler),
         );
 
     // Protected routes — require x-api-key header
@@ -950,6 +961,15 @@ fn build_router(state: Arc<AppState>) -> Router {
         .route(
             "/contracts/{id}/import-status",
             get(publication::import_status_handler),
+        )
+        // RFC-034: Public Catalog — fork + export (auth required)
+        .route(
+            "/contracts/{id}/fork",
+            post(public_catalog::fork_public_contract_handler),
+        )
+        .route(
+            "/contracts/{id}/export",
+            post(public_catalog::export_fork_handler),
         )
         // RFC-033: Provider-Consumer Collaboration
         // Collaborator grants — owner-only writes, viewer+ reads.

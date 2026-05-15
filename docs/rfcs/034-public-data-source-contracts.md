@@ -245,10 +245,11 @@ Second candidate dataset (v1 stretch / v2): NYC Taxi trip data (TLC).
 
 ## Migration
 
-`017-public-contracts.sql`:
+`022_public_catalog.sql`:
 1. Create `public_contracts`.
 2. Alter `contracts` to add `parent_public_contract_id` + `fork_filter`.
 3. Add index on `contracts(parent_public_contract_id)`.
+4. Seed ACS 5-Year entry.
 
 ---
 
@@ -273,5 +274,5 @@ Second candidate dataset (v1 stretch / v2): NYC Taxi trip data (TLC).
 - [ ] Filtering + validation p99 < 15 ms on 10k-row payload (bench target, upstream fetch excluded).
 - [ ] Published contract immutable — fork edits do not mutate parent.
 - [ ] Public toggle works via existing sharing infra (no new sharing UI).
-- [ ] Migration 017 runs clean on fresh DB.
+- [ ] Migration 022 runs clean on fresh DB.
 - [ ] Audit log entry written for every export.
