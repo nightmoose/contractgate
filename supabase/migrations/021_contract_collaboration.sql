@@ -91,6 +91,7 @@ CREATE INDEX IF NOT EXISTS idx_proposals_contract_status
 ALTER TABLE public.contract_collaborators ENABLE ROW LEVEL SECURITY;
 
 -- Service role has unrestricted access (Rust backend).
+DROP POLICY IF EXISTS "service_all" ON public.contract_collaborators;
 CREATE POLICY "service_all" ON public.contract_collaborators
     FOR ALL TO service_role
     USING (TRUE) WITH CHECK (TRUE);
@@ -98,6 +99,7 @@ CREATE POLICY "service_all" ON public.contract_collaborators
 -- Authenticated users can see collaborator rows where their org is the
 -- collaborator OR their org owns the contract.
 -- Both membership checks go through get_my_org_ids() — no inline subquery.
+DROP POLICY IF EXISTS "auth_read" ON public.contract_collaborators;
 CREATE POLICY "auth_read" ON public.contract_collaborators
     FOR SELECT TO authenticated
     USING (
@@ -116,11 +118,13 @@ CREATE POLICY "auth_read" ON public.contract_collaborators
 
 ALTER TABLE public.contract_comments ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "service_all" ON public.contract_comments;
 CREATE POLICY "service_all" ON public.contract_comments
     FOR ALL TO service_role
     USING (TRUE) WITH CHECK (TRUE);
 
 -- Visible to orgs that own or collaborate on the contract.
+DROP POLICY IF EXISTS "auth_read" ON public.contract_comments;
 CREATE POLICY "auth_read" ON public.contract_comments
     FOR SELECT TO authenticated
     USING (
@@ -141,10 +145,12 @@ CREATE POLICY "auth_read" ON public.contract_comments
 
 ALTER TABLE public.contract_change_proposals ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "service_all" ON public.contract_change_proposals;
 CREATE POLICY "service_all" ON public.contract_change_proposals
     FOR ALL TO service_role
     USING (TRUE) WITH CHECK (TRUE);
 
+DROP POLICY IF EXISTS "auth_read" ON public.contract_change_proposals;
 CREATE POLICY "auth_read" ON public.contract_change_proposals
     FOR SELECT TO authenticated
     USING (
@@ -172,6 +178,7 @@ CREATE POLICY "auth_read" ON public.contract_change_proposals
 
 DROP POLICY IF EXISTS "org members can read own contracts" ON public.contracts;
 
+DROP POLICY IF EXISTS "org members and collaborators can read contracts" ON public.contracts;
 CREATE POLICY "org members and collaborators can read contracts"
     ON public.contracts FOR SELECT TO authenticated
     USING (

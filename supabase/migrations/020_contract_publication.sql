@@ -52,12 +52,14 @@ CREATE INDEX IF NOT EXISTS idx_cp_contract_id
 ALTER TABLE contract_publications ENABLE ROW LEVEL SECURITY;
 
 -- Authenticated users can see their own org's publications.
+DROP POLICY IF EXISTS "auth_own_org" ON contract_publications;
 CREATE POLICY "auth_own_org" ON contract_publications
     FOR ALL TO authenticated
     USING (org_id = auth.uid())
     WITH CHECK (org_id = auth.uid());
 
 -- Service role has full access (used by the Rust backend).
+DROP POLICY IF EXISTS "service_all" ON contract_publications;
 CREATE POLICY "service_all" ON contract_publications
     FOR ALL TO service_role
     USING (TRUE) WITH CHECK (TRUE);

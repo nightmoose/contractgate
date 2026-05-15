@@ -113,8 +113,10 @@ CREATE INDEX IF NOT EXISTS idx_pfb_source_window
 
 ALTER TABLE provider_field_baseline ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "auth_all" ON provider_field_baseline;
 CREATE POLICY "auth_all" ON provider_field_baseline
     FOR ALL TO authenticated USING (TRUE) WITH CHECK (TRUE);
 
+DROP POLICY IF EXISTS "service_all" ON provider_field_baseline;
 CREATE POLICY "service_all" ON provider_field_baseline
     FOR ALL TO service_role USING (TRUE) WITH CHECK (TRUE);
