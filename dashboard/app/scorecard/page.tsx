@@ -12,7 +12,7 @@
  * Searches by ?source= query param or inline source picker.
  */
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import AuthGate from "@/components/AuthGate";
 import {
@@ -372,7 +372,9 @@ function ScorecardContent() {
 export default function ScorecardPage() {
   return (
     <AuthGate page="scorecard">
-      <ScorecardContent />
+      <Suspense>
+        <ScorecardContent />
+      </Suspense>
     </AuthGate>
   );
 }
