@@ -43,7 +43,9 @@ use uuid::Uuid;
 pub use contractgate::{contract, transform, validation};
 
 mod api_key_auth;
+mod collaboration;
 mod conformance;
+mod egress;
 mod error;
 mod idempotency;
 mod infer;
@@ -58,8 +60,10 @@ mod kinesis_consumer;
 mod kinesis_ingress;
 pub mod observability;
 mod odcs;
+mod publication;
 mod rate_limit;
 mod replay;
+mod scorecard;
 mod storage;
 mod stream_demo;
 #[cfg(test)]
@@ -796,7 +800,12 @@ fn build_router(state: Arc<AppState>) -> Router {
         .route("/demo/stop", post(stream_demo::stop_handler))
         .route("/demo/stream", get(stream_demo::stream_handler))
         .route("/demo/events", get(stream_demo::events_handler))
-        .route("/demo/contract", get(stream_demo::contract_handler));
+        .route("/demo/contract", get(stream_demo::contract_handler))
+        // RFC-032: public-fetch for published contracts (visibility checked inside handler)
+        .route(
+            "/published/{publication_ref}",
+            get(publication::fetch_published_handler),
+        );
 
     // Protected routes — require x-api-key header
     let protected = Router::new()
@@ -877,6 +886,12 @@ fn build_router(state: Arc<AppState>) -> Router {
             "/ingest/{contract_id}/stats",
             get(ingest::ingest_stats_handler),
         )
+        // Egress validation (RFC-029) — same @version suffix convention.
+        .route("/egress/{raw_id}", post(egress::egress_handler))
+        // Provider scorecard (RFC-031) — keyed by provider source name.
+        .route("/scorecard/{source}", get(scorecard::scorecard_handler))
+        .route("/scorecard/{source}/drift", get(scorecard::drift_handler))
+        .route("/scorecard/{source}/export", get(scorecard::export_handler))
         // Replay Quarantine (RFC-003)
         .route(
             "/contracts/{id}/quarantine/replay",
@@ -915,6 +930,57 @@ fn build_router(state: Arc<AppState>) -> Router {
         .route(
             "/contracts/{id}/kinesis-ingress/rotate-credentials",
             post(kinesis_ingress::rotate_kinesis_credentials_handler),
+        )
+        // RFC-032: Contract Sharing & Publication
+        .route(
+            "/contracts/{id}/versions/{version}/publish",
+            post(publication::publish_handler),
+        )
+        .route(
+            "/contracts/publications/{publication_ref}",
+            axum::routing::delete(publication::revoke_handler),
+        )
+        .route(
+            "/contracts/import-published",
+            post(publication::import_published_handler),
+        )
+        .route(
+            "/contracts/{id}/import-status",
+            get(publication::import_status_handler),
+        )
+        // RFC-033: Provider-Consumer Collaboration
+        // Collaborator grants — owner-only writes, viewer+ reads.
+        .route(
+            "/contracts/{name}/collaborators",
+            get(collaboration::list_collaborators_handler)
+                .post(collaboration::grant_collaborator_handler),
+        )
+        .route(
+            "/contracts/{name}/collaborators/{org_id}",
+            axum::routing::patch(collaboration::patch_collaborator_handler)
+                .delete(collaboration::revoke_collaborator_handler),
+        )
+        // Comments — any collaborator/owner can read and write.
+        .route(
+            "/contracts/{name}/comments",
+            get(collaboration::list_comments_handler).post(collaboration::add_comment_handler),
+        )
+        .route(
+            "/contracts/{name}/comments/{id}/resolve",
+            post(collaboration::resolve_comment_handler),
+        )
+        // Change proposals — editor+ creates, reviewer+ decides, owner applies.
+        .route(
+            "/contracts/{name}/proposals",
+            get(collaboration::list_proposals_handler).post(collaboration::create_proposal_handler),
+        )
+        .route(
+            "/contracts/{name}/proposals/{id}/decide",
+            post(collaboration::decide_proposal_handler),
+        )
+        .route(
+            "/contracts/{name}/proposals/{id}/apply",
+            post(collaboration::apply_proposal_handler),
         )
         // Audit + stats
         .route("/audit", get(audit_log_handler))
@@ -959,6 +1025,24 @@ fn build_router(state: Arc<AppState>) -> Router {
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     dotenvy::dotenv().ok();
+
+    // ── CLI subcommand: scorecard-rollup ──────────────────────────────────────
+    // Run the daily baseline rollup job and exit.
+    // Usage: cargo run -- scorecard-rollup
+    if std::env::args().any(|a| a == "scorecard-rollup") {
+        tracing_subscriber::registry()
+            .with(
+                tracing_subscriber::EnvFilter::try_from_default_env()
+                    .unwrap_or_else(|_| "contractgate=info".into()),
+            )
+            .with(tracing_subscriber::fmt::layer())
+            .init();
+        let database_url = std::env::var("DATABASE_URL").expect("DATABASE_URL must be set");
+        let pool = sqlx::PgPool::connect(&database_url).await?;
+        scorecard::run_baseline_rollup(&pool).await?;
+        tracing::info!("scorecard-rollup complete");
+        return Ok(());
+    }
 
     tracing_subscriber::registry()
         .with(

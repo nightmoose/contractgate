@@ -102,6 +102,11 @@ pub enum ViolationKind {
     /// field name that is not declared in the contract's ontology.  Only
     /// raised when the resolved version has `compliance_mode = true`.
     UndeclaredField,
+    /// RFC-030 egress leakage violation: an outbound payload contained a
+    /// field not declared in the contract's ontology when
+    /// `egress_leakage_mode = fail`.  The field is stripped from the
+    /// response regardless of the RFC-029 disposition.
+    LeakageViolation,
     /// Quality rule: field is null, missing when expected, or (for strings)
     /// an empty string.  Emitted by `rule_type: completeness` checks.
     CompletenessViolation,
@@ -765,7 +770,7 @@ pub fn check_uniqueness_batch(rules: &[QualityRule], events: &[Value]) -> Vec<(u
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::contract::{FieldDefinition, FieldType, Ontology};
+    use crate::contract::{EgressLeakageMode, FieldDefinition, FieldType, Ontology};
     use serde_json::json;
 
     fn make_simple_contract() -> Contract {
@@ -824,6 +829,7 @@ mod tests {
                     },
                 ],
             },
+            egress_leakage_mode: EgressLeakageMode::Off,
             glossary: vec![],
             metrics: vec![],
             quality: vec![],

@@ -321,8 +321,8 @@ fn collect_leaf_field_names(
 mod tests {
     use super::*;
     use crate::contract::{
-        ContractIdentity, ContractVersion, FieldDefinition, FieldType, ImportSource,
-        MultiStableResolution, Ontology, QualityRule, QualityRuleType, VersionState,
+        ContractIdentity, ContractVersion, EgressLeakageMode, FieldDefinition, FieldType,
+        ImportSource, MultiStableResolution, Ontology, QualityRule, QualityRuleType, VersionState,
     };
     use chrono::Utc;
     use uuid::Uuid;
@@ -350,6 +350,7 @@ mod tests {
             promoted_at: Some(Utc::now()),
             deprecated_at: None,
             compliance_mode: false,
+            egress_leakage_mode: EgressLeakageMode::Off,
             import_source: ImportSource::Native,
             requires_review: false,
         }
@@ -405,6 +406,7 @@ mod tests {
                     },
                 ],
             },
+            egress_leakage_mode: EgressLeakageMode::Off,
             glossary: vec![],
             metrics: vec![],
             quality,

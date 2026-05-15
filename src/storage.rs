@@ -7,8 +7,9 @@
 //! directory, then switch to `query!` / `query_as!` macros.
 
 use crate::contract::{
-    Contract, ContractIdentity, ContractSummary, ContractVersion, ImportSource,
-    MultiStableResolution, NameHistoryEntry, VersionState, VersionSummary,
+    Contract, ContractIdentity, ContractSummary, ContractVersion, EgressLeakageMode, ImportMode,
+    ImportSource, MultiStableResolution, NameHistoryEntry, PublicationVisibility, VersionState,
+    VersionSummary,
 };
 use crate::error::{AppError, AppResult, DbOpContext};
 use crate::transform::TransformedPayload;
@@ -67,6 +68,9 @@ struct ContractVersionRow {
     /// remains the single source of truth — this column is synced to
     /// `Contract::compliance_mode` at INSERT / UPDATE time.
     compliance_mode: bool,
+    /// RFC-030: denormalized for SQL-level filtering.  YAML is authoritative;
+    /// synced to `Contract::egress_leakage_mode` at INSERT / UPDATE time.
+    egress_leakage_mode: String,
     /// Migration 010: ODCS import provenance.
     import_source: String,
     /// Migration 010: blocks promotion until human review clears it.
@@ -82,6 +86,10 @@ impl ContractVersionRow {
             .import_source
             .parse::<ImportSource>()
             .map_err(|e| AppError::Internal(format!("invalid import_source in DB: {e}")))?;
+        let egress_leakage_mode = self
+            .egress_leakage_mode
+            .parse::<EgressLeakageMode>()
+            .map_err(|e| AppError::Internal(format!("invalid egress_leakage_mode in DB: {e}")))?;
         Ok(ContractVersion {
             id: self.id,
             contract_id: self.contract_id,
@@ -92,6 +100,7 @@ impl ContractVersionRow {
             promoted_at: self.promoted_at,
             deprecated_at: self.deprecated_at,
             compliance_mode: self.compliance_mode,
+            egress_leakage_mode,
             import_source,
             requires_review: self.requires_review,
         })
@@ -177,6 +186,7 @@ pub async fn create_contract(
     let parsed: Contract = serde_yaml::from_str(yaml_content)
         .map_err(|e| AppError::InvalidContractYaml(e.to_string()))?;
     let compliance_mode = parsed.compliance_mode;
+    let egress_leakage_mode = parsed.egress_leakage_mode.as_str();
 
     let contract_id = Uuid::new_v4();
     let version_id = Uuid::new_v4();
@@ -204,17 +214,18 @@ pub async fn create_contract(
         r#"
         INSERT INTO contract_versions
             (id, contract_id, version, state, yaml_content, created_at, compliance_mode,
-             import_source, requires_review)
-        VALUES ($1, $2, '1.0.0', 'draft', $3, NOW(), $4, 'native', FALSE)
+             egress_leakage_mode, import_source, requires_review)
+        VALUES ($1, $2, '1.0.0', 'draft', $3, NOW(), $4, $5, 'native', FALSE)
         RETURNING id, contract_id, version, state, yaml_content,
                   created_at, promoted_at, deprecated_at, compliance_mode,
-                  import_source, requires_review
+                  egress_leakage_mode, import_source, requires_review
         "#,
     )
     .bind(version_id)
     .bind(contract_id)
     .bind(yaml_content)
     .bind(compliance_mode)
+    .bind(egress_leakage_mode)
     .fetch_one(&mut *tx)
     .await
     .db_op("create_contract:insert_initial_version")?;
@@ -371,6 +382,7 @@ pub async fn create_version(
     let parsed: Contract = serde_yaml::from_str(yaml_content)
         .map_err(|e| AppError::InvalidContractYaml(e.to_string()))?;
     let compliance_mode = parsed.compliance_mode;
+    let egress_leakage_mode = parsed.egress_leakage_mode.as_str();
 
     // Ensure the contract exists first so we get a clean 404 instead of a
     // foreign-key violation.
@@ -382,11 +394,11 @@ pub async fn create_version(
         r#"
         INSERT INTO contract_versions
             (id, contract_id, version, state, yaml_content, created_at, compliance_mode,
-             import_source, requires_review)
-        VALUES ($1, $2, $3, 'draft', $4, NOW(), $5, 'native', FALSE)
+             egress_leakage_mode, import_source, requires_review)
+        VALUES ($1, $2, $3, 'draft', $4, NOW(), $5, $6, 'native', FALSE)
         RETURNING id, contract_id, version, state, yaml_content,
                   created_at, promoted_at, deprecated_at, compliance_mode,
-                  import_source, requires_review
+                  egress_leakage_mode, import_source, requires_review
         "#,
     )
     .bind(id)
@@ -394,6 +406,7 @@ pub async fn create_version(
     .bind(version)
     .bind(yaml_content)
     .bind(compliance_mode)
+    .bind(egress_leakage_mode)
     .fetch_one(pool)
     .await
     .map_err(|e| match &e {
@@ -426,6 +439,7 @@ pub async fn patch_version_yaml(
     let parsed: Contract = serde_yaml::from_str(yaml_content)
         .map_err(|e| AppError::InvalidContractYaml(e.to_string()))?;
     let compliance_mode = parsed.compliance_mode;
+    let egress_leakage_mode = parsed.egress_leakage_mode.as_str();
 
     // Fetch first so we can emit a specific error (not-found vs. immutable).
     let current = get_version(pool, contract_id, version).await?;
@@ -440,17 +454,19 @@ pub async fn patch_version_yaml(
         r#"
         UPDATE contract_versions
         SET yaml_content = $3,
-            compliance_mode = $4
+            compliance_mode = $4,
+            egress_leakage_mode = $5
         WHERE contract_id = $1 AND version = $2
         RETURNING id, contract_id, version, state, yaml_content,
                   created_at, promoted_at, deprecated_at, compliance_mode,
-                  import_source, requires_review
+                  egress_leakage_mode, import_source, requires_review
         "#,
     )
     .bind(contract_id)
     .bind(version)
     .bind(yaml_content)
     .bind(compliance_mode)
+    .bind(egress_leakage_mode)
     .fetch_one(pool)
     .await?;
 
@@ -486,7 +502,7 @@ pub async fn promote_version(
         WHERE contract_id = $1 AND version = $2 AND state = 'draft'
         RETURNING id, contract_id, version, state, yaml_content,
                   created_at, promoted_at, deprecated_at, compliance_mode,
-                  import_source, requires_review
+                  egress_leakage_mode, import_source, requires_review
         "#,
     )
     .bind(contract_id)
@@ -519,7 +535,7 @@ pub async fn deprecate_version(
         WHERE contract_id = $1 AND version = $2 AND state = 'stable'
         RETURNING id, contract_id, version, state, yaml_content,
                   created_at, promoted_at, deprecated_at, compliance_mode,
-                  import_source, requires_review
+                  egress_leakage_mode, import_source, requires_review
         "#,
     )
     .bind(contract_id)
@@ -555,6 +571,7 @@ pub async fn deploy_contract_version(
         .map_err(|e| AppError::InvalidContractYaml(e.to_string()))?;
     let version = parsed.version.clone();
     let compliance_mode = parsed.compliance_mode;
+    let egress_leakage_mode = parsed.egress_leakage_mode.as_str();
     let parsed_json = serde_json::to_value(&parsed)
         .map_err(|e| AppError::Internal(format!("contract json serialization: {e}")))?;
 
@@ -622,14 +639,14 @@ pub async fn deploy_contract_version(
         r#"
         INSERT INTO contract_versions
             (id, contract_id, version, state, yaml_content, created_at,
-             promoted_at, compliance_mode, import_source, requires_review,
-             source, deployed_by, deployed_at, parsed_json)
+             promoted_at, compliance_mode, egress_leakage_mode, import_source,
+             requires_review, source, deployed_by, deployed_at, parsed_json)
         VALUES ($1, $2, $3, 'stable', $4, $5,
-                $5, $6, 'native', FALSE,
-                $7, $8, $5, $9)
+                $5, $6, $7, 'native', FALSE,
+                $8, $9, $5, $10)
         RETURNING id, contract_id, version, state, yaml_content,
                   created_at, promoted_at, deprecated_at, compliance_mode,
-                  import_source, requires_review
+                  egress_leakage_mode, import_source, requires_review
         "#,
     )
     .bind(version_id)
@@ -638,6 +655,7 @@ pub async fn deploy_contract_version(
     .bind(yaml_content)
     .bind(now)
     .bind(compliance_mode)
+    .bind(egress_leakage_mode)
     .bind(source)
     .bind(deployed_by)
     .bind(parsed_json)
@@ -704,7 +722,7 @@ pub async fn get_version(
         r#"
         SELECT id, contract_id, version, state, yaml_content,
                created_at, promoted_at, deprecated_at, compliance_mode,
-               import_source, requires_review
+               egress_leakage_mode, import_source, requires_review
         FROM contract_versions
         WHERE contract_id = $1 AND version = $2
         "#,
@@ -730,7 +748,7 @@ pub async fn list_versions(pool: &PgPool, contract_id: Uuid) -> AppResult<Vec<Ve
         r#"
         SELECT id, contract_id, version, state, yaml_content,
                created_at, promoted_at, deprecated_at, compliance_mode,
-               import_source, requires_review
+               egress_leakage_mode, import_source, requires_review
         FROM contract_versions
         WHERE contract_id = $1
         ORDER BY created_at DESC
@@ -765,7 +783,7 @@ pub async fn get_latest_stable_version(
         r#"
         SELECT id, contract_id, version, state, yaml_content,
                created_at, promoted_at, deprecated_at, compliance_mode,
-               import_source, requires_review
+               egress_leakage_mode, import_source, requires_review
         FROM contract_versions
         WHERE contract_id = $1 AND state = 'stable'
         ORDER BY promoted_at DESC
@@ -790,7 +808,7 @@ pub async fn list_stable_versions(
         r#"
         SELECT id, contract_id, version, state, yaml_content,
                created_at, promoted_at, deprecated_at, compliance_mode,
-               import_source, requires_review
+               egress_leakage_mode, import_source, requires_review
         FROM contract_versions
         WHERE contract_id = $1 AND state = 'stable'
         ORDER BY promoted_at DESC
@@ -826,7 +844,7 @@ pub async fn load_all_non_draft_versions(pool: &PgPool) -> AppResult<Vec<Contrac
         r#"
         SELECT id, contract_id, version, state, yaml_content,
                created_at, promoted_at, deprecated_at, compliance_mode,
-               import_source, requires_review
+               egress_leakage_mode, import_source, requires_review
         FROM contract_versions
         WHERE state IN ('stable', 'deprecated')
         "#,
@@ -850,6 +868,7 @@ pub async fn create_version_from_import(
     let parsed: Contract = serde_yaml::from_str(yaml_content)
         .map_err(|e| AppError::InvalidContractYaml(e.to_string()))?;
     let compliance_mode = parsed.compliance_mode;
+    let egress_leakage_mode = parsed.egress_leakage_mode.as_str();
     let requires_review = import_source == ImportSource::OdcsStripped;
 
     let _ = get_contract_identity(pool, contract_id).await?;
@@ -860,11 +879,11 @@ pub async fn create_version_from_import(
         r#"
         INSERT INTO contract_versions
             (id, contract_id, version, state, yaml_content, created_at, compliance_mode,
-             import_source, requires_review)
-        VALUES ($1, $2, $3, 'draft', $4, NOW(), $5, $6, $7)
+             egress_leakage_mode, import_source, requires_review)
+        VALUES ($1, $2, $3, 'draft', $4, NOW(), $5, $6, $7, $8)
         RETURNING id, contract_id, version, state, yaml_content,
                   created_at, promoted_at, deprecated_at, compliance_mode,
-                  import_source, requires_review
+                  egress_leakage_mode, import_source, requires_review
         "#,
     )
     .bind(id)
@@ -872,6 +891,7 @@ pub async fn create_version_from_import(
     .bind(version)
     .bind(yaml_content)
     .bind(compliance_mode)
+    .bind(egress_leakage_mode)
     .bind(import_source.as_str())
     .bind(requires_review)
     .fetch_one(pool)
@@ -912,7 +932,7 @@ pub async fn clear_requires_review(
         WHERE contract_id = $1 AND version = $2
         RETURNING id, contract_id, version, state, yaml_content,
                   created_at, promoted_at, deprecated_at, compliance_mode,
-                  import_source, requires_review
+                  egress_leakage_mode, import_source, requires_review
         "#,
     )
     .bind(contract_id)
@@ -973,13 +993,14 @@ pub async fn quarantine_event(
     violation_details: serde_json::Value,
     validation_us: i64,
     source_ip: Option<&str>,
+    direction: &str,
 ) -> AppResult<()> {
     sqlx::query(
         r#"
         INSERT INTO quarantine_events
             (id, contract_id, contract_version, payload, violation_count,
-             violation_details, validation_us, source_ip, status, created_at)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'pending', NOW())
+             violation_details, validation_us, source_ip, direction, status, created_at)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'pending', NOW())
         "#,
     )
     .bind(Uuid::new_v4())
@@ -990,6 +1011,7 @@ pub async fn quarantine_event(
     .bind(violation_details)
     .bind(validation_us)
     .bind(source_ip)
+    .bind(direction)
     .execute(pool)
     .await?;
     Ok(())
@@ -1021,13 +1043,14 @@ pub async fn log_audit_entry(
     validation_us: i64,
     source_ip: Option<&str>,
     source: &str,
+    direction: &str,
 ) -> AppResult<()> {
     sqlx::query(
         r#"
         INSERT INTO audit_log
             (id, contract_id, org_id, contract_version, passed, violation_count,
-             violation_details, raw_event, validation_us, source_ip, source, created_at)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, NOW())
+             violation_details, raw_event, validation_us, source_ip, source, direction, created_at)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, NOW())
         "#,
     )
     .bind(Uuid::new_v4())
@@ -1041,6 +1064,7 @@ pub async fn log_audit_entry(
     .bind(validation_us)
     .bind(source_ip)
     .bind(source)
+    .bind(direction)
     .execute(pool)
     .await?;
     Ok(())
@@ -1347,6 +1371,9 @@ pub struct AuditEntryInsert {
     /// For replay-pass audit rows: the source quarantine row that was
     /// re-validated.  NULL on fresh ingest.  RFC-003.
     pub replay_of_quarantine_id: Option<Uuid>,
+    /// RFC-029: traffic direction.  `"ingress"` for all ingest paths;
+    /// `"egress"` for the `POST /egress/{contract}` egress-validation path.
+    pub direction: String,
 }
 
 /// One row to insert into `quarantine_events`.  Only failed events get one.
@@ -1372,6 +1399,9 @@ pub struct QuarantineEventInsert {
     /// via `uuid_generate_v4()`.  Set by RFC-021 v1 ingest handler so callers
     /// can return the quarantine ID in the response without a `SELECT` round-trip.
     pub pre_assigned_id: Option<Uuid>,
+    /// RFC-029: traffic direction.  `"ingress"` for all ingest paths;
+    /// `"egress"` for the `POST /egress/{contract}` egress-validation path.
+    pub direction: String,
 }
 
 /// One row to insert into `forwarded_events`.  Only passing events get one.
@@ -1433,13 +1463,15 @@ pub async fn log_audit_entries_batch(pool: &PgPool, entries: &[AuditEntryInsert]
         .iter()
         .map(|e| e.replay_of_quarantine_id.unwrap_or(Uuid::nil()))
         .collect();
+    // RFC-029: 'ingress' for all ingest paths, 'egress' for egress validation.
+    let directions: Vec<String> = entries.iter().map(|e| e.direction.clone()).collect();
 
     sqlx::query(
         r#"
         INSERT INTO audit_log
             (id, contract_id, org_id, contract_version, passed, violation_count,
              violation_details, raw_event, validation_us, source_ip, source,
-             replay_of_quarantine_id, created_at)
+             replay_of_quarantine_id, direction, created_at)
         SELECT
             COALESCE(NULLIF(pre_assigned_id, '00000000-0000-0000-0000-000000000000'::uuid),
                      uuid_generate_v4()),
@@ -1450,13 +1482,15 @@ pub async fn log_audit_entries_batch(pool: &PgPool, entries: &[AuditEntryInsert]
             NULLIF(source_ip, ''),
             source,
             NULLIF(replay_of_quarantine_id, '00000000-0000-0000-0000-000000000000'::uuid),
+            direction,
             NOW()
         FROM UNNEST(
             $1::uuid[], $2::uuid[], $3::text[], $4::bool[], $5::int[], $6::jsonb[],
-            $7::jsonb[], $8::bigint[], $9::text[], $10::text[], $11::uuid[], $12::uuid[]
+            $7::jsonb[], $8::bigint[], $9::text[], $10::text[], $11::uuid[], $12::uuid[],
+            $13::text[]
         ) AS t(contract_id, org_id, contract_version, passed, violation_count,
                violation_details, raw_event, validation_us, source_ip, source,
-               pre_assigned_id, replay_of_quarantine_id)
+               pre_assigned_id, replay_of_quarantine_id, direction)
         "#,
     )
     .bind(&contract_ids)
@@ -1471,6 +1505,7 @@ pub async fn log_audit_entries_batch(pool: &PgPool, entries: &[AuditEntryInsert]
     .bind(&sources)
     .bind(&pre_assigned_ids)
     .bind(&replay_of)
+    .bind(&directions)
     .execute(pool)
     .await
     .db_op("log_audit_entries_batch")?;
@@ -1519,13 +1554,15 @@ pub async fn quarantine_events_batch(
         .iter()
         .map(|e| e.pre_assigned_id.unwrap_or(Uuid::nil()))
         .collect();
+    // RFC-029: 'ingress' for all ingest paths, 'egress' for egress validation.
+    let directions: Vec<String> = entries.iter().map(|e| e.direction.clone()).collect();
 
     sqlx::query(
         r#"
         INSERT INTO quarantine_events
             (id, contract_id, contract_version, payload, violation_count,
              violation_details, validation_us, source_ip,
-             replay_of_quarantine_id, status, created_at)
+             replay_of_quarantine_id, direction, status, created_at)
         SELECT
             COALESCE(NULLIF(pre_assigned_id, '00000000-0000-0000-0000-000000000000'::uuid),
                      uuid_generate_v4()),
@@ -1533,14 +1570,15 @@ pub async fn quarantine_events_batch(
             violation_details, validation_us,
             NULLIF(source_ip, ''),
             NULLIF(replay_of_quarantine_id, '00000000-0000-0000-0000-000000000000'::uuid),
+            direction,
             'pending',
             NOW()
         FROM UNNEST(
             $1::uuid[], $2::text[], $3::jsonb[], $4::int[], $5::jsonb[],
-            $6::bigint[], $7::text[], $8::uuid[], $9::uuid[]
+            $6::bigint[], $7::text[], $8::uuid[], $9::uuid[], $10::text[]
         ) AS t(contract_id, contract_version, payload, violation_count,
                violation_details, validation_us, source_ip,
-               replay_of_quarantine_id, pre_assigned_id)
+               replay_of_quarantine_id, pre_assigned_id, direction)
         "#,
     )
     .bind(&contract_ids)
@@ -1552,6 +1590,7 @@ pub async fn quarantine_events_batch(
     .bind(&source_ips)
     .bind(&replay_of)
     .bind(&pre_assigned_ids)
+    .bind(&directions)
     .execute(pool)
     .await
     .db_op("quarantine_events_batch")?;
@@ -1863,4 +1902,756 @@ pub async fn replay_history_for(
         });
     }
     Ok(out)
+}
+
+// ---------------------------------------------------------------------------
+// Publication storage (RFC-032)
+// ---------------------------------------------------------------------------
+
+/// Row type for `contract_publications`.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, sqlx::FromRow)]
+pub struct PublicationRow {
+    pub publication_ref: String,
+    pub contract_id: Uuid,
+    pub version_id: Uuid,
+    pub contract_name: String,
+    pub contract_version: String,
+    pub yaml_content: String,
+    pub visibility: String,
+    pub link_token: Option<String>,
+    pub org_id: Option<Uuid>,
+    pub published_by: Option<String>,
+    pub published_at: chrono::DateTime<chrono::Utc>,
+    pub revoked_at: Option<chrono::DateTime<chrono::Utc>>,
+}
+
+impl PublicationRow {
+    pub fn is_revoked(&self) -> bool {
+        self.revoked_at.is_some()
+    }
+
+    pub fn visibility_parsed(&self) -> Option<PublicationVisibility> {
+        self.visibility.parse().ok()
+    }
+}
+
+/// Create a new publication for a contract version.
+///
+/// `link_token` must be `Some` when `visibility == PublicationVisibility::Link`.
+pub async fn publish_contract_version(
+    pool: &PgPool,
+    contract_id: Uuid,
+    version_str: &str,
+    visibility: PublicationVisibility,
+    link_token: Option<&str>,
+    org_id: Option<Uuid>,
+    published_by: Option<&str>,
+) -> AppResult<PublicationRow> {
+    // Resolve the version row.
+    let cv = get_version(pool, contract_id, version_str).await?;
+
+    // Fetch the contract name for denormalization.
+    let identity = get_contract_identity(pool, contract_id).await?;
+
+    let row = sqlx::query_as::<_, PublicationRow>(
+        r#"
+        INSERT INTO contract_publications
+            (ref, contract_id, version_id, contract_name, contract_version,
+             yaml_content, visibility, link_token, org_id, published_by, published_at)
+        VALUES (
+            encode(gen_random_bytes(12), 'hex'),
+            $1, $2, $3, $4, $5, $6, $7, $8, $9, NOW()
+        )
+        RETURNING
+            ref      AS publication_ref,
+            contract_id,
+            version_id,
+            contract_name,
+            contract_version,
+            yaml_content,
+            visibility,
+            link_token,
+            org_id,
+            published_by,
+            published_at,
+            revoked_at
+        "#,
+    )
+    .bind(contract_id)
+    .bind(cv.id)
+    .bind(&identity.name)
+    .bind(version_str)
+    .bind(&cv.yaml_content)
+    .bind(visibility.as_str())
+    .bind(link_token)
+    .bind(org_id)
+    .bind(published_by)
+    .fetch_one(pool)
+    .await
+    .db_op("publish_contract_version")?;
+
+    Ok(row)
+}
+
+/// Soft-delete (revoke) a publication.  Only the org that published it may revoke it.
+pub async fn revoke_publication(
+    pool: &PgPool,
+    publication_ref: &str,
+    org_id: Option<Uuid>,
+) -> AppResult<PublicationRow> {
+    let row = sqlx::query_as::<_, PublicationRow>(
+        r#"
+        UPDATE contract_publications
+        SET revoked_at = NOW()
+        WHERE ref = $1
+          AND ($2::uuid IS NULL OR org_id = $2)
+          AND revoked_at IS NULL
+        RETURNING
+            ref      AS publication_ref,
+            contract_id,
+            version_id,
+            contract_name,
+            contract_version,
+            yaml_content,
+            visibility,
+            link_token,
+            org_id,
+            published_by,
+            published_at,
+            revoked_at
+        "#,
+    )
+    .bind(publication_ref)
+    .bind(org_id)
+    .fetch_optional(pool)
+    .await
+    .db_op("revoke_publication")?
+    .ok_or_else(|| {
+        AppError::BadRequest(format!(
+            "publication '{}' not found, already revoked, or not owned by this org",
+            publication_ref
+        ))
+    })?;
+
+    Ok(row)
+}
+
+/// Fetch a publication by ref.  Does NOT filter on revoked — callers check.
+pub async fn get_publication(pool: &PgPool, publication_ref: &str) -> AppResult<PublicationRow> {
+    let row = sqlx::query_as::<_, PublicationRow>(
+        r#"
+        SELECT
+            ref      AS publication_ref,
+            contract_id,
+            version_id,
+            contract_name,
+            contract_version,
+            yaml_content,
+            visibility,
+            link_token,
+            org_id,
+            published_by,
+            published_at,
+            revoked_at
+        FROM contract_publications
+        WHERE ref = $1
+        "#,
+    )
+    .bind(publication_ref)
+    .fetch_optional(pool)
+    .await
+    .db_op("get_publication")?
+    .ok_or_else(|| AppError::BadRequest(format!("publication '{}' not found", publication_ref)))?;
+
+    Ok(row)
+}
+
+/// Import a published contract into the caller's org.
+///
+/// Creates a new contract identity + a draft version from the publication's
+/// YAML, recording provenance (`imported_from_ref`, `import_mode`,
+/// `imported_at`) on the `contracts` row.
+pub async fn import_published_contract(
+    pool: &PgPool,
+    pub_row: &PublicationRow,
+    import_mode: ImportMode,
+    org_id: Option<Uuid>,
+) -> AppResult<ContractVersion> {
+    let parsed: Contract = serde_yaml::from_str(&pub_row.yaml_content)
+        .map_err(|e| AppError::InvalidContractYaml(e.to_string()))?;
+
+    let compliance_mode = parsed.compliance_mode;
+    let egress_leakage_mode = parsed.egress_leakage_mode.as_str();
+
+    let contract_id = Uuid::new_v4();
+    let version_id = Uuid::new_v4();
+    let description = parsed.description.as_deref();
+
+    let mut tx = pool.begin().await.db_op("import_published:begin")?;
+
+    // Insert identity with provenance.
+    sqlx::query(
+        r#"
+        INSERT INTO contracts
+            (id, org_id, name, description, multi_stable_resolution,
+             imported_from_ref, import_mode, imported_at,
+             created_at, updated_at)
+        VALUES ($1, $2, $3, $4, 'strict', $5, $6, NOW(), NOW(), NOW())
+        "#,
+    )
+    .bind(contract_id)
+    .bind(org_id)
+    .bind(&pub_row.contract_name)
+    .bind(description)
+    .bind(&pub_row.publication_ref)
+    .bind(import_mode.as_str())
+    .execute(&mut *tx)
+    .await
+    .db_op("import_published:insert_identity")?;
+
+    // Insert draft version from the publication YAML.
+    let version_row = sqlx::query_as::<_, ContractVersionRow>(
+        r#"
+        INSERT INTO contract_versions
+            (id, contract_id, version, state, yaml_content, created_at,
+             compliance_mode, egress_leakage_mode, import_source, requires_review)
+        VALUES ($1, $2, $3, 'draft', $4, NOW(), $5, $6, 'publication', FALSE)
+        RETURNING id, contract_id, version, state, yaml_content,
+                  created_at, promoted_at, deprecated_at, compliance_mode,
+                  egress_leakage_mode, import_source, requires_review
+        "#,
+    )
+    .bind(version_id)
+    .bind(contract_id)
+    .bind(&pub_row.contract_version)
+    .bind(&pub_row.yaml_content)
+    .bind(compliance_mode)
+    .bind(egress_leakage_mode)
+    .fetch_one(&mut *tx)
+    .await
+    .db_op("import_published:insert_version")?;
+
+    tx.commit().await.db_op("import_published:commit")?;
+
+    // RFC-033: if the publication has `org` visibility, grant the importing org
+    // a viewer collaborator role on the contract so it can access the
+    // collaboration surface without a separate invite.
+    if pub_row.visibility == "org" {
+        if let Some(importer_org) = org_id {
+            // granted_by = the publication's owning org (or the importer if unknown).
+            let granting_org = pub_row.org_id.unwrap_or(importer_org);
+            // Best-effort — don't fail the import if this insert errors.
+            let _ = ensure_viewer_collaborator(
+                pool,
+                &pub_row.contract_name,
+                importer_org,
+                granting_org,
+            )
+            .await;
+        }
+    }
+
+    version_row.into_version()
+}
+
+/// For a `subscribe` import: check whether the source publication has a newer
+/// version available than the one the consumer imported.
+///
+/// Returns `(current_published_version, update_available, source_revoked)`.
+pub async fn check_import_status(
+    pool: &PgPool,
+    contract_id: Uuid,
+) -> AppResult<ImportStatusResult> {
+    // Load the contract identity to get provenance fields.
+    #[derive(sqlx::FromRow)]
+    struct ProvenanceRow {
+        imported_from_ref: Option<String>,
+        import_mode: Option<String>,
+    }
+
+    let prov = sqlx::query_as::<_, ProvenanceRow>(
+        r#"
+        SELECT imported_from_ref, import_mode
+        FROM contracts
+        WHERE id = $1 AND deleted_at IS NULL
+        "#,
+    )
+    .bind(contract_id)
+    .fetch_optional(pool)
+    .await
+    .db_op("check_import_status:load_provenance")?
+    .ok_or(AppError::ContractNotFound(contract_id))?;
+
+    let publication_ref = match prov.imported_from_ref {
+        Some(r) => r,
+        None => {
+            return Ok(ImportStatusResult {
+                import_mode: None,
+                publication_ref: None,
+                source_revoked: false,
+                update_available: false,
+                latest_published_version: None,
+                imported_version: None,
+            });
+        }
+    };
+
+    let import_mode = prov
+        .import_mode
+        .as_deref()
+        .and_then(|s| s.parse::<ImportMode>().ok());
+
+    // Load the publication to check its state.
+    let pub_row = get_publication(pool, &publication_ref).await?;
+
+    // The "imported" version is the version stored on the consumer's draft.
+    let imported_version = get_latest_draft_version(pool, contract_id).await?;
+
+    let update_available = if pub_row.is_revoked() {
+        false
+    } else {
+        // A newer version is available when the publication's version differs
+        // from what we imported.
+        imported_version
+            .as_deref()
+            .map(|iv| iv != pub_row.contract_version)
+            .unwrap_or(false)
+    };
+
+    Ok(ImportStatusResult {
+        import_mode,
+        publication_ref: Some(publication_ref),
+        source_revoked: pub_row.is_revoked(),
+        update_available,
+        latest_published_version: Some(pub_row.contract_version),
+        imported_version,
+    })
+}
+
+/// Result of `check_import_status`.
+#[derive(Debug, serde::Serialize)]
+pub struct ImportStatusResult {
+    pub import_mode: Option<ImportMode>,
+    pub publication_ref: Option<String>,
+    pub source_revoked: bool,
+    pub update_available: bool,
+    pub latest_published_version: Option<String>,
+    pub imported_version: Option<String>,
+}
+
+// =============================================================================
+// RFC-033 — Provider-Consumer Collaboration storage
+// =============================================================================
+
+// ---------------------------------------------------------------------------
+// Row types
+// ---------------------------------------------------------------------------
+
+/// A collaborator grant row from `contract_collaborators`.
+#[derive(Debug, serde::Serialize, sqlx::FromRow)]
+pub struct CollaboratorRow {
+    pub contract_name: String,
+    pub org_id: Uuid,
+    pub role: String,
+    pub granted_by: Uuid,
+    pub granted_at: chrono::DateTime<chrono::Utc>,
+}
+
+/// A comment row from `contract_comments`.
+#[derive(Debug, serde::Serialize, sqlx::FromRow)]
+pub struct CommentRow {
+    pub id: Uuid,
+    pub contract_name: String,
+    pub field: Option<String>,
+    pub org_id: Uuid,
+    pub author: String,
+    pub body: String,
+    pub resolved: bool,
+    pub created_at: chrono::DateTime<chrono::Utc>,
+}
+
+/// A change proposal row from `contract_change_proposals`.
+#[derive(Debug, serde::Serialize, sqlx::FromRow)]
+pub struct ProposalRow {
+    pub id: Uuid,
+    pub contract_name: String,
+    pub proposed_by: Uuid,
+    pub proposed_yaml: String,
+    pub status: String,
+    pub decided_by: Option<Uuid>,
+    pub created_at: chrono::DateTime<chrono::Utc>,
+}
+
+// ---------------------------------------------------------------------------
+// Collaborator functions
+// ---------------------------------------------------------------------------
+
+/// Return the `org_id` of the org that owns a contract by name.
+/// Returns `None` if no such contract exists (or it is deleted).
+pub async fn get_contract_owner_org(pool: &PgPool, contract_name: &str) -> AppResult<Option<Uuid>> {
+    let row: Option<(Uuid,)> = sqlx::query_as(
+        r#"
+        SELECT org_id FROM contracts
+        WHERE  name = $1 AND deleted_at IS NULL
+        LIMIT 1
+        "#,
+    )
+    .bind(contract_name)
+    .fetch_optional(pool)
+    .await
+    .db_op("get_contract_owner_org")?;
+
+    Ok(row.map(|(id,)| id))
+}
+
+/// Return the stored collaborator role for `org_id` on `contract_name`.
+/// Returns `None` if no row exists (no access).
+pub async fn get_collaborator_role(
+    pool: &PgPool,
+    contract_name: &str,
+    org_id: Uuid,
+) -> AppResult<Option<String>> {
+    let row: Option<(String,)> = sqlx::query_as(
+        r#"
+        SELECT role FROM contract_collaborators
+        WHERE  contract_name = $1 AND org_id = $2
+        "#,
+    )
+    .bind(contract_name)
+    .bind(org_id)
+    .fetch_optional(pool)
+    .await
+    .db_op("get_collaborator_role")?;
+
+    Ok(row.map(|(r,)| r))
+}
+
+/// List all collaborator grants for a contract, ordered by granted_at.
+pub async fn list_collaborators(
+    pool: &PgPool,
+    contract_name: &str,
+) -> AppResult<Vec<CollaboratorRow>> {
+    let rows = sqlx::query_as::<_, CollaboratorRow>(
+        r#"
+        SELECT contract_name, org_id, role, granted_by, granted_at
+        FROM   contract_collaborators
+        WHERE  contract_name = $1
+        ORDER  BY granted_at ASC
+        "#,
+    )
+    .bind(contract_name)
+    .fetch_all(pool)
+    .await
+    .db_op("list_collaborators")?;
+
+    Ok(rows)
+}
+
+/// Grant a role to an org on a contract.  Uses INSERT … ON CONFLICT UPDATE so
+/// calling this twice just updates the role (idempotent from the caller's view).
+pub async fn grant_collaborator(
+    pool: &PgPool,
+    contract_name: &str,
+    org_id: Uuid,
+    role: &str,
+    granted_by: Uuid,
+) -> AppResult<CollaboratorRow> {
+    let row = sqlx::query_as::<_, CollaboratorRow>(
+        r#"
+        INSERT INTO contract_collaborators
+            (contract_name, org_id, role, granted_by, granted_at)
+        VALUES ($1, $2, $3, $4, NOW())
+        ON CONFLICT (contract_name, org_id)
+        DO UPDATE SET role = EXCLUDED.role, granted_by = EXCLUDED.granted_by,
+                      granted_at = NOW()
+        RETURNING contract_name, org_id, role, granted_by, granted_at
+        "#,
+    )
+    .bind(contract_name)
+    .bind(org_id)
+    .bind(role)
+    .bind(granted_by)
+    .fetch_one(pool)
+    .await
+    .db_op("grant_collaborator")?;
+
+    Ok(row)
+}
+
+/// Update an existing collaborator's role.  Returns NotFound if no row exists.
+pub async fn update_collaborator_role(
+    pool: &PgPool,
+    contract_name: &str,
+    org_id: Uuid,
+    new_role: &str,
+) -> AppResult<CollaboratorRow> {
+    let row = sqlx::query_as::<_, CollaboratorRow>(
+        r#"
+        UPDATE contract_collaborators
+        SET    role = $3
+        WHERE  contract_name = $1 AND org_id = $2
+        RETURNING contract_name, org_id, role, granted_by, granted_at
+        "#,
+    )
+    .bind(contract_name)
+    .bind(org_id)
+    .bind(new_role)
+    .fetch_optional(pool)
+    .await
+    .db_op("update_collaborator_role")?
+    .ok_or_else(|| {
+        AppError::BadRequest(format!(
+            "collaborator org '{org_id}' not found on contract '{contract_name}'"
+        ))
+    })?;
+
+    Ok(row)
+}
+
+/// Remove a collaborator grant entirely.
+pub async fn revoke_collaborator(
+    pool: &PgPool,
+    contract_name: &str,
+    org_id: Uuid,
+) -> AppResult<()> {
+    let result = sqlx::query(
+        r#"
+        DELETE FROM contract_collaborators
+        WHERE  contract_name = $1 AND org_id = $2
+        "#,
+    )
+    .bind(contract_name)
+    .bind(org_id)
+    .execute(pool)
+    .await
+    .db_op("revoke_collaborator")?;
+
+    if result.rows_affected() == 0 {
+        return Err(AppError::BadRequest(format!(
+            "collaborator org '{org_id}' not found on contract '{contract_name}'"
+        )));
+    }
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// Comment functions
+// ---------------------------------------------------------------------------
+
+/// List all comments for a contract, oldest first.
+pub async fn list_comments(pool: &PgPool, contract_name: &str) -> AppResult<Vec<CommentRow>> {
+    let rows = sqlx::query_as::<_, CommentRow>(
+        r#"
+        SELECT id, contract_name, field, org_id, author, body, resolved, created_at
+        FROM   contract_comments
+        WHERE  contract_name = $1
+        ORDER  BY created_at ASC
+        "#,
+    )
+    .bind(contract_name)
+    .fetch_all(pool)
+    .await
+    .db_op("list_comments")?;
+
+    Ok(rows)
+}
+
+/// Insert a new comment.
+pub async fn add_comment(
+    pool: &PgPool,
+    contract_name: &str,
+    field: Option<&str>,
+    org_id: Uuid,
+    author: &str,
+    body: &str,
+) -> AppResult<CommentRow> {
+    let row = sqlx::query_as::<_, CommentRow>(
+        r#"
+        INSERT INTO contract_comments
+            (contract_name, field, org_id, author, body, resolved, created_at)
+        VALUES ($1, $2, $3, $4, $5, false, NOW())
+        RETURNING id, contract_name, field, org_id, author, body, resolved, created_at
+        "#,
+    )
+    .bind(contract_name)
+    .bind(field)
+    .bind(org_id)
+    .bind(author)
+    .bind(body)
+    .fetch_one(pool)
+    .await
+    .db_op("add_comment")?;
+
+    Ok(row)
+}
+
+/// Mark a comment as resolved.
+pub async fn resolve_comment(pool: &PgPool, comment_id: Uuid) -> AppResult<CommentRow> {
+    let row = sqlx::query_as::<_, CommentRow>(
+        r#"
+        UPDATE contract_comments
+        SET    resolved = true
+        WHERE  id = $1
+        RETURNING id, contract_name, field, org_id, author, body, resolved, created_at
+        "#,
+    )
+    .bind(comment_id)
+    .fetch_optional(pool)
+    .await
+    .db_op("resolve_comment")?
+    .ok_or_else(|| AppError::BadRequest(format!("comment '{comment_id}' not found")))?;
+
+    Ok(row)
+}
+
+// ---------------------------------------------------------------------------
+// Proposal functions
+// ---------------------------------------------------------------------------
+
+/// List all proposals for a contract, newest first.
+pub async fn list_proposals(pool: &PgPool, contract_name: &str) -> AppResult<Vec<ProposalRow>> {
+    let rows = sqlx::query_as::<_, ProposalRow>(
+        r#"
+        SELECT id, contract_name, proposed_by, proposed_yaml, status, decided_by, created_at
+        FROM   contract_change_proposals
+        WHERE  contract_name = $1
+        ORDER  BY created_at DESC
+        "#,
+    )
+    .bind(contract_name)
+    .fetch_all(pool)
+    .await
+    .db_op("list_proposals")?;
+
+    Ok(rows)
+}
+
+/// Open a new change proposal (status = 'open').
+pub async fn create_proposal(
+    pool: &PgPool,
+    contract_name: &str,
+    proposed_by: Uuid,
+    proposed_yaml: &str,
+) -> AppResult<ProposalRow> {
+    let row = sqlx::query_as::<_, ProposalRow>(
+        r#"
+        INSERT INTO contract_change_proposals
+            (contract_name, proposed_by, proposed_yaml, status, created_at)
+        VALUES ($1, $2, $3, 'open', NOW())
+        RETURNING id, contract_name, proposed_by, proposed_yaml, status, decided_by, created_at
+        "#,
+    )
+    .bind(contract_name)
+    .bind(proposed_by)
+    .bind(proposed_yaml)
+    .fetch_one(pool)
+    .await
+    .db_op("create_proposal")?;
+
+    Ok(row)
+}
+
+/// Set a proposal status to `approved` or `rejected`.
+/// Only operates on proposals that are currently `open`.
+pub async fn decide_proposal(
+    pool: &PgPool,
+    proposal_id: Uuid,
+    new_status: &str, // "approved" | "rejected"
+    decided_by: Uuid,
+) -> AppResult<ProposalRow> {
+    let row = sqlx::query_as::<_, ProposalRow>(
+        r#"
+        UPDATE contract_change_proposals
+        SET    status = $2, decided_by = $3
+        WHERE  id = $1 AND status = 'open'
+        RETURNING id, contract_name, proposed_by, proposed_yaml, status, decided_by, created_at
+        "#,
+    )
+    .bind(proposal_id)
+    .bind(new_status)
+    .bind(decided_by)
+    .fetch_optional(pool)
+    .await
+    .db_op("decide_proposal")?
+    .ok_or_else(|| {
+        AppError::BadRequest(format!(
+            "proposal '{proposal_id}' not found or is not in 'open' status"
+        ))
+    })?;
+
+    Ok(row)
+}
+
+/// Mark an `approved` proposal as `applied`.
+/// Only the owner calls this; the handler has already enforced that.
+/// Only operates on proposals that are currently `approved`.
+pub async fn apply_proposal(pool: &PgPool, proposal_id: Uuid) -> AppResult<ProposalRow> {
+    let row = sqlx::query_as::<_, ProposalRow>(
+        r#"
+        UPDATE contract_change_proposals
+        SET    status = 'applied'
+        WHERE  id = $1 AND status = 'approved'
+        RETURNING id, contract_name, proposed_by, proposed_yaml, status, decided_by, created_at
+        "#,
+    )
+    .bind(proposal_id)
+    .fetch_optional(pool)
+    .await
+    .db_op("apply_proposal")?
+    .ok_or_else(|| {
+        AppError::BadRequest(format!(
+            "proposal '{proposal_id}' not found or is not in 'approved' status"
+        ))
+    })?;
+
+    Ok(row)
+}
+
+/// Grant a `viewer` collaborator role to the importing org when a publication
+/// with `org` visibility is imported.  Idempotent — safe to call twice.
+///
+/// Called from `import_published_contract` when `pub_row.visibility == "org"`.
+pub async fn ensure_viewer_collaborator(
+    pool: &PgPool,
+    contract_name: &str,
+    org_id: Uuid,
+    granted_by: Uuid,
+) -> AppResult<()> {
+    sqlx::query(
+        r#"
+        INSERT INTO contract_collaborators
+            (contract_name, org_id, role, granted_by, granted_at)
+        VALUES ($1, $2, 'viewer', $3, NOW())
+        ON CONFLICT (contract_name, org_id) DO NOTHING
+        "#,
+    )
+    .bind(contract_name)
+    .bind(org_id)
+    .bind(granted_by)
+    .execute(pool)
+    .await
+    .db_op("ensure_viewer_collaborator")?;
+
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
+
+/// Return the version string of the latest (most recently created) draft for
+/// the contract, if any.
+async fn get_latest_draft_version(pool: &PgPool, contract_id: Uuid) -> AppResult<Option<String>> {
+    let row: Option<(String,)> = sqlx::query_as(
+        r#"
+        SELECT version FROM contract_versions
+        WHERE contract_id = $1 AND state = 'draft'
+        ORDER BY created_at DESC
+        LIMIT 1
+        "#,
+    )
+    .bind(contract_id)
+    .fetch_optional(pool)
+    .await
+    .db_op("get_latest_draft_version")?;
+
+    Ok(row.map(|(v,)| v))
 }

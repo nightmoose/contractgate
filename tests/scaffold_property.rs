@@ -223,7 +223,7 @@ proptest! {
 // (base and theirs), then mutate them in memory for the merge scenarios.
 // We test the algebraic properties directly against the merge function.
 
-use contractgate::contract::{Contract, FieldDefinition, FieldType, Ontology};
+use contractgate::contract::{Contract, EgressLeakageMode, FieldDefinition, FieldType, Ontology};
 use contractgate::scaffold::merge::three_way_merge;
 
 fn make_contract(fields: &[(&str, FieldType, bool)]) -> Contract {
@@ -251,6 +251,7 @@ fn make_contract(fields: &[(&str, FieldType, bool)]) -> Contract {
                 })
                 .collect(),
         },
+        egress_leakage_mode: EgressLeakageMode::Off,
         glossary: vec![],
         metrics: vec![],
         quality: vec![],

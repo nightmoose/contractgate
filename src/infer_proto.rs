@@ -15,7 +15,7 @@
 //! Exotic features (map<K,V>, Any, extensions, proto2 syntax) fall back to
 //! `FieldType::Any` with a note, preserving forward-compatibility.
 
-use crate::contract::{Contract, FieldDefinition, FieldType, Ontology};
+use crate::contract::{Contract, EgressLeakageMode, FieldDefinition, FieldType, Ontology};
 use crate::error::{AppError, AppResult};
 use axum::Json;
 use serde_json::Value;
@@ -87,6 +87,7 @@ pub async fn infer_proto_handler(
         name: req.name.clone(),
         description: req.description.clone(),
         compliance_mode: false,
+        egress_leakage_mode: EgressLeakageMode::Off,
         ontology: Ontology { entities },
         glossary: vec![],
         metrics: vec![],

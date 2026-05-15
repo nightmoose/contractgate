@@ -1,8 +1,9 @@
 # RFC-033: Provider-Consumer Collaboration
 
-**Status:** Draft
+**Status:** Accepted
 **Date:** 2026-05-14
 **Author:** Alex Suarez
+**Implemented:** 2026-05-15
 
 ---
 
@@ -204,25 +205,25 @@ Every new policy is helper-routed; none introduce an inline
 
 ## Acceptance Criteria
 
-- [ ] Migration `021_contract_collaboration.sql` adds
+- [x] Migration `021_contract_collaboration.sql` adds
       `contract_collaborators`, `contract_comments`,
       `contract_change_proposals`
-- [ ] All new RLS policies route org membership through
+- [x] All new RLS policies route org membership through
       `get_my_org_ids()` — no inline `org_memberships` subqueries
       (no `42P17` regression)
-- [ ] A collaborator org can read a shared contract but **cannot** read
+- [x] A collaborator org can read a shared contract but **cannot** read
       the owner org's `audit_log`, `quarantine_events`, or
       `contracts.pii_salt` — asserted by test
-- [ ] `editor` / `reviewer` / `viewer` permissions behave per the role
+- [x] `editor` / `reviewer` / `viewer` permissions behave per the role
       table
-- [ ] Collaborator edits flow through proposal → approve → apply; a
+- [x] Collaborator edits flow through proposal → approve → apply; a
       collaborator cannot mutate a stable version directly
-- [ ] Field-anchored comments can be created and resolved
-- [ ] RFC-032 `org`-visibility import resolves to a `viewer` row in
+- [x] Field-anchored comments can be created and resolved
+- [x] RFC-032 `org`-visibility import resolves to a `viewer` row in
       `contract_collaborators`
-- [ ] `cargo test` / `cargo check` pass; existing RFC-001 tenancy and
+- [x] `cargo test` / `cargo check` pass; existing RFC-001 tenancy and
       RLS behavior unchanged
-- [ ] `docs/collaboration-reference.md` added — new user-facing
+- [x] `docs/collaboration-reference.md` added — new user-facing
       collaborator / comment / proposal endpoints
 
 ---

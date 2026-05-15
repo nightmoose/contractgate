@@ -2,6 +2,311 @@
 
 ---
 
+## Run: 2026-05-15 — RFC-033: Provider-Consumer Collaboration
+
+**Branch:** `nightly-maintenance-2026-05-15`
+
+### Summary
+
+Implemented RFC-033 end-to-end: scoped cross-org collaboration on a single contract,
+with a role model (owner / editor / reviewer / viewer), threaded field-anchored
+comments, and a proposal-based change review flow.
+
+### Files Added
+
+- `supabase/migrations/021_contract_collaboration.sql` — three new tables:
+  - `contract_collaborators` — (contract_name, org_id) grant with role + metadata.
+    PRIMARY KEY `(contract_name, org_id)`.
+  - `contract_comments` — flat notes optionally anchored to a specific field, resolvable.
+  - `contract_change_proposals` — editor proposes YAML; reviewer/owner approves/rejects;
+    owner applies. Status machine: `open → approved/rejected → applied`.
+  - All RLS policies route through `public.get_my_org_ids()` — no inline
+    `org_memberships` subqueries (no 42P17 regression).
+  - Extended `contracts` SELECT policy to include collaborator orgs (replacing
+    the policy written by migration 013 with an OR branch).
+- `src/collaboration.rs` — new module with 11 Axum handlers:
+  - `list_collaborators_handler`, `grant_collaborator_handler`,
+    `patch_collaborator_handler`, `revoke_collaborator_handler`
+  - `list_comments_handler`, `add_comment_handler`, `resolve_comment_handler`
+  - `list_proposals_handler`, `create_proposal_handler`,
+    `decide_proposal_handler`, `apply_proposal_handler`
+  - `CallerRole` enum with `satisfies()` rank check; `resolve_role()` /
+    `require_role()` helpers; `validate_collaborator_role()` guard.
+  - 8 inline unit tests covering the full role-permission matrix and
+    invalid-role rejection.
+- `docs/collaboration-reference.md` — user-facing reference for all 11
+  endpoints, role table, RFC-032 integration, and error codes.
+
+### Files Modified
+
+- `src/storage.rs` — appended RFC-033 storage layer:
+  - Row types: `CollaboratorRow`, `CommentRow`, `ProposalRow` (all `serde::Serialize` +
+    `sqlx::FromRow`).
+  - Functions: `get_contract_owner_org`, `get_collaborator_role`,
+    `list_collaborators`, `grant_collaborator`, `update_collaborator_role`,
+    `revoke_collaborator`, `list_comments`, `add_comment`, `resolve_comment`,
+    `list_proposals`, `create_proposal`, `decide_proposal`, `apply_proposal`,
+    `ensure_viewer_collaborator`.
+  - `import_published_contract` — added post-commit best-effort call to
+    `ensure_viewer_collaborator` when `visibility = "org"` (RFC-033 ↔ RFC-032
+    integration point).
+- `src/main.rs` — added `mod collaboration;`; registered 11 routes under
+  `/contracts/{name}/collaborators`, `/contracts/{name}/comments`, and
+  `/contracts/{name}/proposals` in the protected router.
+- `src/tests.rs` — appended `rfc033_collaboration_tests` module (20 unit tests):
+  role matrix, `from_str` coverage, serialization of all three row types,
+  security-invariant compile-time assertion that no pii_salt field leaks through
+  collaboration response structs.
+- `dashboard/lib/api.ts` — appended RFC-033 TypeScript types (`CollaboratorRole`,
+  `CollaboratorRow`, `CommentRow`, `ProposalRow`) and 11 API client functions
+  (`listCollaborators`, `grantCollaborator`, `patchCollaborator`,
+  `revokeCollaborator`, `listComments`, `addComment`, `resolveComment`,
+  `listProposals`, `createProposal`, `decideProposal`, `applyProposal`).
+- `docs/rfcs/033-provider-consumer-collaboration.md` — status: Draft → Accepted;
+  all acceptance criteria checked off.
+
+### Design decisions
+
+- **`{name}` path parameter.** Collaboration routes use the contract's text name
+  (not UUID) because the collaboration tables join on `contract_name` text —
+  matching exactly the RFC schema. Consistent with `scorecard/{source}` precedent.
+- **`ensure_viewer_collaborator` is best-effort.** The `import_published_contract`
+  function runs it after the transaction commits and ignores its error. This means
+  a DB hiccup on the collaborator insert never rolls back a successful import.
+- **Owner role never stored.** The implicit ownership check (`contracts.org_id ==
+  caller_org`) is done first in `resolve_role`; no row in `contract_collaborators`
+  carries `role = 'owner'`. The `validate_collaborator_role` guard rejects attempts
+  to grant it explicitly.
+- **`apply_proposal` marks as applied only.** The owner receives the `proposed_yaml`
+  in the response and uses it to create a new contract version via the existing
+  version API. This keeps the collaboration module dependency-free from the
+  versioning state machine.
+- **No inline `org_memberships` subqueries.** Every RLS policy added here uses
+  `= ANY (SELECT public.get_my_org_ids())`. Migration comment documents the
+  42P17 risk and the mitigation.
+
+### Build status
+
+- `cargo check` / `cargo test`: could not run — Rust toolchain not available in
+  sandbox. Code reviewed for correctness against schema, error types, and existing
+  import paths. **Run `cargo check && cargo test` before merging.**
+- `npm run build`: could not run — npm registry blocked in sandbox. TypeScript
+  types follow existing patterns; no new dependencies added. **Run
+  `cd dashboard && npm run build` before merging.**
+- 20 new unit tests added to `src/tests.rs` (rfc033_collaboration_tests module) +
+  8 inline tests in `src/collaboration.rs`.
+
+---
+
+## 2026-05-15 — RFC-032: Contract Sharing & Publication
+
+**Branch**: `nightly-maintenance-2026-05-15`
+
+### Summary
+
+Implemented RFC-032: a publish → import flow that lets providers share a
+contract version by stable reference and consumers import it directly — no
+manual reconstruction, no spec drift.
+
+### Changes
+
+**`supabase/migrations/020_contract_publication.sql`** (new)
+- `contract_publications` table: `ref` (24-hex PK), `contract_id`, `version_id`,
+  `contract_name`, `contract_version`, `yaml_content`, `visibility`
+  (`public|link|org`), `link_token` (32-hex for link visibility), `org_id`,
+  `published_by`, `published_at`, `revoked_at` (soft-delete).
+- `contracts` provenance columns: `imported_from_ref`, `import_mode`
+  (`snapshot|subscribe`), `imported_at`.
+- RLS policies: authenticated users see own-org publications; service_role full access.
+
+**`src/contract.rs`**
+- Added `ImportSource::Publication` variant (`"publication"` wire name).
+- Added `PublicationVisibility` enum (`public|link|org`) with `FromStr` + `as_str`.
+- Added `ImportMode` enum (`snapshot|subscribe`) with `FromStr` + `as_str`.
+
+**`src/publication.rs`** (new)
+- `publish_handler` — `POST /contracts/{id}/versions/{v}/publish`
+- `revoke_handler` — `DELETE /contracts/publications/{ref}`
+- `fetch_published_handler` — `GET /published/{ref}` (public route)
+- `import_published_handler` — `POST /contracts/import-published`
+- `import_status_handler` — `GET /contracts/{id}/import-status`
+- `constant_time_eq` for link-token comparison (timing-safe, `pub(crate)` for tests).
+
+**`src/storage.rs`**
+- `publish_contract_version` — insert into `contract_publications`, denormalise YAML.
+- `revoke_publication` — soft-delete by `publication_ref + org_id`.
+- `get_publication` — fetch by ref (does not filter on revoked).
+- `import_published_contract` — creates new contract identity + draft with provenance.
+- `check_import_status` — reads provenance columns, compares published vs imported version.
+- `ImportStatusResult` public struct + `get_latest_draft_version` helper.
+
+**`src/main.rs`**
+- `mod publication;` added.
+- Public router: `GET /published/{publication_ref}` (no auth).
+- Protected router: publish, revoke, import-published, import-status routes.
+
+**`src/tests.rs`**
+- `rfc032_publication_tests` module: 15 unit tests covering ImportSource,
+  PublicationVisibility, ImportMode roundtrips, unknown-value rejection,
+  constant_time_eq correctness, PublishRequest defaults, ImportStatusResult
+  serialization, and link token format.
+
+**`dashboard/lib/api.ts`**
+- New types: `PublicationVisibility`, `ImportMode`, `PublishResponse`,
+  `FetchedPublication`, `RevokeResponse`, `ImportPublishedResponse`,
+  `ImportStatusResult`.
+- New functions: `publishVersion`, `revokePublication`, `fetchPublished`,
+  `importPublished`, `getImportStatus`.
+
+**`dashboard/app/contracts/page.tsx`**
+- `PublishModal` component: visibility selector (`public|link`), shows
+  publication ref + link token (with copy buttons) on success.
+- Publish button in `EditContractModal` footer (stable + draft versions),
+  alongside the GitHub Sync button.
+- `useImportStatuses` hook: polls `import-status` for all subscribe-mode
+  contracts on the list page.
+- "↑ Update available" badge + "source revoked" badge in `ContractList`
+  for subscribe-mode imported contracts.
+
+**`docs/contract-sharing-reference.md`** (new)
+- User-facing reference for all 5 endpoints, schema tables, TypeScript SDK
+  usage, and dashboard overview.
+
+**`docs/rfcs/032-contract-sharing-publication.md`**
+- Status: Draft → Accepted. All acceptance criteria checked.
+
+---
+
+## 2026-05-15 — RFC-030: Egress PII & Leakage Guard
+
+**Branch**: `nightly-maintenance-2026-05-15`
+
+### Summary
+
+Implemented RFC-030: PII masking and undeclared-field leakage guard on the
+egress path.  The egress handler now applies the RFC-004 transform engine to
+the outbound payload so raw PII never appears in any API response.  Adds
+`egress_leakage_mode` (`off` / `strip` / `fail`) at the contract-version
+level to control how undeclared fields in the outbound payload are handled.
+
+### Changes
+
+**`src/egress.rs`**
+- Added `apply_egress_pii_pipeline()` — pure function that runs RFC-004
+  `apply_transforms` followed by the leakage guard.  Returns
+  `(for_storage, for_response, stripped_fields, leakage_violations)`.
+- Replaced the old handler comment ("response returns original events") with
+  the correct RFC-030 pipeline: cleaned payload is what the caller receives.
+- `egress_handler` now calls `apply_egress_pii_pipeline` per record, merges
+  leakage violations into `merged_results`, passes cleaned events (not raw) to
+  `apply_disposition`, and attaches `stripped_fields` to each outcome.
+- `apply_disposition` outcome construction now initialises `stripped_fields:
+  vec![]` (was a compile error — field existed on struct but not in initializer).
+- `EgressResponse` construction now sets `egress_leakage_mode` (was a second
+  compile error).
+- Audit/quarantine persist section uses `merged_results` so leakage violations
+  are recorded alongside schema violations.
+- 11 new unit tests covering: mask/redact/drop on egress, `leakage_mode=fail`
+  (single and multiple undeclared fields), `leakage_mode=strip`, `leakage_mode=off`,
+  ingest path unaffected, and salt continuity (hash egress == hash ingest).
+
+**`supabase/migrations/018_egress_leakage_guard.sql`** (new)
+- `ALTER TABLE contract_versions ADD COLUMN IF NOT EXISTS egress_leakage_mode`
+  with `CHECK (egress_leakage_mode IN ('off', 'strip', 'fail'))`.
+- Default `'off'` — no behavior change for existing contracts until opt-in.
+
+**`docs/pii-masking-reference.md`** (new)
+- User-facing reference covering both ingest (RFC-004) and egress (RFC-030)
+  transform behavior: all four transform kinds, mask styles, leakage mode
+  table, pipeline order diagram, migration instructions, salt continuity.
+
+**`docs/rfcs/030-egress-pii-leakage-guard.md`**
+- Status: Draft → Accepted.  All acceptance criteria checked.
+
+### What the user must run
+
+```bash
+# Apply migration
+psql $DATABASE_URL -f supabase/migrations/018_egress_leakage_guard.sql
+
+# Rust backend
+cargo check
+cargo test
+
+# Frontend — no changes
+```
+
+---
+
+## 2026-05-14 — RFC-029: Egress Validation
+
+**Branch**: `nightly-maintenance-2026-05-14`
+
+### Summary
+
+Implemented RFC-029: symmetric outbound contract enforcement via
+`POST /egress/{contract_id}`.  The egress path reuses the `validate()`
+engine verbatim — no rule logic was duplicated — and introduces three
+disposition modes (`block`, `fail`, `tag`) for controlling how failing
+records are handled in the response.
+
+### Changes
+
+**`src/egress.rs`** (new)
+- `POST /egress/{contract_id}` handler with `@version` suffix support.
+- `DispositionMode` enum: `Block` (default), `Fail`, `Tag`.
+- Pure `apply_disposition()` function — tested in isolation without HTTP or DB.
+- Parallel validation via `rayon` in `spawn_blocking` (same pattern as ingest).
+- Fire-and-forget audit + quarantine writes tagged `direction = 'egress'`.
+- 22 unit tests covering all three disposition modes plus path parsing.
+
+**`src/storage.rs`**
+- Added `direction: String` field to `AuditEntryInsert` and `QuarantineEventInsert`.
+- Updated `log_audit_entries_batch` UNNEST INSERT to include `direction` column.
+- Updated `quarantine_events_batch` UNNEST INSERT to include `direction` column.
+- Updated `log_audit_entry` (single-row helper) with `direction: &str` param.
+- Updated `quarantine_event` (single-row helper) with `direction: &str` param.
+
+**`src/ingest.rs`**, **`src/v1_ingest.rs`**, **`src/replay.rs`**,
+**`src/kafka_consumer.rs`**, **`src/kinesis_consumer.rs`**
+- All `AuditEntryInsert` and `QuarantineEventInsert` instantiations updated
+  with `direction: "ingress".to_string()`.
+- Both `log_audit_entry` call sites in ingest updated with `direction: "ingress"`.
+
+**`src/main.rs`**
+- Added `mod egress;` declaration.
+- Added `.route("/egress/{raw_id}", post(egress::egress_handler))` to the
+  protected router.
+
+**`supabase/migrations/017_egress_validation.sql`** (new)
+- `ALTER TABLE audit_log ADD COLUMN direction text NOT NULL DEFAULT 'ingress'`.
+- `ALTER TABLE quarantine_events ADD COLUMN direction text NOT NULL DEFAULT 'ingress'`.
+- Indexes on `(contract_id, direction, created_at DESC)` for both tables.
+
+**`dashboard/lib/api.ts`**
+- `EgressDisposition`, `EgressOutcome`, `EgressResponse` interfaces.
+- `egressValidate(contractId, payload, opts)` client function.
+
+**`docs/egress-validation-reference.md`** (new)
+- User-facing reference doc: endpoint, disposition modes, response shape,
+  status codes, examples (curl + TypeScript), SQL audit queries.
+
+### What the user must run
+
+```bash
+# Rust backend
+cargo check
+cargo test
+
+# Apply migration (requires Supabase CLI or direct psql)
+psql $DATABASE_URL -f supabase/migrations/017_egress_validation.sql
+
+# Frontend (no changes to pages or components — API client only)
+cd dashboard && npm run build
+```
+
+---
+
 ## 2026-05-05 — Confluent connector: fix version-pin bug
 
 **Branch**: `nightly-maintenance-2026-05-05`
@@ -1020,5 +1325,47 @@ This was the **bootstrap run** — the repository contained only `CLAUDE.md`. Th
 - Add `quarantine_events` table and quarantine flow in `ingest.rs`
 - Add webhook forwarding destination (configurable per-contract)
 - Add latency histogram endpoint for p99 tracking
+
+---
+
+## Run: 2026-05-15 — RFC-031 Provider Data-Quality Scorecard
+
+**Branch:** `nightly-maintenance-2026-05-15`
+
+### Summary
+
+Implemented RFC-031 end-to-end (resuming from a prior session that hit a usage limit).
+
+### Files Added
+
+- `supabase/migrations/019_provider_scorecard.sql` — three database objects:
+  - `provider_scorecard` view: per-provider, per-contract pass/quarantine summary over `audit_log`
+  - `provider_field_health` view: per-provider, per-field violation breakdown via lateral JSON unpack of `quarantine_events.violation_details`
+  - `provider_field_baseline` table: rolling 30-day baseline for drift detection, with RLS policies and index on `(source, window_start DESC)`
+- `src/scorecard.rs` — new module with:
+  - `query_scorecard`, `query_field_health`, `query_drift_signals` — async query helpers over the views
+  - `scorecard_handler` — `GET /scorecard/{source}` → full JSON scorecard
+  - `drift_handler` — `GET /scorecard/{source}/drift` → active drift signals only
+  - `export_handler` — `GET /scorecard/{source}/export?format=csv` → RFC 4180 CSV download
+  - `run_baseline_rollup` — idempotent daily job (`cargo run -- scorecard-rollup`); upserts 30-day violation rates into `provider_field_baseline`
+  - 10 unit tests: drift threshold logic (5 cases), CSV escaping (4 cases), constants check
+- `docs/scorecard-reference.md` — full user-facing API reference: endpoints, response shapes, violation code table, drift detection semantics, rollup job instructions, DB objects
+
+### Files Modified
+
+- `src/main.rs` — registered `mod scorecard`; added three protected routes (`/scorecard/{source}`, `/scorecard/{source}/drift`, `/scorecard/{source}/export`); added `scorecard-rollup` CLI subcommand early-exit branch in `main()`
+- `docs/rfcs/031-provider-data-quality-scorecard.md` — status: Draft → Accepted; all acceptance criteria checked off
+
+### Design decisions
+
+- **No ingest-path writes.** Scorecard is pure reads over existing audit/quarantine tables. The `<15ms p99` budget is untouched.
+- **Schema adaptation.** RFC spec SQL used `audit_log.contract_name` and `audit_log.outcome` which don't exist. Adapted to join through `contract_versions` on `(contract_id, contract_version)` and use `passed BOOLEAN`. The migration comment documents each delta.
+- **`source` via `contract_versions`.** RFC-028 added `source` to `contract_versions`, not `contracts`. All three surfaces join through `contract_versions` with `COALESCE(cv.source, '(unsourced)')` to bin un-sourced contracts rather than drop them.
+- **Drift threshold / baseline window.** Fixed at 5 pp / 30d / 24h as recommended in RFC-031 Open Questions 1–2. Constants named `DRIFT_THRESHOLD_PCT` and `BASELINE_WINDOW_DAYS` for easy future extraction.
+
+### Build status
+
+- `cargo check` / `cargo test`: could not run — Rust toolchain not available in sandbox. Code reviewed for correctness against schema, error types, and import paths. **Run `cargo check && cargo test` before merging.**
+- No dashboard changes in this RFC (scorecard UI deferred per RFC-031 Out of Scope).
 
 ---

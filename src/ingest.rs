@@ -510,6 +510,7 @@ pub async fn ingest_handler(
                 // Fresh ingest: let Postgres generate the ID and no replay link.
                 pre_assigned_id: None,
                 replay_of_quarantine_id: None,
+                direction: "ingress".to_string(),
             })
             .collect();
 
@@ -530,6 +531,7 @@ pub async fn ingest_handler(
                 // Fresh ingest: no parent replay source, no pre-assigned ID.
                 replay_of_quarantine_id: None,
                 pre_assigned_id: None,
+                direction: "ingress".to_string(),
             })
             .collect();
 
@@ -711,6 +713,7 @@ async fn deprecated_pin_quarantine(
                 // Deprecated-pin quarantine is ingest-time, not replay-derived.
                 replay_of_quarantine_id: None,
                 pre_assigned_id: None,
+                direction: "ingress".to_string(),
             })
             .collect();
 
@@ -757,6 +760,7 @@ async fn deprecated_pin_quarantine(
                 0,
                 source_ip_owned.as_deref(),
                 "http",
+                "ingress",
             )
             .await
             {
@@ -846,6 +850,7 @@ fn write_batch_rejected_audit(
             0,
             source_ip_owned.as_deref(),
             "http",
+            "ingress",
         )
         .await
         {

@@ -143,6 +143,7 @@ pub fn three_way_merge(base: Option<&Contract>, ours: &Contract, theirs: &Contra
         name: ours.name.clone(),
         description: ours.description.clone(),
         compliance_mode: ours.compliance_mode,
+        egress_leakage_mode: ours.egress_leakage_mode,
         ontology: Ontology {
             entities: result_fields,
         },
@@ -198,7 +199,7 @@ fn ordered_f64_eq(a: Option<f64>, b: Option<f64>) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::contract::{FieldType, Ontology};
+    use crate::contract::{EgressLeakageMode, FieldType, Ontology};
 
     fn make_field(name: &str, ft: FieldType) -> FieldDefinition {
         FieldDefinition {
@@ -223,6 +224,7 @@ mod tests {
             name: "test".to_string(),
             description: None,
             compliance_mode: false,
+            egress_leakage_mode: EgressLeakageMode::Off,
             ontology: Ontology { entities: fields },
             glossary: vec![],
             metrics: vec![],

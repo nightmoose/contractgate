@@ -44,6 +44,14 @@ pub struct Contract {
     /// structured violations just like ontology checks.
     #[serde(default)]
     pub quality: Vec<QualityRule>,
+    /// RFC-030: controls what happens to fields in the outbound payload that
+    /// are not declared in `ontology.entities`.
+    ///   - `off`   — pass through untouched (backwards-compatible default).
+    ///   - `strip` — remove from response; record in per-record outcome.
+    ///   - `fail`  — treat as a violation, subject to the RFC-029 disposition
+    ///     (`block` / `fail` / `tag`).  Field is stripped even on `tag`.
+    #[serde(default)]
+    pub egress_leakage_mode: EgressLeakageMode,
 }
 
 // ---------------------------------------------------------------------------
@@ -188,6 +196,57 @@ impl MaskStyle {
         match self {
             MaskStyle::Opaque => "opaque",
             MaskStyle::FormatPreserving => "format_preserving",
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Egress leakage mode (RFC-030)
+// ---------------------------------------------------------------------------
+
+/// What the egress guard does when an outbound payload contains a field that
+/// is not declared in `ontology.entities`.
+///
+/// The mode is version-level: one contract version may want strict egress
+/// (`fail`) while another stays permissive (`off`) during migration.  The
+/// three-way split is intentional — ingest `compliance_mode` is a boolean
+/// (strip-for-storage), but egress needs to distinguish "silently strip"
+/// from "surface as a violation" because silent stripping can hide real
+/// producer bugs.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum EgressLeakageMode {
+    /// Pass undeclared fields through untouched.  Backwards-compatible default.
+    #[default]
+    Off,
+    /// Remove undeclared fields from the response.  Records the stripped field
+    /// names in the per-record egress outcome.
+    Strip,
+    /// Treat each undeclared field as a `LeakageViolation`.  The record is
+    /// subject to the RFC-029 disposition (`block` / `fail` / `tag`).
+    /// Undeclared fields are stripped from the response even when the record
+    /// passes through (e.g. under `tag` disposition).
+    Fail,
+}
+
+impl EgressLeakageMode {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            EgressLeakageMode::Off => "off",
+            EgressLeakageMode::Strip => "strip",
+            EgressLeakageMode::Fail => "fail",
+        }
+    }
+}
+
+impl FromStr for EgressLeakageMode {
+    type Err = String;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "off" => Ok(Self::Off),
+            "strip" => Ok(Self::Strip),
+            "fail" => Ok(Self::Fail),
+            _ => Err(format!("invalid EgressLeakageMode: {s:?}")),
         }
     }
 }
@@ -450,6 +509,10 @@ pub enum ImportSource {
     /// partially or fully unrecoverable.  `requires_review` is set to `true`
     /// and promotion to stable is blocked until explicitly cleared.
     OdcsStripped,
+    /// Imported from a published contract reference (RFC-032).  Provenance
+    /// (publication ref, import mode, imported_at) is recorded on the
+    /// `contracts` row.
+    Publication,
 }
 
 impl ImportSource {
@@ -458,6 +521,7 @@ impl ImportSource {
             ImportSource::Native => "native",
             ImportSource::Odcs => "odcs",
             ImportSource::OdcsStripped => "odcs_stripped",
+            ImportSource::Publication => "publication",
         }
     }
 }
@@ -469,7 +533,77 @@ impl FromStr for ImportSource {
             "native" => Ok(Self::Native),
             "odcs" => Ok(Self::Odcs),
             "odcs_stripped" => Ok(Self::OdcsStripped),
+            "publication" => Ok(Self::Publication),
             _ => Err(format!("invalid ImportSource: {s:?}")),
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Publication types (RFC-032)
+// ---------------------------------------------------------------------------
+
+/// Visibility level for a published contract.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum PublicationVisibility {
+    /// Anyone with the publication ref can fetch it.
+    Public,
+    /// Requires both the ref and an unguessable link token.
+    Link,
+    /// Only orgs explicitly granted access (wired up by RFC-033).
+    Org,
+}
+
+impl PublicationVisibility {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Public => "public",
+            Self::Link => "link",
+            Self::Org => "org",
+        }
+    }
+}
+
+impl FromStr for PublicationVisibility {
+    type Err = String;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "public" => Ok(Self::Public),
+            "link" => Ok(Self::Link),
+            "org" => Ok(Self::Org),
+            _ => Err(format!("invalid PublicationVisibility: {s:?}")),
+        }
+    }
+}
+
+/// How an imported contract stays linked to its source publication.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ImportMode {
+    /// One-time copy.  Provenance is recorded but the contract never auto-updates.
+    Snapshot,
+    /// Copy with a live link.  When the provider publishes a newer version,
+    /// `import-status` surfaces an "update available" signal — never auto-applies.
+    Subscribe,
+}
+
+impl ImportMode {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Snapshot => "snapshot",
+            Self::Subscribe => "subscribe",
+        }
+    }
+}
+
+impl FromStr for ImportMode {
+    type Err = String;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "snapshot" => Ok(Self::Snapshot),
+            "subscribe" => Ok(Self::Subscribe),
+            _ => Err(format!("invalid ImportMode: {s:?}")),
         }
     }
 }
@@ -516,6 +650,11 @@ pub struct ContractVersion {
     /// the ontology (RFC-004).  Default `false`.
     #[serde(default)]
     pub compliance_mode: bool,
+    /// RFC-030: mirrors `contract_versions.egress_leakage_mode`.
+    /// Controls handling of undeclared fields in outbound payloads.
+    /// Default `off` (pass-through) for backwards compatibility.
+    #[serde(default)]
+    pub egress_leakage_mode: EgressLeakageMode,
     /// Where this version originated (native / odcs / odcs_stripped).
     #[serde(default)]
     pub import_source: ImportSource,
@@ -659,6 +798,9 @@ pub struct VersionResponse {
     /// RFC-004 compliance mode flag — exposed so the dashboard can render
     /// the toggle state without re-parsing YAML.
     pub compliance_mode: bool,
+    /// RFC-030 egress leakage mode — exposed so the dashboard can render
+    /// the selector without re-parsing YAML.
+    pub egress_leakage_mode: EgressLeakageMode,
     /// Import provenance.
     pub import_source: ImportSource,
     /// When `true`, human review is required before promotion to stable.
@@ -677,6 +819,7 @@ impl From<&ContractVersion> for VersionResponse {
             promoted_at: v.promoted_at,
             deprecated_at: v.deprecated_at,
             compliance_mode: v.compliance_mode,
+            egress_leakage_mode: v.egress_leakage_mode,
             import_source: v.import_source,
             requires_review: v.requires_review,
         }
