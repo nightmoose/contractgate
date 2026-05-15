@@ -40,6 +40,7 @@ import {
   getImportStatus,
   fetchPublished,
   importPublished,
+  inferCsv,
 } from "@/lib/api";
 import type {
   ContractSummary,
@@ -1167,6 +1168,223 @@ function GeneratorTab({ onSaved }: { onSaved: () => void }) {
 }
 
 // ---------------------------------------------------------------------------
+// CsvGeneratorTab (RFC-035)
+// ---------------------------------------------------------------------------
+
+type CsvInputMode = "paste" | "upload";
+
+function CsvGeneratorTab({ onSaved }: { onSaved: () => void }) {
+  const [inputMode, setInputMode] = useState<CsvInputMode>("paste");
+  const [csvText, setCsvText] = useState("");
+  const [fileName, setFileName] = useState<string | null>(null);
+  const [contractName, setContractName] = useState("my_contract");
+  const [generatedYaml, setGeneratedYaml] = useState<string | null>(null);
+  const [fieldCount, setFieldCount] = useState<number | null>(null);
+  const [rowCount, setRowCount] = useState<number | null>(null);
+  const [inferring, setInferring] = useState(false);
+  const [inferError, setInferError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setFileName(file.name);
+    // Derive contract name from filename (strip extension)
+    const base = file.name.replace(/\.[^.]+$/, "").replace(/[^a-zA-Z0-9_]/g, "_").toLowerCase();
+    if (base) setContractName(base);
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      setCsvText(ev.target?.result as string ?? "");
+      setGeneratedYaml(null);
+      setInferError(null);
+    };
+    reader.readAsText(file);
+  };
+
+  const handleInfer = async () => {
+    const content = csvText.trim();
+    if (!content) { setInferError("Paste or upload a CSV first."); return; }
+    setInferring(true); setInferError(null); setGeneratedYaml(null);
+    try {
+      const res = await inferCsv({ name: contractName, csv_content: content });
+      setGeneratedYaml(res.yaml_content);
+      setFieldCount(res.field_count);
+      setRowCount(res.sample_count);
+    } catch (e: unknown) {
+      setInferError(e instanceof Error ? e.message : String(e));
+    } finally { setInferring(false); }
+  };
+
+  const handleSave = async () => {
+    if (!generatedYaml) return;
+    setSaving(true); setSaveError(null);
+    try { await createContract(generatedYaml); await mutate("contracts"); onSaved(); }
+    catch (e: unknown) { setSaveError(e instanceof Error ? e.message : String(e)); }
+    finally { setSaving(false); }
+  };
+
+  return (
+    <div className="space-y-6">
+      <p className="text-sm text-slate-400">
+        Upload or paste a CSV file. The backend auto-detects delimiters and infers field types,
+        producing a ready-to-edit YAML contract.
+      </p>
+
+      {/* Input mode tabs */}
+      <div className="flex gap-1 bg-[#0a0d12] border border-[#1f2937] rounded-lg p-1 w-fit">
+        {(["paste", "upload"] as CsvInputMode[]).map((m) => (
+          <button
+            key={m}
+            onClick={() => { setInputMode(m); setGeneratedYaml(null); setInferError(null); }}
+            className={clsx(
+              "px-4 py-1.5 text-sm font-medium rounded-md transition-colors",
+              inputMode === m ? "bg-[#1f2937] text-slate-100" : "text-slate-500 hover:text-slate-300"
+            )}
+          >
+            {m === "paste" ? "📋 Paste" : "📁 Upload"}
+          </button>
+        ))}
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* Left: CSV input */}
+        <div>
+          <div className="flex items-center justify-between mb-2">
+            <label className="text-xs font-medium text-slate-400 uppercase tracking-wider">
+              {inputMode === "paste" ? "CSV Content" : "CSV File"}
+            </label>
+            {csvText && <span className="text-xs text-slate-600">{csvText.split("\n").length} lines</span>}
+          </div>
+
+          {inputMode === "paste" ? (
+            <textarea
+              className="w-full h-72 bg-[#0a0d12] text-orange-300 font-mono text-sm p-4 rounded-lg border border-[#1f2937] outline-none focus:border-orange-700 resize-y"
+              value={csvText}
+              onChange={(e) => { setCsvText(e.target.value); setGeneratedYaml(null); setInferError(null); }}
+              spellCheck={false}
+              placeholder={"id,name,amount,created_at\n1,Alice,99.99,2024-01-01\n2,Bob,149.00,2024-01-02"}
+            />
+          ) : (
+            <div className="flex flex-col items-center justify-center h-72 border-2 border-dashed border-[#2d3748] rounded-lg bg-[#0a0d12] gap-3">
+              <span className="text-4xl">📊</span>
+              <p className="text-sm text-slate-400">
+                {fileName ? (
+                  <span className="text-orange-400 font-mono">{fileName}</span>
+                ) : (
+                  "Select a CSV file"
+                )}
+              </p>
+              {csvText && (
+                <p className="text-xs text-slate-500">{csvText.split("\n").length} lines loaded</p>
+              )}
+              <label className="px-4 py-2 bg-[#1f2937] hover:bg-[#374151] text-slate-300 text-sm font-medium rounded-lg cursor-pointer transition-colors">
+                Browse…
+                <input
+                  type="file"
+                  accept=".csv,.tsv,.txt"
+                  className="hidden"
+                  onChange={handleFileChange}
+                />
+              </label>
+            </div>
+          )}
+
+          {inferError && (
+            <p className="mt-2 text-sm text-red-400 bg-red-900/20 border border-red-800/40 rounded p-2">
+              {inferError}
+            </p>
+          )}
+        </div>
+
+        {/* Right: generated YAML */}
+        <div>
+          <div className="flex items-center justify-between mb-2">
+            <label className="text-xs font-medium text-slate-400 uppercase tracking-wider">
+              Generated Contract (YAML)
+            </label>
+            {generatedYaml && fieldCount !== null && (
+              <span className="text-xs text-green-500">
+                ✔ {fieldCount} field{fieldCount !== 1 ? "s" : ""} · {rowCount} row{rowCount !== 1 ? "s" : ""}
+              </span>
+            )}
+          </div>
+          <textarea
+            className={clsx(
+              "w-full h-72 font-mono text-sm p-4 rounded-lg border outline-none resize-y transition-colors",
+              generatedYaml
+                ? "bg-[#0a0d12] text-green-300 border-[#1f2937] focus:border-green-700"
+                : "bg-[#0a0d12]/50 text-slate-600 border-[#1f2937]/50 cursor-not-allowed"
+            )}
+            value={generatedYaml ?? "// Infer a contract to see YAML here…"}
+            onChange={(e) => setGeneratedYaml(e.target.value)}
+            spellCheck={false}
+            readOnly={!generatedYaml}
+          />
+          {saveError && (
+            <p className="mt-2 text-sm text-red-400 bg-red-900/20 border border-red-800/40 rounded p-2">
+              {saveError}
+            </p>
+          )}
+        </div>
+      </div>
+
+      {/* Controls row */}
+      <div className="flex items-center gap-3 flex-wrap">
+        <div className="flex items-center gap-2">
+          <label className="text-xs text-slate-400 whitespace-nowrap">Contract name</label>
+          <input
+            type="text"
+            value={contractName}
+            onChange={(e) => setContractName(e.target.value)}
+            className="bg-[#0a0d12] border border-[#1f2937] rounded-lg px-3 py-1.5 text-sm text-slate-200 outline-none focus:border-orange-700 w-48"
+            placeholder="my_contract"
+          />
+        </div>
+        <button
+          onClick={handleInfer}
+          disabled={inferring || !csvText.trim()}
+          className="px-4 py-2 bg-orange-600 hover:bg-orange-500 disabled:opacity-40 text-white text-sm font-medium rounded-lg transition-colors"
+        >
+          {inferring ? "Inferring…" : "✦ Infer from CSV"}
+        </button>
+        {generatedYaml && (
+          <button
+            onClick={handleSave}
+            disabled={saving}
+            className="px-4 py-2 bg-green-600 hover:bg-green-500 disabled:opacity-50 text-white text-sm font-medium rounded-lg transition-colors"
+          >
+            {saving ? "Saving…" : "Save Contract"}
+          </button>
+        )}
+        {generatedYaml && (
+          <button
+            onClick={() => { setGeneratedYaml(null); setFieldCount(null); setRowCount(null); }}
+            className="px-4 py-2 bg-[#1f2937] hover:bg-[#374151] text-slate-300 text-sm font-medium rounded-lg transition-colors"
+          >
+            Reset
+          </button>
+        )}
+      </div>
+
+      {generatedYaml && (
+        <div className="bg-[#111827] border border-[#1f2937] rounded-xl p-4">
+          <p className="text-xs font-medium text-slate-400 uppercase tracking-wider mb-3">What was inferred</p>
+          <div className="flex flex-wrap gap-x-6 gap-y-1 text-xs text-slate-500">
+            <span>🔵 Delimiter auto-detected (comma / tab / semicolon)</span>
+            <span>🔵 Types from CSV values (string / integer / number / boolean)</span>
+            <span>🟢 Required = field present in every row</span>
+            <span>🟡 Enum = ≤6 distinct string values</span>
+            <span>🔷 Pattern = UUID / email / date / URL / alphanumeric ID detected</span>
+            <span>🟠 min: 0 suggested for non-negative numbers</span>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // OdcsImportModal
 // ---------------------------------------------------------------------------
 
@@ -1557,7 +1775,7 @@ function ManualCreatePanel({ onCancel, onCreated }: { onCancel: () => void; onCr
 // Page
 // ---------------------------------------------------------------------------
 
-type Tab = "list" | "consumed" | "build" | "generate" | "quarantine";
+type Tab = "list" | "consumed" | "build" | "generate" | "csv" | "quarantine";
 
 function ContractsContent() {
   const router = useRouter();
@@ -1658,7 +1876,7 @@ function ContractsContent() {
       </div>
 
       <div className="flex gap-1 mb-6 bg-[#111827] border border-[#1f2937] rounded-xl p-1 w-fit flex-wrap">
-        {(["list", "consumed", "build", "generate", "quarantine"] as Tab[]).map((t) => (
+        {(["list", "consumed", "build", "generate", "csv", "quarantine"] as Tab[]).map((t) => (
           <button
             key={t}
             onClick={() => { setTab(t); setShowCreate(false); setShowImport(false); setShowImportRef(false); }}
@@ -1671,6 +1889,7 @@ function ContractsContent() {
             {t === "consumed" && "📥 Consumed"}
             {t === "build" && "🧱 Visual Builder"}
             {t === "generate" && "✦ Generate from Sample"}
+            {t === "csv" && "📊 From CSV"}
             {t === "quarantine" && "🔒 Quarantine"}
           </button>
         ))}
@@ -1752,6 +1971,11 @@ function ContractsContent() {
       {tab === "generate" && (
         <div className="bg-[#111827] border border-[#1f2937] rounded-xl p-6">
           <GeneratorTab onSaved={() => setTab("list")} />
+        </div>
+      )}
+      {tab === "csv" && (
+        <div className="bg-[#111827] border border-[#1f2937] rounded-xl p-6">
+          <CsvGeneratorTab onSaved={() => setTab("list")} />
         </div>
       )}
       {tab === "quarantine" && (

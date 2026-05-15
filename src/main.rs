@@ -47,9 +47,11 @@ mod collaboration;
 mod conformance;
 mod egress;
 mod error;
+mod fork_filter;
 mod idempotency;
 mod infer;
 mod infer_avro;
+mod infer_csv;
 mod infer_diff;
 mod infer_openapi;
 mod infer_proto;
@@ -60,6 +62,7 @@ mod kinesis_consumer;
 mod kinesis_ingress;
 pub mod observability;
 mod odcs;
+mod public_catalog;
 mod publication;
 mod rate_limit;
 mod replay;
@@ -805,6 +808,15 @@ fn build_router(state: Arc<AppState>) -> Router {
         .route(
             "/published/{publication_ref}",
             get(publication::fetch_published_handler),
+        )
+        // RFC-034: Public Catalog (no auth — readable by anyone)
+        .route(
+            "/public-contracts",
+            get(public_catalog::list_public_contracts_handler),
+        )
+        .route(
+            "/public-contracts/{id}",
+            get(public_catalog::get_public_contract_handler),
         );
 
     // Protected routes — require x-api-key header
@@ -827,7 +839,7 @@ fn build_router(state: Arc<AppState>) -> Router {
         )
         // Contract inference — JSON samples
         .route("/contracts/infer", post(infer::infer_handler))
-        // Contract inference — format-specific routes (RFC-006)
+        // Contract inference — format-specific routes (RFC-006, RFC-035)
         .route(
             "/contracts/infer/avro",
             post(infer_avro::infer_avro_handler),
@@ -840,6 +852,8 @@ fn build_router(state: Arc<AppState>) -> Router {
             "/contracts/infer/openapi",
             post(infer_openapi::infer_openapi_handler),
         )
+        // CSV inference (RFC-035)
+        .route("/contracts/infer/csv", post(infer_csv::infer_csv_handler))
         // Evolution diff summarizer (RFC-006)
         .route("/contracts/diff", post(infer_diff::diff_handler))
         // Contract identity CRUD
@@ -947,6 +961,15 @@ fn build_router(state: Arc<AppState>) -> Router {
         .route(
             "/contracts/{id}/import-status",
             get(publication::import_status_handler),
+        )
+        // RFC-034: Public Catalog — fork + export (auth required)
+        .route(
+            "/contracts/{id}/fork",
+            post(public_catalog::fork_public_contract_handler),
+        )
+        .route(
+            "/contracts/{id}/export",
+            post(public_catalog::export_fork_handler),
         )
         // RFC-033: Provider-Consumer Collaboration
         // Collaborator grants — owner-only writes, viewer+ reads.
