@@ -539,6 +539,33 @@ export const playgroundValidate = (
 // ODCS — import, export, approve-import, conformance
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// CSV contract inference (RFC-035)
+// ---------------------------------------------------------------------------
+
+/** Response from `POST /contracts/infer/csv`. */
+export interface InferCsvResponse {
+  yaml_content: string;
+  field_count: number;
+  sample_count: number;
+}
+
+/**
+ * Infer a contract from CSV content.
+ * Pass either `csv_content` (plain text) or `base64` (base64-encoded CSV).
+ * `delimiter` is optional — the backend auto-detects comma/tab/semicolon.
+ */
+export const inferCsv = (params: {
+  name: string;
+  description?: string;
+  csv_content?: string;
+  base64?: string;
+  delimiter?: string;
+}) => apiFetch<InferCsvResponse>("/contracts/infer/csv", {
+  method: "POST",
+  body: JSON.stringify(params),
+});
+
 /** Response from `POST /contracts/import`. */
 export interface OdcsImportResponse {
   id: string;
