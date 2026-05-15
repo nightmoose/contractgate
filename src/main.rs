@@ -44,6 +44,7 @@ pub use contractgate::{contract, transform, validation};
 
 mod api_key_auth;
 mod conformance;
+mod egress;
 mod error;
 mod idempotency;
 mod infer;
@@ -877,6 +878,8 @@ fn build_router(state: Arc<AppState>) -> Router {
             "/ingest/{contract_id}/stats",
             get(ingest::ingest_stats_handler),
         )
+        // Egress validation (RFC-029) — same @version suffix convention.
+        .route("/egress/{raw_id}", post(egress::egress_handler))
         // Replay Quarantine (RFC-003)
         .route(
             "/contracts/{id}/quarantine/replay",

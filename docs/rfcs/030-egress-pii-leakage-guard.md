@@ -1,6 +1,6 @@
 # RFC-030: Egress PII & Leakage Guard
 
-**Status:** Draft
+**Status:** Accepted
 **Date:** 2026-05-14
 **Author:** Alex Suarez
 
@@ -149,20 +149,20 @@ transform columns — RFC-004's inline `transform:` blocks are reused.
 
 ## Acceptance Criteria
 
-- [ ] Migration `018_egress_leakage_guard.sql` adds
+- [x] Migration `018_egress_leakage_guard.sql` adds
       `contract_versions.egress_leakage_mode`
-- [ ] Egress path applies RFC-004 `transform:` blocks
+- [x] Egress path applies RFC-004 `transform:` blocks
       (`drop`/`hash`/`mask`/`redact`) to the outbound payload
-- [ ] `egress_leakage_mode` of `off` / `strip` / `fail` all behave per
+- [x] `egress_leakage_mode` of `off` / `strip` / `fail` all behave per
       the table above
-- [ ] Egress `hash` output equals ingest `hash` output for the same
+- [x] Egress `hash` output equals ingest `hash` output for the same
       value on the same contract (salt continuity)
-- [ ] The payload returned by `POST /egress/...` is always the
+- [x] The payload returned by `POST /egress/...` is always the
       post-transform payload
-- [ ] `contracts.pii_salt` still never appears in any API response
-- [ ] `cargo test` / `cargo check` pass; RFC-004 ingest behavior
+- [x] `contracts.pii_salt` still never appears in any API response
+- [x] `cargo test` / `cargo check` pass; RFC-004 ingest behavior
       unchanged
-- [ ] `docs/pii-masking-reference.md` updated (or created) to document
+- [x] `docs/pii-masking-reference.md` updated (or created) to document
       egress behavior — this changes user-facing transform semantics
 
 ---

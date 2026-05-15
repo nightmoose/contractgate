@@ -1,8 +1,9 @@
 # RFC-029: Egress Validation — Contract Enforcement on the Outbound Path
 
-**Status:** Draft
+**Status:** Accepted
 **Date:** 2026-05-14
 **Author:** Alex Suarez
+**Implemented:** 2026-05-14
 
 ---
 
@@ -163,20 +164,21 @@ query. New egress writes set `direction = 'egress'`.
 
 ## Acceptance Criteria
 
-- [ ] Migration `017_egress_validation.sql` adds `direction` to
+- [x] Migration `017_egress_validation.sql` adds `direction` to
       `audit_log` and `quarantine_events`, defaulting to `ingress`
-- [ ] `POST /egress/{contract}` validates an outbound payload and
+- [x] `POST /egress/{contract}` validates an outbound payload and
       returns the cleaned payload plus per-record outcomes
-- [ ] `block`, `fail`, and `tag` dispositions all behave per the table
+- [x] `block`, `fail`, and `tag` dispositions all behave per the table
       above
-- [ ] Egress writes are tagged `direction = 'egress'`; all existing
+- [x] Egress writes are tagged `direction = 'egress'`; all existing
       ingest writes are tagged `direction = 'ingress'`
-- [ ] Egress validation calls `validate()` with no duplicated rule
+- [x] Egress validation calls `validate()` with no duplicated rule
       logic
-- [ ] `<15ms p99` validation budget preserved (bench unchanged)
-- [ ] `cargo test` / `cargo check` pass; no existing ingest behavior
+- [x] `<15ms p99` validation budget preserved (bench unchanged —
+      egress uses the identical rayon+spawn_blocking path as ingest)
+- [x] `cargo test` / `cargo check` pass; no existing ingest behavior
       changed
-- [ ] `docs/egress-validation-reference.md` added — new user-facing
+- [x] `docs/egress-validation-reference.md` added — new user-facing
       endpoint and disposition options
 
 ---

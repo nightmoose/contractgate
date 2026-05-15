@@ -973,13 +973,14 @@ pub async fn quarantine_event(
     violation_details: serde_json::Value,
     validation_us: i64,
     source_ip: Option<&str>,
+    direction: &str,
 ) -> AppResult<()> {
     sqlx::query(
         r#"
         INSERT INTO quarantine_events
             (id, contract_id, contract_version, payload, violation_count,
-             violation_details, validation_us, source_ip, status, created_at)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'pending', NOW())
+             violation_details, validation_us, source_ip, direction, status, created_at)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'pending', NOW())
         "#,
     )
     .bind(Uuid::new_v4())
@@ -990,6 +991,7 @@ pub async fn quarantine_event(
     .bind(violation_details)
     .bind(validation_us)
     .bind(source_ip)
+    .bind(direction)
     .execute(pool)
     .await?;
     Ok(())
@@ -1021,13 +1023,14 @@ pub async fn log_audit_entry(
     validation_us: i64,
     source_ip: Option<&str>,
     source: &str,
+    direction: &str,
 ) -> AppResult<()> {
     sqlx::query(
         r#"
         INSERT INTO audit_log
             (id, contract_id, org_id, contract_version, passed, violation_count,
-             violation_details, raw_event, validation_us, source_ip, source, created_at)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, NOW())
+             violation_details, raw_event, validation_us, source_ip, source, direction, created_at)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, NOW())
         "#,
     )
     .bind(Uuid::new_v4())
@@ -1041,6 +1044,7 @@ pub async fn log_audit_entry(
     .bind(validation_us)
     .bind(source_ip)
     .bind(source)
+    .bind(direction)
     .execute(pool)
     .await?;
     Ok(())
@@ -1347,6 +1351,9 @@ pub struct AuditEntryInsert {
     /// For replay-pass audit rows: the source quarantine row that was
     /// re-validated.  NULL on fresh ingest.  RFC-003.
     pub replay_of_quarantine_id: Option<Uuid>,
+    /// RFC-029: traffic direction.  `"ingress"` for all ingest paths;
+    /// `"egress"` for the `POST /egress/{contract}` egress-validation path.
+    pub direction: String,
 }
 
 /// One row to insert into `quarantine_events`.  Only failed events get one.
@@ -1372,6 +1379,9 @@ pub struct QuarantineEventInsert {
     /// via `uuid_generate_v4()`.  Set by RFC-021 v1 ingest handler so callers
     /// can return the quarantine ID in the response without a `SELECT` round-trip.
     pub pre_assigned_id: Option<Uuid>,
+    /// RFC-029: traffic direction.  `"ingress"` for all ingest paths;
+    /// `"egress"` for the `POST /egress/{contract}` egress-validation path.
+    pub direction: String,
 }
 
 /// One row to insert into `forwarded_events`.  Only passing events get one.
@@ -1433,13 +1443,15 @@ pub async fn log_audit_entries_batch(pool: &PgPool, entries: &[AuditEntryInsert]
         .iter()
         .map(|e| e.replay_of_quarantine_id.unwrap_or(Uuid::nil()))
         .collect();
+    // RFC-029: 'ingress' for all ingest paths, 'egress' for egress validation.
+    let directions: Vec<String> = entries.iter().map(|e| e.direction.clone()).collect();
 
     sqlx::query(
         r#"
         INSERT INTO audit_log
             (id, contract_id, org_id, contract_version, passed, violation_count,
              violation_details, raw_event, validation_us, source_ip, source,
-             replay_of_quarantine_id, created_at)
+             replay_of_quarantine_id, direction, created_at)
         SELECT
             COALESCE(NULLIF(pre_assigned_id, '00000000-0000-0000-0000-000000000000'::uuid),
                      uuid_generate_v4()),
@@ -1450,13 +1462,15 @@ pub async fn log_audit_entries_batch(pool: &PgPool, entries: &[AuditEntryInsert]
             NULLIF(source_ip, ''),
             source,
             NULLIF(replay_of_quarantine_id, '00000000-0000-0000-0000-000000000000'::uuid),
+            direction,
             NOW()
         FROM UNNEST(
             $1::uuid[], $2::uuid[], $3::text[], $4::bool[], $5::int[], $6::jsonb[],
-            $7::jsonb[], $8::bigint[], $9::text[], $10::text[], $11::uuid[], $12::uuid[]
+            $7::jsonb[], $8::bigint[], $9::text[], $10::text[], $11::uuid[], $12::uuid[],
+            $13::text[]
         ) AS t(contract_id, org_id, contract_version, passed, violation_count,
                violation_details, raw_event, validation_us, source_ip, source,
-               pre_assigned_id, replay_of_quarantine_id)
+               pre_assigned_id, replay_of_quarantine_id, direction)
         "#,
     )
     .bind(&contract_ids)
@@ -1471,6 +1485,7 @@ pub async fn log_audit_entries_batch(pool: &PgPool, entries: &[AuditEntryInsert]
     .bind(&sources)
     .bind(&pre_assigned_ids)
     .bind(&replay_of)
+    .bind(&directions)
     .execute(pool)
     .await
     .db_op("log_audit_entries_batch")?;
@@ -1519,13 +1534,15 @@ pub async fn quarantine_events_batch(
         .iter()
         .map(|e| e.pre_assigned_id.unwrap_or(Uuid::nil()))
         .collect();
+    // RFC-029: 'ingress' for all ingest paths, 'egress' for egress validation.
+    let directions: Vec<String> = entries.iter().map(|e| e.direction.clone()).collect();
 
     sqlx::query(
         r#"
         INSERT INTO quarantine_events
             (id, contract_id, contract_version, payload, violation_count,
              violation_details, validation_us, source_ip,
-             replay_of_quarantine_id, status, created_at)
+             replay_of_quarantine_id, direction, status, created_at)
         SELECT
             COALESCE(NULLIF(pre_assigned_id, '00000000-0000-0000-0000-000000000000'::uuid),
                      uuid_generate_v4()),
@@ -1533,14 +1550,15 @@ pub async fn quarantine_events_batch(
             violation_details, validation_us,
             NULLIF(source_ip, ''),
             NULLIF(replay_of_quarantine_id, '00000000-0000-0000-0000-000000000000'::uuid),
+            direction,
             'pending',
             NOW()
         FROM UNNEST(
             $1::uuid[], $2::text[], $3::jsonb[], $4::int[], $5::jsonb[],
-            $6::bigint[], $7::text[], $8::uuid[], $9::uuid[]
+            $6::bigint[], $7::text[], $8::uuid[], $9::uuid[], $10::text[]
         ) AS t(contract_id, contract_version, payload, violation_count,
                violation_details, validation_us, source_ip,
-               replay_of_quarantine_id, pre_assigned_id)
+               replay_of_quarantine_id, pre_assigned_id, direction)
         "#,
     )
     .bind(&contract_ids)
@@ -1552,6 +1570,7 @@ pub async fn quarantine_events_batch(
     .bind(&source_ips)
     .bind(&replay_of)
     .bind(&pre_assigned_ids)
+    .bind(&directions)
     .execute(pool)
     .await
     .db_op("quarantine_events_batch")?;

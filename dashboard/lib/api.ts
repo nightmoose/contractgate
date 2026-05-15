@@ -681,6 +681,90 @@ export const rotateKinesisCredentials = (contractId: string) =>
   );
 
 // ---------------------------------------------------------------------------
+// Egress validation (RFC-029)
+// ---------------------------------------------------------------------------
+
+/**
+ * How the egress endpoint handles failing records.
+ *
+ * - `block` (default) — drop failing records from the response payload.
+ * - `fail`  — any failure rejects the entire response (422).
+ * - `tag`   — all records pass through; failures are flagged in outcomes.
+ */
+export type EgressDisposition = "block" | "fail" | "tag";
+
+/** Per-record outcome returned by `POST /egress/{contractId}`. */
+export interface EgressOutcome {
+  /** Zero-based index of this record in the original payload. */
+  index: number;
+  passed: boolean;
+  violations: Violation[];
+  validation_us: number;
+  /**
+   * What happened to this record:
+   * - `"included"` — passed, present in `payload`
+   * - `"blocked"`  — failed, dropped from `payload` (block mode)
+   * - `"rejected"` — part of a wholesale rejection (fail mode)
+   * - `"tagged"`   — failed but present in `payload` with flag (tag mode)
+   */
+  action: "included" | "blocked" | "rejected" | "tagged";
+}
+
+/** Response from `POST /egress/{contractId}`. */
+export interface EgressResponse {
+  total: number;
+  passed: number;
+  failed: number;
+  dry_run: boolean;
+  disposition: EgressDisposition;
+  resolved_version: string;
+  /**
+   * Cleaned / filtered / annotated payload:
+   * - block: only passing records
+   * - fail: empty when any record fails
+   * - tag: all records
+   */
+  payload: unknown[];
+  /** One entry per input record. */
+  outcomes: EgressOutcome[];
+}
+
+/**
+ * Validate an outbound payload against a named contract.
+ *
+ * Mirrors `ingestEvent` but for the egress path.  The `disposition` parameter
+ * controls what happens to failing records (default: `block`).
+ *
+ * Returns a 207 Multi-Status on partial failure (block/tag) or 422 on full
+ * rejection (fail mode or all records failed).  `apiFetch` treats 207 as
+ * success, so callers always receive the `EgressResponse` body and can inspect
+ * `failed` / `outcomes` to determine what was blocked or tagged.
+ */
+export const egressValidate = (
+  contractId: string,
+  payload: unknown,
+  opts: {
+    disposition?: EgressDisposition;
+    dryRun?: boolean;
+    version?: string;
+  } = {}
+) => {
+  const qs = new URLSearchParams();
+  if (opts.disposition) qs.set("disposition", opts.disposition);
+  if (opts.dryRun) qs.set("dry_run", "true");
+  const qstr = qs.toString() ? `?${qs}` : "";
+
+  const path = opts.version
+    ? `/egress/${contractId}@${encodeURIComponent(opts.version)}${qstr}`
+    : `/egress/${contractId}${qstr}`;
+
+  return apiFetch<EgressResponse>(path, {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+};
+
+// ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 
