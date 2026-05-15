@@ -102,13 +102,6 @@ pub struct ForkResponse {
     pub created_at: DateTime<Utc>,
 }
 
-#[derive(Serialize)]
-pub struct ExportResponse {
-    /// Only used for non-CSV formats (future).  For CSV the body is streamed.
-    pub rows_fetched: usize,
-    pub rows_after_filter: usize,
-}
-
 // ---------------------------------------------------------------------------
 // Request types
 // ---------------------------------------------------------------------------
@@ -120,9 +113,8 @@ pub struct ForkRequest {
     pub description: Option<String>,
     #[serde(default)]
     pub fork_filter: Option<ForkFilter>,
-    /// When true, the fork tracks the parent's YAML version (OQ1 — deferred).
-    #[serde(default)]
-    pub track_parent_version: bool,
+    // track_parent_version deferred (RFC-034 OQ1) — field accepted in body
+    // but ignored until parent-version tracking is implemented.
 }
 
 #[derive(Deserialize)]
@@ -498,10 +490,9 @@ pub async fn fork_public_contract_handler(
 ) -> AppResult<(StatusCode, Json<ForkResponse>)> {
     let org_id = org_id_from_req(&req);
 
-    let axum::Json(body): axum::Json<ForkRequest> =
-        axum::Json::from_request(req, &state)
-            .await
-            .map_err(|e| AppError::BadRequest(e.to_string()))?;
+    let axum::Json(body): axum::Json<ForkRequest> = axum::Json::from_request(req, &state)
+        .await
+        .map_err(|e| AppError::BadRequest(e.to_string()))?;
 
     // Load parent to get the canonical YAML (fork starts as a copy).
     let parent = db_get_public_contract(&state.db, public_id).await?;
