@@ -27,7 +27,7 @@
 //! currently returns 501).
 
 use axum::{
-    extract::{Path, Query, State},
+    extract::{FromRequest, Path, Query, State},
     http::{header, StatusCode},
     response::{IntoResponse, Json, Response},
 };
@@ -163,7 +163,7 @@ async fn db_get_public_contract(db: &PgPool, id: Uuid) -> AppResult<PublicContra
     .fetch_optional(db)
     .await
     .map_err(|e| AppError::Internal(format!("failed to fetch public contract: {e}")))?
-    .ok_or(AppError::NotFound)
+    .ok_or_else(|| AppError::NotFound("public contract not found".into()))
 }
 
 /// Create a new fork contract in the caller's org.
@@ -222,9 +222,11 @@ async fn db_fork_public_contract(
     .await
     .map_err(|e| AppError::Internal(format!("failed to create fork contract: {e}")))?;
 
-    let contract_id: Uuid = row.try_get("id")
+    let contract_id: Uuid = row
+        .try_get("id")
         .map_err(|e| AppError::Internal(format!("missing id from fork insert: {e}")))?;
-    let created_at: DateTime<Utc> = row.try_get("created_at")
+    let created_at: DateTime<Utc> = row
+        .try_get("created_at")
         .map_err(|e| AppError::Internal(format!("missing created_at from fork insert: {e}")))?;
 
     Ok((contract_id, created_at))
@@ -250,18 +252,14 @@ async fn db_get_fork_export_info(db: &PgPool, contract_id: Uuid) -> AppResult<Fo
     .fetch_optional(db)
     .await
     .map_err(|e| AppError::Internal(format!("failed to load fork export info: {e}")))?
-    .ok_or_else(|| {
-        AppError::BadRequest(
-            "contract is not a fork of a public data source".into(),
-        )
-    })
+    .ok_or_else(|| AppError::BadRequest("contract is not a fork of a public data source".into()))
 }
 
 // ---------------------------------------------------------------------------
 // Upstream fetch + parse
 // ---------------------------------------------------------------------------
 
-async fn fetch_upstream(url: &str) -> AppResult<bytes::Bytes> {
+async fn fetch_upstream(url: &str) -> AppResult<Vec<u8>> {
     let timeout_ms = std::env::var("UPSTREAM_TIMEOUT_MS")
         .ok()
         .and_then(|v| v.parse::<u64>().ok())
@@ -298,7 +296,7 @@ async fn fetch_upstream(url: &str) -> AppResult<bytes::Bytes> {
         )));
     }
 
-    Ok(bytes)
+    Ok(bytes.to_vec())
 }
 
 /// Parse upstream response into a Vec of JSON objects based on source_format.
@@ -313,10 +311,7 @@ fn parse_upstream(bytes: &[u8], source_format: &str) -> AppResult<Vec<Value>> {
                 return Err(AppError::Internal("upstream returned empty array".into()));
             }
 
-            let headers: Vec<&str> = outer[0]
-                .iter()
-                .map(|v| v.as_str().unwrap_or(""))
-                .collect();
+            let headers: Vec<&str> = outer[0].iter().map(|v| v.as_str().unwrap_or("")).collect();
 
             outer[1..]
                 .iter()
@@ -396,9 +391,16 @@ fn detect_csv_delimiter(data: &[u8]) -> Option<u8> {
     }
     let candidates = [b',', b'\t', b';'];
     candidates.into_iter().max_by_key(|&d| {
-        let counts: Vec<usize> = lines.iter().map(|l| l.bytes().filter(|&b| b == d).count()).collect();
+        let counts: Vec<usize> = lines
+            .iter()
+            .map(|l| l.bytes().filter(|&b| b == d).count())
+            .collect();
         let max = *counts.iter().max().unwrap_or(&0);
-        if max == 0 { 0 } else { counts.iter().filter(|&&c| c == max).count() }
+        if max == 0 {
+            0
+        } else {
+            counts.iter().filter(|&&c| c == max).count()
+        }
     })
 }
 
@@ -440,8 +442,7 @@ fn rows_to_csv(rows: &[Value]) -> AppResult<String> {
         .into_inner()
         .map_err(|e| AppError::Internal(format!("CSV flush error: {e}")))?;
 
-    String::from_utf8(bytes)
-        .map_err(|e| AppError::Internal(format!("CSV encoding error: {e}")))
+    String::from_utf8(bytes).map_err(|e| AppError::Internal(format!("CSV encoding error: {e}")))
 }
 
 // ---------------------------------------------------------------------------
@@ -497,10 +498,10 @@ pub async fn fork_public_contract_handler(
 ) -> AppResult<(StatusCode, Json<ForkResponse>)> {
     let org_id = org_id_from_req(&req);
 
-    let body: ForkRequest = axum::Json::from_request(req, &state)
-        .await
-        .map(|j: axum::Json<ForkRequest>| j.0)
-        .map_err(|e| AppError::BadRequest(e.to_string()))?;
+    let axum::Json(body): axum::Json<ForkRequest> =
+        axum::Json::from_request(req, &state)
+            .await
+            .map_err(|e| AppError::BadRequest(e.to_string()))?;
 
     // Load parent to get the canonical YAML (fork starts as a copy).
     let parent = db_get_public_contract(&state.db, public_id).await?;

@@ -158,9 +158,7 @@ impl Predicate {
 /// Numbers use serde_json's PartialEq (JSON canonical form).
 fn json_eq(a: &Value, b: &Value) -> bool {
     match (a, b) {
-        (Value::String(sa), Value::String(sb)) => {
-            sa.trim().eq_ignore_ascii_case(sb.trim())
-        }
+        (Value::String(sa), Value::String(sb)) => sa.trim().eq_ignore_ascii_case(sb.trim()),
         // Cross-type numeric comparison: allow "06" == "06" etc, but also
         // allow integer JSON to match a string predicate value like "06".
         // Keep it simple: fall back to serde_json PartialEq.
