@@ -49,7 +49,7 @@ pub struct Contract {
     ///   - `off`   — pass through untouched (backwards-compatible default).
     ///   - `strip` — remove from response; record in per-record outcome.
     ///   - `fail`  — treat as a violation, subject to the RFC-029 disposition
-    ///     (`block` / `fail` / `tag`).  Field is stripped even on `tag`.
+    ///     (`block` / `fail` / `tag`). Field is stripped even on `tag`.
     #[serde(default)]
     pub egress_leakage_mode: EgressLeakageMode,
 }
