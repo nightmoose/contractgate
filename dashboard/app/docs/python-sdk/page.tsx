@@ -139,7 +139,7 @@ function TabNav({
       {(
         [
           { id: "readme" as Tab, label: "README · Quick Guide" },
-          { id: "rfc" as Tab, label: "RFC-005 · Design Spec" },
+          { id: "rfc" as Tab, label: "Design Spec" },
         ] as { id: Tab; label: string }[]
       ).map(({ id, label }) => (
         <button
@@ -274,7 +274,7 @@ vr = compiled.validate({
 })
 assert vr.passed, vr.violations`}</Code>
       <Callout kind="warning">
-        The local validator does <strong>not</strong> run RFC-004 PII transforms
+        The local validator does <strong>not</strong> run PII transforms
         (<code className="text-amber-300">mask</code>,{" "}
         <code className="text-amber-300">hash</code>,{" "}
         <code className="text-amber-300">drop</code>,{" "}
@@ -294,7 +294,7 @@ assert vr.passed, vr.violations`}</Code>
             body: (
               <>
                 The per-contract PII salt is server-side only and never returned
-                in API responses (RFC-004). The local validator is for{" "}
+                in API responses. The local validator is for{" "}
                 <em>assert event_passes_contract(…)</em> in user tests — not for
                 replicating the gateway&apos;s storage path. Read{" "}
                 <code className="text-slate-300">transformed_event</code> from
@@ -370,7 +370,7 @@ function RFCContent() {
               ["Author", "ContractGate team"],
               ["Accepted", "2026-04-26 — Alex sign-off on Q1, Q2, Q4, Q6 (recommendations); Q3, Q5 default"],
               ["Target branch", "nightly-maintenance-2026-04-26"],
-              ["Depends on", "RFC-002 (versioning), RFC-004 (PII transforms) — both landed"],
+              ["Depends on", "Versioning + PII transforms — both landed"],
             ].map(([k, v]) => (
               <tr key={k} className="border-b border-[#1f2937]">
                 <td className="py-2 pr-6 text-slate-500 font-medium text-xs uppercase tracking-wide whitespace-nowrap">
@@ -542,7 +542,7 @@ assert vr.passed, vr.violations`}</Code>
           { q: "Q3 — httpx pin", a: "httpx>=0.25,<1.0. Wide enough for adoption; the pre-1.0 caveat lives in the README. Bump to >=1.0 once httpx 1.x ships and is tested." },
           { q: "Q4 — Validator output equivalence", a: "Strict — byte-identical message text and field paths to the Rust validator. Locked via the shared tests/fixtures/parity/ corpus consumed by both pytest and a Rust integration test." },
           { q: "Q5 — License", a: "MIT. Matches the gateway's existing code license intent. Patent-pending status is independent of the SDK's source license." },
-          { q: "Q6 — PII transforms in local validator", a: "No. Read-only validator. The per-contract pii_salt is never exposed to clients (RFC-004 invariant). The wire response's transformed_event field is what callers should rely on for 'what got stored'." },
+          { q: "Q6 — PII transforms in local validator", a: "No. Read-only validator. The per-contract pii_salt is never exposed to clients. The wire response's transformed_event field is what callers should rely on for 'what got stored'." },
         ].map(({ q, a }) => (
           <div key={q} className="border border-[#1f2937] rounded-lg p-4 bg-[#0d1117]">
             <div className="text-sm font-semibold text-green-400 mb-1">{q}</div>
@@ -577,14 +577,14 @@ assert vr.passed, vr.violations`}</Code>
       <H2 id="rollout">Rollout</H2>
       <ol className="list-decimal list-inside space-y-2 text-slate-400 text-sm">
         {[
-          "Land RFC-005 on nightly-maintenance-2026-04-26 once Q1–Q6 are signed off.",
+          "Land the Python SDK on nightly-maintenance-2026-04-26 once Q1–Q6 are signed off.",
           "Scaffold sdks/python/ with pyproject.toml, package skeleton, README, __init__.py re-exports.",
           "Implement contract.py + validator.py (the canonical-spec port). Unit tests §I + §II.",
           "Implement _transport.py, models.py, exceptions.py, client.py. Unit tests §III + §V (sync side).",
           "Implement async_client.py. Unit tests §IV.",
           "Add tests/parity_python.rs to the Rust crate; wire cargo test to consume the shared fixture directory.",
           "Document the audit-honesty invariant in the SDK README.",
-          "Document the RFC-004 caveat: the local validator does not run transforms.",
+          "Document the PII-transform caveat: the local validator does not run transforms.",
           "Reserve PyPI name in a separate ops task.",
           "Update MAINTENANCE_LOG.md with the rollout entry.",
         ].map((step, i) => (
@@ -670,7 +670,7 @@ export default function PythonSDKDocsPage() {
               v0.1.0
             </span>
             <span className="text-xs bg-amber-900/30 text-amber-400 border border-amber-700/40 px-2 py-1 rounded">
-              RFC-005 · Accepted
+              Accepted
             </span>
           </div>
         </div>

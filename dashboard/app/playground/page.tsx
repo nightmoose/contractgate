@@ -461,7 +461,7 @@ function TransformPreviewPanel({
         <p className="text-xs text-slate-500 leading-relaxed">
           The backend didn&apos;t return a post-transform payload for this
           request. This usually means the server is on a build that predates
-          the RFC-004 Playground handler — redeploy the Rust service to surface
+          the PII transform Playground handler — redeploy the Rust service to surface
           the diff here.
         </p>
       </div>

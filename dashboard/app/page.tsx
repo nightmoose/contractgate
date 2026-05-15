@@ -2,8 +2,8 @@
 
 import { useState } from "react";
 import useSWR from "swr";
-import { getGlobalStats, getAuditLog, listContracts } from "@/lib/api";
-import type { IngestionStats, AuditEntry, ContractSummary } from "@/lib/api";
+import { getGlobalStats, getAuditLog, listContracts, listPublicCatalog } from "@/lib/api";
+import type { IngestionStats, AuditEntry, ContractSummary, CatalogEntry } from "@/lib/api";
 import clsx from "clsx";
 import { useRouter } from "next/navigation";
 import AuthGate from "@/components/AuthGate";
@@ -245,6 +245,80 @@ function AuditTable({ entries }: { entries: AuditEntry[] }) {
 }
 
 // ---------------------------------------------------------------------------
+// Public catalog widget — recently published contracts
+// ---------------------------------------------------------------------------
+
+function PublicCatalogWidget({ entries }: { entries: CatalogEntry[] }) {
+  const router = useRouter();
+
+  if (entries.length === 0) {
+    return (
+      <div className="bg-[#111827] border border-[#1f2937] rounded-xl p-5">
+        <div className="flex items-center justify-between mb-3">
+          <h2 className="text-sm font-semibold text-slate-400 uppercase tracking-wider">
+            Public Contracts
+          </h2>
+          <a href="/catalog" className="text-xs text-green-600 hover:text-green-400 transition-colors">
+            Browse catalog →
+          </a>
+        </div>
+        <p className="text-sm text-slate-600">No public contracts yet.</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="bg-[#111827] border border-[#1f2937] rounded-xl p-5">
+      <div className="flex items-center justify-between mb-4">
+        <div>
+          <h2 className="text-sm font-semibold text-slate-400 uppercase tracking-wider">
+            Public Contracts
+          </h2>
+          <p className="text-xs text-slate-600 mt-0.5">
+            Recently published — available to import or fork
+          </p>
+        </div>
+        <a
+          href="/catalog"
+          className="text-xs text-green-600 hover:text-green-400 transition-colors whitespace-nowrap"
+        >
+          Browse all →
+        </a>
+      </div>
+      <div className="space-y-2">
+        {entries.map((e) => (
+          <div
+            key={e.publication_ref}
+            className="flex items-center justify-between gap-3 py-2 border-b border-[#1f2937]/60 last:border-0 cursor-pointer group"
+            onClick={() => router.push(`/catalog?ref=${encodeURIComponent(e.publication_ref)}`)}
+          >
+            <div className="min-w-0">
+              <p className="text-sm font-medium text-slate-300 group-hover:text-green-400 transition-colors truncate">
+                {e.contract_name}
+              </p>
+              <p className="text-xs text-slate-600 mt-0.5 font-mono">
+                v{e.contract_version}
+                {e.published_by && (
+                  <span className="ml-2 text-slate-700">· {e.published_by}</span>
+                )}
+              </p>
+            </div>
+            <div className="flex items-center gap-2 shrink-0">
+              <span className="text-[10px] bg-indigo-900/30 text-indigo-400 border border-indigo-800/40 px-2 py-0.5 rounded-full font-medium">
+                public
+              </span>
+              <span className="text-xs text-slate-600 group-hover:text-green-500 transition-colors">
+                → import
+              </span>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Page
 // ---------------------------------------------------------------------------
 
@@ -265,6 +339,10 @@ function DashboardContent() {
   const { data: contracts } = useSWR<ContractSummary[]>(
     org ? "contracts" : null,
     listContracts
+  );
+  const { data: publicContracts } = useSWR<CatalogEntry[]>(
+    "public-catalog",
+    () => listPublicCatalog(5)
   );
 
   const stats = healthyMode ? HEALTHY_BASELINE : rawStats;
@@ -414,6 +492,11 @@ function DashboardContent() {
           )}
         </div>
       </div>
+
+      {/* Public contracts discovery widget */}
+      {publicContracts !== undefined && (
+        <PublicCatalogWidget entries={publicContracts ?? []} />
+      )}
     </div>
   );
 }

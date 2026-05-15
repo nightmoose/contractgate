@@ -76,7 +76,6 @@ export function YamlTab({
                       ? "A work-in-progress version. YAML is freely editable."
                       : "A retired version. No new unpinned traffic routes to it."
                   }
-                  rfc="RFC-002"
                 >
                   <span
                     className={clsx(
@@ -140,16 +139,14 @@ export function YamlTab({
                 ) : null
               )}
               {currentVersion.compliance_mode && (
-                <TooltipWrap content="When enabled, any inbound field not declared in the contract ontology is rejected. Nothing undeclared can enter the audit log." rfc="RFC-004">
+                <TooltipWrap content="When enabled, any inbound field not declared in the contract ontology is rejected. Nothing undeclared can enter the audit log.">
                   <span className="text-[10px] uppercase tracking-wider text-amber-600 border border-amber-800/40 rounded px-2 py-0.5 cursor-default">
                     compliance mode
                   </span>
                 </TooltipWrap>
               )}
-              {/* RFC-030: Egress leakage mode */}
               <TooltipWrap
                 content="Controls how undeclared fields in outbound payloads are handled. off = pass through; strip = remove silently; fail = treat as a validation error."
-                rfc="RFC-030"
               >
                 {isDraft && onChangeLeakageMode ? (
                   <select

@@ -897,6 +897,22 @@ export const revokePublication = (publicationRef: string) =>
     method: "DELETE",
   });
 
+/** A single entry in the public contract catalog (no yaml_content). */
+export interface CatalogEntry {
+  publication_ref: string;
+  contract_name: string;
+  contract_version: string;
+  published_by: string | null;
+  published_at: string;
+}
+
+/**
+ * List publicly available contracts (no auth required).
+ * Returns up to `limit` entries ordered by published_at DESC.
+ */
+export const listPublicCatalog = (limit = 20): Promise<CatalogEntry[]> =>
+  apiFetch<CatalogEntry[]>(`/catalog?limit=${limit}`);
+
 /**
  * Fetch a published contract by ref.  Public visibility needs only the ref;
  * link visibility requires `token` to match the link_token returned on publish.

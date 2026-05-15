@@ -2066,6 +2066,41 @@ pub async fn get_publication(pool: &PgPool, publication_ref: &str) -> AppResult<
     Ok(row)
 }
 
+/// Lightweight row for public catalog listings — omits yaml_content for efficiency.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, sqlx::FromRow)]
+pub struct CatalogRow {
+    pub publication_ref: String,
+    pub contract_name: String,
+    pub contract_version: String,
+    pub published_by: Option<String>,
+    pub published_at: chrono::DateTime<chrono::Utc>,
+}
+
+/// Return up to `limit` public (non-revoked) publications, newest first.
+pub async fn list_public_catalog(pool: &PgPool, limit: i64) -> AppResult<Vec<CatalogRow>> {
+    let rows = sqlx::query_as::<_, CatalogRow>(
+        r#"
+        SELECT
+            ref      AS publication_ref,
+            contract_name,
+            contract_version,
+            published_by,
+            published_at
+        FROM contract_publications
+        WHERE visibility = 'public'
+          AND revoked_at IS NULL
+        ORDER BY published_at DESC
+        LIMIT $1
+        "#,
+    )
+    .bind(limit)
+    .fetch_all(pool)
+    .await
+    .db_op("list_public_catalog")?;
+
+    Ok(rows)
+}
+
 /// Import a published contract into the caller's org.
 ///
 /// Creates a new contract identity + a draft version from the publication's

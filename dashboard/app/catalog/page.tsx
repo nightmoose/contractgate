@@ -11,13 +11,15 @@
  * consume, and how do I validate what I'm sending out?"
  */
 
-import { useState } from "react";
+import { useState, useEffect, Suspense } from "react";
+import { useSearchParams } from "next/navigation";
 import AuthGate from "@/components/AuthGate";
 import {
   fetchPublished,
   importPublished,
   egressValidate,
   listContracts,
+  listPublicCatalog,
 } from "@/lib/api";
 import type {
   FetchedPublication,
@@ -25,6 +27,7 @@ import type {
   EgressResponse,
   EgressDisposition,
   ContractSummary,
+  CatalogEntry,
 } from "@/lib/api";
 import useSWR, { mutate } from "swr";
 import { useOrg } from "@/lib/org";
@@ -35,7 +38,8 @@ import clsx from "clsx";
 // ---------------------------------------------------------------------------
 
 function ImportPanel() {
-  const [ref, setRef] = useState("");
+  const searchParams = useSearchParams();
+  const [ref, setRef] = useState(searchParams.get("ref") ?? "");
   const [token, setToken] = useState("");
   const [mode, setMode] = useState<ImportMode>("snapshot");
   const [preview, setPreview] = useState<FetchedPublication | null>(null);
@@ -43,6 +47,24 @@ function ImportPanel() {
   const [importing, setImporting] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
+
+  // Fetch public catalog for discovery — no auth required.
+  const { data: publicEntries } = useSWR<CatalogEntry[]>(
+    "public-catalog",
+    () => listPublicCatalog(20)
+  );
+
+  // If the page was opened with ?ref=, auto-preview it.
+  useEffect(() => {
+    const initial = searchParams.get("ref");
+    if (initial) {
+      setRef(initial);
+      fetchPublished(initial)
+        .then(setPreview)
+        .catch(() => {/* silently ignore — user can retry */});
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const handlePreview = async () => {
     if (!ref.trim()) { setErr("Publication ref is required."); return; }
@@ -71,8 +93,64 @@ function ImportPanel() {
     } finally { setImporting(false); }
   };
 
+  const handleSelectCatalogEntry = (entry: CatalogEntry) => {
+    setRef(entry.publication_ref);
+    setToken("");
+    setPreview(null);
+    setErr(null);
+    setSuccess(null);
+    // Auto-preview on selection.
+    setFetching(true);
+    fetchPublished(entry.publication_ref)
+      .then((p) => setPreview(p))
+      .catch((e) => setErr(e instanceof Error ? e.message : String(e)))
+      .finally(() => setFetching(false));
+  };
+
+  const showBrowse = ref.trim() === "" && !preview;
+
   return (
-    <div className="space-y-4">
+    <div className="space-y-5">
+      {/* Browsable public list — collapses when user starts typing a ref */}
+      {showBrowse && publicEntries && publicEntries.length > 0 && (
+        <div>
+          <p className="text-xs font-medium text-slate-400 uppercase tracking-wider mb-2">
+            Available Public Contracts
+          </p>
+          <div className="divide-y divide-[#1f2937] border border-[#1f2937] rounded-xl overflow-hidden">
+            {publicEntries.map((e) => (
+              <button
+                key={e.publication_ref}
+                onClick={() => handleSelectCatalogEntry(e)}
+                className="w-full flex items-center justify-between gap-3 px-4 py-3 hover:bg-[#1f2937]/50 transition-colors text-left group"
+              >
+                <div className="min-w-0">
+                  <p className="text-sm font-medium text-slate-300 group-hover:text-teal-400 transition-colors truncate">
+                    {e.contract_name}
+                  </p>
+                  <p className="text-xs text-slate-600 mt-0.5 font-mono">
+                    v{e.contract_version}
+                    <span className="ml-2 text-slate-700 font-sans">
+                      · {new Date(e.published_at).toLocaleDateString()}
+                    </span>
+                    {e.published_by && (
+                      <span className="ml-2 text-slate-700 font-sans">· {e.published_by}</span>
+                    )}
+                  </p>
+                </div>
+                <span className="text-xs text-slate-600 group-hover:text-teal-400 transition-colors shrink-0">
+                  Preview →
+                </span>
+              </button>
+            ))}
+          </div>
+          <p className="text-xs text-slate-700 mt-2">
+            Or paste a ref below to import a private (link-gated) contract.
+          </p>
+        </div>
+      )}
+
+      {/* Ref + token inputs */}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <div>
           <label className="text-xs font-medium text-slate-400 uppercase tracking-wider mb-1.5 block">
@@ -118,7 +196,15 @@ function ImportPanel() {
                 published {new Date(preview.published_at).toLocaleDateString()}
               </p>
             </div>
-            <code className="text-xs text-slate-500 font-mono">{preview.publication_ref}</code>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => { setPreview(null); setRef(""); }}
+                className="text-xs text-slate-600 hover:text-slate-400 transition-colors"
+              >
+                ← Back to list
+              </button>
+              <code className="text-xs text-slate-500 font-mono">{preview.publication_ref}</code>
+            </div>
           </div>
 
           <details>
@@ -448,7 +534,7 @@ function CatalogContent() {
             <h2 className="text-base font-semibold text-slate-100">Import from Publication Ref</h2>
             <p className="text-sm text-slate-500 mt-1">
               A provider shares a publication ref (and optional link token). Paste it here to preview and
-              import their contract directly — no manual reconstruction needed (RFC-032).
+              import their contract directly — no manual reconstruction needed.
             </p>
           </div>
           <ImportPanel />
@@ -461,7 +547,7 @@ function CatalogContent() {
             <h2 className="text-base font-semibold text-slate-100">Egress Validator</h2>
             <p className="text-sm text-slate-500 mt-1">
               Validate an outbound payload against one of your contracts before it leaves your API.
-              The same engine that runs on ingest — identical rules, identical latency budget (RFC-029).
+              The same engine that runs on ingest — identical rules, identical latency budget.
             </p>
           </div>
           {contractsLoading ? (
@@ -483,7 +569,9 @@ function CatalogContent() {
 export default function CatalogPage() {
   return (
     <AuthGate page="catalog">
-      <CatalogContent />
+      <Suspense fallback={null}>
+        <CatalogContent />
+      </Suspense>
     </AuthGate>
   );
 }

@@ -328,7 +328,7 @@ export function QuarantineTab({ contracts }: { contracts?: ContractSummary[] }) 
 
           {pickerVersions.length > 0 && (
             <div className="flex items-center gap-2">
-              <TooltipWrap content="Re-validate the selected events against this contract version. Passes land in the audit log; failures create new quarantine rows." rfc="RFC-003">
+              <TooltipWrap content="Re-validate the selected events against this contract version. Passes land in the audit log; failures create new quarantine rows.">
                 <span className="text-xs text-slate-500 whitespace-nowrap cursor-default underline decoration-dotted">
                   Replay against:
                 </span>
@@ -393,7 +393,7 @@ export function QuarantineTab({ contracts }: { contracts?: ContractSummary[] }) 
                 <th className="px-3 py-3 text-xs font-medium text-slate-500 uppercase tracking-wider">Contract</th>
                 <th className="px-3 py-3 text-xs font-medium text-slate-500 uppercase tracking-wider">Version</th>
                 <th className="px-3 py-3 text-xs font-medium text-slate-500 uppercase tracking-wider">
-                  <TooltipWrap content="Number of contract rule violations found in this event." rfc="RFC-003">
+                  <TooltipWrap content="Number of contract rule violations found in this event.">
                     <span className="cursor-default underline decoration-dotted">Violations</span>
                   </TooltipWrap>
                 </th>
@@ -466,7 +466,7 @@ export function QuarantineTab({ contracts }: { contracts?: ContractSummary[] }) 
                     <td className="px-3 py-3" onClick={(e) => e.stopPropagation()}>
                       <div className="flex items-center gap-1">
                         {isPurged ? (
-                          <TooltipWrap content="Event purged — past retention window. Replay is no longer possible." rfc="RFC-003">
+                          <TooltipWrap content="Event purged — past retention window. Replay is no longer possible.">
                             <span className="text-xs text-slate-600 cursor-default px-2 py-1">
                               ⊘
                             </span>
@@ -562,7 +562,7 @@ function EmptyState({ hasFilter }: { hasFilter: boolean }) {
             make stack-up-demo
           </p>
           <p className="text-xs mt-2 text-slate-700">
-            Run the RFC-017 demo seeder to generate sample quarantined events.
+            Run the demo seeder to generate sample quarantined events.
           </p>
         </>
       )}
@@ -604,7 +604,7 @@ function PayloadPreviewDrawer({
         <div className="flex items-start justify-between px-6 py-5 border-b border-[#1f2937]">
           <div>
             <h3 className="text-sm font-semibold text-slate-200 uppercase tracking-wider">
-              <TooltipWrap content="Events that failed contract validation are held here for inspection and optional replay. Nothing is silently dropped." rfc="RFC-003">
+              <TooltipWrap content="Events that failed contract validation are held here for inspection and optional replay. Nothing is silently dropped.">
                 <span className="cursor-default underline decoration-dotted">Quarantined</span>
               </TooltipWrap>{" "}
               Payload
@@ -701,7 +701,7 @@ function ReplayHistoryDrawer({
         <div className="flex items-center justify-between p-5 border-b border-[#1f2937]">
           <div>
             <h3 className="font-semibold text-slate-100">
-              <TooltipWrap content="Re-validate a quarantined event against a current contract version. If it passes, it is written to the audit log and forwarded downstream." rfc="RFC-003">
+              <TooltipWrap content="Re-validate a quarantined event against a current contract version. If it passes, it is written to the audit log and forwarded downstream.">
                 <span className="cursor-default underline decoration-dotted">Replay</span>
               </TooltipWrap>{" "}
               History
