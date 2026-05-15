@@ -35,6 +35,8 @@ import {
   suggestNextVersion,
   listNameHistory,
   importOdcs,
+  publishVersion,
+  getImportStatus,
 } from "@/lib/api";
 import type {
   ContractSummary,
@@ -42,6 +44,9 @@ import type {
   VersionSummary,
   VersionResponse,
   NameHistoryEntry,
+  PublicationVisibility,
+  PublishResponse,
+  ImportStatusResult,
 } from "@/lib/api";
 import VisualBuilder from "./VisualBuilder";
 import { EXAMPLE_YAML, EXAMPLE_SAMPLE } from "./examples";
@@ -92,6 +97,9 @@ function EditContractModal({
   const [ghSyncing, setGhSyncing] = useState(false);
   const [ghSyncUrl, setGhSyncUrl] = useState<string | null>(null);
   const [ghSyncError, setGhSyncError] = useState<string | null>(null);
+
+  // Publish modal state (RFC-032)
+  const [publishModalOpen, setPublishModalOpen] = useState(false);
 
   // Modal-level tab state
   type ModalTab = "yaml" | "versions" | "kafka" | "kinesis";
@@ -427,6 +435,15 @@ function EditContractModal({
           )}
         </div>
 
+        {/* RFC-032: Publish Modal */}
+        {publishModalOpen && currentVersion && (
+          <PublishModal
+            contractId={contractId}
+            version={currentVersion.version}
+            onClose={() => setPublishModalOpen(false)}
+          />
+        )}
+
         {/* Footer actions */}
         {!loading && (currentVersion || modalTab === "versions") && (
           <div className="flex items-center gap-3 p-6 border-t border-[#1f2937] flex-wrap">
@@ -485,6 +502,15 @@ function EditContractModal({
                     </svg>
                     {ghSyncing ? "Syncing…" : "Sync to GitHub"}
                   </button>
+                  {/* RFC-032: Publish button */}
+                  <button
+                    onClick={() => setPublishModalOpen(true)}
+                    disabled={saving}
+                    title="Publish this contract version so others can import it by reference"
+                    className="flex items-center gap-1.5 px-3 py-2 bg-teal-900/30 hover:bg-teal-900/50 disabled:opacity-40 text-teal-300 text-sm font-medium rounded-lg transition-colors border border-teal-800/50"
+                  >
+                    ↑ Publish
+                  </button>
                   {ghSyncUrl && (
                     <a href={ghSyncUrl} target="_blank" rel="noopener noreferrer"
                       className="text-xs text-green-400 hover:text-green-300 truncate max-w-xs" title={ghSyncUrl}>
@@ -509,6 +535,169 @@ function EditContractModal({
               Press <kbd className="bg-[#1f2937] px-1 rounded">Esc</kbd> to close
             </span>
           </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// PublishModal (RFC-032)
+// ---------------------------------------------------------------------------
+
+function PublishModal({
+  contractId,
+  version,
+  onClose,
+}: {
+  contractId: string;
+  version: string;
+  onClose: () => void;
+}) {
+  const [visibility, setVisibility] = useState<PublicationVisibility>("link");
+  const [publishing, setPublishing] = useState(false);
+  const [result, setResult] = useState<PublishResponse | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+  const [tokenCopied, setTokenCopied] = useState(false);
+  const [refCopied, setRefCopied] = useState(false);
+
+  const handlePublish = async () => {
+    setPublishing(true); setErr(null);
+    try {
+      const res = await publishVersion(contractId, version, { visibility });
+      setResult(res);
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : String(e));
+    } finally { setPublishing(false); }
+  };
+
+  const copy = (text: string, cb: (v: boolean) => void) => {
+    navigator.clipboard.writeText(text);
+    cb(true); setTimeout(() => cb(false), 2000);
+  };
+
+  return (
+    <div
+      className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 backdrop-blur-sm"
+      onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
+    >
+      <div className="bg-[#0f1623] border border-[#1f2937] rounded-2xl w-full max-w-md p-6 shadow-2xl">
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="text-base font-semibold text-slate-100">
+            Publish v{version}
+          </h3>
+          <button onClick={onClose} className="text-slate-500 hover:text-slate-300 text-xl leading-none">✕</button>
+        </div>
+
+        {!result ? (
+          <>
+            <p className="text-sm text-slate-400 mb-4">
+              Publishing generates a stable reference that others can use to import
+              this contract version directly — no manual reconstruction needed.
+            </p>
+
+            <div className="mb-5">
+              <label className="text-xs font-medium text-slate-400 uppercase tracking-wider mb-2 block">
+                Visibility
+              </label>
+              <div className="space-y-2">
+                {(["public", "link"] as PublicationVisibility[]).map((v) => (
+                  <label key={v} className="flex items-start gap-3 cursor-pointer group">
+                    <input
+                      type="radio"
+                      name="visibility"
+                      value={v}
+                      checked={visibility === v}
+                      onChange={() => setVisibility(v)}
+                      className="mt-0.5 accent-teal-500"
+                    />
+                    <div>
+                      <span className="text-sm font-medium text-slate-200">
+                        {v === "public" ? "Public" : "Link-only"}
+                      </span>
+                      <p className="text-xs text-slate-500">
+                        {v === "public"
+                          ? "Anyone with the publication ref can fetch this contract."
+                          : "Requires both the ref and an unguessable token — safe to share privately."}
+                      </p>
+                    </div>
+                  </label>
+                ))}
+              </div>
+            </div>
+
+            {err && <p className="text-xs text-red-400 mb-3">✕ {err}</p>}
+
+            <div className="flex gap-2">
+              <button
+                onClick={handlePublish}
+                disabled={publishing}
+                className="flex-1 px-4 py-2 bg-teal-700 hover:bg-teal-600 disabled:opacity-40 text-white text-sm font-medium rounded-lg transition-colors"
+              >
+                {publishing ? "Publishing…" : "Publish"}
+              </button>
+              <button
+                onClick={onClose}
+                className="px-4 py-2 bg-[#1f2937] hover:bg-[#374151] text-slate-300 text-sm font-medium rounded-lg transition-colors"
+              >
+                Cancel
+              </button>
+            </div>
+          </>
+        ) : (
+          <>
+            <div className="bg-teal-900/20 border border-teal-800/40 rounded-lg p-4 mb-4">
+              <p className="text-xs font-medium text-teal-300 uppercase tracking-wider mb-3">
+                ✓ Published — share these details
+              </p>
+
+              <div className="space-y-3">
+                <div>
+                  <p className="text-xs text-slate-500 mb-1">Publication Ref</p>
+                  <div className="flex items-center gap-2">
+                    <code className="text-xs text-slate-200 font-mono bg-[#0a0d12] px-2 py-1 rounded flex-1 truncate">
+                      {result.publication_ref}
+                    </code>
+                    <button
+                      onClick={() => copy(result.publication_ref, setRefCopied)}
+                      className="shrink-0 px-2 py-1 text-xs bg-[#1f2937] hover:bg-[#374151] text-slate-300 rounded transition-colors"
+                    >
+                      {refCopied ? "✔" : "Copy"}
+                    </button>
+                  </div>
+                </div>
+
+                {result.link_token && (
+                  <div>
+                    <p className="text-xs text-slate-500 mb-1">Link Token <span className="text-amber-400">(shown once — save it)</span></p>
+                    <div className="flex items-center gap-2">
+                      <code className="text-xs text-amber-300 font-mono bg-[#0a0d12] px-2 py-1 rounded flex-1 truncate">
+                        {result.link_token}
+                      </code>
+                      <button
+                        onClick={() => copy(result.link_token!, setTokenCopied)}
+                        className="shrink-0 px-2 py-1 text-xs bg-[#1f2937] hover:bg-[#374151] text-slate-300 rounded transition-colors"
+                      >
+                        {tokenCopied ? "✔" : "Copy"}
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                <div className="flex gap-4 text-xs text-slate-500 pt-1">
+                  <span>Visibility: <span className="text-slate-300">{result.visibility}</span></span>
+                  <span>Version: <span className="text-slate-300">v{result.contract_version}</span></span>
+                </div>
+              </div>
+            </div>
+
+            <button
+              onClick={onClose}
+              className="w-full px-4 py-2 bg-[#1f2937] hover:bg-[#374151] text-slate-300 text-sm font-medium rounded-lg transition-colors"
+            >
+              Done
+            </button>
+          </>
         )}
       </div>
     </div>
@@ -560,6 +749,40 @@ function fmtDeployedAt(iso: string | null): string {
 }
 
 // ---------------------------------------------------------------------------
+// useImportStatuses — RFC-032: poll import-status for all subscribe contracts
+// ---------------------------------------------------------------------------
+
+function useImportStatuses(contracts: ContractSummary[] | undefined): Map<string, ImportStatusResult> {
+  const [statuses, setStatuses] = useState<Map<string, ImportStatusResult>>(new Map());
+
+  useEffect(() => {
+    if (!contracts || contracts.length === 0) return;
+    let cancelled = false;
+
+    Promise.all(
+      contracts.map((c) =>
+        getImportStatus(c.id)
+          .then((s) => ({ id: c.id, status: s }))
+          .catch(() => null)
+      )
+    ).then((results) => {
+      if (cancelled) return;
+      const m = new Map<string, ImportStatusResult>();
+      for (const r of results) {
+        if (r && r.status.import_mode === "subscribe") {
+          m.set(r.id, r.status);
+        }
+      }
+      setStatuses(m);
+    });
+
+    return () => { cancelled = true; };
+  }, [contracts]);
+
+  return statuses;
+}
+
+// ---------------------------------------------------------------------------
 // ContractList
 // ---------------------------------------------------------------------------
 
@@ -576,6 +799,7 @@ function ContractList({
   onDelete: (id: string) => void;
   onEdit: (id: string) => void;
 }) {
+  const importStatuses = useImportStatuses(contracts);
   if (isLoading) return <p className="text-slate-500 text-sm">Loading…</p>;
   if (!contracts || contracts.length === 0) {
     return (
@@ -589,6 +813,7 @@ function ContractList({
     <div className="space-y-3">
       {contracts.map((c) => {
         const dm = deployMeta.get(c.name);
+        const importStatus = importStatuses.get(c.id);
         return (
           <div
             key={c.id}
@@ -621,6 +846,23 @@ function ContractList({
                 {dm?.source && (
                   <span className="text-xs px-2 py-0.5 rounded-full bg-sky-900/40 text-sky-300 font-medium">
                     {dm.source}
+                  </span>
+                )}
+                {/* RFC-032: update available badge for subscribed imports */}
+                {importStatus?.update_available && (
+                  <span
+                    className="text-xs px-2 py-0.5 rounded-full bg-teal-900/40 text-teal-300 font-medium border border-teal-800/50"
+                    title={`Provider published v${importStatus.latest_published_version} — open the contract to pull the update`}
+                  >
+                    ↑ Update available
+                  </span>
+                )}
+                {importStatus?.source_revoked && (
+                  <span
+                    className="text-xs px-2 py-0.5 rounded-full bg-red-900/30 text-red-400"
+                    title="The source publication has been revoked"
+                  >
+                    source revoked
                   </span>
                 )}
               </div>

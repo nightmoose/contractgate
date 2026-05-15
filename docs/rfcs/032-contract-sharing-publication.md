@@ -1,8 +1,9 @@
 # RFC-032: Contract Sharing & Publication
 
-**Status:** Draft
+**Status:** Accepted
 **Date:** 2026-05-14
 **Author:** Alex Suarez
+**Implemented:** 2026-05-15
 
 ---
 
@@ -167,21 +168,22 @@ machinery rather than inventing a parallel path.
 
 ## Acceptance Criteria
 
-- [ ] Migration `020_contract_publication.sql` adds
+- [x] Migration `020_contract_publication.sql` adds
       `contract_publications` and the `imported_from_*` provenance
       columns on `contracts`
-- [ ] `POST /contracts/{name}/versions/{v}/publish` returns a stable
+- [x] `POST /contracts/{id}/versions/{v}/publish` returns a stable
       publication ref with `public` or `link` visibility
-- [ ] `GET /published/{ref}` returns the locked YAML + metadata,
+- [x] `GET /published/{ref}` returns the locked YAML + metadata,
       honoring visibility and `link` tokens
-- [ ] `POST /contracts/import-published` imports a published contract
+- [x] `POST /contracts/import-published` imports a published contract
       in `snapshot` or `subscribe` mode with provenance recorded
-- [ ] `GET /contracts/{name}/import-status` reports whether a newer
+- [x] `GET /contracts/{id}/import-status` reports whether a newer
       published version exists for a `subscribe` import
-- [ ] Revoking a publication is reflected in `import-status`
-- [ ] `cargo test` / `cargo check` pass; existing ODCS import behavior
+- [x] Revoking a publication is reflected in `import-status`
+      (`source_revoked: true`)
+- [x] `cargo test` / `cargo check` pass; existing ODCS import behavior
       unchanged
-- [ ] `docs/contract-sharing-reference.md` added — new user-facing
+- [x] `docs/contract-sharing-reference.md` added — new user-facing
       publish/import endpoints
 
 ---
