@@ -20,6 +20,9 @@ import {
   egressValidate,
   listContracts,
   listPublicCatalog,
+  listOpenDataContracts,
+  getOpenDataContract,
+  forkPublicContract,
 } from "@/lib/api";
 import type {
   FetchedPublication,
@@ -28,10 +31,177 @@ import type {
   EgressDisposition,
   ContractSummary,
   CatalogEntry,
+  OpenDataContract,
+  OpenDataContractDetail,
 } from "@/lib/api";
 import useSWR, { mutate } from "swr";
 import { useOrg } from "@/lib/org";
 import clsx from "clsx";
+
+// ---------------------------------------------------------------------------
+// Open Data section — curated contracts, fork flow
+// ---------------------------------------------------------------------------
+
+function OpenDataSection() {
+  const { data: entries, isLoading } = useSWR<OpenDataContract[]>(
+    "open-data-catalog",
+    listOpenDataContracts
+  );
+
+  const [selected, setSelected] = useState<OpenDataContractDetail | null>(null);
+  const [loadingId, setLoadingId] = useState<string | null>(null);
+  const [forkName, setForkName] = useState("");
+  const [forkDesc, setForkDesc] = useState("");
+  const [forking, setForking] = useState(false);
+  const [forkErr, setForkErr] = useState<string | null>(null);
+  const [forkOk, setForkOk] = useState<string | null>(null);
+
+  const handleSelect = async (id: string) => {
+    setLoadingId(id);
+    setForkName(""); setForkDesc(""); setForkErr(null); setForkOk(null);
+    try {
+      const detail = await getOpenDataContract(id);
+      setSelected(detail);
+      setForkName(detail.name);
+    } catch (e) {
+      setForkErr(e instanceof Error ? e.message : String(e));
+    } finally {
+      setLoadingId(null);
+    }
+  };
+
+  const handleFork = async () => {
+    if (!selected || !forkName.trim()) return;
+    setForking(true); setForkErr(null);
+    try {
+      const result = await forkPublicContract(selected.id, {
+        name: forkName.trim(),
+        ...(forkDesc.trim() ? { description: forkDesc.trim() } : {}),
+      });
+      await mutate("contracts");
+      setForkOk(`Forked as "${result.name}" — now in your private contracts.`);
+      setSelected(null);
+    } catch (e) {
+      setForkErr(e instanceof Error ? e.message : String(e));
+    } finally {
+      setForking(false); }
+  };
+
+  if (isLoading) {
+    return <p className="text-sm text-slate-600">Loading open data contracts…</p>;
+  }
+
+  if (!entries || entries.length === 0) {
+    return (
+      <p className="text-sm text-slate-600">
+        No curated open-data contracts available yet.
+      </p>
+    );
+  }
+
+  if (selected) {
+    return (
+      <div className="bg-teal-950/20 border border-teal-800/30 rounded-xl p-5 space-y-4">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <p className="text-base font-semibold text-teal-300">{selected.name}</p>
+            <p className="text-xs text-slate-500 mt-0.5">
+              {selected.source_format.toUpperCase()} · v{selected.version}
+              {selected.description && ` · ${selected.description}`}
+            </p>
+          </div>
+          <button
+            onClick={() => { setSelected(null); setForkErr(null); }}
+            className="text-xs text-slate-600 hover:text-slate-400 transition-colors shrink-0"
+          >
+            ← Back
+          </button>
+        </div>
+
+        <details>
+          <summary className="text-xs text-slate-500 cursor-pointer hover:text-slate-300 select-none">
+            View contract YAML ▾
+          </summary>
+          <pre className="mt-2 text-[10px] text-green-300 font-mono bg-[#0a0d12] rounded-lg p-3 max-h-56 overflow-auto whitespace-pre-wrap leading-relaxed">
+            {selected.contract_yaml}
+          </pre>
+        </details>
+
+        <div className="space-y-3">
+          <div>
+            <label className="text-xs font-medium text-slate-400 uppercase tracking-wider mb-1.5 block">
+              Fork name
+            </label>
+            <input
+              type="text"
+              value={forkName}
+              onChange={(e) => setForkName(e.target.value)}
+              placeholder="Name for your forked contract"
+              className="w-full bg-[#0a0d12] border border-[#1f2937] rounded-lg px-3 py-2 text-sm text-slate-200 placeholder-slate-600 outline-none focus:border-teal-600 transition-colors"
+            />
+          </div>
+          <div>
+            <label className="text-xs font-medium text-slate-400 uppercase tracking-wider mb-1.5 block">
+              Description <span className="normal-case font-normal text-slate-600">(optional)</span>
+            </label>
+            <input
+              type="text"
+              value={forkDesc}
+              onChange={(e) => setForkDesc(e.target.value)}
+              placeholder="e.g. US Census ACS filtered to California"
+              className="w-full bg-[#0a0d12] border border-[#1f2937] rounded-lg px-3 py-2 text-sm text-slate-200 placeholder-slate-600 outline-none focus:border-teal-600 transition-colors"
+            />
+          </div>
+        </div>
+
+        <button
+          onClick={handleFork}
+          disabled={forking || !forkName.trim()}
+          className="px-4 py-2 bg-teal-700 hover:bg-teal-600 disabled:opacity-40 text-white text-sm font-medium rounded-lg transition-colors"
+        >
+          {forking ? "Forking…" : "Fork into my contracts"}
+        </button>
+
+        {forkErr && (
+          <p className="text-sm text-red-400 bg-red-900/20 border border-red-800/40 rounded p-3">{forkErr}</p>
+        )}
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      {forkOk && (
+        <p className="text-sm text-green-400 bg-green-900/20 border border-green-800/40 rounded p-3 mb-3">
+          ✓ {forkOk}
+        </p>
+      )}
+      <div className="divide-y divide-[#1f2937] border border-[#1f2937] rounded-xl overflow-hidden">
+        {entries.map((e) => (
+          <button
+            key={e.id}
+            onClick={() => handleSelect(e.id)}
+            disabled={loadingId === e.id}
+            className="w-full flex items-center justify-between gap-3 px-4 py-3 hover:bg-[#1f2937]/50 transition-colors text-left group disabled:opacity-50"
+          >
+            <div className="min-w-0">
+              <p className="text-sm font-medium text-slate-300 group-hover:text-teal-400 transition-colors truncate">
+                {e.name}
+              </p>
+              <p className="text-xs text-slate-600 mt-0.5">
+                <span className="font-mono">{e.source_format.toUpperCase()}</span>
+                {e.description && <span className="ml-2">{e.description}</span>}
+              </p>
+            </div>
+            <span className="text-xs text-slate-600 group-hover:text-teal-400 transition-colors shrink-0">
+              {loadingId === e.id ? "Loading…" : "Fork →"}
+            </span>
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
 
 // ---------------------------------------------------------------------------
 // Import-from-Ref panel (inline version of ImportFromRefModal for this page)
@@ -488,7 +658,10 @@ function EgressValidator({ contracts }: { contracts: ContractSummary[] }) {
 type PageTab = "import" | "egress";
 
 function CatalogContent() {
-  const [tab, setTab] = useState<PageTab>("import");
+  const searchParams = useSearchParams();
+  const [tab, setTab] = useState<PageTab>(
+    searchParams.get("section") === "opendata" ? "import" : "import"
+  );
   const { org } = useOrg();
   const { data: contracts, isLoading: contractsLoading } = useSWR<ContractSummary[]>(
     org ? "contracts" : null,
@@ -501,7 +674,7 @@ function CatalogContent() {
       <div className="mb-6">
         <h1 className="text-2xl font-bold">Contract Catalog</h1>
         <p className="text-sm text-slate-500 mt-1">
-          Import contracts from providers and validate your outbound data.
+          Browse open data sources, import community contracts, and validate outbound data.
         </p>
       </div>
 
@@ -514,7 +687,7 @@ function CatalogContent() {
             tab === "import" ? "bg-[#1f2937] text-slate-100" : "text-slate-500 hover:text-slate-300"
           )}
         >
-          📥 Import Contract
+          📚 Browse &amp; Import
         </button>
         <button
           onClick={() => setTab("egress")}
@@ -529,15 +702,40 @@ function CatalogContent() {
 
       {/* Tab bodies */}
       {tab === "import" && (
-        <div className="bg-[#111827] border border-[#1f2937] rounded-xl p-6">
-          <div className="mb-5">
-            <h2 className="text-base font-semibold text-slate-100">Import from Publication Ref</h2>
-            <p className="text-sm text-slate-500 mt-1">
-              A provider shares a publication ref (and optional link token). Paste it here to preview and
-              import their contract directly — no manual reconstruction needed.
-            </p>
+        <div className="space-y-6">
+          {/* ── Section 1: Open Data ── */}
+          <div className="bg-[#111827] border border-[#1f2937] rounded-xl p-6">
+            <div className="mb-5">
+              <div className="flex items-center gap-2 mb-1">
+                <h2 className="text-base font-semibold text-slate-100">Open Data Contracts</h2>
+                <span className="text-[10px] bg-teal-900/30 text-teal-400 border border-teal-800/40 px-2 py-0.5 rounded-full font-medium">
+                  curated
+                </span>
+              </div>
+              <p className="text-sm text-slate-500">
+                Pre-built contracts for public data sources. Fork one into your org to
+                customise it — the original stays intact.
+              </p>
+            </div>
+            <OpenDataSection />
           </div>
-          <ImportPanel />
+
+          {/* ── Section 2: Community Published ── */}
+          <div className="bg-[#111827] border border-[#1f2937] rounded-xl p-6">
+            <div className="mb-5">
+              <div className="flex items-center gap-2 mb-1">
+                <h2 className="text-base font-semibold text-slate-100">Community Published</h2>
+                <span className="text-[10px] bg-indigo-900/30 text-indigo-400 border border-indigo-800/40 px-2 py-0.5 rounded-full font-medium">
+                  published
+                </span>
+              </div>
+              <p className="text-sm text-slate-500">
+                Contracts shared by other organisations. Browse the public list or paste a
+                ref directly to import a private (link-gated) contract.
+              </p>
+            </div>
+            <ImportPanel />
+          </div>
         </div>
       )}
 

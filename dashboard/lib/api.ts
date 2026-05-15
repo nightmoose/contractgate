@@ -913,6 +913,54 @@ export interface CatalogEntry {
 export const listPublicCatalog = (limit = 20): Promise<CatalogEntry[]> =>
   apiFetch<CatalogEntry[]>(`/catalog?limit=${limit}`);
 
+// ---------------------------------------------------------------------------
+// Open-data public catalog (GET /public-contracts)
+// ---------------------------------------------------------------------------
+
+/** Summary row from GET /public-contracts — no YAML, suitable for listing. */
+export interface OpenDataContract {
+  id: string;
+  name: string;
+  description: string | null;
+  source_format: string;
+  version: string;
+  created_at: string;
+  updated_at: string;
+}
+
+/** Full detail from GET /public-contracts/{id} — includes YAML. */
+export interface OpenDataContractDetail extends OpenDataContract {
+  source_url: string;
+  contract_yaml: string;
+}
+
+/** Response from POST /contracts/{id}/fork. */
+export interface ForkResponse {
+  contract_id: string;
+  name: string;
+  parent_public_contract_id: string;
+  fork_filter: unknown | null;
+  created_at: string;
+}
+
+/** List all curated open-data contracts (no auth required). */
+export const listOpenDataContracts = (): Promise<OpenDataContract[]> =>
+  apiFetch<OpenDataContract[]>("/public-contracts");
+
+/** Fetch a single curated contract with full YAML (no auth required). */
+export const getOpenDataContract = (id: string): Promise<OpenDataContractDetail> =>
+  apiFetch<OpenDataContractDetail>(`/public-contracts/${encodeURIComponent(id)}`);
+
+/** Fork a curated public contract into the caller's org (auth required). */
+export const forkPublicContract = (
+  publicId: string,
+  body: { name: string; description?: string }
+): Promise<ForkResponse> =>
+  apiFetch<ForkResponse>(`/contracts/${encodeURIComponent(publicId)}/fork`, {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+
 /**
  * Fetch a published contract by ref.  Public visibility needs only the ref;
  * link visibility requires `token` to match the link_token returned on publish.
