@@ -8,7 +8,7 @@
 //!
 //! Developer tooling — not part of the patent-core validation engine.
 
-use crate::contract::{Contract, FieldDefinition, Ontology};
+use crate::contract::{Contract, EgressLeakageMode, FieldDefinition, Ontology};
 use std::collections::HashMap;
 
 // ---------------------------------------------------------------------------
@@ -143,6 +143,7 @@ pub fn three_way_merge(base: Option<&Contract>, ours: &Contract, theirs: &Contra
         name: ours.name.clone(),
         description: ours.description.clone(),
         compliance_mode: ours.compliance_mode,
+        egress_leakage_mode: ours.egress_leakage_mode,
         ontology: Ontology {
             entities: result_fields,
         },
@@ -223,6 +224,7 @@ mod tests {
             name: "test".to_string(),
             description: None,
             compliance_mode: false,
+            egress_leakage_mode: EgressLeakageMode::Off,
             ontology: Ontology { entities: fields },
             glossary: vec![],
             metrics: vec![],

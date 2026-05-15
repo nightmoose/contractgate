@@ -28,7 +28,7 @@
 //! | union of 2+ non-null | Any |
 //! | `"null"` alone | skipped |
 
-use crate::contract::{Contract, FieldDefinition, FieldType, Ontology};
+use crate::contract::{Contract, EgressLeakageMode, FieldDefinition, FieldType, Ontology};
 use crate::error::{AppError, AppResult};
 use crate::infer::infer_fields_from_objects_pub;
 use axum::Json;
@@ -109,6 +109,7 @@ pub async fn infer_avro_handler(
         name: req.name.clone(),
         description: req.description.clone(),
         compliance_mode: false,
+        egress_leakage_mode: EgressLeakageMode::Off,
         ontology: Ontology { entities },
         glossary: vec![],
         metrics: vec![],

@@ -55,7 +55,8 @@
 //!     never a panic or `Result::Err`.
 
 use crate::contract::{
-    Contract, FieldDefinition, FieldType, MetricDefinition, QualityRule, QualityRuleType,
+    Contract, EgressLeakageMode, FieldDefinition, FieldType, MetricDefinition, QualityRule,
+    QualityRuleType,
 };
 use regex::Regex;
 use serde_json::Value;
@@ -829,6 +830,7 @@ mod tests {
                     },
                 ],
             },
+            egress_leakage_mode: EgressLeakageMode::Off,
             glossary: vec![],
             metrics: vec![],
             quality: vec![],
