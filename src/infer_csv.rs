@@ -66,9 +66,7 @@ pub struct InferCsvRequest {
 // Handler
 // ---------------------------------------------------------------------------
 
-pub async fn infer_csv_handler(
-    Json(req): Json<InferCsvRequest>,
-) -> AppResult<Json<InferResponse>> {
+pub async fn infer_csv_handler(Json(req): Json<InferCsvRequest>) -> AppResult<Json<InferResponse>> {
     // 1. Resolve raw CSV string.
     let raw = resolve_content(&req)?;
 
@@ -257,9 +255,8 @@ fn parse_csv(data: &[u8], delimiter: u8) -> AppResult<Vec<Value>> {
         if i >= MAX_SAMPLE_ROWS {
             break;
         }
-        let record = result.map_err(|e| {
-            AppError::BadRequest(format!("CSV parse error at row {}: {e}", i + 2))
-        })?;
+        let record = result
+            .map_err(|e| AppError::BadRequest(format!("CSV parse error at row {}: {e}", i + 2)))?;
 
         let mut obj = serde_json::Map::new();
         for (header, field) in header_vec.iter().zip(record.iter()) {
@@ -364,10 +361,7 @@ mod tests {
 
     #[test]
     fn coerces_integer() {
-        assert_eq!(
-            coerce_csv_value("42"),
-            Value::Number(42i64.into())
-        );
+        assert_eq!(coerce_csv_value("42"), Value::Number(42i64.into()));
     }
 
     #[test]

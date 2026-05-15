@@ -842,10 +842,7 @@ fn build_router(state: Arc<AppState>) -> Router {
             post(infer_openapi::infer_openapi_handler),
         )
         // CSV inference (RFC-035)
-        .route(
-            "/contracts/infer/csv",
-            post(infer_csv::infer_csv_handler),
-        )
+        .route("/contracts/infer/csv", post(infer_csv::infer_csv_handler))
         // Evolution diff summarizer (RFC-006)
         .route("/contracts/diff", post(infer_diff::diff_handler))
         // Contract identity CRUD
