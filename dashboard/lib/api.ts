@@ -765,6 +765,255 @@ export const egressValidate = (
 };
 
 // ---------------------------------------------------------------------------
+// Contract Sharing & Publication (RFC-032)
+// ---------------------------------------------------------------------------
+
+/** Visibility level for a published contract. */
+export type PublicationVisibility = "public" | "link" | "org";
+
+/** How an imported contract stays linked to its source. */
+export type ImportMode = "snapshot" | "subscribe";
+
+/** Response from `POST /contracts/{id}/versions/{v}/publish`. */
+export interface PublishResponse {
+  publication_ref: string;
+  visibility: PublicationVisibility;
+  /** Only present when visibility = "link". */
+  link_token: string | null;
+  contract_name: string;
+  contract_version: string;
+  published_at: string;
+}
+
+/** Response from `GET /published/{ref}`. */
+export interface FetchedPublication {
+  publication_ref: string;
+  contract_name: string;
+  contract_version: string;
+  visibility: PublicationVisibility;
+  published_at: string;
+  /** The locked YAML of the published contract version. */
+  yaml_content: string;
+}
+
+/** Response from `DELETE /contracts/publications/{ref}`. */
+export interface RevokeResponse {
+  publication_ref: string;
+  revoked_at: string;
+}
+
+/** Response from `POST /contracts/import-published`. */
+export interface ImportPublishedResponse {
+  contract_id: string;
+  version: string;
+  import_mode: ImportMode;
+  imported_from_ref: string;
+}
+
+/** Response from `GET /contracts/{id}/import-status`. */
+export interface ImportStatusResult {
+  import_mode: ImportMode | null;
+  publication_ref: string | null;
+  source_revoked: boolean;
+  update_available: boolean;
+  latest_published_version: string | null;
+  imported_version: string | null;
+}
+
+/**
+ * Publish a specific contract version.
+ * Returns a stable publication ref + optional link token (when visibility = "link").
+ */
+export const publishVersion = (
+  contractId: string,
+  version: string,
+  opts: { visibility?: PublicationVisibility } = {}
+) =>
+  apiFetch<PublishResponse>(
+    `/contracts/${contractId}/versions/${encodeURIComponent(version)}/publish`,
+    {
+      method: "POST",
+      body: JSON.stringify({ visibility: opts.visibility ?? "link" }),
+    }
+  );
+
+/**
+ * Revoke a publication (soft-delete).  The consumer org can still keep their
+ * imported copy; `import-status` will surface `source_revoked: true`.
+ */
+export const revokePublication = (publicationRef: string) =>
+  apiFetch<RevokeResponse>(`/contracts/publications/${publicationRef}`, {
+    method: "DELETE",
+  });
+
+/**
+ * Fetch a published contract by ref.  Public visibility needs only the ref;
+ * link visibility requires `token` to match the link_token returned on publish.
+ */
+export const fetchPublished = (publicationRef: string, token?: string) => {
+  const qs = token ? `?token=${encodeURIComponent(token)}` : "";
+  return apiFetch<FetchedPublication>(`/published/${publicationRef}${qs}`);
+};
+
+/**
+ * Import a published contract into the caller's org.
+ *
+ * - `snapshot` (default): one-time copy with provenance recorded.
+ * - `subscribe`: copy + live link that surfaces update-available signals.
+ */
+export const importPublished = (body: {
+  publication_ref: string;
+  link_token?: string;
+  import_mode?: ImportMode;
+}) =>
+  apiFetch<ImportPublishedResponse>("/contracts/import-published", {
+    method: "POST",
+    body: JSON.stringify({
+      publication_ref: body.publication_ref,
+      ...(body.link_token ? { link_token: body.link_token } : {}),
+      import_mode: body.import_mode ?? "snapshot",
+    }),
+  });
+
+/**
+ * For subscribe-mode imports: check whether the source has published a newer
+ * version.  Returns `update_available: true` when the upstream version differs
+ * from what was imported.  Never auto-applies — always explicit pull.
+ */
+export const getImportStatus = (contractId: string) =>
+  apiFetch<ImportStatusResult>(`/contracts/${contractId}/import-status`);
+
+// ---------------------------------------------------------------------------
+// RFC-033: Provider-Consumer Collaboration
+// ---------------------------------------------------------------------------
+
+export type CollaboratorRole = "editor" | "reviewer" | "viewer";
+
+/** A collaborator grant row returned by the API. */
+export interface CollaboratorRow {
+  contract_name: string;
+  org_id: string;
+  role: CollaboratorRole;
+  granted_by: string;
+  granted_at: string;
+}
+
+/** A comment on a contract, optionally anchored to a field. */
+export interface CommentRow {
+  id: string;
+  contract_name: string;
+  /** Field name this comment is anchored to, or null for whole-contract. */
+  field: string | null;
+  org_id: string;
+  author: string;
+  body: string;
+  resolved: boolean;
+  created_at: string;
+}
+
+/** A change proposal from an editor org. */
+export interface ProposalRow {
+  id: string;
+  contract_name: string;
+  proposed_by: string;
+  proposed_yaml: string;
+  status: "open" | "approved" | "rejected" | "applied";
+  decided_by: string | null;
+  created_at: string;
+}
+
+/** List all collaborator grants on a contract. */
+export const listCollaborators = (contractName: string) =>
+  apiFetch<CollaboratorRow[]>(`/contracts/${contractName}/collaborators`);
+
+/** Grant (or update) a collaborator role. */
+export const grantCollaborator = (
+  contractName: string,
+  body: { org_id: string; role: CollaboratorRole }
+) =>
+  apiFetch<CollaboratorRow>(`/contracts/${contractName}/collaborators`, {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+
+/** Change an existing collaborator's role. */
+export const patchCollaborator = (
+  contractName: string,
+  orgId: string,
+  role: CollaboratorRole
+) =>
+  apiFetch<CollaboratorRow>(
+    `/contracts/${contractName}/collaborators/${orgId}`,
+    { method: "PATCH", body: JSON.stringify({ role }) }
+  );
+
+/** Revoke a collaborator grant. */
+export const revokeCollaborator = (contractName: string, orgId: string) =>
+  apiFetch<void>(`/contracts/${contractName}/collaborators/${orgId}`, {
+    method: "DELETE",
+  });
+
+/** List all comments on a contract (oldest first). */
+export const listComments = (contractName: string) =>
+  apiFetch<CommentRow[]>(`/contracts/${contractName}/comments`);
+
+/** Add a comment to a contract, optionally anchored to a field. */
+export const addComment = (
+  contractName: string,
+  body: { field?: string; author: string; body: string }
+) =>
+  apiFetch<CommentRow>(`/contracts/${contractName}/comments`, {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+
+/** Mark a comment as resolved. */
+export const resolveComment = (contractName: string, commentId: string) =>
+  apiFetch<CommentRow>(
+    `/contracts/${contractName}/comments/${commentId}/resolve`,
+    { method: "POST" }
+  );
+
+/** List all change proposals for a contract (newest first). */
+export const listProposals = (contractName: string) =>
+  apiFetch<ProposalRow[]>(`/contracts/${contractName}/proposals`);
+
+/** Open a new change proposal (editor+ only). */
+export const createProposal = (
+  contractName: string,
+  proposed_yaml: string
+) =>
+  apiFetch<ProposalRow>(`/contracts/${contractName}/proposals`, {
+    method: "POST",
+    body: JSON.stringify({ proposed_yaml }),
+  });
+
+/**
+ * Approve or reject a proposal (reviewer+ only).
+ * `decision` must be `"approved"` or `"rejected"`.
+ */
+export const decideProposal = (
+  contractName: string,
+  proposalId: string,
+  decision: "approved" | "rejected"
+) =>
+  apiFetch<ProposalRow>(
+    `/contracts/${contractName}/proposals/${proposalId}/decide`,
+    { method: "POST", body: JSON.stringify({ decision }) }
+  );
+
+/**
+ * Apply an approved proposal (owner only).
+ * Marks the proposal as `applied`; the `proposed_yaml` in the response is the
+ * content the owner should use to create a new contract version.
+ */
+export const applyProposal = (contractName: string, proposalId: string) =>
+  apiFetch<ProposalRow>(
+    `/contracts/${contractName}/proposals/${proposalId}/apply`,
+    { method: "POST" }
+  );
+
+// ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 
