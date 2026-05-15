@@ -29,6 +29,7 @@ import {
   getVersion,
   createVersion,
   patchVersionYaml,
+  patchVersionLeakageMode,
   promoteVersion,
   deprecateVersion,
   deleteVersion,
@@ -37,6 +38,8 @@ import {
   importOdcs,
   publishVersion,
   getImportStatus,
+  fetchPublished,
+  importPublished,
 } from "@/lib/api";
 import type {
   ContractSummary,
@@ -47,6 +50,8 @@ import type {
   PublicationVisibility,
   PublishResponse,
   ImportStatusResult,
+  EgressLeakageMode,
+  ImportMode,
 } from "@/lib/api";
 import VisualBuilder from "./VisualBuilder";
 import { EXAMPLE_YAML, EXAMPLE_SAMPLE } from "./examples";
@@ -55,6 +60,7 @@ import { VersionsTab } from "./_tabs/versions";
 import { QuarantineTab } from "./_tabs/quarantine";
 import { KafkaTab } from "./_tabs/kafka";
 import { KinesisTab } from "./_tabs/kinesis";
+import { CollaborateTab } from "./_tabs/collaborate";
 import {
   pickDefaultVersion,
   newestVersionString,
@@ -102,8 +108,11 @@ function EditContractModal({
   const [publishModalOpen, setPublishModalOpen] = useState(false);
 
   // Modal-level tab state
-  type ModalTab = "yaml" | "versions" | "kafka" | "kinesis";
+  type ModalTab = "yaml" | "versions" | "kafka" | "kinesis" | "collaborate";
   const [modalTab, setModalTab] = useState<ModalTab>("yaml");
+
+  // RFC-030: egress leakage mode
+  const [leakageSaving, setLeakageSaving] = useState(false);
   const [nameHistory, setNameHistory] = useState<NameHistoryEntry[] | null>(null);
   const [loadingNameHistory, setLoadingNameHistory] = useState(false);
 
@@ -260,6 +269,18 @@ function EditContractModal({
     return () => { cancelled = true; };
   }, [contractId, modalTab, nameHistory]);
 
+  /** RFC-030: called from YamlTab leakage mode selector */
+  const handleChangeLeakageMode = async (mode: EgressLeakageMode) => {
+    if (!currentVersion) return;
+    setLeakageSaving(true);
+    try {
+      const v = await patchVersionLeakageMode(contractId, currentVersion.version, mode);
+      setCurrentVersion(v);
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally { setLeakageSaving(false); }
+  };
+
   /** Used by VersionsTab promote button */
   const handlePromoteVersion = async (version: string) => {
     setSaving(true); setError(null);
@@ -391,6 +412,18 @@ function EditContractModal({
             >
               Kinesis
             </button>
+            {/* RFC-033: Collaborate tab */}
+            <button
+              onClick={() => setModalTab("collaborate")}
+              className={clsx(
+                "px-4 py-2 text-sm font-medium rounded-t-lg transition-colors border-b-2 -mb-px",
+                modalTab === "collaborate"
+                  ? "text-slate-100 border-indigo-400"
+                  : "text-slate-500 hover:text-slate-300 border-transparent"
+              )}
+            >
+              👥 Collaborate
+            </button>
           </div>
         )}
 
@@ -412,11 +445,23 @@ function EditContractModal({
               isDraft={isDraft}
               error={error}
               setError={setError}
+              egressLeakageMode={currentVersion?.egress_leakage_mode}
+              onChangeLeakageMode={handleChangeLeakageMode}
+              leakageSaving={leakageSaving}
             />
           ) : modalTab === "kafka" ? (
             <KafkaTab contractId={contractId} />
           ) : modalTab === "kinesis" ? (
             <KinesisTab contractId={contractId} />
+          ) : modalTab === "collaborate" ? (
+            <CollaborateTab
+              contractName={contract?.name ?? contractId}
+              contractCurrentYaml={yamlDraft}
+              onProposalApplied={(yaml) => {
+                setYamlDraft(yaml);
+                setModalTab("yaml");
+              }}
+            />
           ) : (
             <VersionsTab
               contractId={contractId}
@@ -780,6 +825,95 @@ function useImportStatuses(contracts: ContractSummary[] | undefined): Map<string
   }, [contracts]);
 
   return statuses;
+}
+
+// ---------------------------------------------------------------------------
+// ConsumedContractsList — RFC-032 imported contracts view
+// ---------------------------------------------------------------------------
+
+function ConsumedContractsList({
+  contracts,
+  isLoading,
+  onEdit,
+}: {
+  contracts?: ContractSummary[];
+  isLoading: boolean;
+  onEdit: (id: string) => void;
+}) {
+  const importStatuses = useImportStatuses(contracts);
+
+  if (isLoading) return <p className="text-slate-500 text-sm">Loading…</p>;
+
+  // Only show contracts that have an import_mode (snapshot or subscribe)
+  const consumed = (contracts ?? []).filter((c) => {
+    const st = importStatuses.get(c.id);
+    return st && st.import_mode !== null;
+  });
+
+  if (consumed.length === 0) {
+    return (
+      <div className="flex flex-col items-center justify-center h-64 text-slate-600">
+        <p className="text-4xl mb-4">📥</p>
+        <p className="text-sm">No consumed contracts yet.</p>
+        <p className="text-xs mt-2">
+          Use <span className="text-teal-400 font-medium">↓ Import from Ref</span> to add one.
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-3">
+      {consumed.map((c) => {
+        const st = importStatuses.get(c.id)!;
+        return (
+          <div
+            key={c.id}
+            className="bg-[#111827] border border-[#1f2937] rounded-xl p-5 flex items-center justify-between"
+          >
+            <div className="min-w-0 flex-1 mr-4">
+              <div className="flex items-center gap-3 flex-wrap">
+                <h3 className="font-semibold text-slate-200">{c.name}</h3>
+                {c.latest_stable_version && (
+                  <span className="text-xs px-2 py-0.5 rounded-full bg-green-900/40 text-green-400">
+                    v{c.latest_stable_version}
+                  </span>
+                )}
+                <span className="text-xs px-2 py-0.5 rounded-full bg-teal-900/30 text-teal-300 border border-teal-800/40">
+                  {st.import_mode}
+                </span>
+                {st.update_available && (
+                  <span
+                    className="text-xs px-2 py-0.5 rounded-full bg-teal-900/40 text-teal-300 border border-teal-700/50 font-medium"
+                    title={`Provider published v${st.latest_published_version}`}
+                  >
+                    ↑ Update available
+                  </span>
+                )}
+                {st.source_revoked && (
+                  <span className="text-xs px-2 py-0.5 rounded-full bg-red-900/30 text-red-400">
+                    source revoked
+                  </span>
+                )}
+              </div>
+              <p className="text-xs text-slate-600 font-mono mt-1.5">
+                ref: {st.publication_ref ?? "—"}
+                {st.imported_version && (
+                  <span className="text-slate-500 ml-2">· imported v{st.imported_version}</span>
+                )}
+              </p>
+            </div>
+            <button
+              onClick={() => onEdit(c.id)}
+              className="px-3 py-1.5 text-xs bg-indigo-900/30 hover:bg-indigo-900/50 text-indigo-400 rounded-lg transition-colors shrink-0"
+            >
+              View
+            </button>
+          </div>
+        );
+      })}
+    </div>
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -1197,6 +1331,187 @@ function OdcsImportModal({
   );
 }
 
+// ---------------------------------------------------------------------------
+// ImportFromRefModal (RFC-032 consumer import)
+// ---------------------------------------------------------------------------
+
+function ImportFromRefModal({
+  onClose,
+  onImported,
+}: {
+  onClose: () => void;
+  onImported: () => void;
+}) {
+  const [ref, setRef] = useState("");
+  const [token, setToken] = useState("");
+  const [mode, setMode] = useState<ImportMode>("snapshot");
+  const [preview, setPreview] = useState<import("@/lib/api").FetchedPublication | null>(null);
+  const [fetching, setFetching] = useState(false);
+  const [importing, setImporting] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const [success, setSuccess] = useState<string | null>(null);
+
+  const handlePreview = async () => {
+    if (!ref.trim()) { setErr("Publication ref is required."); return; }
+    setFetching(true); setErr(null); setPreview(null);
+    try {
+      const p = await fetchPublished(ref.trim(), token.trim() || undefined);
+      setPreview(p);
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : String(e));
+    } finally { setFetching(false); }
+  };
+
+  const handleImport = async () => {
+    if (!ref.trim()) return;
+    setImporting(true); setErr(null);
+    try {
+      await importPublished({
+        publication_ref: ref.trim(),
+        ...(token.trim() ? { link_token: token.trim() } : {}),
+        import_mode: mode,
+      });
+      await mutate("contracts");
+      setSuccess(`Imported as ${mode} — contract added to your list.`);
+      setTimeout(() => { onImported(); }, 1800);
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : String(e));
+    } finally { setImporting(false); }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
+      <div className="w-full max-w-2xl bg-[#0f1117] border border-[#1f2937] rounded-2xl shadow-2xl overflow-hidden">
+        {/* Header */}
+        <div className="flex items-center justify-between px-6 py-4 border-b border-[#1f2937]">
+          <div>
+            <h2 className="text-base font-semibold text-slate-100">Import Published Contract</h2>
+            <p className="text-xs text-slate-500 mt-0.5">Import a contract by publication ref (RFC-032)</p>
+          </div>
+          <button onClick={onClose} className="text-slate-500 hover:text-slate-300 text-xl leading-none">×</button>
+        </div>
+
+        <div className="p-6 space-y-4">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <div>
+              <label className="text-xs font-medium text-slate-400 uppercase tracking-wider mb-1.5 block">
+                Publication Ref
+              </label>
+              <input
+                type="text"
+                value={ref}
+                onChange={(e) => { setRef(e.target.value); setPreview(null); setErr(null); }}
+                placeholder="e.g. a3f8c2d1b094…"
+                className="w-full bg-[#0a0d12] border border-[#1f2937] rounded-lg px-3 py-2 text-sm text-slate-200 font-mono placeholder-slate-600 outline-none focus:border-teal-600 transition-colors"
+              />
+            </div>
+            <div>
+              <label className="text-xs font-medium text-slate-400 uppercase tracking-wider mb-1.5 block">
+                Link Token <span className="normal-case text-slate-600">(link-only publications)</span>
+              </label>
+              <input
+                type="text"
+                value={token}
+                onChange={(e) => { setToken(e.target.value); setPreview(null); }}
+                placeholder="Leave blank for public refs"
+                className="w-full bg-[#0a0d12] border border-[#1f2937] rounded-lg px-3 py-2 text-sm text-slate-200 font-mono placeholder-slate-600 outline-none focus:border-teal-600 transition-colors"
+              />
+            </div>
+          </div>
+
+          <button
+            onClick={handlePreview}
+            disabled={fetching || !ref.trim()}
+            className="px-4 py-2 bg-slate-700 hover:bg-slate-600 disabled:opacity-40 text-slate-200 text-sm font-medium rounded-lg transition-colors"
+          >
+            {fetching ? "Fetching…" : "Preview"}
+          </button>
+
+          {/* Preview panel */}
+          {preview && (
+            <div className="bg-teal-950/20 border border-teal-800/30 rounded-lg p-4 space-y-3">
+              <div className="flex items-center justify-between flex-wrap gap-2">
+                <div>
+                  <p className="text-sm font-semibold text-teal-300">{preview.contract_name}</p>
+                  <p className="text-xs text-slate-500">
+                    v{preview.contract_version} · {preview.visibility} · published{" "}
+                    {new Date(preview.published_at).toLocaleDateString()}
+                  </p>
+                </div>
+                <span className="text-xs text-teal-500 font-mono">{preview.publication_ref}</span>
+              </div>
+              <details>
+                <summary className="text-xs text-slate-500 cursor-pointer hover:text-slate-300 select-none">
+                  View YAML ▾
+                </summary>
+                <pre className="mt-2 text-[10px] text-green-300 font-mono bg-[#0a0d12] rounded p-3 max-h-48 overflow-auto whitespace-pre-wrap leading-relaxed">
+                  {preview.yaml_content}
+                </pre>
+              </details>
+
+              {/* Import mode */}
+              <div>
+                <p className="text-xs font-medium text-slate-400 uppercase tracking-wider mb-2">
+                  Import mode
+                </p>
+                <div className="space-y-2">
+                  {(["snapshot", "subscribe"] as ImportMode[]).map((m) => (
+                    <label key={m} className="flex items-start gap-3 cursor-pointer">
+                      <input
+                        type="radio"
+                        name="import-mode"
+                        value={m}
+                        checked={mode === m}
+                        onChange={() => setMode(m)}
+                        className="mt-0.5 accent-teal-500"
+                      />
+                      <div>
+                        <span className="text-sm font-medium text-slate-200 capitalize">{m}</span>
+                        <p className="text-xs text-slate-500">
+                          {m === "snapshot"
+                            ? "One-time copy. Provenance is recorded but the contract never auto-updates."
+                            : "Live link — when the provider publishes a newer version you'll see an update-available badge."}
+                        </p>
+                      </div>
+                    </label>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {err && (
+            <p className="text-sm text-red-400 bg-red-900/20 border border-red-800/40 rounded p-2">
+              {err}
+            </p>
+          )}
+          {success && (
+            <p className="text-sm text-green-400 bg-green-900/20 border border-green-800/40 rounded p-2">
+              ✓ {success}
+            </p>
+          )}
+        </div>
+
+        <div className="flex justify-end gap-3 px-6 py-4 border-t border-[#1f2937]">
+          <button
+            onClick={onClose}
+            className="px-4 py-2 bg-[#1f2937] hover:bg-[#374151] text-slate-300 text-sm font-medium rounded-lg transition-colors"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={handleImport}
+            disabled={importing || !preview || !!success}
+            className="px-4 py-2 bg-teal-700 hover:bg-teal-600 disabled:opacity-40 text-white text-sm font-medium rounded-lg transition-colors"
+          >
+            {importing ? "Importing…" : "Import Contract"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ManualCreatePanel
 // ---------------------------------------------------------------------------
 
@@ -1242,7 +1557,7 @@ function ManualCreatePanel({ onCancel, onCreated }: { onCancel: () => void; onCr
 // Page
 // ---------------------------------------------------------------------------
 
-type Tab = "list" | "build" | "generate" | "quarantine";
+type Tab = "list" | "consumed" | "build" | "generate" | "quarantine";
 
 function ContractsContent() {
   const router = useRouter();
@@ -1254,6 +1569,7 @@ function ContractsContent() {
   const [tab, setTab] = useState<Tab>("list");
   const [showCreate, setShowCreate] = useState(false);
   const [showImport, setShowImport] = useState(false);
+  const [showImportRef, setShowImportRef] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
 
   // RFC-028: search + source filter
@@ -1312,41 +1628,70 @@ function ContractsContent() {
             Create and manage versioned semantic contracts
           </p>
         </div>
-        {tab === "list" && (
-          <div className="flex gap-2">
+        {(tab === "list" || tab === "consumed") && (
+          <div className="flex gap-2 flex-wrap">
+            {/* RFC-032: import from publication ref (consumer flow) */}
             <button
-              onClick={() => { setShowImport(true); setShowCreate(false); }}
-              className="px-4 py-2 bg-blue-700 hover:bg-blue-600 text-white text-sm font-medium rounded-lg transition-colors"
+              onClick={() => { setShowImportRef(true); setShowImport(false); setShowCreate(false); }}
+              className="px-4 py-2 bg-teal-800 hover:bg-teal-700 text-white text-sm font-medium rounded-lg transition-colors"
             >
-              ⬆ Import ODCS
+              ↓ Import from Ref
             </button>
-            <button
-              onClick={() => { setShowCreate((v) => !v); setShowImport(false); }}
-              className="px-4 py-2 bg-green-600 hover:bg-green-500 text-white text-sm font-medium rounded-lg transition-colors"
-            >
-              + New Contract
-            </button>
+            {tab === "list" && (
+              <>
+                <button
+                  onClick={() => { setShowImport(true); setShowCreate(false); setShowImportRef(false); }}
+                  className="px-4 py-2 bg-blue-700 hover:bg-blue-600 text-white text-sm font-medium rounded-lg transition-colors"
+                >
+                  ⬆ Import ODCS
+                </button>
+                <button
+                  onClick={() => { setShowCreate((v) => !v); setShowImport(false); setShowImportRef(false); }}
+                  className="px-4 py-2 bg-green-600 hover:bg-green-500 text-white text-sm font-medium rounded-lg transition-colors"
+                >
+                  + New Contract
+                </button>
+              </>
+            )}
           </div>
         )}
       </div>
 
-      <div className="flex gap-1 mb-6 bg-[#111827] border border-[#1f2937] rounded-xl p-1 w-fit">
-        {(["list", "build", "generate", "quarantine"] as Tab[]).map((t) => (
+      <div className="flex gap-1 mb-6 bg-[#111827] border border-[#1f2937] rounded-xl p-1 w-fit flex-wrap">
+        {(["list", "consumed", "build", "generate", "quarantine"] as Tab[]).map((t) => (
           <button
             key={t}
-            onClick={() => { setTab(t); setShowCreate(false); setShowImport(false); }}
+            onClick={() => { setTab(t); setShowCreate(false); setShowImport(false); setShowImportRef(false); }}
             className={clsx(
               "px-4 py-2 text-sm font-medium rounded-lg transition-colors",
               tab === t ? "bg-[#1f2937] text-slate-100" : "text-slate-500 hover:text-slate-300"
             )}
           >
             {t === "list" && "My Contracts"}
+            {t === "consumed" && "📥 Consumed"}
             {t === "build" && "🧱 Visual Builder"}
             {t === "generate" && "✦ Generate from Sample"}
             {t === "quarantine" && "🔒 Quarantine"}
           </button>
         ))}
       </div>
+
+      {/* RFC-032: Consumed contracts tab */}
+      {tab === "consumed" && (
+        <>
+          <div className="mb-4">
+            <p className="text-sm text-slate-400">
+              Contracts you imported from a provider publication ref. Subscribe-mode contracts show
+              update-available badges when the source publishes a newer version.
+            </p>
+          </div>
+          <ConsumedContractsList
+            contracts={contracts}
+            isLoading={isLoading}
+            onEdit={(id) => setEditingId(id)}
+          />
+        </>
+      )}
 
       {tab === "list" && (
         <>
@@ -1429,6 +1774,14 @@ function ContractsContent() {
         <OdcsImportModal
           onClose={() => setShowImport(false)}
           onImported={() => { setShowImport(false); mutate("contracts"); }}
+        />
+      )}
+
+      {/* RFC-032: Import from publication ref modal */}
+      {showImportRef && (
+        <ImportFromRefModal
+          onClose={() => setShowImportRef(false)}
+          onImported={() => { setShowImportRef(false); mutate("contracts"); setTab("consumed"); }}
         />
       )}
     </div>

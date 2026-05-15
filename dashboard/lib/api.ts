@@ -163,6 +163,14 @@ export interface VersionSummary {
   requires_review: boolean;
 }
 
+/**
+ * RFC-030: How the egress path handles undeclared fields in the outbound payload.
+ * - `off`   — pass through untouched (backwards-compatible default).
+ * - `strip` — remove the field and record it in the egress outcome.
+ * - `fail`  — treat as a violation; the record fails under the RFC-029 disposition.
+ */
+export type EgressLeakageMode = "off" | "strip" | "fail";
+
 /** Full response for a single version — includes YAML. */
 export interface VersionResponse {
   id: string;
@@ -175,6 +183,8 @@ export interface VersionResponse {
   deprecated_at: string | null;
   /** RFC-004: when true, undeclared inbound fields fail validation. */
   compliance_mode: boolean;
+  /** RFC-030: controls how undeclared outbound fields are handled. */
+  egress_leakage_mode: EgressLeakageMode;
   /** Where the YAML originated. */
   import_source: ImportSource;
   /** True when the version needs human review before promotion (D-002). */
@@ -382,6 +392,20 @@ export const getVersion = (contractId: string, version: string) =>
 export const getLatestStableVersion = (contractId: string) =>
   apiFetch<VersionResponse>(
     `/contracts/${contractId}/versions/latest-stable`
+  );
+
+/**
+ * RFC-030: Set the egress leakage mode on a draft version.
+ * Sent as a PATCH alongside (or instead of) yaml_content.
+ */
+export const patchVersionLeakageMode = (
+  contractId: string,
+  version: string,
+  egress_leakage_mode: EgressLeakageMode
+) =>
+  apiFetch<VersionResponse>(
+    `/contracts/${contractId}/versions/${encodeURIComponent(version)}`,
+    { method: "PATCH", body: JSON.stringify({ egress_leakage_mode }) }
   );
 
 /** Edit a draft version's YAML.  Fails server-side if the version is not draft. */
@@ -1012,6 +1036,61 @@ export const applyProposal = (contractName: string, proposalId: string) =>
     `/contracts/${contractName}/proposals/${proposalId}/apply`,
     { method: "POST" }
   );
+
+// ---------------------------------------------------------------------------
+// RFC-031: Provider Data-Quality Scorecard
+// ---------------------------------------------------------------------------
+
+/** Per-provider pass/quarantine summary (mirrors `provider_scorecard` view). */
+export interface ScorecardSummaryRow {
+  source: string;
+  contract_name: string;
+  total_events: number;
+  passed: number;
+  quarantined: number;
+  quarantine_pct: number;
+}
+
+/** Per-provider, per-field violation breakdown (mirrors `provider_field_health` view). */
+export interface FieldHealthRow {
+  source: string;
+  contract_name: string;
+  field: string;
+  code: string;
+  violations: number;
+}
+
+/** Active drift signal for a source+field pair. */
+export interface DriftSignal {
+  source: string;
+  contract_name: string;
+  field: string;
+  signal_type: "null_rate" | "violation_rate";
+  baseline_rate: number;
+  current_rate: number;
+  delta: number;
+  window_start: string;
+}
+
+/** Full scorecard response from `GET /scorecard/{source}`. */
+export interface FullScorecard {
+  source: string;
+  summary: ScorecardSummaryRow[];
+  field_health: FieldHealthRow[];
+  drift: DriftSignal[];
+}
+
+/** Fetch the full scorecard for a provider source. */
+export const getScorecard = (source: string) =>
+  apiFetch<FullScorecard>(`/scorecard/${encodeURIComponent(source)}`);
+
+/** Fetch only the active drift signals for a source. */
+export const getScorecardDrift = (source: string) =>
+  apiFetch<DriftSignal[]>(`/scorecard/${encodeURIComponent(source)}/drift`);
+
+/** Returns the URL for a CSV export of the scorecard — use as an <a href>. */
+export const getScorecardExportUrl = (source: string): string =>
+  `${BASE}/scorecard/${encodeURIComponent(source)}/export?format=csv`;
 
 // ---------------------------------------------------------------------------
 // Helpers
