@@ -55,6 +55,7 @@ import type {
   ImportMode,
 } from "@/lib/api";
 import VisualBuilder from "./VisualBuilder";
+import { NewContractWizard } from "./NewContractWizard";
 import { EXAMPLE_YAML, EXAMPLE_SAMPLE } from "./examples";
 import { YamlTab } from "./_tabs/yaml";
 import { VersionsTab } from "./_tabs/versions";
@@ -1785,7 +1786,7 @@ function ContractsContent() {
     listContracts
   );
   const [tab, setTab] = useState<Tab>("list");
-  const [showCreate, setShowCreate] = useState(false);
+  const [showWizard, setShowWizard] = useState(false);
   const [showImport, setShowImport] = useState(false);
   const [showImportRef, setShowImportRef] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -1850,7 +1851,7 @@ function ContractsContent() {
           <div className="flex gap-2 flex-wrap">
             {/* RFC-032: import from publication ref (consumer flow) */}
             <button
-              onClick={() => { setShowImportRef(true); setShowImport(false); setShowCreate(false); }}
+              onClick={() => { setShowImportRef(true); setShowImport(false); setShowWizard(false); }}
               className="px-4 py-2 bg-teal-800 hover:bg-teal-700 text-white text-sm font-medium rounded-lg transition-colors"
             >
               ↓ Import from Ref
@@ -1858,13 +1859,13 @@ function ContractsContent() {
             {tab === "list" && (
               <>
                 <button
-                  onClick={() => { setShowImport(true); setShowCreate(false); setShowImportRef(false); }}
+                  onClick={() => { setShowImport(true); setShowWizard(false); setShowImportRef(false); }}
                   className="px-4 py-2 bg-blue-700 hover:bg-blue-600 text-white text-sm font-medium rounded-lg transition-colors"
                 >
                   ⬆ Import ODCS
                 </button>
                 <button
-                  onClick={() => { setShowCreate((v) => !v); setShowImport(false); setShowImportRef(false); }}
+                  onClick={() => { setShowWizard(true); setShowImport(false); setShowImportRef(false); }}
                   className="px-4 py-2 bg-green-600 hover:bg-green-500 text-white text-sm font-medium rounded-lg transition-colors"
                 >
                   + New Contract
@@ -1879,7 +1880,7 @@ function ContractsContent() {
         {(["list", "consumed", "build", "generate", "csv", "quarantine"] as Tab[]).map((t) => (
           <button
             key={t}
-            onClick={() => { setTab(t); setShowCreate(false); setShowImport(false); setShowImportRef(false); }}
+            onClick={() => { setTab(t); setShowWizard(false); setShowImport(false); setShowImportRef(false); }}
             className={clsx(
               "px-4 py-2 text-sm font-medium rounded-lg transition-colors",
               tab === t ? "bg-[#1f2937] text-slate-100" : "text-slate-500 hover:text-slate-300"
@@ -1955,9 +1956,6 @@ function ContractsContent() {
             )}
           </div>
 
-          {showCreate && (
-            <ManualCreatePanel onCancel={() => setShowCreate(false)} onCreated={() => setShowCreate(false)} />
-          )}
           <ContractList
             contracts={filteredContracts}
             isLoading={isLoading}
@@ -1991,6 +1989,14 @@ function ContractsContent() {
           </div>
           <QuarantineTab contracts={contracts} />
         </div>
+      )}
+
+      {/* RFC-036: Source-first new contract wizard */}
+      {showWizard && (
+        <NewContractWizard
+          onClose={() => setShowWizard(false)}
+          onCreated={() => { setShowWizard(false); mutate("contracts"); }}
+        />
       )}
 
       {/* ODCS import modal — fixed overlay, rendered outside tab flow */}
