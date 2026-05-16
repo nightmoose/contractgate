@@ -257,7 +257,7 @@ pub async fn catalog_handler(
     State(state): State<Arc<AppState>>,
     Query(q): Query<CatalogQuery>,
 ) -> AppResult<Json<Vec<CatalogEntry>>> {
-    let limit = q.limit.unwrap_or(20).min(100).max(1);
+    let limit = q.limit.unwrap_or(20).clamp(1, 100);
     let rows = storage::list_public_catalog(&state.db, limit).await?;
     let entries = rows
         .into_iter()
