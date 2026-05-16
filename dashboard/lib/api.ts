@@ -566,6 +566,24 @@ export const inferCsv = (params: {
   body: JSON.stringify(params),
 });
 
+/** Response from `POST /contracts/infer/url` (RFC-037). */
+export interface InferUrlResponse {
+  yaml_content: string;
+  field_count: number;
+  sample_count: number;
+  detected_format: "json" | "csv";
+}
+
+/** Infer a contract from a live HTTP endpoint (RFC-037). */
+export const inferUrl = (params: {
+  name: string;
+  url: string;
+  headers?: Record<string, string>;
+}) => apiFetch<InferUrlResponse>("/contracts/infer/url", {
+  method: "POST",
+  body: JSON.stringify(params),
+});
+
 /** Response from `POST /contracts/import`. */
 export interface OdcsImportResponse {
   id: string;

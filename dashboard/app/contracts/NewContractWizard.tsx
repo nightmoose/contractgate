@@ -1,12 +1,13 @@
 "use client";
 
 /**
- * NewContractWizard — RFC-036
+ * NewContractWizard — RFC-036 + RFC-037
  *
  * Source-first new contract creation modal.
- * Three paths:
+ * Four paths:
  *   catalog  → fork a curated open-data contract
  *   csv      → infer a contract from CSV content
+ *   api      → infer a contract from a live HTTP endpoint (RFC-037)
  *   blank    → raw YAML editor (existing ManualCreatePanel behaviour)
  */
 
@@ -17,6 +18,7 @@ import {
   listOpenDataContracts,
   forkPublicContract,
   inferCsv,
+  inferUrl,
   createContract,
   type OpenDataContract,
 } from "@/lib/api";
@@ -26,7 +28,7 @@ import { EXAMPLE_YAML } from "./examples";
 // Types
 // ---------------------------------------------------------------------------
 
-type WizardStep = "pick" | "catalog" | "csv" | "blank";
+type WizardStep = "pick" | "catalog" | "csv" | "api" | "blank";
 
 interface Props {
   onClose: () => void;
@@ -77,7 +79,7 @@ function PickStep({ onPick }: { onPick: (step: WizardStep) => void }) {
           Choose a source for your contract. You can customise everything after creation.
         </p>
       </div>
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <SourceTile
           icon="🗂"
           title="Fork from Catalog"
@@ -89,6 +91,12 @@ function PickStep({ onPick }: { onPick: (step: WizardStep) => void }) {
           title="Infer from CSV"
           description="Upload or paste a CSV. Field types, enums, and patterns are inferred automatically."
           onClick={() => onPick("csv")}
+        />
+        <SourceTile
+          icon="🔌"
+          title="Connect an API"
+          description="Paste an endpoint URL. ContractGate fetches a sample and infers the schema."
+          onClick={() => onPick("api")}
         />
         <SourceTile
           icon="✏️"
@@ -445,6 +453,201 @@ function CsvStep({ onCreated, onBack }: { onCreated: () => void; onBack: () => v
 }
 
 // ---------------------------------------------------------------------------
+// Step: connect an API (RFC-037)
+// ---------------------------------------------------------------------------
+
+interface HeaderRow { key: string; value: string }
+
+function ApiStep({ onCreated, onBack }: { onCreated: () => void; onBack: () => void }) {
+  const [url, setUrl] = useState("");
+  const [contractName, setContractName] = useState("my_api_contract");
+  const [headers, setHeaders] = useState<HeaderRow[]>([]);
+  const [showHeaders, setShowHeaders] = useState(false);
+  const [generatedYaml, setGeneratedYaml] = useState<string | null>(null);
+  const [detectedFormat, setDetectedFormat] = useState<string | null>(null);
+  const [fieldCount, setFieldCount] = useState<number | null>(null);
+  const [rowCount, setRowCount] = useState<number | null>(null);
+  const [fetching, setFetching] = useState(false);
+  const [fetchErr, setFetchErr] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [saveErr, setSaveErr] = useState<string | null>(null);
+
+  const addHeader = () => setHeaders((h) => [...h, { key: "", value: "" }]);
+  const removeHeader = (i: number) => setHeaders((h) => h.filter((_, idx) => idx !== i));
+  const updateHeader = (i: number, field: "key" | "value", val: string) =>
+    setHeaders((h) => h.map((row, idx) => (idx === i ? { ...row, [field]: val } : row)));
+
+  const handleFetch = async () => {
+    if (!url.trim()) { setFetchErr("URL is required."); return; }
+    setFetching(true); setFetchErr(null); setGeneratedYaml(null);
+    const hdrs: Record<string, string> = {};
+    for (const { key, value } of headers) {
+      if (key.trim()) hdrs[key.trim()] = value;
+    }
+    try {
+      const res = await inferUrl({
+        name: contractName,
+        url: url.trim(),
+        ...(Object.keys(hdrs).length > 0 ? { headers: hdrs } : {}),
+      });
+      setGeneratedYaml(res.yaml_content);
+      setDetectedFormat(res.detected_format);
+      setFieldCount(res.field_count);
+      setRowCount(res.sample_count);
+    } catch (e: unknown) {
+      setFetchErr(e instanceof Error ? e.message : String(e));
+    } finally { setFetching(false); }
+  };
+
+  const handleSave = async () => {
+    if (!generatedYaml) return;
+    setSaving(true); setSaveErr(null);
+    try {
+      await createContract(generatedYaml);
+      await mutate("contracts");
+      onCreated();
+    } catch (e: unknown) {
+      setSaveErr(e instanceof Error ? e.message : String(e));
+    } finally { setSaving(false); }
+  };
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center gap-3">
+        <button onClick={onBack} className="text-slate-500 hover:text-slate-300 text-sm transition-colors">
+          ← Back
+        </button>
+        <h3 className="text-base font-semibold text-slate-100">Connect an API</h3>
+      </div>
+
+      {/* URL + name row */}
+      <div className="space-y-3">
+        <div>
+          <label className="text-xs font-medium text-slate-400 uppercase tracking-wider mb-1.5 block">
+            Endpoint URL
+          </label>
+          <input
+            type="url"
+            value={url}
+            onChange={(e) => { setUrl(e.target.value); setGeneratedYaml(null); setFetchErr(null); }}
+            placeholder="https://api.example.com/v1/events"
+            className="w-full bg-[#0a0d12] border border-[#1f2937] rounded-lg px-3 py-2 text-sm text-slate-200 font-mono placeholder-slate-600 outline-none focus:border-indigo-600 transition-colors"
+          />
+        </div>
+
+        <div className="flex items-center gap-3 flex-wrap">
+          <div className="flex items-center gap-2">
+            <label className="text-xs text-slate-400 whitespace-nowrap">Contract name</label>
+            <input
+              type="text"
+              value={contractName}
+              onChange={(e) => setContractName(e.target.value)}
+              className="bg-[#0a0d12] border border-[#1f2937] rounded-lg px-3 py-1.5 text-sm text-slate-200 outline-none focus:border-indigo-600 w-44"
+              placeholder="my_api_contract"
+            />
+          </div>
+          <button
+            onClick={() => setShowHeaders((v) => !v)}
+            className="text-xs text-slate-500 hover:text-slate-300 transition-colors underline underline-offset-2"
+          >
+            {showHeaders ? "Hide headers" : "Add headers"}
+          </button>
+        </div>
+
+        {/* Optional headers */}
+        {showHeaders && (
+          <div className="space-y-2">
+            <p className="text-xs text-slate-500">
+              Custom request headers (e.g. <code className="text-slate-400">Authorization: Bearer tok_xxx</code>)
+            </p>
+            {headers.map((row, i) => (
+              <div key={i} className="flex items-center gap-2">
+                <input
+                  type="text"
+                  value={row.key}
+                  onChange={(e) => updateHeader(i, "key", e.target.value)}
+                  placeholder="Header-Name"
+                  className="flex-1 bg-[#0a0d12] border border-[#1f2937] rounded-lg px-3 py-1.5 text-xs text-slate-200 font-mono outline-none focus:border-indigo-600"
+                />
+                <input
+                  type="text"
+                  value={row.value}
+                  onChange={(e) => updateHeader(i, "value", e.target.value)}
+                  placeholder="value"
+                  className="flex-1 bg-[#0a0d12] border border-[#1f2937] rounded-lg px-3 py-1.5 text-xs text-slate-200 font-mono outline-none focus:border-indigo-600"
+                />
+                <button
+                  onClick={() => removeHeader(i)}
+                  className="text-slate-600 hover:text-red-400 text-sm transition-colors px-1"
+                  aria-label="Remove header"
+                >
+                  ✕
+                </button>
+              </div>
+            ))}
+            <button
+              onClick={addHeader}
+              className="text-xs text-indigo-400 hover:text-indigo-300 transition-colors"
+            >
+              + Add header
+            </button>
+          </div>
+        )}
+      </div>
+
+      {fetchErr && (
+        <p className="text-xs text-red-400 bg-red-900/20 border border-red-800/40 rounded p-2">{fetchErr}</p>
+      )}
+
+      {/* Generated YAML */}
+      {generatedYaml !== null && (
+        <div>
+          <div className="flex items-center justify-between mb-1.5">
+            <label className="text-xs font-medium text-slate-400 uppercase tracking-wider">
+              Generated YAML
+            </label>
+            {fieldCount !== null && (
+              <span className="text-xs text-green-500">
+                ✔ {detectedFormat?.toUpperCase()} · {fieldCount} field{fieldCount !== 1 ? "s" : ""} · {rowCount} row{rowCount !== 1 ? "s" : ""}
+              </span>
+            )}
+          </div>
+          <textarea
+            className="w-full h-64 bg-[#0a0d12] text-green-300 font-mono text-sm p-4 rounded-lg border border-[#1f2937] outline-none focus:border-green-700 resize-y"
+            value={generatedYaml}
+            onChange={(e) => setGeneratedYaml(e.target.value)}
+            spellCheck={false}
+          />
+          {saveErr && (
+            <p className="mt-2 text-xs text-red-400 bg-red-900/20 border border-red-800/40 rounded p-2">{saveErr}</p>
+          )}
+        </div>
+      )}
+
+      {/* Actions */}
+      <div className="flex items-center gap-3 flex-wrap">
+        <button
+          onClick={handleFetch}
+          disabled={fetching || !url.trim()}
+          className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 disabled:cursor-not-allowed text-white text-sm font-medium rounded-lg transition-colors"
+        >
+          {fetching ? "Fetching…" : "🔌 Fetch & Infer"}
+        </button>
+        {generatedYaml && (
+          <button
+            onClick={handleSave}
+            disabled={saving}
+            className="px-4 py-2 bg-green-600 hover:bg-green-500 disabled:opacity-50 text-white text-sm font-medium rounded-lg transition-colors"
+          >
+            {saving ? "Saving…" : "Save Contract"}
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Step: start blank
 // ---------------------------------------------------------------------------
 
@@ -534,6 +737,7 @@ export function NewContractWizard({ onClose, onCreated }: Props) {
               <p className="text-xs text-slate-500 mt-0.5">
                 {step === "catalog" && "Fork a curated open-data source"}
                 {step === "csv" && "Infer contract from CSV"}
+                {step === "api" && "Infer contract from a live API endpoint"}
                 {step === "blank" && "Write YAML from scratch"}
               </p>
             )}
@@ -555,6 +759,9 @@ export function NewContractWizard({ onClose, onCreated }: Props) {
           )}
           {step === "csv" && (
             <CsvStep onCreated={handleCreated} onBack={() => setStep("pick")} />
+          )}
+          {step === "api" && (
+            <ApiStep onCreated={handleCreated} onBack={() => setStep("pick")} />
           )}
           {step === "blank" && (
             <BlankStep onCreated={handleCreated} onBack={() => setStep("pick")} />
