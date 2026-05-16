@@ -106,10 +106,7 @@ pub async fn infer_url_handler(
 
     let resp = request.send().await.map_err(|e| {
         if e.is_timeout() {
-            AppError::GatewayTimeout(format!(
-                "upstream timed out after {} ms",
-                timeout_ms
-            ))
+            AppError::GatewayTimeout(format!("upstream timed out after {} ms", timeout_ms))
         } else {
             AppError::BadRequest(format!("could not reach URL: {e}"))
         }
@@ -148,7 +145,9 @@ pub async fn infer_url_handler(
     }
 
     if bytes.is_empty() {
-        return Err(AppError::BadRequest("upstream returned an empty body".into()));
+        return Err(AppError::BadRequest(
+            "upstream returned an empty body".into(),
+        ));
     }
 
     // 5. Parse & infer.
@@ -178,7 +177,9 @@ fn validate_url(url: &str) -> AppResult<()> {
         ));
     }
     if url.len() > 2_048 {
-        return Err(AppError::BadRequest("url is too long (max 2048 chars)".into()));
+        return Err(AppError::BadRequest(
+            "url is too long (max 2048 chars)".into(),
+        ));
     }
     Ok(())
 }
