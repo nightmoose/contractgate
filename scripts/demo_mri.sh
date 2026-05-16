@@ -37,6 +37,8 @@ deploy() {
   local json="${resp%__STATUS__*}"
   if [[ "$status" == "201" ]]; then
     green "  ✓ deployed ($(echo "$json" | jq -r '.version_id'))"
+  elif [[ "$status" == "409" ]]; then
+    green "  ✓ already deployed (v1.0 exists — skipping)"
   else
     red "  ✗ deploy failed ($status)"
     echo "$json" | jq . 2>/dev/null || echo "$json"
@@ -157,7 +159,7 @@ deploy "mri_tenancy_event"    "$TENANCY_YAML"
 
 # ── 2. Get contract IDs ───────────────────────────────────────────────────────
 
-bold "\nFetching contract list ..."
+bold "Fetching contract list ..."
 CONTRACTS=$(curl -s "$HOST/contracts" "${H[@]}")
 PROP_ID=$(echo "$CONTRACTS" | jq -r '.[] | select(.name=="mri_property_listing") | .id')
 TEN_ID=$(echo  "$CONTRACTS" | jq -r '.[] | select(.name=="mri_tenancy_event")    | .id')
@@ -167,7 +169,7 @@ echo "  mri_tenancy_event    → $TEN_ID"
 
 # ── 3. Validate: valid MRI property listing envelope ─────────────────────────
 
-bold "\n[1/4] Valid property listing (all 3 units pass) ..."
+bold "[1/4] Valid property listing (all 3 units pass) ..."
 VALID_PROP=$(jq -n '{
   "success": true,
   "data": [
@@ -181,7 +183,7 @@ VALID_PROP=$(jq -n '{
   ],
   "pagination": {"page":1,"limit":10,"total":3,"hasMore":false}
 }')
-RESP=$(curl -s -X POST "$HOST/v1/events/$PROP_ID" "${H[@]}" -d "$VALID_PROP")
+RESP=$(curl -s -X POST "$HOST/ingest/$PROP_ID" "${H[@]}" -d "$VALID_PROP")
 PASSED=$(echo "$RESP" | jq -r '.passed // empty')
 if [[ "$PASSED" == "3" ]]; then
   green "  ✓ 3 passed, 0 quarantined"
@@ -192,7 +194,7 @@ fi
 
 # ── 4. Validate: bad enum in one record ───────────────────────────────────────
 
-bold "\n[2/4] Invalid property listing (bad currency on record 1) ..."
+bold "[2/4] Invalid property listing (bad currency on record 1) ..."
 BAD_PROP=$(jq -n '{
   "success": true,
   "data": [
@@ -201,7 +203,7 @@ BAD_PROP=$(jq -n '{
   ],
   "pagination": {"page":1,"limit":10,"total":1,"hasMore":false}
 }')
-RESP=$(curl -s -X POST "$HOST/v1/events/$PROP_ID" "${H[@]}" -d "$BAD_PROP")
+RESP=$(curl -s -X POST "$HOST/ingest/$PROP_ID" "${H[@]}" -d "$BAD_PROP")
 Q=$(echo "$RESP" | jq -r '.quarantined // empty')
 if [[ "$Q" == "1" ]]; then
   green "  ✓ 0 passed, 1 quarantined (invalid currency 'XYZ')"
@@ -213,7 +215,7 @@ fi
 
 # ── 5. Validate: valid tenancy event ─────────────────────────────────────────
 
-bold "\n[3/4] Valid tenancy event ..."
+bold "[3/4] Valid tenancy event ..."
 VALID_TEN=$(jq -n '{
   "success": true,
   "data": [
@@ -224,7 +226,7 @@ VALID_TEN=$(jq -n '{
   ],
   "pagination": {"page":1,"limit":10,"total":1,"hasMore":false}
 }')
-RESP=$(curl -s -X POST "$HOST/v1/events/$TEN_ID" "${H[@]}" -d "$VALID_TEN")
+RESP=$(curl -s -X POST "$HOST/ingest/$TEN_ID" "${H[@]}" -d "$VALID_TEN")
 PASSED=$(echo "$RESP" | jq -r '.passed // empty')
 if [[ "$PASSED" == "1" ]]; then
   green "  ✓ 1 passed, 0 quarantined"
@@ -235,7 +237,7 @@ fi
 
 # ── 6. Validate: missing required field in tenancy ────────────────────────────
 
-bold "\n[4/4] Invalid tenancy (missing tenant_contact_id) ..."
+bold "[4/4] Invalid tenancy (missing tenant_contact_id) ..."
 BAD_TEN=$(jq -n '{
   "success": true,
   "data": [
@@ -244,7 +246,7 @@ BAD_TEN=$(jq -n '{
   ],
   "pagination": {"page":1,"limit":10,"total":1,"hasMore":false}
 }')
-RESP=$(curl -s -X POST "$HOST/v1/events/$TEN_ID" "${H[@]}" -d "$BAD_TEN")
+RESP=$(curl -s -X POST "$HOST/ingest/$TEN_ID" "${H[@]}" -d "$BAD_TEN")
 Q=$(echo "$RESP" | jq -r '.quarantined // empty')
 if [[ "$Q" == "1" ]]; then
   green "  ✓ 0 passed, 1 quarantined (missing tenant_contact_id)"
@@ -254,4 +256,4 @@ else
   echo "$RESP" | jq .
 fi
 
-bold "\nDemo complete."
+bold "Demo complete."
