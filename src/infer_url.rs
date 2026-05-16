@@ -402,9 +402,38 @@ fn infer_from_json_bytes(
 }
 
 /// Extract a `Vec<Value>` of objects from a JSON response of unknown shape.
+///
+/// Handles the Census API / `json_rows` format: `[["col1","col2",...], [val,val,...], ...]`
+/// where the first element is an all-string header row and the rest are data rows.
 fn extract_rows(value: Value) -> AppResult<Vec<Value>> {
     match value {
         Value::Array(arr) => {
+            // Detect json_rows format: array where first element is all-string array.
+            if let Some(Value::Array(first)) = arr.first() {
+                if !first.is_empty() && first.iter().all(|v| v.is_string()) {
+                    let headers: Vec<String> = first
+                        .iter()
+                        .map(|v| v.as_str().unwrap_or("").to_string())
+                        .collect();
+                    let objs: Vec<Value> = arr
+                        .into_iter()
+                        .skip(1) // skip header row
+                        .filter_map(|row| {
+                            if let Value::Array(cols) = row {
+                                let mut obj = serde_json::Map::new();
+                                for (header, col) in headers.iter().zip(cols.into_iter()) {
+                                    obj.insert(header.clone(), col);
+                                }
+                                Some(Value::Object(obj))
+                            } else {
+                                None
+                            }
+                        })
+                        .collect();
+                    return Ok(objs);
+                }
+            }
+            // Standard array-of-objects.
             let objs: Vec<Value> = arr.into_iter().filter(|v| v.is_object()).collect();
             Ok(objs)
         }
@@ -574,6 +603,21 @@ mod tests {
         let v = json!({"id": 1, "name": "alice"});
         let rows = extract_rows(v).unwrap();
         assert_eq!(rows.len(), 1);
+    }
+
+    #[test]
+    fn extract_rows_from_json_rows_format() {
+        // Census API / json_rows: first element is header array
+        let v = json!([
+            ["NAME", "B01001_001E", "state"],
+            ["Alabama", "5024279", "01"],
+            ["Alaska", "733391", "02"]
+        ]);
+        let rows = extract_rows(v).unwrap();
+        assert_eq!(rows.len(), 2);
+        assert_eq!(rows[0]["NAME"], json!("Alabama"));
+        assert_eq!(rows[0]["B01001_001E"], json!("5024279"));
+        assert_eq!(rows[1]["state"], json!("02"));
     }
 
     #[test]
