@@ -584,6 +584,66 @@ export const inferUrl = (params: {
   body: JSON.stringify(params),
 });
 
+// ---------------------------------------------------------------------------
+// Brownfield contract scaffolder (RFC-024)
+// ---------------------------------------------------------------------------
+
+/** A single PII candidate returned by the scaffold endpoint. */
+export interface PiiCandidate {
+  field_name: string;
+  confidence: number;
+  reason: string;
+  suggested_transform: string;
+}
+
+/** Response from `POST /contracts/scaffold`. */
+export interface ScaffoldResponse {
+  yaml_content: string;
+  field_count: number;
+  sample_count: number;
+  pii_candidate_count: number;
+  pii_candidates: PiiCandidate[];
+  /** Human-readable format label, e.g. "JSON", "Avro Schema (.avsc)". */
+  format: string;
+  sr_unavailable: boolean;
+}
+
+/**
+ * Scaffold a draft contract from JSON sample objects.
+ * Pass `samples` (array of JSON objects) for the quick path.
+ */
+export const scaffoldFromSamples = (params: {
+  name: string;
+  description?: string;
+  samples: Record<string, unknown>[];
+  fast?: boolean;
+  pii_threshold?: number;
+  max_records?: number;
+}) =>
+  apiFetch<ScaffoldResponse>("/contracts/scaffold", {
+    method: "POST",
+    body: JSON.stringify(params),
+  });
+
+/**
+ * Scaffold a draft contract from raw file content.
+ * `format` must be one of: "json", "ndjson", "avro_schema", "proto".
+ * Omit `format` to let the server auto-detect.
+ */
+export const scaffoldFromContent = (params: {
+  name: string;
+  description?: string;
+  content: string;
+  format?: "json" | "ndjson" | "avro_schema" | "proto";
+  fast?: boolean;
+  pii_threshold?: number;
+  max_records?: number;
+}) =>
+  apiFetch<ScaffoldResponse>("/contracts/scaffold", {
+    method: "POST",
+    body: JSON.stringify(params),
+  });
+
 /** Response from `POST /contracts/import`. */
 export interface OdcsImportResponse {
   id: string;

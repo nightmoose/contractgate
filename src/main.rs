@@ -67,6 +67,7 @@ mod public_catalog;
 mod publication;
 mod rate_limit;
 mod replay;
+mod scaffold_handler;
 mod scorecard;
 mod storage;
 mod stream_demo;
@@ -861,6 +862,11 @@ fn build_router(state: Arc<AppState>) -> Router {
         .route("/contracts/infer/url", post(infer_url::infer_url_handler))
         // Evolution diff summarizer (RFC-006)
         .route("/contracts/diff", post(infer_diff::diff_handler))
+        // Brownfield contract scaffolder (RFC-024)
+        .route(
+            "/contracts/scaffold",
+            post(scaffold_handler::scaffold_handler),
+        )
         // Contract identity CRUD
         .route(
             "/contracts",

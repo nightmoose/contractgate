@@ -43,6 +43,12 @@ const PREVIEWS: Record<string, {
     cta: "Sign in to manage your account",
     illustration: <AccountIllustration />,
   },
+  scaffold: {
+    title: "Brownfield Contract Scaffolder",
+    description: "Drop in a JSON sample, NDJSON stream, Avro schema, or Protobuf definition and get a ready-to-use contract YAML in seconds — complete with PII detection and stat annotations.",
+    cta: "Sign in to scaffold a contract",
+    illustration: <ScaffoldIllustration />,
+  },
 };
 
 // ── Illustrations ─────────────────────────────────────────────────────────────
@@ -168,6 +174,30 @@ function PlaygroundIllustration() {
             </div>
           </div>
         </div>
+      </div>
+    </div>
+  );
+}
+
+function ScaffoldIllustration() {
+  return (
+    <div className="w-full rounded-xl border border-[#1f2937] bg-[#0d1117] p-5 space-y-3 select-none pointer-events-none font-mono text-xs">
+      <div className="flex gap-2 mb-2">
+        {["json", "ndjson", "avro_schema", "proto"].map((fmt, i) => (
+          <span key={fmt} className={`px-2 py-0.5 rounded text-xs border ${i === 0 ? "border-green-700/50 bg-green-900/30 text-green-400" : "border-[#1f2937] text-slate-600"}`}>{fmt}</span>
+        ))}
+      </div>
+      <div className="bg-[#111827] border border-[#1f2937] rounded-lg p-3 space-y-0.5 leading-relaxed">
+        <div className="text-slate-500">version: <span className="text-green-400">&quot;1.0&quot;</span></div>
+        <div className="text-slate-500">name: <span className="text-blue-400">user_events</span></div>
+        <div className="text-slate-500">ontology:</div>
+        <div className="text-slate-500 pl-2">entities:</div>
+        <div className="text-red-400 pl-4">{`- name: email  # scaffold: pii_candidate confidence=0.95`}</div>
+        <div className="text-slate-500 pl-6">type: string</div>
+        <div className="text-orange-400 pl-6">{`  # TODO: apply transform: hash`}</div>
+        <div className="text-green-400 pl-4">{`- name: user_id`}</div>
+        <div className="text-slate-500 pl-6">type: string</div>
+        <div className="text-slate-600 pl-6">{`  # scaffold: seen_in=100% samples`}</div>
       </div>
     </div>
   );

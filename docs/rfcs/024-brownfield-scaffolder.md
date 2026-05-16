@@ -2,7 +2,7 @@
 
 | Field         | Value                                              |
 |---------------|----------------------------------------------------|
-| Status        | **Draft — 2026-05-06**                             |
+| Status        | **Implemented (2026-05-16)**                       |
 | Author        | ContractGate team                                  |
 | Created       | 2026-05-06                                         |
 | Target branch | `nightly-maintenance-2026-05-06`                   |
