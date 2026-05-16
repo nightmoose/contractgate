@@ -235,7 +235,7 @@ export default function ScaffoldPage() {
   const canScaffold = content.trim().length > 0;
 
   return (
-    <AuthGate>
+    <AuthGate page="scaffold">
       <div className="p-6 max-w-6xl mx-auto space-y-6">
         {/* Header */}
         <div>
