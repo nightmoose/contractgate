@@ -168,10 +168,9 @@ All APIs consumed by this RFC are already implemented:
 
 ---
 
-## Open Questions
+## Resolved Questions
 
-- **OQ1:** Should the Catalog step show a YAML preview expand (like the ImportFromRef
-  modal's `<details>`)? Leaning yes for transparency, but deferred if it adds scope.
-- **OQ2:** Should "Infer from CSV" in the wizard auto-navigate to the `csv` tab
-  post-creation so the user can see the full inference metadata? Probably not — the
-  wizard shows enough context inline.
+- **OQ1:** No YAML preview in the Catalog step. Users can delete the forked contract
+  if they don't want it — delete is cheap, preview adds friction. **Closed: no preview.**
+- **OQ2:** No auto-navigation to the `csv` tab post-creation. The wizard shows enough
+  inline context. **Closed: stay on list view.**
