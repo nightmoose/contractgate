@@ -695,7 +695,6 @@ export function CollaborateTab({
       {/* RFC note */}
       <div className="bg-indigo-950/20 border border-indigo-800/30 rounded-lg px-4 py-3">
         <p className="text-xs text-indigo-300/80 leading-relaxed">
-          <span className="font-medium text-indigo-200">RFC-033:</span>{" "}
           Collaborators from other orgs can only see this contract — not your audit logs,
           quarantine events, or PII salt. Roles are enforced by the API.
         </p>

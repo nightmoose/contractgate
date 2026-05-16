@@ -353,7 +353,7 @@ function ScorecardContent() {
 
           {/* RFC note */}
           <p className="text-xs text-slate-700 text-center">
-            RFC-031 · Data aggregated from <code className="font-mono">audit_log</code> and{" "}
+            Data aggregated from <code className="font-mono">audit_log</code> and{" "}
             <code className="font-mono">quarantine_events</code> · Drift baseline: 30-day rolling, 24h window
           </p>
         </div>

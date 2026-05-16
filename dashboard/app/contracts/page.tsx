@@ -1604,7 +1604,7 @@ function ImportFromRefModal({
         <div className="flex items-center justify-between px-6 py-4 border-b border-[#1f2937]">
           <div>
             <h2 className="text-base font-semibold text-slate-100">Import Published Contract</h2>
-            <p className="text-xs text-slate-500 mt-0.5">Import a contract by publication ref (RFC-032)</p>
+            <p className="text-xs text-slate-500 mt-0.5">Import a contract by publication ref</p>
           </div>
           <button onClick={onClose} className="text-slate-500 hover:text-slate-300 text-xl leading-none">×</button>
         </div>

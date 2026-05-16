@@ -234,6 +234,44 @@ pub async fn fetch_published_handler(
     }))
 }
 
+// ---------------------------------------------------------------------------
+// GET /catalog  — public route, no auth; lists public non-revoked publications
+// ---------------------------------------------------------------------------
+
+#[derive(Serialize)]
+pub struct CatalogEntry {
+    pub publication_ref: String,
+    pub contract_name: String,
+    pub contract_version: String,
+    pub published_by: Option<String>,
+    pub published_at: chrono::DateTime<chrono::Utc>,
+}
+
+#[derive(Deserialize)]
+pub struct CatalogQuery {
+    /// Maximum entries to return (default 20, max 100).
+    pub limit: Option<i64>,
+}
+
+pub async fn catalog_handler(
+    State(state): State<Arc<AppState>>,
+    Query(q): Query<CatalogQuery>,
+) -> AppResult<Json<Vec<CatalogEntry>>> {
+    let limit = q.limit.unwrap_or(20).clamp(1, 100);
+    let rows = storage::list_public_catalog(&state.db, limit).await?;
+    let entries = rows
+        .into_iter()
+        .map(|r| CatalogEntry {
+            publication_ref: r.publication_ref,
+            contract_name: r.contract_name,
+            contract_version: r.contract_version,
+            published_by: r.published_by,
+            published_at: r.published_at,
+        })
+        .collect();
+    Ok(Json(entries))
+}
+
 /// Constant-time byte slice comparison.  `pub(crate)` so tests in `tests.rs` can call it.
 pub(crate) fn constant_time_eq(a: &[u8], b: &[u8]) -> bool {
     if a.len() != b.len() {

@@ -809,7 +809,7 @@ fn build_router(state: Arc<AppState>) -> Router {
             "/published/{publication_ref}",
             get(publication::fetch_published_handler),
         )
-        // RFC-034: Public Catalog (no auth — readable by anyone)
+        // Curated open-data public contracts (no auth — readable by anyone)
         .route(
             "/public-contracts",
             get(public_catalog::list_public_contracts_handler),
@@ -817,7 +817,9 @@ fn build_router(state: Arc<AppState>) -> Router {
         .route(
             "/public-contracts/{id}",
             get(public_catalog::get_public_contract_handler),
-        );
+        )
+        // User-published contracts catalog (no auth — lists public visibility publications)
+        .route("/catalog", get(publication::catalog_handler));
 
     // Protected routes — require x-api-key header
     let protected = Router::new()
