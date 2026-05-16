@@ -14,6 +14,38 @@ use std::str::FromStr;
 // Top-level contract
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// Envelope config (RFC-038)
+// ---------------------------------------------------------------------------
+
+/// Optional envelope unwrapping for API-style batch responses.
+///
+/// When present, the ingest engine expects the raw payload to be a JSON object
+/// containing an array at `records_path` (e.g. `"data"`).  The engine unwraps
+/// that array, validates each element against `ontology`, and returns a batch
+/// result with per-record violation indices.
+///
+/// When absent (the default), every inbound payload is treated as a single
+/// record — the pre-RFC-038 behaviour.
+///
+/// Example YAML:
+/// ```yaml
+/// envelope:
+///   records_path: data
+///   validate_wrapper: true
+/// ```
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct EnvelopeConfig {
+    /// Key in the top-level JSON object that holds the records array.
+    /// E.g. `"data"` for MRI MIX API responses.
+    pub records_path: String,
+    /// When `true`, the engine additionally checks that the wrapper contains
+    /// `success: bool` and a `pagination` object with the expected shape
+    /// (`page`, `limit`, `total`, `hasMore`).  Defaults to `false`.
+    #[serde(default)]
+    pub validate_wrapper: bool,
+}
+
 /// A versioned semantic contract describing the shape and rules of a data event.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Contract {
@@ -52,6 +84,12 @@ pub struct Contract {
     ///     (`block` / `fail` / `tag`). Field is stripped even on `tag`.
     #[serde(default)]
     pub egress_leakage_mode: EgressLeakageMode,
+    /// RFC-038: optional envelope unwrapping for API-style batch responses.
+    /// When present, the ingest engine expects `{ <records_path>: [...], ... }`
+    /// and validates the inner array element-by-element.
+    /// When absent, each inbound payload is validated as a single record.
+    #[serde(default)]
+    pub envelope: Option<EnvelopeConfig>,
 }
 
 // ---------------------------------------------------------------------------

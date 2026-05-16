@@ -84,6 +84,7 @@ mod fixtures {
             glossary: vec![],
             metrics: vec![],
             quality: vec![],
+            envelope: None,
         }
     }
 
@@ -108,6 +109,7 @@ mod fixtures {
             glossary,
             metrics,
             quality,
+            envelope: None,
         }
     }
 }
@@ -1880,6 +1882,7 @@ mod rfc028_tests {
             glossary: vec![],
             metrics: vec![],
             quality: vec![],
+            envelope: None,
             egress_leakage_mode: EgressLeakageMode::Off,
         };
 
@@ -1928,6 +1931,7 @@ mod rfc028_tests {
             glossary: vec![],
             metrics: vec![],
             quality: vec![],
+            envelope: None,
             egress_leakage_mode: EgressLeakageMode::Off,
         };
         let json_val = serde_json::to_value(&c).unwrap();
@@ -1995,6 +1999,7 @@ mod rfc028_tests {
             glossary: vec![],
             metrics: vec![],
             quality: vec![],
+            envelope: None,
             egress_leakage_mode: EgressLeakageMode::default(),
         };
         assert_eq!(c.egress_leakage_mode, EgressLeakageMode::Off);

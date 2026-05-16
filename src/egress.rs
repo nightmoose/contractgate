@@ -651,6 +651,7 @@ mod tests {
             glossary: vec![],
             metrics: vec![],
             quality: vec![],
+            envelope: None,
             egress_leakage_mode,
         })
         .expect("test contract must compile")

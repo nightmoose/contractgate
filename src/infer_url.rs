@@ -388,6 +388,7 @@ fn infer_from_json_bytes(
         glossary: vec![],
         metrics: vec![],
         quality: vec![],
+        envelope: None,
     };
 
     let yaml_content = serde_yaml::to_string(&contract)

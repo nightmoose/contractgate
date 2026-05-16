@@ -55,7 +55,8 @@
 //!     never a panic or `Result::Err`.
 
 use crate::contract::{
-    Contract, FieldDefinition, FieldType, MetricDefinition, QualityRule, QualityRuleType,
+    Contract, EnvelopeConfig, FieldDefinition, FieldType, MetricDefinition, QualityRule,
+    QualityRuleType,
 };
 use regex::Regex;
 use serde_json::Value;
@@ -116,6 +117,40 @@ pub enum ViolationKind {
     /// Quality rule: field value appears more than once in the same ingest
     /// batch.  Emitted by `rule_type: uniqueness` checks.
     UniquenessViolation,
+}
+
+// ---------------------------------------------------------------------------
+// Batch result types (RFC-038 envelope path)
+// ---------------------------------------------------------------------------
+
+/// A single per-record violation entry in a `BatchValidationResult`.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct BatchRecordViolation {
+    /// Zero-based index of the offending record in the unwrapped array.
+    pub record_index: usize,
+    /// Dot-separated field path within that record.
+    pub field: String,
+    /// Human-readable explanation.
+    pub message: String,
+    /// Machine-readable violation kind.
+    pub kind: ViolationKind,
+}
+
+/// The outcome of validating a batch envelope (`{ data: [...], ... }`).
+///
+/// Returned by [`validate_envelope_batch`] when a contract declares an
+/// `envelope` stanza.  Each record is validated independently; the batch
+/// result aggregates the pass/quarantine split and surfaces per-record
+/// violation detail with `record_index` so callers can identify exactly
+/// which rows failed.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct BatchValidationResult {
+    pub passed: usize,
+    pub quarantined: usize,
+    /// Per-record violations.  Empty when all records pass.
+    pub violations: Vec<BatchRecordViolation>,
+    /// Wall-clock duration of the full batch validation in microseconds.
+    pub validation_us: u64,
 }
 
 // ---------------------------------------------------------------------------
@@ -333,6 +368,211 @@ pub fn validate(compiled: &CompiledContract, event: &Value) -> ValidationResult 
         passed,
         violations,
         validation_us,
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Envelope batch validation (RFC-038)
+// ---------------------------------------------------------------------------
+
+/// Validate a raw API envelope payload against a contract that declares an
+/// `envelope` stanza.
+///
+/// Steps:
+///   1. Confirm the payload is a JSON object.
+///   2. If `envelope.validate_wrapper`, check `success: bool` and `pagination`
+///      shape are present and well-formed.
+///   3. Extract the array at `envelope.records_path`; error if absent or not
+///      an array.
+///   4. Validate each element of the array with [`validate`]; accumulate
+///      per-record violations with their zero-based `record_index`.
+///
+/// Always returns a `BatchValidationResult` — never panics.
+pub fn validate_envelope_batch(
+    compiled: &CompiledContract,
+    cfg: &EnvelopeConfig,
+    payload: &Value,
+) -> BatchValidationResult {
+    let t0 = std::time::Instant::now();
+
+    let obj = match payload.as_object() {
+        Some(o) => o,
+        None => {
+            return BatchValidationResult {
+                passed: 0,
+                quarantined: 1,
+                violations: vec![BatchRecordViolation {
+                    record_index: 0,
+                    field: "<root>".into(),
+                    message: "Envelope payload must be a JSON object".into(),
+                    kind: ViolationKind::TypeMismatch,
+                }],
+                validation_us: t0.elapsed().as_micros() as u64,
+            };
+        }
+    };
+
+    let mut wrapper_violations: Vec<BatchRecordViolation> = Vec::new();
+
+    // ── Optional wrapper validation ─────────────────────────────────────────
+    if cfg.validate_wrapper {
+        // `success` must be a boolean
+        match obj.get("success") {
+            None => wrapper_violations.push(BatchRecordViolation {
+                record_index: 0,
+                field: "success".into(),
+                message: "Wrapper field 'success' is missing".into(),
+                kind: ViolationKind::MissingRequiredField,
+            }),
+            Some(v) if !v.is_boolean() => wrapper_violations.push(BatchRecordViolation {
+                record_index: 0,
+                field: "success".into(),
+                message: format!(
+                    "Wrapper field 'success' must be boolean, got {}",
+                    json_type_name(v)
+                ),
+                kind: ViolationKind::TypeMismatch,
+            }),
+            _ => {}
+        }
+
+        // `pagination` must be an object with page/limit/total (integers) and hasMore (bool)
+        match obj.get("pagination") {
+            None => {} // absent pagination is acceptable — some endpoints omit it
+            Some(p) => match p.as_object() {
+                None => wrapper_violations.push(BatchRecordViolation {
+                    record_index: 0,
+                    field: "pagination".into(),
+                    message: format!(
+                        "Wrapper field 'pagination' must be an object, got {}",
+                        json_type_name(p)
+                    ),
+                    kind: ViolationKind::TypeMismatch,
+                }),
+                Some(pg) => {
+                    for int_field in &["page", "limit", "total"] {
+                        match pg.get(*int_field) {
+                            None => wrapper_violations.push(BatchRecordViolation {
+                                record_index: 0,
+                                field: format!("pagination.{}", int_field),
+                                message: format!(
+                                    "Wrapper pagination field '{}' is missing",
+                                    int_field
+                                ),
+                                kind: ViolationKind::MissingRequiredField,
+                            }),
+                            Some(v) if !v.is_number() => {
+                                wrapper_violations.push(BatchRecordViolation {
+                                    record_index: 0,
+                                    field: format!("pagination.{}", int_field),
+                                    message: format!(
+                                        "Wrapper pagination field '{}' must be a number, got {}",
+                                        int_field,
+                                        json_type_name(v)
+                                    ),
+                                    kind: ViolationKind::TypeMismatch,
+                                })
+                            }
+                            _ => {}
+                        }
+                    }
+                    if let Some(has_more) = pg.get("hasMore") {
+                        if !has_more.is_boolean() {
+                            wrapper_violations.push(BatchRecordViolation {
+                                record_index: 0,
+                                field: "pagination.hasMore".into(),
+                                message: format!(
+                                    "Wrapper pagination field 'hasMore' must be boolean, got {}",
+                                    json_type_name(has_more)
+                                ),
+                                kind: ViolationKind::TypeMismatch,
+                            });
+                        }
+                    }
+                }
+            },
+        }
+    }
+
+    // ── Extract records array ────────────────────────────────────────────────
+    let records = match obj.get(&cfg.records_path) {
+        None => {
+            let mut violations = wrapper_violations;
+            violations.push(BatchRecordViolation {
+                record_index: 0,
+                field: cfg.records_path.clone(),
+                message: format!("Envelope key '{}' is missing", cfg.records_path),
+                kind: ViolationKind::MissingRequiredField,
+            });
+            return BatchValidationResult {
+                passed: 0,
+                quarantined: 1,
+                violations,
+                validation_us: t0.elapsed().as_micros() as u64,
+            };
+        }
+        Some(v) => match v.as_array() {
+            None => {
+                let mut violations = wrapper_violations;
+                violations.push(BatchRecordViolation {
+                    record_index: 0,
+                    field: cfg.records_path.clone(),
+                    message: format!(
+                        "Envelope key '{}' must be an array, got {}",
+                        cfg.records_path,
+                        json_type_name(v)
+                    ),
+                    kind: ViolationKind::TypeMismatch,
+                });
+                return BatchValidationResult {
+                    passed: 0,
+                    quarantined: 1,
+                    violations,
+                    validation_us: t0.elapsed().as_micros() as u64,
+                };
+            }
+            Some(arr) => arr,
+        },
+    };
+
+    // If wrapper had violations, the whole batch is quarantined before we
+    // even look at records — surface only the wrapper violations.
+    if !wrapper_violations.is_empty() {
+        return BatchValidationResult {
+            passed: 0,
+            quarantined: records.len().max(1),
+            violations: wrapper_violations,
+            validation_us: t0.elapsed().as_micros() as u64,
+        };
+    }
+
+    // ── Validate each record ─────────────────────────────────────────────────
+    let mut all_violations: Vec<BatchRecordViolation> = Vec::new();
+    let mut passed = 0usize;
+    let mut quarantined = 0usize;
+
+    for (idx, record) in records.iter().enumerate() {
+        let result = validate(compiled, record);
+        if result.passed {
+            passed += 1;
+        } else {
+            quarantined += 1;
+            for v in result.violations {
+                all_violations.push(BatchRecordViolation {
+                    record_index: idx,
+                    field: v.field,
+                    message: v.message,
+                    kind: v.kind,
+                });
+            }
+        }
+    }
+
+    BatchValidationResult {
+        passed,
+        quarantined,
+        violations: all_violations,
+        validation_us: t0.elapsed().as_micros() as u64,
     }
 }
 
@@ -770,7 +1010,9 @@ pub fn check_uniqueness_batch(rules: &[QualityRule], events: &[Value]) -> Vec<(u
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::contract::{EgressLeakageMode, FieldDefinition, FieldType, Ontology};
+    use crate::contract::{
+        EgressLeakageMode, EnvelopeConfig, FieldDefinition, FieldType, Ontology,
+    };
     use serde_json::json;
 
     fn make_simple_contract() -> Contract {
@@ -833,6 +1075,7 @@ mod tests {
             glossary: vec![],
             metrics: vec![],
             quality: vec![],
+            envelope: None,
         }
     }
 
@@ -923,5 +1166,137 @@ mod tests {
         let compiled = CompiledContract::compile(contract).unwrap();
         let result = validate(&compiled, &json!(["not", "an", "object"]));
         assert!(!result.passed);
+    }
+
+    // -------------------------------------------------------------------------
+    // RFC-038: envelope batch tests
+    // -------------------------------------------------------------------------
+
+    fn make_envelope_cfg(records_path: &str, validate_wrapper: bool) -> EnvelopeConfig {
+        EnvelopeConfig {
+            records_path: records_path.to_string(),
+            validate_wrapper,
+        }
+    }
+
+    #[test]
+    fn envelope_all_valid_passes() {
+        let compiled = CompiledContract::compile(make_simple_contract()).unwrap();
+        let cfg = make_envelope_cfg("data", false);
+        let payload = json!({
+            "success": true,
+            "data": [
+                { "user_id": "alice_01", "event_type": "click", "timestamp": 1712000000 },
+                { "user_id": "bob_02",   "event_type": "view",  "timestamp": 1712000001 }
+            ],
+            "pagination": { "page": 1, "limit": 50, "total": 2, "hasMore": false }
+        });
+        let result = validate_envelope_batch(&compiled, &cfg, &payload);
+        assert_eq!(result.passed, 2);
+        assert_eq!(result.quarantined, 0);
+        assert!(result.violations.is_empty());
+    }
+
+    #[test]
+    fn envelope_missing_field_quarantines_correct_record() {
+        let compiled = CompiledContract::compile(make_simple_contract()).unwrap();
+        let cfg = make_envelope_cfg("data", false);
+        let payload = json!({
+            "success": true,
+            "data": [
+                { "user_id": "alice_01", "event_type": "click", "timestamp": 1712000000 },
+                // record index 1: missing required "timestamp"
+                { "user_id": "bob_02",   "event_type": "view" }
+            ],
+            "pagination": { "page": 1, "limit": 50, "total": 2, "hasMore": false }
+        });
+        let result = validate_envelope_batch(&compiled, &cfg, &payload);
+        assert_eq!(result.passed, 1);
+        assert_eq!(result.quarantined, 1);
+        assert_eq!(result.violations.len(), 1);
+        assert_eq!(result.violations[0].record_index, 1);
+        assert_eq!(result.violations[0].field, "timestamp");
+        assert_eq!(
+            result.violations[0].kind,
+            ViolationKind::MissingRequiredField
+        );
+    }
+
+    #[test]
+    fn envelope_bad_enum_quarantines_correct_record() {
+        let compiled = CompiledContract::compile(make_simple_contract()).unwrap();
+        let cfg = make_envelope_cfg("data", false);
+        let payload = json!({
+            "data": [
+                // record index 0: event_type not in enum
+                { "user_id": "alice_01", "event_type": "delete", "timestamp": 1712000000 }
+            ]
+        });
+        let result = validate_envelope_batch(&compiled, &cfg, &payload);
+        assert_eq!(result.quarantined, 1);
+        assert_eq!(result.violations[0].record_index, 0);
+        assert_eq!(result.violations[0].kind, ViolationKind::EnumViolation);
+    }
+
+    #[test]
+    fn envelope_missing_records_path_fails() {
+        let compiled = CompiledContract::compile(make_simple_contract()).unwrap();
+        let cfg = make_envelope_cfg("data", false);
+        let payload = json!({ "success": true }); // no "data" key
+        let result = validate_envelope_batch(&compiled, &cfg, &payload);
+        assert_eq!(result.quarantined, 1);
+        assert!(result
+            .violations
+            .iter()
+            .any(|v| v.kind == ViolationKind::MissingRequiredField && v.field == "data"));
+    }
+
+    #[test]
+    fn envelope_non_object_payload_fails() {
+        let compiled = CompiledContract::compile(make_simple_contract()).unwrap();
+        let cfg = make_envelope_cfg("data", false);
+        let result = validate_envelope_batch(&compiled, &cfg, &json!([1, 2, 3]));
+        assert_eq!(result.quarantined, 1);
+        assert!(result
+            .violations
+            .iter()
+            .any(|v| v.kind == ViolationKind::TypeMismatch));
+    }
+
+    #[test]
+    fn envelope_validate_wrapper_catches_missing_success() {
+        let compiled = CompiledContract::compile(make_simple_contract()).unwrap();
+        let cfg = make_envelope_cfg("data", true);
+        // Payload missing `success` field
+        let payload = json!({
+            "data": [
+                { "user_id": "alice_01", "event_type": "click", "timestamp": 1712000000 }
+            ],
+            "pagination": { "page": 1, "limit": 50, "total": 1, "hasMore": false }
+        });
+        let result = validate_envelope_batch(&compiled, &cfg, &payload);
+        assert!(result
+            .violations
+            .iter()
+            .any(|v| v.field == "success" && v.kind == ViolationKind::MissingRequiredField));
+    }
+
+    #[test]
+    fn envelope_validate_wrapper_catches_bad_pagination() {
+        let compiled = CompiledContract::compile(make_simple_contract()).unwrap();
+        let cfg = make_envelope_cfg("data", true);
+        // `pagination.total` is a string instead of a number
+        let payload = json!({
+            "success": true,
+            "data": [
+                { "user_id": "alice_01", "event_type": "click", "timestamp": 1712000000 }
+            ],
+            "pagination": { "page": 1, "limit": 50, "total": "three", "hasMore": false }
+        });
+        let result = validate_envelope_batch(&compiled, &cfg, &payload);
+        assert!(result
+            .violations
+            .iter()
+            .any(|v| v.field == "pagination.total" && v.kind == ViolationKind::TypeMismatch));
     }
 }

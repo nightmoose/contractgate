@@ -262,6 +262,7 @@ mod tests {
             glossary: vec![],
             metrics: vec![],
             quality: vec![],
+            envelope: None,
         };
         CompiledContract::compile_with_salt(contract, salt).unwrap()
     }
@@ -541,6 +542,7 @@ mod tests {
             glossary: vec![],
             metrics: vec![],
             quality: vec![],
+            envelope: None,
         };
         let err = CompiledContract::compile_with_salt(contract, b"x".to_vec())
             .expect_err("non-string transform should fail compile");

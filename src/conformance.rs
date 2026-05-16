@@ -410,6 +410,7 @@ mod tests {
             glossary: vec![],
             metrics: vec![],
             quality,
+            envelope: None,
         }
     }
 

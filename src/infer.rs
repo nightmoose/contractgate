@@ -88,6 +88,7 @@ pub async fn infer_handler(Json(req): Json<InferRequest>) -> AppResult<Json<Infe
         glossary: vec![],
         metrics: vec![],
         quality: vec![],
+        envelope: None,
     };
 
     let yaml_content = serde_yaml::to_string(&contract)
@@ -411,6 +412,7 @@ mod tests {
             glossary: vec![],
             metrics: vec![],
             quality: vec![],
+            envelope: None,
         }
     }
 
