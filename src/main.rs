@@ -754,13 +754,11 @@ async fn require_api_key(
         return Ok(next.run(request).await);
     }
 
-    // Legacy env-var key: still accepted for zero-downtime migration.
-    // Remove this branch once all connectors are issuing DB-backed keys.
-    if !provided.is_empty() && provided == state.api_key {
-        return Ok(next.run(request).await);
-    }
-
     // DB-backed key: validate via cache (60-second TTL).
+    // Checked FIRST so that if the same value is also set as the legacy
+    // env-var key, the DB path wins and ValidatedKey (with org_id) is
+    // injected.  Without this ordering, the legacy short-circuit fires,
+    // org_id stays None, and deploy/ingest writes fail the NOT NULL constraint.
     if !provided.is_empty() {
         match state.key_cache.validate(&provided, &state.db).await {
             Ok(validated) => {
@@ -774,6 +772,12 @@ async fn require_api_key(
                 state.key_cache.evict(&provided);
             }
         }
+    }
+
+    // Legacy env-var key: still accepted for zero-downtime migration.
+    // Remove this branch once all connectors are issuing DB-backed keys.
+    if !provided.is_empty() && provided == state.api_key {
+        return Ok(next.run(request).await);
     }
 
     tracing::warn!("Rejected request: missing or invalid x-api-key");
