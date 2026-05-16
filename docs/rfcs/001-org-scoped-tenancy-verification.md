@@ -1,5 +1,7 @@
 # RFC-001 Org Isolation — Verification Runbook
 
+**Status:** Implemented (2026-05-03) — verification runbook for migration 007 (org-scoped tenancy)
+
 Run these checks after applying migration 007 to a staging or production Supabase project.
 Each check has a SQL probe (run in the Supabase SQL editor as `postgres` / service-role)
 and a UI smoke test.
