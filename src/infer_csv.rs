@@ -80,32 +80,51 @@ pub async fn infer_csv_handler(Json(req): Json<InferCsvRequest>) -> AppResult<Js
         )));
     }
 
-    // 2. Determine delimiter.
-    let delim = match &req.delimiter {
+    Ok(Json(infer_from_text(
+        &raw,
+        &req.name,
+        req.description.as_deref(),
+        req.delimiter.as_deref(),
+    )?))
+}
+
+/// Core CSV inference logic — exposed for reuse by `infer_url`.
+///
+/// Parses `text` as CSV, runs the shared inference engine, and returns an
+/// [`InferResponse`] with the generated YAML contract.  Does **not** enforce
+/// a byte-size limit (callers are responsible for capping before calling).
+pub fn infer_from_text(
+    text: &str,
+    name: &str,
+    description: Option<&str>,
+    delimiter: Option<&str>,
+) -> AppResult<InferResponse> {
+    // 1. Determine delimiter.
+    let delim = match delimiter {
         Some(d) => parse_delimiter(d)?,
-        None => detect_delimiter(raw.as_bytes()).ok_or_else(|| {
+        None => detect_delimiter(text.as_bytes()).ok_or_else(|| {
             AppError::BadRequest(
                 "could not detect delimiter; pass delimiter field explicitly".into(),
             )
         })?,
     };
 
-    // 3. Parse CSV → JSON objects.
-    let rows = parse_csv(raw.as_bytes(), delim)?;
+    // 2. Parse CSV → JSON objects.
+    let rows = parse_csv(text.as_bytes(), delim)?;
     if rows.is_empty() {
         return Err(AppError::BadRequest("CSV contains no data rows".into()));
     }
 
     let sample_count = rows.len();
 
-    // 4. Run shared inference engine.
+    // 3. Run shared inference engine.
     let entities = infer_fields_from_objects_pub(&rows);
     let field_count = entities.len();
 
     let contract = Contract {
         version: "1.0".to_string(),
-        name: req.name.clone(),
-        description: req.description.clone(),
+        name: name.to_string(),
+        description: description.map(str::to_string),
         compliance_mode: false,
         egress_leakage_mode: EgressLeakageMode::Off,
         ontology: Ontology { entities },
@@ -117,11 +136,11 @@ pub async fn infer_csv_handler(Json(req): Json<InferCsvRequest>) -> AppResult<Js
     let yaml_content = serde_yaml::to_string(&contract)
         .map_err(|e| AppError::Internal(format!("yaml serialisation failed: {e}")))?;
 
-    Ok(Json(InferResponse {
+    Ok(InferResponse {
         yaml_content,
         field_count,
         sample_count,
-    }))
+    })
 }
 
 // ---------------------------------------------------------------------------

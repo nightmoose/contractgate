@@ -111,6 +111,14 @@ pub enum AppError {
     /// parsing, bad enum values read back from the DB, etc.
     #[error("Internal error: {0}")]
     Internal(String),
+
+    /// Upstream HTTP fetch timed out (infer/url, public-catalog export).  504.
+    #[error("Gateway timeout: {0}")]
+    GatewayTimeout(String),
+
+    /// Response is structurally valid but contains no inferable records.  422.
+    #[error("Unprocessable: {0}")]
+    UnprocessableEntity(String),
 }
 
 // Preserve ergonomic `?` conversion from anyhow::Error (previously handled by
@@ -159,6 +167,10 @@ impl IntoResponse for AppError {
                     StatusCode::INTERNAL_SERVER_ERROR,
                     "Internal server error".into(),
                 )
+            }
+            AppError::GatewayTimeout(_) => (StatusCode::GATEWAY_TIMEOUT, self.to_string()),
+            AppError::UnprocessableEntity(_) => {
+                (StatusCode::UNPROCESSABLE_ENTITY, self.to_string())
             }
         };
 

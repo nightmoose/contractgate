@@ -53,6 +53,7 @@ mod infer;
 mod infer_avro;
 mod infer_csv;
 mod infer_diff;
+mod infer_url;
 mod infer_openapi;
 mod infer_proto;
 mod ingest;
@@ -856,6 +857,8 @@ fn build_router(state: Arc<AppState>) -> Router {
         )
         // CSV inference (RFC-035)
         .route("/contracts/infer/csv", post(infer_csv::infer_csv_handler))
+        // URL inference (RFC-037)
+        .route("/contracts/infer/url", post(infer_url::infer_url_handler))
         // Evolution diff summarizer (RFC-006)
         .route("/contracts/diff", post(infer_diff::diff_handler))
         // Contract identity CRUD
