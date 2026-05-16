@@ -23,8 +23,10 @@
 //! | Unspecified | 0.0.0.0, :: |
 //!
 //! If **any** resolved address falls in a blocked range the request is rejected
-//! with 400.  DNS rebinding is not addressed here (a full mitigation requires
-//! pinning the resolved IP in the socket; flagged for a future hardening pass).
+//! with 400.  To close the DNS rebinding window the first allowed `SocketAddr`
+//! returned by the OS resolver is pinned into the reqwest client via
+//! `ClientBuilder::resolve()`, so the actual TCP connection uses the pre-checked
+//! IP and cannot be redirected by a second DNS lookup.
 //!
 //! ## Format detection
 //!
@@ -56,7 +58,7 @@ use axum::Json;
 use serde::Deserialize;
 use serde_json::Value;
 use std::collections::HashMap;
-use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
+use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
 
 const MAX_INFER_URL_BYTES: usize = 10 * 1024 * 1024; // 10 MB
 const MAX_SAMPLE_ROWS: usize = 1_000;
@@ -99,8 +101,10 @@ pub async fn infer_url_handler(
     // 1. Validate URL syntax.
     validate_url(&req.url)?;
 
-    // 2. Resolve hostname and block private/internal ranges (SSRF guard).
-    check_ssrf(&req.url).await?;
+    // 2. Resolve hostname, block private ranges, and return the pinned SocketAddr.
+    //    Pinning it into the client closes the DNS rebinding window — the TCP
+    //    connection uses this pre-checked address directly, not a second lookup.
+    let (host, pinned_addr) = check_ssrf(&req.url).await?;
 
     // 3. Fetch upstream.
     let timeout_ms = std::env::var("INFER_URL_TIMEOUT_MS")
@@ -110,6 +114,7 @@ pub async fn infer_url_handler(
 
     let client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_millis(timeout_ms))
+        .resolve(&host, pinned_addr)
         .build()
         .map_err(|e| AppError::Internal(format!("failed to build HTTP client: {e}")))?;
 
@@ -164,7 +169,9 @@ pub async fn infer_url_handler(
     }
 
     if bytes.is_empty() {
-        return Err(AppError::BadRequest("upstream returned an empty body".into()));
+        return Err(AppError::BadRequest(
+            "upstream returned an empty body".into(),
+        ));
     }
 
     // 6. Parse & infer.
@@ -184,46 +191,59 @@ pub async fn infer_url_handler(
 // SSRF protection
 // ---------------------------------------------------------------------------
 
-/// Resolve the hostname in `url` and reject any address in a private, loopback,
-/// link-local, multicast, or unspecified range.
-async fn check_ssrf(url: &str) -> AppResult<()> {
-    let parsed = reqwest::Url::parse(url)
-        .map_err(|e| AppError::BadRequest(format!("invalid URL: {e}")))?;
+/// Resolve the hostname in `url`, reject any blocked address, and return
+/// `(hostname, pinned_SocketAddr)` so the caller can bind the client to that
+/// exact address — closing the DNS rebinding window.
+async fn check_ssrf(url: &str) -> AppResult<(String, SocketAddr)> {
+    let parsed =
+        reqwest::Url::parse(url).map_err(|e| AppError::BadRequest(format!("invalid URL: {e}")))?;
 
     let host = parsed
         .host_str()
-        .ok_or_else(|| AppError::BadRequest("URL has no host".into()))?;
+        .ok_or_else(|| AppError::BadRequest("URL has no host".into()))?
+        .to_owned();
 
-    // Reject bare IP literals that are already blocked — catches 127.0.0.1
-    // without a DNS round-trip.
+    let port = parsed
+        .port()
+        .unwrap_or(if parsed.scheme() == "https" { 443 } else { 80 });
+
+    // Bare IP literal — check and pin directly, no DNS needed.
     if let Ok(ip) = host.parse::<IpAddr>() {
         if is_blocked_ip(ip) {
             return Err(AppError::BadRequest(format!(
                 "requests to {ip} are not allowed"
             )));
         }
-        return Ok(());
+        return Ok((host, SocketAddr::new(ip, port)));
     }
 
-    // DNS resolution.
-    let port = parsed.port().unwrap_or(if parsed.scheme() == "https" { 443 } else { 80 });
+    // DNS resolution — collect all addresses, reject if any is blocked.
     let lookup_target = format!("{host}:{port}");
-
-    let addrs = tokio::net::lookup_host(&lookup_target)
+    let addrs: Vec<SocketAddr> = tokio::net::lookup_host(&lookup_target)
         .await
-        .map_err(|e| AppError::BadRequest(format!("DNS resolution failed for {host}: {e}")))?;
+        .map_err(|e| AppError::BadRequest(format!("DNS resolution failed for {host}: {e}")))?
+        .collect();
 
-    for addr in addrs {
-        let ip = addr.ip();
-        if is_blocked_ip(ip) {
+    if addrs.is_empty() {
+        return Err(AppError::BadRequest(format!(
+            "DNS returned no addresses for {host}"
+        )));
+    }
+
+    for addr in &addrs {
+        if is_blocked_ip(addr.ip()) {
             return Err(AppError::BadRequest(format!(
-                "URL resolves to a private or reserved address ({ip}) — \
-                 internal endpoints cannot be used as contract sources"
+                "URL resolves to a private or reserved address ({}) — \
+                 internal endpoints cannot be used as contract sources",
+                addr.ip()
             )));
         }
     }
 
-    Ok(())
+    // All addresses are safe — pin the first one into the client so the TCP
+    // connection uses this pre-checked IP and cannot be redirected by a
+    // subsequent DNS lookup (DNS rebinding mitigation).
+    Ok((host, addrs[0]))
 }
 
 /// Returns `true` if the address must be blocked.
@@ -237,36 +257,62 @@ fn is_blocked_ip(ip: IpAddr) -> bool {
 fn is_blocked_v4(ip: Ipv4Addr) -> bool {
     let o = ip.octets();
     // Unspecified: 0.0.0.0/8
-    if o[0] == 0 { return true; }
+    if o[0] == 0 {
+        return true;
+    }
     // Loopback: 127.0.0.0/8
-    if o[0] == 127 { return true; }
+    if o[0] == 127 {
+        return true;
+    }
     // Private: 10.0.0.0/8
-    if o[0] == 10 { return true; }
+    if o[0] == 10 {
+        return true;
+    }
     // Private: 172.16.0.0/12  (172.16.x.x – 172.31.x.x)
-    if o[0] == 172 && (16..=31).contains(&o[1]) { return true; }
+    if o[0] == 172 && (16..=31).contains(&o[1]) {
+        return true;
+    }
     // Private: 192.168.0.0/16
-    if o[0] == 192 && o[1] == 168 { return true; }
+    if o[0] == 192 && o[1] == 168 {
+        return true;
+    }
     // Link-local / APIPA: 169.254.0.0/16 — includes AWS metadata 169.254.169.254
-    if o[0] == 169 && o[1] == 254 { return true; }
+    if o[0] == 169 && o[1] == 254 {
+        return true;
+    }
     // Multicast: 224.0.0.0/4
-    if o[0] >= 224 && o[0] <= 239 { return true; }
+    if o[0] >= 224 && o[0] <= 239 {
+        return true;
+    }
     // Broadcast / reserved: 240.0.0.0/4
-    if o[0] >= 240 { return true; }
+    if o[0] >= 240 {
+        return true;
+    }
     false
 }
 
 fn is_blocked_v6(ip: Ipv6Addr) -> bool {
     let s = ip.segments();
     // Unspecified: ::
-    if ip == Ipv6Addr::UNSPECIFIED { return true; }
+    if ip == Ipv6Addr::UNSPECIFIED {
+        return true;
+    }
     // Loopback: ::1
-    if ip == Ipv6Addr::LOCALHOST { return true; }
+    if ip == Ipv6Addr::LOCALHOST {
+        return true;
+    }
     // Link-local: fe80::/10
-    if (s[0] & 0xffc0) == 0xfe80 { return true; }
+    if (s[0] & 0xffc0) == 0xfe80 {
+        return true;
+    }
     // Unique local: fc00::/7  (fc00:: and fd00::)
-    if (s[0] & 0xfe00) == 0xfc00 { return true; }
+    if (s[0] & 0xfe00) == 0xfc00 {
+        return true;
+    }
     // Multicast: ff00::/8
-    if (s[0] & 0xff00) == 0xff00 { return true; }
+    if (s[0] & 0xff00) == 0xff00 {
+        return true;
+    }
     // IPv4-mapped: ::ffff:0:0/96 — inherit IPv4 block rules
     if s[0] == 0 && s[1] == 0 && s[2] == 0 && s[3] == 0 && s[4] == 0 && s[5] == 0xffff {
         let v4 = Ipv4Addr::new(
@@ -294,7 +340,9 @@ fn validate_url(url: &str) -> AppResult<()> {
         ));
     }
     if url.len() > 2_048 {
-        return Err(AppError::BadRequest("url is too long (max 2048 chars)".into()));
+        return Err(AppError::BadRequest(
+            "url is too long (max 2048 chars)".into(),
+        ));
     }
     Ok(())
 }

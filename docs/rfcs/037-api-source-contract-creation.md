@@ -197,4 +197,8 @@ export const inferUrl = (params: {
   ranges: loopback (127/8, ::1), RFC 1918 private (10/8, 172.16/12, 192.168/16),
   link-local/APIPA (169.254/16 — covers AWS metadata endpoint), IPv6 link-local
   (fe80::/10), unique-local (fc00::/7), multicast, and IPv4-mapped equivalents.
-  Bare IP literals are also rejected without a DNS round-trip. **Closed: shipped.**
+  Bare IP literals are also rejected without a DNS round-trip. DNS rebinding
+  also mitigated: `check_ssrf` returns the first verified `SocketAddr`, which
+  is pinned into the reqwest client via `ClientBuilder::resolve()` — the TCP
+  connection uses the pre-checked IP and cannot be redirected by a second
+  DNS lookup. **Closed: fully shipped.**
