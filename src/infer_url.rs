@@ -421,7 +421,7 @@ fn extract_rows(value: Value) -> AppResult<Vec<Value>> {
                         .filter_map(|row| {
                             if let Value::Array(cols) = row {
                                 let mut obj = serde_json::Map::new();
-                                for (header, col) in headers.iter().zip(cols.into_iter()) {
+                                for (header, col) in headers.iter().zip(cols) {
                                     obj.insert(header.clone(), col);
                                 }
                                 Some(Value::Object(obj))
