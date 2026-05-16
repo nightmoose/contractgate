@@ -190,9 +190,11 @@ export const inferUrl = (params: {
 
 ---
 
-## Open Questions
+## Resolved Questions
 
-- **OQ1:** Should we validate the URL doesn't point to private/internal ranges
-  (SSRF protection)? Leaning yes for production hardening — block `localhost`,
-  `10.x`, `172.16–31.x`, `192.168.x`. Deferred to a follow-up security pass
-  but flagged here.
+- **OQ1:** SSRF protection — shipped in the same PR. Hostname is resolved via
+  DNS before the HTTP request; all resolved addresses are checked against blocked
+  ranges: loopback (127/8, ::1), RFC 1918 private (10/8, 172.16/12, 192.168/16),
+  link-local/APIPA (169.254/16 — covers AWS metadata endpoint), IPv6 link-local
+  (fe80::/10), unique-local (fc00::/7), multicast, and IPv4-mapped equivalents.
+  Bare IP literals are also rejected without a DNS round-trip. **Closed: shipped.**
