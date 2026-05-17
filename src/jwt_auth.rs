@@ -228,7 +228,7 @@ pub async fn verify_supabase_jwt(
         FROM   org_memberships
         WHERE  user_id    = $1
           AND  deleted_at IS NULL
-        ORDER  BY created_at ASC
+        ORDER  BY joined_at ASC
         LIMIT  1
         "#,
     )
