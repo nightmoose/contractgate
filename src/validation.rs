@@ -698,17 +698,17 @@ fn validate_value(
         }
 
         // RFC-044: calendar validation for date fields
-        if field.field_type == FieldType::Date {
-            if chrono::NaiveDate::parse_from_str(s, "%Y-%m-%d").is_err() {
-                violations.push(Violation {
-                    field: path.to_string(),
-                    message: format!(
-                        "Field '{}' value {:?} is not a valid calendar date (expected YYYY-MM-DD)",
-                        path, s
-                    ),
-                    kind: ViolationKind::PatternMismatch,
-                });
-            }
+        if field.field_type == FieldType::Date
+            && chrono::NaiveDate::parse_from_str(s, "%Y-%m-%d").is_err()
+        {
+            violations.push(Violation {
+                field: path.to_string(),
+                message: format!(
+                    "Field '{}' value {:?} is not a valid calendar date (expected YYYY-MM-DD)",
+                    path, s
+                ),
+                kind: ViolationKind::PatternMismatch,
+            });
         }
     }
 
