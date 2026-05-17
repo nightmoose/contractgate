@@ -28,6 +28,10 @@ pub enum AppError {
     #[error("Unauthorized: missing or invalid API key")]
     Unauthorized,
 
+    /// P1-1: per-key token-bucket exhausted.  429.
+    #[error("Rate limit exceeded — too many requests")]
+    RateLimitExceeded,
+
     // -----------------------------------------------------------------------
     // Versioning (RFC-002)
     // -----------------------------------------------------------------------
@@ -139,6 +143,7 @@ impl IntoResponse for AppError {
             AppError::BadRequest(_) => (StatusCode::BAD_REQUEST, self.to_string()),
             AppError::PayloadTooLarge(_) => (StatusCode::PAYLOAD_TOO_LARGE, self.to_string()),
             AppError::Unauthorized => (StatusCode::UNAUTHORIZED, self.to_string()),
+            AppError::RateLimitExceeded => (StatusCode::TOO_MANY_REQUESTS, self.to_string()),
 
             AppError::VersionConflict { .. } => (StatusCode::CONFLICT, self.to_string()),
             AppError::VersionImmutable { .. } => (StatusCode::CONFLICT, self.to_string()),

@@ -762,6 +762,16 @@ async fn require_api_key(
         if let Some(jwks) = &state.supabase_jwks {
             match jwt_auth::verify_supabase_jwt(&bearer, jwks, &state.db).await {
                 Ok(validated) => {
+                    // P1-1: rate-limit JWT sessions by nil UUID with generous defaults
+                    // (dashboard makes many concurrent requests; don't throttle UI).
+                    let outcome = state.rate_limiter.check(
+                        validated.api_key_id, // nil UUID for JWT sessions
+                        Some(500),
+                        Some(2_000),
+                    );
+                    if !outcome.allowed {
+                        return Err(error::AppError::RateLimitExceeded);
+                    }
                     request.extensions_mut().insert(validated);
                     return Ok(next.run(request).await);
                 }
@@ -796,6 +806,15 @@ async fn require_api_key(
     if !provided.is_empty() {
         match state.key_cache.validate(&provided, &state.db).await {
             Ok(validated) => {
+                // P1-1: rate-limit DB-backed keys using per-key overrides.
+                let outcome = state.rate_limiter.check(
+                    validated.api_key_id,
+                    validated.rate_limit_rps,
+                    validated.rate_limit_burst,
+                );
+                if !outcome.allowed {
+                    return Err(error::AppError::RateLimitExceeded);
+                }
                 // Inject the validated key into request extensions so
                 // downstream handlers can scope queries to the correct org.
                 request.extensions_mut().insert(validated);
@@ -832,7 +851,6 @@ fn build_router(state: Arc<AppState>) -> Router {
     let public = Router::new()
         .route("/health", get(health_handler))
         .route("/openapi.json", get(v1_ingest::openapi_handler))
-        .route("/playground/validate", post(playground_handler))
         // Prometheus metrics scrape endpoint (RFC-016).
         // Open by default; Bearer-auth gated when METRICS_AUTH_TOKEN is set.
         // Mounted as public so Prometheus can scrape without an x-api-key.
@@ -1057,6 +1075,15 @@ fn build_router(state: Arc<AppState>) -> Router {
         // Audit + stats
         .route("/audit", get(audit_log_handler))
         .route("/stats", get(global_stats_handler))
+        // P1-3: playground now requires auth (moved from public router).
+        // Previously unauthenticated + unlimited; now gated + capped at 1 MB
+        // along with the rest of the protected surface.
+        .route("/playground/validate", post(playground_handler))
+        // P1-2: 1 MB body limit on all protected routes, including playground.
+        // Prevents oversized YAML blobs on /contracts, /infer/*, /playground/*, etc.
+        .layer(tower_http::limit::RequestBodyLimitLayer::new(
+            1024 * 1024, // 1 MB
+        ))
         .layer(middleware::from_fn_with_state(
             state.clone(),
             require_api_key,
@@ -1143,24 +1170,33 @@ async fn main() -> anyhow::Result<()> {
     }
 
     // RFC-039: fetch Supabase JWKS for RS256 dashboard session auth.
-    // Derived from DATABASE_URL — no extra env var required.
-    let supabase_jwks: Option<Arc<JwkSet>> =
-        match jwt_auth::jwks_url_from_database_url(&database_url) {
-            Some(url) => match jwt_auth::fetch_jwks(&url).await {
-                Ok(jwks) => {
-                    tracing::info!("Supabase JWKS loaded — Bearer JWT auth enabled");
-                    Some(Arc::new(jwks))
-                }
-                Err(e) => {
-                    tracing::warn!("Failed to fetch Supabase JWKS: {e} — Bearer JWT auth disabled");
-                    None
-                }
-            },
-            None => {
-                tracing::info!("DATABASE_URL is not a Supabase host — Bearer JWT auth disabled");
+    // Resolution order:
+    //   1. SUPABASE_URL env var (explicit override — set this on Fly if
+    //      DATABASE_URL parsing doesn't yield the correct project URL)
+    //   2. Derived from DATABASE_URL (handles direct + pooler formats)
+    let jwks_url: Option<String> = std::env::var("SUPABASE_URL")
+        .ok()
+        .map(|u| format!("{}/auth/v1/.well-known/jwks.json", u.trim_end_matches('/')))
+        .or_else(|| jwt_auth::jwks_url_from_database_url(&database_url));
+
+    let supabase_jwks: Option<Arc<JwkSet>> = match jwks_url {
+        Some(url) => match jwt_auth::fetch_jwks(&url).await {
+            Ok(jwks) => {
+                tracing::info!("Supabase JWKS loaded from {url} — Bearer JWT auth enabled");
+                Some(Arc::new(jwks))
+            }
+            Err(e) => {
+                tracing::warn!(
+                    "Failed to fetch Supabase JWKS from {url}: {e} — Bearer JWT auth disabled"
+                );
                 None
             }
-        };
+        },
+        None => {
+            tracing::warn!("Could not derive Supabase URL from DATABASE_URL and SUPABASE_URL is not set — Bearer JWT auth disabled");
+            None
+        }
+    };
 
     let state = Arc::new(AppState::new(pool, api_key, supabase_jwks));
 
