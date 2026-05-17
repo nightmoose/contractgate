@@ -95,16 +95,15 @@ async function extractErrorMessage(res: Response): Promise<string> {
 }
 
 async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
-  // === NEW: Always ensure we have a session token if we're in the browser ===
+  // === Aggressive session handling ===
   if (typeof window !== "undefined") {
-    if (!_apiSession) {
-      try {
-        const supabase = createClient();
+    try {
+      const supabase = createClient();
 
-        // Try current session first
+      // If we don't have a token yet, try hard to get one
+      if (!_apiSession) {
         let { data: { session } } = await supabase.auth.getSession();
 
-        // If still nothing, force a refresh
         if (!session?.access_token) {
           const { data: refreshed } = await supabase.auth.refreshSession();
           session = refreshed?.session ?? null;
@@ -113,9 +112,9 @@ async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
         if (session?.access_token) {
           _apiSession = session.access_token;
         }
-      } catch {
-        // non-fatal
       }
+    } catch {
+      // non-fatal
     }
   }
 
@@ -126,11 +125,9 @@ async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
   if (_apiSession) {
     headers["authorization"] = `Bearer ${_apiSession}`;
   }
-  // Note: x-api-key fallback has been removed
 
   if (_apiOrgId) headers["x-org-id"] = _apiOrgId;
 
-  // Merge caller headers...
   if (init?.headers) {
     new Headers(init.headers).forEach((v, k) => {
       headers[k] = v;
