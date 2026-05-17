@@ -111,13 +111,18 @@ pub struct AppState {
     pub kafka_consumers: kafka_consumer::ConsumerPool,
     /// RFC-026: platform-side Kinesis consumer pool (one task per enabled contract).
     pub kinesis_consumers: kinesis_consumer::ConsumerPool,
-    /// RFC-039: Supabase JWT secret for verifying dashboard session tokens.
-    /// None = JWT auth branch disabled (dev mode or not yet configured).
-    pub supabase_jwt_secret: Option<String>,
+    /// RFC-039: Cached Supabase JWKS for verifying dashboard session tokens
+    /// (RS256/ES256).  Fetched at startup from SUPABASE_URL.
+    /// None = JWT auth branch disabled (SUPABASE_URL not configured).
+    pub supabase_jwks: Option<Arc<jsonwebtoken::jwk::JwkSet>>,
 }
 
 impl AppState {
-    pub fn new(db: PgPool, api_key: String, supabase_jwt_secret: Option<String>) -> Self {
+    pub fn new(
+        db: PgPool,
+        api_key: String,
+        supabase_jwks: Option<Arc<jsonwebtoken::jwk::JwkSet>>,
+    ) -> Self {
         AppState {
             db,
             contract_cache: RwLock::new(HashMap::new()),
@@ -127,7 +132,7 @@ impl AppState {
             stream_demo: std::sync::Arc::new(stream_demo::StreamDemoState::new()),
             kafka_consumers: kafka_consumer::ConsumerPool::new(),
             kinesis_consumers: kinesis_consumer::ConsumerPool::new(),
-            supabase_jwt_secret,
+            supabase_jwks,
         }
     }
 
@@ -766,7 +771,7 @@ async fn require_auth(
     next: Next,
 ) -> Result<axum::response::Response, error::AppError> {
     // Dev mode: no auth configured at all — pass through.
-    if state.api_key.is_empty() && state.supabase_jwt_secret.is_none() {
+    if state.api_key.is_empty() && state.supabase_jwks.is_none() {
         return Ok(next.run(request).await);
     }
 
@@ -779,15 +784,17 @@ async fn require_auth(
         .map(str::to_owned);
 
     if let Some(token) = bearer {
-        let secret = match &state.supabase_jwt_secret {
-            Some(s) => s.clone(),
+        let jwks = match &state.supabase_jwks {
+            Some(j) => j.clone(),
             None => {
-                // Bearer sent but secret not configured — reject cleanly.
-                tracing::warn!("Bearer JWT received but SUPABASE_JWT_SECRET not configured");
+                // Bearer sent but JWKS not loaded — reject cleanly.
+                tracing::warn!(
+                    "Bearer JWT received but SUPABASE_URL not configured / JWKS not loaded"
+                );
                 return Err(error::AppError::Unauthorized);
             }
         };
-        match jwt_auth::verify_supabase_jwt(&token, &secret, &state.db).await {
+        match jwt_auth::verify_supabase_jwt(&token, &jwks, &state.db).await {
             Ok(validated) => {
                 request.extensions_mut().insert(validated);
                 return Ok(next.run(request).await);
@@ -1153,14 +1160,29 @@ async fn main() -> anyhow::Result<()> {
         tracing::info!("API key authentication enabled");
     }
 
-    let supabase_jwt_secret = std::env::var("SUPABASE_JWT_SECRET").ok();
-    if supabase_jwt_secret.is_some() {
-        tracing::info!("Supabase-JWT auth enabled (RFC-039)");
-    } else {
-        tracing::warn!("SUPABASE_JWT_SECRET not set — dashboard JWT auth disabled");
-    }
+    // RFC-039: fetch Supabase JWKS for RS256 session-token verification.
+    // Derive the project URL from DATABASE_URL (already required) so no
+    // additional env var is needed.
+    // DATABASE_URL format: postgresql://user:pass@db.<project>.supabase.co:5432/db
+    // JWKS URL:            https://<project>.supabase.co/auth/v1/.well-known/jwks.json
+    let supabase_jwks = match jwt_auth::jwks_url_from_database_url(&database_url) {
+        Some(jwks_url) => match jwt_auth::fetch_jwks(&jwks_url).await {
+            Ok(jwks) => {
+                tracing::info!("Supabase-JWT auth enabled via JWKS (RFC-039)");
+                Some(Arc::new(jwks))
+            }
+            Err(e) => {
+                tracing::error!("Failed to fetch Supabase JWKS — JWT auth disabled: {e}");
+                None
+            }
+        },
+        None => {
+            tracing::warn!("DATABASE_URL is not a Supabase URL — JWT auth disabled");
+            None
+        }
+    };
 
-    let state = Arc::new(AppState::new(pool, api_key, supabase_jwt_secret));
+    let state = Arc::new(AppState::new(pool, api_key, supabase_jwks));
 
     // Warm the compiled-contract cache with every stable + deprecated
     // version.  Failure here is logged but does not block boot.
