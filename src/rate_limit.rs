@@ -213,4 +213,22 @@ mod tests {
         assert!(out.reset_unix > 0);
         assert_eq!(out.retry_after_ms, 0); // allowed → no wait
     }
+
+    /// RFC-043 fix-1: two distinct UUIDs must have independent buckets.
+    /// Exhausting one must not affect the other — guards against the old
+    /// nil-UUID bug where all JWT users shared a single global bucket.
+    #[test]
+    fn two_distinct_uuids_have_independent_buckets() {
+        let state = RateLimitState::default();
+        let a = Uuid::new_v4();
+        let b = Uuid::new_v4();
+        // Drain bucket A entirely (burst = 1, rps = 1).
+        let out_a = state.check(a, Some(1), Some(1));
+        assert!(out_a.allowed, "first request on A must be allowed");
+        let out_a2 = state.check(a, Some(1), Some(1));
+        assert!(!out_a2.allowed, "A should be exhausted");
+        // B must still be untouched.
+        let out_b = state.check(b, Some(1), Some(1));
+        assert!(out_b.allowed, "B must be unaffected by A being exhausted");
+    }
 }

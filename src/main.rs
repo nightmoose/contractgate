@@ -762,10 +762,12 @@ async fn require_api_key(
         if let Some(jwks) = &state.supabase_jwks {
             match jwt_auth::verify_supabase_jwt(&bearer, jwks, &state.db).await {
                 Ok(validated) => {
-                    // P1-1: rate-limit JWT sessions by nil UUID with generous defaults
-                    // (dashboard makes many concurrent requests; don't throttle UI).
+                    // RFC-043 fix-1: key by user_id, not api_key_id (nil UUID).
+                    // api_key_id = Uuid::nil() is the "JWT session" sentinel used
+                    // in audit logs — it must not double as a rate-limit key or
+                    // every dashboard user shares one global bucket.
                     let outcome = state.rate_limiter.check(
-                        validated.api_key_id, // nil UUID for JWT sessions
+                        validated.user_id, // real Supabase user UUID
                         Some(500),
                         Some(2_000),
                     );
