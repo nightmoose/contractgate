@@ -7,6 +7,10 @@
 
 set -euo pipefail
 
+# RFC-043 fix-3: playground/validate moved to protected in RFC-042 and now
+# requires an API key.  API_KEY must be set before running this script.
+: "${API_KEY:?API_KEY env var required (RFC-042 moved /playground/validate to protected)}"
+
 BASE="${1:-https://contractgate-api.fly.dev}"
 PASS=0; FAIL=0
 
@@ -134,6 +138,7 @@ check "Dry run → dry_run:true in response" "$R9" '"dry_run":true'
 header "Playground Validate Endpoint"
 PG=$(curl -sf -X POST "$BASE/playground/validate" \
   -H "Content-Type: application/json" \
+  -H "x-api-key: $API_KEY" \
   -d "{\"yaml_content\": $(echo "$CONTRACT_YAML" | python3 -c 'import json,sys; print(json.dumps(sys.stdin.read()))'), \"event\": {\"user_id\":\"test_99\",\"event_type\":\"click\",\"timestamp\":1712000099}}")
 check "Playground validate → passed" "$PG" '"passed":true'
 
