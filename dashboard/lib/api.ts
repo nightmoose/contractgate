@@ -95,35 +95,31 @@ async function extractErrorMessage(res: Response): Promise<string> {
 }
 
 async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
-  // === Aggressive session handling ===
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+  };
+
+  // === Forcefully ensure we have a valid token ===
   if (typeof window !== "undefined") {
     try {
       const supabase = createClient();
+      const { data: { session } } = await supabase.auth.getSession();
 
-      // If we don't have a token yet, try hard to get one
-      if (!_apiSession) {
-        let { data: { session } } = await supabase.auth.getSession();
-
-        if (!session?.access_token) {
-          const { data: refreshed } = await supabase.auth.refreshSession();
-          session = refreshed?.session ?? null;
-        }
-
-        if (session?.access_token) {
-          _apiSession = session.access_token;
+      if (session?.access_token) {
+        headers["authorization"] = `Bearer ${session.access_token}`;
+        // Also update the cache for future calls
+        _apiSession = session.access_token;
+      } else {
+        // Last attempt - try refresh
+        const { data: refreshed } = await supabase.auth.refreshSession();
+        if (refreshed?.session?.access_token) {
+          headers["authorization"] = `Bearer ${refreshed.session.access_token}`;
+          _apiSession = refreshed.session.access_token;
         }
       }
     } catch {
       // non-fatal
     }
-  }
-
-  const headers: Record<string, string> = {
-    "Content-Type": "application/json",
-  };
-
-  if (_apiSession) {
-    headers["authorization"] = `Bearer ${_apiSession}`;
   }
 
   if (_apiOrgId) headers["x-org-id"] = _apiOrgId;
