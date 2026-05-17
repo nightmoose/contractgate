@@ -99,7 +99,7 @@ async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
     "Content-Type": "application/json",
   };
 
-  // === Forcefully ensure we have a valid token ===
+  // Always try to get a fresh token for this request
   if (typeof window !== "undefined") {
     try {
       const supabase = createClient();
@@ -107,19 +107,8 @@ async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
 
       if (session?.access_token) {
         headers["authorization"] = `Bearer ${session.access_token}`;
-        // Also update the cache for future calls
-        _apiSession = session.access_token;
-      } else {
-        // Last attempt - try refresh
-        const { data: refreshed } = await supabase.auth.refreshSession();
-        if (refreshed?.session?.access_token) {
-          headers["authorization"] = `Bearer ${refreshed.session.access_token}`;
-          _apiSession = refreshed.session.access_token;
-        }
       }
-    } catch {
-      // non-fatal
-    }
+    } catch {}
   }
 
   if (_apiOrgId) headers["x-org-id"] = _apiOrgId;
