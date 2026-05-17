@@ -102,7 +102,12 @@ async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
   if (typeof window !== "undefined") {
     try {
       const supabase = createClient();
-      const { data: { session } } = await supabase.auth.getSession();
+      let { data: { session } } = await supabase.auth.getSession();
+
+      if (!session?.access_token) {
+        const { data: refreshed } = await supabase.auth.refreshSession();
+        session = refreshed?.session ?? null;
+      }
 
       if (session?.access_token) {
         headers["authorization"] = `Bearer ${session.access_token}`;
