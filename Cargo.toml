@@ -166,6 +166,10 @@ aws-sdk-iam = { version = "1", optional = true }
 aws-config = { version = "1", optional = true }
 bytes = "1.11.1"
 
+# RFC-039: Supabase JWT verification for dashboard browser sessions.
+# `jwk` feature enables JWK/JWKS support for RS256 key sets.
+jsonwebtoken = { version = "9", features = ["use_pem"] }
+
 [dev-dependencies]
 axum-test = "20"
 tokio-test = "0.4"
