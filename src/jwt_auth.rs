@@ -85,12 +85,7 @@ impl std::fmt::Display for JwtAuthError {
 pub fn jwks_url_from_database_url(database_url: &str) -> Option<String> {
     // Extract host: everything after "@" and before the next ":" or "/".
     let after_at = database_url.split('@').nth(1)?;
-    let host = after_at
-        .split(':')
-        .next()?
-        .split('/')
-        .next()?
-        .trim();
+    let host = after_at.split(':').next()?.split('/').next()?.trim();
 
     // Must be a Supabase host: db.<project>.supabase.co
     if !host.ends_with(".supabase.co") {
@@ -131,10 +126,11 @@ pub async fn verify_supabase_jwt(
     db: &PgPool,
 ) -> Result<ValidatedKey, JwtAuthError> {
     // 1. Decode header (no verification) to get `kid` and algorithm hint.
-    let header = decode_header(token).map_err(|e| JwtAuthError::InvalidToken(e.to_string()))?;
+    let header = decode_header(token)
+        .map_err(|e: jsonwebtoken::errors::Error| JwtAuthError::InvalidToken(e.to_string()))?;
 
     // 2. Find matching JWK(s): prefer kid match, fall back to trying all.
-    let candidates: Vec<_> = if let Some(ref kid) = header.kid {
+    let candidates: Vec<_> = if let Some(kid) = &header.kid {
         jwks.keys
             .iter()
             .filter(|k| k.common.key_id.as_deref() == Some(kid.as_str()))
@@ -181,7 +177,7 @@ pub async fn verify_supabase_jwt(
         let decoding_key = match DecodingKey::from_jwk(jwk) {
             Ok(k) => k,
             Err(e) => {
-                last_err = e.to_string();
+                last_err = format!("{e}");
                 continue 'keys;
             }
         };
@@ -196,7 +192,7 @@ pub async fn verify_supabase_jwt(
                 break 'keys;
             }
             Err(e) => {
-                last_err = e.to_string();
+                last_err = format!("{e}");
             }
         }
     }

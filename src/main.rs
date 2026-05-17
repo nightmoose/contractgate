@@ -22,6 +22,7 @@ use axum::{
     routing::{get, post},
     Router,
 };
+use jsonwebtoken::jwk::JwkSet;
 use sqlx::PgPool;
 use std::{
     collections::HashMap,
@@ -57,6 +58,7 @@ mod infer_openapi;
 mod infer_proto;
 mod infer_url;
 mod ingest;
+mod jwt_auth;
 mod kafka_consumer;
 mod kafka_ingress;
 mod kinesis_consumer;
@@ -110,10 +112,14 @@ pub struct AppState {
     pub kafka_consumers: kafka_consumer::ConsumerPool,
     /// RFC-026: platform-side Kinesis consumer pool (one task per enabled contract).
     pub kinesis_consumers: kinesis_consumer::ConsumerPool,
+    /// RFC-039: Supabase JWKS for verifying RS256 session tokens from the dashboard.
+    /// Fetched once at startup from the project's JWKS endpoint.  None = JWT auth
+    /// disabled (local dev without a Supabase DATABASE_URL).
+    pub supabase_jwks: Option<Arc<JwkSet>>,
 }
 
 impl AppState {
-    pub fn new(db: PgPool, api_key: String) -> Self {
+    pub fn new(db: PgPool, api_key: String, supabase_jwks: Option<Arc<JwkSet>>) -> Self {
         AppState {
             db,
             contract_cache: RwLock::new(HashMap::new()),
@@ -123,6 +129,7 @@ impl AppState {
             stream_demo: std::sync::Arc::new(stream_demo::StreamDemoState::new()),
             kafka_consumers: kafka_consumer::ConsumerPool::new(),
             kinesis_consumers: kinesis_consumer::ConsumerPool::new(),
+            supabase_jwks,
         }
     }
 
@@ -742,6 +749,33 @@ async fn require_api_key(
     mut request: Request,
     next: Next,
 ) -> Result<axum::response::Response, error::AppError> {
+    // RFC-039: Bearer JWT wins — used by the dashboard after Supabase sign-in.
+    // Hard-reject on a bad token so clients see the real error (expired, invalid
+    // signature) rather than silently falling through to a 401 about x-api-key.
+    if let Some(bearer) = request
+        .headers()
+        .get("authorization")
+        .and_then(|v| v.to_str().ok())
+        .and_then(|v| v.strip_prefix("Bearer "))
+        .map(str::to_owned)
+    {
+        if let Some(jwks) = &state.supabase_jwks {
+            match jwt_auth::verify_supabase_jwt(&bearer, jwks, &state.db).await {
+                Ok(validated) => {
+                    request.extensions_mut().insert(validated);
+                    return Ok(next.run(request).await);
+                }
+                Err(e) => {
+                    tracing::warn!("JWT verification failed: {e}");
+                    return Err(error::AppError::Unauthorized);
+                }
+            }
+        } else {
+            tracing::warn!("Bearer token received but JWKS not loaded — rejecting");
+            return Err(error::AppError::Unauthorized);
+        }
+    }
+
     let provided = request
         .headers()
         .get("x-api-key")
@@ -1108,7 +1142,27 @@ async fn main() -> anyhow::Result<()> {
         tracing::info!("API key authentication enabled");
     }
 
-    let state = Arc::new(AppState::new(pool, api_key));
+    // RFC-039: fetch Supabase JWKS for RS256 dashboard session auth.
+    // Derived from DATABASE_URL — no extra env var required.
+    let supabase_jwks: Option<Arc<JwkSet>> =
+        match jwt_auth::jwks_url_from_database_url(&database_url) {
+            Some(url) => match jwt_auth::fetch_jwks(&url).await {
+                Ok(jwks) => {
+                    tracing::info!("Supabase JWKS loaded — Bearer JWT auth enabled");
+                    Some(Arc::new(jwks))
+                }
+                Err(e) => {
+                    tracing::warn!("Failed to fetch Supabase JWKS: {e} — Bearer JWT auth disabled");
+                    None
+                }
+            },
+            None => {
+                tracing::info!("DATABASE_URL is not a Supabase host — Bearer JWT auth disabled");
+                None
+            }
+        };
+
+    let state = Arc::new(AppState::new(pool, api_key, supabase_jwks));
 
     // Warm the compiled-contract cache with every stable + deprecated
     // version.  Failure here is logged but does not block boot.
