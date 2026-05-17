@@ -1369,3 +1369,56 @@ Implemented RFC-031 end-to-end (resuming from a prior session that hit a usage l
 - No dashboard changes in this RFC (scorecard UI deferred per RFC-031 Out of Scope).
 
 ---
+
+## Nightly 2026-05-16 — RFC-039: Supabase-JWT Auth (P0-1)
+
+### Problem fixed
+
+Dashboard could not authenticate to the Rust backend. `NEXT_PUBLIC_API_KEY` was
+a build-time env var — if unset, every SWR call returned 401 and the contracts
+list and audit log appeared empty (the bug Alex was seeing). Even when set, all
+users shared one key with a single fixed `org_id`, making multi-tenancy
+impossible.
+
+### Files Created
+
+- `docs/rfcs/039-supabase-jwt-auth.md` — RFC and implementation spec
+- `src/jwt_auth.rs` — HS256 JWT verification, `sub` → UUID, org lookup via
+  `org_memberships`, returns `ValidatedKey` (nil `api_key_id` = JWT session)
+
+### Files Modified
+
+- `Cargo.toml` — added `jsonwebtoken = "9"`
+- `src/main.rs`:
+  - `AppState` gains `supabase_jwt_secret: Option<String>`
+  - `AppState::new()` takes the new field
+  - Reads `SUPABASE_JWT_SECRET` env var on boot
+  - `require_api_key` renamed to `require_auth`; new logic: check
+    `Authorization: Bearer` first (hard-reject on failure), then fall back to
+    `x-api-key` (DB-backed + legacy env-var paths unchanged)
+  - Added `mod jwt_auth;`
+- `dashboard/lib/api.ts`:
+  - `setApiSession()` + `_apiSession` module var
+  - `apiFetch` sends `Authorization: Bearer` when session token present and no
+    static `API_KEY`; same fix applied to `exportOdcs`
+  - Fixed `BASE` default from `:8080` → `:3001` (matches `main.rs PORT`)
+- `dashboard/components/OrgProvider.tsx`:
+  - Seeds `_apiSession` from `supabase.auth.getSession()` on mount
+  - Wires `onAuthStateChange` so token refreshes + sign-out propagate
+- `.env.example` — added `SUPABASE_JWT_SECRET` with instructions
+- `dashboard/.env.local` — commented out `NEXT_PUBLIC_API_KEY`; noted JWT path
+
+### Build status
+
+- `cargo check`: **passed** (confirmed by user 2026-05-16)
+- `cargo test`: pending
+
+### Rollout
+
+1. `fly secrets set SUPABASE_JWT_SECRET=<jwt-secret>` before deploying binary
+2. Deploy Rust backend
+3. Deploy dashboard
+4. Verify: log in → contracts list and audit log populate
+5. After confirming, remove `NEXT_PUBLIC_API_KEY` from Vercel env vars
+
+---
