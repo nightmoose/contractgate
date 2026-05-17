@@ -57,7 +57,6 @@ mod infer_openapi;
 mod infer_proto;
 mod infer_url;
 mod ingest;
-mod jwt_auth;
 mod kafka_consumer;
 mod kafka_ingress;
 mod kinesis_consumer;
@@ -111,18 +110,10 @@ pub struct AppState {
     pub kafka_consumers: kafka_consumer::ConsumerPool,
     /// RFC-026: platform-side Kinesis consumer pool (one task per enabled contract).
     pub kinesis_consumers: kinesis_consumer::ConsumerPool,
-    /// RFC-039: Cached Supabase JWKS for verifying dashboard session tokens
-    /// (RS256/ES256).  Fetched at startup from SUPABASE_URL.
-    /// None = JWT auth branch disabled (SUPABASE_URL not configured).
-    pub supabase_jwks: Option<Arc<jsonwebtoken::jwk::JwkSet>>,
 }
 
 impl AppState {
-    pub fn new(
-        db: PgPool,
-        api_key: String,
-        supabase_jwks: Option<Arc<jsonwebtoken::jwk::JwkSet>>,
-    ) -> Self {
+    pub fn new(db: PgPool, api_key: String) -> Self {
         AppState {
             db,
             contract_cache: RwLock::new(HashMap::new()),
@@ -132,7 +123,6 @@ impl AppState {
             stream_demo: std::sync::Arc::new(stream_demo::StreamDemoState::new()),
             kafka_consumers: kafka_consumer::ConsumerPool::new(),
             kinesis_consumers: kinesis_consumer::ConsumerPool::new(),
-            supabase_jwks,
         }
     }
 
@@ -747,72 +737,22 @@ async fn playground_handler(
 // Auth middleware
 // ---------------------------------------------------------------------------
 
-/// Unified auth middleware (RFC-039).
-///
-/// Accepts two credential types in precedence order:
-///
-/// 1. **Supabase JWT** (`Authorization: Bearer <token>`) — for dashboard
-///    browser sessions.  Requires `SUPABASE_JWT_SECRET` to be set.
-///    Verified inline (no cache); Supabase tokens expire in ~1 h by default.
-///    If the JWT path is attempted but verification fails, we return 401
-///    immediately and do NOT fall through to the API-key check — this avoids
-///    a confused-deputy where a valid API key hidden in `x-api-key` could
-///    silently satisfy a request whose Bearer token was rejected.
-///
-/// 2. **DB-backed API key** (`x-api-key`) — for server-to-server traffic
-///    (CLI, SDKs, Kafka connectors).  Validated against the DB with a 60-s
-///    in-process cache.  Legacy env-var key still accepted for zero-downtime
-///    migration.
-///
-/// Dev mode (no auth configured at all) passes through as before.
-async fn require_auth(
+async fn require_api_key(
     State(state): State<Arc<AppState>>,
     mut request: Request,
     next: Next,
 ) -> Result<axum::response::Response, error::AppError> {
-    // Dev mode: no auth configured at all — pass through.
-    if state.api_key.is_empty() && state.supabase_jwks.is_none() {
-        return Ok(next.run(request).await);
-    }
-
-    // --- Branch 1: Supabase JWT (Authorization: Bearer) ---
-    let bearer = request
-        .headers()
-        .get("authorization")
-        .and_then(|v| v.to_str().ok())
-        .and_then(|v| v.strip_prefix("Bearer "))
-        .map(str::to_owned);
-
-    if let Some(token) = bearer {
-        let jwks = match &state.supabase_jwks {
-            Some(j) => j.clone(),
-            None => {
-                // Bearer sent but JWKS not loaded — reject cleanly.
-                tracing::warn!(
-                    "Bearer JWT received but SUPABASE_URL not configured / JWKS not loaded"
-                );
-                return Err(error::AppError::Unauthorized);
-            }
-        };
-        match jwt_auth::verify_supabase_jwt(&token, &jwks, &state.db).await {
-            Ok(validated) => {
-                request.extensions_mut().insert(validated);
-                return Ok(next.run(request).await);
-            }
-            Err(e) => {
-                tracing::warn!("JWT auth failed: {e}");
-                return Err(error::AppError::Unauthorized);
-            }
-        }
-    }
-
-    // --- Branch 2: DB-backed API key ---
     let provided = request
         .headers()
         .get("x-api-key")
         .and_then(|v| v.to_str().ok())
         .unwrap_or("")
         .to_owned();
+
+    // Dev mode: no auth configured at all — pass through.
+    if state.api_key.is_empty() {
+        return Ok(next.run(request).await);
+    }
 
     // DB-backed key: validate via cache (60-second TTL).
     // Checked FIRST so that if the same value is also set as the legacy
@@ -822,6 +762,8 @@ async fn require_auth(
     if !provided.is_empty() {
         match state.key_cache.validate(&provided, &state.db).await {
             Ok(validated) => {
+                // Inject the validated key into request extensions so
+                // downstream handlers can scope queries to the correct org.
                 request.extensions_mut().insert(validated);
                 return Ok(next.run(request).await);
             }
@@ -838,7 +780,7 @@ async fn require_auth(
         return Ok(next.run(request).await);
     }
 
-    tracing::warn!("Rejected request: missing or invalid credentials");
+    tracing::warn!("Rejected request: missing or invalid x-api-key");
     Err(error::AppError::Unauthorized)
 }
 
@@ -1081,7 +1023,10 @@ fn build_router(state: Arc<AppState>) -> Router {
         // Audit + stats
         .route("/audit", get(audit_log_handler))
         .route("/stats", get(global_stats_handler))
-        .layer(middleware::from_fn_with_state(state.clone(), require_auth));
+        .layer(middleware::from_fn_with_state(
+            state.clone(),
+            require_api_key,
+        ));
 
     // v1 ingest: own sub-router so the 10 MB RequestBodyLimitLayer is scoped
     // to this route only and does not affect other routes.  Auth middleware
@@ -1095,7 +1040,10 @@ fn build_router(state: Arc<AppState>) -> Router {
         .layer(tower_http::limit::RequestBodyLimitLayer::new(
             10 * 1024 * 1024, // 10 MB — RFC-021
         ))
-        .layer(middleware::from_fn_with_state(state.clone(), require_auth));
+        .layer(middleware::from_fn_with_state(
+            state.clone(),
+            require_api_key,
+        ));
 
     Router::new()
         .merge(public)
@@ -1160,29 +1108,7 @@ async fn main() -> anyhow::Result<()> {
         tracing::info!("API key authentication enabled");
     }
 
-    // RFC-039: fetch Supabase JWKS for RS256 session-token verification.
-    // Derive the project URL from DATABASE_URL (already required) so no
-    // additional env var is needed.
-    // DATABASE_URL format: postgresql://user:pass@db.<project>.supabase.co:5432/db
-    // JWKS URL:            https://<project>.supabase.co/auth/v1/.well-known/jwks.json
-    let supabase_jwks = match jwt_auth::jwks_url_from_database_url(&database_url) {
-        Some(jwks_url) => match jwt_auth::fetch_jwks(&jwks_url).await {
-            Ok(jwks) => {
-                tracing::info!("Supabase-JWT auth enabled via JWKS (RFC-039)");
-                Some(Arc::new(jwks))
-            }
-            Err(e) => {
-                tracing::error!("Failed to fetch Supabase JWKS — JWT auth disabled: {e}");
-                None
-            }
-        },
-        None => {
-            tracing::warn!("DATABASE_URL is not a Supabase URL — JWT auth disabled");
-            None
-        }
-    };
-
-    let state = Arc::new(AppState::new(pool, api_key, supabase_jwks));
+    let state = Arc::new(AppState::new(pool, api_key));
 
     // Warm the compiled-contract cache with every stable + deprecated
     // version.  Failure here is logged but does not block boot.

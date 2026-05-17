@@ -20,7 +20,7 @@
 import * as yaml from "js-yaml";
 import { DEMO_MODE, DEMO_ORG_UUID } from "@/lib/demo";
 
-const BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001";
+const BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8080";
 const API_KEY = process.env.NEXT_PUBLIC_API_KEY ?? "";
 
 /**
@@ -37,20 +37,6 @@ let _apiOrgId: string | null = DEMO_MODE ? DEMO_ORG_UUID : null;
 
 export function setApiOrgId(orgId: string): void {
   _apiOrgId = orgId;
-}
-
-/**
- * RFC-039: Supabase session JWT for authenticating dashboard browser traffic
- * against the Rust backend.  Set by OrgProvider after sign-in; refreshed
- * automatically via onAuthStateChange.
- *
- * When set (and NEXT_PUBLIC_API_KEY is absent), apiFetch sends
- * `Authorization: Bearer <token>` instead of `x-api-key`.
- */
-let _apiSession: string | null = null;
-
-export function setApiSession(token: string | null): void {
-  _apiSession = token;
 }
 
 /** Parse name + description out of a contract YAML string. */
@@ -99,13 +85,7 @@ async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
   };
-  // RFC-039: prefer Bearer JWT for browser sessions; fall back to API key for
-  // server-to-server traffic (CLI, SDKs, Kafka connectors).
-  if (_apiSession && !API_KEY) {
-    headers["authorization"] = `Bearer ${_apiSession}`;
-  } else if (API_KEY) {
-    headers["x-api-key"] = API_KEY;
-  }
+  if (API_KEY) headers["x-api-key"] = API_KEY;
   if (_apiOrgId) headers["x-org-id"] = _apiOrgId;
   // Merge any caller-supplied headers (supports Headers, string[][], or plain object)
   if (init?.headers) {
@@ -726,12 +706,7 @@ export const exportOdcs = async (
   version: string
 ): Promise<string> => {
   const headers: Record<string, string> = {};
-  // RFC-039: mirror the apiFetch auth logic for this manual-header path.
-  if (_apiSession && !API_KEY) {
-    headers["authorization"] = `Bearer ${_apiSession}`;
-  } else if (API_KEY) {
-    headers["x-api-key"] = API_KEY;
-  }
+  if (API_KEY) headers["x-api-key"] = API_KEY;
   if (_apiOrgId) headers["x-org-id"] = _apiOrgId;
   const res = await fetch(
     `${BASE}/contracts/${contractId}/versions/${encodeURIComponent(version)}/export`,
