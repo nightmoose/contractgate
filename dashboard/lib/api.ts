@@ -95,41 +95,46 @@ async function extractErrorMessage(res: Response): Promise<string> {
 }
 
 async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
+  // RFC-039: lazy session bootstrap — if OrgProvider hasn't fired yet (race
+  // condition on first render), pull the token directly from Supabase's cached
+  // session so the first SWR fetch carries a Bearer token instead of 401-ing.
+  if (!_apiSession && typeof window !== "undefined") {
+    try {
+      const { data: { session } } = await createClient().auth.getSession();
+      if (session?.access_token) _apiSession = session.access_token;
+    } catch {
+      // non-fatal — proceed without token, backend will 401 if auth required
+    }
+  }
+
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
   };
-
-  if (typeof window !== "undefined") {
-    try {
-      const supabase = createClient();
-      let { data: { session } } = await supabase.auth.getSession();
-
-      if (!session?.access_token) {
-        const { data: refreshed } = await supabase.auth.refreshSession();
-        session = refreshed?.session ?? null;
-      }
-
-      if (session?.access_token) {
-        headers["authorization"] = `Bearer ${session.access_token}`;
-      }
-    } catch {}
+  // RFC-039: Bearer JWT wins for browser sessions; x-api-key is the fallback
+  // for server-to-server traffic (CLI, SDKs) where no session is available.
+  if (_apiSession) {
+    headers["authorization"] = `Bearer ${_apiSession}`;
+  } else if (API_KEY) {
+    headers["x-api-key"] = API_KEY;
   }
-
   if (_apiOrgId) headers["x-org-id"] = _apiOrgId;
-
+  // Merge any caller-supplied headers (supports Headers, string[][], or plain object)
   if (init?.headers) {
     new Headers(init.headers).forEach((v, k) => {
       headers[k] = v;
     });
   }
-
   const res = await fetch(`${BASE}${path}`, { ...init, headers });
-
+  // 207 Multi-Status is a valid success response from the ingest endpoint
   if (!res.ok && res.status !== 207) {
+    // Try JSON first (the Rust API always returns `{error, status}` on
+    // failure).  If that fails — e.g. the server returned an HTML error
+    // page from a proxy, or an empty body — fall back to the raw text so
+    // the thrown Error carries something more useful than `statusText`.
     const message = await extractErrorMessage(res);
     throw new Error(message);
   }
-
+  // 204 No Content — typed as void by callers
   if (res.status === 204) return undefined as T;
   return res.json() as Promise<T>;
 }
