@@ -95,25 +95,27 @@ async function extractErrorMessage(res: Response): Promise<string> {
 }
 
 async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
-  // RFC-039: lazy session bootstrap — if OrgProvider hasn't fired yet (race
-  // condition on first render), pull the token directly from Supabase's cached
-  // session so the first SWR fetch carries a Bearer token instead of 401-ing.
-  if (!_apiSession && typeof window !== "undefined") {
-    try {
-      const supabase = createClient();
-      let { data: { session } } = await supabase.auth.getSession();
+  // === NEW: Always ensure we have a session token if we're in the browser ===
+  if (typeof window !== "undefined") {
+    if (!_apiSession) {
+      try {
+        const supabase = createClient();
 
-      if (!session?.access_token) {
-        // Try one refresh if getSession() returned nothing but user might be logged in
-        const { data: refreshed } = await supabase.auth.refreshSession();
-        session = refreshed?.session ?? null;
-      }
+        // Try current session first
+        let { data: { session } } = await supabase.auth.getSession();
 
-      if (session?.access_token) {
-        _apiSession = session.access_token;
+        // If still nothing, force a refresh
+        if (!session?.access_token) {
+          const { data: refreshed } = await supabase.auth.refreshSession();
+          session = refreshed?.session ?? null;
+        }
+
+        if (session?.access_token) {
+          _apiSession = session.access_token;
+        }
+      } catch {
+        // non-fatal
       }
-    } catch {
-      // non-fatal — proceed without token, backend will 401 if auth required
     }
   }
 
@@ -124,26 +126,24 @@ async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
   if (_apiSession) {
     headers["authorization"] = `Bearer ${_apiSession}`;
   }
-  // Removed the else if (API_KEY) branch — it was the old insecure fallback
+  // Note: x-api-key fallback has been removed
 
   if (_apiOrgId) headers["x-org-id"] = _apiOrgId;
-  // Merge any caller-supplied headers (supports Headers, string[][], or plain object)
+
+  // Merge caller headers...
   if (init?.headers) {
     new Headers(init.headers).forEach((v, k) => {
       headers[k] = v;
     });
   }
+
   const res = await fetch(`${BASE}${path}`, { ...init, headers });
-  // 207 Multi-Status is a valid success response from the ingest endpoint
+
   if (!res.ok && res.status !== 207) {
-    // Try JSON first (the Rust API always returns `{error, status}` on
-    // failure).  If that fails — e.g. the server returned an HTML error
-    // page from a proxy, or an empty body — fall back to the raw text so
-    // the thrown Error carries something more useful than `statusText`.
     const message = await extractErrorMessage(res);
     throw new Error(message);
   }
-  // 204 No Content — typed as void by callers
+
   if (res.status === 204) return undefined as T;
   return res.json() as Promise<T>;
 }
