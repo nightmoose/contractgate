@@ -19,6 +19,7 @@
 
 import * as yaml from "js-yaml";
 import { DEMO_MODE, DEMO_ORG_UUID } from "@/lib/demo";
+import { createClient } from "@/lib/supabase/client";
 
 const BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001";
 const API_KEY = process.env.NEXT_PUBLIC_API_KEY ?? "";
@@ -94,6 +95,18 @@ async function extractErrorMessage(res: Response): Promise<string> {
 }
 
 async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
+  // RFC-039: lazy session bootstrap — if OrgProvider hasn't fired yet (race
+  // condition on first render), pull the token directly from Supabase's cached
+  // session so the first SWR fetch carries a Bearer token instead of 401-ing.
+  if (!_apiSession && typeof window !== "undefined") {
+    try {
+      const { data: { session } } = await createClient().auth.getSession();
+      if (session?.access_token) _apiSession = session.access_token;
+    } catch {
+      // non-fatal — proceed without token, backend will 401 if auth required
+    }
+  }
+
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
   };
