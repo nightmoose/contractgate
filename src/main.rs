@@ -899,25 +899,6 @@ fn build_router(state: Arc<AppState>) -> Router {
             "/contracts/{id}/versions/{version}/odcs-conformance",
             get(odcs_conformance_handler),
         )
-        // Contract inference — JSON samples
-        .route("/contracts/infer", post(infer::infer_handler))
-        // Contract inference — format-specific routes (RFC-006, RFC-035)
-        .route(
-            "/contracts/infer/avro",
-            post(infer_avro::infer_avro_handler),
-        )
-        .route(
-            "/contracts/infer/proto",
-            post(infer_proto::infer_proto_handler),
-        )
-        .route(
-            "/contracts/infer/openapi",
-            post(infer_openapi::infer_openapi_handler),
-        )
-        // CSV inference (RFC-035)
-        .route("/contracts/infer/csv", post(infer_csv::infer_csv_handler))
-        // URL inference (RFC-037)
-        .route("/contracts/infer/url", post(infer_url::infer_url_handler))
         // Evolution diff summarizer (RFC-006)
         .route("/contracts/diff", post(infer_diff::diff_handler))
         // Brownfield contract scaffolder (RFC-024)
@@ -1081,10 +1062,41 @@ fn build_router(state: Arc<AppState>) -> Router {
         // Previously unauthenticated + unlimited; now gated + capped at 1 MB
         // along with the rest of the protected surface.
         .route("/playground/validate", post(playground_handler))
-        // P1-2: 1 MB body limit on all protected routes, including playground.
-        // Prevents oversized YAML blobs on /contracts, /infer/*, /playground/*, etc.
+        // P1-2: 1 MB body limit on all protected routes.
+        // /contracts/infer/* is carved out below with a 10 MB cap (RFC-043 fix-2).
         .layer(tower_http::limit::RequestBodyLimitLayer::new(
             1024 * 1024, // 1 MB
+        ))
+        .layer(middleware::from_fn_with_state(
+            state.clone(),
+            require_api_key,
+        ));
+
+    // RFC-043 fix-2: inference routes get 10 MB — real OpenAPI specs (e.g.
+    // Stripe's) exceed 1 MB; capping them at 1 MB causes 413 on first real use.
+    // Auth middleware applied here so both groups share the same auth path.
+    let infer = Router::new()
+        // Contract inference — JSON samples
+        .route("/contracts/infer", post(infer::infer_handler))
+        // Contract inference — format-specific routes (RFC-006, RFC-035)
+        .route(
+            "/contracts/infer/avro",
+            post(infer_avro::infer_avro_handler),
+        )
+        .route(
+            "/contracts/infer/proto",
+            post(infer_proto::infer_proto_handler),
+        )
+        .route(
+            "/contracts/infer/openapi",
+            post(infer_openapi::infer_openapi_handler),
+        )
+        // CSV inference (RFC-035)
+        .route("/contracts/infer/csv", post(infer_csv::infer_csv_handler))
+        // URL inference (RFC-037)
+        .route("/contracts/infer/url", post(infer_url::infer_url_handler))
+        .layer(tower_http::limit::RequestBodyLimitLayer::new(
+            10 * 1024 * 1024, // 10 MB — matches v1_ingest cap
         ))
         .layer(middleware::from_fn_with_state(
             state.clone(),
@@ -1111,6 +1123,7 @@ fn build_router(state: Arc<AppState>) -> Router {
     Router::new()
         .merge(public)
         .merge(protected)
+        .merge(infer)
         .merge(v1)
         .layer(cors)
         .layer(middleware::from_fn(observability::track_requests))
