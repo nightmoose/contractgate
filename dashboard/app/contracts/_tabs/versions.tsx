@@ -8,24 +8,9 @@
 
 import { useState, useCallback, useEffect } from "react";
 import clsx from "clsx";
-import { getVersion, exportOdcs, approveImport, getConformanceReport } from "@/lib/api";
-import type { ContractResponse, VersionSummary, VersionResponse, NameHistoryEntry, ConformanceReport } from "@/lib/api";
+import { getVersion, exportOdcs, approveImport, getConformanceReport, diffContracts } from "@/lib/api";
+import type { ContractResponse, VersionSummary, VersionResponse, NameHistoryEntry, ConformanceReport, DiffResponse } from "@/lib/api";
 import { ConfirmActionModal, TooltipWrap } from "../_lib";
-
-// ---------------------------------------------------------------------------
-// Diff drawer types (mirrors src/infer_diff.rs DiffResponse)
-// ---------------------------------------------------------------------------
-
-interface DiffChange {
-  kind: string;
-  field: string;
-  detail: string;
-}
-
-interface DiffResponse {
-  summary: string;
-  changes: DiffChange[];
-}
 
 // ---------------------------------------------------------------------------
 // VersionsTab
@@ -75,8 +60,6 @@ export function VersionsTab({
   const [diffLoading, setDiffLoading] = useState(false);
   const [diffResult, setDiffResult] = useState<DiffResponse | null>(null);
   const [diffError, setDiffError] = useState<string | null>(null);
-
-  const BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001";
 
   // ODCS export loading map: version → loading state
   const [exportingVersion, setExportingVersion] = useState<string | null>(null);
@@ -186,19 +169,7 @@ export function VersionsTab({
         getVersion(contractId, compareSet[0]),
         getVersion(contractId, compareSet[1]),
       ]);
-      const res = await fetch(`${BASE}/contracts/diff`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          contract_yaml_a: vA.yaml_content,
-          contract_yaml_b: vB.yaml_content,
-        }),
-      });
-      if (!res.ok) {
-        const text = await res.text();
-        throw new Error(text || `Diff failed: ${res.status}`);
-      }
-      const data: DiffResponse = await res.json();
+      const data = await diffContracts(vA.yaml_content, vB.yaml_content);
       setDiffResult(data);
     } catch (e: unknown) {
       setDiffError(e instanceof Error ? e.message : String(e));

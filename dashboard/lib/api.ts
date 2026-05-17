@@ -20,7 +20,7 @@
 import * as yaml from "js-yaml";
 import { DEMO_MODE, DEMO_ORG_UUID } from "@/lib/demo";
 
-const BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8080";
+const BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001";
 const API_KEY = process.env.NEXT_PUBLIC_API_KEY ?? "";
 
 /**
@@ -37,6 +37,18 @@ let _apiOrgId: string | null = DEMO_MODE ? DEMO_ORG_UUID : null;
 
 export function setApiOrgId(orgId: string): void {
   _apiOrgId = orgId;
+}
+
+/**
+ * RFC-039: Supabase session JWT for authenticating dashboard browser traffic
+ * against the Rust backend.  Set by OrgProvider after sign-in; refreshed
+ * automatically via onAuthStateChange.  When set, apiFetch sends
+ * `Authorization: Bearer <token>` instead of `x-api-key`.
+ */
+let _apiSession: string | null = null;
+
+export function setApiSession(token: string | null): void {
+  _apiSession = token;
 }
 
 /** Parse name + description out of a contract YAML string. */
@@ -85,7 +97,13 @@ async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
   };
-  if (API_KEY) headers["x-api-key"] = API_KEY;
+  // RFC-039: Bearer JWT wins for browser sessions; x-api-key is the fallback
+  // for server-to-server traffic (CLI, SDKs) where no session is available.
+  if (_apiSession) {
+    headers["authorization"] = `Bearer ${_apiSession}`;
+  } else if (API_KEY) {
+    headers["x-api-key"] = API_KEY;
+  }
   if (_apiOrgId) headers["x-org-id"] = _apiOrgId;
   // Merge any caller-supplied headers (supports Headers, string[][], or plain object)
   if (init?.headers) {
@@ -520,6 +538,30 @@ export const getReplayHistory = (params?: {
 // ---------------------------------------------------------------------------
 // Playground
 // ---------------------------------------------------------------------------
+// Contract diff (mirrors src/infer_diff.rs DiffResponse)
+// ---------------------------------------------------------------------------
+
+export interface DiffChange {
+  kind: string;
+  field: string;
+  detail: string;
+}
+
+export interface DiffResponse {
+  summary: string;
+  changes: DiffChange[];
+}
+
+export const diffContracts = (
+  contract_yaml_a: string,
+  contract_yaml_b: string
+) =>
+  apiFetch<DiffResponse>("/contracts/diff", {
+    method: "POST",
+    body: JSON.stringify({ contract_yaml_a, contract_yaml_b }),
+  });
+
+// ---------------------------------------------------------------------------
 
 export const playgroundValidate = (
   yaml_content: string,
@@ -706,7 +748,11 @@ export const exportOdcs = async (
   version: string
 ): Promise<string> => {
   const headers: Record<string, string> = {};
-  if (API_KEY) headers["x-api-key"] = API_KEY;
+  if (_apiSession) {
+    headers["authorization"] = `Bearer ${_apiSession}`;
+  } else if (API_KEY) {
+    headers["x-api-key"] = API_KEY;
+  }
   if (_apiOrgId) headers["x-org-id"] = _apiOrgId;
   const res = await fetch(
     `${BASE}/contracts/${contractId}/versions/${encodeURIComponent(version)}/export`,
