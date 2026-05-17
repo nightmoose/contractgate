@@ -1781,7 +1781,7 @@ type Tab = "list" | "consumed" | "build" | "generate" | "csv" | "quarantine";
 function ContractsContent() {
   const router = useRouter();
   const { org } = useOrg();
-  const { data: contracts, isLoading } = useSWR<ContractSummary[]>(
+  const { data: contracts, isLoading, error: contractsError } = useSWR<ContractSummary[]>(
     org ? "contracts" : null,
     listContracts
   );
@@ -1838,6 +1838,15 @@ function ContractsContent() {
           onSaved={() => setEditingId(null)}
           onTestInPlayground={handleTestInPlayground}
         />
+      )}
+
+      {contractsError && (
+        <div className="mb-4 rounded-lg border border-red-300 bg-red-50 px-4 py-3 text-sm text-red-700">
+          <strong>Failed to load contracts:</strong>{" "}
+          {contractsError instanceof Error
+            ? contractsError.message
+            : String(contractsError)}
+        </div>
       )}
 
       <div className="flex items-center justify-between mb-6">
