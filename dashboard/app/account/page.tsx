@@ -45,10 +45,10 @@ function generateRawKey(): string {
   return `cg_live_${hex}`;
 }
 
-// Simple browser-compatible hash using SubtleCrypto (SHA-256 then base64).
-// Note: for production, the hash should be bcrypt — this is the client-side
-// representation sent to the server which should re-hash with bcrypt before
-// storage. The API route handles bcrypt hashing.
+// SHA-256 hash of the raw key, base64-encoded via SubtleCrypto.
+// This IS the final stored value — api_key_auth.rs verifies with the same
+// SHA-256/base64 digest.  High-entropy keys (224+ bits) make SHA-256
+// equivalent to bcrypt here.  See RFC-041 / migration 024.
 async function hashKey(raw: string): Promise<string> {
   const encoder = new TextEncoder();
   const data = encoder.encode(raw);
