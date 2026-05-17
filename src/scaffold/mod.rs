@@ -563,6 +563,8 @@ fn field_type_str(ft: &FieldType) -> &'static str {
         FieldType::Object => "object",
         FieldType::Array => "array",
         FieldType::Any => "any",
+        // RFC-044
+        FieldType::Date => "date",
     }
 }
 

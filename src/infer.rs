@@ -18,7 +18,7 @@
 //! | All values are objects             | `type: object` + properties     |
 //! | All values are arrays              | `type: array` + items           |
 //! | All strings match UUID shape       | `pattern: ^[0-9a-f]{8}-…$`     |
-//! | All strings match ISO-8601 date    | `pattern: ^\d{4}-\d{2}-\d{2}$` |
+//! | All strings match ISO-8601 date    | `type: date` (RFC-044)          |
 //! | All strings match ISO-8601 dt      | `pattern: ^\d{4}-…T\d{2}:…$`   |
 //! | ≤8 distinct string values, ≥2 seen | `enum: [...]`                   |
 //! | Mixed types across samples         | `type: any`                     |
@@ -326,7 +326,12 @@ fn refine_string(def: &mut FieldDefinition, strings: &[&str], total_samples: usi
     }
 
     if strings.iter().all(|s| looks_like_date(s)) {
-        def.pattern = Some(r"^\d{4}-\d{2}-\d{2}$".to_string());
+        // RFC-044: promote to native date type — calendar validation now
+        // happens in the engine, no regex needed.
+        def.field_type = FieldType::Date;
+        def.pattern = None;
+        def.min_length = None;
+        def.max_length = None;
         return;
     }
 

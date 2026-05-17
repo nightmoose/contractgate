@@ -44,6 +44,8 @@ fn field_type_to_logical(ft: &FieldType) -> &'static str {
         FieldType::Object => "object",
         FieldType::Array => "array",
         FieldType::Any => "any",
+        // RFC-044
+        FieldType::Date => "date",
     }
 }
 
@@ -54,6 +56,8 @@ fn logical_to_field_type(s: &str) -> FieldType {
         "boolean" | "bool" => FieldType::Boolean,
         "object" | "record" | "struct" => FieldType::Object,
         "array" | "list" => FieldType::Array,
+        // RFC-044: date32 is the Arrow/Iceberg alias
+        "date" | "date32" => FieldType::Date,
         _ => FieldType::String,
     }
 }

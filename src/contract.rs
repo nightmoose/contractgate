@@ -161,6 +161,10 @@ pub enum FieldType {
     Array,
     /// Field may hold any JSON value (use sparingly — weakens contract)
     Any,
+    /// RFC-044: calendar-aware date. Value must be a JSON string in YYYY-MM-DD
+    /// format and must represent a real calendar date (e.g. month ≤ 12).
+    /// Maps to ODCS `logicalType: date`.
+    Date,
 }
 
 fn default_true() -> bool {

@@ -633,6 +633,8 @@ fn validate_value(
         FieldType::Object => value.is_object(),
         FieldType::Array => value.is_array(),
         FieldType::Any => true,
+        // RFC-044: date must be a string; calendar check runs below
+        FieldType::Date => value.is_string(),
     };
 
     if !type_ok {
@@ -688,6 +690,20 @@ fn validate_value(
                     field: path.to_string(),
                     message: format!(
                         "Field '{}' value {:?} does not match required pattern",
+                        path, s
+                    ),
+                    kind: ViolationKind::PatternMismatch,
+                });
+            }
+        }
+
+        // RFC-044: calendar validation for date fields
+        if field.field_type == FieldType::Date {
+            if chrono::NaiveDate::parse_from_str(s, "%Y-%m-%d").is_err() {
+                violations.push(Violation {
+                    field: path.to_string(),
+                    message: format!(
+                        "Field '{}' value {:?} is not a valid calendar date (expected YYYY-MM-DD)",
                         path, s
                     ),
                     kind: ViolationKind::PatternMismatch,
