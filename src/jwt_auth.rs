@@ -75,29 +75,44 @@ impl std::fmt::Display for JwtAuthError {
 
 /// Derive the Supabase JWKS URL from `DATABASE_URL`.
 ///
-/// Supabase database URLs have the form:
-/// `postgresql://user:pass@db.<project>.supabase.co:5432/postgres`
+/// Handles both Supabase connection string formats:
 ///
-/// The JWKS endpoint is at:
-/// `https://<project>.supabase.co/auth/v1/.well-known/jwks.json`
+/// 1. Direct:  `postgresql://user:pass@db.<project>.supabase.co:5432/postgres`
+/// 2. Pooler:  `postgresql://postgres.<project>:pass@aws-0-<region>.pooler.supabase.com:6543/postgres`
 ///
-/// Returns `None` if the URL doesn't look like a Supabase host.
+/// Returns `None` if the URL doesn't match either format.
 pub fn jwks_url_from_database_url(database_url: &str) -> Option<String> {
-    // Extract host: everything after "@" and before the next ":" or "/".
     let after_at = database_url.split('@').nth(1)?;
     let host = after_at.split(':').next()?.split('/').next()?.trim();
 
-    // Must be a Supabase host: db.<project>.supabase.co
-    if !host.ends_with(".supabase.co") {
-        return None;
+    // Format 1: direct — db.<project>.supabase.co
+    if host.ends_with(".supabase.co") {
+        let project_host = host.strip_prefix("db.").unwrap_or(host);
+        return Some(format!(
+            "https://{}/auth/v1/.well-known/jwks.json",
+            project_host
+        ));
     }
-    // Strip the "db." prefix added by Supabase for the Postgres endpoint.
-    let project_host = host.strip_prefix("db.").unwrap_or(host);
 
-    Some(format!(
-        "https://{}/auth/v1/.well-known/jwks.json",
-        project_host
-    ))
+    // Format 2: pooler — aws-0-<region>.pooler.supabase.com
+    // Project ref is in the username: postgres.<project>
+    if host.ends_with(".pooler.supabase.com") {
+        let before_at = database_url.split('@').next()?;
+        let credentials = before_at
+            .trim_start_matches("postgresql://")
+            .trim_start_matches("postgres://");
+        let user = credentials.split(':').next()?.trim();
+        if let Some(project_ref) = user.strip_prefix("postgres.") {
+            if !project_ref.is_empty() {
+                return Some(format!(
+                    "https://{}.supabase.co/auth/v1/.well-known/jwks.json",
+                    project_ref
+                ));
+            }
+        }
+    }
+
+    None
 }
 
 /// Fetch the Supabase project's JWKS and return the key set.
