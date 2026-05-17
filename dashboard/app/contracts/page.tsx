@@ -1781,7 +1781,7 @@ type Tab = "list" | "consumed" | "build" | "generate" | "csv" | "quarantine";
 function ContractsContent() {
   const router = useRouter();
   const { org } = useOrg();
-  const { data: contracts, isLoading } = useSWR<ContractSummary[]>(
+  const { data: contracts, isLoading, error: contractsError } = useSWR<ContractSummary[]>(
     org ? "contracts" : null,
     listContracts
   );
@@ -1911,6 +1911,12 @@ function ContractsContent() {
             onEdit={(id) => setEditingId(id)}
           />
         </>
+      )}
+
+      {contractsError && (
+        <div className="mb-4 rounded-md bg-red-900/40 border border-red-700 px-4 py-3 text-red-300 text-sm">
+          Failed to load contracts: {contractsError?.message ?? String(contractsError)}
+        </div>
       )}
 
       {tab === "list" && (
