@@ -100,8 +100,18 @@ async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
   // session so the first SWR fetch carries a Bearer token instead of 401-ing.
   if (!_apiSession && typeof window !== "undefined") {
     try {
-      const { data: { session } } = await createClient().auth.getSession();
-      if (session?.access_token) _apiSession = session.access_token;
+      const supabase = createClient();
+      let { data: { session } } = await supabase.auth.getSession();
+
+      if (!session?.access_token) {
+        // Try one refresh if getSession() returned nothing but user might be logged in
+        const { data: refreshed } = await supabase.auth.refreshSession();
+        session = refreshed?.session ?? null;
+      }
+
+      if (session?.access_token) {
+        _apiSession = session.access_token;
+      }
     } catch {
       // non-fatal — proceed without token, backend will 401 if auth required
     }
@@ -110,13 +120,12 @@ async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
   };
-  // RFC-039: Bearer JWT wins for browser sessions; x-api-key is the fallback
-  // for server-to-server traffic (CLI, SDKs) where no session is available.
+
   if (_apiSession) {
     headers["authorization"] = `Bearer ${_apiSession}`;
-  } else if (API_KEY) {
-    headers["x-api-key"] = API_KEY;
   }
+  // Removed the else if (API_KEY) branch — it was the old insecure fallback
+
   if (_apiOrgId) headers["x-org-id"] = _apiOrgId;
   // Merge any caller-supplied headers (supports Headers, string[][], or plain object)
   if (init?.headers) {
