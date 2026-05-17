@@ -22,8 +22,8 @@ side.
 
 ## Decision
 
-**Keep SHA-256.**  The raw key is 56 characters of cryptographically random
-hex (`cg_live_<28-byte hex>`), giving ~224 bits of entropy.  SHA-256 of a
+**Keep SHA-256.**  The raw key is 48 characters of cryptographically random
+hex (`cg_live_<24-byte hex>`), giving ~192 bits of entropy.  SHA-256 of a
 high-entropy key provides equivalent security to bcrypt for this use case — the
 cost function adds nothing when the input space is already unguessable.
 

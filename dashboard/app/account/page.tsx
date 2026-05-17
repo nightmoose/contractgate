@@ -37,7 +37,8 @@ interface OrgInvite {
 }
 
 // ── Key generation ────────────────────────────────────────────────────────────
-// Generates a secure random API key in the format: cg_live_<32 random hex chars>
+// Generates a secure random API key in the format: cg_live_<48 random hex chars>
+// 24 random bytes → 48 hex chars → 192 bits of entropy (RFC-043 fix-6).
 function generateRawKey(): string {
   const bytes = new Uint8Array(24);
   crypto.getRandomValues(bytes);
@@ -47,7 +48,7 @@ function generateRawKey(): string {
 
 // SHA-256 hash of the raw key, base64-encoded via SubtleCrypto.
 // This IS the final stored value — api_key_auth.rs verifies with the same
-// SHA-256/base64 digest.  High-entropy keys (224+ bits) make SHA-256
+// SHA-256/base64 digest.  High-entropy keys (192 bits) make SHA-256
 // equivalent to bcrypt here.  See RFC-041 / migration 024.
 async function hashKey(raw: string): Promise<string> {
   const encoder = new TextEncoder();

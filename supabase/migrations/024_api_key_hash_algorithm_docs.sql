@@ -4,6 +4,13 @@
 -- implementation (dashboard SubtleCrypto + api_key_auth.rs) has always used
 -- SHA-256 base64.  RFC-041 / P0-3 fixes the mismatch.
 --
+-- RFC-043 fix-4: migration 006 still contains "bcrypt" in its file-level
+-- comments — that file is intentionally left intact as immutable history.
+-- This migration's COMMENT ON COLUMN is the authoritative source of truth.
+-- The CHECK constraint added here is superseded by migration 025 (RFC-043
+-- fix-5), which re-adds it using NOT VALID + VALIDATE to avoid an ACCESS
+-- EXCLUSIVE lock on a busy table.
+--
 -- A CHECK constraint on length (44 = base64(32 bytes)) catches any future
 -- attempt to store a different hash format at the DB layer.
 
