@@ -473,6 +473,31 @@ export const deleteVersion = (contractId: string, version: string) =>
   );
 
 // ---------------------------------------------------------------------------
+// Deploy (RFC-028 / RFC-046)
+// ---------------------------------------------------------------------------
+
+export interface DeployContractResponse {
+  contract_id: string;
+  version_id: string;
+  name: string;
+  version: string;
+  deprecated_count: number;
+  deployed_at: string;
+  deployed_by: string | null;
+}
+
+/** Atomically deploy a contract YAML as the new stable version. Growth+ only. */
+export const deployContract = (params: {
+  yaml_content: string;
+  source?: string;
+  deployed_by?: string;
+}) =>
+  apiFetch<DeployContractResponse>("/contracts/deploy", {
+    method: "POST",
+    body: JSON.stringify(params),
+  });
+
+// ---------------------------------------------------------------------------
 // Ingestion
 // ---------------------------------------------------------------------------
 

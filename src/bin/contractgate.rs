@@ -1,12 +1,12 @@
 //! `contractgate` CLI binary.
 //!
-//! Subcommands: push, pull, validate, scaffold, enforce.
+//! Subcommands: push, pull, validate, scaffold, enforce, infer.
 //! Auth via CONTRACTGATE_API_KEY env var or --api-key flag.
 //! Config via .contractgate.yml (walk-up from cwd, stop at git root).
 
 use clap::{Parser, Subcommand};
 use contractgate::cli::{
-    commands::{deploy, enforce, pull, push, scaffold, validate},
+    commands::{deploy, enforce, infer, pull, push, scaffold, validate},
     config::CliConfig,
 };
 use std::{path::PathBuf, process};
@@ -65,6 +65,17 @@ enum Cmd {
     ///   cg enforce --mode shadow --contract contracts/orders.yaml --topic orders
     ///   cg enforce --mode shadow --contract my.yaml --topic events --report json
     Enforce(enforce::EnforceArgs),
+    /// Infer a contract from Newman JSON reporter output (RFC-046).
+    ///
+    /// Run Newman with --reporter-json-export, then pipe through this command
+    /// to derive a ContractGate YAML (and optionally an ODCS YAML) locally.
+    /// No network call is made — credentials never leave your machine.
+    ///
+    /// Examples:
+    ///   newman run collection.json --reporters json --reporter-json-export out.json
+    ///   cg infer --from-newman out.json --name user_events --out contracts/user_events.yaml
+    ///   cg infer --from-newman out.json --out contracts/orders.yaml --odcs --odcs-version 2.2.2
+    Infer(infer::InferArgs),
     /// Emit the JSON Schema for .contractgate.yml.
     #[command(hide = true)]
     ConfigSchema,
@@ -103,9 +114,10 @@ fn main() {
             pull::run(args, &cfg, &key)
         }
 
-        // Scaffold and enforce do not need gateway config or an API key.
+        // Scaffold, enforce, and infer do not need gateway config or an API key.
         Cmd::Scaffold(args) => scaffold::run(args),
         Cmd::Enforce(args) => enforce::run(args),
+        Cmd::Infer(args) => infer::run(args),
 
         Cmd::ConfigSchema => {
             // Emit a minimal JSON Schema describing .contractgate.yml.

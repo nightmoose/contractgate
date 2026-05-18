@@ -98,6 +98,8 @@ const FEATURES: Feature[] = [
   { label: "Open data catalog (browse + fork)", selfHosted: false,              free: true,              growth: true,         enterprise: true },
   { label: "Import by ref — snapshot",         selfHosted: false,               free: true,              growth: true,         enterprise: true },
   { label: "Import by ref — subscribe (live)", selfHosted: false,               free: false,             growth: true,         enterprise: true },
+  { label: "API Workbench — Try It (1 endpoint)", selfHosted: false,           free: true,              growth: true,         enterprise: true },
+  { label: "API Workbench — full (save / deploy / suite)", selfHosted: false,  free: false,             growth: true,         enterprise: true },
   { label: "SSO / SAML",                       selfHosted: false,               free: false,             growth: false,        enterprise: true },
   { label: "Custom SLA",                       selfHosted: false,               free: false,             growth: false,        enterprise: true },
   { label: "Audit log export (S3 / GCS)",      selfHosted: false,               free: false,             growth: false,        enterprise: true },

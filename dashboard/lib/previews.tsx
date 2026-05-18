@@ -267,6 +267,72 @@ export function CatalogIllustration() {
   );
 }
 
+export function WorkbenchIllustration() {
+  const endpoints = [
+    { method: "GET",  path: "/users/{id}",   conf: 92 },
+    { method: "POST", path: "/events",        conf: 78 },
+    { method: "GET",  path: "/orders",        conf: 55 },
+  ];
+  const fields = [
+    { name: "user_id",    type: "string",  conf: 95, req: true  },
+    { name: "email",      type: "string",  conf: 88, req: true  },
+    { name: "created_at", type: "string",  conf: 90, req: false },
+    { name: "amount",     type: "number",  conf: 52, req: false },
+  ];
+  const methodColor: Record<string, string> = {
+    GET:  "bg-green-900/40 text-green-400",
+    POST: "bg-blue-900/40 text-blue-400",
+  };
+  return (
+    <div className="w-full rounded-xl border border-[#1f2937] bg-[#0d1117] overflow-hidden select-none pointer-events-none text-[11px]">
+      {/* Header bar */}
+      <div className="px-4 py-2.5 border-b border-[#1f2937] flex items-center gap-3 bg-[#111827]">
+        <span className="text-slate-200 font-semibold">API Workbench</span>
+        <span className="ml-auto text-[9px] bg-amber-900/30 text-amber-400 border border-amber-700/30 px-2 py-0.5 rounded-full">Try It — 1 endpoint</span>
+      </div>
+      <div className="flex">
+        {/* Endpoint list */}
+        <div className="w-36 border-r border-[#1f2937] p-2 space-y-1 bg-[#111827]">
+          {endpoints.map(ep => (
+            <div key={ep.path} className={`flex items-center gap-1.5 px-2 py-1.5 rounded ${ep.method === "GET" && ep.path === "/users/{id}" ? "bg-green-900/30 border border-green-800/40" : ""}`}>
+              <span className={`text-[8px] font-bold px-1 py-0.5 rounded w-8 text-center ${methodColor[ep.method] ?? "bg-slate-700/40 text-slate-400"}`}>{ep.method}</span>
+              <span className="font-mono text-slate-500 truncate text-[9px]">{ep.path}</span>
+            </div>
+          ))}
+        </div>
+        {/* Right panel */}
+        <div className="flex-1 p-3 space-y-2">
+          {/* URL bar */}
+          <div className="flex items-center gap-2">
+            <span className="text-[9px] bg-green-900/40 text-green-400 px-1.5 py-0.5 rounded font-bold">GET</span>
+            <span className="flex-1 font-mono text-slate-500 text-[9px] bg-[#111827] border border-[#1f2937] rounded px-2 py-1">https://api.example.com/users/u123</span>
+            <span className="text-[9px] bg-green-600 text-white px-2 py-1 rounded font-semibold">Send</span>
+          </div>
+          {/* Response */}
+          <div className="bg-[#111827] border border-[#1f2937] rounded p-2">
+            <span className="text-green-400 font-bold text-[9px]">200 </span><span className="text-slate-600 text-[9px]">OK · 42ms</span>
+            <pre className="text-[8px] font-mono text-slate-500 mt-1">{`{ "user_id": "u123", "email": "alice@...",\n  "created_at": "2026-05-18T...", "amount": 42.5 }`}</pre>
+          </div>
+          {/* Inferred fields */}
+          <div className="bg-[#111827] border border-[#1f2937] rounded p-2 space-y-1">
+            <span className="text-slate-600 text-[9px] uppercase tracking-wider">Inferred schema</span>
+            {fields.map(f => (
+              <div key={f.name} className="flex items-center gap-1.5">
+                <span className="font-mono text-slate-400 w-20 truncate text-[9px]">{f.name}</span>
+                <span className="text-[8px] bg-slate-700/50 text-slate-500 px-1 rounded">{f.type}</span>
+                <div className="flex-1 h-1 bg-[#0d1117] rounded-full overflow-hidden">
+                  <div className={`h-full rounded-full ${f.conf >= 70 ? "bg-green-500" : f.conf >= 40 ? "bg-amber-500" : "bg-red-500"}`} style={{ width: `${f.conf}%` }} />
+                </div>
+                <span className={`text-[8px] ${f.conf >= 70 ? "text-green-500" : f.conf >= 40 ? "text-amber-500" : "text-red-500"}`}>{f.conf}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ---------------------------------------------------------------------------
 // PREVIEWS registry
 // ---------------------------------------------------------------------------
@@ -319,5 +385,11 @@ export const PREVIEWS: Record<string, PreviewEntry> = {
     description: "Browse curated open-data contracts, import community schemas by reference, and validate outbound payloads against your contracts before they leave your API.",
     cta: "Sign in to browse the catalog",
     illustration: <CatalogIllustration />,
+  },
+  workbench: {
+    title: "API Workbench",
+    description: "Paste a base URL, OpenAPI spec, curl command, or Postman collection — explore endpoints live in your browser, infer a contract schema from real responses, refine fields, and deploy enforcement in one workflow. Credentials never leave your browser.",
+    cta: "Sign in to open the Workbench",
+    illustration: <WorkbenchIllustration />,
   },
 };
