@@ -22,7 +22,7 @@ import { deployContract } from "@/lib/api";
 // ---------------------------------------------------------------------------
 
 type HttpMethod = "GET" | "POST" | "PUT" | "PATCH" | "DELETE" | "HEAD" | "OPTIONS";
-type SeedMode = "url" | "spec-url" | "upload" | "curl" | "postman" | "bruno";
+type SeedMode = "url" | "spec-url" | "upload" | "curl" | "postman" | "bruno" | "manual";
 type FieldType = "string" | "integer" | "number" | "boolean" | "array" | "object" | "any";
 type TemporalType = "date" | "datetime" | "timestamp";
 type AuthType = "none" | "bearer" | "api-key" | "basic";
@@ -493,6 +493,10 @@ export default function WorkbenchClient() {
   const [seedMode,   setSeedMode]   = useState<SeedMode>("url");
   const [seedInput,  setSeedInput]  = useState("");
   const [seedError,  setSeedError]  = useState("");
+  const [corsBlocked, setCorsBlocked] = useState(false);
+  // Manual mode state
+  const [manualBase,  setManualBase]  = useState("");
+  const [manualRows,  setManualRows]  = useState<Array<{ method: HttpMethod; path: string }>>([{ method: "GET", path: "/users" }]);
   const [isSending,  setIsSending]  = useState(false);
   const [isSeeding,  setIsSeeding]  = useState(false);
   const [expandedField, setExpandedField] = useState<string | null>(null);
@@ -547,66 +551,157 @@ export default function WorkbenchClient() {
   // ---- Seeding ----
   const handleSeed = useCallback(async () => {
     setSeedError("");
+    setCorsBlocked(false);
     setIsSeeding(true);
     try {
+      // ---- Manual mode ----
+      if (seedMode === "manual") {
+        if (!manualBase.trim()) { setSeedError("Enter a base URL."); return; }
+        const eps: EndpointDef[] = manualRows
+          .filter(r => r.path.trim())
+          .map(r => ({
+            id: `${r.method}:${r.path}`,
+            method: r.method,
+            path: r.path.startsWith("/") ? r.path : "/" + r.path,
+            pathParams: [...r.path.matchAll(/\{([^}]+)\}/g)].map(m => ({ key: m[1], value: "" })),
+            queryParams: [],
+          }));
+        if (eps.length === 0) { setSeedError("Add at least one endpoint."); return; }
+        let base = manualBase.trim();
+        try { const u = new URL(base); base = `${u.protocol}//${u.host}`; } catch { /* keep as-is */ }
+        setBaseUrl(base);
+        setEndpoints(eps);
+        persist({ baseUrl: base, endpoints: eps });
+        return;
+      }
+
+      // ---- URL / OpenAPI spec discovery ----
       if (seedMode === "url" || seedMode === "spec-url") {
-        // Try to fetch OpenAPI spec
-        const url = seedMode === "url"
-          ? (seedInput.endsWith("/") ? seedInput : seedInput + "/") + "openapi.json"
-          : seedInput;
-        let specText: string;
+        // Strip query params + hash so we never append paths onto a query string.
+        let cleanBase = seedInput.trim();
         try {
-          const res = await fetch(url, { headers: { Accept: "application/json, application/yaml" } });
-          specText = await res.text();
-        } catch {
-          setSeedError("Could not fetch spec — check URL and CORS policy.");
+          const u = new URL(cleanBase);
+          cleanBase = `${u.protocol}//${u.host}${u.pathname.replace(/\/+$/, "")}`;
+        } catch { /* keep as-is */ }
+
+        const pathsToTry = seedMode === "spec-url"
+          ? [seedInput.trim()] // user gave us the exact spec URL — use it directly
+          : [
+              `${cleanBase}/openapi.json`,
+              `${cleanBase}/swagger.json`,
+              `${cleanBase}/openapi.yaml`,
+              `${cleanBase}/api-docs`,
+              `${cleanBase}/api-docs/swagger.json`,
+              `${cleanBase}/v1/openapi.json`,
+              `${cleanBase}/api/openapi.json`,
+            ];
+
+        let specText: string | null = null;
+        let isCors = false;
+        for (const specUrl of pathsToTry) {
+          try {
+            const res = await fetch(specUrl, { headers: { Accept: "application/json, application/yaml, */*" } });
+            if (res.ok) { specText = await res.text(); break; }
+          } catch (err) {
+            // "Failed to fetch" / "NetworkError" = CORS or network
+            const msg = String(err).toLowerCase();
+            if (msg.includes("failed to fetch") || msg.includes("networkerror") || msg.includes("cors") || msg.includes("access-control")) {
+              isCors = true;
+            }
+          }
+        }
+
+        if (!specText) {
+          if (isCors) {
+            setCorsBlocked(true);
+            setSeedError("CORS");
+          } else {
+            setSeedError("No OpenAPI spec found — try OpenAPI URL mode, curl mode, or add endpoints manually.");
+          }
           return;
         }
+
         let spec: OpenApiSpec;
         try { spec = JSON.parse(specText) as OpenApiSpec; }
-        catch { try { spec = jsYaml.load(specText) as OpenApiSpec; } catch { setSeedError("Could not parse spec as JSON or YAML."); return; } }
+        catch { try { spec = jsYaml.load(specText) as OpenApiSpec; } catch { setSeedError("Spec found but couldn't parse as JSON or YAML."); return; } }
+
         const discovered = parseOpenApiEndpoints(spec);
-        if (discovered.length === 0) { setSeedError("No endpoints found in spec."); return; }
-        const base = spec.servers?.[0]?.url ?? (seedMode === "url" ? seedInput : "");
+        if (discovered.length === 0) { setSeedError("No endpoints found in spec — try OpenAPI URL mode or add endpoints manually."); return; }
+        const base = spec.servers?.[0]?.url ?? cleanBase;
         setBaseUrl(base);
         setEndpoints(discovered);
         persist({ baseUrl: base, endpoints: discovered });
-      } else if (seedMode === "curl") {
+        return;
+      }
+
+      // ---- curl ----
+      if (seedMode === "curl") {
         const ep = parseCurl(seedInput);
         if (!ep) { setSeedError("Could not parse curl command — check format."); return; }
-        const urlMatch = seedInput.match(/https?:\/\/[^/\s'"]+/i);
-        const base = urlMatch ? urlMatch[0] : "";
+        let base = "";
+        try { const u = new URL(seedInput.match(/https?:\/\/[^\s'"]+/i)?.[0] ?? ""); base = `${u.protocol}//${u.host}`; } catch { /* ignore */ }
         setBaseUrl(base);
         setEndpoints([ep]);
         persist({ baseUrl: base, endpoints: [ep] });
-      } else if (seedMode === "postman") {
+        return;
+      }
+
+      // ---- Postman ----
+      if (seedMode === "postman") {
         const { baseUrl: base, endpoints: eps } = parsePostmanCollection(seedInput);
         if (eps.length === 0) { setSeedError("No requests found in Postman collection."); return; }
         setBaseUrl(base);
         setEndpoints(eps);
         persist({ baseUrl: base, endpoints: eps });
-      } else if (seedMode === "bruno") {
+        return;
+      }
+
+      if (seedMode === "bruno") {
         setSeedError("Bruno import: paste as Postman JSON export or use CLI mode.");
         return;
-      } else if (seedMode === "upload") {
+      }
+      if (seedMode === "upload") {
         setSeedError("Upload a spec file using the file picker above, then click Explore.");
         return;
       }
     } finally {
       setIsSeeding(false);
     }
-  }, [seedMode, seedInput, persist]);
+  }, [seedMode, seedInput, manualBase, manualRows, persist]);
 
   const handleFileUpload = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
     const reader = new FileReader();
     reader.onload = (ev) => {
-      setSeedInput(ev.target?.result as string ?? "");
-      setSeedMode("postman"); // will parse as JSON/YAML spec
+      const text = ev.target?.result as string ?? "";
+      setSeedError("");
+      setCorsBlocked(false);
+      try {
+        let spec: OpenApiSpec;
+        try { spec = JSON.parse(text) as OpenApiSpec; }
+        catch { spec = jsYaml.load(text) as OpenApiSpec; }
+        const discovered = parseOpenApiEndpoints(spec);
+        if (discovered.length === 0) { setSeedError("No endpoints found in spec."); return; }
+        const base = spec.servers?.[0]?.url ?? "";
+        setBaseUrl(base);
+        setEndpoints(discovered);
+        persist({ baseUrl: base, endpoints: discovered });
+      } catch {
+        // Not an OpenAPI spec — try Postman collection
+        try {
+          const { baseUrl: base, endpoints: eps } = parsePostmanCollection(text);
+          if (eps.length === 0) { setSeedError("Could not parse file as OpenAPI spec or Postman collection."); return; }
+          setBaseUrl(base);
+          setEndpoints(eps);
+          persist({ baseUrl: base, endpoints: eps });
+        } catch {
+          setSeedError("Could not parse file as OpenAPI spec or Postman collection.");
+        }
+      }
     };
     reader.readAsText(file);
-  }, []);
+  }, [persist]);
 
   // ---- Sending ----
   const resolveUrl = useCallback((ep: EndpointDef): string => {
@@ -790,55 +885,141 @@ export default function WorkbenchClient() {
       {!hasSession && (
         <div className="max-w-2xl mx-auto px-6 py-14">
           <h2 className="text-xl font-semibold text-slate-200 mb-2">Start from your API</h2>
-          <p className="text-sm text-slate-500 mb-8">Paste a URL, spec, curl command, or Postman collection to discover endpoints.</p>
+          <p className="text-sm text-slate-500 mb-8">Paste a URL, spec, curl command, or add endpoints manually.</p>
 
           {/* Mode tabs */}
-          <div className="flex gap-1 mb-4 bg-[#111827] border border-[#1f2937] rounded-lg p-1">
-            {(["url","spec-url","curl","postman","upload"] as SeedMode[]).map(m => (
+          <div className="flex gap-1 mb-4 bg-[#111827] border border-[#1f2937] rounded-lg p-1 flex-wrap">
+            {(["url","spec-url","curl","postman","upload","manual"] as SeedMode[]).map(m => (
               <button
                 key={m}
-                onClick={() => { setSeedMode(m); setSeedInput(""); setSeedError(""); }}
+                onClick={() => { setSeedMode(m); setSeedInput(""); setSeedError(""); setCorsBlocked(false); }}
                 className={clsx(
-                  "flex-1 py-1.5 px-2 rounded-md text-xs font-medium transition-colors",
+                  "flex-1 py-1.5 px-2 rounded-md text-xs font-medium transition-colors whitespace-nowrap",
                   seedMode === m ? "bg-green-800/50 text-green-300" : "text-slate-500 hover:text-slate-300"
                 )}
               >
-                {({"url": "Base URL", "spec-url": "OpenAPI URL", "curl": "curl", "postman": "Postman", "upload": "Upload", "bruno": "Bruno"} as Record<SeedMode, string>)[m]}
+                {({"url": "Base URL", "spec-url": "OpenAPI URL", "curl": "curl", "postman": "Postman", "upload": "Upload", "bruno": "Bruno", "manual": "Manual"} as Record<SeedMode, string>)[m]}
               </button>
             ))}
           </div>
 
-          {seedMode === "upload" ? (
+          {/* CORS blocked — show alternatives prominently */}
+          {corsBlocked && (
+            <div className="mb-4 bg-amber-900/20 border border-amber-700/40 rounded-xl p-4 space-y-3">
+              <div className="flex items-start gap-2">
+                <span className="text-amber-400 text-lg shrink-0">⚠</span>
+                <div>
+                  <p className="text-sm font-semibold text-amber-300">CORS policy blocked the request</p>
+                  <p className="text-xs text-amber-400/80 mt-1">This API doesn&apos;t allow browser requests from other origins. Your credentials are safe — nothing was sent. Use one of these alternatives:</p>
+                </div>
+              </div>
+              <div className="grid grid-cols-1 gap-2 text-xs">
+                <button onClick={() => { setSeedMode("curl"); setSeedError(""); setCorsBlocked(false); }}
+                  className="flex items-center gap-2 px-3 py-2.5 bg-[#111827] border border-[#374151] hover:border-green-700/50 rounded-lg text-left transition-colors">
+                  <span className="text-lg">⌨️</span>
+                  <div>
+                    <p className="font-medium text-slate-300">Paste a curl command</p>
+                    <p className="text-slate-500">Copy from your terminal — Workbench will parse the endpoint and you can add more samples</p>
+                  </div>
+                </button>
+                <button onClick={() => { setSeedMode("manual"); setSeedError(""); setCorsBlocked(false); }}
+                  className="flex items-center gap-2 px-3 py-2.5 bg-[#111827] border border-[#374151] hover:border-green-700/50 rounded-lg text-left transition-colors">
+                  <span className="text-lg">✏️</span>
+                  <div>
+                    <p className="font-medium text-slate-300">Add endpoints manually</p>
+                    <p className="text-slate-500">Type endpoint paths and run them from your terminal — paste the JSON response to infer a contract</p>
+                  </div>
+                </button>
+                <div className="flex items-start gap-2 px-3 py-2.5 bg-[#111827] border border-[#374151] rounded-lg">
+                  <span className="text-lg">🖥️</span>
+                  <div>
+                    <p className="font-medium text-slate-300">Use the Newman CLI pipe</p>
+                    <p className="text-slate-500 font-mono mt-1 break-all">
+                      curl &quot;{seedInput}&quot; | contractgate infer --from-stdin --name my_api
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Manual endpoint entry */}
+          {seedMode === "manual" && (
+            <div className="space-y-3">
+              <input
+                value={manualBase}
+                onChange={e => setManualBase(e.target.value)}
+                placeholder="https://api.example.com"
+                className="w-full bg-[#111827] border border-[#1f2937] rounded-xl px-4 py-2.5 text-sm font-mono text-slate-300 placeholder:text-slate-600 focus:outline-none focus:border-green-700/60"
+              />
+              <div className="space-y-2">
+                {manualRows.map((row, i) => (
+                  <div key={i} className="flex items-center gap-2">
+                    <select
+                      value={row.method}
+                      onChange={e => setManualRows(prev => prev.map((r, j) => j === i ? { ...r, method: e.target.value as HttpMethod } : r))}
+                      className="bg-[#111827] border border-[#1f2937] rounded-lg px-2 py-2 text-xs font-mono text-slate-300 focus:outline-none w-24"
+                    >
+                      {(["GET","POST","PUT","PATCH","DELETE"] as HttpMethod[]).map(m => <option key={m} value={m}>{m}</option>)}
+                    </select>
+                    <input
+                      value={row.path}
+                      onChange={e => setManualRows(prev => prev.map((r, j) => j === i ? { ...r, path: e.target.value } : r))}
+                      placeholder="/users/{id}"
+                      className="flex-1 bg-[#111827] border border-[#1f2937] rounded-lg px-3 py-2 text-sm font-mono text-slate-300 placeholder:text-slate-600 focus:outline-none focus:border-green-700/60"
+                    />
+                    {manualRows.length > 1 && (
+                      <button onClick={() => setManualRows(prev => prev.filter((_, j) => j !== i))} className="text-slate-600 hover:text-red-400 transition-colors text-sm">✕</button>
+                    )}
+                  </div>
+                ))}
+              </div>
+              <button
+                onClick={() => setManualRows(prev => [...prev, { method: "GET", path: "" }])}
+                className="text-xs text-green-500 hover:text-green-400 transition-colors"
+              >+ Add endpoint</button>
+            </div>
+          )}
+
+          {/* Upload drop zone */}
+          {seedMode === "upload" && (
             <label className="block border-2 border-dashed border-[#374151] rounded-xl p-10 text-center cursor-pointer hover:border-green-700/50 transition-colors">
               <div className="text-4xl mb-3">📂</div>
               <p className="text-sm text-slate-400">Drop or click to upload a <span className="text-slate-300 font-medium">.json</span> or <span className="text-slate-300 font-medium">.yaml</span> spec file</p>
+              <p className="text-xs text-slate-600 mt-2">Supports OpenAPI 3.x, Swagger 2.x, and Postman Collection v2.1</p>
               <input type="file" accept=".json,.yaml,.yml" className="hidden" onChange={handleFileUpload} />
             </label>
-          ) : (
+          )}
+
+          {/* Text input for all other modes */}
+          {seedMode !== "upload" && seedMode !== "manual" && (
             <textarea
               value={seedInput}
-              onChange={e => setSeedInput(e.target.value)}
-              placeholder={{
+              onChange={e => { setSeedInput(e.target.value); if (corsBlocked) setCorsBlocked(false); }}
+              placeholder={({
                 url: "https://api.example.com/v2",
                 "spec-url": "https://api.example.com/openapi.json",
                 curl: 'curl -X GET "https://api.example.com/users" -H "Authorization: Bearer TOKEN"',
                 postman: "Paste Postman Collection v2.1 JSON here…",
                 upload: "",
                 bruno: "",
-              }[seedMode]}
+                manual: "",
+              } as Record<SeedMode, string>)[seedMode]}
               className="w-full h-32 bg-[#111827] border border-[#1f2937] rounded-xl px-4 py-3 text-sm font-mono text-slate-300 placeholder:text-slate-600 resize-none focus:outline-none focus:border-green-700/60"
             />
           )}
 
-          {seedError && <p className="mt-2 text-sm text-red-400">{seedError}</p>}
+          {seedError && seedError !== "CORS" && <p className="mt-2 text-sm text-red-400">{seedError}</p>}
 
-          <button
-            onClick={handleSeed}
-            disabled={isSeeding || (seedMode !== "upload" && !seedInput.trim())}
-            className="mt-4 w-full py-2.5 bg-green-600 hover:bg-green-500 disabled:opacity-40 disabled:cursor-not-allowed text-white font-semibold rounded-lg text-sm transition-colors"
-          >
-            {isSeeding ? "Exploring…" : "Explore →"}
-          </button>
+          {seedMode !== "upload" && (
+            <button
+              onClick={handleSeed}
+              disabled={isSeeding || (seedMode === "manual" ? !manualBase.trim() : !seedInput.trim())}
+              className="mt-4 w-full py-2.5 bg-green-600 hover:bg-green-500 disabled:opacity-40 disabled:cursor-not-allowed text-white font-semibold rounded-lg text-sm transition-colors"
+            >
+              {isSeeding ? "Exploring…" : "Explore →"}
+            </button>
+          )}
 
           <p className="mt-4 text-xs text-slate-600 text-center">
             All API calls run in your browser. Credentials never reach ContractGate servers.
@@ -1221,10 +1402,16 @@ export default function WorkbenchClient() {
                       >↓ Bruno Collection</button>
                     </div>
 
-                    <p className="text-[10px] text-slate-600">
-                      Run Newman collections locally:{" "}
-                      <code className="font-mono">newman run collection.json --reporter-json-export response.json | contractgate infer --from-newman response.json --out contracts/{contractName}.yaml</code>
-                    </p>
+                    <div className="text-[10px] text-slate-600 space-y-1">
+                      <p>Pipe curl directly (CORS-blocked APIs):</p>
+                      <code className="font-mono block bg-[#0d1117] rounded px-2 py-1 text-slate-500 break-all">
+                        curl &quot;$URL&quot; | contractgate infer --from-stdin --name {contractName || "my_api"} --out contracts/{contractName || "my_api"}.yaml
+                      </code>
+                      <p className="mt-1">Or via Newman:</p>
+                      <code className="font-mono block bg-[#0d1117] rounded px-2 py-1 text-slate-500 break-all">
+                        newman run collection.json --reporter-json-export out.json &amp;&amp; contractgate infer --from-newman out.json --out contracts/{contractName || "my_api"}.yaml
+                      </code>
+                    </div>
                   </div>
                 )}
 

@@ -65,16 +65,20 @@ enum Cmd {
     ///   cg enforce --mode shadow --contract contracts/orders.yaml --topic orders
     ///   cg enforce --mode shadow --contract my.yaml --topic events --report json
     Enforce(enforce::EnforceArgs),
-    /// Infer a contract from Newman JSON reporter output (RFC-046).
+    /// Infer a ContractGate contract from a JSON response (RFC-046).
     ///
-    /// Run Newman with --reporter-json-export, then pipe through this command
-    /// to derive a ContractGate YAML (and optionally an ODCS YAML) locally.
-    /// No network call is made — credentials never leave your machine.
+    /// Two input modes — all processing is local, no network calls:
+    ///
+    ///   --from-stdin   Pipe raw curl/httpie output directly.
+    ///   --from-newman  Read a Newman JSON reporter export file.
     ///
     /// Examples:
+    ///   curl "https://api.example.com/users/1" \
+    ///     | cg infer --from-stdin --name users --out contracts/users.yaml
+    ///   curl -H "Authorization: Bearer $TOKEN" "https://api.census.gov/..." \
+    ///     | cg infer --from-stdin --name census_acs5
     ///   newman run collection.json --reporters json --reporter-json-export out.json
-    ///   cg infer --from-newman out.json --name user_events --out contracts/user_events.yaml
-    ///   cg infer --from-newman out.json --out contracts/orders.yaml --odcs --odcs-version 2.2.2
+    ///   cg infer --from-newman out.json --out contracts/orders.yaml --odcs
     Infer(infer::InferArgs),
     /// Emit the JSON Schema for .contractgate.yml.
     #[command(hide = true)]

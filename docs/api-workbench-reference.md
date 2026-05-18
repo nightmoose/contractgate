@@ -171,43 +171,60 @@ A **Bruno Collection** (`.bru`) is also available for teams using Bruno as their
 
 ---
 
-## Newman CLI pipe (`contractgate infer`)
+## Newman CLI pipe / curl pipe (`contractgate infer`)
 
-For CI or local workflows using Newman:
+Two input modes — both are fully local, no network calls, no API key required.
+
+### `--from-stdin` — pipe any curl output directly
+
+The fastest path for CORS-blocked APIs. Run curl locally and pipe the response straight into the infer command:
 
 ```bash
-# 1. Run your collection and export results
+# Basic
+curl "https://api.census.gov/data/2022/acs/acs5?get=NAME,B01001_001E&for=state:*&key=$KEY" \
+  | contractgate infer --from-stdin --name census_acs5 --out contracts/census.yaml
+
+# With auth header
+curl -H "Authorization: Bearer $TOKEN" "https://api.example.com/users/1" \
+  | contractgate infer --from-stdin --name users
+
+# With ODCS export
+curl "https://api.example.com/orders" \
+  | contractgate infer --from-stdin --name orders \
+    --out contracts/orders.yaml --odcs --odcs-version 2.2.2
+```
+
+The JSON may be a single object or an array of objects. Arrays are flattened and all items are used as samples to improve confidence scores.
+
+### `--from-newman` — Newman reporter export
+
+```bash
+# 1. Run collection and export results
 newman run collection.json \
   --reporters json \
   --reporter-json-export newman-output.json
 
-# 2. Infer a ContractGate contract from the results
+# 2. Infer from results
 contractgate infer \
   --from-newman newman-output.json \
   --name user_events \
-  --out contracts/user_events.yaml
-
-# 3. Optionally include an ODCS export
-contractgate infer \
-  --from-newman newman-output.json \
-  --out contracts/user_events.yaml \
-  --odcs \
-  --odcs-version 2.2.2
+  --out contracts/user_events.yaml --odcs
 ```
 
 ### Flags
 
 | Flag | Description |
 |---|---|
-| `--from-newman <FILE>` | Path to Newman JSON reporter export (required) |
-| `--name <NAME>` | Contract name (defaults to collection name) |
+| `--from-stdin` | Read raw JSON from stdin (curl, httpie, etc.) |
+| `--from-newman <FILE>` | Path to Newman JSON reporter export |
+| `--name <NAME>` | Contract name (defaults to collection name or `inferred_contract`) |
 | `--description <TEXT>` | Contract description |
 | `--out <FILE>` | Output path for ContractGate YAML (defaults to stdout) |
 | `--odcs` | Also write an ODCS-compatible YAML |
 | `--odcs-version <VERSION>` | ODCS schema version: `2.2.2` (default), `2.1.0`, `2.0.0` |
 | `--json` | Emit machine-readable JSON summary to stderr |
 
-No API key is required. No network call is made. All processing is local.
+`--from-stdin` and `--from-newman` are mutually exclusive; at least one is required.
 
 ---
 

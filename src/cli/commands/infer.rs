@@ -1,24 +1,35 @@
-//! `contractgate infer` — RFC-046: derive a contract from Newman reporter output.
+//! `contractgate infer` — RFC-046: derive a contract from a JSON response.
 //!
-//! Reads Newman's JSON reporter export, extracts response bodies from all
-//! executions, runs the same field-inference logic used by `POST /contracts/infer`,
-//! and writes a ContractGate YAML (and optionally an ODCS-compatible YAML).
+//! Two input modes:
+//!
+//! **--from-newman** — reads Newman's JSON reporter export and extracts all
+//! response bodies across executions.
+//!
+//! **--from-stdin** — reads raw JSON piped from stdout of any tool (curl, httpie,
+//! wget -O-, etc.).  The JSON may be a single object or an array of objects.
 //!
 //! All processing is local — no network calls, no credentials required.
 //!
 //! ## Usage
 //!
 //! ```sh
-//! newman run collection.json --reporters json --reporter-json-export response.json
-//! contractgate infer --from-newman response.json --out contracts/my-api.yaml
-//! contractgate infer --from-newman response.json --out contracts/my-api.yaml --odcs --odcs-version 2.2.2
+//! # Pipe curl output directly
+//! curl "https://api.example.com/users/1" | contractgate infer --from-stdin --name users
+//!
+//! # Pipe curl with auth header
+//! curl -H "Authorization: Bearer $TOKEN" "https://api.census.gov/data/..." \
+//!   | contractgate infer --from-stdin --name census_acs5 --out contracts/census.yaml
+//!
+//! # Newman round-trip
+//! newman run collection.json --reporters json --reporter-json-export out.json
+//! contractgate infer --from-newman out.json --out contracts/my-api.yaml --odcs
 //! ```
 
 use crate::infer::infer_fields_from_objects_pub;
 use anyhow::{bail, Context, Result};
 use clap::Args;
 use serde_json::Value;
-use std::{fs, path::PathBuf};
+use std::{fs, io::Read as _, path::PathBuf};
 
 // ---------------------------------------------------------------------------
 // Supported ODCS versions
@@ -34,13 +45,23 @@ const ODCS_KNOWN_VERSIONS: &[&str] = &["2.2.2", "2.1.0", "2.0.0"];
 
 #[derive(Debug, Args)]
 pub struct InferArgs {
+    /// Read raw JSON from stdin (output of curl, httpie, wget -O-, etc.).
+    /// The JSON may be a single object or an array of objects.
+    ///
+    /// Examples:
+    ///   curl "https://api.example.com/users/1" | contractgate infer --from-stdin --name users
+    ///   curl -H "Authorization: Bearer $TOKEN" "https://api.census.gov/..." \
+    ///     | contractgate infer --from-stdin --name census_acs5
+    #[arg(long, conflicts_with = "from_newman")]
+    pub from_stdin: bool,
+
     /// Path to Newman's JSON reporter export file.
     /// Produce with: newman run collection.json --reporters json --reporter-json-export output.json
-    #[arg(long, value_name = "FILE")]
-    pub from_newman: PathBuf,
+    #[arg(long, value_name = "FILE", conflicts_with = "from_stdin")]
+    pub from_newman: Option<PathBuf>,
 
     /// Contract name embedded in the generated YAML.
-    /// Defaults to the Newman collection name if available.
+    /// Defaults to the Newman collection name (--from-newman) or "inferred_contract".
     #[arg(long, short = 'n', value_name = "NAME")]
     pub name: Option<String>,
 
@@ -118,7 +139,12 @@ enum NewmanStream {
 // ---------------------------------------------------------------------------
 
 pub fn run(args: &InferArgs) -> Result<i32> {
-    // 1. Validate ODCS version if --odcs is requested.
+    // 1. Validate flags — exactly one input source required.
+    if !args.from_stdin && args.from_newman.is_none() {
+        bail!("provide --from-stdin (pipe curl output) or --from-newman <FILE>");
+    }
+
+    // 2. Validate ODCS version if --odcs is requested.
     if args.odcs && !ODCS_KNOWN_VERSIONS.contains(&args.odcs_version.as_str()) {
         bail!(
             "unsupported ODCS version {:?}; supported: {}",
@@ -127,28 +153,61 @@ pub fn run(args: &InferArgs) -> Result<i32> {
         );
     }
 
-    // 2. Read + parse Newman report.
-    let raw = fs::read_to_string(&args.from_newman)
-        .with_context(|| format!("reading {:?}", args.from_newman))?;
-    let report: NewmanReport =
-        serde_json::from_str(&raw).context("parsing Newman JSON reporter output")?;
-
-    // 3. Extract response bodies.
-    let samples = extract_samples(&report);
-    if samples.is_empty() {
-        bail!("no JSON response bodies found in Newman report — ensure the collection has at least one successful request");
-    }
+    // 3. Collect samples depending on input mode.
+    let (samples, default_name) = if args.from_stdin {
+        // Read raw JSON from stdin.
+        let mut buf = String::new();
+        std::io::stdin()
+            .read_to_string(&mut buf)
+            .context("reading from stdin")?;
+        let val: Value = serde_json::from_str(buf.trim())
+            .context("stdin is not valid JSON — pipe the raw JSON response body")?;
+        let samples = match val {
+            Value::Array(arr) => arr
+                .into_iter()
+                .filter(|v| v.is_object())
+                .collect::<Vec<_>>(),
+            Value::Object(_) => vec![val],
+            other => bail!(
+                "stdin JSON must be an object or array of objects, got {}",
+                match other {
+                    Value::String(_) => "string",
+                    Value::Number(_) => "number",
+                    Value::Bool(_) => "boolean",
+                    Value::Null => "null",
+                    _ => "unexpected type",
+                }
+            ),
+        };
+        if samples.is_empty() {
+            bail!("stdin array contained no JSON objects");
+        }
+        (samples, "inferred_contract".to_string())
+    } else {
+        // Read Newman JSON reporter file.
+        let path = args.from_newman.as_ref().unwrap();
+        let raw = fs::read_to_string(path).with_context(|| format!("reading {:?}", path))?;
+        let report: NewmanReport =
+            serde_json::from_str(&raw).context("parsing Newman JSON reporter output")?;
+        let samples = extract_samples(&report);
+        if samples.is_empty() {
+            bail!("no JSON response bodies found in Newman report — ensure the collection has at least one successful request");
+        }
+        let default = report
+            .collection
+            .as_ref()
+            .and_then(|c| c.info.as_ref())
+            .and_then(|i| i.name.clone())
+            .unwrap_or_else(|| "inferred_contract".to_string());
+        (samples, default)
+    };
 
     // 4. Infer contract fields.
-    let name = args
-        .name
-        .clone()
-        .or_else(|| report.collection.as_ref()?.info.as_ref()?.name.clone())
-        .unwrap_or_else(|| "inferred_contract".to_string());
+    let name = args.name.clone().unwrap_or(default_name);
     let description = args
         .description
         .clone()
-        .unwrap_or_else(|| format!("Contract inferred from Newman run of {name}"));
+        .unwrap_or_else(|| format!("Contract inferred from {name}"));
 
     let fields = infer_fields_from_objects_pub(&samples);
     let field_count = fields.len();
