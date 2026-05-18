@@ -753,7 +753,7 @@ function CatalogContent() {
       )}
 
       {tab === "egress" && (
-        <PlanGate minTier="growth" feature="Egress Validator">
+        <PlanGate minTier="growth" feature="Egress Validator" previewKey="catalog">
           <div className="bg-[#111827] border border-[#1f2937] rounded-xl p-6">
             <div className="mb-5">
               <h2 className="text-base font-semibold text-slate-100">Egress Validator</h2>

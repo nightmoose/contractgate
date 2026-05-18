@@ -373,7 +373,7 @@ function ScorecardContent() {
 export default function ScorecardPage() {
   return (
     <AuthGate page="scorecard">
-      <PlanGate minTier="growth" feature="Provider Scorecard">
+      <PlanGate minTier="growth" feature="Provider Scorecard" previewKey="scorecard">
         <Suspense>
           <ScorecardContent />
         </Suspense>

@@ -237,7 +237,7 @@ export default function ScaffoldPage() {
 
   return (
     <AuthGate page="scaffold">
-      <PlanGate minTier="growth" feature="Brownfield Contract Scaffolder">
+      <PlanGate minTier="growth" feature="Brownfield Contract Scaffolder" previewKey="scaffold">
       <div className="p-6 max-w-6xl mx-auto space-y-6">
         {/* Header */}
         <div>
