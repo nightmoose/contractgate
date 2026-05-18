@@ -18,7 +18,8 @@ import { useState, useEffect, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import useSWR, { mutate } from "swr";
 import AuthGate from "@/components/AuthGate";
-import { useOrg } from "@/lib/org";
+import PlanGate, { FreeLimitBanner } from "@/components/PlanGate";
+import { useOrg, planAtLeast } from "@/lib/org";
 import { createClient } from "@/lib/supabase/client";
 import {
   listContracts,
@@ -105,6 +106,10 @@ function EditContractModal({
   const [ghSyncing, setGhSyncing] = useState(false);
   const [ghSyncUrl, setGhSyncUrl] = useState<string | null>(null);
   const [ghSyncError, setGhSyncError] = useState<string | null>(null);
+
+  // RFC-045: plan gating inside modal
+  const { org: modalOrg } = useOrg();
+  const isGrowth = modalOrg ? planAtLeast(modalOrg.plan, "growth") : false;
 
   // Publish modal state (RFC-032)
   const [publishModalOpen, setPublishModalOpen] = useState(false);
@@ -394,38 +399,54 @@ function EditContractModal({
             </button>
             <button
               onClick={() => setModalTab("kafka")}
+              disabled={!isGrowth}
+              title={!isGrowth ? "Kafka integration — Growth plan required" : undefined}
               className={clsx(
-                "px-4 py-2 text-sm font-medium rounded-t-lg transition-colors border-b-2 -mb-px",
+                "px-4 py-2 text-sm font-medium rounded-t-lg transition-colors border-b-2 -mb-px flex items-center gap-1",
                 modalTab === "kafka"
                   ? "text-slate-100 border-emerald-500"
-                  : "text-slate-500 hover:text-slate-300 border-transparent"
+                  : "text-slate-500 hover:text-slate-300 border-transparent",
+                !isGrowth && "opacity-50 cursor-not-allowed"
               )}
             >
-              Kafka
+              Kafka {!isGrowth && <span className="text-[10px] text-amber-500">🔒</span>}
             </button>
             <button
               onClick={() => setModalTab("kinesis")}
+              disabled={!isGrowth}
+              title={!isGrowth ? "Kinesis integration — Growth plan required" : undefined}
               className={clsx(
-                "px-4 py-2 text-sm font-medium rounded-t-lg transition-colors border-b-2 -mb-px",
+                "px-4 py-2 text-sm font-medium rounded-t-lg transition-colors border-b-2 -mb-px flex items-center gap-1",
                 modalTab === "kinesis"
                   ? "text-slate-100 border-emerald-500"
-                  : "text-slate-500 hover:text-slate-300 border-transparent"
+                  : "text-slate-500 hover:text-slate-300 border-transparent",
+                !isGrowth && "opacity-50 cursor-not-allowed"
               )}
             >
-              Kinesis
+              Kinesis {!isGrowth && <span className="text-[10px] text-amber-500">🔒</span>}
             </button>
             {/* RFC-033: Collaborate tab */}
             <button
               onClick={() => setModalTab("collaborate")}
+              disabled={!isGrowth}
+              title={!isGrowth ? "AI Collaborate — Growth plan required" : undefined}
               className={clsx(
-                "px-4 py-2 text-sm font-medium rounded-t-lg transition-colors border-b-2 -mb-px",
+                "px-4 py-2 text-sm font-medium rounded-t-lg transition-colors border-b-2 -mb-px flex items-center gap-1",
                 modalTab === "collaborate"
                   ? "text-slate-100 border-indigo-400"
-                  : "text-slate-500 hover:text-slate-300 border-transparent"
+                  : "text-slate-500 hover:text-slate-300 border-transparent",
+                !isGrowth && "opacity-50 cursor-not-allowed"
               )}
             >
-              👥 Collaborate
+              👥 Collaborate {!isGrowth && <span className="text-[10px] text-amber-500">🔒</span>}
             </button>
+          </div>
+        )}
+
+        {/* RFC-045: version limit banner — free plan, ≥3 versions */}
+        {!loading && versions.length >= 3 && (
+          <div className="px-6 pt-2">
+            <FreeLimitBanner current={versions.length} max={3} resource="versions" />
           </div>
         )}
 
@@ -538,26 +559,48 @@ function EditContractModal({
                       Deprecate
                     </button>
                   )}
-                  <button
-                    onClick={handleGitHubSync}
-                    disabled={ghSyncing || saving}
-                    title="Commit this version's YAML to the configured GitHub repository"
-                    className="flex items-center gap-1.5 px-3 py-2 bg-[#24292e] hover:bg-[#2f363d] disabled:opacity-40 text-slate-200 text-sm font-medium rounded-lg transition-colors border border-[#374151]"
-                  >
-                    <svg height="14" viewBox="0 0 16 16" width="14" fill="currentColor" aria-hidden="true">
-                      <path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z" />
-                    </svg>
-                    {ghSyncing ? "Syncing…" : "Sync to GitHub"}
-                  </button>
-                  {/* RFC-032: Publish button */}
-                  <button
-                    onClick={() => setPublishModalOpen(true)}
-                    disabled={saving}
-                    title="Publish this contract version so others can import it by reference"
-                    className="flex items-center gap-1.5 px-3 py-2 bg-teal-900/30 hover:bg-teal-900/50 disabled:opacity-40 text-teal-300 text-sm font-medium rounded-lg transition-colors border border-teal-800/50"
-                  >
-                    ↑ Publish
-                  </button>
+                  {/* RFC-045: GitHub sync — Growth+ only */}
+                  {isGrowth ? (
+                    <button
+                      onClick={handleGitHubSync}
+                      disabled={ghSyncing || saving}
+                      title="Commit this version's YAML to the configured GitHub repository"
+                      className="flex items-center gap-1.5 px-3 py-2 bg-[#24292e] hover:bg-[#2f363d] disabled:opacity-40 text-slate-200 text-sm font-medium rounded-lg transition-colors border border-[#374151]"
+                    >
+                      <svg height="14" viewBox="0 0 16 16" width="14" fill="currentColor" aria-hidden="true">
+                        <path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z" />
+                      </svg>
+                      {ghSyncing ? "Syncing…" : "Sync to GitHub"}
+                    </button>
+                  ) : (
+                    <span
+                      title="GitHub sync — Growth plan required"
+                      className="flex items-center gap-1.5 px-3 py-2 bg-[#24292e]/50 text-slate-600 text-sm font-medium rounded-lg border border-[#374151]/50 cursor-not-allowed select-none"
+                    >
+                      <svg height="14" viewBox="0 0 16 16" width="14" fill="currentColor" aria-hidden="true">
+                        <path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z" />
+                      </svg>
+                      Sync to GitHub 🔒
+                    </span>
+                  )}
+                  {/* RFC-032: Publish button — Growth+ only */}
+                  {isGrowth ? (
+                    <button
+                      onClick={() => setPublishModalOpen(true)}
+                      disabled={saving}
+                      title="Publish this contract version so others can import it by reference"
+                      className="flex items-center gap-1.5 px-3 py-2 bg-teal-900/30 hover:bg-teal-900/50 disabled:opacity-40 text-teal-300 text-sm font-medium rounded-lg transition-colors border border-teal-800/50"
+                    >
+                      ↑ Publish
+                    </button>
+                  ) : (
+                    <span
+                      title="Publish to catalog — Growth plan required"
+                      className="flex items-center gap-1.5 px-3 py-2 bg-teal-900/10 text-teal-900 text-sm font-medium rounded-lg border border-teal-900/30 cursor-not-allowed select-none"
+                    >
+                      ↑ Publish 🔒
+                    </span>
+                  )}
                   {ghSyncUrl && (
                     <a href={ghSyncUrl} target="_blank" rel="noopener noreferrer"
                       className="text-xs text-green-400 hover:text-green-300 truncate max-w-xs" title={ghSyncUrl}>
@@ -1877,23 +1920,29 @@ function ContractsContent() {
       </div>
 
       <div className="flex gap-1 mb-6 bg-[#111827] border border-[#1f2937] rounded-xl p-1 w-fit flex-wrap">
-        {(["list", "consumed", "build", "generate", "csv", "quarantine"] as Tab[]).map((t) => (
-          <button
-            key={t}
-            onClick={() => { setTab(t); setShowWizard(false); setShowImport(false); setShowImportRef(false); }}
-            className={clsx(
-              "px-4 py-2 text-sm font-medium rounded-lg transition-colors",
-              tab === t ? "bg-[#1f2937] text-slate-100" : "text-slate-500 hover:text-slate-300"
-            )}
-          >
-            {t === "list" && "My Contracts"}
-            {t === "consumed" && "📥 Consumed"}
-            {t === "build" && "🧱 Visual Builder"}
-            {t === "generate" && "✦ Generate from Sample"}
-            {t === "csv" && "📊 From CSV"}
-            {t === "quarantine" && "🔒 Quarantine"}
-          </button>
-        ))}
+        {(["list", "consumed", "build", "generate", "csv", "quarantine"] as Tab[]).map((t) => {
+          // Growth-only tabs show a lock badge when on free plan.
+          const growthOnly = ["build", "generate", "csv", "quarantine"].includes(t);
+          const locked = growthOnly && org && !planAtLeast(org.plan, "growth");
+          return (
+            <button
+              key={t}
+              onClick={() => { setTab(t); setShowWizard(false); setShowImport(false); setShowImportRef(false); }}
+              className={clsx(
+                "px-4 py-2 text-sm font-medium rounded-lg transition-colors flex items-center gap-1.5",
+                tab === t ? "bg-[#1f2937] text-slate-100" : "text-slate-500 hover:text-slate-300"
+              )}
+            >
+              {t === "list" && "My Contracts"}
+              {t === "consumed" && "📥 Consumed"}
+              {t === "build" && "🧱 Visual Builder"}
+              {t === "generate" && "✦ Generate from Sample"}
+              {t === "csv" && "📊 From CSV"}
+              {t === "quarantine" && "🔒 Quarantine"}
+              {locked && <span className="text-[10px] text-amber-500" title="Growth plan required">🔒</span>}
+            </button>
+          );
+        })}
       </div>
 
       {/* RFC-032: Consumed contracts tab */}
@@ -1917,6 +1966,11 @@ function ContractsContent() {
         <div className="mb-4 rounded-md bg-red-900/40 border border-red-700 px-4 py-3 text-red-300 text-sm">
           Failed to load contracts: {contractsError?.message ?? String(contractsError)}
         </div>
+      )}
+
+      {/* RFC-045: Free-tier contract limit banner */}
+      {tab === "list" && contracts && (
+        <FreeLimitBanner current={contracts.length} max={3} resource="contracts" />
       )}
 
       {tab === "list" && (
@@ -1971,30 +2025,40 @@ function ContractsContent() {
           />
         </>
       )}
-      {tab === "build" && <VisualBuilder onSaved={() => setTab("list")} />}
+      {tab === "build" && (
+        <PlanGate minTier="growth" feature="Visual Builder">
+          <VisualBuilder onSaved={() => setTab("list")} />
+        </PlanGate>
+      )}
       {tab === "generate" && (
-        <div className="bg-[#111827] border border-[#1f2937] rounded-xl p-6">
-          <GeneratorTab onSaved={() => setTab("list")} />
-        </div>
+        <PlanGate minTier="growth" feature="Generate from Sample (JSON → YAML)">
+          <div className="bg-[#111827] border border-[#1f2937] rounded-xl p-6">
+            <GeneratorTab onSaved={() => setTab("list")} />
+          </div>
+        </PlanGate>
       )}
       {tab === "csv" && (
-        <div className="bg-[#111827] border border-[#1f2937] rounded-xl p-6">
-          <CsvGeneratorTab onSaved={() => setTab("list")} />
-        </div>
+        <PlanGate minTier="growth" feature="CSV → YAML Inference">
+          <div className="bg-[#111827] border border-[#1f2937] rounded-xl p-6">
+            <CsvGeneratorTab onSaved={() => setTab("list")} />
+          </div>
+        </PlanGate>
       )}
       {tab === "quarantine" && (
-        <div className="bg-[#111827] border border-[#1f2937] rounded-xl p-6">
-          <div className="mb-5">
-            <h2 className="text-base font-semibold text-slate-100">
-              Quarantine
-            </h2>
-            <p className="text-sm text-slate-500 mt-1">
-              Events that failed validation and were held for review.
-              Select one or more to replay against any contract version.
-            </p>
+        <PlanGate minTier="growth" feature="Quarantine & Replay">
+          <div className="bg-[#111827] border border-[#1f2937] rounded-xl p-6">
+            <div className="mb-5">
+              <h2 className="text-base font-semibold text-slate-100">
+                Quarantine
+              </h2>
+              <p className="text-sm text-slate-500 mt-1">
+                Events that failed validation and were held for review.
+                Select one or more to replay against any contract version.
+              </p>
+            </div>
+            <QuarantineTab contracts={contracts} />
           </div>
-          <QuarantineTab contracts={contracts} />
-        </div>
+        </PlanGate>
       )}
 
       {/* RFC-036: Source-first new contract wizard */}

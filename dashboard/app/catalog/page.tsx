@@ -14,6 +14,7 @@
 import { useState, useEffect, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import AuthGate from "@/components/AuthGate";
+import PlanGate from "@/components/PlanGate";
 import {
   fetchPublished,
   importPublished,
@@ -35,7 +36,7 @@ import type {
   OpenDataContractDetail,
 } from "@/lib/api";
 import useSWR, { mutate } from "swr";
-import { useOrg } from "@/lib/org";
+import { useOrg, planAtLeast } from "@/lib/org";
 import clsx from "clsx";
 
 // ---------------------------------------------------------------------------
@@ -212,6 +213,8 @@ function ImportPanel() {
   const [ref, setRef] = useState(searchParams.get("ref") ?? "");
   const [token, setToken] = useState("");
   const [mode, setMode] = useState<ImportMode>("snapshot");
+  const { org } = useOrg();
+  const canSubscribe = org ? planAtLeast(org.plan, "growth") : false;
   const [preview, setPreview] = useState<FetchedPublication | null>(null);
   const [fetching, setFetching] = useState(false);
   const [importing, setImporting] = useState(false);
@@ -391,26 +394,36 @@ function ImportPanel() {
               Import mode
             </p>
             <div className="space-y-2">
-              {(["snapshot", "subscribe"] as ImportMode[]).map((m) => (
-                <label key={m} className="flex items-start gap-3 cursor-pointer">
-                  <input
-                    type="radio"
-                    name="cat-import-mode"
-                    value={m}
-                    checked={mode === m}
-                    onChange={() => setMode(m)}
-                    className="mt-0.5 accent-teal-500"
-                  />
-                  <div>
-                    <span className="text-sm font-medium text-slate-200 capitalize">{m}</span>
-                    <p className="text-xs text-slate-500 leading-relaxed">
-                      {m === "snapshot"
-                        ? "One-time copy with provenance. Contract never auto-updates."
-                        : "Live link — shows an update-available badge when the provider publishes a new version."}
-                    </p>
-                  </div>
-                </label>
-              ))}
+              {(["snapshot", "subscribe"] as ImportMode[]).map((m) => {
+                const disabled = m === "subscribe" && !canSubscribe;
+                return (
+                  <label
+                    key={m}
+                    className={clsx("flex items-start gap-3", disabled ? "cursor-not-allowed opacity-50" : "cursor-pointer")}
+                    title={disabled ? "Subscribe mode — Growth plan required" : undefined}
+                  >
+                    <input
+                      type="radio"
+                      name="cat-import-mode"
+                      value={m}
+                      checked={mode === m}
+                      onChange={() => !disabled && setMode(m)}
+                      disabled={disabled}
+                      className="mt-0.5 accent-teal-500"
+                    />
+                    <div>
+                      <span className="text-sm font-medium text-slate-200 capitalize">
+                        {m} {disabled && <span className="text-[10px] text-amber-500">🔒 Growth</span>}
+                      </span>
+                      <p className="text-xs text-slate-500 leading-relaxed">
+                        {m === "snapshot"
+                          ? "One-time copy with provenance. Contract never auto-updates."
+                          : "Live link — shows an update-available badge when the provider publishes a new version."}
+                      </p>
+                    </div>
+                  </label>
+                );
+              })}
             </div>
           </div>
 
@@ -740,25 +753,27 @@ function CatalogContent() {
       )}
 
       {tab === "egress" && (
-        <div className="bg-[#111827] border border-[#1f2937] rounded-xl p-6">
-          <div className="mb-5">
-            <h2 className="text-base font-semibold text-slate-100">Egress Validator</h2>
-            <p className="text-sm text-slate-500 mt-1">
-              Validate an outbound payload against one of your contracts before it leaves your API.
-              The same engine that runs on ingest — identical rules, identical latency budget.
-            </p>
-          </div>
-          {contractsLoading ? (
-            <p className="text-sm text-slate-500">Loading contracts…</p>
-          ) : !contracts || contracts.length === 0 ? (
-            <div className="flex flex-col items-center justify-center h-48 text-slate-600">
-              <p className="text-4xl mb-3">📋</p>
-              <p className="text-sm">No contracts yet — create one first.</p>
+        <PlanGate minTier="growth" feature="Egress Validator">
+          <div className="bg-[#111827] border border-[#1f2937] rounded-xl p-6">
+            <div className="mb-5">
+              <h2 className="text-base font-semibold text-slate-100">Egress Validator</h2>
+              <p className="text-sm text-slate-500 mt-1">
+                Validate an outbound payload against one of your contracts before it leaves your API.
+                The same engine that runs on ingest — identical rules, identical latency budget.
+              </p>
             </div>
-          ) : (
-            <EgressValidator contracts={contracts} />
-          )}
-        </div>
+            {contractsLoading ? (
+              <p className="text-sm text-slate-500">Loading contracts…</p>
+            ) : !contracts || contracts.length === 0 ? (
+              <div className="flex flex-col items-center justify-center h-48 text-slate-600">
+                <p className="text-4xl mb-3">📋</p>
+                <p className="text-sm">No contracts yet — create one first.</p>
+              </div>
+            ) : (
+              <EgressValidator contracts={contracts} />
+            )}
+          </div>
+        </PlanGate>
       )}
     </div>
   );

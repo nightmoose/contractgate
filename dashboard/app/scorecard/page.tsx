@@ -15,6 +15,7 @@
 import { useState, useEffect, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import AuthGate from "@/components/AuthGate";
+import PlanGate from "@/components/PlanGate";
 import {
   getScorecard,
   getScorecardExportUrl,
@@ -372,9 +373,11 @@ function ScorecardContent() {
 export default function ScorecardPage() {
   return (
     <AuthGate page="scorecard">
-      <Suspense>
-        <ScorecardContent />
-      </Suspense>
+      <PlanGate minTier="growth" feature="Provider Scorecard">
+        <Suspense>
+          <ScorecardContent />
+        </Suspense>
+      </PlanGate>
     </AuthGate>
   );
 }

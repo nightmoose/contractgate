@@ -11,6 +11,7 @@
 import { useState, useRef, useCallback } from "react";
 import clsx from "clsx";
 import AuthGate from "@/components/AuthGate";
+import PlanGate from "@/components/PlanGate";
 import {
   scaffoldFromSamples,
   scaffoldFromContent,
@@ -236,6 +237,7 @@ export default function ScaffoldPage() {
 
   return (
     <AuthGate page="scaffold">
+      <PlanGate minTier="growth" feature="Brownfield Contract Scaffolder">
       <div className="p-6 max-w-6xl mx-auto space-y-6">
         {/* Header */}
         <div>
@@ -462,6 +464,7 @@ export default function ScaffoldPage() {
           </div>
         </div>
       </div>
+      </PlanGate>
     </AuthGate>
   );
 }
