@@ -1,21 +1,29 @@
--- Migration 026: Add plan tier to organizations
+-- Migration 026: Rename 'pro' plan value to 'growth' in public.orgs
 --
--- Adds a plan enum and column to the organizations table so the dashboard
--- can gate Growth+ and Enterprise features per org.
+-- The plan column already exists (migration 007) as:
+--   plan text not null default 'free'
+--   constraint orgs_plan_valid check (plan in ('free', 'pro', 'enterprise'))
 --
--- All existing orgs default to 'free'.  Admins promote orgs via the
--- Supabase dashboard or a future admin API.  Backend quota enforcement
--- (event limits, audit retention windows) is a separate concern and is
--- NOT in this migration.
+-- This migration does three things:
+--   1. Drops the old check constraint (which uses 'pro').
+--   2. Renames any existing 'pro' rows to 'growth' (safe: no prod data yet,
+--      but written defensively for future migrations).
+--   3. Adds the new check constraint with 'growth' replacing 'pro'.
+--
+-- No column or type is added — plan is and remains a plain text column.
 
--- Enum: ordered from least to most capable.
-create type public.plan_tier as enum ('free', 'growth', 'enterprise');
+alter table public.orgs
+    drop constraint if exists orgs_plan_valid;
 
--- Add column — NOT NULL with default so existing rows are covered atomically.
-alter table public.organizations
-  add column plan public.plan_tier not null default 'free';
+update public.orgs
+    set plan = 'growth'
+    where plan = 'pro';
 
--- Comment for schema browsers.
-comment on column public.organizations.plan is
-  'Billing plan tier: free | growth | enterprise.  '
-  'Controls which dashboard features the org can access.';
+alter table public.orgs
+    add constraint orgs_plan_valid
+        check (plan in ('free', 'growth', 'enterprise'));
+
+comment on column public.orgs.plan is
+    'Billing plan tier: free | growth | enterprise. '
+    'Controls which dashboard features the org can access (RFC-045). '
+    'Set by admins; self-serve upgrade is a future feature.';
