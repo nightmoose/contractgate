@@ -126,7 +126,7 @@ export default function SignupPage() {
                 value={displayName}
                 onChange={(e) => setDisplayName(e.target.value)}
                 className="w-full bg-[#0a0d12] border border-[#374151] rounded-lg px-3 py-2.5 text-sm text-slate-200 placeholder-slate-600 focus:outline-none focus:border-green-600 focus:ring-1 focus:ring-green-600/50 transition-colors"
-                placeholder="Alex Suarez"
+                placeholder="Jane Smith"
               />
             </div>
 
@@ -179,7 +179,7 @@ export default function SignupPage() {
 
           <p className="mt-4 text-center text-xs text-slate-600">
             By signing up you agree to our{" "}
-            <a href="https://datacontractgate.com/terms" className="text-slate-500 hover:text-slate-400">
+            <a href="/terms" className="text-slate-500 hover:text-slate-400">
               Terms of Service
             </a>
             .

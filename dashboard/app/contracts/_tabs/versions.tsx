@@ -621,11 +621,6 @@ function DiffDrawer({
                         <th className="px-4 py-2.5 text-left text-slate-500 uppercase tracking-wider font-medium">Kind</th>
                         <th className="px-4 py-2.5 text-left text-slate-500 uppercase tracking-wider font-medium">Field</th>
                         <th className="px-4 py-2.5 text-left text-slate-500 uppercase tracking-wider font-medium">Detail</th>
-                        <th className="px-4 py-2.5 text-left text-slate-500 uppercase tracking-wider font-medium">
-                          <TooltipWrap content="Severity scoring coming soon.">
-                            <span className="cursor-default underline decoration-dotted">Severity</span>
-                          </TooltipWrap>
-                        </th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-[#1f2937]">
@@ -651,7 +646,6 @@ function DiffDrawer({
                           </td>
                           <td className="px-4 py-2.5 font-mono text-slate-300">{c.field}</td>
                           <td className="px-4 py-2.5 text-slate-400">{c.detail}</td>
-                          <td className="px-4 py-2.5 text-slate-600">—</td>
                         </tr>
                       ))}
                     </tbody>

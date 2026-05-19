@@ -29,7 +29,7 @@ export default function DemoBanner() {
 
       {/* Right: upgrade CTA */}
       <Link
-        href="https://contractgate.io/cloud"
+        href="https://app.datacontractgate.com"
         target="_blank"
         rel="noopener noreferrer"
         className="flex items-center gap-1.5 text-xs text-green-500 hover:text-green-400 transition-colors font-medium"

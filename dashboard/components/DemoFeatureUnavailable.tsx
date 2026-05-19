@@ -54,7 +54,7 @@ export default function DemoFeatureUnavailable({ feature, reason }: Props) {
       {/* CTA */}
       <div className="mt-6 flex flex-col items-center gap-2">
         <Link
-          href="https://contractgate.io/cloud"
+          href="https://app.datacontractgate.com"
           target="_blank"
           rel="noopener noreferrer"
           className="px-5 py-2 bg-green-600 hover:bg-green-500 text-white rounded-lg text-sm font-medium transition-colors"
