@@ -320,3 +320,34 @@ jobs:
           SEEDER_RATE: "50"
           SEEDER_DURATION: "30s"
           MIN_AUDIT_ROWS: "500"
+
+  # ── Deploy to Fly.io (main only) ──────────────────────────
+  # Runs only on push to main (not on PRs).
+  # All other CI jobs must be green before deploy fires.
+  # Requires FLY_API_TOKEN repository secret:
+  #   fly.io dashboard → contractgate-api → Tokens → create deploy token
+  #   GitHub → repo Settings → Secrets → Actions → FLY_API_TOKEN
+  deploy-fly:
+    name: Deploy — Fly.io
+    if: github.event_name == 'push'
+    needs:
+      - rust-check
+      - dashboard
+      - docker
+      - migrations-check
+      - security
+      - compose-smoke
+      - compose-demo-smoke
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up flyctl
+        uses: superfly/flyctl-actions/setup-flyctl@master
+
+      - name: Deploy to Fly.io
+        run: flyctl deploy --remote-only
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}

@@ -1,6 +1,6 @@
 # RFC-001: Batch Ingest
 
-| Status        | Proposed                                 |
+| Status        | Accepted (2026-04-17)                    |
 |---------------|------------------------------------------|
 | Author        | ContractGate team                        |
 | Created       | 2026-04-17                               |

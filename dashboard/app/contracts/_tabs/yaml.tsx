@@ -7,7 +7,7 @@
 
 import clsx from "clsx";
 import { TooltipWrap } from "../_lib";
-import type { VersionSummary, VersionResponse } from "@/lib/api";
+import type { VersionSummary, VersionResponse, EgressLeakageMode } from "@/lib/api";
 
 interface YamlTabProps {
   versions: VersionSummary[];
@@ -20,6 +20,11 @@ interface YamlTabProps {
   isDraft: boolean;
   error: string | null;
   setError: (e: string | null) => void;
+  /** RFC-030: current leakage mode (from VersionResponse) */
+  egressLeakageMode?: EgressLeakageMode;
+  /** RFC-030: called when the user changes the leakage mode on a draft */
+  onChangeLeakageMode?: (mode: EgressLeakageMode) => void;
+  leakageSaving?: boolean;
 }
 
 export function YamlTab({
@@ -33,6 +38,9 @@ export function YamlTab({
   isDraft,
   error,
   setError,
+  egressLeakageMode,
+  onChangeLeakageMode,
+  leakageSaving,
 }: YamlTabProps) {
   return (
     <>
@@ -68,7 +76,6 @@ export function YamlTab({
                       ? "A work-in-progress version. YAML is freely editable."
                       : "A retired version. No new unpinned traffic routes to it."
                   }
-                  rfc="RFC-002"
                 >
                   <span
                     className={clsx(
@@ -132,12 +139,37 @@ export function YamlTab({
                 ) : null
               )}
               {currentVersion.compliance_mode && (
-                <TooltipWrap content="When enabled, any inbound field not declared in the contract ontology is rejected. Nothing undeclared can enter the audit log." rfc="RFC-004">
+                <TooltipWrap content="When enabled, any inbound field not declared in the contract ontology is rejected. Nothing undeclared can enter the audit log.">
                   <span className="text-[10px] uppercase tracking-wider text-amber-600 border border-amber-800/40 rounded px-2 py-0.5 cursor-default">
                     compliance mode
                   </span>
                 </TooltipWrap>
               )}
+              <TooltipWrap
+                content="Controls how undeclared fields in outbound payloads are handled. off = pass through; strip = remove silently; fail = treat as a validation error."
+              >
+                {isDraft && onChangeLeakageMode ? (
+                  <select
+                    value={egressLeakageMode ?? "off"}
+                    onChange={(e) => onChangeLeakageMode(e.target.value as EgressLeakageMode)}
+                    disabled={leakageSaving}
+                    className={clsx(
+                      "text-[10px] uppercase tracking-wider rounded px-2 py-0.5 border cursor-pointer outline-none transition-colors",
+                      egressLeakageMode && egressLeakageMode !== "off"
+                        ? "bg-violet-900/30 border-violet-700/50 text-violet-300"
+                        : "bg-[#1f2937] border-[#374151] text-slate-400 hover:text-slate-200"
+                    )}
+                  >
+                    <option value="off">leakage: off</option>
+                    <option value="strip">leakage: strip</option>
+                    <option value="fail">leakage: fail</option>
+                  </select>
+                ) : egressLeakageMode && egressLeakageMode !== "off" ? (
+                  <span className="text-[10px] uppercase tracking-wider text-violet-400 border border-violet-800/40 rounded px-2 py-0.5 cursor-default">
+                    leakage: {egressLeakageMode}
+                  </span>
+                ) : null}
+              </TooltipWrap>
             </div>
           )}
 

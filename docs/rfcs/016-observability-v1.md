@@ -1,6 +1,6 @@
 # RFC-016: Observability v1 (Metrics Only)
 
-| Status        | Draft — awaiting sign-off                                              |
+| Status        | Implemented (2026-05-03)                                               |
 |---------------|------------------------------------------------------------------------|
 | Author        | ContractGate team                                                      |
 | Created       | 2026-04-27                                                             |

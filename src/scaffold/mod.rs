@@ -18,7 +18,7 @@ pub mod report;
 #[cfg(feature = "scaffold")]
 pub mod kafka;
 
-use crate::contract::{Contract, FieldDefinition, FieldType, Ontology};
+use crate::contract::{Contract, EgressLeakageMode, FieldDefinition, FieldType, Ontology};
 use crate::infer::infer_fields_from_objects_pub;
 use crate::infer_avro::walk_avro_schema;
 use crate::infer_proto::{build_fields_for_message, parse_proto_source};
@@ -380,10 +380,12 @@ fn build_contract(entities: Vec<FieldDefinition>, config: &ScaffoldConfig) -> Co
         name: config.name.clone(),
         description: config.description.clone(),
         compliance_mode: false,
+        egress_leakage_mode: EgressLeakageMode::Off,
         ontology: Ontology { entities },
         glossary: vec![],
         metrics: vec![],
         quality: vec![],
+        envelope: None,
     }
 }
 
@@ -561,6 +563,8 @@ fn field_type_str(ft: &FieldType) -> &'static str {
         FieldType::Object => "object",
         FieldType::Array => "array",
         FieldType::Any => "any",
+        // RFC-044
+        FieldType::Date => "date",
     }
 }
 

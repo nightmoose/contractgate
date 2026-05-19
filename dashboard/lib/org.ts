@@ -19,11 +19,24 @@ import { useState, useEffect, useRef } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { DEMO_MODE, DEMO_ORG_UUID, DEMO_ORG_NAME } from "@/lib/demo";
 
+/** RFC-045: billing plan tier exposed to UI for feature gating. */
+export type PlanTier = "free" | "growth" | "enterprise";
+
+/** Ordered list used for tier comparisons — index = capability rank. */
+export const PLAN_ORDER: PlanTier[] = ["free", "growth", "enterprise"];
+
+/** Returns true when `actual` meets or exceeds `required`. */
+export function planAtLeast(actual: PlanTier, required: PlanTier): boolean {
+  return PLAN_ORDER.indexOf(actual) >= PLAN_ORDER.indexOf(required);
+}
+
 export interface OrgInfo {
   org_id: string;
   org_name: string;
   slug: string;
   role: "owner" | "admin" | "member";
+  /** RFC-045: billing plan tier. Defaults to "free" for legacy rows. */
+  plan: PlanTier;
 }
 
 /**
@@ -34,7 +47,7 @@ export interface OrgInfo {
  * runtime.  Local type so the unwrap below stays narrow and removes the
  * `as unknown` double-cast that was here previously.
  */
-type OrgJoinCell = { name: string; slug: string } | { name: string; slug: string }[] | null;
+type OrgJoinCell = { name: string; slug: string; plan: string } | { name: string; slug: string; plan: string }[] | null;
 
 interface UseOrgResult {
   org: OrgInfo | null;
@@ -61,6 +74,7 @@ export function useOrg(): UseOrgResult {
         org_name: DEMO_ORG_NAME,
         slug: "demo",
         role: "owner",
+        plan: "growth" as PlanTier, // demo shows Growth features
       },
       loading: false,
       error: null,
@@ -91,7 +105,7 @@ export function useOrg(): UseOrgResult {
 
         const { data, error: dbErr } = await supabase
           .from("org_memberships")
-          .select("org_id, role, orgs(name, slug)")
+          .select("org_id, role, orgs(name, slug, plan)")
           .eq("user_id", user.id)
           .order("joined_at", { ascending: true })
           .limit(1)
@@ -109,11 +123,15 @@ export function useOrg(): UseOrgResult {
         // it can be either an object or an array.
         const rawOrgs = data.orgs as OrgJoinCell;
         const orgsRow = Array.isArray(rawOrgs) ? (rawOrgs[0] ?? null) : rawOrgs;
+        const rawPlan = orgsRow?.plan ?? "free";
+        const plan: PlanTier =
+          rawPlan === "growth" || rawPlan === "enterprise" ? rawPlan : "free";
         setOrg({
           org_id: data.org_id as string,
           org_name: orgsRow?.name ?? "My Org",
           slug: orgsRow?.slug ?? "",
           role: (data.role as OrgInfo["role"]) ?? "member",
+          plan,
         });
       } catch (e: unknown) {
         if (!cancelled) {

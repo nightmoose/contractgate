@@ -8,24 +8,9 @@
 
 import { useState, useCallback, useEffect } from "react";
 import clsx from "clsx";
-import { getVersion, exportOdcs, approveImport, getConformanceReport } from "@/lib/api";
-import type { ContractResponse, VersionSummary, VersionResponse, NameHistoryEntry, ConformanceReport } from "@/lib/api";
+import { getVersion, exportOdcs, approveImport, getConformanceReport, diffContracts } from "@/lib/api";
+import type { ContractResponse, VersionSummary, VersionResponse, NameHistoryEntry, ConformanceReport, DiffResponse } from "@/lib/api";
 import { ConfirmActionModal, TooltipWrap } from "../_lib";
-
-// ---------------------------------------------------------------------------
-// Diff drawer types (mirrors src/infer_diff.rs DiffResponse)
-// ---------------------------------------------------------------------------
-
-interface DiffChange {
-  kind: string;
-  field: string;
-  detail: string;
-}
-
-interface DiffResponse {
-  summary: string;
-  changes: DiffChange[];
-}
 
 // ---------------------------------------------------------------------------
 // VersionsTab
@@ -75,8 +60,6 @@ export function VersionsTab({
   const [diffLoading, setDiffLoading] = useState(false);
   const [diffResult, setDiffResult] = useState<DiffResponse | null>(null);
   const [diffError, setDiffError] = useState<string | null>(null);
-
-  const BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001";
 
   // ODCS export loading map: version → loading state
   const [exportingVersion, setExportingVersion] = useState<string | null>(null);
@@ -186,19 +169,7 @@ export function VersionsTab({
         getVersion(contractId, compareSet[0]),
         getVersion(contractId, compareSet[1]),
       ]);
-      const res = await fetch(`${BASE}/contracts/diff`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          contract_yaml_a: vA.yaml_content,
-          contract_yaml_b: vB.yaml_content,
-        }),
-      });
-      if (!res.ok) {
-        const text = await res.text();
-        throw new Error(text || `Diff failed: ${res.status}`);
-      }
-      const data: DiffResponse = await res.json();
+      const data = await diffContracts(vA.yaml_content, vB.yaml_content);
       setDiffResult(data);
     } catch (e: unknown) {
       setDiffError(e instanceof Error ? e.message : String(e));
@@ -247,7 +218,6 @@ export function VersionsTab({
                 ? "Unpinned traffic first tries the latest stable version. On failure it retries other stable versions in order; the first that passes wins."
                 : "Unpinned traffic validates against only this latest stable version. On failure the event is quarantined — no retry."
             }
-            rfc="RFC-002"
           >
             <span className="text-xs font-mono text-green-400 cursor-default">
               → v{latestStable}
@@ -334,7 +304,6 @@ export function VersionsTab({
                         ? "A work-in-progress version. YAML is freely editable. Promotes to Stable when ready."
                         : "A retired version. No new unpinned traffic routes to it. Clients that explicitly pin this version get their batch quarantined."
                     }
-                    rfc="RFC-002"
                   >
                     <span
                       className={clsx(
@@ -350,7 +319,6 @@ export function VersionsTab({
                   {isLatestStable && (
                     <TooltipWrap
                       content="Unpinned traffic resolves to this version by default (latest stable by promotion timestamp)."
-                      rfc="RFC-002"
                     >
                       <span className="text-[10px] px-1.5 py-0.5 rounded bg-green-900/20 text-green-600 border border-green-800/30 cursor-default">
                         default
@@ -365,7 +333,6 @@ export function VersionsTab({
                           ? "Imported from a full ODCS v3.1.0 document (lossless round-trip)."
                           : "Imported from a foreign ODCS document without ContractGate extensions. Best-effort reconstruction — review required before promotion."
                       }
-                      rfc="D-003"
                     >
                       <span className={clsx(
                         "text-[10px] px-1.5 py-0.5 rounded border cursor-default",
@@ -381,7 +348,6 @@ export function VersionsTab({
                   {v.requires_review && (
                     <TooltipWrap
                       content="This version was imported from a foreign ODCS document without ContractGate extensions. A human must review the reconstructed contract before it can be promoted. Click 'Approve' to clear this flag."
-                      rfc="D-002"
                     >
                       <span className="text-[10px] px-1.5 py-0.5 rounded bg-orange-900/30 text-orange-300 border border-orange-800/40 cursor-default animate-pulse">
                         review required
@@ -538,7 +504,7 @@ function ConformanceChip({
   ].join("\n");
 
   return (
-    <TooltipWrap content={tooltip} rfc="ODCS">
+    <TooltipWrap content={tooltip}>
       <span className={clsx(
         "text-[10px] px-1.5 py-0.5 rounded border cursor-default font-mono",
         color
@@ -556,19 +522,19 @@ function ConformanceChip({
 function StateLadder() {
   return (
     <div className="flex items-center gap-2 text-xs py-2">
-      <TooltipWrap content="A work-in-progress version. YAML is freely editable. Promotes to Stable when ready." rfc="RFC-002">
+      <TooltipWrap content="A work-in-progress version. YAML is freely editable. Promotes to Stable when ready.">
         <span className="px-2.5 py-1 rounded-lg bg-amber-900/30 text-amber-400 border border-amber-800/30 cursor-default">
           Draft
         </span>
       </TooltipWrap>
       <span className="text-slate-600 select-none">──promote──▶</span>
-      <TooltipWrap content="A frozen, immutable version eligible to receive inbound traffic. YAML cannot be edited after promotion." rfc="RFC-002">
+      <TooltipWrap content="A frozen, immutable version eligible to receive inbound traffic. YAML cannot be edited after promotion.">
         <span className="px-2.5 py-1 rounded-lg bg-green-900/30 text-green-400 border border-green-800/30 cursor-default">
           Stable
         </span>
       </TooltipWrap>
       <span className="text-slate-600 select-none">──deprecate──▶</span>
-      <TooltipWrap content="A retired version. No new unpinned traffic routes to it. Clients that explicitly pin this version get their batch quarantined." rfc="RFC-002">
+      <TooltipWrap content="A retired version. No new unpinned traffic routes to it. Clients that explicitly pin this version get their batch quarantined.">
         <span className="px-2.5 py-1 rounded-lg bg-slate-800 text-slate-500 border border-slate-700/30 cursor-default">
           Deprecated
         </span>
@@ -656,7 +622,7 @@ function DiffDrawer({
                         <th className="px-4 py-2.5 text-left text-slate-500 uppercase tracking-wider font-medium">Field</th>
                         <th className="px-4 py-2.5 text-left text-slate-500 uppercase tracking-wider font-medium">Detail</th>
                         <th className="px-4 py-2.5 text-left text-slate-500 uppercase tracking-wider font-medium">
-                          <TooltipWrap content="Severity scoring will be available with RFC-015 breaking-change taxonomy.">
+                          <TooltipWrap content="Severity scoring coming soon.">
                             <span className="cursor-default underline decoration-dotted">Severity</span>
                           </TooltipWrap>
                         </th>

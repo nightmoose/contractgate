@@ -148,11 +148,9 @@ export function buildYaml(name: string, fields: InferredField[]): string {
 export function TooltipWrap({
   children,
   content,
-  rfc,
 }: {
   children: React.ReactNode;
   content: string;
-  rfc?: string;
 }) {
   return (
     <Tooltip.Provider delayDuration={300}>
@@ -164,11 +162,6 @@ export function TooltipWrap({
             sideOffset={4}
           >
             {content}
-            {rfc && (
-              <span className="ml-1 text-indigo-400 underline underline-offset-2">
-                {rfc}
-              </span>
-            )}
             <Tooltip.Arrow className="fill-[#1f2937]" />
           </Tooltip.Content>
         </Tooltip.Portal>

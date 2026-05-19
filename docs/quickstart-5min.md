@@ -29,13 +29,26 @@ export CONTRACT_ID=<paste id here>
 
 ## Step 2 — Publish a stable version
 
-The contract starts as a draft. Promote it to `stable` so you can ingest
-against it:
+**Recommended (CLI):** `deploy-contract` creates or promotes a version to
+`stable` atomically, deprecates any prior stable version, and rejects if
+pending quarantine events exist.
+
+```bash
+cg deploy-contract contracts/user_events.yaml \
+  --source demo \
+  --deployed-by "$USER"
+```
+
+**Alternative (API):** if you haven't deployed via the CLI, promote the draft
+directly:
 
 ```bash
 curl -s -X POST "$BASE/contracts/$CONTRACT_ID/versions/1.0.0/promote" \
   -H "X-Api-Key: $KEY" | jq '{version: .version, state: .state}'
 ```
+
+See [deploy-contract reference](deploy-contract-reference.md) for dry-run,
+JSON output, and CI integration options.
 
 ---
 

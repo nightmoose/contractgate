@@ -112,7 +112,7 @@ function RawEventDrawer({
             {entry.contract_version && (
               <span
                 className="text-xs bg-indigo-900/40 text-indigo-300 border border-indigo-700/40 rounded-full px-2 py-0.5 font-mono"
-                title="Contract version that produced this decision (RFC-002)"
+                title="Contract version that produced this decision"
               >
                 v{entry.contract_version}
               </span>
@@ -177,7 +177,7 @@ function RawEventDrawer({
           <div className="mb-3 flex items-start gap-2 bg-indigo-900/15 border border-indigo-700/30 rounded-lg px-3 py-2">
             <span className="text-indigo-400 text-sm leading-5">🔒</span>
             <p className="text-[11px] text-indigo-200 leading-relaxed">
-              Under RFC-004 §6, values here have already been through the
+              Values here have already been through the
               contract&apos;s PII transforms before being written to{" "}
               <code className="text-indigo-300">audit_log.raw_event</code>. Raw
               PII never reaches this column — fields with a declared{" "}

@@ -226,7 +226,9 @@ pub(crate) fn format_preserving_mask(input: &str, salt: &[u8], field_name: &str)
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::contract::{Contract, FieldDefinition, FieldType, Ontology, Transform};
+    use crate::contract::{
+        Contract, EgressLeakageMode, FieldDefinition, FieldType, Ontology, Transform,
+    };
 
     fn entity(name: &str, transform: Option<Transform>) -> FieldDefinition {
         FieldDefinition {
@@ -255,10 +257,12 @@ mod tests {
             name: "test".into(),
             description: None,
             compliance_mode,
+            egress_leakage_mode: EgressLeakageMode::Off,
             ontology: Ontology { entities: fields },
             glossary: vec![],
             metrics: vec![],
             quality: vec![],
+            envelope: None,
         };
         CompiledContract::compile_with_salt(contract, salt).unwrap()
     }
@@ -531,12 +535,14 @@ mod tests {
             name: "bad".into(),
             description: None,
             compliance_mode: false,
+            egress_leakage_mode: EgressLeakageMode::Off,
             ontology: Ontology {
                 entities: vec![bad],
             },
             glossary: vec![],
             metrics: vec![],
             quality: vec![],
+            envelope: None,
         };
         let err = CompiledContract::compile_with_salt(contract, b"x".to_vec())
             .expect_err("non-string transform should fail compile");

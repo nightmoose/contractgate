@@ -18,12 +18,12 @@
 //! | All values are objects             | `type: object` + properties     |
 //! | All values are arrays              | `type: array` + items           |
 //! | All strings match UUID shape       | `pattern: ^[0-9a-f]{8}-…$`     |
-//! | All strings match ISO-8601 date    | `pattern: ^\d{4}-\d{2}-\d{2}$` |
+//! | All strings match ISO-8601 date    | `type: date` (RFC-044)          |
 //! | All strings match ISO-8601 dt      | `pattern: ^\d{4}-…T\d{2}:…$`   |
 //! | ≤8 distinct string values, ≥2 seen | `enum: [...]`                   |
 //! | Mixed types across samples         | `type: any`                     |
 
-use crate::contract::{Contract, FieldDefinition, FieldType, Ontology};
+use crate::contract::{Contract, EgressLeakageMode, FieldDefinition, FieldType, Ontology};
 use crate::error::{AppError, AppResult};
 use axum::Json;
 use serde_json::Value;
@@ -83,10 +83,12 @@ pub async fn infer_handler(Json(req): Json<InferRequest>) -> AppResult<Json<Infe
         name: req.name.clone(),
         description: req.description.clone(),
         compliance_mode: false,
+        egress_leakage_mode: EgressLeakageMode::Off,
         ontology: Ontology { entities },
         glossary: vec![],
         metrics: vec![],
         quality: vec![],
+        envelope: None,
     };
 
     let yaml_content = serde_yaml::to_string(&contract)
@@ -324,7 +326,12 @@ fn refine_string(def: &mut FieldDefinition, strings: &[&str], total_samples: usi
     }
 
     if strings.iter().all(|s| looks_like_date(s)) {
-        def.pattern = Some(r"^\d{4}-\d{2}-\d{2}$".to_string());
+        // RFC-044: promote to native date type — calendar validation now
+        // happens in the engine, no regex needed.
+        def.field_type = FieldType::Date;
+        def.pattern = None;
+        def.min_length = None;
+        def.max_length = None;
         return;
     }
 
@@ -405,10 +412,12 @@ mod tests {
             name: name.to_string(),
             description: None,
             compliance_mode: false,
+            egress_leakage_mode: EgressLeakageMode::Off,
             ontology: Ontology { entities },
             glossary: vec![],
             metrics: vec![],
             quality: vec![],
+            envelope: None,
         }
     }
 

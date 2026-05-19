@@ -14,8 +14,8 @@
 //! `name`; callers must NOT pass the salt to any outbound serializer.
 
 use crate::contract::{
-    Contract, ContractIdentity, ContractVersion, FieldDefinition, FieldType, ImportSource,
-    Ontology, QualityRule, QualityRuleType, UniqueScope, VersionState,
+    Contract, ContractIdentity, ContractVersion, EgressLeakageMode, FieldDefinition, FieldType,
+    ImportSource, Ontology, QualityRule, QualityRuleType, UniqueScope, VersionState,
 };
 use serde_yaml::{Mapping, Value};
 
@@ -44,6 +44,8 @@ fn field_type_to_logical(ft: &FieldType) -> &'static str {
         FieldType::Object => "object",
         FieldType::Array => "array",
         FieldType::Any => "any",
+        // RFC-044
+        FieldType::Date => "date",
     }
 }
 
@@ -54,6 +56,8 @@ fn logical_to_field_type(s: &str) -> FieldType {
         "boolean" | "bool" => FieldType::Boolean,
         "object" | "record" | "struct" => FieldType::Object,
         "array" | "list" => FieldType::Array,
+        // RFC-044: date32 is the Arrow/Iceberg alias
+        "date" | "date32" => FieldType::Date,
         _ => FieldType::String,
     }
 }
@@ -479,6 +483,8 @@ fn import_mode_b(doc: &Mapping, version: String) -> Result<ImportResult, String>
         name,
         description,
         compliance_mode: false,
+        egress_leakage_mode: EgressLeakageMode::Off,
+        envelope: None,
         ontology: Ontology { entities },
         glossary: vec![],
         metrics: vec![],

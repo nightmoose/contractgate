@@ -295,6 +295,7 @@ mod inner {
             source: "kafka".to_string(),
             pre_assigned_id: None,
             replay_of_quarantine_id: None,
+            direction: "ingress".to_string(),
         };
 
         if let Err(e) = log_audit_entries_batch(&state.db, &[audit]).await {

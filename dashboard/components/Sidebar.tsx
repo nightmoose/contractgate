@@ -14,7 +14,11 @@ const PUBLIC_NAV = [
 const ACCOUNT_NAV = [
   { href: "/",           label: "Dashboard",  icon: "⬡" },
   { href: "/contracts",  label: "Contracts",  icon: "📋" },
+  { href: "/catalog",    label: "Catalog",    icon: "📥" },
+  { href: "/scorecard",  label: "Scorecard",  icon: "📊" },
   { href: "/audit",      label: "Audit Log",  icon: "🔍" },
+  { href: "/scaffold",   label: "Scaffold",   icon: "🏗️" },
+  { href: "/workbench",  label: "Workbench",  icon: "🔬" },
   { href: "/playground", label: "Playground", icon: "🧪" },
   { href: "/account",    label: "Account",    icon: "🔑" },
 ];

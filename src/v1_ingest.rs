@@ -653,6 +653,7 @@ pub async fn v1_ingest_handler(
                 source: "http".to_string(),
                 pre_assigned_id: None,
                 replay_of_quarantine_id: None,
+                direction: "ingress".to_string(),
             })
             .collect();
 
@@ -669,6 +670,7 @@ pub async fn v1_ingest_handler(
                 source_ip: source_ip.clone(),
                 replay_of_quarantine_id: None,
                 pre_assigned_id: quarantine_ids[idx], // pre-assigned so we can return it
+                direction: "ingress".to_string(),
             })
             .collect();
 
@@ -768,6 +770,7 @@ pub async fn v1_ingest_handler(
                 0,
                 source_ip.as_deref(),
                 "http",
+                "ingress",
             )
             .await
             {
@@ -904,6 +907,7 @@ async fn deprecated_quarantine(
                 source_ip: source_ip.clone(),
                 replay_of_quarantine_id: None,
                 pre_assigned_id: None,
+                direction: "ingress".to_string(),
             })
             .collect();
         let pool = state.db.clone();

@@ -27,8 +27,9 @@ mod inner {
     use std::sync::Arc;
     use std::time::{Duration, Instant};
 
+    use aws_config::BehaviorVersion;
     use aws_sdk_kinesis::{
-        config::{BehaviorVersion, Credentials, Region},
+        config::{Credentials, Region},
         types::ShardIteratorType,
         Client as KinesisClient,
     };
@@ -319,6 +320,7 @@ mod inner {
                     source: "kinesis".to_string(),
                     pre_assigned_id: None,
                     replay_of_quarantine_id: None,
+                    direction: "ingress".to_string(),
                 });
 
                 sequence_numbers.insert(shard_id.clone(), seq);

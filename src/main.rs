@@ -22,6 +22,7 @@ use axum::{
     routing::{get, post},
     Router,
 };
+use jsonwebtoken::jwk::JwkSet;
 use sqlx::PgPool;
 use std::{
     collections::HashMap,
@@ -43,23 +44,33 @@ use uuid::Uuid;
 pub use contractgate::{contract, transform, validation};
 
 mod api_key_auth;
+mod collaboration;
 mod conformance;
+mod egress;
 mod error;
+mod fork_filter;
 mod idempotency;
 mod infer;
 mod infer_avro;
+mod infer_csv;
 mod infer_diff;
 mod infer_openapi;
 mod infer_proto;
+mod infer_url;
 mod ingest;
+mod jwt_auth;
 mod kafka_consumer;
 mod kafka_ingress;
 mod kinesis_consumer;
 mod kinesis_ingress;
 pub mod observability;
 mod odcs;
+mod public_catalog;
+mod publication;
 mod rate_limit;
 mod replay;
+mod scaffold_handler;
+mod scorecard;
 mod storage;
 mod stream_demo;
 #[cfg(test)]
@@ -68,8 +79,8 @@ mod v1_ingest;
 
 use contract::{
     Contract, ContractIdentity, ContractResponse, ContractSummary, ContractVersion,
-    CreateContractRequest, CreateVersionRequest, NameHistoryEntry, PatchContractRequest,
-    PatchVersionRequest, VersionResponse, VersionSummary,
+    CreateContractRequest, CreateVersionRequest, DeployContractRequest, DeployContractResponse,
+    NameHistoryEntry, PatchContractRequest, PatchVersionRequest, VersionResponse, VersionSummary,
 };
 use error::{AppError, AppResult};
 use validation::CompiledContract;
@@ -101,10 +112,14 @@ pub struct AppState {
     pub kafka_consumers: kafka_consumer::ConsumerPool,
     /// RFC-026: platform-side Kinesis consumer pool (one task per enabled contract).
     pub kinesis_consumers: kinesis_consumer::ConsumerPool,
+    /// RFC-039: Supabase JWKS for verifying RS256 session tokens from the dashboard.
+    /// Fetched once at startup from the project's JWKS endpoint.  None = JWT auth
+    /// disabled (local dev without a Supabase DATABASE_URL).
+    pub supabase_jwks: Option<Arc<JwkSet>>,
 }
 
 impl AppState {
-    pub fn new(db: PgPool, api_key: String) -> Self {
+    pub fn new(db: PgPool, api_key: String, supabase_jwks: Option<Arc<JwkSet>>) -> Self {
         AppState {
             db,
             contract_cache: RwLock::new(HashMap::new()),
@@ -114,6 +129,7 @@ impl AppState {
             stream_demo: std::sync::Arc::new(stream_demo::StreamDemoState::new()),
             kafka_consumers: kafka_consumer::ConsumerPool::new(),
             kinesis_consumers: kinesis_consumer::ConsumerPool::new(),
+            supabase_jwks,
         }
     }
 
@@ -448,6 +464,60 @@ async fn list_name_history_handler(
 }
 
 // ---------------------------------------------------------------------------
+// Deploy handler (RFC-028)
+// ---------------------------------------------------------------------------
+
+/// `POST /contracts/deploy` — atomically deploy a contract version as stable.
+///
+/// Admin-only: requires a service-role or admin API key (validated by the
+/// standard auth middleware; no additional role check is needed here because
+/// only service-role keys bypass org-scoped RLS).
+///
+/// Steps (delegated to `storage::deploy_contract_version`):
+///   1. Find-or-create the contract identity by name.
+///   2. Reject if pending quarantine events exist for this contract.
+///   3. Insert the version as `stable` with parsed_json/source/deployed_by/deployed_at.
+///   4. Deprecate all previously-stable versions.
+async fn deploy_contract_handler(
+    State(state): State<Arc<AppState>>,
+    req: axum::extract::Request,
+) -> AppResult<(StatusCode, Json<DeployContractResponse>)> {
+    let org_id = org_id_from_req(&req);
+    let Json(body): Json<DeployContractRequest> = axum::Json::from_request(req, &state)
+        .await
+        .map_err(|e| AppError::BadRequest(e.to_string()))?;
+
+    let (version, deprecated_count) = storage::deploy_contract_version(
+        &state.db,
+        &body.name,
+        &body.yaml_content,
+        body.source.as_deref(),
+        body.deployed_by.as_deref(),
+        org_id,
+    )
+    .await?;
+
+    // Warm the cache for the new stable version so the first ingest is fast.
+    let _ = state
+        .get_compiled(version.contract_id, &version.version)
+        .await;
+
+    let deployed_at = version.promoted_at.unwrap_or_else(chrono::Utc::now);
+    let resp = DeployContractResponse {
+        contract_id: version.contract_id,
+        version_id: version.id,
+        name: body.name,
+        version: version.version,
+        source: body.source,
+        deployed_by: body.deployed_by,
+        deployed_at,
+        deprecated_count,
+    };
+
+    Ok((StatusCode::CREATED, Json(resp)))
+}
+
+// ---------------------------------------------------------------------------
 // ODCS import / export / approve-import handlers
 // ---------------------------------------------------------------------------
 
@@ -679,6 +749,45 @@ async fn require_api_key(
     mut request: Request,
     next: Next,
 ) -> Result<axum::response::Response, error::AppError> {
+    // RFC-039: Bearer JWT wins — used by the dashboard after Supabase sign-in.
+    // Hard-reject on a bad token so clients see the real error (expired, invalid
+    // signature) rather than silently falling through to a 401 about x-api-key.
+    if let Some(bearer) = request
+        .headers()
+        .get("authorization")
+        .and_then(|v| v.to_str().ok())
+        .and_then(|v| v.strip_prefix("Bearer "))
+        .map(str::to_owned)
+    {
+        if let Some(jwks) = &state.supabase_jwks {
+            match jwt_auth::verify_supabase_jwt(&bearer, jwks, &state.db).await {
+                Ok(validated) => {
+                    // RFC-043 fix-1: key by user_id, not api_key_id (nil UUID).
+                    // api_key_id = Uuid::nil() is the "JWT session" sentinel used
+                    // in audit logs — it must not double as a rate-limit key or
+                    // every dashboard user shares one global bucket.
+                    let outcome = state.rate_limiter.check(
+                        validated.user_id, // real Supabase user UUID
+                        Some(500),
+                        Some(2_000),
+                    );
+                    if !outcome.allowed {
+                        return Err(error::AppError::RateLimitExceeded);
+                    }
+                    request.extensions_mut().insert(validated);
+                    return Ok(next.run(request).await);
+                }
+                Err(e) => {
+                    tracing::warn!("JWT verification failed: {e}");
+                    return Err(error::AppError::Unauthorized);
+                }
+            }
+        } else {
+            tracing::warn!("Bearer token received but JWKS not loaded — rejecting");
+            return Err(error::AppError::Unauthorized);
+        }
+    }
+
     let provided = request
         .headers()
         .get("x-api-key")
@@ -691,16 +800,23 @@ async fn require_api_key(
         return Ok(next.run(request).await);
     }
 
-    // Legacy env-var key: still accepted for zero-downtime migration.
-    // Remove this branch once all connectors are issuing DB-backed keys.
-    if !provided.is_empty() && provided == state.api_key {
-        return Ok(next.run(request).await);
-    }
-
     // DB-backed key: validate via cache (60-second TTL).
+    // Checked FIRST so that if the same value is also set as the legacy
+    // env-var key, the DB path wins and ValidatedKey (with org_id) is
+    // injected.  Without this ordering, the legacy short-circuit fires,
+    // org_id stays None, and deploy/ingest writes fail the NOT NULL constraint.
     if !provided.is_empty() {
         match state.key_cache.validate(&provided, &state.db).await {
             Ok(validated) => {
+                // P1-1: rate-limit DB-backed keys using per-key overrides.
+                let outcome = state.rate_limiter.check(
+                    validated.api_key_id,
+                    validated.rate_limit_rps,
+                    validated.rate_limit_burst,
+                );
+                if !outcome.allowed {
+                    return Err(error::AppError::RateLimitExceeded);
+                }
                 // Inject the validated key into request extensions so
                 // downstream handlers can scope queries to the correct org.
                 request.extensions_mut().insert(validated);
@@ -711,6 +827,12 @@ async fn require_api_key(
                 state.key_cache.evict(&provided);
             }
         }
+    }
+
+    // Legacy env-var key: still accepted for zero-downtime migration.
+    // Remove this branch once all connectors are issuing DB-backed keys.
+    if !provided.is_empty() && provided == state.api_key {
+        return Ok(next.run(request).await);
     }
 
     tracing::warn!("Rejected request: missing or invalid x-api-key");
@@ -731,7 +853,6 @@ fn build_router(state: Arc<AppState>) -> Router {
     let public = Router::new()
         .route("/health", get(health_handler))
         .route("/openapi.json", get(v1_ingest::openapi_handler))
-        .route("/playground/validate", post(playground_handler))
         // Prometheus metrics scrape endpoint (RFC-016).
         // Open by default; Bearer-auth gated when METRICS_AUTH_TOKEN is set.
         // Mounted as public so Prometheus can scrape without an x-api-key.
@@ -742,10 +863,28 @@ fn build_router(state: Arc<AppState>) -> Router {
         .route("/demo/stop", post(stream_demo::stop_handler))
         .route("/demo/stream", get(stream_demo::stream_handler))
         .route("/demo/events", get(stream_demo::events_handler))
-        .route("/demo/contract", get(stream_demo::contract_handler));
+        .route("/demo/contract", get(stream_demo::contract_handler))
+        // RFC-032: public-fetch for published contracts (visibility checked inside handler)
+        .route(
+            "/published/{publication_ref}",
+            get(publication::fetch_published_handler),
+        )
+        // Curated open-data public contracts (no auth — readable by anyone)
+        .route(
+            "/public-contracts",
+            get(public_catalog::list_public_contracts_handler),
+        )
+        .route(
+            "/public-contracts/{id}",
+            get(public_catalog::get_public_contract_handler),
+        )
+        // User-published contracts catalog (no auth — lists public visibility publications)
+        .route("/catalog", get(publication::catalog_handler));
 
     // Protected routes — require x-api-key header
     let protected = Router::new()
+        // Deploy — RFC-028: atomically push a version straight to stable
+        .route("/contracts/deploy", post(deploy_contract_handler))
         // ODCS import / export / approve-import
         .route("/contracts/import", post(import_odcs_handler))
         .route(
@@ -760,23 +899,13 @@ fn build_router(state: Arc<AppState>) -> Router {
             "/contracts/{id}/versions/{version}/odcs-conformance",
             get(odcs_conformance_handler),
         )
-        // Contract inference — JSON samples
-        .route("/contracts/infer", post(infer::infer_handler))
-        // Contract inference — format-specific routes (RFC-006)
-        .route(
-            "/contracts/infer/avro",
-            post(infer_avro::infer_avro_handler),
-        )
-        .route(
-            "/contracts/infer/proto",
-            post(infer_proto::infer_proto_handler),
-        )
-        .route(
-            "/contracts/infer/openapi",
-            post(infer_openapi::infer_openapi_handler),
-        )
         // Evolution diff summarizer (RFC-006)
         .route("/contracts/diff", post(infer_diff::diff_handler))
+        // Brownfield contract scaffolder (RFC-024)
+        .route(
+            "/contracts/scaffold",
+            post(scaffold_handler::scaffold_handler),
+        )
         // Contract identity CRUD
         .route(
             "/contracts",
@@ -821,6 +950,12 @@ fn build_router(state: Arc<AppState>) -> Router {
             "/ingest/{contract_id}/stats",
             get(ingest::ingest_stats_handler),
         )
+        // Egress validation (RFC-029) — same @version suffix convention.
+        .route("/egress/{raw_id}", post(egress::egress_handler))
+        // Provider scorecard (RFC-031) — keyed by provider source name.
+        .route("/scorecard/{source}", get(scorecard::scorecard_handler))
+        .route("/scorecard/{source}/drift", get(scorecard::drift_handler))
+        .route("/scorecard/{source}/export", get(scorecard::export_handler))
         // Replay Quarantine (RFC-003)
         .route(
             "/contracts/{id}/quarantine/replay",
@@ -860,9 +995,109 @@ fn build_router(state: Arc<AppState>) -> Router {
             "/contracts/{id}/kinesis-ingress/rotate-credentials",
             post(kinesis_ingress::rotate_kinesis_credentials_handler),
         )
+        // RFC-032: Contract Sharing & Publication
+        .route(
+            "/contracts/{id}/versions/{version}/publish",
+            post(publication::publish_handler),
+        )
+        .route(
+            "/contracts/publications/{publication_ref}",
+            axum::routing::delete(publication::revoke_handler),
+        )
+        .route(
+            "/contracts/import-published",
+            post(publication::import_published_handler),
+        )
+        .route(
+            "/contracts/{id}/import-status",
+            get(publication::import_status_handler),
+        )
+        // RFC-034: Public Catalog — fork + export (auth required)
+        .route(
+            "/contracts/{id}/fork",
+            post(public_catalog::fork_public_contract_handler),
+        )
+        .route(
+            "/contracts/{id}/export",
+            post(public_catalog::export_fork_handler),
+        )
+        // RFC-033: Provider-Consumer Collaboration
+        // Collaborator grants — owner-only writes, viewer+ reads.
+        .route(
+            "/contracts/{name}/collaborators",
+            get(collaboration::list_collaborators_handler)
+                .post(collaboration::grant_collaborator_handler),
+        )
+        .route(
+            "/contracts/{name}/collaborators/{org_id}",
+            axum::routing::patch(collaboration::patch_collaborator_handler)
+                .delete(collaboration::revoke_collaborator_handler),
+        )
+        // Comments — any collaborator/owner can read and write.
+        .route(
+            "/contracts/{name}/comments",
+            get(collaboration::list_comments_handler).post(collaboration::add_comment_handler),
+        )
+        .route(
+            "/contracts/{name}/comments/{id}/resolve",
+            post(collaboration::resolve_comment_handler),
+        )
+        // Change proposals — editor+ creates, reviewer+ decides, owner applies.
+        .route(
+            "/contracts/{name}/proposals",
+            get(collaboration::list_proposals_handler).post(collaboration::create_proposal_handler),
+        )
+        .route(
+            "/contracts/{name}/proposals/{id}/decide",
+            post(collaboration::decide_proposal_handler),
+        )
+        .route(
+            "/contracts/{name}/proposals/{id}/apply",
+            post(collaboration::apply_proposal_handler),
+        )
         // Audit + stats
         .route("/audit", get(audit_log_handler))
         .route("/stats", get(global_stats_handler))
+        // P1-3: playground now requires auth (moved from public router).
+        // Previously unauthenticated + unlimited; now gated + capped at 1 MB
+        // along with the rest of the protected surface.
+        .route("/playground/validate", post(playground_handler))
+        // P1-2: 1 MB body limit on all protected routes.
+        // /contracts/infer/* is carved out below with a 10 MB cap (RFC-043 fix-2).
+        .layer(tower_http::limit::RequestBodyLimitLayer::new(
+            1024 * 1024, // 1 MB
+        ))
+        .layer(middleware::from_fn_with_state(
+            state.clone(),
+            require_api_key,
+        ));
+
+    // RFC-043 fix-2: inference routes get 10 MB — real OpenAPI specs (e.g.
+    // Stripe's) exceed 1 MB; capping them at 1 MB causes 413 on first real use.
+    // Auth middleware applied here so both groups share the same auth path.
+    let infer = Router::new()
+        // Contract inference — JSON samples
+        .route("/contracts/infer", post(infer::infer_handler))
+        // Contract inference — format-specific routes (RFC-006, RFC-035)
+        .route(
+            "/contracts/infer/avro",
+            post(infer_avro::infer_avro_handler),
+        )
+        .route(
+            "/contracts/infer/proto",
+            post(infer_proto::infer_proto_handler),
+        )
+        .route(
+            "/contracts/infer/openapi",
+            post(infer_openapi::infer_openapi_handler),
+        )
+        // CSV inference (RFC-035)
+        .route("/contracts/infer/csv", post(infer_csv::infer_csv_handler))
+        // URL inference (RFC-037)
+        .route("/contracts/infer/url", post(infer_url::infer_url_handler))
+        .layer(tower_http::limit::RequestBodyLimitLayer::new(
+            10 * 1024 * 1024, // 10 MB — matches v1_ingest cap
+        ))
         .layer(middleware::from_fn_with_state(
             state.clone(),
             require_api_key,
@@ -888,6 +1123,7 @@ fn build_router(state: Arc<AppState>) -> Router {
     Router::new()
         .merge(public)
         .merge(protected)
+        .merge(infer)
         .merge(v1)
         .layer(cors)
         .layer(middleware::from_fn(observability::track_requests))
@@ -903,6 +1139,24 @@ fn build_router(state: Arc<AppState>) -> Router {
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     dotenvy::dotenv().ok();
+
+    // ── CLI subcommand: scorecard-rollup ──────────────────────────────────────
+    // Run the daily baseline rollup job and exit.
+    // Usage: cargo run -- scorecard-rollup
+    if std::env::args().any(|a| a == "scorecard-rollup") {
+        tracing_subscriber::registry()
+            .with(
+                tracing_subscriber::EnvFilter::try_from_default_env()
+                    .unwrap_or_else(|_| "contractgate=info".into()),
+            )
+            .with(tracing_subscriber::fmt::layer())
+            .init();
+        let database_url = std::env::var("DATABASE_URL").expect("DATABASE_URL must be set");
+        let pool = sqlx::PgPool::connect(&database_url).await?;
+        scorecard::run_baseline_rollup(&pool).await?;
+        tracing::info!("scorecard-rollup complete");
+        return Ok(());
+    }
 
     tracing_subscriber::registry()
         .with(
@@ -930,7 +1184,36 @@ async fn main() -> anyhow::Result<()> {
         tracing::info!("API key authentication enabled");
     }
 
-    let state = Arc::new(AppState::new(pool, api_key));
+    // RFC-039: fetch Supabase JWKS for RS256 dashboard session auth.
+    // Resolution order:
+    //   1. SUPABASE_URL env var (explicit override — set this on Fly if
+    //      DATABASE_URL parsing doesn't yield the correct project URL)
+    //   2. Derived from DATABASE_URL (handles direct + pooler formats)
+    let jwks_url: Option<String> = std::env::var("SUPABASE_URL")
+        .ok()
+        .map(|u| format!("{}/auth/v1/.well-known/jwks.json", u.trim_end_matches('/')))
+        .or_else(|| jwt_auth::jwks_url_from_database_url(&database_url));
+
+    let supabase_jwks: Option<Arc<JwkSet>> = match jwks_url {
+        Some(url) => match jwt_auth::fetch_jwks(&url).await {
+            Ok(jwks) => {
+                tracing::info!("Supabase JWKS loaded from {url} — Bearer JWT auth enabled");
+                Some(Arc::new(jwks))
+            }
+            Err(e) => {
+                tracing::warn!(
+                    "Failed to fetch Supabase JWKS from {url}: {e} — Bearer JWT auth disabled"
+                );
+                None
+            }
+        },
+        None => {
+            tracing::warn!("Could not derive Supabase URL from DATABASE_URL and SUPABASE_URL is not set — Bearer JWT auth disabled");
+            None
+        }
+    };
+
+    let state = Arc::new(AppState::new(pool, api_key, supabase_jwks));
 
     // Warm the compiled-contract cache with every stable + deprecated
     // version.  Failure here is logged but does not block boot.

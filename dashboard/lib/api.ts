@@ -19,8 +19,9 @@
 
 import * as yaml from "js-yaml";
 import { DEMO_MODE, DEMO_ORG_UUID } from "@/lib/demo";
+import { createClient } from "@/lib/supabase/client";
 
-const BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8080";
+const BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001";
 const API_KEY = process.env.NEXT_PUBLIC_API_KEY ?? "";
 
 /**
@@ -37,6 +38,18 @@ let _apiOrgId: string | null = DEMO_MODE ? DEMO_ORG_UUID : null;
 
 export function setApiOrgId(orgId: string): void {
   _apiOrgId = orgId;
+}
+
+/**
+ * RFC-039: Supabase session JWT for authenticating dashboard browser traffic
+ * against the Rust backend.  Set by OrgProvider after sign-in; refreshed
+ * automatically via onAuthStateChange.  When set, apiFetch sends
+ * `Authorization: Bearer <token>` instead of `x-api-key`.
+ */
+let _apiSession: string | null = null;
+
+export function setApiSession(token: string | null): void {
+  _apiSession = token;
 }
 
 /** Parse name + description out of a contract YAML string. */
@@ -82,10 +95,28 @@ async function extractErrorMessage(res: Response): Promise<string> {
 }
 
 async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
+  // RFC-039: lazy session bootstrap — if OrgProvider hasn't fired yet (race
+  // condition on first render), pull the token directly from Supabase's cached
+  // session so the first SWR fetch carries a Bearer token instead of 401-ing.
+  if (!_apiSession && typeof window !== "undefined") {
+    try {
+      const { data: { session } } = await createClient().auth.getSession();
+      if (session?.access_token) _apiSession = session.access_token;
+    } catch {
+      // non-fatal — proceed without token, backend will 401 if auth required
+    }
+  }
+
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
   };
-  if (API_KEY) headers["x-api-key"] = API_KEY;
+  // RFC-039: Bearer JWT wins for browser sessions; x-api-key is the fallback
+  // for server-to-server traffic (CLI, SDKs) where no session is available.
+  if (_apiSession) {
+    headers["authorization"] = `Bearer ${_apiSession}`;
+  } else if (API_KEY) {
+    headers["x-api-key"] = API_KEY;
+  }
   if (_apiOrgId) headers["x-org-id"] = _apiOrgId;
   // Merge any caller-supplied headers (supports Headers, string[][], or plain object)
   if (init?.headers) {
@@ -163,6 +194,14 @@ export interface VersionSummary {
   requires_review: boolean;
 }
 
+/**
+ * RFC-030: How the egress path handles undeclared fields in the outbound payload.
+ * - `off`   — pass through untouched (backwards-compatible default).
+ * - `strip` — remove the field and record it in the egress outcome.
+ * - `fail`  — treat as a violation; the record fails under the RFC-029 disposition.
+ */
+export type EgressLeakageMode = "off" | "strip" | "fail";
+
 /** Full response for a single version — includes YAML. */
 export interface VersionResponse {
   id: string;
@@ -175,6 +214,8 @@ export interface VersionResponse {
   deprecated_at: string | null;
   /** RFC-004: when true, undeclared inbound fields fail validation. */
   compliance_mode: boolean;
+  /** RFC-030: controls how undeclared outbound fields are handled. */
+  egress_leakage_mode: EgressLeakageMode;
   /** Where the YAML originated. */
   import_source: ImportSource;
   /** True when the version needs human review before promotion (D-002). */
@@ -384,6 +425,20 @@ export const getLatestStableVersion = (contractId: string) =>
     `/contracts/${contractId}/versions/latest-stable`
   );
 
+/**
+ * RFC-030: Set the egress leakage mode on a draft version.
+ * Sent as a PATCH alongside (or instead of) yaml_content.
+ */
+export const patchVersionLeakageMode = (
+  contractId: string,
+  version: string,
+  egress_leakage_mode: EgressLeakageMode
+) =>
+  apiFetch<VersionResponse>(
+    `/contracts/${contractId}/versions/${encodeURIComponent(version)}`,
+    { method: "PATCH", body: JSON.stringify({ egress_leakage_mode }) }
+  );
+
 /** Edit a draft version's YAML.  Fails server-side if the version is not draft. */
 export const patchVersionYaml = (
   contractId: string,
@@ -416,6 +471,31 @@ export const deleteVersion = (contractId: string, version: string) =>
     `/contracts/${contractId}/versions/${encodeURIComponent(version)}`,
     { method: "DELETE" }
   );
+
+// ---------------------------------------------------------------------------
+// Deploy (RFC-028 / RFC-046)
+// ---------------------------------------------------------------------------
+
+export interface DeployContractResponse {
+  contract_id: string;
+  version_id: string;
+  name: string;
+  version: string;
+  deprecated_count: number;
+  deployed_at: string;
+  deployed_by: string | null;
+}
+
+/** Atomically deploy a contract YAML as the new stable version. Growth+ only. */
+export const deployContract = (params: {
+  yaml_content: string;
+  source?: string;
+  deployed_by?: string;
+}) =>
+  apiFetch<DeployContractResponse>("/contracts/deploy", {
+    method: "POST",
+    body: JSON.stringify(params),
+  });
 
 // ---------------------------------------------------------------------------
 // Ingestion
@@ -496,6 +576,30 @@ export const getReplayHistory = (params?: {
 // ---------------------------------------------------------------------------
 // Playground
 // ---------------------------------------------------------------------------
+// Contract diff (mirrors src/infer_diff.rs DiffResponse)
+// ---------------------------------------------------------------------------
+
+export interface DiffChange {
+  kind: string;
+  field: string;
+  detail: string;
+}
+
+export interface DiffResponse {
+  summary: string;
+  changes: DiffChange[];
+}
+
+export const diffContracts = (
+  contract_yaml_a: string,
+  contract_yaml_b: string
+) =>
+  apiFetch<DiffResponse>("/contracts/diff", {
+    method: "POST",
+    body: JSON.stringify({ contract_yaml_a, contract_yaml_b }),
+  });
+
+// ---------------------------------------------------------------------------
 
 export const playgroundValidate = (
   yaml_content: string,
@@ -514,6 +618,111 @@ export const playgroundValidate = (
 // ---------------------------------------------------------------------------
 // ODCS — import, export, approve-import, conformance
 // ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
+// CSV contract inference (RFC-035)
+// ---------------------------------------------------------------------------
+
+/** Response from `POST /contracts/infer/csv`. */
+export interface InferCsvResponse {
+  yaml_content: string;
+  field_count: number;
+  sample_count: number;
+}
+
+/**
+ * Infer a contract from CSV content.
+ * Pass either `csv_content` (plain text) or `base64` (base64-encoded CSV).
+ * `delimiter` is optional — the backend auto-detects comma/tab/semicolon.
+ */
+export const inferCsv = (params: {
+  name: string;
+  description?: string;
+  csv_content?: string;
+  base64?: string;
+  delimiter?: string;
+}) => apiFetch<InferCsvResponse>("/contracts/infer/csv", {
+  method: "POST",
+  body: JSON.stringify(params),
+});
+
+/** Response from `POST /contracts/infer/url` (RFC-037). */
+export interface InferUrlResponse {
+  yaml_content: string;
+  field_count: number;
+  sample_count: number;
+  detected_format: "json" | "csv";
+}
+
+/** Infer a contract from a live HTTP endpoint (RFC-037). */
+export const inferUrl = (params: {
+  name: string;
+  url: string;
+  headers?: Record<string, string>;
+}) => apiFetch<InferUrlResponse>("/contracts/infer/url", {
+  method: "POST",
+  body: JSON.stringify(params),
+});
+
+// ---------------------------------------------------------------------------
+// Brownfield contract scaffolder (RFC-024)
+// ---------------------------------------------------------------------------
+
+/** A single PII candidate returned by the scaffold endpoint. */
+export interface PiiCandidate {
+  field_name: string;
+  confidence: number;
+  reason: string;
+  suggested_transform: string;
+}
+
+/** Response from `POST /contracts/scaffold`. */
+export interface ScaffoldResponse {
+  yaml_content: string;
+  field_count: number;
+  sample_count: number;
+  pii_candidate_count: number;
+  pii_candidates: PiiCandidate[];
+  /** Human-readable format label, e.g. "JSON", "Avro Schema (.avsc)". */
+  format: string;
+  sr_unavailable: boolean;
+}
+
+/**
+ * Scaffold a draft contract from JSON sample objects.
+ * Pass `samples` (array of JSON objects) for the quick path.
+ */
+export const scaffoldFromSamples = (params: {
+  name: string;
+  description?: string;
+  samples: Record<string, unknown>[];
+  fast?: boolean;
+  pii_threshold?: number;
+  max_records?: number;
+}) =>
+  apiFetch<ScaffoldResponse>("/contracts/scaffold", {
+    method: "POST",
+    body: JSON.stringify(params),
+  });
+
+/**
+ * Scaffold a draft contract from raw file content.
+ * `format` must be one of: "json", "ndjson", "avro_schema", "proto".
+ * Omit `format` to let the server auto-detect.
+ */
+export const scaffoldFromContent = (params: {
+  name: string;
+  description?: string;
+  content: string;
+  format?: "json" | "ndjson" | "avro_schema" | "proto";
+  fast?: boolean;
+  pii_threshold?: number;
+  max_records?: number;
+}) =>
+  apiFetch<ScaffoldResponse>("/contracts/scaffold", {
+    method: "POST",
+    body: JSON.stringify(params),
+  });
 
 /** Response from `POST /contracts/import`. */
 export interface OdcsImportResponse {
@@ -577,7 +786,11 @@ export const exportOdcs = async (
   version: string
 ): Promise<string> => {
   const headers: Record<string, string> = {};
-  if (API_KEY) headers["x-api-key"] = API_KEY;
+  if (_apiSession) {
+    headers["authorization"] = `Bearer ${_apiSession}`;
+  } else if (API_KEY) {
+    headers["x-api-key"] = API_KEY;
+  }
   if (_apiOrgId) headers["x-org-id"] = _apiOrgId;
   const res = await fetch(
     `${BASE}/contracts/${contractId}/versions/${encodeURIComponent(version)}/export`,
@@ -679,6 +892,458 @@ export const rotateKinesisCredentials = (contractId: string) =>
     `/contracts/${contractId}/kinesis-ingress/rotate-credentials`,
     { method: "POST" }
   );
+
+// ---------------------------------------------------------------------------
+// Egress validation (RFC-029)
+// ---------------------------------------------------------------------------
+
+/**
+ * How the egress endpoint handles failing records.
+ *
+ * - `block` (default) — drop failing records from the response payload.
+ * - `fail`  — any failure rejects the entire response (422).
+ * - `tag`   — all records pass through; failures are flagged in outcomes.
+ */
+export type EgressDisposition = "block" | "fail" | "tag";
+
+/** Per-record outcome returned by `POST /egress/{contractId}`. */
+export interface EgressOutcome {
+  /** Zero-based index of this record in the original payload. */
+  index: number;
+  passed: boolean;
+  violations: Violation[];
+  validation_us: number;
+  /**
+   * What happened to this record:
+   * - `"included"` — passed, present in `payload`
+   * - `"blocked"`  — failed, dropped from `payload` (block mode)
+   * - `"rejected"` — part of a wholesale rejection (fail mode)
+   * - `"tagged"`   — failed but present in `payload` with flag (tag mode)
+   */
+  action: "included" | "blocked" | "rejected" | "tagged";
+}
+
+/** Response from `POST /egress/{contractId}`. */
+export interface EgressResponse {
+  total: number;
+  passed: number;
+  failed: number;
+  dry_run: boolean;
+  disposition: EgressDisposition;
+  resolved_version: string;
+  /**
+   * Cleaned / filtered / annotated payload:
+   * - block: only passing records
+   * - fail: empty when any record fails
+   * - tag: all records
+   */
+  payload: unknown[];
+  /** One entry per input record. */
+  outcomes: EgressOutcome[];
+}
+
+/**
+ * Validate an outbound payload against a named contract.
+ *
+ * Mirrors `ingestEvent` but for the egress path.  The `disposition` parameter
+ * controls what happens to failing records (default: `block`).
+ *
+ * Returns a 207 Multi-Status on partial failure (block/tag) or 422 on full
+ * rejection (fail mode or all records failed).  `apiFetch` treats 207 as
+ * success, so callers always receive the `EgressResponse` body and can inspect
+ * `failed` / `outcomes` to determine what was blocked or tagged.
+ */
+export const egressValidate = (
+  contractId: string,
+  payload: unknown,
+  opts: {
+    disposition?: EgressDisposition;
+    dryRun?: boolean;
+    version?: string;
+  } = {}
+) => {
+  const qs = new URLSearchParams();
+  if (opts.disposition) qs.set("disposition", opts.disposition);
+  if (opts.dryRun) qs.set("dry_run", "true");
+  const qstr = qs.toString() ? `?${qs}` : "";
+
+  const path = opts.version
+    ? `/egress/${contractId}@${encodeURIComponent(opts.version)}${qstr}`
+    : `/egress/${contractId}${qstr}`;
+
+  return apiFetch<EgressResponse>(path, {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+};
+
+// ---------------------------------------------------------------------------
+// Contract Sharing & Publication (RFC-032)
+// ---------------------------------------------------------------------------
+
+/** Visibility level for a published contract. */
+export type PublicationVisibility = "public" | "link" | "org";
+
+/** How an imported contract stays linked to its source. */
+export type ImportMode = "snapshot" | "subscribe";
+
+/** Response from `POST /contracts/{id}/versions/{v}/publish`. */
+export interface PublishResponse {
+  publication_ref: string;
+  visibility: PublicationVisibility;
+  /** Only present when visibility = "link". */
+  link_token: string | null;
+  contract_name: string;
+  contract_version: string;
+  published_at: string;
+}
+
+/** Response from `GET /published/{ref}`. */
+export interface FetchedPublication {
+  publication_ref: string;
+  contract_name: string;
+  contract_version: string;
+  visibility: PublicationVisibility;
+  published_at: string;
+  /** The locked YAML of the published contract version. */
+  yaml_content: string;
+}
+
+/** Response from `DELETE /contracts/publications/{ref}`. */
+export interface RevokeResponse {
+  publication_ref: string;
+  revoked_at: string;
+}
+
+/** Response from `POST /contracts/import-published`. */
+export interface ImportPublishedResponse {
+  contract_id: string;
+  version: string;
+  import_mode: ImportMode;
+  imported_from_ref: string;
+}
+
+/** Response from `GET /contracts/{id}/import-status`. */
+export interface ImportStatusResult {
+  import_mode: ImportMode | null;
+  publication_ref: string | null;
+  source_revoked: boolean;
+  update_available: boolean;
+  latest_published_version: string | null;
+  imported_version: string | null;
+}
+
+/**
+ * Publish a specific contract version.
+ * Returns a stable publication ref + optional link token (when visibility = "link").
+ */
+export const publishVersion = (
+  contractId: string,
+  version: string,
+  opts: { visibility?: PublicationVisibility } = {}
+) =>
+  apiFetch<PublishResponse>(
+    `/contracts/${contractId}/versions/${encodeURIComponent(version)}/publish`,
+    {
+      method: "POST",
+      body: JSON.stringify({ visibility: opts.visibility ?? "link" }),
+    }
+  );
+
+/**
+ * Revoke a publication (soft-delete).  The consumer org can still keep their
+ * imported copy; `import-status` will surface `source_revoked: true`.
+ */
+export const revokePublication = (publicationRef: string) =>
+  apiFetch<RevokeResponse>(`/contracts/publications/${publicationRef}`, {
+    method: "DELETE",
+  });
+
+/** A single entry in the public contract catalog (no yaml_content). */
+export interface CatalogEntry {
+  publication_ref: string;
+  contract_name: string;
+  contract_version: string;
+  published_by: string | null;
+  published_at: string;
+}
+
+/**
+ * List publicly available contracts (no auth required).
+ * Returns up to `limit` entries ordered by published_at DESC.
+ */
+export const listPublicCatalog = (limit = 20): Promise<CatalogEntry[]> =>
+  apiFetch<CatalogEntry[]>(`/catalog?limit=${limit}`);
+
+// ---------------------------------------------------------------------------
+// Open-data public catalog (GET /public-contracts)
+// ---------------------------------------------------------------------------
+
+/** Summary row from GET /public-contracts — no YAML, suitable for listing. */
+export interface OpenDataContract {
+  id: string;
+  name: string;
+  description: string | null;
+  source_format: string;
+  version: string;
+  created_at: string;
+  updated_at: string;
+}
+
+/** Full detail from GET /public-contracts/{id} — includes YAML. */
+export interface OpenDataContractDetail extends OpenDataContract {
+  source_url: string;
+  contract_yaml: string;
+}
+
+/** Response from POST /contracts/{id}/fork. */
+export interface ForkResponse {
+  contract_id: string;
+  name: string;
+  parent_public_contract_id: string;
+  fork_filter: unknown | null;
+  created_at: string;
+}
+
+/** List all curated open-data contracts (no auth required). */
+export const listOpenDataContracts = (): Promise<OpenDataContract[]> =>
+  apiFetch<OpenDataContract[]>("/public-contracts");
+
+/** Fetch a single curated contract with full YAML (no auth required). */
+export const getOpenDataContract = (id: string): Promise<OpenDataContractDetail> =>
+  apiFetch<OpenDataContractDetail>(`/public-contracts/${encodeURIComponent(id)}`);
+
+/** Fork a curated public contract into the caller's org (auth required). */
+export const forkPublicContract = (
+  publicId: string,
+  body: { name: string; description?: string }
+): Promise<ForkResponse> =>
+  apiFetch<ForkResponse>(`/contracts/${encodeURIComponent(publicId)}/fork`, {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+
+/**
+ * Fetch a published contract by ref.  Public visibility needs only the ref;
+ * link visibility requires `token` to match the link_token returned on publish.
+ */
+export const fetchPublished = (publicationRef: string, token?: string) => {
+  const qs = token ? `?token=${encodeURIComponent(token)}` : "";
+  return apiFetch<FetchedPublication>(`/published/${publicationRef}${qs}`);
+};
+
+/**
+ * Import a published contract into the caller's org.
+ *
+ * - `snapshot` (default): one-time copy with provenance recorded.
+ * - `subscribe`: copy + live link that surfaces update-available signals.
+ */
+export const importPublished = (body: {
+  publication_ref: string;
+  link_token?: string;
+  import_mode?: ImportMode;
+}) =>
+  apiFetch<ImportPublishedResponse>("/contracts/import-published", {
+    method: "POST",
+    body: JSON.stringify({
+      publication_ref: body.publication_ref,
+      ...(body.link_token ? { link_token: body.link_token } : {}),
+      import_mode: body.import_mode ?? "snapshot",
+    }),
+  });
+
+/**
+ * For subscribe-mode imports: check whether the source has published a newer
+ * version.  Returns `update_available: true` when the upstream version differs
+ * from what was imported.  Never auto-applies — always explicit pull.
+ */
+export const getImportStatus = (contractId: string) =>
+  apiFetch<ImportStatusResult>(`/contracts/${contractId}/import-status`);
+
+// ---------------------------------------------------------------------------
+// RFC-033: Provider-Consumer Collaboration
+// ---------------------------------------------------------------------------
+
+export type CollaboratorRole = "editor" | "reviewer" | "viewer";
+
+/** A collaborator grant row returned by the API. */
+export interface CollaboratorRow {
+  contract_name: string;
+  org_id: string;
+  role: CollaboratorRole;
+  granted_by: string;
+  granted_at: string;
+}
+
+/** A comment on a contract, optionally anchored to a field. */
+export interface CommentRow {
+  id: string;
+  contract_name: string;
+  /** Field name this comment is anchored to, or null for whole-contract. */
+  field: string | null;
+  org_id: string;
+  author: string;
+  body: string;
+  resolved: boolean;
+  created_at: string;
+}
+
+/** A change proposal from an editor org. */
+export interface ProposalRow {
+  id: string;
+  contract_name: string;
+  proposed_by: string;
+  proposed_yaml: string;
+  status: "open" | "approved" | "rejected" | "applied";
+  decided_by: string | null;
+  created_at: string;
+}
+
+/** List all collaborator grants on a contract. */
+export const listCollaborators = (contractName: string) =>
+  apiFetch<CollaboratorRow[]>(`/contracts/${contractName}/collaborators`);
+
+/** Grant (or update) a collaborator role. */
+export const grantCollaborator = (
+  contractName: string,
+  body: { org_id: string; role: CollaboratorRole }
+) =>
+  apiFetch<CollaboratorRow>(`/contracts/${contractName}/collaborators`, {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+
+/** Change an existing collaborator's role. */
+export const patchCollaborator = (
+  contractName: string,
+  orgId: string,
+  role: CollaboratorRole
+) =>
+  apiFetch<CollaboratorRow>(
+    `/contracts/${contractName}/collaborators/${orgId}`,
+    { method: "PATCH", body: JSON.stringify({ role }) }
+  );
+
+/** Revoke a collaborator grant. */
+export const revokeCollaborator = (contractName: string, orgId: string) =>
+  apiFetch<void>(`/contracts/${contractName}/collaborators/${orgId}`, {
+    method: "DELETE",
+  });
+
+/** List all comments on a contract (oldest first). */
+export const listComments = (contractName: string) =>
+  apiFetch<CommentRow[]>(`/contracts/${contractName}/comments`);
+
+/** Add a comment to a contract, optionally anchored to a field. */
+export const addComment = (
+  contractName: string,
+  body: { field?: string; author: string; body: string }
+) =>
+  apiFetch<CommentRow>(`/contracts/${contractName}/comments`, {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+
+/** Mark a comment as resolved. */
+export const resolveComment = (contractName: string, commentId: string) =>
+  apiFetch<CommentRow>(
+    `/contracts/${contractName}/comments/${commentId}/resolve`,
+    { method: "POST" }
+  );
+
+/** List all change proposals for a contract (newest first). */
+export const listProposals = (contractName: string) =>
+  apiFetch<ProposalRow[]>(`/contracts/${contractName}/proposals`);
+
+/** Open a new change proposal (editor+ only). */
+export const createProposal = (
+  contractName: string,
+  proposed_yaml: string
+) =>
+  apiFetch<ProposalRow>(`/contracts/${contractName}/proposals`, {
+    method: "POST",
+    body: JSON.stringify({ proposed_yaml }),
+  });
+
+/**
+ * Approve or reject a proposal (reviewer+ only).
+ * `decision` must be `"approved"` or `"rejected"`.
+ */
+export const decideProposal = (
+  contractName: string,
+  proposalId: string,
+  decision: "approved" | "rejected"
+) =>
+  apiFetch<ProposalRow>(
+    `/contracts/${contractName}/proposals/${proposalId}/decide`,
+    { method: "POST", body: JSON.stringify({ decision }) }
+  );
+
+/**
+ * Apply an approved proposal (owner only).
+ * Marks the proposal as `applied`; the `proposed_yaml` in the response is the
+ * content the owner should use to create a new contract version.
+ */
+export const applyProposal = (contractName: string, proposalId: string) =>
+  apiFetch<ProposalRow>(
+    `/contracts/${contractName}/proposals/${proposalId}/apply`,
+    { method: "POST" }
+  );
+
+// ---------------------------------------------------------------------------
+// RFC-031: Provider Data-Quality Scorecard
+// ---------------------------------------------------------------------------
+
+/** Per-provider pass/quarantine summary (mirrors `provider_scorecard` view). */
+export interface ScorecardSummaryRow {
+  source: string;
+  contract_name: string;
+  total_events: number;
+  passed: number;
+  quarantined: number;
+  quarantine_pct: number;
+}
+
+/** Per-provider, per-field violation breakdown (mirrors `provider_field_health` view). */
+export interface FieldHealthRow {
+  source: string;
+  contract_name: string;
+  field: string;
+  code: string;
+  violations: number;
+}
+
+/** Active drift signal for a source+field pair. */
+export interface DriftSignal {
+  source: string;
+  contract_name: string;
+  field: string;
+  signal_type: "null_rate" | "violation_rate";
+  baseline_rate: number;
+  current_rate: number;
+  delta: number;
+  window_start: string;
+}
+
+/** Full scorecard response from `GET /scorecard/{source}`. */
+export interface FullScorecard {
+  source: string;
+  summary: ScorecardSummaryRow[];
+  field_health: FieldHealthRow[];
+  drift: DriftSignal[];
+}
+
+/** Fetch the full scorecard for a provider source. */
+export const getScorecard = (source: string) =>
+  apiFetch<FullScorecard>(`/scorecard/${encodeURIComponent(source)}`);
+
+/** Fetch only the active drift signals for a source. */
+export const getScorecardDrift = (source: string) =>
+  apiFetch<DriftSignal[]>(`/scorecard/${encodeURIComponent(source)}/drift`);
+
+/** Returns the URL for a CSV export of the scorecard — use as an <a href>. */
+export const getScorecardExportUrl = (source: string): string =>
+  `${BASE}/scorecard/${encodeURIComponent(source)}/export?format=csv`;
 
 // ---------------------------------------------------------------------------
 // Helpers

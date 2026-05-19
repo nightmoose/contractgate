@@ -28,6 +28,10 @@ pub enum AppError {
     #[error("Unauthorized: missing or invalid API key")]
     Unauthorized,
 
+    /// P1-1: per-key token-bucket exhausted.  429.
+    #[error("Rate limit exceeded — too many requests")]
+    RateLimitExceeded,
+
     // -----------------------------------------------------------------------
     // Versioning (RFC-002)
     // -----------------------------------------------------------------------
@@ -111,6 +115,14 @@ pub enum AppError {
     /// parsing, bad enum values read back from the DB, etc.
     #[error("Internal error: {0}")]
     Internal(String),
+
+    /// Upstream HTTP fetch timed out (infer/url, public-catalog export).  504.
+    #[error("Gateway timeout: {0}")]
+    GatewayTimeout(String),
+
+    /// Response is structurally valid but contains no inferable records.  422.
+    #[error("Unprocessable: {0}")]
+    UnprocessableEntity(String),
 }
 
 // Preserve ergonomic `?` conversion from anyhow::Error (previously handled by
@@ -131,6 +143,7 @@ impl IntoResponse for AppError {
             AppError::BadRequest(_) => (StatusCode::BAD_REQUEST, self.to_string()),
             AppError::PayloadTooLarge(_) => (StatusCode::PAYLOAD_TOO_LARGE, self.to_string()),
             AppError::Unauthorized => (StatusCode::UNAUTHORIZED, self.to_string()),
+            AppError::RateLimitExceeded => (StatusCode::TOO_MANY_REQUESTS, self.to_string()),
 
             AppError::VersionConflict { .. } => (StatusCode::CONFLICT, self.to_string()),
             AppError::VersionImmutable { .. } => (StatusCode::CONFLICT, self.to_string()),
@@ -159,6 +172,10 @@ impl IntoResponse for AppError {
                     StatusCode::INTERNAL_SERVER_ERROR,
                     "Internal server error".into(),
                 )
+            }
+            AppError::GatewayTimeout(_) => (StatusCode::GATEWAY_TIMEOUT, self.to_string()),
+            AppError::UnprocessableEntity(_) => {
+                (StatusCode::UNPROCESSABLE_ENTITY, self.to_string())
             }
         };
 

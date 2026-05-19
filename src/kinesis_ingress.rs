@@ -146,23 +146,19 @@ pub async fn provision_kinesis_ingress(
     shard_count: i32,
     region: &str,
 ) -> anyhow::Result<(String, String, String, String, String, String)> {
+    use aws_config::BehaviorVersion;
     use aws_sdk_iam::Client as IamClient;
-    use aws_sdk_kinesis::config::BehaviorVersion;
     use aws_sdk_kinesis::Client as KinesisClient;
 
-    let config = aws_sdk_kinesis::config::Builder::new()
-        .behavior_version(BehaviorVersion::latest())
+    // Load shared config from env (AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY,
+    // AWS_REGION, or instance role) — the full credential provider chain.
+    let shared = aws_config::defaults(BehaviorVersion::latest())
         .region(aws_sdk_kinesis::config::Region::new(region.to_string()))
-        .build();
-    // Use separate SDK configs for Kinesis vs IAM since IAM is global.
-    let kinesis_conf = config;
-    let iam_conf = aws_sdk_iam::config::Builder::new()
-        .behavior_version(aws_sdk_iam::config::BehaviorVersion::latest())
-        .region(aws_sdk_iam::config::Region::new(region.to_string()))
-        .build();
+        .load()
+        .await;
 
-    let kinesis = KinesisClient::from_conf(kinesis_conf);
-    let iam = IamClient::from_conf(iam_conf);
+    let kinesis = KinesisClient::new(&shared);
+    let iam = IamClient::new(&shared);
 
     // 1. Create the three streams.
     let raw_name = stream_raw(contract_id);
@@ -309,13 +305,14 @@ pub async fn rotate_iam_credentials(
     old_access_key_id: &str,
     region: &str,
 ) -> anyhow::Result<(String, String)> {
+    use aws_config::BehaviorVersion;
     use aws_sdk_iam::Client as IamClient;
 
-    let iam_conf = aws_sdk_iam::config::Builder::new()
-        .behavior_version(aws_sdk_iam::config::BehaviorVersion::latest())
-        .region(aws_sdk_iam::config::Region::new(region.to_string()))
-        .build();
-    let iam = IamClient::from_conf(iam_conf);
+    let shared = aws_config::defaults(BehaviorVersion::latest())
+        .region(aws_sdk_kinesis::config::Region::new(region.to_string()))
+        .load()
+        .await;
+    let iam = IamClient::new(&shared);
     let user_name = iam_user_name(contract_id);
 
     let key_resp = iam
@@ -348,19 +345,16 @@ pub async fn deprovision_kinesis_ingress(
     access_key_id: &str,
     region: &str,
 ) -> anyhow::Result<()> {
+    use aws_config::BehaviorVersion;
     use aws_sdk_iam::Client as IamClient;
     use aws_sdk_kinesis::Client as KinesisClient;
 
-    let kinesis_conf = aws_sdk_kinesis::config::Builder::new()
-        .behavior_version(aws_sdk_kinesis::config::BehaviorVersion::latest())
+    let shared = aws_config::defaults(BehaviorVersion::latest())
         .region(aws_sdk_kinesis::config::Region::new(region.to_string()))
-        .build();
-    let iam_conf = aws_sdk_iam::config::Builder::new()
-        .behavior_version(aws_sdk_iam::config::BehaviorVersion::latest())
-        .region(aws_sdk_iam::config::Region::new(region.to_string()))
-        .build();
-    let kinesis = KinesisClient::from_conf(kinesis_conf);
-    let iam = IamClient::from_conf(iam_conf);
+        .load()
+        .await;
+    let kinesis = KinesisClient::new(&shared);
+    let iam = IamClient::new(&shared);
     let user_name = iam_user_name(contract_id);
 
     // 1. Delete the access key (immediate revocation).

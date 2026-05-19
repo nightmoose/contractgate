@@ -1,6 +1,6 @@
 # RFC-020: Dashboard Polish
 
-| Status        | Draft — awaiting sign-off                             |
+| Status        | Accepted (2026-04-28)                                 |
 |---------------|-------------------------------------------------------|
 | Author        | ContractGate team                                     |
 | Created       | 2026-04-28                                            |

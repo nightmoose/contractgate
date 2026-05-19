@@ -95,7 +95,10 @@ use crate::contract::{ContractIdentity, MultiStableResolution, VersionState};
 use crate::error::{AppError, AppResult};
 use crate::storage;
 use crate::transform::{apply_transforms, TransformedPayload};
-use crate::validation::{check_uniqueness_batch, validate, CompiledContract, ValidationResult};
+use crate::validation::{
+    check_uniqueness_batch, validate, validate_envelope_batch, BatchValidationResult,
+    CompiledContract, ValidationResult,
+};
 use crate::AppState;
 use std::collections::HashMap;
 use std::time::Instant;
@@ -312,6 +315,34 @@ pub async fn ingest_handler(
     let mut compiled_by_version: HashMap<String, Arc<CompiledContract>> = HashMap::new();
     compiled_by_version.insert(resolved_version.clone(), Arc::clone(&compiled));
 
+    // --- RFC-038: envelope contract short-circuit ----------------------------
+    // When the contract declares an `envelope` stanza the inbound payload is a
+    // single JSON object wrapping a records array (e.g. MRI MIX API responses).
+    // We route directly to `validate_envelope_batch` and return a batch result
+    // without going through the per-record validation / fallback / audit path.
+    if let Some(envelope_cfg) = compiled.contract.envelope.clone() {
+        if events.len() != 1 {
+            return Err(AppError::BadRequest(
+                "Envelope contract expects a single JSON object payload, not a bare array of events. \
+                 Wrap your records in the envelope format: { \"data\": [...], ... }".into(),
+            ));
+        }
+        let payload = &events[0];
+        let result: BatchValidationResult =
+            validate_envelope_batch(&compiled, &envelope_cfg, payload);
+
+        tracing::info!(
+            contract_id = %contract_id,
+            version = %resolved_version,
+            passed = result.passed,
+            quarantined = result.quarantined,
+            violation_count = result.violations.len(),
+            "envelope batch validated"
+        );
+
+        return Ok(axum::Json(result).into_response());
+    }
+
     // --- First-pass validation against the resolved version ----------------
     // RFC-016: time the top-level validation call; record histogram after.
     let _validation_start = Instant::now();
@@ -510,6 +541,7 @@ pub async fn ingest_handler(
                 // Fresh ingest: let Postgres generate the ID and no replay link.
                 pre_assigned_id: None,
                 replay_of_quarantine_id: None,
+                direction: "ingress".to_string(),
             })
             .collect();
 
@@ -530,6 +562,7 @@ pub async fn ingest_handler(
                 // Fresh ingest: no parent replay source, no pre-assigned ID.
                 replay_of_quarantine_id: None,
                 pre_assigned_id: None,
+                direction: "ingress".to_string(),
             })
             .collect();
 
@@ -711,6 +744,7 @@ async fn deprecated_pin_quarantine(
                 // Deprecated-pin quarantine is ingest-time, not replay-derived.
                 replay_of_quarantine_id: None,
                 pre_assigned_id: None,
+                direction: "ingress".to_string(),
             })
             .collect();
 
@@ -757,6 +791,7 @@ async fn deprecated_pin_quarantine(
                 0,
                 source_ip_owned.as_deref(),
                 "http",
+                "ingress",
             )
             .await
             {
@@ -846,6 +881,7 @@ fn write_batch_rejected_audit(
             0,
             source_ip_owned.as_deref(),
             "http",
+            "ingress",
         )
         .await
         {

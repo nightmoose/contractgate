@@ -9,7 +9,7 @@ import clsx from "clsx";
 // Types
 // ---------------------------------------------------------------------------
 
-type FieldType = "string" | "integer" | "number" | "boolean";
+type FieldType = "string" | "integer" | "number" | "boolean" | "date";
 
 interface FieldState {
   id: string;
@@ -79,6 +79,7 @@ const TYPE_COLORS: Record<FieldType, string> = {
   integer: "bg-purple-900/40 text-purple-300 border-purple-700/50",
   number:  "bg-orange-900/40 text-orange-300 border-orange-700/50",
   boolean: "bg-teal-900/40 text-teal-300 border-teal-700/50",
+  date:    "bg-rose-900/40 text-rose-300 border-rose-700/50",
 };
 
 // ---------------------------------------------------------------------------
@@ -283,7 +284,7 @@ function FieldCard({
 
         {/* Type selector */}
         <div className="flex gap-1 shrink-0">
-          {(["string", "integer", "number", "boolean"] as FieldType[]).map((t) => (
+          {(["string", "integer", "number", "boolean", "date"] as FieldType[]).map((t) => (
             <button
               key={t}
               onClick={() => onChange({ type: t, enumValues: [], patternPreset: "", customPattern: "", min: "", max: "", minLength: "", maxLength: "", transformKind: "", maskStyle: "" })}

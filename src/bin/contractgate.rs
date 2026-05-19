@@ -1,12 +1,12 @@
 //! `contractgate` CLI binary.
 //!
-//! Subcommands: push, pull, validate, scaffold, enforce.
+//! Subcommands: push, pull, validate, scaffold, enforce, infer.
 //! Auth via CONTRACTGATE_API_KEY env var or --api-key flag.
 //! Config via .contractgate.yml (walk-up from cwd, stop at git root).
 
 use clap::{Parser, Subcommand};
 use contractgate::cli::{
-    commands::{enforce, pull, push, scaffold, validate},
+    commands::{deploy, enforce, infer, pull, push, scaffold, validate},
     config::CliConfig,
 };
 use std::{path::PathBuf, process};
@@ -34,6 +34,17 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Cmd {
+    /// Atomically deploy a contract YAML directly to stable (RFC-028).
+    ///
+    /// Finds-or-creates the contract by name, inserts the version as stable,
+    /// and deprecates all prior stable versions.  Rejected if pending
+    /// quarantine events exist.  Admin / service-role key required.
+    ///
+    /// Examples:
+    ///   cg deploy-contract contracts/orders.yaml --source yardi --deployed-by ci-job-42
+    ///   cg deploy-contract contracts/events.yaml --dry-run
+    #[command(name = "deploy-contract")]
+    DeployContract(deploy::DeployArgs),
     /// Walk contracts dir, parse YAML, push to gateway.
     Push(push::PushArgs),
     /// Pull contracts from gateway and write as YAML files.
@@ -54,6 +65,21 @@ enum Cmd {
     ///   cg enforce --mode shadow --contract contracts/orders.yaml --topic orders
     ///   cg enforce --mode shadow --contract my.yaml --topic events --report json
     Enforce(enforce::EnforceArgs),
+    /// Infer a ContractGate contract from a JSON response (RFC-046).
+    ///
+    /// Two input modes — all processing is local, no network calls:
+    ///
+    ///   --from-stdin   Pipe raw curl/httpie output directly.
+    ///   --from-newman  Read a Newman JSON reporter export file.
+    ///
+    /// Examples:
+    ///   curl "https://api.example.com/users/1" \
+    ///     | cg infer --from-stdin --name users --out contracts/users.yaml
+    ///   curl -H "Authorization: Bearer $TOKEN" "https://api.census.gov/..." \
+    ///     | cg infer --from-stdin --name census_acs5
+    ///   newman run collection.json --reporters json --reporter-json-export out.json
+    ///   cg infer --from-newman out.json --out contracts/orders.yaml --odcs
+    Infer(infer::InferArgs),
     /// Emit the JSON Schema for .contractgate.yml.
     #[command(hide = true)]
     ConfigSchema,
@@ -77,6 +103,11 @@ fn main() {
     let exit_code = match &cli.command {
         Cmd::Validate(args) => validate::run(args, &cfg),
 
+        Cmd::DeployContract(args) => {
+            let key = require_api_key(&cli.api_key);
+            deploy::run(args, &cfg, &key)
+        }
+
         Cmd::Push(args) => {
             let key = require_api_key(&cli.api_key);
             push::run(args, &cfg, &key)
@@ -87,9 +118,10 @@ fn main() {
             pull::run(args, &cfg, &key)
         }
 
-        // Scaffold and enforce do not need gateway config or an API key.
+        // Scaffold, enforce, and infer do not need gateway config or an API key.
         Cmd::Scaffold(args) => scaffold::run(args),
         Cmd::Enforce(args) => enforce::run(args),
+        Cmd::Infer(args) => infer::run(args),
 
         Cmd::ConfigSchema => {
             // Emit a minimal JSON Schema describing .contractgate.yml.
