@@ -70,10 +70,10 @@ export default function TermsPage() {
             <p>
               Questions about these Terms? Email us at{" "}
               <a
-                href="mailto:sales@contractgate.io"
+                href="mailto:datacontractgate@nightmoose.com"
                 className="text-green-400 hover:text-green-300"
               >
-                sales@contractgate.io
+                datacontractgate@nightmoose.com
               </a>
               .
             </p>

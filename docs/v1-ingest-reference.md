@@ -9,7 +9,7 @@ that can make an HTTP POST can validate events against a contract.
 
 ```
 POST /v1/ingest/{contract_id}
-Host: contractgate.io
+Host: app.datacontractgate.com
 X-Api-Key: cg_live_<your_key>
 Content-Type: application/json          # or application/x-ndjson
 Idempotency-Key: <opaque_string>        # optional

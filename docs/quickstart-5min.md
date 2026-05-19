@@ -7,7 +7,7 @@ Validate your first event against a contract using only `curl`.
 ## Step 1 — Create a contract
 
 ```bash
-export BASE=https://contractgate.io
+export BASE=https://app.datacontractgate.com
 export KEY=cg_live_<your_api_key>
 
 curl -s -X POST "$BASE/contracts" \

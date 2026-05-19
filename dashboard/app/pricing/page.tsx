@@ -50,7 +50,7 @@ const TIERS = [
     price: { monthly: "$299", annual: "$249" },
     priceSub: { monthly: "per month", annual: "per month, billed annually" },
     cta: "Get in touch",
-    ctaHref: "mailto:sales@contractgate.io?subject=ContractGate%20Growth%20Plan&body=Hi%2C%20I%27m%20interested%20in%20the%20Growth%20plan.",
+    ctaHref: "mailto:datacontractgate@nightmoose.com?subject=ContractGate%20Growth%20Plan&body=Hi%2C%20I%27m%20interested%20in%20the%20Growth%20plan.",
     highlight: true,
     color: "border-green-700/60",
     badge: "Most popular",
@@ -62,7 +62,7 @@ const TIERS = [
     price: { monthly: "Custom", annual: "Custom" },
     priceSub: { monthly: "contact us", annual: "contact us" },
     cta: "Talk to us",
-    ctaHref: "mailto:sales@contractgate.io",
+    ctaHref: "mailto:datacontractgate@nightmoose.com",
     highlight: false,
     color: "border-[#1f2937]",
     badge: null,
@@ -361,7 +361,7 @@ export default function PricingPage() {
           named SRE. We&apos;ll scope your POC in one call.
         </p>
         <a
-          href="mailto:sales@contractgate.io"
+          href="mailto:datacontractgate@nightmoose.com"
           className="inline-block bg-green-600 hover:bg-green-500 text-white font-semibold text-sm px-6 py-3 rounded-lg transition-colors"
         >
           Talk to sales →

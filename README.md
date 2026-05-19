@@ -75,7 +75,7 @@ make demo-logs    # follow all service logs
 | Managed hosting + SLA | ❌ Self-hosted | ✅ |
 
 [→ Full pricing](https://app.datacontractgate.com/pricing)
-[→ Talk to sales](mailto:sales@contractgate.io)
+[→ Talk to sales](mailto:datacontractgate@nightmoose.com)
 
 ---
 
