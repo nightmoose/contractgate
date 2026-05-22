@@ -2,6 +2,65 @@
 
 ---
 
+## Run: 2026-05-22 — RFC-047 completion + RFC-049 + RFC-050: Replay IDOR close, SSRF hardening, CORS allowlist
+
+**Branch:** `nightly-maintenance-2026-05-22-rfc049-050`
+
+### Summary
+
+Three P0 security fixes. RFC-047 merge had left `src/replay.rs` unscoped —
+both replay endpoints called `get_contract_identity` / `get_version` with
+`None`, making them the same cross-org IDOR the original RFC set out to close.
+RFC-049 closes an SSRF redirect bypass in `/contracts/infer/url`: the reqwest
+client now uses `Policy::none()` so a 3xx from an upstream returns 400 instead
+of following the redirect to an unchecked host (e.g. the cloud metadata
+endpoint). RFC-050 replaces the wildcard `allow_origin(Any)` with two scoped
+CORS layers: an explicit `DASHBOARD_ORIGIN` allowlist on authenticated routes,
+and a permissive wildcard only on genuinely public routes.
+
+### Files Changed
+
+- **`src/main.rs`** — `OrgId` struct made `pub(crate)` so `replay.rs` can
+  import it. CORS: single wildcard layer split into `protected_cors`
+  (origin-allowlist from `DASHBOARD_ORIGIN`) and `public_cors` (wildcard).
+  `AllowOrigin` added to `tower_http::cors` imports.
+
+- **`src/replay.rs`** — `OrgId` imported from `crate`. `replay_handler`:
+  `OrgId(org_id): OrgId` extractor added (before `Json` — `FromRequestParts`
+  must precede `FromRequest`), `auth_configured` guard, `org_id` threaded into
+  `get_contract_identity` and `resolve_replay_target`. `replay_history_handler`:
+  same guard + `get_contract_identity` ownership check before returning history.
+  `resolve_replay_target`: `org_id: Option<Uuid>` param threaded into
+  `get_version`. Wrong-org → 404, never 403.
+
+- **`src/infer_url.rs`** — `.redirect(reqwest::redirect::Policy::none())`
+  added to `ClientBuilder`. Audit comment confirms `infer_openapi` / `avro` /
+  `proto` parse in-memory only (no change needed). Two new unit tests:
+  `non_success_http_status_is_bad_request`, `redirect_policy_none_is_set`.
+
+- **`.env.example`** — `DASHBOARD_ORIGIN` documented with example value.
+- **`docker-compose.yml`** — commented placeholder for production override.
+- **`fly.toml`** — note to set via `fly secrets`, not committed to source.
+- **`docs/auth-reference.md`** — CORS policy section added: two-layer model,
+  `DASHBOARD_ORIGIN` reference table, `fly secrets set` example.
+- **`docs/rfcs/049-ssrf-redirect-hardening.md`** — status: Draft → Accepted.
+- **`docs/rfcs/050-cors-origin-allowlist.md`** — status: Draft → Accepted.
+
+### No Migration
+
+Application-only. No schema changes.
+
+### Commands to run
+
+```sh
+cargo check
+cargo test
+cargo clippy --all-targets -- -D warnings
+cargo sqlx prepare
+```
+
+---
+
 ## Run: 2026-05-22 — RFC-047 + RFC-048: Backend org scoping + x-org-id removal
 
 **Branch:** `nightly-maintenance-2026-05-22-rfc047-048`
