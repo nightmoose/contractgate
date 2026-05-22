@@ -344,7 +344,7 @@ function AuditContent() {
   }, [searchParams]);
 
   const { org } = useOrg();
-  // Gate on org resolving so x-org-id is set before the first fetch fires.
+  // Gate on org resolving so session JWT is seeded before the first fetch fires.
   const { data: contracts } = useSWR<ContractSummary[]>(
     org ? "contracts" : null,
     listContracts

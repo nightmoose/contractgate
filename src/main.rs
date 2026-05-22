@@ -209,8 +209,9 @@ impl AppState {
         // we can seed the compiled contract with the correct `pii_salt`
         // (RFC-004).  Cost is one extra round-trip on cache miss —
         // acceptable because misses are rare (boot + draft pins).
-        let row = storage::get_version(&self.db, contract_id, version).await?;
-        let identity = storage::get_contract_identity(&self.db, contract_id).await?;
+        // Cache compilation — contract already auth-verified by handler; pass None.
+        let row = storage::get_version(&self.db, contract_id, version, None).await?;
+        let identity = storage::get_contract_identity(&self.db, contract_id, None).await?;
         let compiled = compile_version(&row, identity.pii_salt).map_err(|e| {
             AppError::InvalidContractYaml(format!(
                 "could not compile contract {}@{}: {}",
@@ -239,6 +240,14 @@ impl AppState {
         let mut cache = self.cache_write();
         cache.retain(|(cid, _), _| *cid != contract_id);
     }
+
+    /// Returns true when any auth mechanism is configured (env-var key or
+    /// Supabase JWKS).  Used by org-scoped handlers to decide whether a
+    /// missing `org_id` should be treated as dev-mode unscoped (false) or
+    /// as an unauthenticated request that must be rejected with 401 (true).
+    pub fn auth_configured(&self) -> bool {
+        !self.api_key.is_empty() || self.supabase_jwks.is_some()
+    }
 }
 
 /// Parse + compile a `ContractVersion` row into a `CompiledContract`,
@@ -255,7 +264,8 @@ fn compile_version(v: &ContractVersion, salt: Vec<u8>) -> Result<CompiledContrac
 
 /// Merge an identity row with aggregated version info into a response.
 async fn identity_to_response(db: &PgPool, id: ContractIdentity) -> AppResult<ContractResponse> {
-    let summaries = storage::list_versions(db, id.id).await?;
+    // identity was already org-verified before this helper is called — pass None.
+    let summaries = storage::list_versions(db, id.id, None).await?;
     let version_count = summaries.len() as i64;
     let latest_stable_version = storage::get_latest_stable_version(db, id.id)
         .await?
@@ -275,25 +285,45 @@ async fn identity_to_response(db: &PgPool, id: ContractIdentity) -> AppResult<Co
 // ---------------------------------------------------------------------------
 // Helper: extract org_id from request extensions.
 //
-// Priority:
-//   1. DB-backed API key (ValidatedKey in extensions) — most secure; org_id
-//      is authoritative from the database row.
-//   2. `x-org-id` request header — trusted fallback when using the legacy
-//      env-var key or in dev mode (no key).  The dashboard passes this header
-//      so the user's personal org is used even before they've created a
-//      DB-backed key.  Not trusted when a DB-backed key is already present.
+// RFC-048: only `ValidatedKey` (DB-backed key or verified JWT) is trusted.
+// The `x-org-id` header fallback has been removed — it was spoofable by any
+// caller holding the legacy env-var key and allowed full tenant impersonation.
+//
+// Returns `None` in dev mode (no auth configured) or when the legacy env-var
+// key path is used (no ValidatedKey injected).  Callers that require org
+// context must check `state.auth_configured()` and return 401 when this
+// returns None in a production environment.
 // ---------------------------------------------------------------------------
 
 fn org_id_from_req(req: &axum::extract::Request) -> Option<uuid::Uuid> {
-    // 1. DB-backed key wins unconditionally.
-    if let Some(k) = req.extensions().get::<api_key_auth::ValidatedKey>() {
-        return Some(k.org_id);
+    req.extensions()
+        .get::<api_key_auth::ValidatedKey>()
+        .map(|k| k.org_id)
+}
+
+// ---------------------------------------------------------------------------
+// OrgId extractor — pulls org_id from request extensions for handlers that
+// also need to extract Path<T> or Json<T> as separate parameters.
+//
+// Implements `FromRequestParts` so it can coexist with any other extractor.
+// Always succeeds (never 400/401 on its own); the 401 check is in handlers.
+// ---------------------------------------------------------------------------
+
+struct OrgId(Option<Uuid>);
+
+impl<S: Send + Sync> axum::extract::FromRequestParts<S> for OrgId {
+    type Rejection = std::convert::Infallible;
+
+    async fn from_request_parts(
+        parts: &mut axum::http::request::Parts,
+        _state: &S,
+    ) -> Result<Self, Self::Rejection> {
+        let org_id = parts
+            .extensions
+            .get::<api_key_auth::ValidatedKey>()
+            .map(|k| k.org_id);
+        Ok(OrgId(org_id))
     }
-    // 2. Fallback: client-supplied header (legacy/dev mode only).
-    req.headers()
-        .get("x-org-id")
-        .and_then(|v| v.to_str().ok())
-        .and_then(|s| uuid::Uuid::parse_str(s).ok())
 }
 
 // ---------------------------------------------------------------------------
@@ -326,9 +356,13 @@ async fn create_contract_handler(
 
 async fn get_contract_handler(
     State(state): State<Arc<AppState>>,
+    OrgId(org_id): OrgId,
     Path(id): Path<Uuid>,
 ) -> AppResult<Json<ContractResponse>> {
-    let identity = storage::get_contract_identity(&state.db, id).await?;
+    if state.auth_configured() && org_id.is_none() {
+        return Err(error::AppError::Unauthorized);
+    }
+    let identity = storage::get_contract_identity(&state.db, id, org_id).await?;
     Ok(Json(identity_to_response(&state.db, identity).await?))
 }
 
@@ -343,15 +377,20 @@ async fn list_contracts_handler(
 
 async fn patch_contract_handler(
     State(state): State<Arc<AppState>>,
+    OrgId(org_id): OrgId,
     Path(id): Path<Uuid>,
     Json(req): Json<PatchContractRequest>,
 ) -> AppResult<Json<ContractResponse>> {
+    if state.auth_configured() && org_id.is_none() {
+        return Err(error::AppError::Unauthorized);
+    }
     let identity = storage::patch_contract_identity(
         &state.db,
         id,
         req.name.as_deref(),
         req.description.as_deref(),
         req.multi_stable_resolution,
+        org_id,
     )
     .await?;
     // Identity-only patch doesn't touch yaml; no cache eviction needed.
@@ -360,9 +399,13 @@ async fn patch_contract_handler(
 
 async fn delete_contract_handler(
     State(state): State<Arc<AppState>>,
+    OrgId(org_id): OrgId,
     Path(id): Path<Uuid>,
 ) -> AppResult<StatusCode> {
-    storage::delete_contract(&state.db, id).await?;
+    if state.auth_configured() && org_id.is_none() {
+        return Err(error::AppError::Unauthorized);
+    }
+    storage::delete_contract(&state.db, id, org_id).await?;
     state.invalidate_contract_all(id);
     Ok(StatusCode::NO_CONTENT)
 }
@@ -373,37 +416,59 @@ async fn delete_contract_handler(
 
 async fn create_version_handler(
     State(state): State<Arc<AppState>>,
+    OrgId(org_id): OrgId,
     Path(contract_id): Path<Uuid>,
     Json(req): Json<CreateVersionRequest>,
 ) -> AppResult<(StatusCode, Json<VersionResponse>)> {
-    let v =
-        storage::create_version(&state.db, contract_id, &req.version, &req.yaml_content).await?;
+    if state.auth_configured() && org_id.is_none() {
+        return Err(error::AppError::Unauthorized);
+    }
+    let v = storage::create_version(
+        &state.db,
+        contract_id,
+        &req.version,
+        &req.yaml_content,
+        org_id,
+    )
+    .await?;
     // Drafts are cached lazily on first pin — no eager insert.
     Ok((StatusCode::CREATED, Json(VersionResponse::from(&v))))
 }
 
 async fn list_versions_handler(
     State(state): State<Arc<AppState>>,
+    OrgId(org_id): OrgId,
     Path(contract_id): Path<Uuid>,
 ) -> AppResult<Json<Vec<VersionSummary>>> {
-    let versions = storage::list_versions(&state.db, contract_id).await?;
+    if state.auth_configured() && org_id.is_none() {
+        return Err(error::AppError::Unauthorized);
+    }
+    let versions = storage::list_versions(&state.db, contract_id, org_id).await?;
     Ok(Json(versions))
 }
 
 async fn get_version_handler(
     State(state): State<Arc<AppState>>,
+    OrgId(org_id): OrgId,
     Path((contract_id, version)): Path<(Uuid, String)>,
 ) -> AppResult<Json<VersionResponse>> {
-    let v = storage::get_version(&state.db, contract_id, &version).await?;
+    if state.auth_configured() && org_id.is_none() {
+        return Err(error::AppError::Unauthorized);
+    }
+    let v = storage::get_version(&state.db, contract_id, &version, org_id).await?;
     Ok(Json(VersionResponse::from(&v)))
 }
 
 async fn get_latest_stable_handler(
     State(state): State<Arc<AppState>>,
+    OrgId(org_id): OrgId,
     Path(contract_id): Path<Uuid>,
 ) -> AppResult<Json<VersionResponse>> {
-    // Ensure the contract exists (clean 404).
-    let _ = storage::get_contract_identity(&state.db, contract_id).await?;
+    if state.auth_configured() && org_id.is_none() {
+        return Err(error::AppError::Unauthorized);
+    }
+    // Org-scoped existence check (RFC-047); stable lookup unscoped — same contract_id.
+    let _ = storage::get_contract_identity(&state.db, contract_id, org_id).await?;
     let v = storage::get_latest_stable_version(&state.db, contract_id)
         .await?
         .ok_or(AppError::NoStableVersion { contract_id })?;
@@ -412,11 +477,21 @@ async fn get_latest_stable_handler(
 
 async fn patch_version_handler(
     State(state): State<Arc<AppState>>,
+    OrgId(org_id): OrgId,
     Path((contract_id, version)): Path<(Uuid, String)>,
     Json(req): Json<PatchVersionRequest>,
 ) -> AppResult<Json<VersionResponse>> {
-    let v =
-        storage::patch_version_yaml(&state.db, contract_id, &version, &req.yaml_content).await?;
+    if state.auth_configured() && org_id.is_none() {
+        return Err(error::AppError::Unauthorized);
+    }
+    let v = storage::patch_version_yaml(
+        &state.db,
+        contract_id,
+        &version,
+        &req.yaml_content,
+        org_id,
+    )
+    .await?;
     // Evict: a draft edit changes its compiled form.
     state.invalidate_version(contract_id, &version);
     Ok(Json(VersionResponse::from(&v)))
@@ -424,9 +499,13 @@ async fn patch_version_handler(
 
 async fn promote_version_handler(
     State(state): State<Arc<AppState>>,
+    OrgId(org_id): OrgId,
     Path((contract_id, version)): Path<(Uuid, String)>,
 ) -> AppResult<Json<VersionResponse>> {
-    let v = storage::promote_version(&state.db, contract_id, &version).await?;
+    if state.auth_configured() && org_id.is_none() {
+        return Err(error::AppError::Unauthorized);
+    }
+    let v = storage::promote_version(&state.db, contract_id, &version, org_id).await?;
     // Version is now stable and frozen.  Pre-warm the cache so the first
     // ingest request doesn't take the slow path.
     let _ = state.get_compiled(contract_id, &version).await;
@@ -435,9 +514,13 @@ async fn promote_version_handler(
 
 async fn deprecate_version_handler(
     State(state): State<Arc<AppState>>,
+    OrgId(org_id): OrgId,
     Path((contract_id, version)): Path<(Uuid, String)>,
 ) -> AppResult<Json<VersionResponse>> {
-    let v = storage::deprecate_version(&state.db, contract_id, &version).await?;
+    if state.auth_configured() && org_id.is_none() {
+        return Err(error::AppError::Unauthorized);
+    }
+    let v = storage::deprecate_version(&state.db, contract_id, &version, org_id).await?;
     // Cached compiled form is still correct (YAML didn't change); the
     // deprecated-pin short-circuit in ingest.rs looks at the DB row's state,
     // not the cache.  No invalidation needed.
@@ -446,20 +529,27 @@ async fn deprecate_version_handler(
 
 async fn delete_version_handler(
     State(state): State<Arc<AppState>>,
+    OrgId(org_id): OrgId,
     Path((contract_id, version)): Path<(Uuid, String)>,
 ) -> AppResult<StatusCode> {
-    storage::delete_version(&state.db, contract_id, &version).await?;
+    if state.auth_configured() && org_id.is_none() {
+        return Err(error::AppError::Unauthorized);
+    }
+    storage::delete_version(&state.db, contract_id, &version, org_id).await?;
     state.invalidate_version(contract_id, &version);
     Ok(StatusCode::NO_CONTENT)
 }
 
 async fn list_name_history_handler(
     State(state): State<Arc<AppState>>,
+    OrgId(org_id): OrgId,
     Path(contract_id): Path<Uuid>,
 ) -> AppResult<Json<Vec<NameHistoryEntry>>> {
-    // 404 if the contract is gone.
-    let _ = storage::get_contract_identity(&state.db, contract_id).await?;
-    let rows = storage::list_name_history(&state.db, contract_id).await?;
+    if state.auth_configured() && org_id.is_none() {
+        return Err(error::AppError::Unauthorized);
+    }
+    // list_name_history verifies ownership internally (RFC-047).
+    let rows = storage::list_name_history(&state.db, contract_id, org_id).await?;
     Ok(Json(rows))
 }
 
@@ -565,7 +655,8 @@ async fn import_odcs_handler(
     .await?;
 
     // Step 3: remove the throwaway native draft.
-    storage::delete_version(&state.db, identity.id, "1.0.0").await?;
+    // Contract was just created in this request so org is already verified.
+    storage::delete_version(&state.db, identity.id, "1.0.0", org_id).await?;
 
     // Step 4: create the real versioned draft with correct import provenance.
     let cv = storage::create_version_from_import(
@@ -574,6 +665,7 @@ async fn import_odcs_handler(
         &result.version,
         &result.yaml_content,
         result.import_source,
+        org_id,
     )
     .await?;
 
@@ -584,10 +676,15 @@ async fn import_odcs_handler(
 /// serialized as ODCS v3.1.0 YAML.
 async fn export_odcs_handler(
     State(state): State<Arc<AppState>>,
+    OrgId(org_id): OrgId,
     Path((contract_id, version)): Path<(Uuid, String)>,
 ) -> AppResult<axum::response::Response> {
-    let identity = storage::get_contract_identity(&state.db, contract_id).await?;
-    let cv = storage::get_version(&state.db, contract_id, &version).await?;
+    if state.auth_configured() && org_id.is_none() {
+        return Err(error::AppError::Unauthorized);
+    }
+    let identity = storage::get_contract_identity(&state.db, contract_id, org_id).await?;
+    // Version scoped through the same contract — identity already org-verified.
+    let cv = storage::get_version(&state.db, contract_id, &version, org_id).await?;
     let contract: Contract = serde_yaml::from_str(&cv.yaml_content)
         .map_err(|e| AppError::InvalidContractYaml(e.to_string()))?;
 
@@ -611,9 +708,13 @@ async fn export_odcs_handler(
 /// on draft versions.
 async fn approve_import_handler(
     State(state): State<Arc<AppState>>,
+    OrgId(org_id): OrgId,
     Path((contract_id, version)): Path<(Uuid, String)>,
 ) -> AppResult<Json<VersionResponse>> {
-    let cv = storage::clear_requires_review(&state.db, contract_id, &version).await?;
+    if state.auth_configured() && org_id.is_none() {
+        return Err(error::AppError::Unauthorized);
+    }
+    let cv = storage::clear_requires_review(&state.db, contract_id, &version, org_id).await?;
     Ok(Json(VersionResponse::from(&cv)))
 }
 
@@ -626,10 +727,14 @@ async fn approve_import_handler(
 /// Returns a `ConformanceReport` with four ODCS v3.1.0 dimension scores.
 async fn odcs_conformance_handler(
     State(state): State<Arc<AppState>>,
+    OrgId(org_id): OrgId,
     Path((contract_id, version)): Path<(Uuid, String)>,
 ) -> AppResult<Json<conformance::ConformanceReport>> {
-    let identity = storage::get_contract_identity(&state.db, contract_id).await?;
-    let cv = storage::get_version(&state.db, contract_id, &version).await?;
+    if state.auth_configured() && org_id.is_none() {
+        return Err(error::AppError::Unauthorized);
+    }
+    let identity = storage::get_contract_identity(&state.db, contract_id, org_id).await?;
+    let cv = storage::get_version(&state.db, contract_id, &version, org_id).await?;
     let contract: Contract = serde_yaml::from_str(&cv.yaml_content)
         .map_err(|e| AppError::BadRequest(format!("stored yaml_content is invalid: {e}")))?;
     let report = conformance::compute_conformance(&identity, &cv, &contract);

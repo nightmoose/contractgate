@@ -371,14 +371,15 @@ pub async fn egress_handler(
         .filter(|s| !s.is_empty());
 
     // --- Load contract identity ---------------------------------------------
-    let _identity = storage::get_contract_identity(&state.db, contract_id).await?;
+    // Egress hot path — scoped by key.allowed_contract_ids, not org_id.
+    let _identity = storage::get_contract_identity(&state.db, contract_id, None).await?;
 
     // --- Resolve version ----------------------------------------------------
     let (resolved_version, _pin_source) =
         resolve_version(&state, contract_id, header_version, path_version).await?;
 
     // --- Fetch version row (check deprecated) --------------------------------
-    let version_row = storage::get_version(&state.db, contract_id, &resolved_version).await?;
+    let version_row = storage::get_version(&state.db, contract_id, &resolved_version, None).await?;
 
     tracing::debug!(
         contract_id = %contract_id,

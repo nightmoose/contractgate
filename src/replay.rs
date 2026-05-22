@@ -133,7 +133,8 @@ pub async fn replay_handler(
     req.validate_bounds()?;
 
     // Verify the contract identity exists (404s early if not).
-    let identity = storage::get_contract_identity(&state.db, contract_id).await?;
+    // Replay is an internal operation; org scoping is handled at the route auth layer.
+    let identity = storage::get_contract_identity(&state.db, contract_id, None).await?;
 
     // ----- 1. Resolve target version --------------------------------------
     let (target_version, target_source, target_is_draft) =
@@ -489,7 +490,7 @@ pub async fn resolve_replay_target(
     match requested {
         Some(v) => {
             // Verify it exists — 404 if not.
-            let row = storage::get_version(&state.db, contract_id, v).await?;
+            let row = storage::get_version(&state.db, contract_id, v, None).await?;
             Ok((row.version, "explicit", row.state == VersionState::Draft))
         }
         None => {

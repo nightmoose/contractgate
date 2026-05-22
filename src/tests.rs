@@ -2371,3 +2371,283 @@ mod rfc031_tests {
         assert_eq!(val["drift_signals"].as_array().unwrap().len(), 0);
     }
 }
+
+// ---------------------------------------------------------------------------
+// RFC-047 / RFC-048 — org-scoping + x-org-id header removal tests
+//
+// Unit tests run without a DB.  The two-org DB tests are marked `#[ignore]`
+// and require DATABASE_URL; run them with:
+//
+//   cargo test org_scoping -- --ignored
+// ---------------------------------------------------------------------------
+
+#[cfg(test)]
+mod org_scoping {
+    // ---- Unit: OrgId extractor ------------------------------------------------
+
+    /// `OrgId` extractor returns `None` when no `ValidatedKey` is in extensions.
+    /// Covers dev mode (no auth) and the legacy env-var key path.
+    #[test]
+    fn org_id_none_when_no_validated_key() {
+        use axum::extract::FromRequestParts;
+        use axum::http::Request;
+
+        // Build a minimal request with no extensions.
+        let req = Request::builder()
+            .uri("/")
+            .body(axum::body::Body::empty())
+            .unwrap();
+        let (mut parts, _) = req.into_parts();
+
+        let result = tokio::runtime::Runtime::new()
+            .unwrap()
+            .block_on(super::super::OrgId::from_request_parts(&mut parts, &()));
+
+        let super::super::OrgId(org_id) = result.unwrap();
+        assert!(
+            org_id.is_none(),
+            "OrgId should be None when no ValidatedKey present"
+        );
+    }
+
+    /// `OrgId` extractor returns `Some(uuid)` when a `ValidatedKey` is injected.
+    /// Covers DB-backed key and JWT paths.
+    #[test]
+    fn org_id_some_when_validated_key_present() {
+        use axum::extract::FromRequestParts;
+        use axum::http::Request;
+        use uuid::Uuid;
+
+        let expected_org = Uuid::new_v4();
+        let key = super::super::api_key_auth::ValidatedKey {
+            api_key_id: Uuid::nil(),
+            user_id: Uuid::new_v4(),
+            org_id: expected_org,
+            allowed_contract_ids: None,
+            rate_limit_rps: None,
+            rate_limit_burst: None,
+        };
+
+        let req = Request::builder()
+            .uri("/")
+            .body(axum::body::Body::empty())
+            .unwrap();
+        let (mut parts, _) = req.into_parts();
+        parts.extensions.insert(key);
+
+        let result = tokio::runtime::Runtime::new()
+            .unwrap()
+            .block_on(super::super::OrgId::from_request_parts(&mut parts, &()));
+
+        let super::super::OrgId(org_id) = result.unwrap();
+        assert_eq!(
+            org_id,
+            Some(expected_org),
+            "OrgId should match the ValidatedKey org_id"
+        );
+    }
+
+    /// RFC-048: `org_id_from_req` no longer reads the `x-org-id` header.
+    /// A request with the header but no ValidatedKey must yield None.
+    #[test]
+    fn x_org_id_header_not_trusted() {
+        use axum::http::Request;
+        use uuid::Uuid;
+
+        let spoofed_org = Uuid::new_v4();
+        let req = Request::builder()
+            .uri("/")
+            .header("x-org-id", spoofed_org.to_string())
+            .body(axum::body::Body::empty())
+            .unwrap();
+
+        let org_id = super::super::org_id_from_req(&req);
+        assert!(
+            org_id.is_none(),
+            "x-org-id header must NOT be trusted after RFC-048 (got {:?})",
+            org_id
+        );
+    }
+
+    // ---- DB integration: two-org isolation ------------------------------------
+    //
+    // These tests require DATABASE_URL.  Run with:
+    //   cargo test org_scoping::two_org -- --ignored
+    //
+    // They exercise the full storage layer end-to-end: org A creates a
+    // contract; org B holds a different UUID and must see 404 on every
+    // by-ID route.  Dev mode (org_id = None) must serve unscoped.
+
+    /// Org B's key gets ContractNotFound on GET for org A's contract.
+    #[tokio::test]
+    #[ignore = "requires DATABASE_URL and a live Supabase/Postgres instance"]
+    async fn two_org_get_contract_isolation() {
+        let db_url = std::env::var("DATABASE_URL").expect("DATABASE_URL must be set");
+        let pool = sqlx::PgPool::connect(&db_url).await.unwrap();
+
+        let org_a = uuid::Uuid::new_v4();
+        let org_b = uuid::Uuid::new_v4();
+
+        let minimal_yaml = r#"
+version: "1.0"
+name: "isolation_test_contract"
+description: "Two-org isolation test"
+ontology:
+  entities:
+    - name: id
+      type: string
+      required: true
+glossary: []
+metrics: []
+"#;
+
+        // Org A creates a contract.
+        let (identity, _) = super::super::storage::create_contract(
+            &pool,
+            "isolation_test_contract",
+            Some("Two-org isolation test"),
+            minimal_yaml,
+            Default::default(),
+            Some(org_a),
+        )
+        .await
+        .expect("org A should create contract");
+
+        let contract_id = identity.id;
+
+        // Org B: GET → ContractNotFound (404).
+        let err = super::super::storage::get_contract_identity(&pool, contract_id, Some(org_b))
+            .await
+            .unwrap_err();
+        assert!(
+            matches!(err, super::super::error::AppError::ContractNotFound(_)),
+            "org B GET should be ContractNotFound, got: {:?}",
+            err
+        );
+
+        // Org B: PATCH → ContractNotFound.
+        let err = super::super::storage::patch_contract_identity(
+            &pool, contract_id, Some("renamed"), None, None, Some(org_b),
+        )
+        .await
+        .unwrap_err();
+        assert!(matches!(
+            err,
+            super::super::error::AppError::ContractNotFound(_)
+        ));
+
+        // Org B: DELETE → ContractNotFound.
+        let err = super::super::storage::delete_contract(&pool, contract_id, Some(org_b))
+            .await
+            .unwrap_err();
+        assert!(matches!(
+            err,
+            super::super::error::AppError::ContractNotFound(_)
+        ));
+
+        // Org B: create version → ContractNotFound (org check in create_version).
+        let err = super::super::storage::create_version(
+            &pool,
+            contract_id,
+            "2.0.0",
+            minimal_yaml,
+            Some(org_b),
+        )
+        .await
+        .unwrap_err();
+        assert!(matches!(
+            err,
+            super::super::error::AppError::ContractNotFound(_)
+        ));
+
+        // Org A: GET succeeds (same org).
+        super::super::storage::get_contract_identity(&pool, contract_id, Some(org_a))
+            .await
+            .expect("org A should still read its own contract");
+
+        // Dev mode (org_id = None): unscoped, must also succeed.
+        super::super::storage::get_contract_identity(&pool, contract_id, None)
+            .await
+            .expect("dev mode (org_id=None) should serve unscoped");
+
+        // Cleanup: hard-delete the test row so reruns don't collide.
+        sqlx::query("DELETE FROM contracts WHERE id = $1")
+            .bind(contract_id)
+            .execute(&pool)
+            .await
+            .unwrap();
+    }
+
+    /// Org B's key gets VersionNotFound on GET for org A's version.
+    #[tokio::test]
+    #[ignore = "requires DATABASE_URL and a live Supabase/Postgres instance"]
+    async fn two_org_get_version_isolation() {
+        let db_url = std::env::var("DATABASE_URL").expect("DATABASE_URL must be set");
+        let pool = sqlx::PgPool::connect(&db_url).await.unwrap();
+
+        let org_a = uuid::Uuid::new_v4();
+        let org_b = uuid::Uuid::new_v4();
+
+        let minimal_yaml = r#"
+version: "1.0"
+name: "isolation_version_test"
+description: "Version isolation test"
+ontology:
+  entities:
+    - name: id
+      type: string
+      required: true
+glossary: []
+metrics: []
+"#;
+
+        let (identity, _) = super::super::storage::create_contract(
+            &pool,
+            "isolation_version_test",
+            None,
+            minimal_yaml,
+            Default::default(),
+            Some(org_a),
+        )
+        .await
+        .unwrap();
+
+        let contract_id = identity.id;
+
+        // Org B: GET version → VersionNotFound (scoped through parent contract).
+        let err =
+            super::super::storage::get_version(&pool, contract_id, "1.0.0", Some(org_b))
+                .await
+                .unwrap_err();
+        assert!(
+            matches!(
+                err,
+                super::super::error::AppError::VersionNotFound { .. }
+            ),
+            "org B version GET should be VersionNotFound, got: {:?}",
+            err
+        );
+
+        // Org B: promote → same VersionNotFound before reaching state check.
+        let err =
+            super::super::storage::promote_version(&pool, contract_id, "1.0.0", Some(org_b))
+                .await
+                .unwrap_err();
+        assert!(matches!(
+            err,
+            super::super::error::AppError::VersionNotFound { .. }
+        ));
+
+        // Org A: GET version succeeds.
+        super::super::storage::get_version(&pool, contract_id, "1.0.0", Some(org_a))
+            .await
+            .expect("org A should still read its own version");
+
+        // Cleanup.
+        sqlx::query("DELETE FROM contracts WHERE id = $1")
+            .bind(contract_id)
+            .execute(&pool)
+            .await
+            .unwrap();
+    }
+}

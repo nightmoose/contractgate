@@ -237,15 +237,24 @@ pub async fn create_contract(
 
 /// Fetch a contract identity by id.  Soft-deleted contracts are not visible
 /// (RFC-001 sign-off #6: soft delete everywhere).
-pub async fn get_contract_identity(pool: &PgPool, id: Uuid) -> AppResult<ContractIdentity> {
+///
+/// `org_id` — when `Some`, the row must belong to that org or 404 is returned
+/// (RFC-047 app-level BOLA guard).  Pass `None` only in dev mode or from
+/// internal callers that have already verified ownership.
+pub async fn get_contract_identity(
+    pool: &PgPool,
+    id: Uuid,
+    org_id: Option<Uuid>,
+) -> AppResult<ContractIdentity> {
     let row = sqlx::query_as::<_, ContractIdentityRow>(
         r#"
         SELECT id, name, description, multi_stable_resolution, created_at, updated_at, pii_salt
         FROM contracts
-        WHERE id = $1 AND deleted_at IS NULL
+        WHERE id = $1 AND deleted_at IS NULL AND ($2 IS NULL OR org_id = $2)
         "#,
     )
     .bind(id)
+    .bind(org_id)
     .fetch_optional(pool)
     .await
     .db_op("get_contract_identity")?
@@ -323,15 +332,20 @@ pub async fn list_contracts(
 /// Patch identity-level fields.  Passing `Some(value)` updates the field;
 /// `None` leaves it alone.  Name changes are mirrored to
 /// `contract_name_history` by the DB trigger.
+///
+/// `org_id` — org-scope guard (RFC-047).  Pass `None` only in dev mode.
 pub async fn patch_contract_identity(
     pool: &PgPool,
     id: Uuid,
     name: Option<&str>,
     description: Option<&str>,
     resolution: Option<MultiStableResolution>,
+    org_id: Option<Uuid>,
 ) -> AppResult<ContractIdentity> {
     // COALESCE keeps the existing value when the bind is NULL.  Resolution
     // is bound as a string with an explicit NULL when not provided.
+    // $5 = org_id: row is invisible (fetch_optional → None → 404) when the
+    // caller's org doesn't own it — never leaks existence via 403 (RFC-047).
     let row = sqlx::query_as::<_, ContractIdentityRow>(
         r#"
         UPDATE contracts
@@ -340,7 +354,7 @@ pub async fn patch_contract_identity(
             description             = COALESCE($3, description),
             multi_stable_resolution = COALESCE($4, multi_stable_resolution),
             updated_at              = NOW()
-        WHERE id = $1
+        WHERE id = $1 AND ($5 IS NULL OR org_id = $5)
         RETURNING id, name, description, multi_stable_resolution, created_at, updated_at, pii_salt
         "#,
     )
@@ -348,6 +362,7 @@ pub async fn patch_contract_identity(
     .bind(name)
     .bind(description)
     .bind(resolution.map(|r| r.as_str()))
+    .bind(org_id)
     .fetch_optional(pool)
     .await?
     .ok_or(AppError::ContractNotFound(id))?;
@@ -355,15 +370,24 @@ pub async fn patch_contract_identity(
     row.into_identity()
 }
 
-pub async fn delete_contract(pool: &PgPool, id: Uuid) -> AppResult<()> {
-    // RFC-001 sign-off #6: soft delete everywhere — never lose data.
-    // Stamps `deleted_at`; downstream queries filter `deleted_at IS NULL`,
-    // so the contract disappears from the dashboard but the audit trail and
-    // version history remain intact.  A future restore is just an UPDATE.
-    sqlx::query("UPDATE contracts SET deleted_at = NOW() WHERE id = $1 AND deleted_at IS NULL")
-        .bind(id)
-        .execute(pool)
-        .await?;
+/// Soft-delete a contract (RFC-001 §6).  `org_id` scope guard (RFC-047):
+/// returns `ContractNotFound` when no row matches id + org, so UUID
+/// existence is never leaked to the wrong tenant.
+pub async fn delete_contract(pool: &PgPool, id: Uuid, org_id: Option<Uuid>) -> AppResult<()> {
+    let result = sqlx::query(
+        "UPDATE contracts SET deleted_at = NOW() \
+         WHERE id = $1 AND deleted_at IS NULL AND ($2 IS NULL OR org_id = $2)",
+    )
+    .bind(id)
+    .bind(org_id)
+    .execute(pool)
+    .await?;
+
+    // 0 rows: either doesn't exist, already deleted, or belongs to another
+    // org.  All map to 404 so we never reveal UUID existence (RFC-047).
+    if result.rows_affected() == 0 {
+        return Err(AppError::ContractNotFound(id));
+    }
     Ok(())
 }
 
@@ -373,20 +397,22 @@ pub async fn delete_contract(pool: &PgPool, id: Uuid) -> AppResult<()> {
 
 /// Create a new draft version on an existing contract.  The YAML is parsed
 /// first so invalid contracts never land in the DB.
+///
+/// `org_id` — org-scope guard (RFC-047).  Pass `None` only in dev mode.
 pub async fn create_version(
     pool: &PgPool,
     contract_id: Uuid,
     version: &str,
     yaml_content: &str,
+    org_id: Option<Uuid>,
 ) -> AppResult<ContractVersion> {
     let parsed: Contract = serde_yaml::from_str(yaml_content)
         .map_err(|e| AppError::InvalidContractYaml(e.to_string()))?;
     let compliance_mode = parsed.compliance_mode;
     let egress_leakage_mode = parsed.egress_leakage_mode.as_str();
 
-    // Ensure the contract exists first so we get a clean 404 instead of a
-    // foreign-key violation.
-    let _ = get_contract_identity(pool, contract_id).await?;
+    // Ensure the contract exists and belongs to the caller's org (RFC-047).
+    let _ = get_contract_identity(pool, contract_id, org_id).await?;
 
     let id = Uuid::new_v4();
 
@@ -425,11 +451,14 @@ pub async fn create_version(
 
 /// Edit a draft version's YAML.  Illegal (409) on stable/deprecated — the
 /// Postgres trigger blocks that at the storage layer too.
+///
+/// `org_id` — org-scope guard (RFC-047).  Pass `None` only in dev mode.
 pub async fn patch_version_yaml(
     pool: &PgPool,
     contract_id: Uuid,
     version: &str,
     yaml_content: &str,
+    org_id: Option<Uuid>,
 ) -> AppResult<ContractVersion> {
     // Parse first — reject invalid YAML before touching the DB.  We also
     // extract `compliance_mode` so the column stays in sync on UPDATE.  The
@@ -442,7 +471,8 @@ pub async fn patch_version_yaml(
     let egress_leakage_mode = parsed.egress_leakage_mode.as_str();
 
     // Fetch first so we can emit a specific error (not-found vs. immutable).
-    let current = get_version(pool, contract_id, version).await?;
+    // org_id check happens inside get_version (RFC-047).
+    let current = get_version(pool, contract_id, version, org_id).await?;
     if current.state != VersionState::Draft {
         return Err(AppError::VersionImmutable {
             version: version.to_string(),
@@ -474,12 +504,15 @@ pub async fn patch_version_yaml(
 }
 
 /// Transition draft → stable.  Rejects any other source state.
+///
+/// `org_id` — org-scope guard (RFC-047).  Pass `None` only in dev mode.
 pub async fn promote_version(
     pool: &PgPool,
     contract_id: Uuid,
     version: &str,
+    org_id: Option<Uuid>,
 ) -> AppResult<ContractVersion> {
-    let current = get_version(pool, contract_id, version).await?;
+    let current = get_version(pool, contract_id, version, org_id).await?;
     if current.state != VersionState::Draft {
         return Err(AppError::InvalidStateTransition {
             from: current.state.as_str().to_string(),
@@ -514,12 +547,15 @@ pub async fn promote_version(
 }
 
 /// Transition stable → deprecated.  Rejects any other source state.
+///
+/// `org_id` — org-scope guard (RFC-047).  Pass `None` only in dev mode.
 pub async fn deprecate_version(
     pool: &PgPool,
     contract_id: Uuid,
     version: &str,
+    org_id: Option<Uuid>,
 ) -> AppResult<ContractVersion> {
-    let current = get_version(pool, contract_id, version).await?;
+    let current = get_version(pool, contract_id, version, org_id).await?;
     if current.state != VersionState::Stable {
         return Err(AppError::InvalidStateTransition {
             from: current.state.as_str().to_string(),
@@ -693,10 +729,17 @@ pub async fn deploy_contract_version(
 }
 
 /// Delete a draft version.  Postgres trigger enforces the draft-only rule
-/// as well — so even a direct SQL hit cannot remove a stable/deprecated
-/// row.
-pub async fn delete_version(pool: &PgPool, contract_id: Uuid, version: &str) -> AppResult<()> {
-    let current = get_version(pool, contract_id, version).await?;
+/// as well — so even a direct SQL hit cannot remove a stable/deprecated row.
+///
+/// `org_id` — org-scope guard (RFC-047).  Pass `None` only in dev mode or
+/// from internal callers that have already verified ownership.
+pub async fn delete_version(
+    pool: &PgPool,
+    contract_id: Uuid,
+    version: &str,
+    org_id: Option<Uuid>,
+) -> AppResult<()> {
+    let current = get_version(pool, contract_id, version, org_id).await?;
     if current.state != VersionState::Draft {
         return Err(AppError::VersionImmutable {
             version: version.to_string(),
@@ -713,10 +756,18 @@ pub async fn delete_version(pool: &PgPool, contract_id: Uuid, version: &str) -> 
     Ok(())
 }
 
+/// Fetch a specific contract version.
+///
+/// `org_id` — when `Some`, scopes through the parent contract row so a
+/// version that exists for another org is invisible (RFC-047).  Returns
+/// `VersionNotFound` in all miss cases — never leaks UUID existence.
+/// Pass `None` only from ingest/egress hot paths or after the contract
+/// identity has already been org-verified.
 pub async fn get_version(
     pool: &PgPool,
     contract_id: Uuid,
     version: &str,
+    org_id: Option<Uuid>,
 ) -> AppResult<ContractVersion> {
     let row = sqlx::query_as::<_, ContractVersionRow>(
         r#"
@@ -725,10 +776,15 @@ pub async fn get_version(
                egress_leakage_mode, import_source, requires_review
         FROM contract_versions
         WHERE contract_id = $1 AND version = $2
+          AND contract_id IN (
+              SELECT id FROM contracts
+              WHERE id = $1 AND ($3 IS NULL OR org_id = $3)
+          )
         "#,
     )
     .bind(contract_id)
     .bind(version)
+    .bind(org_id)
     .fetch_optional(pool)
     .await
     .db_op("get_version")?
@@ -740,9 +796,15 @@ pub async fn get_version(
     row.into_version()
 }
 
-pub async fn list_versions(pool: &PgPool, contract_id: Uuid) -> AppResult<Vec<VersionSummary>> {
-    // Ensure contract exists so callers get a clean 404.
-    let _ = get_contract_identity(pool, contract_id).await?;
+/// `org_id` — org-scope guard (RFC-047).  Pass `None` from internal helpers
+/// that have already verified ownership (e.g. `identity_to_response`).
+pub async fn list_versions(
+    pool: &PgPool,
+    contract_id: Uuid,
+    org_id: Option<Uuid>,
+) -> AppResult<Vec<VersionSummary>> {
+    // Ensure contract exists (and belongs to caller's org) so callers get a clean 404.
+    let _ = get_contract_identity(pool, contract_id, org_id).await?;
 
     let rows = sqlx::query_as::<_, ContractVersionRow>(
         r#"
@@ -858,12 +920,15 @@ pub async fn load_all_non_draft_versions(pool: &PgPool) -> AppResult<Vec<Contrac
 /// Create a new draft version from an ODCS import.  Functionally identical to
 /// [`create_version`] but accepts an explicit `import_source` and sets
 /// `requires_review` when the source is `odcs_stripped` (D-002).
+///
+/// `org_id` — org-scope guard (RFC-047).  Pass `None` only in dev mode.
 pub async fn create_version_from_import(
     pool: &PgPool,
     contract_id: Uuid,
     version: &str,
     yaml_content: &str,
     import_source: ImportSource,
+    org_id: Option<Uuid>,
 ) -> AppResult<ContractVersion> {
     let parsed: Contract = serde_yaml::from_str(yaml_content)
         .map_err(|e| AppError::InvalidContractYaml(e.to_string()))?;
@@ -871,7 +936,7 @@ pub async fn create_version_from_import(
     let egress_leakage_mode = parsed.egress_leakage_mode.as_str();
     let requires_review = import_source == ImportSource::OdcsStripped;
 
-    let _ = get_contract_identity(pool, contract_id).await?;
+    let _ = get_contract_identity(pool, contract_id, org_id).await?;
 
     let id = Uuid::new_v4();
 
@@ -912,12 +977,15 @@ pub async fn create_version_from_import(
 /// Clear the `requires_review` flag set by a stripped ODCS import (D-002).
 /// Called by the `POST /contracts/:id/versions/:version/approve-import` handler.
 /// Only valid on draft versions; stable/deprecated versions are immutable.
+///
+/// `org_id` — org-scope guard (RFC-047).  Pass `None` only in dev mode.
 pub async fn clear_requires_review(
     pool: &PgPool,
     contract_id: Uuid,
     version: &str,
+    org_id: Option<Uuid>,
 ) -> AppResult<ContractVersion> {
-    let current = get_version(pool, contract_id, version).await?;
+    let current = get_version(pool, contract_id, version, org_id).await?;
     if current.state != VersionState::Draft {
         return Err(AppError::VersionImmutable {
             version: version.to_string(),
@@ -948,10 +1016,16 @@ pub async fn clear_requires_review(
 // Name history
 // ---------------------------------------------------------------------------
 
+/// `org_id` — org-scope guard (RFC-047).  Verifies ownership before
+/// returning history rows so cross-org UUID enumeration is blocked.
 pub async fn list_name_history(
     pool: &PgPool,
     contract_id: Uuid,
+    org_id: Option<Uuid>,
 ) -> AppResult<Vec<NameHistoryEntry>> {
+    // Ownership check — returns ContractNotFound if wrong org.
+    let _ = get_contract_identity(pool, contract_id, org_id).await?;
+
     let rows = sqlx::query_as::<_, NameHistoryEntry>(
         r#"
         SELECT id, contract_id, old_name, new_name, changed_at
@@ -1947,11 +2021,11 @@ pub async fn publish_contract_version(
     org_id: Option<Uuid>,
     published_by: Option<&str>,
 ) -> AppResult<PublicationRow> {
-    // Resolve the version row.
-    let cv = get_version(pool, contract_id, version_str).await?;
+    // Resolve the version row (org-scoped — RFC-047).
+    let cv = get_version(pool, contract_id, version_str, org_id).await?;
 
-    // Fetch the contract name for denormalization.
-    let identity = get_contract_identity(pool, contract_id).await?;
+    // Fetch the contract name for denormalization (org already verified above).
+    let identity = get_contract_identity(pool, contract_id, org_id).await?;
 
     let row = sqlx::query_as::<_, PublicationRow>(
         r#"

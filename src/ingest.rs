@@ -237,14 +237,15 @@ pub async fn ingest_handler(
         .filter(|s| !s.is_empty());
 
     // --- Load contract identity (404 if unknown) ---------------------------
-    let identity: ContractIdentity = storage::get_contract_identity(&state.db, contract_id).await?;
+    // Ingest hot path is scoped by key.allowed_contract_ids, not org_id — pass None.
+    let identity: ContractIdentity = storage::get_contract_identity(&state.db, contract_id, None).await?;
 
     // --- Resolve which version to use --------------------------------------
     let (resolved_version, pin_source) =
         resolve_version(&state, contract_id, header_version, path_version).await?;
 
     // --- Fetch version row so we know its state (draft/stable/deprecated) --
-    let version_row = storage::get_version(&state.db, contract_id, &resolved_version).await?;
+    let version_row = storage::get_version(&state.db, contract_id, &resolved_version, None).await?;
 
     tracing::debug!(
         contract_id = %contract_id,
@@ -903,7 +904,7 @@ pub async fn ingest_stats_handler(
     Path(contract_id): Path<Uuid>,
 ) -> AppResult<Json<storage::IngestionStats>> {
     // Verify contract exists (clean 404 if not).
-    let _ = storage::get_contract_identity(&state.db, contract_id).await?;
+    let _ = storage::get_contract_identity(&state.db, contract_id, None).await?;
     let stats = storage::ingestion_stats(&state.db, None, Some(contract_id)).await?;
     Ok(Json(stats))
 }

@@ -551,7 +551,7 @@ function PlaygroundContent() {
   const parsedContract = useMemo(() => parseContractRules(yaml_), [yaml_]);
 
   // Load stored contracts for the "Load from store" dropdown.
-  // Gate on org resolving so x-org-id is set before the first fetch fires.
+  // Gate on org resolving so session JWT is seeded before the first fetch fires.
   const { org } = useOrg();
   const { data: contracts } = useSWR<ContractSummary[]>(
     org ? "contracts" : null,

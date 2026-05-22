@@ -2,6 +2,78 @@
 
 ---
 
+## Run: 2026-05-22 — RFC-047 + RFC-048: Backend org scoping + x-org-id removal
+
+**Branch:** `nightly-maintenance-2026-05-22-rfc047-048`
+
+### Summary
+
+P0 launch-blocker fix: the Rust backend connects as the Supabase service role
+which bypasses RLS unconditionally. Every by-ID contract and version route was
+accessible to any valid JWT or API key — a BOLA/IDOR hole across the entire
+`/contracts/{id}/…` surface. RFC-047 adds application-level org scoping to all
+affected storage functions and handlers. RFC-048 removes the spoofable `x-org-id`
+header fallback that allowed full tenant impersonation via the legacy env-var key.
+Shipped together atomically so org scoping is introduced and the spoofable input
+is removed in one PR.
+
+### Files Changed
+
+- **`src/storage.rs`** — `org_id: Option<Uuid>` added to 13 by-ID functions:
+  `get_contract_identity`, `patch_contract_identity`, `delete_contract`,
+  `create_version`, `get_version`, `patch_version_yaml`, `promote_version`,
+  `deprecate_version`, `delete_version`, `list_versions`, `list_name_history`,
+  `create_version_from_import`, `clear_requires_review`. Contracts-rooted
+  queries add `AND ($N IS NULL OR org_id = $N)`; version queries scope through
+  the parent contract via `contract_id IN (SELECT id FROM contracts WHERE …)`.
+  `delete_contract` now checks `rows_affected()` and returns `ContractNotFound`
+  on 0 — never leaks UUID existence via a silent 204.
+
+- **`src/main.rs`** — RFC-048: `org_id_from_req` stripped of the `x-org-id`
+  header fallback; now returns `org_id` only from a `ValidatedKey`. New
+  `OrgId` extractor (`FromRequestParts`) injected into 15 by-ID handlers.
+  New `AppState::auth_configured()` helper — handlers 401 when auth is
+  configured but no org_id is resolvable. Cache path and `identity_to_response`
+  pass `None` (identity already verified).
+
+- **`src/ingest.rs`, `src/egress.rs`, `src/v1_ingest.rs`, `src/replay.rs`** —
+  hot-path callers pass `None` (scoped by `allowed_contract_ids`, not org).
+
+- **`dashboard/lib/api.ts`** — removed `_apiOrgId`, `setApiOrgId`, and all
+  `x-org-id` header sends (in `apiFetch` and `exportOdcs`).
+
+- **`dashboard/components/OrgProvider.tsx`** — removed `setApiOrgId` import
+  and call; updated JSDoc.
+
+- **`dashboard/app/audit/page.tsx`**, **`dashboard/app/playground/page.tsx`** —
+  updated stale comments.
+
+- **`src/tests.rs`** — `org_scoping` test module: three unit tests
+  (OrgId extractor, x-org-id header not trusted); two DB integration tests
+  `#[ignore]` (two-org contract + version isolation, dev-mode unscoped).
+
+- **`docs/auth-reference.md`** — new reference page documenting current auth
+  model, org scoping rules, and the x-org-id breaking change.
+
+- **`docs/rfcs/047-backend-org-scoping.md`** — status: Draft → Accepted.
+- **`docs/rfcs/048-drop-x-org-id-header-trust.md`** — status: Draft → Accepted.
+
+### No Migration
+
+Application-only change. RLS policies (RFC-040 / migration 023) remain as
+defense-in-depth on the Supabase REST path.
+
+### Commands to run
+
+```sh
+cargo check
+cargo test
+cargo clippy --all-targets -- -D warnings
+cargo sqlx prepare
+```
+
+---
+
 ## Run: 2026-05-15 — RFC-033: Provider-Consumer Collaboration
 
 **Branch:** `nightly-maintenance-2026-05-15`
