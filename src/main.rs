@@ -309,7 +309,7 @@ fn org_id_from_req(req: &axum::extract::Request) -> Option<uuid::Uuid> {
 // Always succeeds (never 400/401 on its own); the 401 check is in handlers.
 // ---------------------------------------------------------------------------
 
-struct OrgId(Option<Uuid>);
+pub(crate) struct OrgId(pub(crate) Option<Uuid>);
 
 impl<S: Send + Sync> axum::extract::FromRequestParts<S> for OrgId {
     type Rejection = std::convert::Infallible;
