@@ -238,7 +238,8 @@ pub async fn ingest_handler(
 
     // --- Load contract identity (404 if unknown) ---------------------------
     // Ingest hot path is scoped by key.allowed_contract_ids, not org_id — pass None.
-    let identity: ContractIdentity = storage::get_contract_identity(&state.db, contract_id, None).await?;
+    let identity: ContractIdentity =
+        storage::get_contract_identity(&state.db, contract_id, None).await?;
 
     // --- Resolve which version to use --------------------------------------
     let (resolved_version, pin_source) =

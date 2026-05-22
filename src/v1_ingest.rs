@@ -481,7 +481,8 @@ pub async fn v1_ingest_handler(
 
     // --- 7. Load contract identity + scope check --------------------------
     // v1 ingest hot path — scoped by key.allowed_contract_ids, not org_id.
-    let identity: ContractIdentity = storage::get_contract_identity(&state.db, contract_id, None).await?;
+    let identity: ContractIdentity =
+        storage::get_contract_identity(&state.db, contract_id, None).await?;
 
     // API key contract-scope enforcement.
     if let Some(Extension(ref k)) = key_ext {

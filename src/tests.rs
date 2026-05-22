@@ -2527,7 +2527,12 @@ metrics: []
 
         // Org B: PATCH → ContractNotFound.
         let err = super::super::storage::patch_contract_identity(
-            &pool, contract_id, Some("renamed"), None, None, Some(org_b),
+            &pool,
+            contract_id,
+            Some("renamed"),
+            None,
+            None,
+            Some(org_b),
         )
         .await
         .unwrap_err();
@@ -2615,24 +2620,19 @@ metrics: []
         let contract_id = identity.id;
 
         // Org B: GET version → VersionNotFound (scoped through parent contract).
-        let err =
-            super::super::storage::get_version(&pool, contract_id, "1.0.0", Some(org_b))
-                .await
-                .unwrap_err();
+        let err = super::super::storage::get_version(&pool, contract_id, "1.0.0", Some(org_b))
+            .await
+            .unwrap_err();
         assert!(
-            matches!(
-                err,
-                super::super::error::AppError::VersionNotFound { .. }
-            ),
+            matches!(err, super::super::error::AppError::VersionNotFound { .. }),
             "org B version GET should be VersionNotFound, got: {:?}",
             err
         );
 
         // Org B: promote → same VersionNotFound before reaching state check.
-        let err =
-            super::super::storage::promote_version(&pool, contract_id, "1.0.0", Some(org_b))
-                .await
-                .unwrap_err();
+        let err = super::super::storage::promote_version(&pool, contract_id, "1.0.0", Some(org_b))
+            .await
+            .unwrap_err();
         assert!(matches!(
             err,
             super::super::error::AppError::VersionNotFound { .. }

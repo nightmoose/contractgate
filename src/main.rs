@@ -484,14 +484,9 @@ async fn patch_version_handler(
     if state.auth_configured() && org_id.is_none() {
         return Err(error::AppError::Unauthorized);
     }
-    let v = storage::patch_version_yaml(
-        &state.db,
-        contract_id,
-        &version,
-        &req.yaml_content,
-        org_id,
-    )
-    .await?;
+    let v =
+        storage::patch_version_yaml(&state.db, contract_id, &version, &req.yaml_content, org_id)
+            .await?;
     // Evict: a draft edit changes its compiled form.
     state.invalidate_version(contract_id, &version);
     Ok(Json(VersionResponse::from(&v)))
