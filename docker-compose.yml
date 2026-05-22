@@ -42,6 +42,11 @@ services:
       # Leave blank to disable metrics auth (Prometheus scrapes unauthenticated).
       # Set to a non-empty string to require `Authorization: Bearer <token>`.
       METRICS_AUTH_TOKEN: ""
+      # RFC-050: CORS origin allowlist for the authenticated API surface.
+      # In demo/dev mode the dashboard runs at localhost:3000, which is the
+      # fallback when DASHBOARD_ORIGIN is unset, so leaving it unset here is
+      # intentional. Set explicitly in production deploys.
+      # DASHBOARD_ORIGIN: https://app.datacontractgate.com
     depends_on:
       postgres:
         # Wait for Postgres to finish applying init-script migrations

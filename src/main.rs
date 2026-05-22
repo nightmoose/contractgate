@@ -30,7 +30,7 @@ use std::{
     sync::{Arc, RwLock, RwLockReadGuard, RwLockWriteGuard},
 };
 use tower_http::{
-    cors::{Any, CorsLayer},
+    cors::{AllowOrigin, Any, CorsLayer},
     timeout::TimeoutLayer,
     trace::TraceLayer,
 };
@@ -944,7 +944,42 @@ async fn require_api_key(
 // ---------------------------------------------------------------------------
 
 fn build_router(state: Arc<AppState>) -> Router {
-    let cors = CorsLayer::new()
+    // RFC-050: two CORS layers with different scopes.
+    //
+    // `protected_cors` — authenticated surface (protected, infer, v1 routers).
+    // Origins come from DASHBOARD_ORIGIN (comma-separated).  Unset → warn +
+    // fall back to http://localhost:3000 for local dev.
+    let allowed_origins: Vec<axum::http::HeaderValue> = std::env::var("DASHBOARD_ORIGIN")
+        .unwrap_or_else(|_| {
+            tracing::warn!(
+                "DASHBOARD_ORIGIN is not set — CORS restricted to http://localhost:3000. \
+                 Set DASHBOARD_ORIGIN in production."
+            );
+            "http://localhost:3000".to_string()
+        })
+        .split(',')
+        .map(|s| s.trim().to_owned())
+        .filter(|s| !s.is_empty())
+        .filter_map(|s| s.parse::<axum::http::HeaderValue>().ok())
+        .collect();
+
+    let protected_cors = CorsLayer::new()
+        .allow_origin(AllowOrigin::list(allowed_origins))
+        .allow_methods([
+            axum::http::Method::GET,
+            axum::http::Method::POST,
+            axum::http::Method::PATCH,
+            axum::http::Method::DELETE,
+            axum::http::Method::OPTIONS,
+        ])
+        .allow_headers([
+            axum::http::header::AUTHORIZATION,
+            axum::http::header::CONTENT_TYPE,
+        ]);
+
+    // `public_cors` — genuinely public endpoints (no tenant data, no bearer
+    // tokens).  Permissive so browsers and third-party tools can embed them.
+    let public_cors = CorsLayer::new()
         .allow_origin(Any)
         .allow_methods(Any)
         .allow_headers(Any);
@@ -1220,12 +1255,21 @@ fn build_router(state: Arc<AppState>) -> Router {
             require_api_key,
         ));
 
-    Router::new()
-        .merge(public)
+    // RFC-050: scoped CORS layers.
+    // public routes get the permissive wildcard layer;
+    // authenticated routers get the origin-allowlist layer.
+    // Layer order matters in Axum: .layer() wraps from outermost in,
+    // so we apply CORS after merging so it wraps the correct sub-tree.
+    let public_router = public.layer(public_cors);
+    let auth_router = Router::new()
         .merge(protected)
         .merge(infer)
         .merge(v1)
-        .layer(cors)
+        .layer(protected_cors);
+
+    Router::new()
+        .merge(public_router)
+        .merge(auth_router)
         .layer(middleware::from_fn(observability::track_requests))
         .layer(TraceLayer::new_for_http())
         .layer(TimeoutLayer::new(std::time::Duration::from_secs(30)))

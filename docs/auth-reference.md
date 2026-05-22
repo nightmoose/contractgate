@@ -1,6 +1,6 @@
 # Authentication Reference
 
-**Last updated:** 2026-05-22 (RFC-047 / RFC-048)
+**Last updated:** 2026-05-22 (RFC-047 / RFC-048 / RFC-050)
 
 ContractGate's Rust backend supports two authentication mechanisms for the
 management API.  The validation hot path (`/ingest`, `/v1/ingest`) follows the
@@ -84,6 +84,41 @@ must now rely on the Bearer JWT or a DB-backed API key for org context.
 
 The dashboard's `OrgProvider` has been updated accordingly — it no longer
 calls `setApiOrgId` or sends `x-org-id`.
+
+---
+
+## CORS policy — `DASHBOARD_ORIGIN` (RFC-050)
+
+ContractGate uses two CORS layers with different scopes:
+
+**Authenticated surface** (`/contracts/*`, `/ingest/*`, `/egress/*`, `/v1/*`,
+`/audit`, `/stats`, `/playground/*`, `/contracts/infer/*`): only origins listed
+in `DASHBOARD_ORIGIN` receive an `Access-Control-Allow-Origin` header.  Requests
+from any other origin receive no CORS header and are rejected by the browser.
+
+Allowed methods: `GET, POST, PATCH, DELETE, OPTIONS`.  
+Allowed headers: `Authorization, Content-Type`.
+
+**Public surface** (`/health`, `/metrics`, `/openapi.json`, `/demo/*`,
+`/public-contracts`, `/catalog`, `/published/*`): wildcard `*` — these routes
+expose no tenant data and are safe to embed from any origin.
+
+### `DASHBOARD_ORIGIN` environment variable
+
+| Value | Behaviour |
+|---|---|
+| Unset | Startup warning; falls back to `http://localhost:3000` (dev only). |
+| `https://app.datacontractgate.com` | Single origin allowed. |
+| `https://app.example.com,https://staging.example.com` | Multiple origins, comma-separated. |
+
+Set in production via Fly secrets — **do not commit the value to source control**:
+
+```bash
+fly secrets set DASHBOARD_ORIGIN=https://app.datacontractgate.com
+```
+
+For local development with `docker compose`, leave `DASHBOARD_ORIGIN` unset
+(the fallback `http://localhost:3000` matches the default dashboard port).
 
 ---
 
