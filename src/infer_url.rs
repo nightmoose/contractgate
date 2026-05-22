@@ -653,7 +653,10 @@ mod tests {
         assert!(!status.is_success(), "302 must not be treated as success");
 
         let status_301 = reqwest::StatusCode::MOVED_PERMANENTLY;
-        assert!(!status_301.is_success(), "301 must not be treated as success");
+        assert!(
+            !status_301.is_success(),
+            "301 must not be treated as success"
+        );
 
         let status_200 = reqwest::StatusCode::OK;
         assert!(status_200.is_success(), "200 must be success");
