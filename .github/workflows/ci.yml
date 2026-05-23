@@ -348,6 +348,10 @@ jobs:
         uses: superfly/flyctl-actions/setup-flyctl@master
 
       - name: Deploy to Fly.io
-        run: flyctl deploy --remote-only
+        # Build locally on the Actions runner (Docker is available on
+        # ubuntu-latest).  --remote-only would have Fly's builder clone the
+        # repo directly from GitHub, which fails for private repos because no
+        # GitHub credentials are passed to the remote builder.
+        run: flyctl deploy --local-only
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
