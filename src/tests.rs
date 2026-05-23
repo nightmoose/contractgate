@@ -2651,3 +2651,81 @@ metrics: []
             .unwrap();
     }
 }
+
+// ---------------------------------------------------------------------------
+// RFC-053 — /ready readiness-probe tests
+//
+// These tests do NOT require a live DB: they construct a minimal AppState with
+// a deliberately closed pool to exercise the 503 path, and rely on axum-test
+// to drive the 200 path against a live pool (guarded by `#[ignore]` + DATABASE_URL).
+// ---------------------------------------------------------------------------
+
+#[cfg(test)]
+mod rfc053_ready_tests {
+    use axum::http::StatusCode;
+    use axum_test::TestServer;
+
+    /// Build a test router with only the /ready route wired.
+    async fn make_server(pool: sqlx::PgPool) -> TestServer {
+        let state =
+            std::sync::Arc::new(super::super::AppState::new(pool, String::new(), None, None));
+        let app = axum::Router::new()
+            .route("/ready", axum::routing::get(super::super::ready_handler))
+            .with_state(state);
+        // axum-test 20: TestServer::new returns TestServer directly, not Result.
+        TestServer::new(app)
+    }
+
+    /// /ready returns 503 when the pool is closed (cannot serve SELECT 1).
+    #[tokio::test]
+    async fn ready_returns_503_on_closed_pool() {
+        // Build a pool with no valid connection string — close it immediately.
+        let pool = sqlx::PgPool::connect_lazy("postgres://invalid:5432/none")
+            .expect("lazy connect should succeed");
+        pool.close().await;
+
+        let server = make_server(pool).await;
+        let resp = server.get("/ready").await;
+        assert_eq!(resp.status_code(), StatusCode::SERVICE_UNAVAILABLE);
+
+        // axum-test 20: use .json::<T>() to deserialise the body.
+        let body = resp.json::<serde_json::Value>();
+        assert_eq!(body["status"], "degraded");
+        assert_eq!(body["db"], "error");
+    }
+
+    /// /health always returns 200 regardless of DB state.
+    #[tokio::test]
+    async fn health_always_200() {
+        let pool = sqlx::PgPool::connect_lazy("postgres://invalid:5432/none")
+            .expect("lazy connect should succeed");
+        pool.close().await;
+
+        let state =
+            std::sync::Arc::new(super::super::AppState::new(pool, String::new(), None, None));
+        let app = axum::Router::new()
+            .route("/health", axum::routing::get(super::super::health_handler))
+            .with_state(state);
+        let server = TestServer::new(app);
+
+        let resp: axum_test::TestResponse = server.get("/health").await;
+        assert_eq!(resp.status_code(), StatusCode::OK);
+    }
+
+    /// /ready returns 200 against a live DB.
+    /// Requires DATABASE_URL; run with: `cargo test ready_returns_200 -- --ignored`
+    #[tokio::test]
+    #[ignore]
+    async fn ready_returns_200_live_db() {
+        let db_url = std::env::var("DATABASE_URL").expect("DATABASE_URL must be set");
+        let pool = sqlx::PgPool::connect(&db_url).await.unwrap();
+        let server = make_server(pool).await;
+
+        let resp = server.get("/ready").await;
+        assert_eq!(resp.status_code(), StatusCode::OK);
+
+        let body = resp.json::<serde_json::Value>();
+        assert_eq!(body["status"], "ready");
+        assert_eq!(body["db"], "ok");
+    }
+}

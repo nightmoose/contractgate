@@ -2,6 +2,75 @@
 
 ---
 
+## Run: 2026-05-24 — RFC-052 + RFC-053: JWKS refresh + /ready readiness probe
+
+**Branch:** `nightly-maintenance-2026-05-24-rfc052-053`
+
+### Summary
+
+Two P1 availability hardening fixes that both touch `AppState` and startup
+in `src/main.rs`, landed in a single branch to avoid merge churn.
+
+**RFC-052 — Periodic Supabase JWKS refresh** (`src/main.rs`, `src/jwt_auth.rs`,
+`Cargo.toml`):
+
+1. **ArcSwap field.** `AppState.supabase_jwks` changed from
+   `Option<Arc<JwkSet>>` to `Arc<ArcSwap<Option<JwkSet>>>`.  The `arc-swap`
+   crate (lock-free atomic pointer swap) is added to `Cargo.toml`.
+
+2. **Background refresh task.** `jwt_auth::spawn_jwks_refresh_task` is called
+   at startup.  It wakes every 10 minutes and atomically swaps in the new
+   `JwkSet` on success.  A failed fetch logs a warning and keeps the previous
+   keys — the store is never blanked.
+
+3. **Refresh-on-unknown-kid.** `maybe_refresh_jwks_on_unknown_kid` in
+   `src/main.rs` performs an out-of-band fetch when `verify_supabase_jwt`
+   returns `NoMatchingKey`.  Debounced to at most one fetch per 60 seconds
+   via `AtomicU64` CAS.  `require_api_key` retries once after a successful
+   refresh.
+
+4. **Startup resilience.** A failed initial JWKS fetch no longer permanently
+   disables JWT auth — the background task will recover once the network is up.
+
+5. **New AppState fields:** `supabase_jwks_url: Option<String>` and
+   `jwks_last_kid_refresh: Arc<AtomicU64>`.
+
+**RFC-053 — Real `/ready` readiness probe** (`src/main.rs`, `fly.toml`,
+`docker-compose.yml`, `docs/health-reference.md`):
+
+1. **`GET /ready`** added to the public router.  Runs `SELECT 1` with a 2-second
+   timeout.  Returns `200 {"status":"ready","db":"ok","version":"...","pool":{...}}`
+   on success, `503 {"status":"degraded","db":"error"}` on timeout or error.
+
+2. **`GET /health`** unchanged — liveness only, no DB.
+
+3. `fly.toml` health check renamed from `[checks.health]` to `[checks.ready]`
+   and path changed from `/health` → `/ready`.
+
+4. `docker-compose.yml` gateway healthcheck path changed `/health` → `/ready`.
+
+5. `docs/health-reference.md` added — documents both probes, platform config,
+   and JWKS refresh behaviour.
+
+### Tests added
+
+- `src/jwt_auth.rs` `#[cfg(test)] mod tests`: 3 unit tests — swap visibility,
+  failing-refresh preserves keys, debounce logic.
+- `src/tests.rs` `mod rfc053_ready_tests`: `/ready` 503 on closed pool,
+  `/health` always 200 (no-DB tests); `/ready` 200 against live DB
+  (`#[ignore]`, requires `DATABASE_URL`).
+
+### Commands to run
+
+```
+cargo check
+cargo test
+cargo clippy --all-targets -- -D warnings
+cargo sqlx prepare
+```
+
+---
+
 ## Run: 2026-05-23 — RFC-051 + RFC-054: API-key cache hardening + lock-poison recovery
 
 **Branch:** `nightly-maintenance-2026-05-23-rfc051-054`

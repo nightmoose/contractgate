@@ -54,7 +54,9 @@ services:
         # schema and logs "relation contract_versions does not exist".
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      # RFC-053: /ready runs SELECT 1 so the compose stack waits for a live DB
+      # connection before starting dependents.  /health stays as liveness only.
+      test: ["CMD", "curl", "-f", "http://localhost:8080/ready"]
       interval: 5s
       timeout: 3s
       retries: 12

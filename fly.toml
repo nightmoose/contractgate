@@ -30,14 +30,17 @@ primary_region = 'iad'
     soft_limit = 400
 
 [checks]
-  [checks.health]
+  # RFC-053: readiness probe (SELECT 1 against the DB pool).
+  # /health is the liveness probe (process-up, no DB); use /ready for
+  # platform routing so a dead DB pool drains traffic from this instance.
+  [checks.ready]
     port = 3001
     type = 'http'
     interval = '15s'
     timeout = '5s'
     grace_period = '10s'
     method = 'GET'
-    path = '/health'
+    path = '/ready'
 
 [[vm]]
   cpu_kind = 'shared'

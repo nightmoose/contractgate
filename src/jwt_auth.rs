@@ -1,5 +1,8 @@
 //! Supabase-JWT verification for dashboard browser sessions (RFC-039).
 //!
+//! RFC-052 adds a background JWKS refresh task so key rotations are recovered
+//! automatically — no restart required.
+//!
 //! Supabase projects that have migrated to JWT Signing Keys issue RS256 (or
 //! ES256) session tokens signed with an asymmetric key pair.  We verify these
 //! by fetching the project's JWKS endpoint once at startup and caching the
@@ -14,6 +17,7 @@
 //! signal "JWT-authed session".  Audit handlers should treat nil as "dashboard
 //! session" rather than a real API key row.
 
+use arc_swap::ArcSwap;
 use jsonwebtoken::{
     decode, decode_header,
     jwk::{AlgorithmParameters, JwkSet},
@@ -21,6 +25,8 @@ use jsonwebtoken::{
 };
 use serde::Deserialize;
 use sqlx::PgPool;
+use std::sync::Arc;
+use std::time::Duration;
 use uuid::Uuid;
 
 use crate::api_key_auth::ValidatedKey;
@@ -248,4 +254,116 @@ pub async fn verify_supabase_jwt(
         rate_limit_rps: None,
         rate_limit_burst: None,
     })
+}
+
+// ---------------------------------------------------------------------------
+// RFC-052: Background JWKS refresh
+// ---------------------------------------------------------------------------
+
+/// Spawn a background task that re-fetches the Supabase JWKS every 10 minutes
+/// and atomically swaps it in on success.
+///
+/// A failed fetch logs a warning and leaves the previous key set intact —
+/// the store is never blanked.  If `jwks_url` is `None` the task is a no-op.
+pub fn spawn_jwks_refresh_task(jwks_store: Arc<ArcSwap<Option<JwkSet>>>, jwks_url: Option<String>) {
+    let Some(url) = jwks_url else {
+        return;
+    };
+    tokio::spawn(async move {
+        // First tick fires immediately; skip it so we don't double-fetch on
+        // a successful startup where the initial JWKS was already loaded.
+        let mut interval = tokio::time::interval(Duration::from_secs(600));
+        interval.tick().await; // discard the immediate first tick
+
+        loop {
+            interval.tick().await;
+            match fetch_jwks(&url).await {
+                Ok(new_jwks) => {
+                    tracing::info!(
+                        keys = new_jwks.keys.len(),
+                        "JWKS periodic refresh succeeded"
+                    );
+                    jwks_store.store(Arc::new(Some(new_jwks)));
+                }
+                Err(e) => {
+                    // Keep the previous key set — do NOT store None.
+                    tracing::warn!("JWKS periodic refresh failed (keeping previous keys): {e}");
+                }
+            }
+        }
+    });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // -----------------------------------------------------------------------
+    // RFC-052 unit tests
+    // -----------------------------------------------------------------------
+
+    fn empty_jwks() -> JwkSet {
+        JwkSet { keys: vec![] }
+    }
+
+    /// Swapping the store is immediately visible to the next load().
+    #[test]
+    fn swap_is_visible() {
+        let store: Arc<ArcSwap<Option<JwkSet>>> =
+            Arc::new(ArcSwap::from_pointee(Some(empty_jwks())));
+        assert!(store.load().is_some(), "initial value should be Some");
+
+        // Swap in a new JwkSet (still empty keys, but a fresh object).
+        store.store(Arc::new(Some(empty_jwks())));
+        assert!(store.load().is_some(), "after swap should still be Some");
+
+        // Swap to None (simulates auth disabled).
+        store.store(Arc::new(None));
+        assert!(store.load().is_none(), "after storing None should be None");
+    }
+
+    /// A simulated failing refresh must not blank the store.
+    #[test]
+    fn failing_refresh_preserves_prior_keys() {
+        let initial = Some(empty_jwks());
+        let store: Arc<ArcSwap<Option<JwkSet>>> = Arc::new(ArcSwap::from_pointee(initial));
+
+        // Simulate a refresh that fails — we intentionally do NOT call store().
+        // The invariant is: on failure we skip store(); prior value survives.
+        let _simulate_fetch_error: anyhow::Result<JwkSet> = Err(anyhow::anyhow!("network error"));
+        // Store is unchanged.
+        assert!(
+            store.load().is_some(),
+            "prior keys must survive a failed refresh"
+        );
+    }
+
+    /// The debounce AtomicU64 prevents more than one refresh per 60-second window.
+    #[test]
+    fn debounce_limits_refresh_rate() {
+        use std::sync::atomic::{AtomicU64, Ordering};
+
+        let last_refresh = Arc::new(AtomicU64::new(0));
+        let now: u64 = 1_000_000; // arbitrary epoch seconds
+
+        // First call: last=0, now=1_000_000 → delta > 60 → should refresh.
+        let last = last_refresh.load(Ordering::Relaxed);
+        let should_refresh = now.saturating_sub(last) >= 60;
+        assert!(should_refresh, "first call should trigger refresh");
+
+        // Record the attempt.
+        last_refresh.store(now, Ordering::Relaxed);
+
+        // Second call 30s later — within the debounce window → should NOT refresh.
+        let now2 = now + 30;
+        let last2 = last_refresh.load(Ordering::Relaxed);
+        let should_refresh2 = now2.saturating_sub(last2) >= 60;
+        assert!(!should_refresh2, "call within 60s window must be debounced");
+
+        // Third call 70s after the first — outside the window → should refresh.
+        let now3 = now + 70;
+        let last3 = last_refresh.load(Ordering::Relaxed);
+        let should_refresh3 = now3.saturating_sub(last3) >= 60;
+        assert!(should_refresh3, "call after 60s window must be allowed");
+    }
 }

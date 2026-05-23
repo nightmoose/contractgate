@@ -13,6 +13,7 @@
 //! Version resolution + fallback semantics live in `ingest.rs`; this module
 //! is just wiring.
 
+use arc_swap::ArcSwap;
 use axum::extract::Request;
 use axum::{
     extract::{FromRequest, Path, Query, State},
@@ -27,7 +28,10 @@ use sqlx::PgPool;
 use std::{
     collections::HashMap,
     net::SocketAddr,
-    sync::{Arc, RwLock, RwLockReadGuard, RwLockWriteGuard},
+    sync::{
+        atomic::{AtomicU64, Ordering},
+        Arc, RwLock, RwLockReadGuard, RwLockWriteGuard,
+    },
 };
 use tower_http::{
     cors::{AllowOrigin, Any, CorsLayer},
@@ -112,14 +116,25 @@ pub struct AppState {
     pub kafka_consumers: kafka_consumer::ConsumerPool,
     /// RFC-026: platform-side Kinesis consumer pool (one task per enabled contract).
     pub kinesis_consumers: kinesis_consumer::ConsumerPool,
-    /// RFC-039: Supabase JWKS for verifying RS256 session tokens from the dashboard.
-    /// Fetched once at startup from the project's JWKS endpoint.  None = JWT auth
-    /// disabled (local dev without a Supabase DATABASE_URL).
-    pub supabase_jwks: Option<Arc<JwkSet>>,
+    // RFC-052: live-swappable JWKS — replaced by the background refresh task
+    // every ~10 min and on unknown-kid hits.  Inner Option is None when JWT
+    // auth is disabled (no Supabase URL configured or initial fetch failed).
+    pub supabase_jwks: Arc<ArcSwap<Option<JwkSet>>>,
+    /// JWKS URL for the background refresh task and on-demand kid-refresh.
+    /// None = no Supabase URL derived at startup.
+    pub supabase_jwks_url: Option<String>,
+    /// Unix-epoch-seconds of the last out-of-band kid-refresh attempt.
+    /// Used to debounce refresh-on-unknown-kid to at most once per 60 s.
+    pub jwks_last_kid_refresh: Arc<AtomicU64>,
 }
 
 impl AppState {
-    pub fn new(db: PgPool, api_key: String, supabase_jwks: Option<Arc<JwkSet>>) -> Self {
+    pub fn new(
+        db: PgPool,
+        api_key: String,
+        supabase_jwks: Option<JwkSet>,
+        supabase_jwks_url: Option<String>,
+    ) -> Self {
         AppState {
             db,
             contract_cache: RwLock::new(HashMap::new()),
@@ -129,7 +144,9 @@ impl AppState {
             stream_demo: std::sync::Arc::new(stream_demo::StreamDemoState::new()),
             kafka_consumers: kafka_consumer::ConsumerPool::new(),
             kinesis_consumers: kinesis_consumer::ConsumerPool::new(),
-            supabase_jwks,
+            supabase_jwks: Arc::new(ArcSwap::from_pointee(supabase_jwks)),
+            supabase_jwks_url,
+            jwks_last_kid_refresh: Arc::new(AtomicU64::new(0)),
         }
     }
 
@@ -250,7 +267,7 @@ impl AppState {
     /// missing `org_id` should be treated as dev-mode unscoped (false) or
     /// as an unauthenticated request that must be rejected with 401 (true).
     pub fn auth_configured(&self) -> bool {
-        !self.api_key.is_empty() || self.supabase_jwks.is_some()
+        !self.api_key.is_empty() || self.supabase_jwks.load().is_some()
     }
 }
 
@@ -800,15 +817,70 @@ async fn global_stats_handler(
 }
 
 // ---------------------------------------------------------------------------
-// Health check
+// Health / readiness probes
 // ---------------------------------------------------------------------------
 
+/// `GET /health` — liveness probe.
+///
+/// Cheap, no DB.  Returns 200 as long as the process is up.  Used by Fly /
+/// orchestrators to decide whether to restart the pod.  Must NOT depend on
+/// the database — a DB outage should not cause the orchestrator to kill an
+/// otherwise-live process.
 async fn health_handler() -> Json<serde_json::Value> {
     Json(serde_json::json!({
         "status": "ok",
         "version": env!("CARGO_PKG_VERSION"),
         "service": "contractgate"
     }))
+}
+
+/// `GET /ready` — readiness probe (RFC-053).
+///
+/// Runs `SELECT 1` against the DB pool with a 2-second timeout.
+/// - `200 {"status":"ready","db":"ok"}` — pool is healthy.
+/// - `503 {"status":"degraded","db":"error"}` — pool exhausted or Supabase down.
+///
+/// Platform health checks (Fly, docker-compose) should point at `/ready`;
+/// `/health` is the liveness probe and intentionally never touches the DB.
+async fn ready_handler(State(state): State<Arc<AppState>>) -> impl IntoResponse {
+    let db = &state.db;
+    let probe = tokio::time::timeout(
+        std::time::Duration::from_secs(2),
+        sqlx::query("SELECT 1").execute(db),
+    )
+    .await;
+
+    let size = db.size();
+    let idle = db.num_idle();
+
+    match probe {
+        Ok(Ok(_)) => (
+            StatusCode::OK,
+            Json(serde_json::json!({
+                "status": "ready",
+                "db": "ok",
+                "version": env!("CARGO_PKG_VERSION"),
+                "pool": { "size": size, "idle": idle },
+            })),
+        )
+            .into_response(),
+        Ok(Err(e)) => {
+            tracing::warn!("readiness probe DB error: {e}");
+            (
+                StatusCode::SERVICE_UNAVAILABLE,
+                Json(serde_json::json!({ "status": "degraded", "db": "error" })),
+            )
+                .into_response()
+        }
+        Err(_elapsed) => {
+            tracing::warn!("readiness probe timed out after 2s");
+            (
+                StatusCode::SERVICE_UNAVAILABLE,
+                Json(serde_json::json!({ "status": "degraded", "db": "error" })),
+            )
+                .into_response()
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -866,6 +938,61 @@ async fn playground_handler(
 }
 
 // ---------------------------------------------------------------------------
+// RFC-052: out-of-band JWKS kid-refresh helper
+// ---------------------------------------------------------------------------
+
+/// Attempt an out-of-band JWKS refresh when a token's kid is not in the
+/// cached set.  Debounced to at most one network fetch per 60 seconds to
+/// avoid hammering the Supabase JWKS endpoint under a sustained rotation.
+///
+/// Returns `true` if a refresh was attempted AND succeeded (the store has
+/// been updated).  Returns `false` on debounce hit or fetch failure
+/// (previous keys are preserved either way).
+async fn maybe_refresh_jwks_on_unknown_kid(state: &AppState) -> bool {
+    let Some(url) = &state.supabase_jwks_url else {
+        return false;
+    };
+
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs();
+
+    let last = state.jwks_last_kid_refresh.load(Ordering::Relaxed);
+    if now.saturating_sub(last) < 60 {
+        tracing::debug!(
+            secs_since_last = now.saturating_sub(last),
+            "JWKS kid-refresh debounced"
+        );
+        return false;
+    }
+
+    // CAS to claim the refresh slot — prevents concurrent duplicate fetches.
+    if state
+        .jwks_last_kid_refresh
+        .compare_exchange(last, now, Ordering::AcqRel, Ordering::Relaxed)
+        .is_err()
+    {
+        return false; // another task won the race
+    }
+
+    tracing::info!("Triggering out-of-band JWKS refresh (unknown kid)");
+    match jwt_auth::fetch_jwks(url).await {
+        Ok(new_jwks) => {
+            tracing::info!(keys = new_jwks.keys.len(), "JWKS refreshed on unknown kid");
+            state.supabase_jwks.store(Arc::new(Some(new_jwks)));
+            true
+        }
+        Err(e) => {
+            tracing::warn!("JWKS kid-refresh fetch failed: {e}");
+            // Reset so the next request can retry after the debounce window.
+            state.jwks_last_kid_refresh.store(last, Ordering::Relaxed);
+            false
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Auth middleware
 // ---------------------------------------------------------------------------
 
@@ -884,8 +1011,32 @@ async fn require_api_key(
         .and_then(|v| v.strip_prefix("Bearer "))
         .map(str::to_owned)
     {
-        if let Some(jwks) = &state.supabase_jwks {
-            match jwt_auth::verify_supabase_jwt(&bearer, jwks, &state.db).await {
+        // RFC-052: load the live JWKS snapshot (lock-free ArcSwap read).
+        let jwks_guard = state.supabase_jwks.load();
+        if let Some(jwks) = jwks_guard.as_ref() {
+            // First verification attempt with the current key set.
+            let result = jwt_auth::verify_supabase_jwt(&bearer, jwks, &state.db).await;
+
+            // On NoMatchingKey, attempt a debounced out-of-band refresh and
+            // retry once.  This makes key rotation near-instant instead of
+            // waiting up to 10 min for the next periodic tick.
+            let result = match result {
+                Err(jwt_auth::JwtAuthError::NoMatchingKey) => {
+                    if maybe_refresh_jwks_on_unknown_kid(&state).await {
+                        let new_guard = state.supabase_jwks.load();
+                        if let Some(new_jwks) = new_guard.as_ref() {
+                            jwt_auth::verify_supabase_jwt(&bearer, new_jwks, &state.db).await
+                        } else {
+                            Err(jwt_auth::JwtAuthError::NoMatchingKey)
+                        }
+                    } else {
+                        Err(jwt_auth::JwtAuthError::NoMatchingKey)
+                    }
+                }
+                other => other,
+            };
+
+            match result {
                 Ok(validated) => {
                     // RFC-043 fix-1: key by user_id, not api_key_id (nil UUID).
                     // api_key_id = Uuid::nil() is the "JWT session" sentinel used
@@ -1012,6 +1163,9 @@ fn build_router(state: Arc<AppState>) -> Router {
     // Public routes — no auth required
     let public = Router::new()
         .route("/health", get(health_handler))
+        // RFC-053: readiness probe — SELECT 1 with 2s timeout.
+        // Platform health checks should point here; /health is liveness only.
+        .route("/ready", get(ready_handler))
         .route("/openapi.json", get(v1_ingest::openapi_handler))
         // Prometheus metrics scrape endpoint (RFC-016).
         // Open by default; Bearer-auth gated when METRICS_AUTH_TOKEN is set.
@@ -1363,26 +1517,33 @@ async fn main() -> anyhow::Result<()> {
         .map(|u| format!("{}/auth/v1/.well-known/jwks.json", u.trim_end_matches('/')))
         .or_else(|| jwt_auth::jwks_url_from_database_url(&database_url));
 
-    let supabase_jwks: Option<Arc<JwkSet>> = match jwks_url {
-        Some(url) => match jwt_auth::fetch_jwks(&url).await {
+    // RFC-052: initial fetch does not wrap in Arc — AppState::new does that.
+    // A fetch failure is non-fatal: the background task will recover once the
+    // network is up (today a startup failure was permanent until restart).
+    let supabase_jwks: Option<JwkSet> = match &jwks_url {
+        Some(url) => match jwt_auth::fetch_jwks(url).await {
             Ok(jwks) => {
                 tracing::info!("Supabase JWKS loaded from {url} — Bearer JWT auth enabled");
-                Some(Arc::new(jwks))
+                Some(jwks)
             }
             Err(e) => {
                 tracing::warn!(
-                    "Failed to fetch Supabase JWKS from {url}: {e} — Bearer JWT auth disabled"
+                    "Failed to fetch Supabase JWKS from {url}: {e} — \
+                     JWT auth disabled at startup; background task will retry"
                 );
                 None
             }
         },
         None => {
-            tracing::warn!("Could not derive Supabase URL from DATABASE_URL and SUPABASE_URL is not set — Bearer JWT auth disabled");
+            tracing::warn!(
+                "Could not derive Supabase URL from DATABASE_URL and SUPABASE_URL is \
+                 not set — Bearer JWT auth disabled"
+            );
             None
         }
     };
 
-    let state = Arc::new(AppState::new(pool, api_key, supabase_jwks));
+    let state = Arc::new(AppState::new(pool, api_key, supabase_jwks, jwks_url));
 
     // Warm the compiled-contract cache with every stable + deprecated
     // version.  Failure here is logged but does not block boot.
@@ -1405,6 +1566,14 @@ async fn main() -> anyhow::Result<()> {
     // expired entries and enforces the MAX_CACHE_ENTRIES cap.
     api_key_auth::ApiKeyCache::spawn_sweeper(state.key_cache.clone());
     tracing::info!("api-key cache sweeper spawned");
+
+    // RFC-052: spawn the JWKS background refresh task (every ~10 min).
+    // No-op when supabase_jwks_url is None (no Supabase URL configured).
+    jwt_auth::spawn_jwks_refresh_task(
+        Arc::clone(&state.supabase_jwks),
+        state.supabase_jwks_url.clone(),
+    );
+    tracing::info!("JWKS background refresh task spawned");
 
     // Spawn background gauge-refresh tasks (RFC-016 §Decisions Q5).
     // Must be spawned after the pool is created and the recorder is installed.

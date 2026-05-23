@@ -170,6 +170,10 @@ bytes = "1.11.1"
 # `jwk` feature enables JWK/JWKS support for RS256 key sets.
 jsonwebtoken = { version = "9", features = ["use_pem"] }
 
+# RFC-052: lock-free atomic swap for the live JWKS key set so the background
+# refresh task can replace it without blocking request handlers.
+arc-swap = "1"
+
 [dev-dependencies]
 axum-test = "20"
 tokio-test = "0.4"
