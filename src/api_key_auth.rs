@@ -184,12 +184,10 @@ impl ApiKeyCache {
                     let key_id = validated.api_key_id;
                     let db2 = db.clone();
                     tokio::spawn(async move {
-                        match sqlx::query(
-                            "UPDATE api_keys SET last_used_at = now() WHERE id = $1",
-                        )
-                        .bind(key_id)
-                        .execute(&db2)
-                        .await
+                        match sqlx::query("UPDATE api_keys SET last_used_at = now() WHERE id = $1")
+                            .bind(key_id)
+                            .execute(&db2)
+                            .await
                         {
                             Ok(_) => {}
                             Err(e) => {
@@ -254,10 +252,7 @@ impl ApiKeyCache {
                     );
                 }
 
-                tracing::debug!(
-                    entries = map.len(),
-                    "api-key cache sweep complete"
-                );
+                tracing::debug!(entries = map.len(), "api-key cache sweep complete");
             }
         });
     }
@@ -340,7 +335,11 @@ mod tests {
     use std::thread;
 
     // Helper: build a cache and pre-populate one entry directly.
-    fn cache_with_entry(cache_key: &str, result: Option<ValidatedKey>, age: Duration) -> ApiKeyCache {
+    fn cache_with_entry(
+        cache_key: &str,
+        result: Option<ValidatedKey>,
+        age: Duration,
+    ) -> ApiKeyCache {
         let cache = ApiKeyCache::default();
         let mut map = cache.inner.lock().unwrap();
         map.insert(
