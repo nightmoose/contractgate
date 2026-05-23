@@ -339,7 +339,28 @@ async fn create_contract_handler(
     req: axum::extract::Request,
 ) -> AppResult<(StatusCode, Json<ContractResponse>)> {
     let org_id = org_id_from_req(&req);
-    // Extract JSON body after reading extensions
+
+    // RFC-048 removed the x-org-id header fallback from org_id_from_req to
+    // prevent tenant impersonation in production.  However, contracts.org_id
+    // is NOT NULL, so an INSERT with org_id = None crashes with a DB error in
+    // dev / compose mode where no ValidatedKey is injected.
+    //
+    // Fix: when auth is not configured (compose smoke, local dev) trust the
+    // x-org-id header as a convenience so the smoke tests and demo seeder can
+    // operate without a full auth setup.  This branch is gated on
+    // !auth_configured() — it never executes in production, so RFC-048's
+    // spoofability protection is fully preserved for all real deployments.
+    let org_id = if org_id.is_none() && !state.auth_configured() {
+        req.headers()
+            .get("x-org-id")
+            .and_then(|v| v.to_str().ok())
+            .and_then(|s| Uuid::parse_str(s).ok())
+    } else {
+        org_id
+    };
+
+    // Extract JSON body after reading extensions (req move must come after
+    // the header read above, which is a borrow — order is safe).
     let Json(body_req): Json<CreateContractRequest> =
         axum::Json::from_request(req, &state)
             .await
