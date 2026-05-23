@@ -2729,3 +2729,71 @@ mod rfc053_ready_tests {
         assert_eq!(body["db"], "ok");
     }
 }
+
+// ---------------------------------------------------------------------------
+// RFC-052 follow-up: unknown-kid debounce on the failure path
+// ---------------------------------------------------------------------------
+//
+// Regression guard for the bug where a failed JWKS fetch reset the atomic
+// back to `last` (the old timestamp), letting every subsequent request
+// attempt its own re-fetch — a thundering herd against a down endpoint.
+// After the fix the atomic stays at `now` after a failure, so the 60-second
+// debounce applies to failures as well as successes.
+
+#[cfg(test)]
+mod rfc052_debounce_tests {
+    use std::sync::atomic::Ordering;
+    use std::sync::Arc;
+
+    /// Build a minimal AppState whose JWKS URL points to a port that always
+    /// refuses connections, so `fetch_jwks` returns Err instantly.
+    fn make_state() -> Arc<super::super::AppState> {
+        let pool = sqlx::PgPool::connect_lazy("postgres://invalid:5432/none")
+            .expect("lazy connect should succeed");
+        Arc::new(super::super::AppState::new(
+            pool,
+            String::new(),
+            None,
+            // Port 1 is always closed on loopback — connection refused is
+            // instant, keeping the test fast.
+            Some("http://127.0.0.1:1/.well-known/jwks.json".into()),
+        ))
+    }
+
+    /// After a failed JWKS refresh the atomic must remain at `now`, not be
+    /// reset to the prior value.  A second call within 60 s must be debounced.
+    #[tokio::test]
+    async fn failed_refresh_debounces_subsequent_calls() {
+        let state = make_state();
+
+        // Atomic starts at 0; first call should attempt a fetch (not debounced).
+        // fetch_jwks will fail → should return false.
+        let refreshed = super::super::maybe_refresh_jwks_on_unknown_kid(&state).await;
+        assert!(!refreshed, "expected false on a failed fetch");
+
+        // The atomic must now be near `now`, NOT 0.
+        // If the bug is present, store(last) resets it back to 0 here.
+        let stamp = state.jwks_last_kid_refresh.load(Ordering::Relaxed);
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
+        assert!(
+            stamp > 0 && now.saturating_sub(stamp) < 5,
+            "jwks_last_kid_refresh should be near `now` after a failed fetch, got {stamp} (now={now})"
+        );
+
+        // Second call immediately after must be debounced (stamp is recent,
+        // saturating_sub < 60).  It must NOT attempt another fetch.
+        let refreshed2 = super::super::maybe_refresh_jwks_on_unknown_kid(&state).await;
+        assert!(!refreshed2, "expected debounce on second call within 60 s");
+
+        // The atomic must still equal the stamp from the first call — a
+        // debounced call must not touch the atomic.
+        let stamp2 = state.jwks_last_kid_refresh.load(Ordering::Relaxed);
+        assert_eq!(
+            stamp, stamp2,
+            "debounced call must not modify jwks_last_kid_refresh"
+        );
+    }
+}

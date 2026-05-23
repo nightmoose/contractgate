@@ -985,8 +985,10 @@ async fn maybe_refresh_jwks_on_unknown_kid(state: &AppState) -> bool {
         }
         Err(e) => {
             tracing::warn!("JWKS kid-refresh fetch failed: {e}");
-            // Reset so the next request can retry after the debounce window.
-            state.jwks_last_kid_refresh.store(last, Ordering::Relaxed);
+            // Leave jwks_last_kid_refresh at `now` (already written by the
+            // CAS above).  Failures are debounced to at most once per 60 s —
+            // same as successes — so a down JWKS endpoint cannot cause a
+            // thundering herd of concurrent re-fetches.
             false
         }
     }
