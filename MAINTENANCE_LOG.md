@@ -2,6 +2,67 @@
 
 ---
 
+## Run: 2026-05-23 — RFC-052 follow-up + RFC-055: JWKS debounce fix + CI toolchain fix
+
+**Branch:** `nightly-maintenance-2026-05-23-rfc055`
+
+### Summary
+
+Two commits; P1 CI correctness and a one-line backend safety fix.
+
+**RFC-052 follow-up — JWKS unknown-kid debounce on failure path** (`src/main.rs`,
+`src/tests.rs`):
+
+The failure branch of `maybe_refresh_jwks_on_unknown_kid` was calling
+`state.jwks_last_kid_refresh.store(last, Ordering::Relaxed)`, resetting the
+atomic back to the *old* timestamp after a failed fetch.  This undid the CAS
+that had already written `now`, leaving the debounce window empty — every
+subsequent unknown-kid request triggered its own re-fetch against a down JWKS
+endpoint (thundering herd).
+
+Fix: removed the reset store.  The CAS already writes `now`; leaving it there
+means failures are debounced to at most once per 60 s, same as successes.
+Comment updated to make this explicit.
+
+Added `rfc052_debounce_tests::failed_refresh_debounces_subsequent_calls` which
+asserts the atomic stays at `now` after a failed fetch and the second call is
+debounced without a network attempt.
+
+**RFC-055 — CI sqlx-cli version drift + stale migration sentinel**
+(`.github/workflows/ci.yml`):
+
+1. `sqlx-cli` was pinned to `0.7.4` while `Cargo.toml` is on `sqlx = "0.8"`.
+   The `.sqlx/` metadata format changed between majors, making
+   `cargo sqlx prepare --check` silently inert or failing for wrong reasons.
+   Fixed: version now derived from `Cargo.lock` via `awk` so they can never
+   drift.  Current lockfile resolves to `sqlx = 0.8.6 → sqlx-cli 0.8.6`.
+
+2. Migration sentinel replaced.  Was: checked only migration 009
+   (`github_integrations` table, "Expected all 9 migrations").  Now: two-part
+   check — Sentinel A verifies migration 026's `orgs_plan_valid` constraint
+   contains `'growth'`; Sentinel B asserts `EXPECTED_MIGRATION_COUNT=26` file
+   count (fails CI when a new migration is added without updating the gate).
+
+3. Job header comment updated: 9 migrations → 26 migrations.
+
+### Status
+
+- RFC-052 follow-up: merged (commit `4de357a`)
+- RFC-055: Accepted, merged (commit `f380e79`)
+- P0 blockers: all closed (RFC-047–050)
+- P1 blockers: all closed (RFC-051–055)
+- Remaining: P2 — RFC-056 (server-side API key issuance), RFC-057 (docs + RFC index)
+
+### Commands to run
+
+```
+cargo check
+cargo test
+cargo clippy --all-targets -- -D warnings
+```
+
+---
+
 ## Run: 2026-05-24 — RFC-052 + RFC-053: JWKS refresh + /ready readiness probe
 
 **Branch:** `nightly-maintenance-2026-05-24-rfc052-053`
