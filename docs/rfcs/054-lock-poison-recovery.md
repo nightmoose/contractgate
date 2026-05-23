@@ -1,6 +1,6 @@
 # RFC-054 — Recover from poisoned locks instead of crashing the process
 
-**Status:** Draft  
+**Status:** Accepted  
 **Date:** 2026-05-22  
 **Branch:** nightly-maintenance-2026-05-22-rfc054  
 **Addresses:** REVIEW-2026-05-22-launch-readiness H4  

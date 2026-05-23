@@ -2,6 +2,64 @@
 
 ---
 
+## Run: 2026-05-23 — RFC-051 + RFC-054: API-key cache hardening + lock-poison recovery
+
+**Branch:** `nightly-maintenance-2026-05-23-rfc051-054`
+
+### Summary
+
+Two P1 availability hardening fixes to in-process caches. Both touch `api_key_auth.rs`'s
+lock internals, so they land in a single branch to avoid merge conflicts.
+
+**RFC-051 — API-key cache hardening** (`src/api_key_auth.rs`):
+
+1. **Three-state result.** `verify_against_db` now returns
+   `Result<Option<ValidatedKey>, ()>`: `Ok(Some)` = valid, `Ok(None)` = definitive
+   miss (key not found or hash mismatch), `Err(())` = transient DB error. Only
+   `Ok(Some)` and `Ok(None)` are cached. A DB error returns 401 immediately without
+   writing the cache so the next request re-queries — eliminating the prior bug where
+   a 60-second outage window was stamped in on the first blip.
+
+2. **Cache key is SHA-256 hex of the raw key.** The map no longer holds any plaintext
+   `cg_` key material. The digest was already computed for hash verification; storing
+   it costs nothing extra.
+
+3. **Background sweeper.** `ApiKeyCache::spawn_sweeper` is called once at startup.
+   It wakes every 5 minutes, evicts all expired entries, and enforces a hard cap of
+   10 000 entries (oldest evicted first). Opportunistic per-miss eviction retained as
+   belt-and-braces.
+
+4. **`last_used_at` errors are logged.** `let _ = sqlx::query(...)` replaced with
+   `match ... Err(e) => tracing::warn!(...)` so a vanished column or dropped row
+   surfaces in logs instead of being swallowed silently.
+
+**RFC-054 — Lock-poison recovery** (`src/main.rs`, `src/api_key_auth.rs`,
+`src/rate_limit.rs`):
+
+All six lock accessors (`cache_read`, `cache_write` in `main.rs`; `lock_cache` in
+`api_key_auth.rs`; bucket lock in `rate_limit.rs`) now recover via
+`unwrap_or_else(|e| { tracing::error!(...); e.into_inner() })` instead of
+`.expect(...)`. A panicked thread poisoning the lock no longer crashes the process
+for every subsequent caller. Critical sections between acquisition and guard drop
+were audited — all are pure map/float ops with no panic sources.
+
+### Files Changed
+
+- **`src/api_key_auth.rs`** — complete rewrite of cache internals; sweeper added;
+  `lock_cache` poison-recovered; unit tests added (cache key no plaintext, sweeper
+  evicts expired, stale not returned, poisoned mutex recovered).
+- **`src/main.rs`** — `cache_read` / `cache_write` poison-recovered; sweeper spawn
+  added after `warm_cache`.
+- **`src/rate_limit.rs`** — bucket mutex lock poison-recovered.
+- **`docs/rfcs/051-api-key-cache-hardening.md`** — status: Draft → Accepted.
+- **`docs/rfcs/054-lock-poison-recovery.md`** — status: Draft → Accepted.
+
+### No Migration
+
+Application-only changes. No schema changes.
+
+---
+
 ## Run: 2026-05-22 — RFC-047 completion + RFC-049 + RFC-050: Replay IDOR close, SSRF hardening, CORS allowlist
 
 **Branch:** `nightly-maintenance-2026-05-22-rfc049-050`

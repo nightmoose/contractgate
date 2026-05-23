@@ -18,9 +18,9 @@
 //!
 //! `CachedEntry.result` is an `Option<ValidatedKey>`:
 //!   - `Some(key)` — the key was found and verified (valid hit).
-//!   - `None`      — the key was definitively rejected (not found or hash
-//!                   mismatch).  This is a cacheable negative result that
-//!                   prevents repeated DB queries for the same bad key.
+//!   - `None` — the key was definitively rejected (not found or hash
+//!     mismatch).  This is a cacheable negative result that
+//!     prevents repeated DB queries for the same bad key.
 //!
 //! DB errors are *not* cached.  `verify_against_db` returns `Err(())` only for
 //! transient failures; the caller returns 401 without writing the cache so the
@@ -271,9 +271,9 @@ impl ApiKeyCache {
 ///
 /// Returns:
 /// - `Ok(Some(key))` — key found, hash matches, not revoked.
-/// - `Ok(None)`      — definitively rejected: prefix not found, already
-///                     revoked, or hash mismatch.  Cacheable.
-/// - `Err(())`       — transient DB error.  The caller must not cache this.
+/// - `Ok(None)` — definitively rejected: prefix not found, already
+///   revoked, or hash mismatch.  Cacheable.
+/// - `Err(())` — transient DB error.  The caller must not cache this.
 async fn verify_against_db(raw_key: &str, db: &PgPool) -> Result<Option<ValidatedKey>, ()> {
     // Sanity-check length / prefix to avoid DB queries for junk values.
     if raw_key.len() < 12 || !raw_key.starts_with("cg_") {
