@@ -144,15 +144,19 @@ impl AppState {
     // one-liners and the rationale lives in exactly one place.
 
     fn cache_read(&self) -> RwLockReadGuard<'_, HashMap<(Uuid, String), Arc<CompiledContract>>> {
-        self.contract_cache
-            .read()
-            .expect("contract cache RwLock poisoned (a prior holder panicked)")
+        // RFC-054: recover from poison instead of re-panicking.  A poisoned
+        // RwLock means a prior holder panicked; the inner value is intact.
+        self.contract_cache.read().unwrap_or_else(|e| {
+            tracing::error!("contract cache RwLock was poisoned — recovering inner value");
+            e.into_inner()
+        })
     }
 
     fn cache_write(&self) -> RwLockWriteGuard<'_, HashMap<(Uuid, String), Arc<CompiledContract>>> {
-        self.contract_cache
-            .write()
-            .expect("contract cache RwLock poisoned (a prior holder panicked)")
+        self.contract_cache.write().unwrap_or_else(|e| {
+            tracing::error!("contract cache RwLock was poisoned — recovering inner value");
+            e.into_inner()
+        })
     }
 
     /// Load every stable + deprecated version into the cache.  Drafts are
@@ -1375,6 +1379,11 @@ async fn main() -> anyhow::Result<()> {
         .restore_all(Arc::clone(&state))
         .await;
     tracing::info!("kinesis consumer pool restored");
+
+    // RFC-051: spawn the API-key cache sweeper — runs every 5 min, evicts
+    // expired entries and enforces the MAX_CACHE_ENTRIES cap.
+    api_key_auth::ApiKeyCache::spawn_sweeper(state.key_cache.clone());
+    tracing::info!("api-key cache sweeper spawned");
 
     // Spawn background gauge-refresh tasks (RFC-016 §Decisions Q5).
     // Must be spawned after the pool is created and the recorder is installed.
