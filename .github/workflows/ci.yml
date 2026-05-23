@@ -122,13 +122,15 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-  # ── Migrations + sqlx metadata check (RFC-019) ───────────
+  # ── Migrations + sqlx metadata check (RFC-019, RFC-055) ──
   # 1. Spins a Postgres 16 service container.
   # 2. Applies every file in supabase/migrations/ in numeric order (ls -v).
   # 3. Asserts `cargo sqlx prepare --check` still matches the committed
   #    .sqlx/ query metadata — catches storage.rs changes that add/change
   #    queries without regenerating .sqlx/.
-  # 4. Sentinel column check: confirms migration 009 applied cleanly.
+  # 4. Sentinel check: confirms latest migration (026) and total count (26)
+  #    applied cleanly.  Update EXPECTED_MIGRATION_COUNT when adding new
+  #    migrations; add a new sentinel assertion for the latest schema object.
   #
   # Contract: migration files must be named NNN_description.sql with no
   # gaps in the numeric prefix. A missing file means ls -v silently skips
@@ -177,16 +179,32 @@ jobs:
           done
           echo "All migrations applied."
 
-      - name: Assert migration 009 sentinel (github_integrations table)
+      - name: Assert migration sentinels (026 schema object + total count)
         run: |
-          RESULT=$(psql "$DATABASE_URL" -Atc \
-            "SELECT to_regclass('public.github_integrations')::text")
-          if [[ "$RESULT" != "github_integrations" ]]; then
-            echo "::error::Migration 009 sentinel check failed — table github_integrations not found."
-            echo "Expected all 9 migrations to apply cleanly. Check supabase/migrations/ for errors."
+          # Sentinel A — migration 026 (plan_tier): verify the orgs_plan_valid
+          # constraint was updated to include 'growth' (replaces 'pro').
+          CONSTRAINT_OK=$(psql "$DATABASE_URL" -Atc \
+            "SELECT COUNT(*) FROM information_schema.check_constraints
+             WHERE constraint_schema = 'public'
+               AND constraint_name    = 'orgs_plan_valid'
+               AND check_clause LIKE '%growth%'")
+          if [[ "$CONSTRAINT_OK" != "1" ]]; then
+            echo "::error::Migration 026 sentinel failed — orgs_plan_valid constraint not found or does not include 'growth'."
             exit 1
           fi
-          echo "Sentinel OK: github_integrations table exists."
+          echo "Sentinel A OK: orgs_plan_valid constraint includes 'growth' (migration 026)."
+
+          # Sentinel B — file count: the loop above applies every *.sql file.
+          # Assert we have exactly the expected number so a new migration
+          # automatically forces this sentinel to be updated.
+          EXPECTED_MIGRATION_COUNT=26
+          ACTUAL_COUNT=$(ls supabase/migrations/*.sql | wc -l | tr -d ' ')
+          if [[ "$ACTUAL_COUNT" != "$EXPECTED_MIGRATION_COUNT" ]]; then
+            echo "::error::Migration count mismatch — expected $EXPECTED_MIGRATION_COUNT files, found $ACTUAL_COUNT."
+            echo "Update EXPECTED_MIGRATION_COUNT in ci.yml and add a sentinel assertion for the new migration."
+            exit 1
+          fi
+          echo "Sentinel B OK: all $EXPECTED_MIGRATION_COUNT migrations applied cleanly."
 
       - name: Install Rust stable
         uses: dtolnay/rust-toolchain@stable
@@ -202,12 +220,18 @@ jobs:
           key: ${{ runner.os }}-migrations-cargo-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: ${{ runner.os }}-migrations-cargo-
 
-      - name: Install sqlx-cli (matches sqlx 0.7 dep)
+      - name: Install sqlx-cli (version derived from Cargo.lock)
         run: |
-          # Only install if not already cached.
-          if ! command -v cargo-sqlx &> /dev/null; then
+          # Derive the sqlx version from Cargo.lock so sqlx-cli can never
+          # drift from the crate version.  Cargo.lock is the ground truth.
+          # RFC-055: was pinned to 0.7.4 while sqlx is on 0.8.x — the .sqlx/
+          # metadata format changed between majors, making the check inert.
+          SQLX_VERSION=$(awk '/^name = "sqlx"$/{found=1} found && /^version/{gsub(/"/, "", $3); print $3; exit}' Cargo.lock)
+          echo "Installing sqlx-cli ${SQLX_VERSION} (matches Cargo.lock sqlx = ${SQLX_VERSION})"
+          # Only install if not already cached or version changed.
+          if ! cargo-sqlx --version 2>/dev/null | grep -q "${SQLX_VERSION}"; then
             cargo install sqlx-cli \
-              --version 0.7.4 \
+              --version "${SQLX_VERSION}" \
               --no-default-features \
               --features postgres,rustls \
               --locked
