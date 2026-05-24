@@ -4,7 +4,13 @@
 
 Stop bad data **before** it reaches your warehouse, lakehouse, or ML pipeline.
 
-ContractGate is a high-performance validation gateway that enforces rich semantic data contracts in real time. Built in Rust for extreme speed (<10 µs p99 latency, 86k+ events/sec/core), it goes far beyond JSON Schema or basic type checks — ontology, glossary, patterns, enums, computed metrics, and automatic inference.
+ContractGate is a high-performance validation gateway that enforces rich semantic data contracts in real time. Built in Rust for sub-millisecond per-event validation (86k+ events/sec/core), it goes far beyond JSON Schema or basic type checks — ontology, glossary, patterns, enums, computed metrics, and automatic inference.
+
+<!-- LATENCY NOTE (RFC-057): The previous claim "<10 µs p99 latency" is an unverified figure.
+     Replace with a real measured benchmark from `ops/bench/` before the launch announcement.
+     CLAUDE.md targets <15 ms p99 end-to-end (network + DB); per-call validation with a warm
+     compiled-contract cache is expected to be much faster, but the exact p99 needs a
+     reproducible run. Flag for Alex to supply the measured number. -->
 
 [![Security](https://img.shields.io/badge/security-hardened-brightgreen)](https://github.com/nightmoose/contractgate/security)
 [![Dependabot](https://img.shields.io/badge/Dependabot-enabled-brightgreen)](https://github.com/nightmoose/contractgate/security/dependabot)
@@ -43,7 +49,7 @@ make demo-logs    # follow all service logs
 ## Key Features
 
 - **Semantic YAML Contracts** — entities, types, patterns, enums, required fields, glossary, and computed metrics
-- **Real-time Validation** — at ingestion (Kafka, HTTP, batch) with <10 µs p99 latency
+- **Real-time Validation** — at ingestion (Kafka, HTTP, batch) with sub-millisecond per-event validation
 - **Visual Contract Builder** — intuitive UI + live YAML preview *(Cloud)*
 - **AI-Powered Inference** — paste sample JSON → instantly generates a full contract *(Cloud)*
 - **Quarantine + Replay** — automatically hold and replay violating events *(Cloud)*
@@ -108,13 +114,13 @@ contractgate validate --contract examples/nested-order.yaml events.json
 
 | Layer | Tech |
 |---|---|
-| Validation engine | Rust + Axum (<10 µs p99) |
+| Validation engine | Rust + Axum (sub-millisecond per-event, see note) |
 | Dashboard | Next.js 15 + TypeScript + Tailwind |
 | Storage | Supabase (Postgres + Auth) |
 | Connectors | Kafka Connect, HTTP, batch, Python SDK, CLI |
 | Observability | Prometheus + Grafana |
 
-Full RFCs and design docs live in [`docs/rfcs/`](docs/rfcs/).
+Full RFCs and design docs live in [`docs/rfcs/`](docs/rfcs/). For a quick shipped-vs-draft view, see [`docs/STATUS.md`](docs/STATUS.md).
 
 ---
 
@@ -123,7 +129,7 @@ Full RFCs and design docs live in [`docs/rfcs/`](docs/rfcs/).
 | Feature | **ContractGate** | Great Expectations | Soda | Monte Carlo | dbt |
 |---|---|---|---|---|---|
 | Validation timing | **At ingestion** | Post-hoc / batch | Mix (mostly batch) | Observability | During dbt runs |
-| Performance | **<10 µs p99, 86k+ ev/s** (Rust) | Python-based | Varies | Not a validator | Not real-time |
+| Performance | **Sub-ms per-event, 86k+ ev/s** (Rust, see note) | Python-based | Varies | Not a validator | Not real-time |
 | Semantic depth | **Ontology + glossary + metrics** | Basic expectations | Checks + rules | No contracts | Basic schema |
 | Visual builder | **Yes + live YAML** | Partial | Limited | No | YAML only |
 | Inference from sample data | **One-click JSON → YAML** | Profiler (basic) | Limited | No | No |
@@ -138,7 +144,7 @@ Full RFCs and design docs live in [`docs/rfcs/`](docs/rfcs/).
 
 PRs welcome. See [`CONTRIBUTING.md`](CONTRIBUTING.md) and the active punchlist in [`docs/`](docs/).
 
-Active RFCs: [`docs/rfcs/`](docs/rfcs/)
+Active RFCs: [`docs/rfcs/`](docs/rfcs/) · RFC status index: [`docs/STATUS.md`](docs/STATUS.md)
 
 ---
 

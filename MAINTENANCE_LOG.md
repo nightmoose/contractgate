@@ -2,6 +2,51 @@
 
 ---
 
+## Run: 2026-05-24 — RFC-057: Documentation completeness for public launch
+
+**Branch:** `nightly-maintenance-2026-05-24-rfc057`
+
+### Summary
+
+Docs-only pass closing the last item (M2) on the 2026-05-22 launch-readiness
+review. All six missing feature reference docs written; RFC status index created;
+CLAUDE.md code-review-graph section made conditional; deprecated schema columns
+documented; README latency claim softened and flagged for measured benchmark.
+
+### Files added
+
+- `docs/kinesis-ingress-reference.md` — Kinesis Ingress API (RFC-026): endpoints, IAM policy, encryption, DB objects, edge cases
+- `docs/csv-inference-reference.md` — CSV contract inference (RFC-035): delimiter detection, coercion table, limits, examples
+- `docs/url-inference-reference.md` — URL contract inference (RFC-037): SSRF blocked ranges, redirect policy, format detection, examples
+- `docs/public-catalog-reference.md` — Public Catalog fork+export (RFC-034): all four endpoints, fork filter, source formats
+- `docs/date-type-reference.md` — Native `date` field type (RFC-044): validation rules, violation messages, ODCS mapping
+- `docs/plan-gating-reference.md` — Plan tiers and feature gating (RFC-045): tier matrix, PlanGate component, FreeLimitBanner, DB schema
+- `docs/STATUS.md` — RFC status index: all 58 RFCs with status and shipped branch
+- `docs/schema-notes.md` — Deprecated columns note: `contracts.version/active/yaml_content` confirmed unused; drop deferred
+
+### Files modified
+
+- `docs/rfcs/057-launch-documentation-completeness.md` — Status: Draft → Accepted
+- `README.md` — Three `<10 µs p99` claims softened to "sub-millisecond per-event"; latency note added flagging need for measured benchmark; STATUS.md linked from architecture and contributing sections
+- `CLAUDE.md` — `code-review-graph` MCP section gated on MCP actually being connected; ALWAYS gate removed; STATUS.md link added
+
+### Items deferred
+
+- **Migration 028** (`COMMENT ON COLUMN` on deprecated columns): skipped to keep RFC-057 strictly docs-only. Documented in `docs/schema-notes.md`. CI count stays at 27.
+- **README latency number**: softened but not replaced with a real measured benchmark. **Alex must supply the measured p99 from a reproducible bench run before the launch announcement.** See HTML comment in README.md.
+
+### Cargo / CI
+
+No Rust source changes. `cargo check`, `cargo test`, and `cargo clippy` are not required for this branch. `npm run build` not required (no dashboard changes).
+
+### Acceptance criteria (RFC-057)
+
+- [x] Six missing reference docs written and linked
+- [x] `docs/STATUS.md` row count matches RFC file count (58 RFCs, 60 files including the two 001-* variants)
+- [ ] README latency figure backed by a benchmark — **FLAGGED, needs Alex's input**
+
+---
+
 ## Run: 2026-05-24 — RFC-056: Server-side API key issuance
 
 **Branch:** `nightly-maintenance-2026-05-24-rfc056`
