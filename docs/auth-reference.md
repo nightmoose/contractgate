@@ -25,14 +25,21 @@ authoritative `org_id`.  No additional header is needed.
 
 ### DB-backed API key
 
-Issue keys through the dashboard or the `/api-keys` endpoint.  Send as:
+Issue keys through the dashboard (Account → API Keys).  Key issuance is
+**server-side only** (RFC-056): the dashboard calls `POST /api/keys` on the
+Next.js server, which generates the raw key with a CSPRNG, hashes it
+server-side, and returns the raw key exactly once.  The raw key is never
+stored anywhere and cannot be retrieved again.
+
+Send the raw key on every API request as:
 
 ```
-x-api-key: cgk_<hex>
+x-api-key: cg_live_<48 hex chars>
 ```
 
 Each key row stores its owning `org_id`.  All management API calls are
-automatically scoped to that org.
+automatically scoped to that org.  See [Key Management reference](./key-management-reference.md)
+for the full issuance and revocation API.
 
 ### Legacy env-var key (`API_KEY`)
 

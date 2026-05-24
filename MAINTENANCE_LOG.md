@@ -2,6 +2,70 @@
 
 ---
 
+## Run: 2026-05-24 — RFC-056: Server-side API key issuance
+
+**Branch:** `nightly-maintenance-2026-05-24-rfc056`
+
+### Summary
+
+P2-M1 from the 2026-05-22 launch-readiness review. Three commits.
+
+**ITEM 1 — `dashboard/app/api/keys/route.ts`** (new file):
+
+New Next.js route handler. `POST` validates the Supabase session, generates the
+raw key server-side with `crypto.randomBytes(24)` → `cg_live_` + 48 hex chars,
+computes `key_prefix` (first 12 chars) and `key_hash`
+(`base64(sha256(raw_key))` — exact match to `api_key_auth.rs`), inserts via
+the Supabase service role with `org_id` resolved from `org_memberships` (never
+client-supplied), and returns the raw key exactly once. `DELETE` revokes by
+`id` after verifying the key belongs to the session user's org; a different
+org's key ID returns 404. Both methods enforce a same-origin CSRF check
+(Origin/Referer vs. Host).
+
+**ITEM 2 — `supabase/migrations/027_api_keys_server_side_issuance.sql`**:
+
+Drops the `authenticated` INSERT and UPDATE policies on `api_keys`. Adds a
+`service_role` INSERT policy so the route handler can insert rows. Rewrites
+the SELECT policy to use `get_my_org_ids()` (avoids PG 42P17 recursion).
+Asserts the existing `service role can update last_used_at` policy is still
+present. Migration ordered after route deployment so issuance is never broken
+in between.
+
+CI gate: `EXPECTED_MIGRATION_COUNT` bumped 26 → 27. Sentinel A2 added:
+verifies `authenticated` INSERT policy is gone and `service_role` INSERT policy
+exists on `api_keys`.
+
+**ITEM 3 — `dashboard/app/account/page.tsx`**:
+
+`handleCreateKey` now calls `POST /api/keys` instead of
+`supabase.from("api_keys").insert(...)`. `handleRevoke` now calls
+`DELETE /api/keys`. Client-side `generateRawKey()` and `hashKey()` helpers
+removed. The Supabase client is no longer used for key writes. Read path
+(`loadKeys` SELECT) is unchanged.
+
+**Docs:**
+
+- `docs/auth-reference.md`: updated "DB-backed API key" section to describe
+  server-side issuance and link to the new reference.
+- `docs/key-management-reference.md` (new): full reference for `POST /api/keys`
+  and `DELETE /api/keys` — request/response shapes, error table, key format
+  spec, RLS posture after migration 027, `api_keys` column table.
+
+### Verification needed (user must run)
+
+```
+cd dashboard && npm run build
+```
+
+No Rust changes in this branch — `cargo check / cargo test` not required.
+
+### Remaining
+
+RFC-057 (docs completeness pass + STATUS.md RFC index + CLAUDE.md cleanup) —
+pure docs, the final pre-launch task.
+
+---
+
 ## Run: 2026-05-23 — RFC-052 follow-up + RFC-055: JWKS debounce fix + CI toolchain fix
 
 **Branch:** `nightly-maintenance-2026-05-23-rfc055`

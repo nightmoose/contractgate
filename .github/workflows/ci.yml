@@ -128,7 +128,7 @@ jobs:
   # 3. Asserts `cargo sqlx prepare --check` still matches the committed
   #    .sqlx/ query metadata — catches storage.rs changes that add/change
   #    queries without regenerating .sqlx/.
-  # 4. Sentinel check: confirms latest migration (026) and total count (26)
+  # 4. Sentinel check: confirms latest migration (027) and total count (27)
   #    applied cleanly.  Update EXPECTED_MIGRATION_COUNT when adding new
   #    migrations; add a new sentinel assertion for the latest schema object.
   #
@@ -179,7 +179,7 @@ jobs:
           done
           echo "All migrations applied."
 
-      - name: Assert migration sentinels (026 schema object + total count)
+      - name: Assert migration sentinels (027 schema object + total count)
         run: |
           # Sentinel A — migration 026 (plan_tier): verify the orgs_plan_valid
           # constraint was updated to include 'growth' (replaces 'pro').
@@ -194,10 +194,35 @@ jobs:
           fi
           echo "Sentinel A OK: orgs_plan_valid constraint includes 'growth' (migration 026)."
 
+          # Sentinel A2 — migration 027 (api_keys server-side issuance, RFC-056):
+          # verify the authenticated INSERT policy is gone and the service_role
+          # INSERT policy exists.
+          AUTHENTICATED_INSERT=$(psql "$DATABASE_URL" -Atc \
+            "SELECT COUNT(*) FROM pg_policies
+             WHERE schemaname = 'public'
+               AND tablename  = 'api_keys'
+               AND cmd        = 'INSERT'
+               AND roles      @> ARRAY['authenticated']::name[]")
+          if [[ "$AUTHENTICATED_INSERT" != "0" ]]; then
+            echo "::error::Migration 027 sentinel failed — authenticated INSERT policy still exists on api_keys."
+            exit 1
+          fi
+          SERVICE_INSERT=$(psql "$DATABASE_URL" -Atc \
+            "SELECT COUNT(*) FROM pg_policies
+             WHERE schemaname = 'public'
+               AND tablename  = 'api_keys'
+               AND cmd        = 'INSERT'
+               AND roles      @> ARRAY['service_role']::name[]")
+          if [[ "$SERVICE_INSERT" != "1" ]]; then
+            echo "::error::Migration 027 sentinel failed — service_role INSERT policy not found on api_keys."
+            exit 1
+          fi
+          echo "Sentinel A2 OK: api_keys INSERT locked to service_role (migration 027)."
+
           # Sentinel B — file count: the loop above applies every *.sql file.
           # Assert we have exactly the expected number so a new migration
           # automatically forces this sentinel to be updated.
-          EXPECTED_MIGRATION_COUNT=26
+          EXPECTED_MIGRATION_COUNT=27
           ACTUAL_COUNT=$(ls supabase/migrations/*.sql | wc -l | tr -d ' ')
           if [[ "$ACTUAL_COUNT" != "$EXPECTED_MIGRATION_COUNT" ]]; then
             echo "::error::Migration count mismatch — expected $EXPECTED_MIGRATION_COUNT files, found $ACTUAL_COUNT."
