@@ -231,6 +231,7 @@ jobs:
           # Only install if not already cached or version changed.
           if ! cargo-sqlx --version 2>/dev/null | grep -q "${SQLX_VERSION}"; then
             cargo install sqlx-cli \
+              --force \
               --version "${SQLX_VERSION}" \
               --no-default-features \
               --features postgres,rustls \
