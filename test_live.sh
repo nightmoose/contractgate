@@ -1,18 +1,32 @@
 #!/usr/bin/env bash
 # ============================================================
 # ContractGate — Live API smoke test + data seeder
-# Usage: bash test_live.sh [BASE_URL]
-# Default: https://contractgate-api.fly.dev
+# Usage: API_KEY=cg_live_... bash test_live.sh [BASE_URL]
+# Default BASE_URL: https://contractgate-api.fly.dev
 # ============================================================
+#
+# API_KEY must be a DB-backed key (`cg_live_...`).  Every management route
+# (/contracts, /ingest, /audit, /stats, /playground) is on the protected
+# router and requires `x-api-key`; the legacy env-var key carries no org
+# context and is rejected (401) on org-scoped routes (RFC-048).
+#
+# 2026-05-25 fix: the script previously (a) sent no auth header on most
+# calls and (b) created the contract via `POST /contracts`, which only makes
+# a *draft* — ingesting against a draft returns 409.  Both are fixed:
+#   - all protected calls now send x-api-key;
+#   - the contract is created with `POST /contracts/deploy`, which atomically
+#     creates the contract AND a stable version, so ingestion works.
+# `POST /contracts` also now requires a top-level `name` field.
 
 set -euo pipefail
 
-# RFC-043 fix-3: playground/validate moved to protected in RFC-042 and now
-# requires an API key.  API_KEY must be set before running this script.
-: "${API_KEY:?API_KEY env var required (RFC-042 moved /playground/validate to protected)}"
+: "${API_KEY:?API_KEY env var required — use a DB-backed cg_live_ key}"
 
 BASE="${1:-https://contractgate-api.fly.dev}"
 PASS=0; FAIL=0
+
+# Auth header reused on every protected call.
+AUTH=(-H "x-api-key: ${API_KEY}")
 
 green()  { echo -e "\033[32m✔ $*\033[0m"; }
 red()    { echo -e "\033[31m✘ $*\033[0m"; }
@@ -36,8 +50,8 @@ HEALTH=$(curl -sf "$BASE/health")
 check "GET /health → ok" "$HEALTH" '"status":"ok"'
 echo "   $HEALTH"
 
-# ── 2. Create a contract ────────────────────────────────────
-header "Create Contract"
+# ── 2. Deploy a contract (create + stable version) ───────────
+header "Deploy Contract"
 CONTRACT_YAML='version: "1.0"
 name: "user_events_test"
 description: "Smoke-test contract"
@@ -71,24 +85,45 @@ metrics:
     formula: "sum(amount) where event_type = '"'"'purchase'"'"'"
 '
 
-CREATE_RESP=$(curl -sf -X POST "$BASE/contracts" \
-  -H "Content-Type: application/json" \
-  -d "{\"yaml_content\": $(echo "$CONTRACT_YAML" | python3 -c 'import json,sys; print(json.dumps(sys.stdin.read()))')}")
+# POST /contracts/deploy needs a top-level `name` + `yaml_content`.
+# Use a unique name per run so the script is re-runnable: failed events from a
+# prior run land in quarantine, and deploying a new version of a contract that
+# has pending quarantine events is rejected.  A fresh name sidesteps that.
+CONTRACT_NAME="user_events_test_$(date +%s)"
+yellow "Contract name: $CONTRACT_NAME"
 
-check "POST /contracts → created" "$CREATE_RESP" '"name":"user_events_test"'
-CONTRACT_ID=$(echo "$CREATE_RESP" | python3 -c 'import json,sys; print(json.load(sys.stdin)["id"])')
+# Build the JSON body with python: inject the unique name into both the
+# top-level `name` field and the YAML's `name:` line (they must agree).
+DEPLOY_BODY=$(echo "$CONTRACT_YAML" | python3 -c \
+'import json,sys
+name = sys.argv[1]
+yaml = sys.stdin.read().replace("user_events_test", name, 1)
+print(json.dumps({"name": name, "yaml_content": yaml}))' "$CONTRACT_NAME")
+
+CREATE_RESP=$(curl -sf -X POST "$BASE/contracts/deploy" \
+  "${AUTH[@]}" \
+  -H "Content-Type: application/json" \
+  -d "$DEPLOY_BODY")
+
+check "POST /contracts/deploy → deployed" "$CREATE_RESP" "$CONTRACT_NAME"
+CONTRACT_ID=$(echo "$CREATE_RESP" | python3 -c 'import json,sys; print(json.load(sys.stdin)["contract_id"])')
 yellow "Contract ID: $CONTRACT_ID"
 
 # ── 3. List contracts ────────────────────────────────────────
 header "List Contracts"
-LIST_RESP=$(curl -sf "$BASE/contracts")
-check "GET /contracts → contains our contract" "$LIST_RESP" "user_events_test"
+LIST_RESP=$(curl -sf "${AUTH[@]}" "$BASE/contracts")
+check "GET /contracts → contains our contract" "$LIST_RESP" "$CONTRACT_NAME"
 
 # ── 4. Ingest VALID events ───────────────────────────────────
 header "Ingest Valid Events"
 
+# NOTE: no `-f` here.  The ingest endpoint returns HTTP 422 (not 200) whenever
+# any event in the batch fails validation — that is an expected outcome for the
+# invalid-event tests below, not a transport error.  `check` inspects the JSON
+# body, so the HTTP status does not need to be 2xx.
 ingest() {
-  curl -sf -X POST "$BASE/ingest/$CONTRACT_ID" \
+  curl -s -X POST "$BASE/ingest/$CONTRACT_ID" \
+    "${AUTH[@]}" \
     -H "Content-Type: application/json" \
     -d "$1"
 }
@@ -129,27 +164,30 @@ check "Mixed batch → 2 passed 2 failed" "$R8" '"passed":2'
 
 # ── 7. Dry run ───────────────────────────────────────────────
 header "Dry Run (no DB writes)"
-R9=$(curl -sf -X POST "$BASE/ingest/$CONTRACT_ID?dry_run=true" \
+R9=$(curl -s -X POST "$BASE/ingest/$CONTRACT_ID?dry_run=true" \
+  "${AUTH[@]}" \
   -H "Content-Type: application/json" \
   -d '[{"user_id":"dryrun_user","event_type":"view","timestamp":1712000020}]')
 check "Dry run → dry_run:true in response" "$R9" '"dry_run":true'
 
 # ── 8. Playground validate (no DB) ───────────────────────────
 header "Playground Validate Endpoint"
+PG_BODY=$(echo "$CONTRACT_YAML" | python3 -c \
+  'import json,sys; print(json.dumps({"yaml_content":sys.stdin.read(),"event":{"user_id":"test_99","event_type":"click","timestamp":1712000099}}))')
 PG=$(curl -sf -X POST "$BASE/playground/validate" \
+  "${AUTH[@]}" \
   -H "Content-Type: application/json" \
-  -H "x-api-key: $API_KEY" \
-  -d "{\"yaml_content\": $(echo "$CONTRACT_YAML" | python3 -c 'import json,sys; print(json.dumps(sys.stdin.read()))'), \"event\": {\"user_id\":\"test_99\",\"event_type\":\"click\",\"timestamp\":1712000099}}")
+  -d "$PG_BODY")
 check "Playground validate → passed" "$PG" '"passed":true'
 
 # ── 9. Audit log ─────────────────────────────────────────────
 header "Audit Log"
-AUDIT=$(curl -sf "$BASE/audit?contract_id=$CONTRACT_ID&limit=20")
+AUDIT=$(curl -sf "${AUTH[@]}" "$BASE/audit?contract_id=$CONTRACT_ID&limit=20")
 check "GET /audit → has entries" "$AUDIT" '"contract_id"'
 
 # ── 10. Stats ────────────────────────────────────────────────
 header "Stats"
-STATS=$(curl -sf "$BASE/ingest/$CONTRACT_ID/stats")
+STATS=$(curl -sf "${AUTH[@]}" "$BASE/ingest/$CONTRACT_ID/stats")
 check "GET /ingest/:id/stats → has total_events" "$STATS" '"total_events"'
 echo "   $STATS"
 
