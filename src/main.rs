@@ -87,7 +87,6 @@ use contract::{
     NameHistoryEntry, PatchContractRequest, PatchVersionRequest, VersionResponse, VersionSummary,
 };
 use error::{AppError, AppResult};
-use hex;
 use sha2::{Digest, Sha256};
 use validation::CompiledContract;
 
