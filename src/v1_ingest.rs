@@ -484,12 +484,10 @@ pub async fn v1_ingest_handler(
     let identity: ContractIdentity =
         storage::get_contract_identity(&state.db, contract_id, None).await?;
 
-    // API key contract-scope enforcement.
+    // API key contract-scope enforcement (RFC-065 shared helper).
     if let Some(Extension(ref k)) = key_ext {
-        if let Some(ref allowed) = k.allowed_contract_ids {
-            if !allowed.contains(&contract_id) {
-                return Err(AppError::Unauthorized);
-            }
+        if !k.permits_contract(contract_id) {
+            return Err(AppError::Unauthorized);
         }
     }
 

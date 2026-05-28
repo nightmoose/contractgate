@@ -75,6 +75,7 @@ signed off (may be planning docs or UI-only); **Draft** = under review;
 | 062 | [Rust Enterprise: SSO/SAML + Audit Export](rfcs/062-rust-enterprise-sso-saml-audit-export.md) | Deferred | — |
 | 063 | [Maven Multi-Module Restructure of `connect/`](rfcs/063-maven-multimodule-connect.md) | Deferred | — |
 | 064 | [Kafka Connect SMT: Dynamic Reload + DLQ Routing](rfcs/064-java-enterprise-smt-features.md) | Accepted | `nightly-maintenance-2026-05-27-rfc064-smt-reload-dlq` |
+| 065 | [Ingest/Egress Contract-Scope Enforcement](rfcs/065-ingest-egress-contract-scope.md) | Accepted | `nightly-maintenance-2026-05-28-rfc065-ingest-egress-scope` |
 
 ---
 
@@ -92,4 +93,4 @@ signed off (may be planning docs or UI-only); **Draft** = under review;
 
 ---
 
-*Last updated: 2026-05-27 — RFC-059, 060 shelved; 061–063 deferred (no validated demand); 064 rewritten as community-tier work.*
+*Last updated: 2026-05-28 — RFC-065 closes the ingest/egress cross-tenant authz gap (per-key `allowed_contract_ids` now enforced on all hot paths).*
