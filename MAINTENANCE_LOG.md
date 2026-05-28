@@ -2,6 +2,38 @@
 
 ---
 
+## Run: 2026-05-28 — RFC-066: Remove Legacy env-var `API_KEY` Master Key
+
+**Branch:** `nightly-maintenance-2026-05-28-rfc065-ingest-egress-scope` (bundled with RFC-065)
+**Severity:** P0 — cross-tenant authorization (last broad-impersonation path)
+
+**Problem:** The env-var `API_KEY`, presented as `x-api-key`, authenticated with
+**no org and no contract scope** (`org_id: None`, `allowed_contract_ids: None`) —
+read/write to every contract in every org. RFC-065 closed the scoped-key gap but
+this master key bypassed all of it. The field also doubled as the implicit
+dev-mode no-auth switch (`auth_configured()` keyed off an empty `api_key`).
+
+**Fix (scope: "master key only"):**
+- Deleted the env-var master key + its `provided == state.api_key` branch.
+- Split the dual-purpose field: `AppState.api_key: String` → `dev_no_auth: bool`,
+  driven by explicit `CONTRACTGATE_DEV_NO_AUTH=1` (defaults off, never silent in prod).
+  `auth_configured()` = `!dev_no_auth`; dev passthrough gated on `state.dev_no_auth`.
+- `docker-compose.yml`: added `CONTRACTGATE_DEV_NO_AUTH: "1"` to gateway (keeps
+  `make demo` + CI smoke working). Demo-seeder unchanged (its `cg_demo_key` now ignored).
+- `.env.example`, `docs/auth-reference.md` updated. `src/tests.rs` fixtures →
+  `AppState::new(pool, true, …)` to preserve dev-mode-unscoped intent.
+
+**Result:** only auth paths now are Bearer JWT (dashboard) or DB-backed `x-api-key`
+(connectors/SDKs). Neither → 401, unless `CONTRACTGATE_DEV_NO_AUTH=1` (local only).
+
+**Breaking:** any caller using the env-var key as a credential. No DB migration.
+
+**Docs:** STATUS.md updated; RFC at `docs/rfcs/066-remove-legacy-api-key.md`.
+
+**Verification:** pending maintainer `cargo check` + `cargo test`.
+
+---
+
 ## Run: 2026-05-28 — RFC-065: Ingest/Egress Contract-Scope Enforcement
 
 **Branch:** `nightly-maintenance-2026-05-28-rfc065-ingest-egress-scope`

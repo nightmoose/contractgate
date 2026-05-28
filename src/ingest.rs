@@ -221,7 +221,7 @@ pub async fn ingest_handler(
     key_ext: Option<Extension<ValidatedKey>>,
     Json(body): Json<Value>,
 ) -> AppResult<axum::response::Response> {
-    // DB-backed key wins; fall back to x-org-id header in legacy/dev mode.
+    // DB-backed key wins; fall back to x-org-id header in dev mode (CONTRACTGATE_DEV_NO_AUTH).
     let org_id: Option<Uuid> = key_ext.as_ref().map(|Extension(k)| k.org_id).or_else(|| {
         headers
             .get("x-org-id")

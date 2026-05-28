@@ -39,6 +39,9 @@ services:
       # RFC-017 onboarding URLs.
       PORT: "8080"
       DATABASE_URL: postgres://cg:cg@postgres/contractgate
+      # RFC-066: local/demo stack runs without auth. This is the ONLY way to
+      # disable auth now (the env-var master key was removed). Never set in prod.
+      CONTRACTGATE_DEV_NO_AUTH: "1"
       # Leave blank to disable metrics auth (Prometheus scrapes unauthenticated).
       # Set to a non-empty string to require `Authorization: Bearer <token>`.
       METRICS_AUTH_TOKEN: ""
