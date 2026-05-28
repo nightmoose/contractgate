@@ -353,7 +353,7 @@ pub async fn egress_handler(
     Json(body): Json<Value>,
 ) -> AppResult<axum::response::Response> {
     // --- Resolve org_id (same pattern as ingest) ----------------------------
-    let org_id: Option<Uuid> = key_ext.map(|Extension(k)| k.org_id).or_else(|| {
+    let org_id: Option<Uuid> = key_ext.as_ref().map(|Extension(k)| k.org_id).or_else(|| {
         headers
             .get("x-org-id")
             .and_then(|v| v.to_str().ok())
@@ -363,6 +363,14 @@ pub async fn egress_handler(
     // --- Parse path: uuid[@version] ----------------------------------------
     let (contract_id, path_version) = parse_egress_path(&raw_id)?;
 
+    // --- Per-key contract-scope enforcement (RFC-065) ----------------------
+    // Egress hot path is scoped by key.allowed_contract_ids, not org_id.
+    if let Some(Extension(ref k)) = key_ext {
+        if !k.permits_contract(contract_id) {
+            return Err(AppError::Unauthorized);
+        }
+    }
+
     // --- Version header (mirrors ingest) ------------------------------------
     let header_version = headers
         .get("x-contract-version")
@@ -371,7 +379,6 @@ pub async fn egress_handler(
         .filter(|s| !s.is_empty());
 
     // --- Load contract identity ---------------------------------------------
-    // Egress hot path — scoped by key.allowed_contract_ids, not org_id.
     let _identity = storage::get_contract_identity(&state.db, contract_id, None).await?;
 
     // --- Resolve version ----------------------------------------------------

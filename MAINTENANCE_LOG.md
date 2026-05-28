@@ -2,6 +2,35 @@
 
 ---
 
+## Run: 2026-05-28 — RFC-065: Ingest/Egress Contract-Scope Enforcement
+
+**Branch:** `nightly-maintenance-2026-05-28-rfc065-ingest-egress-scope`
+**Severity:** P0 — cross-tenant authorization gap (BOLA on hot paths)
+
+**Problem:** `ingest.rs` and `egress.rs` carried a comment claiming the path was
+scoped by `key.allowed_contract_ids` but had **no enforcement code**. Only
+`v1_ingest.rs` actually checked. Any valid restricted-scope API key could
+ingest to / egress from any `contract_id` across orgs by UUID enumeration.
+
+**Fix:**
+- Added `ValidatedKey::permits_contract(contract_id)` helper in `api_key_auth.rs`
+  (`None` allowlist = unrestricted; `Some` = membership check) + 3 unit tests.
+- Wired it into `ingest_handler` and `egress_handler` (before identity load, so
+  wrong-scope keys 401 without learning the contract exists).
+- Refactored `v1_ingest` to the shared helper (removed duplicated logic).
+- Changed `key_ext.map(...)` → `key_ext.as_ref().map(...)` so the extension
+  survives for the scope check.
+
+**Out of scope (follow-up):** retiring/strictly scoping the legacy env-var
+`API_KEY` master key (issued with `allowed_contract_ids: None`, unrestricted).
+
+**Docs:** behavior now matches the already-correct `docs/auth-reference.md`
+scoping table. STATUS.md updated; RFC at `docs/rfcs/065-ingest-egress-contract-scope.md`.
+
+**Verification:** pending maintainer `cargo check` + `cargo test`.
+
+---
+
 ## Run: 2026-05-27 — RFC-064: Kafka Connect SMT — Dynamic Reload + Per-Violation DLQ Routing
 
 **Branch:** `nightly-maintenance-2026-05-27-rfc064-smt-reload-dlq`

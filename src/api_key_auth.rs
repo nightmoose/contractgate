@@ -80,6 +80,19 @@ pub struct ValidatedKey {
     pub rate_limit_burst: Option<u32>,
 }
 
+impl ValidatedKey {
+    /// True if this key may act on `contract_id` (RFC-065).
+    ///
+    /// `allowed_contract_ids == None` → unrestricted (JWT-derived keys and the
+    /// legacy master key). `Some(list)` → permitted only for listed UUIDs.
+    pub fn permits_contract(&self, contract_id: Uuid) -> bool {
+        match &self.allowed_contract_ids {
+            Some(allowed) => allowed.contains(&contract_id),
+            None => true,
+        }
+    }
+}
+
 /// A cached outcome for a given key digest.
 ///
 /// `result = Some(key)` → valid and active.
@@ -362,6 +375,30 @@ mod tests {
             rate_limit_rps: None,
             rate_limit_burst: None,
         }
+    }
+
+    // -----------------------------------------------------------------------
+    // RFC-065: per-key contract-scope enforcement
+    // -----------------------------------------------------------------------
+    #[test]
+    fn permits_contract_unrestricted_when_none() {
+        let key = dummy_key(); // allowed_contract_ids: None
+        assert!(key.permits_contract(Uuid::new_v4()));
+    }
+
+    #[test]
+    fn permits_contract_allows_listed() {
+        let id = Uuid::new_v4();
+        let mut key = dummy_key();
+        key.allowed_contract_ids = Some(vec![Uuid::new_v4(), id]);
+        assert!(key.permits_contract(id));
+    }
+
+    #[test]
+    fn permits_contract_denies_unlisted() {
+        let mut key = dummy_key();
+        key.allowed_contract_ids = Some(vec![Uuid::new_v4()]);
+        assert!(!key.permits_contract(Uuid::new_v4()));
     }
 
     // -----------------------------------------------------------------------
