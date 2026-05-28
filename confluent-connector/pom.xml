@@ -38,7 +38,7 @@
 
     <!-- Keep in sync with your Kafka / Confluent Platform version -->
     <kafka.version>3.6.0</kafka.version>
-    <jackson.version>2.15.2</jackson.version>
+    <jackson.version>2.18.6</jackson.version>
     <slf4j.version>2.0.9</slf4j.version>
     <junit.version>5.10.0</junit.version>
     <mockito.version>5.7.0</mockito.version>
