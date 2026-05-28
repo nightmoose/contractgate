@@ -2386,7 +2386,7 @@ mod org_scoping {
     // ---- Unit: OrgId extractor ------------------------------------------------
 
     /// `OrgId` extractor returns `None` when no `ValidatedKey` is in extensions.
-    /// Covers dev mode (no auth) and the legacy env-var key path.
+    /// Covers dev mode (`CONTRACTGATE_DEV_NO_AUTH`) where no key is injected.
     #[test]
     fn org_id_none_when_no_validated_key() {
         use axum::extract::FromRequestParts;
@@ -2667,8 +2667,7 @@ mod rfc053_ready_tests {
 
     /// Build a test router with only the /ready route wired.
     async fn make_server(pool: sqlx::PgPool) -> TestServer {
-        let state =
-            std::sync::Arc::new(super::super::AppState::new(pool, String::new(), None, None));
+        let state = std::sync::Arc::new(super::super::AppState::new(pool, true, None, None));
         let app = axum::Router::new()
             .route("/ready", axum::routing::get(super::super::ready_handler))
             .with_state(state);
@@ -2701,8 +2700,7 @@ mod rfc053_ready_tests {
             .expect("lazy connect should succeed");
         pool.close().await;
 
-        let state =
-            std::sync::Arc::new(super::super::AppState::new(pool, String::new(), None, None));
+        let state = std::sync::Arc::new(super::super::AppState::new(pool, true, None, None));
         let app = axum::Router::new()
             .route("/health", axum::routing::get(super::super::health_handler))
             .with_state(state);
@@ -2752,7 +2750,7 @@ mod rfc052_debounce_tests {
             .expect("lazy connect should succeed");
         Arc::new(super::super::AppState::new(
             pool,
-            String::new(),
+            true,
             None,
             // Port 1 is always closed on loopback — connection refused is
             // instant, keeping the test fast.

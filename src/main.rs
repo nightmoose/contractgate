@@ -104,9 +104,12 @@ pub struct AppState {
     pub db: PgPool,
     /// (contract_id, version) → compiled contract.
     contract_cache: RwLock<HashMap<(Uuid, String), Arc<CompiledContract>>>,
-    /// Legacy single env-var key (empty = disabled).  Kept for zero-downtime
-    /// migration: if set, it still grants access alongside DB-issued keys.
-    pub api_key: String,
+    /// RFC-066: explicit local-dev escape hatch. `true` ⇒ the authenticated
+    /// surface accepts unauthenticated requests (and trusts `x-org-id`) for
+    /// local/compose/demo use only. Driven by `CONTRACTGATE_DEV_NO_AUTH=1`;
+    /// defaults to `false` so production can never silently run open. There is
+    /// no longer any env-var master key — auth is JWT or a DB-backed key.
+    pub dev_no_auth: bool,
     /// DB-backed API key cache with 60-second TTL.
     pub key_cache: Arc<api_key_auth::ApiKeyCache>,
     /// Per-API-key token-bucket rate limiter (RFC-021).
@@ -132,14 +135,14 @@ pub struct AppState {
 impl AppState {
     pub fn new(
         db: PgPool,
-        api_key: String,
+        dev_no_auth: bool,
         supabase_jwks: Option<JwkSet>,
         supabase_jwks_url: Option<String>,
     ) -> Self {
         AppState {
             db,
             contract_cache: RwLock::new(HashMap::new()),
-            api_key,
+            dev_no_auth,
             key_cache: Arc::new(api_key_auth::ApiKeyCache::default()),
             rate_limiter: Arc::new(rate_limit::RateLimitState::default()),
             stream_demo: std::sync::Arc::new(stream_demo::StreamDemoState::new()),
@@ -263,12 +266,15 @@ impl AppState {
         cache.retain(|(cid, _), _| *cid != contract_id);
     }
 
-    /// Returns true when any auth mechanism is configured (env-var key or
-    /// Supabase JWKS).  Used by org-scoped handlers to decide whether a
-    /// missing `org_id` should be treated as dev-mode unscoped (false) or
-    /// as an unauthenticated request that must be rejected with 401 (true).
+    /// Returns true when auth is required (the normal case). Used by org-scoped
+    /// handlers to decide whether a missing `org_id` is dev-mode unscoped
+    /// (false) or an unauthenticated request to reject with 401 (true).
+    ///
+    /// RFC-066: auth is always required unless the explicit `dev_no_auth`
+    /// escape hatch is set, so this is simply `!dev_no_auth`. (Previously this
+    /// also keyed off the env-var master key, which has been removed.)
     pub fn auth_configured(&self) -> bool {
-        !self.api_key.is_empty() || self.supabase_jwks.load().is_some()
+        !self.dev_no_auth
     }
 }
 
@@ -311,10 +317,10 @@ async fn identity_to_response(db: &PgPool, id: ContractIdentity) -> AppResult<Co
 // The `x-org-id` header fallback has been removed — it was spoofable by any
 // caller holding the legacy env-var key and allowed full tenant impersonation.
 //
-// Returns `None` in dev mode (no auth configured) or when the legacy env-var
-// key path is used (no ValidatedKey injected).  Callers that require org
-// context must check `state.auth_configured()` and return 401 when this
-// returns None in a production environment.
+// Returns `None` only in dev mode (`CONTRACTGATE_DEV_NO_AUTH`), where no
+// ValidatedKey is injected.  In production every authenticated request carries
+// a ValidatedKey, so callers still check `state.auth_configured()` and return
+// 401 if this is None (defense in depth).
 // ---------------------------------------------------------------------------
 
 fn org_id_from_req(req: &axum::extract::Request) -> Option<uuid::Uuid> {
@@ -1074,16 +1080,15 @@ async fn require_api_key(
         .unwrap_or("")
         .to_owned();
 
-    // Dev mode: no auth configured at all — pass through.
-    if state.api_key.is_empty() {
+    // RFC-066: explicit local-dev escape hatch — pass through unauthenticated.
+    // Never set in production (defaults off).
+    if state.dev_no_auth {
         return Ok(next.run(request).await);
     }
 
-    // DB-backed key: validate via cache (60-second TTL).
-    // Checked FIRST so that if the same value is also set as the legacy
-    // env-var key, the DB path wins and ValidatedKey (with org_id) is
-    // injected.  Without this ordering, the legacy short-circuit fires,
-    // org_id stays None, and deploy/ingest writes fail the NOT NULL constraint.
+    // DB-backed key: validate via cache (60-second TTL). This is now the only
+    // `x-api-key` credential path — the legacy env-var master key was removed
+    // in RFC-066.
     if !provided.is_empty() {
         match state.key_cache.validate(&provided, &state.db).await {
             Ok(validated) => {
@@ -1106,12 +1111,6 @@ async fn require_api_key(
                 state.key_cache.evict(&provided);
             }
         }
-    }
-
-    // Legacy env-var key: still accepted for zero-downtime migration.
-    // Remove this branch once all connectors are issuing DB-backed keys.
-    if !provided.is_empty() && provided == state.api_key {
-        return Ok(next.run(request).await);
     }
 
     tracing::warn!("Rejected request: missing or invalid x-api-key");
@@ -1557,11 +1556,18 @@ async fn main() -> anyhow::Result<()> {
     let pool = PgPool::connect(&database_url).await?;
     tracing::info!("Connected to database");
 
-    let api_key = std::env::var("API_KEY").unwrap_or_default();
-    if api_key.is_empty() {
-        tracing::warn!("API_KEY is not set — running without authentication (dev mode only)");
+    // RFC-066: explicit local-dev escape hatch. Defaults off so production is
+    // always authenticated (JWT or DB-backed key). The legacy env-var master
+    // key was removed.
+    let dev_no_auth = std::env::var("CONTRACTGATE_DEV_NO_AUTH")
+        .map(|v| matches!(v.trim(), "1" | "true" | "TRUE"))
+        .unwrap_or(false);
+    if dev_no_auth {
+        tracing::warn!(
+            "CONTRACTGATE_DEV_NO_AUTH is set — authenticated surface is OPEN (local/dev only)"
+        );
     } else {
-        tracing::info!("API key authentication enabled");
+        tracing::info!("Authentication required (JWT + DB-backed API keys)");
     }
 
     // RFC-039: fetch Supabase JWKS for RS256 dashboard session auth.
@@ -1600,7 +1606,7 @@ async fn main() -> anyhow::Result<()> {
         }
     };
 
-    let state = Arc::new(AppState::new(pool, api_key, supabase_jwks, jwks_url));
+    let state = Arc::new(AppState::new(pool, dev_no_auth, supabase_jwks, jwks_url));
 
     // Warm the compiled-contract cache with every stable + deprecated
     // version.  Failure here is logged but does not block boot.
