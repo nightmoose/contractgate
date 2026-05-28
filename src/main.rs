@@ -87,6 +87,8 @@ use contract::{
     NameHistoryEntry, PatchContractRequest, PatchVersionRequest, VersionResponse, VersionSummary,
 };
 use error::{AppError, AppResult};
+use hex;
+use sha2::{Digest, Sha256};
 use validation::CompiledContract;
 
 // ---------------------------------------------------------------------------
@@ -1118,6 +1120,53 @@ async fn require_api_key(
 }
 
 // ---------------------------------------------------------------------------
+// RFC-064: SMT version probe
+// ---------------------------------------------------------------------------
+
+/// Response body for `GET /v1/contracts/{contract_id}/version`.
+#[derive(serde::Serialize)]
+struct ContractVersionProbe {
+    /// Semver string of the latest stable version.
+    version: String,
+    /// SHA-256 hex digest of the YAML content.  The SMT polls this and swaps
+    /// its cached contract only when the hash changes — avoids a full body
+    /// fetch on every poll interval.
+    hash: String,
+}
+
+/// `GET /v1/contracts/{contract_id}/version` — cheap version probe for the
+/// Kafka Connect SMT (RFC-064 dynamic contract reload).
+///
+/// Returns the latest stable version string and a SHA-256 hash of its YAML
+/// content.  The SMT polls this endpoint and triggers a reload only when the
+/// hash changes, keeping the hot-path cost to a single small JSON GET per
+/// `contractgate.reload.poll.ms`.
+///
+/// Auth: same `x-api-key` / Bearer JWT as all other protected routes.
+async fn v1_contract_version_handler(
+    State(state): State<Arc<AppState>>,
+    OrgId(org_id): OrgId,
+    Path(contract_id): Path<Uuid>,
+) -> AppResult<Json<ContractVersionProbe>> {
+    if state.auth_configured() && org_id.is_none() {
+        return Err(AppError::Unauthorized);
+    }
+    // Verify the caller can see this contract (org-scoped check).
+    let _ = storage::get_contract_identity(&state.db, contract_id, org_id).await?;
+
+    let v = storage::get_latest_stable_version(&state.db, contract_id)
+        .await?
+        .ok_or(AppError::NoStableVersion { contract_id })?;
+
+    let hash = hex::encode(Sha256::digest(v.yaml_content.as_bytes()));
+
+    Ok(Json(ContractVersionProbe {
+        version: v.version,
+        hash,
+    }))
+}
+
+// ---------------------------------------------------------------------------
 // Router
 // ---------------------------------------------------------------------------
 
@@ -1427,6 +1476,13 @@ fn build_router(state: Arc<AppState>) -> Router {
         .route(
             "/v1/ingest/{contract_id}",
             post(v1_ingest::v1_ingest_handler),
+        )
+        // RFC-064: SMT version probe — cheap GET for dynamic contract reload.
+        // Placed in the v1 router so the SMT can use the same API key and
+        // namespace as the ingest route.
+        .route(
+            "/v1/contracts/{contract_id}/version",
+            get(v1_contract_version_handler),
         )
         .layer(tower_http::limit::RequestBodyLimitLayer::new(
             10 * 1024 * 1024, // 10 MB — RFC-021

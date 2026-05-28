@@ -2,6 +2,47 @@
 
 ---
 
+## Run: 2026-05-27 — RFC-064: Kafka Connect SMT — Dynamic Reload + Per-Violation DLQ Routing
+
+**Branch:** `nightly-maintenance-2026-05-27-rfc064-smt-reload-dlq`
+
+### Summary
+
+Community-tier feature pair for the `confluent-connector/` SMT (single-module Java plugin). Both features default to off — existing behaviour is byte-identical with both flags unset.
+
+**Dynamic contract reload** (`contractgate.reload.enabled=true`): background daemon thread polls `GET /v1/contracts/{id}/version` every `poll.ms` ms. On hash change it fetches the full body for a sanity check, then atomically swaps the `AtomicReference<ContractVersionInfo>` used by `apply()`. Failure action: `warn` (keep old contract) or `fail-task` (surface ConnectException on next `apply()` call). Exposes two `AtomicLong` counters: `reloadSuccessCount`, `reloadFailureCount`.
+
+**Per-violation DLQ routing** (`contractgate.dlq.routing.enabled=true`): rule engine evaluates a JSON rule array top-to-bottom against the first violation's context (`severity`, `type`, `field`, `contract`) and sends the failing record to the matched topic via a dedicated `KafkaProducer` before throwing `DataException`. Falls back to `dlq.routing.default` if no rule matches.
+
+**Server-side version probe** (Rust, `src/main.rs`): `GET /v1/contracts/{contract_id}/version` returns `{"version":"…","hash":"<sha256>"}`. Cheap polling target — only the full body is fetched when the hash changes.
+
+All 40 tests pass (`mvn verify` clean). Confluent Hub ZIP rebuilt.
+
+### Files added
+
+- `src/main/java/io/datacontractgate/connect/smt/reload/ContractVersionInfo.java`
+- `src/main/java/io/datacontractgate/connect/smt/reload/ContractVersionCheck.java`
+- `src/main/java/io/datacontractgate/connect/smt/reload/DynamicContractReloader.java`
+- `src/main/java/io/datacontractgate/connect/smt/dlq/DlqRule.java`
+- `src/main/java/io/datacontractgate/connect/smt/dlq/DlqRoutingConfig.java`
+- `src/main/java/io/datacontractgate/connect/smt/dlq/DlqRouter.java`
+- `src/main/java/io/datacontractgate/connect/smt/dlq/KafkaDlqProducer.java`
+- `src/test/java/…/reload/DynamicContractReloaderTest.java`
+- `src/test/java/…/reload/ContractReloadIntegrationTest.java`
+- `src/test/java/…/dlq/DlqRouterTest.java`
+- `src/test/java/…/dlq/DlqRoutingIntegrationTest.java`
+
+### Files modified
+
+- `src/main.rs` — added `v1_contract_version_handler` + route
+- `confluent-connector/pom.xml` — WireMock dep, `jackson-core` scope fix, Surefire Byte Buddy flag
+- `src/main/java/…/smt/ContractGateValidatorConfig.java` — RFC-064 config keys + cross-field validation
+- `src/main/java/…/smt/ContractGateValidator.java` — reload + DLQ routing wired in
+- `confluent-connector/README.md` — Dynamic Reload, Per-Violation DLQ Routing, server-side version probe sections
+- `docs/STATUS.md` — RFC-064 marked Accepted
+
+---
+
 ## Run: 2026-05-24 — RFC-057: Documentation completeness for public launch
 
 **Branch:** `nightly-maintenance-2026-05-24-rfc057`

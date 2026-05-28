@@ -69,6 +69,12 @@ signed off (may be planning docs or UI-only); **Draft** = under review;
 | 056 | [Server-Side API Key Issuance](rfcs/056-server-side-api-key-issuance.md) | Accepted | `nightly-maintenance-2026-05-24-rfc056` |
 | 057 | [Documentation Completeness for Public Launch](rfcs/057-launch-documentation-completeness.md) | Accepted | `nightly-maintenance-2026-05-24-rfc057` |
 | 058 | [12-Month Product Roadmap (2026 H2 – 2027 H1)](rfcs/058-twelve-month-roadmap.md) | Draft | — |
+| 059 | [Open-Core Split: Architecture & Licensing](rfcs/059-open-core-split.md) | Draft (shelf) | — |
+| 060 | [LicenseManager Protocol + SaaS Validation](rfcs/060-license-manager-protocol.md) | Draft (shelf) | — |
+| 061 | [Rust `enterprise` Cargo Feature Flag](rfcs/061-rust-enterprise-feature-flag.md) | Deferred | — |
+| 062 | [Rust Enterprise: SSO/SAML + Audit Export](rfcs/062-rust-enterprise-sso-saml-audit-export.md) | Deferred | — |
+| 063 | [Maven Multi-Module Restructure of `connect/`](rfcs/063-maven-multimodule-connect.md) | Deferred | — |
+| 064 | [Kafka Connect SMT: Dynamic Reload + DLQ Routing](rfcs/064-java-enterprise-smt-features.md) | Accepted | `nightly-maintenance-2026-05-27-rfc064-smt-reload-dlq` |
 
 ---
 
@@ -80,8 +86,10 @@ signed off (may be planning docs or UI-only); **Draft** = under review;
 | **Accepted** | Design signed off, code shipped or in progress. RFC frontmatter says "Accepted". |
 | **Shipped (RFC Draft)** | Code shipped and in production, but the RFC document was never formally accepted (frontmatter still says "Draft"). To be rectified in a follow-up. |
 | **Draft** | Under review; no code shipped. |
+| **Draft (shelf)** | Design is finished and on the shelf, but implementation is intentionally not scheduled — see the RFC's "Build trigger" section for what fires it. |
+| **Deferred** | Design exists but implementation is intentionally postponed (typically waiting on an upstream "shelf" RFC to fire, or on validated customer demand). |
 | **Superseded** | Replaced by a later RFC listed in the notes column; kept for design context. |
 
 ---
 
-*Last updated: 2026-05-24 by nightly-maintenance-2026-05-24-rfc057.*
+*Last updated: 2026-05-27 — RFC-059, 060 shelved; 061–063 deferred (no validated demand); 064 rewritten as community-tier work.*
