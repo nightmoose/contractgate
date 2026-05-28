@@ -2,6 +2,42 @@
 
 ---
 
+## Run: 2026-05-28 — RFC-067: Request-Path Panic Hardening
+
+**Branch:** `nightly-maintenance-2026-05-28-rfc067-panic-hardening`
+**Severity:** P2 — latent DoS (worker panic on an authenticated request)
+
+**Source:** external read-only "cheap findings" scan
+(`docs/reviews/cheap-findings-2026-05-28.md`). Of ~48 flagged items, only the
+six request-path panics below were acted on; the `transform.rs` HMAC/UTF-8
+`expect`s and `len() as i32` casts are provably safe under current input bounds
+and were left in place.
+
+**Problem:** Six call sites turned a violated-but-unreachable invariant into a
+panic instead of an HTTP error — each guarded today, but coupled by convention
+(not the type system), so a future refactor could re-arm them.
+
+**Fix:**
+- `collaboration.rs` (186, 262, 329, 356) — `org_id.expect("…")` →
+  `org_id.ok_or(AppError::Unauthorized)?`. Missing org → 401, consistent with
+  the existing idiom at `collaboration.rs:86`.
+- `replay.rs` (419, 436) — `*ordinal_for_id.get(&source_id).unwrap()` →
+  `let Some(&idx) = … else { continue };`. Matches the already-graceful
+  slot-take at `replay.rs:449`.
+
+**Behaviour:** No API/DB/config change. Identical output for all
+reachable-today inputs; only the failure *mode* of a should-be-impossible state
+changes (clean 401 / dropped slot instead of panic). No test changes (changed
+branches are unreachable under current invariants).
+
+**Docs:** STATUS.md updated; RFC at
+`docs/rfcs/067-request-path-panic-hardening.md`; findings doc archived at
+`docs/reviews/cheap-findings-2026-05-28.md`.
+
+**Verification:** pending maintainer `cargo check` + `cargo test`.
+
+---
+
 ## Run: 2026-05-28 — RFC-066: Remove Legacy env-var `API_KEY` Master Key
 
 **Branch:** `nightly-maintenance-2026-05-28-rfc065-ingest-egress-scope` (bundled with RFC-065)

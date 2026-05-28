@@ -77,6 +77,7 @@ signed off (may be planning docs or UI-only); **Draft** = under review;
 | 064 | [Kafka Connect SMT: Dynamic Reload + DLQ Routing](rfcs/064-java-enterprise-smt-features.md) | Accepted | `nightly-maintenance-2026-05-27-rfc064-smt-reload-dlq` |
 | 065 | [Ingest/Egress Contract-Scope Enforcement](rfcs/065-ingest-egress-contract-scope.md) | Accepted | `nightly-maintenance-2026-05-28-rfc065-ingest-egress-scope` |
 | 066 | [Remove Legacy env-var `API_KEY` Master Key](rfcs/066-remove-legacy-api-key.md) | Implemented | `nightly-maintenance-2026-05-28-rfc065-ingest-egress-scope` |
+| 067 | [Request-Path Panic Hardening](rfcs/067-request-path-panic-hardening.md) | Implemented | `nightly-maintenance-2026-05-28-rfc067-panic-hardening` |
 
 ---
 
@@ -94,4 +95,4 @@ signed off (may be planning docs or UI-only); **Draft** = under review;
 
 ---
 
-*Last updated: 2026-05-28 — RFC-065 closes the ingest/egress cross-tenant authz gap (per-key `allowed_contract_ids` now enforced on all hot paths); RFC-066 removes the legacy env-var `API_KEY` master key (dev no-auth now gated on explicit `CONTRACTGATE_DEV_NO_AUTH=1`).*
+*Last updated: 2026-05-28 — RFC-065 closes the ingest/egress cross-tenant authz gap (per-key `allowed_contract_ids` now enforced on all hot paths); RFC-066 removes the legacy env-var `API_KEY` master key (dev no-auth now gated on explicit `CONTRACTGATE_DEV_NO_AUTH=1`); RFC-067 converts six latent request-path panics (collaboration `expect`, replay `unwrap`) to clean 401 / graceful skip.*

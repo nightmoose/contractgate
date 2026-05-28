@@ -416,7 +416,9 @@ pub async fn replay_handler(
                 audit_id,
                 matched_version,
             } => {
-                let idx = *ordinal_for_id.get(&source_id).unwrap();
+                let Some(&idx) = ordinal_for_id.get(&source_id) else {
+                    continue;
+                };
                 if stamped.contains(&source_id) {
                     slot[idx] = Some(ReplayItemOutcome::Replayed {
                         replayed_into_audit_id: audit_id,
@@ -433,7 +435,9 @@ pub async fn replay_handler(
                 attempted_version,
                 violations,
             } => {
-                let idx = *ordinal_for_id.get(&source_id).unwrap();
+                let Some(&idx) = ordinal_for_id.get(&source_id) else {
+                    continue;
+                };
                 slot[idx] = Some(ReplayItemOutcome::StillQuarantined {
                     new_quarantine_id: new_quar_id,
                     contract_version_attempted: attempted_version,
