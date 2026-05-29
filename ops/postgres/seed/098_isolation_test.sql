@@ -40,16 +40,15 @@ VALUES
 ON CONFLICT (id) DO NOTHING;
 
 -- ── contract owned by org A ─────────────────────────────────────────────────
--- yaml_content need only be a valid contract; the isolation test is rejected
--- at the org-scope layer before validation runs.
-INSERT INTO public.contracts (id, org_id, name, version, active, yaml_content, created_at, updated_at)
+-- Post-migration-003, `contracts` has no version/active/yaml_content columns —
+-- those moved to contract_versions. The contract row is identity + org scope;
+-- the YAML lives on the version row below.
+INSERT INTO public.contracts (id, org_id, name, description, created_at, updated_at)
 VALUES (
     'a0000000-0000-0000-0000-000000000001',
     'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
     'iso_test_contract',
-    '1.0',
-    TRUE,
-    E'version: "1.0"\nname: "iso_test_contract"\ndescription: "RFC-073 isolation fixture"\nontology:\n  entities:\n    - name: user_id\n      type: string\n      required: true\nglossary: []\nmetrics: []\n',
+    'RFC-073 isolation fixture',
     NOW(),
     NOW()
 )

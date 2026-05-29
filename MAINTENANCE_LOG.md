@@ -2,6 +2,47 @@
 
 ---
 
+## Run: 2026-05-29 — RFC-074: Org-ownership enforcement on data plane (latent P0-class)
+
+**Branch:** `nightly-maintenance-2026-05-28-rfc069-pure-fn-coverage`
+**Severity:** **Latent P0-class (cross-tenant write, BOLA/IDOR) — found by code
+inspection, NOT reproduced under auth.**
+**Surfaced by:** triaging why RFC-073's `cross_org_ingest_is_rejected` returned
+200 in the compose-smoke lane.
+
+**What:** While chasing the 200, found that `ingest_handler`, `egress_handler`,
+and `v1_ingest_handler` resolve the caller's `org_id` from the validated key but
+pass `None` to `get_contract_identity`/`get_version`. With auth on, the only
+per-request scope check is then RFC-065's per-key allow-list, which is `None`
+(unrestricted) for all JWT/dashboard keys — so an unrestricted key could write
+to another org's contract. The storage layer was already org-aware; the handlers
+just never passed `org_id`.
+
+**Important — the 200 was NOT a demonstrated breach.** The compose stack runs
+`CONTRACTGATE_DEV_NO_AUTH=1`, which short-circuits `require_api_key` and attaches
+no `ValidatedKey`, so `org_id` is `None` regardless of the fix. The 200 means
+"auth is off in this stack," not "isolation was bypassed." The bug is real in
+production code; it was not reproduced end-to-end.
+
+**Fix:** Threaded the resolved `org_id` into the identity + version lookups on
+all three handlers (`src/ingest.rs`, `src/egress.rs`, `src/v1_ingest.rs`). With
+auth on, a cross-org caller now 404s at the identity load, before any write. No
+storage, schema, or signature change. Dev-mode / demo-seeder (`org_id = None`)
+still matches all orgs, so smoke-stack contract publishing is unaffected.
+
+**Not verified by smoke lane.** Because `DEV_NO_AUTH=1`,
+`cross_org_ingest_is_rejected` returns 200 with or without this fix — a false
+signal. Verified by code inspection + (pending) `cargo test`. The test-lane fix
+to run the isolation test against an auth-on gateway is tracked as an RFC-073
+follow-up and must land before the smoke lane can prove isolation.
+
+**Deferred (in RFC):** `get_latest_stable_version`/`resolve_version` lack an
+`org_id` param (defense-in-depth only — unreachable cross-org after the identity
+fix); `ingest_stats_handler` has no auth extension at all (separate P1 read-side
+exposure).
+
+---
+
 ## Run: 2026-05-28 — RFC-073: Org-isolation test in compose-smoke lane
 
 **Branch:** `nightly-maintenance-2026-05-28-rfc069-pure-fn-coverage`

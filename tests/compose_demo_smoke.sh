@@ -140,25 +140,34 @@ fi
 echo "  audit_log total_events=$TOTAL ✓"
 
 # ── RFC-073: cross-tenant isolation integration test ────────────────────────
-# Seeded by ops/postgres/seed/098_isolation_test.sql (orgs A+B, one contract
-# owned by A, one API key per org). Org B's key POSTing to A's contract must be
-# rejected (403/404). These raw keys are throwaway fixtures — they unlock
-# nothing outside this disposable compose DB.
-echo "=== compose_demo_smoke: cross-org isolation test (RFC-073) ==="
-export TEST_BASE_URL="http://localhost:8080"
-export TEST_API_KEY_A="cg_live_orgA_isolationtest_000000000001"
-export TEST_API_KEY_B="cg_live_orgB_isolationtest_000000000002"
-export TEST_CONTRACT_ID_A="a0000000-0000-0000-0000-000000000001"
-
-# Run only the read-only cross-org rejection test. `--exact` + the grep guard
-# below defend against a silent false-green: `cargo test` exits 0 even when a
-# filter matches zero tests (e.g. a future rename).
-cargo test --test rfc_001_isolation -- --ignored --exact \
-    integration::cross_org_ingest_is_rejected 2>&1 | tee /tmp/iso_smoke.out
-if ! grep -qE '1 passed; 0 failed' /tmp/iso_smoke.out; then
-    echo "ERROR: cross_org_ingest_is_rejected did not report '1 passed; 0 failed' — isolation test failed, was skipped, or was renamed."
-    exit 1
-fi
-echo "  cross-org ingest rejected ✓"
+# DISABLED (2026-05-29, RFC-074). This block is intentionally NOT run.
+#
+# This compose stack starts the gateway with CONTRACTGATE_DEV_NO_AUTH=1
+# (see docker-compose.yml), which short-circuits require_api_key and attaches
+# no ValidatedKey — so the caller's org_id is always None and EVERY key is
+# accepted for EVERY contract. Against this stack cross_org_ingest_is_rejected
+# returns 200 regardless of whether the RFC-074 org-scoping fix is present, so
+# wiring it here produces a false signal: a red lane that proves nothing, and
+# (worse) a green lane would mean nothing either.
+#
+# Org isolation is auth-dependent and MUST be exercised against a gateway with
+# auth ON (DEV_NO_AUTH=0) and real keys. That dedicated auth-on test lane is
+# tracked in docs/rfcs/075-auth-on-isolation-test-lane.md. The seed
+# (ops/postgres/seed/098_isolation_test.sql) and the test
+# (tests/rfc_001_isolation.rs::integration::cross_org_ingest_is_rejected) are
+# kept in place for that lane to consume.
+#
+# echo "=== compose_demo_smoke: cross-org isolation test (RFC-073) ==="
+# export TEST_BASE_URL="http://localhost:8080"
+# export TEST_API_KEY_A="cg_live_orgA_isolationtest_000000000001"
+# export TEST_API_KEY_B="cg_live_orgB_isolationtest_000000000002"
+# export TEST_CONTRACT_ID_A="a0000000-0000-0000-0000-000000000001"
+# cargo test --test rfc_001_isolation -- --ignored --exact \
+#     integration::cross_org_ingest_is_rejected 2>&1 | tee /tmp/iso_smoke.out
+# if ! grep -qE '1 passed; 0 failed' /tmp/iso_smoke.out; then
+#     echo "ERROR: cross_org_ingest_is_rejected did not report '1 passed; 0 failed'."
+#     exit 1
+# fi
+# echo "  cross-org ingest rejected ✓"
 
 echo "=== compose_demo_smoke: PASS ==="

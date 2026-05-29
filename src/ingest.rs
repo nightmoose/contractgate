@@ -246,16 +246,19 @@ pub async fn ingest_handler(
         .map(|s| s.trim().to_string())
         .filter(|s| !s.is_empty());
 
-    // --- Load contract identity (404 if unknown) ---------------------------
+    // --- Load contract identity (404 if unknown OR not owned by caller's org)
+    // RFC-074: scope by org_id so a key cannot ingest into another org's
+    // contract. 404 (not 403) so a wrong-org key never learns it exists.
     let identity: ContractIdentity =
-        storage::get_contract_identity(&state.db, contract_id, None).await?;
+        storage::get_contract_identity(&state.db, contract_id, org_id).await?;
 
     // --- Resolve which version to use --------------------------------------
     let (resolved_version, pin_source) =
         resolve_version(&state, contract_id, header_version, path_version).await?;
 
     // --- Fetch version row so we know its state (draft/stable/deprecated) --
-    let version_row = storage::get_version(&state.db, contract_id, &resolved_version, None).await?;
+    let version_row =
+        storage::get_version(&state.db, contract_id, &resolved_version, org_id).await?;
 
     tracing::debug!(
         contract_id = %contract_id,
