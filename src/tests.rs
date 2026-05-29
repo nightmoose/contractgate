@@ -2793,7 +2793,7 @@ metrics: []
             serde_json::json!([{ "field": "id", "rule": "required" }]),
             42,
             Some("203.0.113.7"),
-            "ingest",
+            "ingress",
         )
         .await
         .expect("seed quarantine row");
@@ -2805,9 +2805,29 @@ metrics: []
                 .await
                 .expect("read back quarantine id");
 
+        // replayed_into_audit_id is a FK to audit_log(id), so the two "audit
+        // rows a replay produced" must really exist. Seed them directly.
         let now = chrono::Utc::now();
         let audit_first = uuid::Uuid::new_v4();
         let audit_second = uuid::Uuid::new_v4();
+        for audit_id in [audit_first, audit_second] {
+            sqlx::query(
+                r#"
+                INSERT INTO audit_log
+                    (id, contract_id, org_id, contract_version, passed,
+                     violation_count, violation_details, raw_event,
+                     validation_us, source_ip, source, direction, created_at)
+                VALUES ($1, $2, $3, '1.0.0', true, 0, '[]'::jsonb,
+                        '{"id":"evt-1"}'::jsonb, 42, NULL, 'replay', 'ingress', NOW())
+                "#,
+            )
+            .bind(audit_id)
+            .bind(contract_id)
+            .bind(org)
+            .execute(&pool)
+            .await
+            .expect("seed audit row");
+        }
 
         // First replay wins the conditional UPDATE.
         let marked_first = super::super::storage::mark_quarantine_replayed_batch(
@@ -2852,9 +2872,14 @@ metrics: []
             "row must link to the winning (first) audit id, not the loser"
         );
 
-        // Cleanup: quarantine rows cascade with the contract; delete contract
-        // then org (see sibling tests for rationale).
+        // Cleanup. quarantine_events references audit_log, so delete quarantine
+        // rows first, then audit rows, then contract, then org.
         sqlx::query("DELETE FROM quarantine_events WHERE contract_id = $1")
+            .bind(contract_id)
+            .execute(&pool)
+            .await
+            .unwrap();
+        sqlx::query("DELETE FROM audit_log WHERE contract_id = $1")
             .bind(contract_id)
             .execute(&pool)
             .await

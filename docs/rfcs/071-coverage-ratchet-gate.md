@@ -36,6 +36,22 @@ fixed high bar.
   protection requires it) but does not block the main-branch deploy while the
   gate beds in. Promote it into `needs` once the baseline is trusted.
 
+## Reading the number (note for reviewers)
+
+The seeded baseline is **low on purpose** — expect roughly 30% line coverage,
+not 80%. This gate measures **only the deterministic, DB-free unit suite**, and
+ContractGate's largest modules are DB-bound (`storage.rs`, `ingest.rs`,
+`main.rs`, the CLI and scaffold trees) — their real coverage comes from the
+`#[ignore]`d integration tests that need a live Postgres (RFC-068), which this
+job deliberately does **not** run so the number stays stable across CI runs. So
+the figure is **not** a quality verdict on the codebase; it is a stable
+reference point the ratchet defends against backsliding. Judge a PR by whether
+it moves the number *down*, not by its absolute value.
+
+The authoritative value lives in `coverage-baseline.txt` (the file the gate
+reads), not in this document — intentionally, so it can't go stale as the
+ratchet bumps it.
+
 ## How the baseline is seeded
 
 The gate logic lives in `scripts/check-coverage.sh` (kept out of `ci.yml` so it
