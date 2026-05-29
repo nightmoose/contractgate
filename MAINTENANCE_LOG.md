@@ -2,6 +2,28 @@
 
 ---
 
+## Run: 2026-05-28 — RFC-072: Quarantine→replay race-guard test
+
+**Branch:** `nightly-maintenance-2026-05-28-rfc069-pure-fn-coverage`
+**Severity:** P3 — test hardening; no runtime impact
+**Addresses:** docs/reviews/test-hardening-handoff-2026-05-28.md — Task 3
+
+**What:** Added a self-seeding Class-1 DB test
+(`tests::org_scoping::quarantine_replay_race_guard`) for the untested race guard
+in `storage::mark_quarantine_replayed_batch`. Seeds an org+contract+pending
+quarantine row, calls the batch mark twice with two distinct audit ids, and
+asserts only the first wins the conditional UPDATE — the row is stamped
+`replayed` once and links to the winning audit id. Wired into the
+`migrations-check` named-test list (false-green guard bumped 3→4 passed).
+Inference happy-path coverage (the other Task 3 tail item) was investigated and
+skipped — all five formats already have happy-path tests.
+
+**Verify:** `bash scripts/test-db-up.sh` then
+`DATABASE_URL=… cargo test --bin contractgate-server -- --ignored --exact tests::org_scoping::quarantine_replay_race_guard`
+→ expect `1 passed; 0 failed`. No product/schema change.
+
+---
+
 ## Run: 2026-05-28 — RFC-071: Coverage ratchet gate
 
 **Branch:** `nightly-maintenance-2026-05-28-rfc069-pure-fn-coverage`

@@ -337,13 +337,14 @@ jobs:
           cargo test --bin contractgate-server -- --ignored --exact \
             tests::org_scoping::two_org_get_contract_isolation \
             tests::org_scoping::two_org_get_version_isolation \
+            tests::org_scoping::quarantine_replay_race_guard \
             tests::rfc053_ready_tests::ready_returns_200_live_db \
             2>&1 | tee /tmp/iso_test.out
           # Guard against the silent false-green: `cargo test` exits 0 even when
           # a filter matches zero tests (e.g. a future rename). Assert exactly
-          # the 3 expected tests actually ran.
-          if ! grep -qE '3 passed; 0 failed' /tmp/iso_test.out; then
-            echo "::error::Expected '3 passed; 0 failed' from the isolation/readiness tests — got something else. A test may have been renamed or skipped."
+          # the 4 expected tests actually ran.
+          if ! grep -qE '4 passed; 0 failed' /tmp/iso_test.out; then
+            echo "::error::Expected '4 passed; 0 failed' from the isolation/readiness tests — got something else. A test may have been renamed or skipped."
             exit 1
           fi
 

@@ -2727,6 +2727,149 @@ metrics: []
             .await
             .unwrap();
     }
+
+    /// RFC-072: the conditional UPDATE in `mark_quarantine_replayed_batch` is
+    /// the double-replay race guard. Two concurrent replays of the same source
+    /// row must result in at most one stamp; the loser sees the row already
+    /// `replayed` and is re-categorized as `already_replayed` by the handler.
+    ///
+    /// Self-seeding Class-1 test (RFC-068): seeds an org + contract + one
+    /// pending quarantine row, then calls the batch mark twice with two
+    /// distinct audit IDs. The first call must return the source ID (it won
+    /// the UPDATE); the second must return empty (status no longer
+    /// `pending`/`reviewed`). Verifies the persisted row is stamped exactly
+    /// once and links to the *first* audit ID.
+    #[tokio::test]
+    #[ignore = "requires DATABASE_URL and a live Supabase/Postgres instance"]
+    async fn quarantine_replay_race_guard() {
+        let db_url = std::env::var("DATABASE_URL").expect("DATABASE_URL must be set");
+        let pool = sqlx::PgPool::connect(&db_url).await.unwrap();
+
+        let org = uuid::Uuid::new_v4();
+
+        let minimal_yaml = r#"
+version: "1.0"
+name: "replay_race_test"
+description: "Replay race-guard test"
+ontology:
+  entities:
+    - name: id
+      type: string
+      required: true
+glossary: []
+metrics: []
+"#;
+
+        sqlx::query("INSERT INTO orgs (id, name, slug) VALUES ($1, $2, $3)")
+            .bind(org)
+            .bind("replay race test org")
+            .bind(format!("replay-race-{}", org.simple()))
+            .execute(&pool)
+            .await
+            .expect("seed org");
+
+        let (identity, _) = super::super::storage::create_contract(
+            &pool,
+            "replay_race_test",
+            None,
+            minimal_yaml,
+            Default::default(),
+            Some(org),
+        )
+        .await
+        .expect("seed contract");
+        let contract_id = identity.id;
+
+        // Seed one pending quarantine row. `quarantine_event` doesn't return
+        // the id, so read it back via list-by-contract through a direct SELECT.
+        super::super::storage::quarantine_event(
+            &pool,
+            contract_id,
+            "1.0.0",
+            super::super::transform::TransformedPayload::from_stored(
+                serde_json::json!({ "id": "evt-1" }),
+            ),
+            1,
+            serde_json::json!([{ "field": "id", "rule": "required" }]),
+            42,
+            Some("203.0.113.7"),
+            "ingest",
+        )
+        .await
+        .expect("seed quarantine row");
+
+        let (quar_id,): (uuid::Uuid,) =
+            sqlx::query_as("SELECT id FROM quarantine_events WHERE contract_id = $1")
+                .bind(contract_id)
+                .fetch_one(&pool)
+                .await
+                .expect("read back quarantine id");
+
+        let now = chrono::Utc::now();
+        let audit_first = uuid::Uuid::new_v4();
+        let audit_second = uuid::Uuid::new_v4();
+
+        // First replay wins the conditional UPDATE.
+        let marked_first = super::super::storage::mark_quarantine_replayed_batch(
+            &pool,
+            &[(quar_id, audit_first)],
+            now,
+        )
+        .await
+        .expect("first mark");
+        assert_eq!(
+            marked_first,
+            vec![quar_id],
+            "first replay should win the race and mark the row"
+        );
+
+        // Second replay loses: status is no longer pending/reviewed.
+        let marked_second = super::super::storage::mark_quarantine_replayed_batch(
+            &pool,
+            &[(quar_id, audit_second)],
+            now,
+        )
+        .await
+        .expect("second mark");
+        assert!(
+            marked_second.is_empty(),
+            "second replay must lose the race (no row marked), got: {:?}",
+            marked_second
+        );
+
+        // Persisted row is stamped once and links to the FIRST audit id.
+        let rows = super::super::storage::list_quarantine_by_ids(&pool, &[quar_id])
+            .await
+            .expect("list by id");
+        let row = rows
+            .into_iter()
+            .find(|r| r.id == quar_id)
+            .expect("row should exist");
+        assert_eq!(row.status, "replayed", "row should be stamped replayed");
+        assert_eq!(
+            row.replayed_into_audit_id,
+            Some(audit_first),
+            "row must link to the winning (first) audit id, not the loser"
+        );
+
+        // Cleanup: quarantine rows cascade with the contract; delete contract
+        // then org (see sibling tests for rationale).
+        sqlx::query("DELETE FROM quarantine_events WHERE contract_id = $1")
+            .bind(contract_id)
+            .execute(&pool)
+            .await
+            .unwrap();
+        sqlx::query("DELETE FROM contracts WHERE id = $1")
+            .bind(contract_id)
+            .execute(&pool)
+            .await
+            .unwrap();
+        sqlx::query("DELETE FROM orgs WHERE id = $1")
+            .bind(org)
+            .execute(&pool)
+            .await
+            .unwrap();
+    }
 }
 
 // ---------------------------------------------------------------------------
