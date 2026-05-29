@@ -40,6 +40,17 @@ nothing ever runs them.
 > server + external seed (API keys, contract IDs via env vars) — they belong in
 > the compose-smoke lane. Remaining work: stand those up there. See
 > `docs/rfcs/068-org-isolation-tests-in-ci.md`.
+>
+> **UPDATE 2026-05-28 (RFC-073): isolation guarantee now runs in CI.**
+> `cross_org_ingest_is_rejected` — the test that proves org B's key cannot POST
+> to org A's contract — is now wired into the compose-smoke lane, seeded by
+> `ops/postgres/seed/098_isolation_test.sql` (fixed-UUID orgs A+B, one contract
+> owned by A, one API key per org). This closes the headline "tenant isolation
+> never runs in CI" gap. Deferred follow-ups (each needs divergent extra seed):
+> `soft_delete_hides_from_list` (mutates state), `v1_ingest` round-trip/
+> idempotency/rate-limit, `expired_invite_rejected` (Supabase service role +
+> expired invite), `metrics`, `cli_push_pull`. See
+> `docs/rfcs/073-org-isolation-test-in-compose-smoke.md`.
 
 Add a job (or extend the existing `Migrations` job, which already has Postgres +
 applied migrations) that runs:

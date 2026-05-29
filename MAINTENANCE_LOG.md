@@ -2,6 +2,40 @@
 
 ---
 
+## Run: 2026-05-28 — RFC-073: Org-isolation test in compose-smoke lane
+
+**Branch:** `nightly-maintenance-2026-05-28-rfc069-pure-fn-coverage`
+**Severity:** P2 — closes the last "tenant isolation never runs in CI" gap
+**Addresses:** docs/reviews/test-hardening-handoff-2026-05-28.md — Task 1 (tail)
+
+**What:** Wired the cross-tenant isolation integration test
+(`tests/rfc_001_isolation.rs::integration::cross_org_ingest_is_rejected`) into
+the existing compose-smoke lane. Org B's API key POSTing to org A's contract
+must be rejected (403/404). New compose-only seed
+`ops/postgres/seed/098_isolation_test.sql` provides two orgs, one contract owned
+by A (+ stable version), and one API key per org (precomputed
+`base64(SHA-256(raw_key))` hashes; raw keys are throwaway fixtures in the smoke
+script). `tests/compose_demo_smoke.sh` exports `TEST_BASE_URL`/`TEST_API_KEY_A`/
+`TEST_API_KEY_B`/`TEST_CONTRACT_ID_A` and runs the one `--ignored --exact` test
+with a `1 passed; 0 failed` false-green guard. The test is read-only (asserts a
+rejection, never mutates) so it's safe against the shared smoke stack.
+
+Scoped to the single highest-value test; the other three Class-2 tests
+(`soft_delete_hides_from_list`, `v1_ingest` round-trips, `expired_invite_rejected`,
+`metrics`, `cli_push_pull`) are tracked as follow-ups in the RFC.
+
+**Verified here:** seed SQL parses (sqlglot, postgres dialect); every column
+referenced confirmed against migrations 006/007/012 (all later `api_keys` adds
+are nullable/defaulted); key→org auth uses `api_keys.org_id` directly (no
+`org_memberships` row needed); module path is `integration::`, not `tests::`.
+Could NOT run the stack (no docker/postgres in agent env).
+
+**Verify:** `bash tests/compose_demo_smoke.sh` → existing smoke assertions pass,
+then `1 passed; 0 failed` from the isolation test. No product/schema change; the
+new SQL is compose-only seed, never runs in real Supabase.
+
+---
+
 ## Run: 2026-05-28 — RFC-072: Quarantine→replay race-guard test
 
 **Branch:** `nightly-maintenance-2026-05-28-rfc069-pure-fn-coverage`
