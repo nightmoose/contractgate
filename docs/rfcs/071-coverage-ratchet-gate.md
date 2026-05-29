@@ -38,7 +38,7 @@ fixed high bar.
 
 ## Reading the number (note for reviewers)
 
-The seeded baseline is **low on purpose** — expect roughly 30% line coverage,
+The seeded baseline is **low on purpose** — expect roughly 40% line coverage,
 not 80%. This gate measures **only the deterministic, DB-free unit suite**, and
 ContractGate's largest modules are DB-bound (`storage.rs`, `ingest.rs`,
 `main.rs`, the CLI and scaffold trees) — their real coverage comes from the
