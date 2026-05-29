@@ -2,6 +2,131 @@
 
 ---
 
+## Run: 2026-05-28 — RFC-071: Coverage ratchet gate
+
+**Branch:** `nightly-maintenance-2026-05-28-rfc069-pure-fn-coverage`
+**Severity:** P3 — process/quality; no runtime impact
+**Addresses:** docs/reviews/test-hardening-handoff-2026-05-28.md — Task 2
+
+**What:** Added a `cargo-llvm-cov` coverage gate to CI with ratchet semantics
+(fail only on a *decrease* beyond tolerance vs a committed baseline — never a
+fixed high bar). Unit-tests only, so the number is deterministic (DB-backed
+tests run elsewhere). The `coverage` job is deliberately NOT in `deploy-fly`'s
+`needs` so a regression flags the PR without blocking the main deploy while the
+gate beds in.
+
+**Files:**
+- `scripts/check-coverage.sh` — measures `cargo llvm-cov --summary-only`, parses
+  the TOTAL *Lines* %, compares to `coverage-baseline.txt` with a 0.5pp
+  tolerance, auto-seeds the baseline when absent (non-blocking first land), and
+  ratchets the baseline up on improvement. Parser + all five gate paths (seed,
+  equal, regression, improvement, within-tolerance) verified locally with a
+  stubbed llvm-cov.
+- `.github/workflows/ci.yml` — new `coverage` job (llvm-tools-preview +
+  cargo-llvm-cov, runs the script, uploads baseline artifact).
+
+**ACTION REQUIRED (maintainer):** baseline not committed (cargo unavailable in
+this session). Seed once and commit to activate the ratchet:
+```
+cargo install cargo-llvm-cov --locked
+bash scripts/check-coverage.sh
+git add coverage-baseline.txt && git commit -m "RFC-071: seed coverage baseline"
+```
+Until committed, every CI run re-seeds from the ephemeral checkout (always
+green) — correct but inert.
+
+---
+
+## Run: 2026-05-28 — RFC-070: Org-scope tests for version-mutating storage fns
+
+**Branch:** `nightly-maintenance-2026-05-28-rfc069-pure-fn-coverage`
+**Severity:** P2 — write-side cross-tenant denial paths partially untested
+**Addresses:** docs/reviews/test-hardening-handoff-2026-05-28.md — Task 3 (storage org-scope)
+
+**Problem:** RFC-068's version-isolation test covered `get_version` and
+`promote_version` denial, but `patch_version_yaml`, `deprecate_version`, and
+`delete_version` carry the same `org_id` guard and had no wrong-org test — the
+write-side BOLA surface.
+
+**Fix (test-only):** Extended `org_scoping::two_org_get_version_isolation` with
+three org-B denial assertions (each expects `VersionNotFound`). Reuses the
+already-seeded org A contract/version; no new fixture, no CI change (the test
+runs by exact name in the RFC-068 CI step).
+
+**Verification:** `cargo test --bin contractgate-server -- --ignored --exact tests::org_scoping::two_org_get_version_isolation` against a migrated Postgres; `cargo test` unit suite.
+
+---
+
+## Run: 2026-05-28 — RFC-069: Unit coverage for untested pure functions
+
+**Branch:** `nightly-maintenance-2026-05-28-rfc069-pure-fn-coverage`
+**Severity:** P2 — silent correctness regressions in untested pure functions
+**Addresses:** docs/reviews/test-hardening-handoff-2026-05-28.md — Task 3 (auth, partial)
+
+**Problem:** Task 3 asks for critical-path coverage (auth first). Most auth is
+DB/network-backed (Class-1/2 lanes), but three pure functions had zero tests
+despite running in plain `cargo test`. The hottest:
+`jwt_auth::jwks_url_from_database_url` hand-parses two Supabase connection-string
+formats; a silent regression breaks all dashboard JWT auth at startup.
+
+**Fix (test-only, no product code):**
+- `src/jwt_auth.rs` — `jwks_url_from_database_url` cases: direct host, direct
+  host without `db.` prefix, pooler (`postgres.<ref>` username), non-Supabase
+  host → None, no-`@` → None, empty pooler ref → None. Plus `JwtAuthError`
+  Display wording locked for all four variants.
+- `src/storage.rs` — new `tests` mod covering `PublicationRow::is_revoked`
+  (true/false). `visibility_parsed` deliberately skipped — already covered via
+  `PublicationVisibility::FromStr` tests in `src/tests.rs`.
+
+**Verification:** `cargo test` (full unit suite). No schema/config/behavior change.
+
+**Follow-ups:** Task 2 coverage gate (`cargo-llvm-cov` ratchet); Task 3 storage
+org-scope guard tests (DB-backed, Class-1 lane); quarantine/replay + inference
+happy-path coverage.
+
+---
+
+## Run: 2026-05-28 — RFC-068: Run Org-Isolation DB Tests in CI
+
+**Branch:** `nightly-maintenance-2026-05-28-rfc068-isolation-ci`
+**Severity:** P1 — multi-tenant isolation asserted in code but never executed in CI
+**Addresses:** docs/reviews/test-hardening-handoff-2026-05-28.md — Task 1 (partial: self-contained subset)
+
+**Problem:** CI runs plain `cargo test`, which skips `#[ignore]`d tests — so the
+DB-backed org-isolation tests (the product's core guarantee) never ran on PRs.
+The handoff's "just add `cargo test -- --ignored`" was insufficient: the ignored
+tests split into self-contained (need only a migrated Postgres) and
+gateway-dependent (need a running server + external seed). Worse, even the
+self-contained two-org tests would have failed in bare CI — they create
+contracts with random org UUIDs but never seeded the `orgs` rows that
+`contracts.org_id` FK-references (migration 007); they implicitly relied on a
+pre-seeded dev DB.
+
+**Fix:**
+- `src/tests.rs` — `two_org_get_contract_isolation` and
+  `two_org_get_version_isolation` now insert their own `orgs(id,name,slug)` rows
+  before creating contracts and delete them in cleanup (slugs UUID-suffixed for
+  rerun safety). Runnable against any migrated Postgres, zero external seed.
+- `.github/workflows/ci.yml` — new step in `migrations-check` (after migrations
+  apply) runs the three self-contained ignored tests by name via
+  `cargo test --bin contractgate-server -- --ignored --exact …`, with a
+  `3 passed; 0 failed` assertion to defeat the silent-false-green that `cargo
+  test` produces when a name filter matches zero tests.
+
+**Deliberately out of scope:** gateway-dependent Class-2 tests
+(`rfc_001_isolation`, `v1_ingest`, `metrics`, `cli_push_pull`) — they belong to
+the compose-smoke lane, not the migrations job. Tracked as remaining handoff work.
+
+**Result:** a change that breaks org scoping in `storage.rs` now fails CI on the
+PR instead of shipping.
+
+**Docs:** STATUS.md updated; RFC at `docs/rfcs/068-org-isolation-tests-in-ci.md`.
+
+**Verification:** pending maintainer `cargo test` + the new explicit `--ignored`
+invocation against a migrated Postgres.
+
+---
+
 ## Run: 2026-05-28 — RFC-067: Request-Path Panic Hardening
 
 **Branch:** `nightly-maintenance-2026-05-28-rfc067-panic-hardening`

@@ -2501,6 +2501,20 @@ glossary: []
 metrics: []
 "#;
 
+        // Seed the two orgs. `contracts.org_id` is a FK to orgs(id) (migration
+        // 007), so the contract insert below fails without these rows. Seeding
+        // here makes the test runnable against any migrated Postgres with no
+        // external seed data (RFC-068).
+        for (org, slug) in [(org_a, "iso-test-a"), (org_b, "iso-test-b")] {
+            sqlx::query("INSERT INTO orgs (id, name, slug) VALUES ($1, $2, $3)")
+                .bind(org)
+                .bind("isolation test org")
+                .bind(format!("{slug}-{}", org.simple()))
+                .execute(&pool)
+                .await
+                .expect("seed org");
+        }
+
         // Org A creates a contract.
         let (identity, _) = super::super::storage::create_contract(
             &pool,
@@ -2575,9 +2589,17 @@ metrics: []
             .await
             .expect("dev mode (org_id=None) should serve unscoped");
 
-        // Cleanup: hard-delete the test row so reruns don't collide.
+        // Cleanup: delete the contract first, then the orgs. (Deleting the org
+        // would cascade to the contract via ON DELETE CASCADE, but we delete
+        // the contract explicitly so the intent is obvious and a future FK
+        // change can't silently leave orphan rows.)
         sqlx::query("DELETE FROM contracts WHERE id = $1")
             .bind(contract_id)
+            .execute(&pool)
+            .await
+            .unwrap();
+        sqlx::query("DELETE FROM orgs WHERE id = ANY($1)")
+            .bind(vec![org_a, org_b])
             .execute(&pool)
             .await
             .unwrap();
@@ -2605,6 +2627,18 @@ ontology:
 glossary: []
 metrics: []
 "#;
+
+        // Seed the two orgs (FK target for contracts.org_id, migration 007).
+        // See two_org_get_contract_isolation for rationale (RFC-068).
+        for (org, slug) in [(org_a, "iso-ver-a"), (org_b, "iso-ver-b")] {
+            sqlx::query("INSERT INTO orgs (id, name, slug) VALUES ($1, $2, $3)")
+                .bind(org)
+                .bind("isolation test org")
+                .bind(format!("{slug}-{}", org.simple()))
+                .execute(&pool)
+                .await
+                .expect("seed org");
+        }
 
         let (identity, _) = super::super::storage::create_contract(
             &pool,
@@ -2638,14 +2672,57 @@ metrics: []
             super::super::error::AppError::VersionNotFound { .. }
         ));
 
+        // Org B: write-side denials (RFC-070). Each of these guards via
+        // get_version(.., org_id) and must return VersionNotFound before any
+        // state check — a regression dropping org_id would let one tenant
+        // mutate/delete another tenant's version.
+        let err = super::super::storage::patch_version_yaml(
+            &pool,
+            contract_id,
+            "1.0.0",
+            minimal_yaml,
+            Some(org_b),
+        )
+        .await
+        .unwrap_err();
+        assert!(
+            matches!(err, super::super::error::AppError::VersionNotFound { .. }),
+            "org B patch_version_yaml should be VersionNotFound, got: {:?}",
+            err
+        );
+
+        let err =
+            super::super::storage::deprecate_version(&pool, contract_id, "1.0.0", Some(org_b))
+                .await
+                .unwrap_err();
+        assert!(
+            matches!(err, super::super::error::AppError::VersionNotFound { .. }),
+            "org B deprecate_version should be VersionNotFound, got: {:?}",
+            err
+        );
+
+        let err = super::super::storage::delete_version(&pool, contract_id, "1.0.0", Some(org_b))
+            .await
+            .unwrap_err();
+        assert!(
+            matches!(err, super::super::error::AppError::VersionNotFound { .. }),
+            "org B delete_version should be VersionNotFound, got: {:?}",
+            err
+        );
+
         // Org A: GET version succeeds.
         super::super::storage::get_version(&pool, contract_id, "1.0.0", Some(org_a))
             .await
             .expect("org A should still read its own version");
 
-        // Cleanup.
+        // Cleanup (contract first, then orgs — see sibling test).
         sqlx::query("DELETE FROM contracts WHERE id = $1")
             .bind(contract_id)
+            .execute(&pool)
+            .await
+            .unwrap();
+        sqlx::query("DELETE FROM orgs WHERE id = ANY($1)")
+            .bind(vec![org_a, org_b])
             .execute(&pool)
             .await
             .unwrap();

@@ -31,6 +31,16 @@ nothing ever runs them.
 
 ## Task 1 — Run DB-backed tests in CI
 
+> **UPDATE 2026-05-28 (RFC-068): partially addressed.** The *self-contained*
+> DB-backed tests now run in the `migrations-check` job:
+> `two_org_get_contract_isolation`, `two_org_get_version_isolation`, and
+> `ready_returns_200_live_db`. Note `cargo test -- --ignored` as written below
+> does **not** work for the rest: the gateway-dependent tests
+> (`rfc_001_isolation`, `v1_ingest`, `metrics`, `cli_push_pull`) need a running
+> server + external seed (API keys, contract IDs via env vars) — they belong in
+> the compose-smoke lane. Remaining work: stand those up there. See
+> `docs/rfcs/068-org-isolation-tests-in-ci.md`.
+
 Add a job (or extend the existing `Migrations` job, which already has Postgres +
 applied migrations) that runs:
 

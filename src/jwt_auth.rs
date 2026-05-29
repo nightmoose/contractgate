@@ -366,4 +366,81 @@ mod tests {
         let should_refresh3 = now3.saturating_sub(last3) >= 60;
         assert!(should_refresh3, "call after 60s window must be allowed");
     }
+
+    // -----------------------------------------------------------------------
+    // RFC-069: jwks_url_from_database_url — both connection-string formats
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn jwks_url_direct_format() {
+        let url = "postgresql://postgres:pw@db.abcdefgh.supabase.co:5432/postgres";
+        assert_eq!(
+            jwks_url_from_database_url(url).as_deref(),
+            Some("https://abcdefgh.supabase.co/auth/v1/.well-known/jwks.json")
+        );
+    }
+
+    #[test]
+    fn jwks_url_direct_without_db_prefix() {
+        // Host already lacks the `db.` prefix — used verbatim.
+        let url = "postgresql://postgres:pw@abcdefgh.supabase.co:5432/postgres";
+        assert_eq!(
+            jwks_url_from_database_url(url).as_deref(),
+            Some("https://abcdefgh.supabase.co/auth/v1/.well-known/jwks.json")
+        );
+    }
+
+    #[test]
+    fn jwks_url_pooler_format() {
+        // Project ref lives in the username: postgres.<ref>
+        let url =
+            "postgresql://postgres.abcdefgh:pw@aws-0-us-east-1.pooler.supabase.com:6543/postgres";
+        assert_eq!(
+            jwks_url_from_database_url(url).as_deref(),
+            Some("https://abcdefgh.supabase.co/auth/v1/.well-known/jwks.json")
+        );
+    }
+
+    #[test]
+    fn jwks_url_non_supabase_host_is_none() {
+        let url = "postgresql://user:pw@localhost:5432/contractgate";
+        assert_eq!(jwks_url_from_database_url(url), None);
+    }
+
+    #[test]
+    fn jwks_url_no_at_sign_is_none() {
+        // Malformed — no `@`, so there is no host segment to parse.
+        assert_eq!(jwks_url_from_database_url("postgresql://no-at-sign"), None);
+    }
+
+    #[test]
+    fn jwks_url_pooler_empty_ref_is_none() {
+        // Username is exactly `postgres.` → empty project ref → None.
+        let url = "postgresql://postgres.:pw@aws-0-us-east-1.pooler.supabase.com:6543/postgres";
+        assert_eq!(jwks_url_from_database_url(url), None);
+    }
+
+    // -----------------------------------------------------------------------
+    // RFC-069: JwtAuthError Display wording is locked
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn jwt_auth_error_display() {
+        assert_eq!(
+            JwtAuthError::InvalidToken("boom".into()).to_string(),
+            "invalid or expired JWT: boom"
+        );
+        assert_eq!(
+            JwtAuthError::InvalidSub.to_string(),
+            "JWT sub claim is not a valid UUID"
+        );
+        assert_eq!(
+            JwtAuthError::NoMatchingKey.to_string(),
+            "no JWK matched this token's kid/algorithm"
+        );
+        assert_eq!(
+            JwtAuthError::NoOrgMembership.to_string(),
+            "user has no org membership"
+        );
+    }
 }

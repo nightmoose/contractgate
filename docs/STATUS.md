@@ -78,6 +78,10 @@ signed off (may be planning docs or UI-only); **Draft** = under review;
 | 065 | [Ingest/Egress Contract-Scope Enforcement](rfcs/065-ingest-egress-contract-scope.md) | Accepted | `nightly-maintenance-2026-05-28-rfc065-ingest-egress-scope` |
 | 066 | [Remove Legacy env-var `API_KEY` Master Key](rfcs/066-remove-legacy-api-key.md) | Implemented | `nightly-maintenance-2026-05-28-rfc065-ingest-egress-scope` |
 | 067 | [Request-Path Panic Hardening](rfcs/067-request-path-panic-hardening.md) | Implemented | `nightly-maintenance-2026-05-28-rfc067-panic-hardening` |
+| 068 | [Run Org-Isolation DB Tests in CI](rfcs/068-org-isolation-tests-in-ci.md) | Implemented | `nightly-maintenance-2026-05-28-rfc068-isolation-ci` |
+| 069 | [Unit Coverage for Untested Pure Functions](rfcs/069-pure-fn-unit-coverage.md) | Implemented | `nightly-maintenance-2026-05-28-rfc069-pure-fn-coverage` |
+| 070 | [Org-Scope Tests for Version-Mutating Storage Fns](rfcs/070-version-mutation-org-scope-tests.md) | Implemented | `nightly-maintenance-2026-05-28-rfc069-pure-fn-coverage` |
+| 071 | [Coverage Ratchet Gate](rfcs/071-coverage-ratchet-gate.md) | Implemented | `nightly-maintenance-2026-05-28-rfc069-pure-fn-coverage` |
 
 ---
 
@@ -95,4 +99,4 @@ signed off (may be planning docs or UI-only); **Draft** = under review;
 
 ---
 
-*Last updated: 2026-05-28 — RFC-065 closes the ingest/egress cross-tenant authz gap (per-key `allowed_contract_ids` now enforced on all hot paths); RFC-066 removes the legacy env-var `API_KEY` master key (dev no-auth now gated on explicit `CONTRACTGATE_DEV_NO_AUTH=1`); RFC-067 converts six latent request-path panics (collaboration `expect`, replay `unwrap`) to clean 401 / graceful skip.*
+*Last updated: 2026-05-28 — RFC-065 closes the ingest/egress cross-tenant authz gap (per-key `allowed_contract_ids` now enforced on all hot paths); RFC-066 removes the legacy env-var `API_KEY` master key (dev no-auth now gated on explicit `CONTRACTGATE_DEV_NO_AUTH=1`); RFC-067 converts six latent request-path panics (collaboration `expect`, replay `unwrap`) to clean 401 / graceful skip; RFC-068 wires the self-contained org-isolation DB tests into CI (`migrations-check`) so cross-tenant scoping is enforced on every PR; RFC-069 adds unit coverage for the previously-untested pure auth helper `jwks_url_from_database_url` (both Supabase connection-string formats + `None` fallbacks), `PublicationRow::is_revoked`, and `JwtAuthError` Display; RFC-070 extends the org-isolation DB test to the write-side version-mutation BOLA surface (`patch_version_yaml`/`deprecate_version`/`delete_version` wrong-org → `VersionNotFound`); RFC-071 adds a `cargo-llvm-cov` ratchet coverage gate to CI (fails only on a drop beyond tolerance vs a committed baseline; non-blocking for deploy while it beds in).*
