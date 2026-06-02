@@ -256,7 +256,7 @@ fn parse_records(raw: &str) -> anyhow::Result<Vec<Result<Value, String>>> {
     match serde_json::from_str::<Value>(trimmed) {
         Ok(Value::Array(items)) => {
             // JSON array — each element is a record.
-            let results = items.into_iter().map(|v| Ok(v)).collect();
+            let results = items.into_iter().map(Ok).collect();
             return Ok(results);
         }
         Ok(obj @ Value::Object(_)) => {
