@@ -1,0 +1,213 @@
+# ContractGate reference stack (RFC-017, RFC-023).
+#
+# Default profile boots: gateway + Postgres + Prometheus + Grafana.
+# Optional profiles:
+#   --profile ui     additionally starts the Next.js dashboard (non-demo build)
+#   --profile demo   zero-auth demo: builds dashboard from source + seeder runs forever
+#   --profile kafka  additionally starts a Kafka broker (Bitnami Kafka 3.7)
+#
+# Quick start (RFC-023):
+#   make demo          # git clone && make demo — full zero-auth stack
+#   make demo-down     # tear down + wipe volumes
+#   make demo-reset    # wipe volumes + restart fresh
+#   make demo-logs     # follow all logs
+#
+# Manual:
+#   docker compose up                        # gateway stack, no seed data
+#   docker compose --profile ui up           # + dashboard (prod build, needs Supabase env)
+#   docker compose --profile demo up --build # zero-auth demo
+#
+# Grafana:    http://localhost:3002  (admin / admin)
+# Dashboard:  http://localhost:3000  (demo or ui profile)
+# Gateway:    http://localhost:8080
+#
+# NOTE: The Kafka speed-demo binary (cargo run --features demo --bin demo) uses
+# a separate compose file: docker-compose.kafka-demo.yml
+# See README for both files.
+
+services:
+  # ---------------------------------------------------------------------------
+  # Gateway — the validation engine HTTP server
+  # ---------------------------------------------------------------------------
+  gateway:
+    image: ghcr.io/contractgate/gateway:${TAG:-latest}
+    ports:
+      - "8080:8080"
+    environment:
+      # Override Dockerfile default (3001) so the gateway listens on the
+      # port the Compose stack maps + healthchecks. Keep aligned with
+      # RFC-017 onboarding URLs.
+      PORT: "8080"
+      DATABASE_URL: postgres://cg:cg@postgres/contractgate
+      # RFC-066: local/demo stack runs without auth. This is the ONLY way to
+      # disable auth now (the env-var master key was removed). Never set in prod.
+      CONTRACTGATE_DEV_NO_AUTH: "1"
+      # Leave blank to disable metrics auth (Prometheus scrapes unauthenticated).
+      # Set to a non-empty string to require `Authorization: Bearer <token>`.
+      METRICS_AUTH_TOKEN: ""
+      # RFC-050: CORS origin allowlist for the authenticated API surface.
+      # In demo/dev mode the dashboard runs at localhost:3000, which is the
+      # fallback when DASHBOARD_ORIGIN is unset, so leaving it unset here is
+      # intentional. Set explicitly in production deploys.
+      # DASHBOARD_ORIGIN: https://app.datacontractgate.com
+    depends_on:
+      postgres:
+        # Wait for Postgres to finish applying init-script migrations
+        # before booting — otherwise the cache-warmup query races the
+        # schema and logs "relation contract_versions does not exist".
+        condition: service_healthy
+    healthcheck:
+      # RFC-053: /ready runs SELECT 1 so the compose stack waits for a live DB
+      # connection before starting dependents.  /health stays as liveness only.
+      test: ["CMD", "curl", "-f", "http://localhost:8080/ready"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 10s
+    restart: unless-stopped
+
+  # ---------------------------------------------------------------------------
+  # Dashboard — Next.js frontend
+  #
+  # profile: ui    — prod build (requires NEXT_PUBLIC_SUPABASE_* env vars at
+  #                  build time; image must be pre-built or GHCR-published).
+  # profile: demo  — zero-auth demo build via NEXT_PUBLIC_DEMO_MODE=1.
+  #                  Built from source so no GHCR pull needed. First build
+  #                  ~2-3 min; layer cache makes subsequent runs instant.
+  # ---------------------------------------------------------------------------
+  dashboard:
+    profiles: [ui, demo]
+    build:
+      context: ./dashboard
+      args:
+        NEXT_PUBLIC_DEMO_MODE: "1"
+        NEXT_PUBLIC_API_URL: http://localhost:8080
+        NEXT_PUBLIC_API_KEY: cg_demo_key
+    ports:
+      - "3000:3000"
+    depends_on:
+      gateway:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # ---------------------------------------------------------------------------
+  # Postgres — primary data store
+  # ---------------------------------------------------------------------------
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: cg
+      POSTGRES_PASSWORD: cg
+      POSTGRES_DB: contractgate
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+      # First-boot init: a single shell wrapper applies every file in
+      # /migrations/ and then every file in /seed/, in numeric order.
+      # Keeps supabase/migrations/ pure schema (it never sees compose-only
+      # seed data) while still letting us insert a fixed-UUID demo org so
+      # POST /contracts succeeds without a real sign-up flow.
+      # Only runs when pg_data is empty; re-run via `docker compose down -v`.
+      - ./ops/postgres/initdb-wrapper.sh:/docker-entrypoint-initdb.d/00-init.sh:ro
+      - ./supabase/migrations:/migrations:ro
+      - ./ops/postgres/seed:/seed:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U cg -d contractgate"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+
+  # ---------------------------------------------------------------------------
+  # Prometheus — metrics scraper
+  # NOTE: /metrics endpoint is not yet implemented (RFC-016 ships it).
+  # Prometheus will scrape and receive 404 until RFC-016 lands.
+  # See ops/prometheus/prometheus.yml for the scrape config.
+  # ---------------------------------------------------------------------------
+  prometheus:
+    image: prom/prometheus:latest
+    volumes:
+      - ./ops/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    ports:
+      - "9090:9090"
+    restart: unless-stopped
+
+  # ---------------------------------------------------------------------------
+  # Grafana — dashboard viewer
+  # Pre-imports the RFC-016 dashboard via provisioning.
+  # Dashboard JSON stub at ops/grafana/contractgate.json — will be populated
+  # when RFC-016 lands.
+  # ---------------------------------------------------------------------------
+  grafana:
+    image: grafana/grafana:latest
+    ports:
+      # Host port 3002 → container 3000. Avoids the common conflict with
+      # local dev gateways (Dockerfile default PORT=3001) and dashboard
+      # dev servers that grab 3001. Update README/RFC if you change this.
+      - "3002:3000"
+    volumes:
+      - ./ops/grafana/provisioning/dashboards:/etc/grafana/provisioning/dashboards:ro
+      - ./ops/grafana/contractgate.json:/var/lib/grafana/dashboards/contractgate.json:ro
+      - grafana_data:/var/lib/grafana
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: admin
+      GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH: /var/lib/grafana/dashboards/contractgate.json
+    restart: unless-stopped
+
+  # ---------------------------------------------------------------------------
+  # Demo seeder (profile: demo)
+  # Publishes the three starter contracts to the gateway and posts ~3 000
+  # synthetic events (80% pass / 15% fail / 5% quarantine) at 10 events/sec
+  # for 5 minutes.  Exits when done.
+  # ---------------------------------------------------------------------------
+  demo-seeder:
+    image: ghcr.io/contractgate/gateway:${TAG:-latest}
+    # Stable name so smoke scripts can `docker inspect` it without going
+    # through `docker compose ps -q`, which has been flaky across compose
+    # versions when the service is in a profile.
+    container_name: cg-demo-seeder
+    profiles: [demo]
+    # Override Dockerfile ENTRYPOINT (= the gateway binary) so this service
+    # actually runs the seeder. Otherwise `command:` becomes args to
+    # `contractgate` and the gateway panics on missing DATABASE_URL.
+    entrypoint: ["/usr/local/bin/demo-seeder"]
+    # Compose substitutes ${VAR:-default} from the environment that invoked
+    # `docker compose up`, so the smoke scripts can override rate/duration
+    # via env vars (CI uses a 30s run to keep wall-clock short).
+    # Demo: low rate, no duration → runs forever so dashboard is always live.
+    # CI overrides via env: SEEDER_RATE=50 SEEDER_DURATION=30s.
+    command:
+      - --rate
+      - "${SEEDER_RATE:-3}"
+      - --duration
+      - "${SEEDER_DURATION:-}"
+    environment:
+      GATEWAY_URL: http://gateway:8080
+      CONTRACTGATE_API_KEY: ${CONTRACTGATE_API_KEY:-cg_demo_key}
+      # Fixed-UUID demo org seeded by ops/postgres/seed/099_demo_org.sql.
+      # Sent as `x-org-id` so POST /contracts succeeds in dev mode where
+      # `contracts.org_id` is NOT NULL but no API key is configured.
+      CONTRACTGATE_ORG_ID: ${CONTRACTGATE_ORG_ID:-cccccccc-cccc-cccc-cccc-cccccccccccc}
+    depends_on:
+      gateway:
+        condition: service_healthy
+
+  # ---------------------------------------------------------------------------
+  # Kafka broker (profile: kafka) — Bitnami KRaft-mode single node
+  # ---------------------------------------------------------------------------
+  kafka:
+    image: bitnami/kafka:3.7
+    profiles: [kafka]
+    ports:
+      - "9093:9092"
+    environment:
+      KAFKA_CFG_NODE_ID: 1
+      KAFKA_CFG_PROCESS_ROLES: controller,broker
+      KAFKA_CFG_LISTENERS: PLAINTEXT://:9092,CONTROLLER://:9093
+      KAFKA_CFG_ADVERTISED_LISTENERS: PLAINTEXT://localhost:9093
+      KAFKA_CFG_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT
+      KAFKA_CFG_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      KAFKA_CFG_CONTROLLER_LISTENER_NAMES: CONTROLLER
+
+volumes:
+  pg_data:
+  grafana_data:

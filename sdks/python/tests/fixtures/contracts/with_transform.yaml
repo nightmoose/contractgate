@@ -1,0 +1,15 @@
+version: "1.0"
+name: "user_events_pii"
+description: "User events with a mask transform on user_id"
+
+ontology:
+  entities:
+    - name: user_id
+      type: string
+      required: true
+      transform:
+        kind: mask
+        style: opaque
+    - name: event_type
+      type: string
+      required: true

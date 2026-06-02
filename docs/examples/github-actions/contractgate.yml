@@ -1,0 +1,80 @@
+---
+# ─────────────────────────────────────────────────────────────────────────────
+# REFERENCE WORKFLOW — NOT ACTIVE IN THIS REPO.
+#
+# This file is documentation: an example users can copy into their own repo
+# to validate + publish their contracts/ directory against a ContractGate
+# gateway. It does NOT live under .github/workflows/ on purpose — putting it
+# there would trigger on every PR touching contracts/** and fail until the
+# referenced CLI release tarball exists.
+#
+# To use:
+#   1. Copy this file to your repo at .github/workflows/contractgate.yml
+#   2. Set CONTRACTGATE_API_KEY in repository secrets
+#   3. Bump CONTRACTGATE_VERSION below to a published release tag
+# ─────────────────────────────────────────────────────────────────────────────
+#
+# What it does:
+#   validate job — parse + compile every contract YAML locally (no network).
+#   publish job  — push validated contracts to the ContractGate gateway
+#                  (runs only on pushes to main).
+#
+# ── Upgrading the CLI version ──────────────────────────────────────────────
+# Pin CONTRACTGATE_VERSION to a specific release tag (e.g. v0.1.0).
+# When a new ContractGate release is available, bump this value and review
+# the release notes for breaking changes before merging.
+# Do NOT use "latest" in the download URL — silent upgrades can break
+# validate/push behaviour without warning.
+
+name: contractgate
+
+on:
+  pull_request:
+    paths:
+      - 'contracts/**'
+  push:
+    branches:
+      - main
+    paths:
+      - 'contracts/**'
+
+env:
+  # Bump this to upgrade the CLI. Must match an existing release tag.
+  CONTRACTGATE_VERSION: "0.1.0"
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install contractgate
+        run: |
+          curl -sSL \
+            -H "Accept: application/octet-stream" \
+            -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+            "https://github.com/contractgate/contractgate/releases/download/v${CONTRACTGATE_VERSION}/contractgate-${CONTRACTGATE_VERSION}-x86_64-unknown-linux-gnu.tar.gz" \
+            | sudo tar xz -C /usr/local/bin
+
+      - name: Validate contracts
+        run: contractgate validate
+
+  publish:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: validate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install contractgate
+        run: |
+          curl -sSL \
+            -H "Accept: application/octet-stream" \
+            -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+            "https://github.com/contractgate/contractgate/releases/download/v${CONTRACTGATE_VERSION}/contractgate-${CONTRACTGATE_VERSION}-x86_64-unknown-linux-gnu.tar.gz" \
+            | sudo tar xz -C /usr/local/bin
+
+      - name: Push contracts
+        run: contractgate push
+        env:
+          CONTRACTGATE_API_KEY: ${{ secrets.CONTRACTGATE_API_KEY }}

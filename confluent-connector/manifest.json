@@ -1,0 +1,41 @@
+{
+  "name": "kafka-connect-contractgate",
+  "title": "ContractGate Semantic Validator",
+  "description": "Real-time semantic contract enforcement for Kafka Connect. Validates every record against a ContractGate contract before it reaches storage or AI systems. Invalid records are routed to a dead-letter topic; passing records continue downstream unchanged. Supports DLQ routing, tag-and-pass, per-field violation headers, dry-run mode, and contract version pinning.",
+  "version": "0.1.0",
+  "documentation_url": "https://app.datacontractgate.com/docs/kafka-connect",
+  "source_url": "https://github.com/datacontractgate/kafka-connect-contractgate",
+  "license": [
+    {
+      "name": "Apache License 2.0",
+      "url": "https://www.apache.org/licenses/LICENSE-2.0"
+    }
+  ],
+  "component_types": ["transform"],
+  "tags": [
+    "contractgate",
+    "data-quality",
+    "validation",
+    "governance",
+    "semantic-contract",
+    "dead-letter",
+    "smt",
+    "transform"
+  ],
+  "requirements": ["Java 11+", "Kafka Connect 2.8+"],
+  "owner": {
+    "username": "datacontractgate",
+    "name": "DataContractGate",
+    "url": "https://datacontractgate.com",
+    "logo": "https://datacontractgate.com/logo.png",
+    "type": "organization",
+    "verified": false
+  },
+  "features": {
+    "supported_encodings": ["any"],
+    "kafka_connect_api_version": "2",
+    "single_message_transforms": true,
+    "confluent_controlled_updates": false,
+    "license_required": false
+  }
+}

@@ -1,0 +1,86 @@
+{
+  "_note": "Snapshot of public.contracts taken 2026-04-20 just before migration 003 TRUNCATE. Use yaml_content of any row you want to re-import via the dashboard/API after migrations 003-005 apply. Event-row tables (audit_log, quarantine_events, forwarded_events) are NOT backed up — they're disposable test traffic.",
+  "contracts": [
+    {
+      "id": "a1b2c3d4-0000-0000-0000-000000000001",
+      "name": "user_events_test",
+      "version": "1.0",
+      "active": true,
+      "created_at": "2026-04-14T19:36:02.665722Z",
+      "yaml_content": "version: \"1.0\"\nname: \"user_events_test\"\ndescription: \"Smoke-test contract\"\n\nontology:\n  entities:\n    - name: user_id\n      type: string\n      required: true\n      pattern: \"^[a-zA-Z0-9_-]+$\"\n    - name: event_type\n      type: string\n      required: true\n      enum: [\"click\", \"view\", \"purchase\", \"login\"]\n    - name: timestamp\n      type: integer\n      required: true\n      min: 0\n    - name: amount\n      type: number\n      required: false\n      min: 0\n\nglossary:\n  - field: amount\n    description: \"Monetary amount in USD\"\n    constraints: \"must be non-negative\"\n\nmetrics:\n  - name: total_revenue\n    formula: \"sum(amount) where event_type = 'purchase'\"\n"
+    },
+    {
+      "id": "d92e3c9a-bbaf-4609-bf47-a6620ddf2a0d",
+      "name": "user_events_test",
+      "version": "1.0",
+      "active": true,
+      "created_at": "2026-04-14T22:13:39.577979Z",
+      "_note": "duplicate of a1b2c3d4 — seeded/replayed",
+      "yaml_content": "version: \"1.0\"\nname: \"user_events_test\"\ndescription: \"Smoke-test contract\"\n\nontology:\n  entities:\n    - name: user_id\n      type: string\n      required: true\n      pattern: \"^[a-zA-Z0-9_-]+$\"\n    - name: event_type\n      type: string\n      required: true\n      enum: [\"click\", \"view\", \"purchase\", \"login\"]\n    - name: timestamp\n      type: integer\n      required: true\n      min: 0\n    - name: amount\n      type: number\n      required: false\n      min: 0\n\nglossary:\n  - field: amount\n    description: \"Monetary amount in USD\"\n    constraints: \"must be non-negative\"\n\nmetrics:\n  - name: total_revenue\n    formula: \"sum(amount) where event_type = 'purchase'\"\n\n"
+    },
+    {
+      "id": "55f14dab-587e-4d75-bbf8-67cf63cae4be",
+      "name": "user_events_test",
+      "version": "1.0",
+      "active": true,
+      "created_at": "2026-04-14T22:14:00.219716Z",
+      "_note": "duplicate — smoke test run",
+      "yaml_content": "version: \"1.0\"\nname: \"user_events_test\"\ndescription: \"Smoke-test contract\"\n\nontology:\n  entities:\n    - name: user_id\n      type: string\n      required: true\n      pattern: \"^[a-zA-Z0-9_-]+$\"\n    - name: event_type\n      type: string\n      required: true\n      enum: [\"click\", \"view\", \"purchase\", \"login\"]\n    - name: timestamp\n      type: integer\n      required: true\n      min: 0\n    - name: amount\n      type: number\n      required: false\n      min: 0\n\nglossary:\n  - field: amount\n    description: \"Monetary amount in USD\"\n    constraints: \"must be non-negative\"\n\nmetrics:\n  - name: total_revenue\n    formula: \"sum(amount) where event_type = 'purchase'\"\n\n"
+    },
+    {
+      "id": "d77607cc-891e-49d9-9ced-b2675a63bdb3",
+      "name": "user_events_test",
+      "version": "1.0",
+      "active": true,
+      "created_at": "2026-04-15T01:23:05.3795Z",
+      "_note": "duplicate",
+      "yaml_content": "version: \"1.0\"\nname: \"user_events_test\"\ndescription: \"Smoke-test contract\"\n\nontology:\n  entities:\n    - name: user_id\n      type: string\n      required: true\n      pattern: \"^[a-zA-Z0-9_-]+$\"\n    - name: event_type\n      type: string\n      required: true\n      enum: [\"click\", \"view\", \"purchase\", \"login\"]\n    - name: timestamp\n      type: integer\n      required: true\n      min: 0\n    - name: amount\n      type: number\n      required: false\n      min: 0\n\nglossary:\n  - field: amount\n    description: \"Monetary amount in USD\"\n    constraints: \"must be non-negative\"\n\nmetrics:\n  - name: total_revenue\n    formula: \"sum(amount) where event_type = 'purchase'\"\n\n"
+    },
+    {
+      "id": "8c166372-ee30-42e4-9245-0e4a9f1f7412",
+      "name": "demo_sales",
+      "version": "1.0",
+      "active": true,
+      "created_at": "2026-04-16T03:33:49.117361Z",
+      "updated_at": "2026-04-16T04:27:33.673413Z",
+      "yaml_content": "version: \"1.0\"\nname: \"demo_sales\"\nontology:\n  entities:\n    - name: customer_id\n      type: string\n      required: true\n    - name: revenue\n      type: float\n      required: true\n      min: 0\n    - name: event_type\n      type: string\n      required: true\n    - name: timestamp\n      type: integer\n      required: true"
+    },
+    {
+      "id": "035fdd4d-de71-481e-8705-ea5be49565db",
+      "name": "user_events_test",
+      "version": "1.0",
+      "active": true,
+      "created_at": "2026-04-17T19:43:33.191401Z",
+      "_note": "duplicate",
+      "yaml_content": "version: \"1.0\"\nname: \"user_events_test\"\ndescription: \"Smoke-test contract\"\n\nontology:\n  entities:\n    - name: user_id\n      type: string\n      required: true\n      pattern: \"^[a-zA-Z0-9_-]+$\"\n    - name: event_type\n      type: string\n      required: true\n      enum: [\"click\", \"view\", \"purchase\", \"login\"]\n    - name: timestamp\n      type: integer\n      required: true\n      min: 0\n    - name: amount\n      type: number\n      required: false\n      min: 0\n\nglossary:\n  - field: amount\n    description: \"Monetary amount in USD\"\n    constraints: \"must be non-negative\"\n\nmetrics:\n  - name: total_revenue\n    formula: \"sum(amount) where event_type = 'purchase'\"\n\n"
+    },
+    {
+      "id": "07f17e70-b47e-455e-9f1b-48d0b0dccac5",
+      "name": "user_events_test",
+      "version": "1.0",
+      "active": true,
+      "created_at": "2026-04-17T20:04:43.199681Z",
+      "_note": "duplicate",
+      "yaml_content": "version: \"1.0\"\nname: \"user_events_test\"\ndescription: \"Smoke-test contract\"\n\nontology:\n  entities:\n    - name: user_id\n      type: string\n      required: true\n      pattern: \"^[a-zA-Z0-9_-]+$\"\n    - name: event_type\n      type: string\n      required: true\n      enum: [\"click\", \"view\", \"purchase\", \"login\"]\n    - name: timestamp\n      type: integer\n      required: true\n      min: 0\n    - name: amount\n      type: number\n      required: false\n      min: 0\n\nglossary:\n  - field: amount\n    description: \"Monetary amount in USD\"\n    constraints: \"must be non-negative\"\n\nmetrics:\n  - name: total_revenue\n    formula: \"sum(amount) where event_type = 'purchase'\"\n\n"
+    },
+    {
+      "id": "7b55193f-08d7-4dc9-8bbb-8dd765c56b52",
+      "name": "my_contract",
+      "version": "1.0",
+      "active": false,
+      "created_at": "2026-04-20T18:28:00.730264Z",
+      "updated_at": "2026-04-20T18:28:58.662627Z",
+      "_note": "draft from today's PII-test session — has compliance_mode:true and mask on event_type",
+      "yaml_content": "version: \"1.0\"\nname: \"my_contract\"\ncompliance_mode: true\n\nontology:\n  entities:\n    - name: user_id\n      type: string\n      required: true\n      pattern: \"^[a-zA-Z0-9_-]{3,64}$\"\n    - name: event_type\n      type: string\n      required: true\n      enum:\n        - \"click\"\n        - \"view\"\n        - \"purchase\"\n      transform:\n        kind: mask\n    - name: timestamp\n      type: integer\n      required: true\n      min: 0\n\nglossary:\n  - field: \"user_id\"\n    description: \"Unique user identifier\"\n  - field: \"event_type\"\n    description: \"Type of user interaction\"\n  - field: \"timestamp\"\n    description: \"Unix timestamp in seconds\"\n\nmetrics: []\n"
+    },
+    {
+      "id": "1fd62328-318c-41aa-a71c-21aac10d0dab",
+      "name": "my_contract",
+      "version": "1.1",
+      "active": true,
+      "created_at": "2026-04-20T18:28:53.401338Z",
+      "_note": "ACTIVE — this is the contract from today's PII-masking test; mask on user_id only",
+      "yaml_content": "version: \"1.1\"\nname: \"my_contract\"\n\nontology:\n  entities:\n    - name: user_id\n      type: string\n      required: true\n      pattern: \"^[a-zA-Z0-9_-]{3,64}$\"\n      transform:\n        kind: mask\n    - name: event_type\n      type: string\n      required: true\n      enum:\n        - \"click\"\n        - \"view\"\n        - \"purchase\"\n    - name: timestamp\n      type: integer\n      required: true\n      min: 0\n\nglossary:\n  - field: \"user_id\"\n    description: \"Unique user identifier\"\n  - field: \"event_type\"\n    description: \"Type of user interaction\"\n  - field: \"timestamp\"\n    description: \"Unix timestamp in seconds\"\n\nmetrics: []\n"
+    }
+  ]
+}

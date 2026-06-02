@@ -1,0 +1,24 @@
+# flyctl launch added from .gitignore
+# Rust
+**/target
+
+# Environment
+**/.env
+**/.env.local
+
+# Node / Next.js
+**/dashboard/node_modules
+**/dashboard/.next
+**/dashboard/out
+**/dashboard/.env.local
+**/dashboard/.env
+
+# OS
+**/.DS_Store
+**/*.swp
+**/*.swo
+
+# Editor
+**/.vscode
+**/.idea
+fly.toml

@@ -4,16 +4,63 @@
 //! returns either `ValidationResult::Pass` or `ValidationResult::Fail` with a
 //! detailed list of `Violation` structs.
 //!
-//! Design goals:
+//! ### Two-stage shape
+//!
+//! Validation is split into a **compile-once** stage and a **validate-many**
+//! stage so per-event work stays cheap:
+//!
+//!   1. [`CompiledContract::compile_with_salt`] runs at contract-load time.
+//!      It parses every `pattern` regex, indexes the declared top-level field
+//!      names (for compliance-mode O(1) lookup), and binds the per-contract
+//!      `pii_salt` so transforms have keying material.  This is the only stage
+//!      that can fail with a contract-error; once compiled, [`validate`]
+//!      cannot panic.
+//!   2. [`validate`] runs per inbound event.  It does no I/O, no allocation
+//!      of regexes, and no parsing of contract YAML.  The compiled contract
+//!      is shared by `Arc`, so callers can fan out parallel validations
+//!      across rayon (see `ingest.rs`) without contention.
+//!
+//! ### Per-event pipeline order
+//!
+//! Within a single [`validate`] call, checks run in this fixed order so the
+//! resulting `violations` vec is stable and operator-triagable:
+//!
+//!   1. **Ontology fields** — required/type/pattern/enum/range/length, walked
+//!      recursively for nested object fields.
+//!   2. **Metric definitions** — declared in `metrics:`, currently only the
+//!      `min`/`max` envelope (formula evaluation lands later).
+//!   3. **Compliance-mode undeclared fields** (RFC-004) — only runs when the
+//!      resolved contract version opted in, and is intentionally last so the
+//!      "fix your ontology errors first" violations come before the "stray
+//!      field" violations in the response.
+//!
+//! ### What lives elsewhere
+//!
+//! - **PII transforms** (`hash`, `mask:format_preserving`, etc.) live in
+//!   `transform.rs`.  Validation is read-only; transforms are applied to a
+//!   *clone* of the event on the ingest side and are what gets persisted.
+//!   Compile-time only: this module rejects contracts that put a transform
+//!   on a non-string field (see [`validate_transform_types`]).
+//! - **Version resolution + fallback** lives in `ingest.rs`.  The validator
+//!   sees a single `CompiledContract` and has no notion of "is this stable
+//!   or deprecated"; that decision is made before we get here.
+//!
+//! ### Design goals
+//!
 //!   - Zero heap allocations in the hot path wherever possible
 //!   - All regex compiled once at contract load time (cached via `CompiledContract`)
 //!   - Sub-15 ms p99 for typical event sizes on modest hardware
 //!   - Clear, actionable violation messages for data engineers
+//!   - `validate()` is total: any input shape produces a `ValidationResult`,
+//!     never a panic or `Result::Err`.
 
-use crate::contract::{Contract, FieldDefinition, FieldType, MetricDefinition};
+use crate::contract::{
+    Contract, EnvelopeConfig, FieldDefinition, FieldType, MetricDefinition, QualityRule,
+    QualityRuleType,
+};
 use regex::Regex;
 use serde_json::Value;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 // ---------------------------------------------------------------------------
 // Public result types
@@ -50,7 +97,60 @@ pub enum ViolationKind {
     RangeViolation,
     LengthViolation,
     MetricRangeViolation,
+    #[allow(dead_code)]
     UnknownField,
+    /// RFC-004 compliance-mode violation: an inbound event contained a
+    /// field name that is not declared in the contract's ontology.  Only
+    /// raised when the resolved version has `compliance_mode = true`.
+    UndeclaredField,
+    /// RFC-030 egress leakage violation: an outbound payload contained a
+    /// field not declared in the contract's ontology when
+    /// `egress_leakage_mode = fail`.  The field is stripped from the
+    /// response regardless of the RFC-029 disposition.
+    LeakageViolation,
+    /// Quality rule: field is null, missing when expected, or (for strings)
+    /// an empty string.  Emitted by `rule_type: completeness` checks.
+    CompletenessViolation,
+    /// Quality rule: field value is older than `max_age_seconds` relative to
+    /// the ingest wall-clock time.  Emitted by `rule_type: freshness` checks.
+    FreshnessViolation,
+    /// Quality rule: field value appears more than once in the same ingest
+    /// batch.  Emitted by `rule_type: uniqueness` checks.
+    UniquenessViolation,
+}
+
+// ---------------------------------------------------------------------------
+// Batch result types (RFC-038 envelope path)
+// ---------------------------------------------------------------------------
+
+/// A single per-record violation entry in a `BatchValidationResult`.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct BatchRecordViolation {
+    /// Zero-based index of the offending record in the unwrapped array.
+    pub record_index: usize,
+    /// Dot-separated field path within that record.
+    pub field: String,
+    /// Human-readable explanation.
+    pub message: String,
+    /// Machine-readable violation kind.
+    pub kind: ViolationKind,
+}
+
+/// The outcome of validating a batch envelope (`{ data: [...], ... }`).
+///
+/// Returned by [`validate_envelope_batch`] when a contract declares an
+/// `envelope` stanza.  Each record is validated independently; the batch
+/// result aggregates the pass/quarantine split and surfaces per-record
+/// violation detail with `record_index` so callers can identify exactly
+/// which rows failed.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct BatchValidationResult {
+    pub passed: usize,
+    pub quarantined: usize,
+    /// Per-record violations.  Empty when all records pass.
+    pub violations: Vec<BatchRecordViolation>,
+    /// Wall-clock duration of the full batch validation in microseconds.
+    pub validation_us: u64,
 }
 
 // ---------------------------------------------------------------------------
@@ -59,19 +159,60 @@ pub enum ViolationKind {
 
 /// A `Contract` with expensive operations (regex compilation) done once.
 /// Re-use across many `validate()` calls for maximum throughput.
+#[derive(Debug)]
 pub struct CompiledContract {
     pub contract: Contract,
     /// field_name → compiled regex (for ontology fields with `pattern`)
     pub patterns: HashMap<String, Regex>,
+    /// RFC-004: per-contract 32-byte salt for the hash + format-preserving
+    /// mask transforms.  Loaded from `contracts.pii_salt` on the identity
+    /// row; `compile()` with no salt defaults to an empty `Vec<u8>` which
+    /// is valid for any contract that does not declare a `hash` or
+    /// `format_preserving` transform (the transform engine only reads this
+    /// when it actually needs keying material).
+    pub pii_salt: Vec<u8>,
+    /// RFC-004: the set of top-level field names declared in the ontology,
+    /// cached here so the compliance-mode undeclared-field check is an
+    /// O(1) HashSet lookup per incoming field rather than an O(n) scan.
+    /// Empty when `contract.compliance_mode == false` (the validator
+    /// short-circuits the check, so the set is never consulted).
+    pub declared_top_level_fields: HashSet<String>,
 }
 
 impl CompiledContract {
-    /// Compile all regex patterns in the contract.
-    /// Returns an error if any pattern is invalid.
+    /// Compile all regex patterns in the contract with no PII salt.
+    /// Backwards-compatible entry point used by unit tests and any call
+    /// site that pre-dates RFC-004.  For production paths that serve
+    /// ingest traffic, use `compile_with_salt` so hash + format-preserving
+    /// transforms are keyed correctly.
     pub fn compile(contract: Contract) -> anyhow::Result<Self> {
+        Self::compile_with_salt(contract, Vec::new())
+    }
+
+    /// Compile with an explicit per-contract salt loaded from
+    /// `contracts.pii_salt`.  This is the production entry point.
+    pub fn compile_with_salt(contract: Contract, pii_salt: Vec<u8>) -> anyhow::Result<Self> {
         let mut patterns = HashMap::new();
         compile_field_patterns(&contract.ontology.entities, "", &mut patterns)?;
-        Ok(CompiledContract { contract, patterns })
+        validate_transform_types(&contract.ontology.entities, "")?;
+
+        let declared_top_level_fields = if contract.compliance_mode {
+            contract
+                .ontology
+                .entities
+                .iter()
+                .map(|f| f.name.clone())
+                .collect()
+        } else {
+            HashSet::new()
+        };
+
+        Ok(CompiledContract {
+            contract,
+            patterns,
+            pii_salt,
+            declared_top_level_fields,
+        })
     }
 }
 
@@ -89,8 +230,9 @@ fn compile_field_patterns(
         };
 
         if let Some(pattern) = &field.pattern {
-            let re = Regex::new(pattern)
-                .map_err(|e| anyhow::anyhow!("Invalid regex '{}' for field '{}': {}", pattern, path, e))?;
+            let re = Regex::new(pattern).map_err(|e| {
+                anyhow::anyhow!("Invalid regex '{}' for field '{}': {}", pattern, path, e)
+            })?;
             out.insert(path.clone(), re);
         }
 
@@ -98,6 +240,37 @@ fn compile_field_patterns(
         if field.field_type == FieldType::Object {
             if let Some(props) = &field.properties {
                 compile_field_patterns(props, &path, out)?;
+            }
+        }
+    }
+    Ok(())
+}
+
+/// RFC-004: reject contracts that declare a `transform` on any non-string
+/// entity.  Applying `hash` / `mask` to a number or boolean is either a
+/// type error at runtime OR silently coerces through JSON, both of which
+/// produce surprises in prod — reject at contract-compile time instead.
+/// Numeric PII (account numbers, etc.) should be typed as `string` in the
+/// contract.
+fn validate_transform_types(fields: &[FieldDefinition], prefix: &str) -> anyhow::Result<()> {
+    for field in fields {
+        let path = if prefix.is_empty() {
+            field.name.clone()
+        } else {
+            format!("{}.{}", prefix, field.name)
+        };
+
+        if field.transform.is_some() && field.field_type != FieldType::String {
+            return Err(anyhow::anyhow!(
+                "Field '{}' declares a PII transform but has type '{:?}' — transforms are only supported on string fields. If this field holds PII, change its type to 'string'.",
+                path,
+                field.field_type
+            ));
+        }
+
+        if field.field_type == FieldType::Object {
+            if let Some(props) = &field.properties {
+                validate_transform_types(props, &path)?;
             }
         }
     }
@@ -115,7 +288,7 @@ pub fn validate(compiled: &CompiledContract, event: &Value) -> ValidationResult 
     let t0 = std::time::Instant::now();
     let mut violations = Vec::new();
 
-    let obj = match event.as_object() {
+    let _obj = match event.as_object() {
         Some(o) => o,
         None => {
             return ValidationResult {
@@ -144,6 +317,50 @@ pub fn validate(compiled: &CompiledContract, event: &Value) -> ValidationResult 
         validate_metric(metric, event, &mut violations);
     }
 
+    // 3. Per-event quality rules (completeness, validity, freshness).
+    //    Uniqueness is batch-level and handled separately in ingest.rs.
+    for rule in &compiled.contract.quality {
+        match rule.rule_type {
+            QualityRuleType::Completeness => {
+                check_completeness(rule, event, &mut violations);
+            }
+            QualityRuleType::Validity => {
+                // Validity is already covered by the ontology field checks above.
+                // No extra violation is emitted — this rule type is purely
+                // declarative / scoring.
+            }
+            QualityRuleType::Freshness => {
+                check_freshness(rule, event, &mut violations);
+            }
+            QualityRuleType::Uniqueness => {
+                // Batch-level — skip in per-event path.
+            }
+        }
+    }
+
+    // 4. RFC-004: compliance-mode undeclared-field check.  Runs last so
+    //    undeclared-field violations appear after the standard
+    //    missing/mismatched-field violations in the response — which
+    //    matches how operators typically triage ("fix my ontology
+    //    errors before you worry about stray fields").  Only runs when
+    //    the resolved version opted in.
+    if compiled.contract.compliance_mode {
+        if let Some(obj) = event.as_object() {
+            for field_name in obj.keys() {
+                if !compiled.declared_top_level_fields.contains(field_name) {
+                    violations.push(Violation {
+                        field: field_name.clone(),
+                        message: format!(
+                            "Field '{}' is not declared in the contract ontology. Compliance mode rejects undeclared fields.",
+                            field_name
+                        ),
+                        kind: ViolationKind::UndeclaredField,
+                    });
+                }
+            }
+        }
+    }
+
     let validation_us = t0.elapsed().as_micros() as u64;
     let passed = violations.is_empty();
 
@@ -151,6 +368,211 @@ pub fn validate(compiled: &CompiledContract, event: &Value) -> ValidationResult 
         passed,
         violations,
         validation_us,
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Envelope batch validation (RFC-038)
+// ---------------------------------------------------------------------------
+
+/// Validate a raw API envelope payload against a contract that declares an
+/// `envelope` stanza.
+///
+/// Steps:
+///   1. Confirm the payload is a JSON object.
+///   2. If `envelope.validate_wrapper`, check `success: bool` and `pagination`
+///      shape are present and well-formed.
+///   3. Extract the array at `envelope.records_path`; error if absent or not
+///      an array.
+///   4. Validate each element of the array with [`validate`]; accumulate
+///      per-record violations with their zero-based `record_index`.
+///
+/// Always returns a `BatchValidationResult` — never panics.
+pub fn validate_envelope_batch(
+    compiled: &CompiledContract,
+    cfg: &EnvelopeConfig,
+    payload: &Value,
+) -> BatchValidationResult {
+    let t0 = std::time::Instant::now();
+
+    let obj = match payload.as_object() {
+        Some(o) => o,
+        None => {
+            return BatchValidationResult {
+                passed: 0,
+                quarantined: 1,
+                violations: vec![BatchRecordViolation {
+                    record_index: 0,
+                    field: "<root>".into(),
+                    message: "Envelope payload must be a JSON object".into(),
+                    kind: ViolationKind::TypeMismatch,
+                }],
+                validation_us: t0.elapsed().as_micros() as u64,
+            };
+        }
+    };
+
+    let mut wrapper_violations: Vec<BatchRecordViolation> = Vec::new();
+
+    // ── Optional wrapper validation ─────────────────────────────────────────
+    if cfg.validate_wrapper {
+        // `success` must be a boolean
+        match obj.get("success") {
+            None => wrapper_violations.push(BatchRecordViolation {
+                record_index: 0,
+                field: "success".into(),
+                message: "Wrapper field 'success' is missing".into(),
+                kind: ViolationKind::MissingRequiredField,
+            }),
+            Some(v) if !v.is_boolean() => wrapper_violations.push(BatchRecordViolation {
+                record_index: 0,
+                field: "success".into(),
+                message: format!(
+                    "Wrapper field 'success' must be boolean, got {}",
+                    json_type_name(v)
+                ),
+                kind: ViolationKind::TypeMismatch,
+            }),
+            _ => {}
+        }
+
+        // `pagination` must be an object with page/limit/total (integers) and hasMore (bool)
+        match obj.get("pagination") {
+            None => {} // absent pagination is acceptable — some endpoints omit it
+            Some(p) => match p.as_object() {
+                None => wrapper_violations.push(BatchRecordViolation {
+                    record_index: 0,
+                    field: "pagination".into(),
+                    message: format!(
+                        "Wrapper field 'pagination' must be an object, got {}",
+                        json_type_name(p)
+                    ),
+                    kind: ViolationKind::TypeMismatch,
+                }),
+                Some(pg) => {
+                    for int_field in &["page", "limit", "total"] {
+                        match pg.get(*int_field) {
+                            None => wrapper_violations.push(BatchRecordViolation {
+                                record_index: 0,
+                                field: format!("pagination.{}", int_field),
+                                message: format!(
+                                    "Wrapper pagination field '{}' is missing",
+                                    int_field
+                                ),
+                                kind: ViolationKind::MissingRequiredField,
+                            }),
+                            Some(v) if !v.is_number() => {
+                                wrapper_violations.push(BatchRecordViolation {
+                                    record_index: 0,
+                                    field: format!("pagination.{}", int_field),
+                                    message: format!(
+                                        "Wrapper pagination field '{}' must be a number, got {}",
+                                        int_field,
+                                        json_type_name(v)
+                                    ),
+                                    kind: ViolationKind::TypeMismatch,
+                                })
+                            }
+                            _ => {}
+                        }
+                    }
+                    if let Some(has_more) = pg.get("hasMore") {
+                        if !has_more.is_boolean() {
+                            wrapper_violations.push(BatchRecordViolation {
+                                record_index: 0,
+                                field: "pagination.hasMore".into(),
+                                message: format!(
+                                    "Wrapper pagination field 'hasMore' must be boolean, got {}",
+                                    json_type_name(has_more)
+                                ),
+                                kind: ViolationKind::TypeMismatch,
+                            });
+                        }
+                    }
+                }
+            },
+        }
+    }
+
+    // ── Extract records array ────────────────────────────────────────────────
+    let records = match obj.get(&cfg.records_path) {
+        None => {
+            let mut violations = wrapper_violations;
+            violations.push(BatchRecordViolation {
+                record_index: 0,
+                field: cfg.records_path.clone(),
+                message: format!("Envelope key '{}' is missing", cfg.records_path),
+                kind: ViolationKind::MissingRequiredField,
+            });
+            return BatchValidationResult {
+                passed: 0,
+                quarantined: 1,
+                violations,
+                validation_us: t0.elapsed().as_micros() as u64,
+            };
+        }
+        Some(v) => match v.as_array() {
+            None => {
+                let mut violations = wrapper_violations;
+                violations.push(BatchRecordViolation {
+                    record_index: 0,
+                    field: cfg.records_path.clone(),
+                    message: format!(
+                        "Envelope key '{}' must be an array, got {}",
+                        cfg.records_path,
+                        json_type_name(v)
+                    ),
+                    kind: ViolationKind::TypeMismatch,
+                });
+                return BatchValidationResult {
+                    passed: 0,
+                    quarantined: 1,
+                    violations,
+                    validation_us: t0.elapsed().as_micros() as u64,
+                };
+            }
+            Some(arr) => arr,
+        },
+    };
+
+    // If wrapper had violations, the whole batch is quarantined before we
+    // even look at records — surface only the wrapper violations.
+    if !wrapper_violations.is_empty() {
+        return BatchValidationResult {
+            passed: 0,
+            quarantined: records.len().max(1),
+            violations: wrapper_violations,
+            validation_us: t0.elapsed().as_micros() as u64,
+        };
+    }
+
+    // ── Validate each record ─────────────────────────────────────────────────
+    let mut all_violations: Vec<BatchRecordViolation> = Vec::new();
+    let mut passed = 0usize;
+    let mut quarantined = 0usize;
+
+    for (idx, record) in records.iter().enumerate() {
+        let result = validate(compiled, record);
+        if result.passed {
+            passed += 1;
+        } else {
+            quarantined += 1;
+            for v in result.violations {
+                all_violations.push(BatchRecordViolation {
+                    record_index: idx,
+                    field: v.field,
+                    message: v.message,
+                    kind: v.kind,
+                });
+            }
+        }
+    }
+
+    BatchValidationResult {
+        passed,
+        quarantined,
+        violations: all_violations,
+        validation_us: t0.elapsed().as_micros() as u64,
     }
 }
 
@@ -211,6 +633,8 @@ fn validate_value(
         FieldType::Object => value.is_object(),
         FieldType::Array => value.is_array(),
         FieldType::Any => true,
+        // RFC-044: date must be a string; calendar check runs below
+        FieldType::Date => value.is_string(),
     };
 
     if !type_ok {
@@ -272,6 +696,20 @@ fn validate_value(
                 });
             }
         }
+
+        // RFC-044: calendar validation for date fields
+        if field.field_type == FieldType::Date
+            && chrono::NaiveDate::parse_from_str(s, "%Y-%m-%d").is_err()
+        {
+            violations.push(Violation {
+                field: path.to_string(),
+                message: format!(
+                    "Field '{}' value {:?} is not a valid calendar date (expected YYYY-MM-DD)",
+                    path, s
+                ),
+                kind: ViolationKind::PatternMismatch,
+            });
+        }
     }
 
     // --- Numeric range checks ---
@@ -332,27 +770,35 @@ fn validate_value(
 }
 
 /// Validate a metric definition against the event.
-fn validate_metric(
-    metric: &MetricDefinition,
-    event: &Value,
-    violations: &mut Vec<Violation>,
-) {
-    let value = resolve_path(event, &metric.field);
+///
+/// Formula-style metrics (no `field`) are skipped at ingestion time —
+/// they are informational / for downstream aggregation systems only.
+/// Field-bound metrics (with `field` set) are checked against `min`/`max`.
+fn validate_metric(metric: &MetricDefinition, event: &Value, violations: &mut Vec<Violation>) {
+    // Formula-only metrics have no field — nothing to validate per-event.
+    let field_path = match &metric.field {
+        Some(f) => f,
+        None => return,
+    };
+
+    // Only validate if bounds are actually set
+    if metric.min.is_none() && metric.max.is_none() {
+        return;
+    }
+
+    let value = resolve_path(event, field_path);
 
     let n = match value.and_then(numeric_value) {
         Some(n) => n,
         None => {
-            // Missing metric field is a violation if it has bounds
-            if metric.min.is_some() || metric.max.is_some() {
-                violations.push(Violation {
-                    field: metric.field.clone(),
-                    message: format!(
-                        "Metric '{}' field '{}' is missing or not numeric",
-                        metric.name, metric.field
-                    ),
-                    kind: ViolationKind::MissingRequiredField,
-                });
-            }
+            violations.push(Violation {
+                field: field_path.clone(),
+                message: format!(
+                    "Metric '{}' field '{}' is missing or not numeric",
+                    metric.name, field_path
+                ),
+                kind: ViolationKind::MissingRequiredField,
+            });
             return;
         }
     };
@@ -360,10 +806,10 @@ fn validate_metric(
     if let Some(min) = metric.min {
         if n < min {
             violations.push(Violation {
-                field: metric.field.clone(),
+                field: field_path.clone(),
                 message: format!(
                     "Metric '{}' value {} is below minimum {} (field: '{}')",
-                    metric.name, n, min, metric.field
+                    metric.name, n, min, field_path
                 ),
                 kind: ViolationKind::MetricRangeViolation,
             });
@@ -372,10 +818,10 @@ fn validate_metric(
     if let Some(max) = metric.max {
         if n > max {
             violations.push(Violation {
-                field: metric.field.clone(),
+                field: field_path.clone(),
                 message: format!(
                     "Metric '{}' value {} exceeds maximum {} (field: '{}')",
-                    metric.name, n, max, metric.field
+                    metric.name, n, max, field_path
                 ),
                 kind: ViolationKind::MetricRangeViolation,
             });
@@ -424,13 +870,165 @@ fn json_type_name(value: &Value) -> &'static str {
 }
 
 // ---------------------------------------------------------------------------
+// Quality rule helpers (per-event)
+// ---------------------------------------------------------------------------
+
+/// Walk a dot-notation path and return the value at that path, or None.
+fn get_nested_value<'a>(event: &'a Value, path: &str) -> Option<&'a Value> {
+    let mut cur = event;
+    for segment in path.split('.') {
+        cur = cur.as_object()?.get(segment)?;
+    }
+    Some(cur)
+}
+
+/// `rule_type: completeness` — field must be present, non-null, non-empty string.
+fn check_completeness(rule: &QualityRule, event: &Value, violations: &mut Vec<Violation>) {
+    match get_nested_value(event, &rule.field) {
+        None | Some(Value::Null) => {
+            violations.push(Violation {
+                field: rule.field.clone(),
+                message: format!(
+                    "Quality completeness: field '{}' is absent or null",
+                    rule.field
+                ),
+                kind: ViolationKind::CompletenessViolation,
+            });
+        }
+        Some(Value::String(s)) if s.is_empty() => {
+            violations.push(Violation {
+                field: rule.field.clone(),
+                message: format!(
+                    "Quality completeness: field '{}' is an empty string",
+                    rule.field
+                ),
+                kind: ViolationKind::CompletenessViolation,
+            });
+        }
+        _ => {} // present and non-empty — passes
+    }
+}
+
+/// `rule_type: freshness` — field must be a Unix epoch within `max_age_seconds`.
+///
+/// Detection heuristic: if the value is > 1_700_000_000_000 it is treated as
+/// milliseconds and divided by 1000 first.  This covers both second-precision
+/// and millisecond-precision timestamps without requiring a schema annotation.
+fn check_freshness(rule: &QualityRule, event: &Value, violations: &mut Vec<Violation>) {
+    let Some(max_age) = rule.max_age_seconds else {
+        // No max_age_seconds configured — nothing to check.
+        return;
+    };
+    let Some(val) = get_nested_value(event, &rule.field) else {
+        // Field absent — completeness rule handles this; skip here.
+        return;
+    };
+
+    let ts_secs: Option<i64> = match val {
+        Value::Number(n) => n.as_i64().map(|v| {
+            // Heuristic: ms epoch if value is larger than ~year 2023 in seconds
+            if v > 1_700_000_000_000 {
+                v / 1000
+            } else {
+                v
+            }
+        }),
+        _ => None,
+    };
+
+    let Some(ts) = ts_secs else {
+        violations.push(Violation {
+            field: rule.field.clone(),
+            message: format!(
+                "Quality freshness: field '{}' is not a numeric Unix timestamp",
+                rule.field
+            ),
+            kind: ViolationKind::FreshnessViolation,
+        });
+        return;
+    };
+
+    let now_secs = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs() as i64;
+
+    let age_secs = now_secs - ts;
+    if age_secs < 0 || age_secs > max_age as i64 {
+        violations.push(Violation {
+            field: rule.field.clone(),
+            message: format!(
+                "Quality freshness: field '{}' timestamp is {}s old (max {}s)",
+                rule.field, age_secs, max_age
+            ),
+            kind: ViolationKind::FreshnessViolation,
+        });
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Quality rule helpers (batch-level)
+// ---------------------------------------------------------------------------
+
+/// `rule_type: uniqueness` — detect duplicate values for a field across
+/// a batch of events.  Returns a `Vec<(event_index, Violation)>` so the
+/// caller can annotate individual event results.
+///
+/// Only the *second and subsequent* occurrences of a value are flagged;
+/// the first occurrence is always clean.
+pub fn check_uniqueness_batch(rules: &[QualityRule], events: &[Value]) -> Vec<(usize, Violation)> {
+    let mut out = Vec::new();
+
+    let unique_rules: Vec<&QualityRule> = rules
+        .iter()
+        .filter(|r| r.rule_type == QualityRuleType::Uniqueness)
+        .collect();
+
+    if unique_rules.is_empty() {
+        return out;
+    }
+
+    for rule in unique_rules {
+        let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
+        for (idx, event) in events.iter().enumerate() {
+            let Some(val) = get_nested_value(event, &rule.field) else {
+                continue; // absent — completeness rule covers this
+            };
+            if val.is_null() {
+                continue; // null values are not deduplicated
+            }
+            // Use JSON serialisation as the canonical key so arrays / objects
+            // are compared by value, not identity.
+            let key = val.to_string();
+            if !seen.insert(key.clone()) {
+                out.push((
+                    idx,
+                    Violation {
+                        field: rule.field.clone(),
+                        message: format!(
+                            "Quality uniqueness: duplicate value {:?} for field '{}' in batch",
+                            key, rule.field
+                        ),
+                        kind: ViolationKind::UniquenessViolation,
+                    },
+                ));
+            }
+        }
+    }
+
+    out
+}
+
+// ---------------------------------------------------------------------------
 // Unit tests
 // ---------------------------------------------------------------------------
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::contract::{FieldDefinition, FieldType, Ontology};
+    use crate::contract::{
+        EgressLeakageMode, EnvelopeConfig, FieldDefinition, FieldType, Ontology,
+    };
     use serde_json::json;
 
     fn make_simple_contract() -> Contract {
@@ -438,6 +1036,7 @@ mod tests {
             version: "1.0".into(),
             name: "test".into(),
             description: None,
+            compliance_mode: false,
             ontology: Ontology {
                 entities: vec![
                     FieldDefinition {
@@ -452,6 +1051,7 @@ mod tests {
                         max_length: None,
                         properties: None,
                         items: None,
+                        transform: None,
                     },
                     FieldDefinition {
                         name: "event_type".into(),
@@ -469,6 +1069,7 @@ mod tests {
                         max_length: None,
                         properties: None,
                         items: None,
+                        transform: None,
                     },
                     FieldDefinition {
                         name: "timestamp".into(),
@@ -482,11 +1083,15 @@ mod tests {
                         max_length: None,
                         properties: None,
                         items: None,
+                        transform: None,
                     },
                 ],
             },
+            egress_leakage_mode: EgressLeakageMode::Off,
             glossary: vec![],
             metrics: vec![],
+            quality: vec![],
+            envelope: None,
         }
     }
 
@@ -500,7 +1105,11 @@ mod tests {
             "timestamp": 1712000000
         });
         let result = validate(&compiled, &event);
-        assert!(result.passed, "Expected pass but got violations: {:?}", result.violations);
+        assert!(
+            result.passed,
+            "Expected pass but got violations: {:?}",
+            result.violations
+        );
     }
 
     #[test]
@@ -510,7 +1119,10 @@ mod tests {
         let event = json!({ "user_id": "alice_01", "event_type": "click" }); // missing timestamp
         let result = validate(&compiled, &event);
         assert!(!result.passed);
-        assert!(result.violations.iter().any(|v| v.kind == ViolationKind::MissingRequiredField));
+        assert!(result
+            .violations
+            .iter()
+            .any(|v| v.kind == ViolationKind::MissingRequiredField));
     }
 
     #[test]
@@ -524,7 +1136,10 @@ mod tests {
         });
         let result = validate(&compiled, &event);
         assert!(!result.passed);
-        assert!(result.violations.iter().any(|v| v.kind == ViolationKind::EnumViolation));
+        assert!(result
+            .violations
+            .iter()
+            .any(|v| v.kind == ViolationKind::EnumViolation));
     }
 
     #[test]
@@ -538,7 +1153,10 @@ mod tests {
         });
         let result = validate(&compiled, &event);
         assert!(!result.passed);
-        assert!(result.violations.iter().any(|v| v.kind == ViolationKind::PatternMismatch));
+        assert!(result
+            .violations
+            .iter()
+            .any(|v| v.kind == ViolationKind::PatternMismatch));
     }
 
     #[test]
@@ -552,7 +1170,10 @@ mod tests {
         });
         let result = validate(&compiled, &event);
         assert!(!result.passed);
-        assert!(result.violations.iter().any(|v| v.kind == ViolationKind::RangeViolation));
+        assert!(result
+            .violations
+            .iter()
+            .any(|v| v.kind == ViolationKind::RangeViolation));
     }
 
     #[test]
@@ -561,5 +1182,137 @@ mod tests {
         let compiled = CompiledContract::compile(contract).unwrap();
         let result = validate(&compiled, &json!(["not", "an", "object"]));
         assert!(!result.passed);
+    }
+
+    // -------------------------------------------------------------------------
+    // RFC-038: envelope batch tests
+    // -------------------------------------------------------------------------
+
+    fn make_envelope_cfg(records_path: &str, validate_wrapper: bool) -> EnvelopeConfig {
+        EnvelopeConfig {
+            records_path: records_path.to_string(),
+            validate_wrapper,
+        }
+    }
+
+    #[test]
+    fn envelope_all_valid_passes() {
+        let compiled = CompiledContract::compile(make_simple_contract()).unwrap();
+        let cfg = make_envelope_cfg("data", false);
+        let payload = json!({
+            "success": true,
+            "data": [
+                { "user_id": "alice_01", "event_type": "click", "timestamp": 1712000000 },
+                { "user_id": "bob_02",   "event_type": "view",  "timestamp": 1712000001 }
+            ],
+            "pagination": { "page": 1, "limit": 50, "total": 2, "hasMore": false }
+        });
+        let result = validate_envelope_batch(&compiled, &cfg, &payload);
+        assert_eq!(result.passed, 2);
+        assert_eq!(result.quarantined, 0);
+        assert!(result.violations.is_empty());
+    }
+
+    #[test]
+    fn envelope_missing_field_quarantines_correct_record() {
+        let compiled = CompiledContract::compile(make_simple_contract()).unwrap();
+        let cfg = make_envelope_cfg("data", false);
+        let payload = json!({
+            "success": true,
+            "data": [
+                { "user_id": "alice_01", "event_type": "click", "timestamp": 1712000000 },
+                // record index 1: missing required "timestamp"
+                { "user_id": "bob_02",   "event_type": "view" }
+            ],
+            "pagination": { "page": 1, "limit": 50, "total": 2, "hasMore": false }
+        });
+        let result = validate_envelope_batch(&compiled, &cfg, &payload);
+        assert_eq!(result.passed, 1);
+        assert_eq!(result.quarantined, 1);
+        assert_eq!(result.violations.len(), 1);
+        assert_eq!(result.violations[0].record_index, 1);
+        assert_eq!(result.violations[0].field, "timestamp");
+        assert_eq!(
+            result.violations[0].kind,
+            ViolationKind::MissingRequiredField
+        );
+    }
+
+    #[test]
+    fn envelope_bad_enum_quarantines_correct_record() {
+        let compiled = CompiledContract::compile(make_simple_contract()).unwrap();
+        let cfg = make_envelope_cfg("data", false);
+        let payload = json!({
+            "data": [
+                // record index 0: event_type not in enum
+                { "user_id": "alice_01", "event_type": "delete", "timestamp": 1712000000 }
+            ]
+        });
+        let result = validate_envelope_batch(&compiled, &cfg, &payload);
+        assert_eq!(result.quarantined, 1);
+        assert_eq!(result.violations[0].record_index, 0);
+        assert_eq!(result.violations[0].kind, ViolationKind::EnumViolation);
+    }
+
+    #[test]
+    fn envelope_missing_records_path_fails() {
+        let compiled = CompiledContract::compile(make_simple_contract()).unwrap();
+        let cfg = make_envelope_cfg("data", false);
+        let payload = json!({ "success": true }); // no "data" key
+        let result = validate_envelope_batch(&compiled, &cfg, &payload);
+        assert_eq!(result.quarantined, 1);
+        assert!(result
+            .violations
+            .iter()
+            .any(|v| v.kind == ViolationKind::MissingRequiredField && v.field == "data"));
+    }
+
+    #[test]
+    fn envelope_non_object_payload_fails() {
+        let compiled = CompiledContract::compile(make_simple_contract()).unwrap();
+        let cfg = make_envelope_cfg("data", false);
+        let result = validate_envelope_batch(&compiled, &cfg, &json!([1, 2, 3]));
+        assert_eq!(result.quarantined, 1);
+        assert!(result
+            .violations
+            .iter()
+            .any(|v| v.kind == ViolationKind::TypeMismatch));
+    }
+
+    #[test]
+    fn envelope_validate_wrapper_catches_missing_success() {
+        let compiled = CompiledContract::compile(make_simple_contract()).unwrap();
+        let cfg = make_envelope_cfg("data", true);
+        // Payload missing `success` field
+        let payload = json!({
+            "data": [
+                { "user_id": "alice_01", "event_type": "click", "timestamp": 1712000000 }
+            ],
+            "pagination": { "page": 1, "limit": 50, "total": 1, "hasMore": false }
+        });
+        let result = validate_envelope_batch(&compiled, &cfg, &payload);
+        assert!(result
+            .violations
+            .iter()
+            .any(|v| v.field == "success" && v.kind == ViolationKind::MissingRequiredField));
+    }
+
+    #[test]
+    fn envelope_validate_wrapper_catches_bad_pagination() {
+        let compiled = CompiledContract::compile(make_simple_contract()).unwrap();
+        let cfg = make_envelope_cfg("data", true);
+        // `pagination.total` is a string instead of a number
+        let payload = json!({
+            "success": true,
+            "data": [
+                { "user_id": "alice_01", "event_type": "click", "timestamp": 1712000000 }
+            ],
+            "pagination": { "page": 1, "limit": 50, "total": "three", "hasMore": false }
+        });
+        let result = validate_envelope_batch(&compiled, &cfg, &payload);
+        assert!(result
+            .violations
+            .iter()
+            .any(|v| v.field == "pagination.total" && v.kind == ViolationKind::TypeMismatch));
     }
 }

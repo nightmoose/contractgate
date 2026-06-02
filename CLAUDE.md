@@ -1,49 +1,69 @@
-# CLAUDE.md - Autonomous Code Guardian Instructions
+# CLAUDE.md - ContractGate Maintenance
 
-**Project Name:** ContractGate  
-**Description:** A high-performance semantic contract enforcement gateway that validates incoming data events in real time against a full semantic contract (ontology + business glossary + metric definitions) before the data reaches any storage or AI system. Marketed as "Patent Pending".
+**Project:** ContractGate - High-performance semantic contract enforcement gateway (Patent Pending)
 
-**Core Goal:** Prevent garbage-in-garbage-out at ingestion time with sub-15ms latency. Make it simple enough for small data teams to adopt quickly while being powerful enough to demonstrate the patented idea.
+**Current Phase:** Fully built. Now iterating on missing functions + eliminating tech debt. Performance and correctness are non-negotiable.
 
-## Tech Stack (MVP)
-- **Validation Engine:** Rust (primary — for speed and low latency)
-- **API Layer:** Axum (Rust web framework) or thin wrapper
-- **Frontend Dashboard:** Next.js 15 + TypeScript + Tailwind CSS
-- **Database:** Supabase (contracts, audit logs, quarantined events)
-- **Deployment:** Rust service on Fly.io/Railway, Next.js on Vercel
+**Tech Stack**
+- Rust (Axum) backend – validation engine must stay <15ms p99
+- Next.js 15 + TS + Tailwind frontend (do not overhaul)
+- Supabase (contracts, audit logs, quarantined events)
 
-## MVP Features (Strict Scope)
-1. Contract Management
-   - Create/edit versioned contracts in clean YAML format (ontology, glossary, metrics)
-   - Store contracts in Supabase
+**Strict Priorities**
+1. Fix missing functions
+2. Eliminate tech debt (refactor, clean, optimize)
+3. Preserve all existing functionality
+4. Keep validation engine fast, correct, and patent-core
 
-2. Ingestion API
-   - POST /ingest/{contract_id} — accepts single JSON event or batch
-   - Real-time validation against the semantic contract
-   - On success: forward to configurable destination (webhook, Supabase, Kafka topic stub, etc.)
-   - On violation: reject with clear error + log to audit trail + optional quarantine
+**Semantic Contract Format (locked)**
+Use this clean YAML structure:
 
-3. Dashboard (Next.js)
-   - List of contracts
-   - Live ingestion monitor (throughput, pass rate, violations)
-   - Searchable audit log
-   - Simple test ingestion playground
-   - Prominent "Patent Pending" badge
+```
+version: "1.0"
+name: "user_events"
+description: "Contract for user interaction events"
 
-## Performance Target
-- < 15ms p99 latency for validation on modest hardware
-- Capable of handling thousands of events per second
+ontology:
+  entities:
+    - name: user_id
+      type: string
+      required: true
+      pattern: "^[a-zA-Z0-9_-]+$"
+    - name: event_type
+      type: string
+      required: true
+      enum: ["click", "view", "purchase", "login"]
+    - name: timestamp
+      type: integer
+      required: true
+    - name: amount
+      type: number
+      required: false
+      min: 0
 
-## Coding Rules
-- Rust core must be fast, safe, and well-commented for the validation logic
-- Keep contract YAML format simple and human-readable
-- Use strong typing and proper error handling everywhere
-- Frontend must be clean, modern, and professional (dark theme preferred)
-- Always include clear violation reasons in responses
+glossary:
+  - field: amount
+    description: "Monetary amount in USD"
+    constraints: "must be non-negative"
+
+metrics:
+  - name: total_revenue
+    formula: "sum(amount) where event_type = 'purchase'"
+```
+
+## Rules (always obey)
+- Be ultra-concise. Result first. Short sentences. No fluff, no explanations unless asked.
+- One issue or refactor at a time unless told otherwise.
+- Always test changes (cargo test, cargo check).
+- Never break existing behavior.
+- Prefer simple, idiomatic Rust. Comment only when it adds real value.
+- Create branch: nightly-maintenance-$(date +%Y-%m-%d)-<rfc-slug> for all changes (e.g. nightly-maintenance-2026-05-16-rfc024).
+- Use only necessary files. Minimize context.
+- **When adding or changing user-facing functionality:** (1) check whether any existing `docs/` page covers that surface and update it for breaking changes; (2) add a new `docs/<feature>-reference.md` if no doc exists. User-facing = any CLI flag, API endpoint, contract field, or config key a user can read or write.
 
 ## Important Commands
-[CODE_BLOCK_START]
-# Rust
+```
+# Rust backend
 cargo check
 cargo build
 cargo test
@@ -51,27 +71,56 @@ cargo run
 
 # Frontend
 cd dashboard
-npm install
-npm run dev
 npm run build
+```
 
-# Database
-npx prisma generate   # if using Prisma for dashboard
-[CODE_BLOCK_END]
+Create branch: nightly-maintenance-$(date +%Y-%m-%d)-<rfc-slug> for changes (e.g. nightly-maintenance-2026-05-16-rfc024).
 
-## Rules for Autonomous Nightly Runs
-- Priority 1: Fix all build, test, or compilation errors
-- Priority 2: Improve performance and reliability of the validation engine
-- Priority 3: Add or polish MVP features (contract CRUD, better error messages, dashboard improvements, audit logging)
-- Never add features outside the MVP scope (no complex ML remediation, no full ontology reasoner, no enterprise multi-tenancy yet)
-- Create branch: nightly-maintenance-$(date +%Y-%m-%d)
-- Use small, focused commits with prefix "nightly: "
+Start now.
 
-## Non-Goals for Now
-- Do not add native Kafka/Flink connectors yet
-- Do not implement heavy ML auto-remediation
-- Do not over-engineer the contract language
+## RFC Status Index
 
-You are the senior Rust + Full-stack engineer for ContractGate. Keep the system fast, simple, and demonstrably valuable for data teams fighting dirty data at ingestion.
+[`docs/STATUS.md`](docs/STATUS.md) — shipped-vs-draft view of all 58 RFCs.
 
-Start every run by reading this file and running cargo check + npm run build in the dashboard.
+<!-- code-review-graph MCP tools -->
+## MCP Tools: code-review-graph (optional)
+
+> **This section only applies if the `code-review-graph` MCP server is
+> connected in your environment.** Check with `list_connected_mcps` or look for
+> tools named `detect_changes`, `query_graph`, etc. in your tool list. If the
+> MCP is **not** connected, use Grep/Glob/Read normally — skip this section.
+
+When the `code-review-graph` MCP **is** connected, prefer it over file
+scanning: the graph is faster, cheaper (fewer tokens), and surfaces structural
+context (callers, dependents, test coverage) that grep cannot.
+
+### When to use graph tools (if connected)
+
+- **Exploring code**: `semantic_search_nodes` or `query_graph` instead of Grep
+- **Understanding impact**: `get_impact_radius` instead of manually tracing imports
+- **Code review**: `detect_changes` + `get_review_context` instead of reading entire files
+- **Finding relationships**: `query_graph` with callers_of/callees_of/imports_of/tests_for
+- **Architecture questions**: `get_architecture_overview` + `list_communities`
+
+Fall back to Grep/Glob/Read when the graph is not connected or does not cover
+what you need.
+
+### Key Tools
+
+| Tool | Use when |
+|------|----------|
+| `detect_changes` | Reviewing code changes — gives risk-scored analysis |
+| `get_review_context` | Need source snippets for review — token-efficient |
+| `get_impact_radius` | Understanding blast radius of a change |
+| `get_affected_flows` | Finding which execution paths are impacted |
+| `query_graph` | Tracing callers, callees, imports, tests, dependencies |
+| `semantic_search_nodes` | Finding functions/classes by name or keyword |
+| `get_architecture_overview` | Understanding high-level codebase structure |
+| `refactor_tool` | Planning renames, finding dead code |
+
+### Workflow (when connected)
+
+1. The graph auto-updates on file changes (via hooks).
+2. Use `detect_changes` for code review.
+3. Use `get_affected_flows` to understand impact.
+4. Use `query_graph` pattern="tests_for" to check coverage.

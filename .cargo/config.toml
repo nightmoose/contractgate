@@ -1,0 +1,12 @@
+# Cargo aliases — project-local shortcuts.
+#
+# The `demo` binary is gated behind the `demo` cargo feature (see Cargo.toml)
+# so the default build has no system-dep requirements (no cmake, no libssl,
+# no libcurl).  The alias below restores the "just run the demo" ergonomics
+# without giving up the lean default build.
+#
+#   cargo demo -- --brokers 127.0.0.1:9092   # release-mode Kafka demo
+#   cargo demo-dbg                           # debug-mode variant
+[alias]
+demo = "run --release --features demo --bin demo --"
+demo-dbg = "run --features demo --bin demo --"

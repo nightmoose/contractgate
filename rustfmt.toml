@@ -1,0 +1,12 @@
+# ContractGate rustfmt configuration.
+#
+# Locks the rustfmt baseline so contributors with non-default editor
+# settings don't churn diffs. Every option here matches rustfmt's
+# default — the file's purpose is to *anchor* defaults, not to introduce
+# new style. Run `cargo fmt --all -- --check -l` to see which files
+# (if any) drift; opinions like field-init shorthand or import grouping
+# can be added later behind a one-shot reformat commit.
+edition = "2021"
+max_width = 100
+hard_tabs = false
+tab_spaces = 4

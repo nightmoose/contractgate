@@ -1,0 +1,12 @@
+[
+  {"user_id": "u-1001", "event_type": "click", "timestamp": 1746500000, "amount": null},
+  {"user_id": "u-1002", "event_type": "purchase", "timestamp": 1746500100, "amount": 29.99},
+  {"user_id": "u-1003", "event_type": "view", "timestamp": 1746500200, "amount": null},
+  {"user_id": "u-1004", "event_type": "purchase", "timestamp": 1746500300, "amount": 149.00},
+  {"user_id": "u-1001", "event_type": "login", "timestamp": 1746500400, "amount": null},
+  {"user_id": "u-1005", "event_type": "click", "timestamp": 1746500500, "amount": null},
+  {"user_id": "u-1002", "event_type": "purchase", "timestamp": 1746500600, "amount": 9.99},
+  {"user_id": "u-1006", "event_type": "view", "timestamp": 1746500700, "amount": null},
+  {"user_id": "u-1003", "event_type": "click", "timestamp": 1746500800, "amount": null},
+  {"user_id": "u-1007", "event_type": "purchase", "timestamp": 1746500900, "amount": 59.50}
+]

@@ -1,0 +1,126 @@
+version: "1.0"
+name: "order_events_nested"
+description: |
+  Realistic e-commerce order event with nested objects and an itemised
+  line-item array.  Used by the speed demo as the high-complexity
+  scenario: bigger payloads, deeper walks, lots of regex / enum checks.
+
+ontology:
+  entities:
+    - name: order_id
+      type: string
+      required: true
+      pattern: "^ord_[a-zA-Z0-9]{16}$"
+
+    - name: placed_at
+      type: integer
+      required: true
+      min: 1577836800
+
+    - name: channel
+      type: string
+      required: true
+      enum: ["web", "ios", "android", "pos", "partner_api"]
+
+    - name: currency
+      type: string
+      required: true
+      pattern: "^[A-Z]{3}$"
+
+    - name: customer
+      type: object
+      required: true
+      properties:
+        - name: id
+          type: string
+          required: true
+          pattern: "^[a-zA-Z0-9_-]{3,64}$"
+        - name: email
+          type: string
+          required: true
+          pattern: "^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}$"
+          max_length: 254
+        - name: tier
+          type: string
+          required: false
+          enum: ["free", "silver", "gold", "platinum"]
+        - name: address
+          type: object
+          required: true
+          properties:
+            - name: country
+              type: string
+              required: true
+              pattern: "^[A-Z]{2}$"
+            - name: postal_code
+              type: string
+              required: true
+              min_length: 3
+              max_length: 16
+            - name: city
+              type: string
+              required: true
+              min_length: 1
+              max_length: 80
+
+    - name: items
+      type: array
+      required: true
+      items:
+        # `name` here is a placeholder — the deserializer requires it on every
+        # FieldDefinition, but the validator only consults the item's `type` /
+        # `properties` when walking array elements.
+        name: item
+        type: object
+        required: true
+        properties:
+          - name: sku
+            type: string
+            required: true
+            pattern: "^[A-Z0-9-]{4,24}$"
+          - name: quantity
+            type: integer
+            required: true
+            min: 1
+            max: 10000
+          - name: unit_price
+            type: number
+            required: true
+            min: 0
+            max: 1000000
+
+    - name: total_amount
+      type: number
+      required: true
+      min: 0
+      max: 10000000
+
+    - name: payment
+      type: object
+      required: true
+      properties:
+        - name: method
+          type: string
+          required: true
+          enum: ["card", "paypal", "apple_pay", "google_pay", "bank_transfer"]
+        - name: last4
+          type: string
+          required: false
+          pattern: "^[0-9]{4}$"
+
+glossary:
+  - field: order_id
+    description: "Idempotency-safe order identifier."
+  - field: items
+    description: "Line items in the order. Must contain at least one entry."
+  - field: payment.method
+    description: "Tender used for settlement."
+
+metrics:
+  - name: total_amount
+    field: total_amount
+    type: float
+    max: 10000000
+
+  - name: order_revenue
+    formula: "sum(total_amount)"

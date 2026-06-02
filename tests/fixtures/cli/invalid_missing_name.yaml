@@ -1,0 +1,8 @@
+version: "1.0"
+description: "Missing required name field"
+
+ontology:
+  entities:
+    - name: user_id
+      type: string
+      required: true
