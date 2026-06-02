@@ -5,66 +5,18 @@ edition = "2021"
 description = "High-performance semantic contract enforcement gateway (Patent Pending)"
 authors = ["ContractGate Team"]
 
-[lib]
-name = "contractgate"
-path = "src/lib.rs"
-
 [[bin]]
-name = "contractgate-server"
+name = "contractgate"
 path = "src/main.rs"
-
-[[bin]]
-name = "contractgate"
-path = "src/bin/contractgate.rs"
-
-# Volume / speed demo binary — Kafka-backed end-to-end pipeline with a live
-# HTML dashboard.  See `demo/README.md` for setup and usage.
-#
-# Gated behind the `demo` feature because rdkafka pulls in librdkafka (which
-# needs cmake + a C compiler + curl headers at build time).  Keeping it off by
-# default means `cargo check` / `cargo build` / `cargo test` work on any host
-# that has Rust installed, with no system deps.  Build the demo explicitly with
-# `cargo build --features demo --bin demo`.
-[[bin]]
-name = "demo"
-path = "src/bin/demo.rs"
-required-features = ["demo"]
-
-[[bin]]
-name = "demo-seeder"
-path = "src/bin/demo-seeder.rs"
-
-[features]
-# Default build is lean: just the library + main binary.  The `demo` feature
-# pulls in rdkafka (and its librdkafka build-time deps) and enables the demo
-# binary.  See the `[[bin]] name = "demo"` stanza above for rationale.
-#
-# The `scaffold` feature enables live Kafka topic sampling for `cg scaffold
-# <topic>`.  It also bundles librdkafka.  The `--from-file` scaffold path
-# works without this feature.
-default = []
-demo = ["rdkafka"]
-scaffold = ["rdkafka"]
-# kafka-ingress: platform-side consumer pool for RFC-025.
-# Pulls in rdkafka (librdkafka) — needs cmake + C compiler at build time.
-# Not in default so `cargo check` / `cargo test` work without system deps.
-kafka-ingress = ["rdkafka", "aes-gcm"]
-
-# kinesis-ingress: platform-side consumer loop for RFC-026.
-# Pure-Rust AWS SDK crates — no system deps beyond tokio.
-# Not in default so `cargo check` / `cargo test` work on any host.
-kinesis-ingress = ["dep:aws-sdk-kinesis", "dep:aws-sdk-iam", "dep:aws-config", "aes-gcm"]
 
 [dependencies]
 # Web framework
-axum = { version = "0.8", features = ["macros"] }
-tower = "0.5"
-tower-http = { version = "0.5", features = ["cors", "trace", "timeout", "limit"] }
+axum = { version = "0.7", features = ["macros"] }
+tower = "0.4"
+tower-http = { version = "0.5", features = ["cors", "trace", "timeout"] }
 
 # Async runtime
 tokio = { version = "1", features = ["full"] }
-tokio-stream = { version = "0.1", features = ["sync"] }
-futures-util = "0.3"
 
 # Serialization
 serde = { version = "1", features = ["derive"] }
@@ -74,37 +26,13 @@ serde_yaml = "0.9"
 # Validation
 regex = "1"
 
-# PII transforms (RFC-004): HMAC-256 for `kind: hash`, seeded StdRng
-# for `mask: format_preserving`.  Pure-Rust, no system deps — portable
-# across CI + sandbox builds.
-sha2 = "0.10"
-hmac = "0.12"
-hex = "0.4"
-base64 = "0.22"
-rand = { version = "0.8", features = ["small_rng"] }
-
-# Data-parallel batch validation (RFC-001).  Used by the ingest handler to
-# fan out a batch of events across CPU cores while keeping the tokio reactor
-# free (the parallel stage runs inside `spawn_blocking`).
-rayon = "1"
-
-# Concurrent hashmap for per-key rate-limit buckets (RFC-021).  Lock-free
-# reads; no RwLock wrapping needed.
-dashmap = "5"
-
 # IDs & time
 uuid = { version = "1", features = ["v4", "serde"] }
 chrono = { version = "0.4", features = ["serde"] }
 
 # Database
-#
-# rustls (not native-tls) as the TLS backend — avoids a system OpenSSL
-# dependency at build time, which makes CI + sandbox builds portable and
-# removes the "need libssl-dev before `cargo check` will run" paper cut.
-# rustls is a pure-Rust TLS implementation and is fully compatible with
-# Postgres over TLS.  See MAINTENANCE_LOG.md for the 2026-04-17 rationale.
-sqlx = { version = "0.8", features = [
-    "runtime-tokio-rustls",
+sqlx = { version = "0.7", features = [
+    "runtime-tokio-native-tls",
     "postgres",
     "chrono",
     "uuid",
@@ -113,76 +41,22 @@ sqlx = { version = "0.8", features = [
 
 # Error handling
 anyhow = "1"
-thiserror = "2"
+thiserror = "1"
 
 # Logging / tracing
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
 
-# Config / CLI
+# Config
 dotenvy = "0.15"
-clap = { version = "4", features = ["derive", "env"] }
-
-# CLI HTTP client — blocking reqwest keeps the CLI single-threaded (no tokio
-# runtime needed in the CLI binary).  rustls avoids a system OpenSSL dep,
-# matching the gateway's TLS approach.
-reqwest = { version = "0.12", features = ["blocking", "json", "rustls-tls"], default-features = false }
-
-# Glob pattern matching for the `validate` and `push` subcommands when walking
-# the contracts directory.  Pure-Rust, no system deps.
-glob = "0.3"
-
-# CSV parsing for contract inference (RFC-035).  Pure-Rust, no system deps.
-csv = "1.3"
-
-# Temporary files used by the scaffold HTTP handler to bridge the async
-# request body into the synchronous scaffold_from_file() call path.
-tempfile = "3"
 
 # Metrics / perf
 once_cell = "1"
-hdrhistogram = "7"
-
-# Observability (RFC-016): Prometheus metrics exposition.
-# metrics 0.24 + metrics-exporter-prometheus 0.16 are tested against
-# tokio 1.x and have no system deps (pure Rust).
-metrics = "0.24"
-metrics-exporter-prometheus = { version = "0.16", default-features = false, features = ["http-listener"] }
-
-# Kafka transport (bundles librdkafka via cmake — needs cmake + a C compiler
-# available on the build host).  Used by the `demo` binary and the
-# `kafka-ingress` consumer pool (RFC-025).  Gated behind feature flags so
-# `cargo check` / `cargo build` work on any host without system deps.
-rdkafka = { version = "0.39", features = ["tokio", "sasl", "cmake-build"], optional = true }
-
-# AES-256-GCM encryption for secrets at rest (RFC-025 Confluent, RFC-026 IAM).
-# Pure-Rust, no system deps.
-aes-gcm = { version = "0.10", optional = true }
-
-# AWS SDK for Kinesis ingress (RFC-026). Pure-Rust, no system deps.
-# Gated behind `kinesis-ingress` feature — not compiled in default builds.
-aws-sdk-kinesis = { version = "1", optional = true }
-aws-sdk-iam = { version = "1", optional = true }
-aws-config = { version = "1", optional = true }
-bytes = "1.11.1"
-
-# RFC-039: Supabase JWT verification for dashboard browser sessions.
-# `jwk` feature enables JWK/JWKS support for RS256 key sets.
-jsonwebtoken = { version = "9", features = ["use_pem"] }
-
-# RFC-052: lock-free atomic swap for the live JWKS key set so the background
-# refresh task can replace it without blocking request handlers.
-arc-swap = "1"
 
 [dev-dependencies]
-axum-test = "20"
+axum-test = "14"
 tokio-test = "0.4"
 serde_json = "1"
-# Integration tests for v1 ingest (RFC-021) — same flags as the main reqwest dep.
-reqwest = { version = "0.12", features = ["json", "rustls-tls"], default-features = false }
-uuid = { version = "1", features = ["v4"] }
-# Property-based tests for scaffold profiler + merge algorithm (RFC-024).
-proptest = "1"
 
 [profile.release]
 opt-level = 3
