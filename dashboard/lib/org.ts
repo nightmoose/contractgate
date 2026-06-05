@@ -37,6 +37,10 @@ export interface OrgInfo {
   role: "owner" | "admin" | "member";
   /** RFC-045: billing plan tier. Defaults to "free" for legacy rows. */
   plan: PlanTier;
+  /** Stripe subscription status (trialing, active, past_due, canceled, etc.) */
+  plan_status?: string | null;
+  stripe_customer_id?: string | null;
+  stripe_subscription_id?: string | null;
 }
 
 /**
@@ -47,7 +51,21 @@ export interface OrgInfo {
  * runtime.  Local type so the unwrap below stays narrow and removes the
  * `as unknown` double-cast that was here previously.
  */
-type OrgJoinCell = { name: string; slug: string; plan: string } | { name: string; slug: string; plan: string }[] | null;
+type OrgJoinCell = {
+  name: string;
+  slug: string;
+  plan: string;
+  plan_status?: string | null;
+  stripe_customer_id?: string | null;
+  stripe_subscription_id?: string | null;
+} | {
+  name: string;
+  slug: string;
+  plan: string;
+  plan_status?: string | null;
+  stripe_customer_id?: string | null;
+  stripe_subscription_id?: string | null;
+}[] | null;
 
 interface UseOrgResult {
   org: OrgInfo | null;
@@ -105,7 +123,7 @@ export function useOrg(): UseOrgResult {
 
         const { data, error: dbErr } = await supabase
           .from("org_memberships")
-          .select("org_id, role, orgs(name, slug, plan)")
+          .select("org_id, role, orgs(name, slug, plan, plan_status, stripe_customer_id, stripe_subscription_id)")
           .eq("user_id", user.id)
           .order("joined_at", { ascending: true })
           .limit(1)
@@ -132,6 +150,9 @@ export function useOrg(): UseOrgResult {
           slug: orgsRow?.slug ?? "",
           role: (data.role as OrgInfo["role"]) ?? "member",
           plan,
+          plan_status: orgsRow?.plan_status ?? null,
+          stripe_customer_id: orgsRow?.stripe_customer_id ?? null,
+          stripe_subscription_id: orgsRow?.stripe_subscription_id ?? null,
         });
       } catch (e: unknown) {
         if (!cancelled) {

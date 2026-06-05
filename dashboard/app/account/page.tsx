@@ -347,6 +347,43 @@ function AccountContent() {
         </button>
       </div>
 
+      {/* Billing / Stripe status */}
+      {org && (
+        <div className="bg-[#111827] border border-[#1f2937] rounded-2xl p-6 mb-8">
+          <div className="flex items-center justify-between mb-3">
+            <div>
+              <div className="text-sm font-semibold text-slate-200">Billing</div>
+              <div className="text-xs text-slate-500">
+                Plan: <span className="font-medium capitalize text-slate-300">{org.plan}</span>
+                {org.plan_status && <span className="ml-1 text-slate-400">({org.plan_status})</span>}
+              </div>
+            </div>
+            {org.plan === 'free' ? (
+              <a href="/pricing" className="text-xs px-3 py-1 rounded bg-green-600 hover:bg-green-500 text-white font-medium">Upgrade</a>
+            ) : (
+              <button
+                onClick={async () => {
+                  try {
+                    const res = await fetch('/api/stripe/portal', { method: 'POST' });
+                    const data = await res.json();
+                    if (data.url) window.location.href = data.url;
+                    else alert(data.error || 'Could not open billing portal');
+                  } catch {
+                    alert('Failed to open Stripe portal');
+                  }
+                }}
+                className="text-xs px-3 py-1 rounded bg-[#1f2937] hover:bg-[#374151] text-slate-200 font-medium"
+              >
+                Manage subscription →
+              </button>
+            )}
+          </div>
+          <p className="text-[11px] text-slate-500">
+            Self-serve upgrades use Stripe Checkout. The marketing site Payment Links also provision Growth access via webhook.
+          </p>
+        </div>
+      )}
+
       {/* Newly created key banner — shown once, then dismissed */}
       {createdKey && (
         <div className="mb-6 bg-green-900/20 border border-green-700/40 rounded-xl p-5">
