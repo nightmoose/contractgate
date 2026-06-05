@@ -242,7 +242,7 @@ export default function PricingPage() {
             </div>
 
             {tier.key === "growth" ? (
-              <GrowthUpgradeButton />
+              <GrowthUpgradeButton annual={annual} onToggleAnnual={setAnnual} />
             ) : (
               <a
                 href={tier.ctaHref}
@@ -376,8 +376,9 @@ export default function PricingPage() {
   );
 }
 
-// Client component for the in-app Growth upgrade flow (uses the new /api/stripe/create-checkout-session)
-function GrowthUpgradeButton() {
+// Client component for the in-app Growth upgrade flow (uses the new /api/stripe/create-checkout-session).
+// `annual` is driven by the page-level billing toggle so the CTA and the displayed price stay in sync.
+function GrowthUpgradeButton({ annual, onToggleAnnual }: { annual: boolean; onToggleAnnual: (v: boolean) => void }) {
   const { org, loading } = useOrg();
   const [loadingUpgrade, setLoadingUpgrade] = useState(false);
 
@@ -427,18 +428,20 @@ function GrowthUpgradeButton() {
   return (
     <div className="mb-6">
       <button
-        onClick={() => startUpgrade(false)}
+        onClick={() => startUpgrade(annual)}
         disabled={loadingUpgrade}
         className="w-full py-2.5 rounded-lg text-sm font-semibold transition-colors bg-green-600 hover:bg-green-500 text-white disabled:opacity-60"
       >
-        {loadingUpgrade ? 'Starting checkout…' : 'Start 14-day trial (monthly)'}
+        {loadingUpgrade
+          ? 'Starting checkout…'
+          : `Start 14-day trial (${annual ? 'annual' : 'monthly'})`}
       </button>
       <button
-        onClick={() => startUpgrade(true)}
+        onClick={() => onToggleAnnual(!annual)}
         disabled={loadingUpgrade}
         className="w-full mt-2 py-1.5 text-xs rounded-lg text-green-400 hover:text-green-300 underline disabled:opacity-60"
       >
-        or annual billing (save 17%)
+        {annual ? 'or switch to monthly billing' : 'or annual billing (save 17%)'}
       </button>
       <p className="text-[10px] text-slate-500 mt-1">You will be redirected to Stripe Checkout.</p>
     </div>
