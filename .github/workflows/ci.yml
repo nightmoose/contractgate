@@ -269,10 +269,31 @@ jobs:
           fi
           echo "Sentinel A2 OK: api_keys INSERT locked to service_role (migration 027)."
 
+          # Sentinel A3 — migration 028 (Stripe billing): verify the orgs billing
+          # columns and the webhook idempotency table exist.
+          ORG_COLS=$(psql "$DATABASE_URL" -Atc \
+            "SELECT COUNT(*) FROM information_schema.columns
+             WHERE table_schema = 'public'
+               AND table_name   = 'orgs'
+               AND column_name IN ('stripe_customer_id','stripe_subscription_id','plan_status')")
+          if [[ "$ORG_COLS" != "3" ]]; then
+            echo "::error::Migration 028 sentinel failed — expected 3 Stripe billing columns on orgs, found $ORG_COLS."
+            exit 1
+          fi
+          EVENTS_TABLE=$(psql "$DATABASE_URL" -Atc \
+            "SELECT COUNT(*) FROM information_schema.tables
+             WHERE table_schema = 'public'
+               AND table_name   = 'stripe_processed_events'")
+          if [[ "$EVENTS_TABLE" != "1" ]]; then
+            echo "::error::Migration 028 sentinel failed — stripe_processed_events table not found."
+            exit 1
+          fi
+          echo "Sentinel A3 OK: Stripe billing columns + idempotency table present (migration 028)."
+
           # Sentinel B — file count: the loop above applies every *.sql file.
           # Assert we have exactly the expected number so a new migration
           # automatically forces this sentinel to be updated.
-          EXPECTED_MIGRATION_COUNT=27
+          EXPECTED_MIGRATION_COUNT=28
           ACTUAL_COUNT=$(ls supabase/migrations/*.sql | wc -l | tr -d ' ')
           if [[ "$ACTUAL_COUNT" != "$EXPECTED_MIGRATION_COUNT" ]]; then
             echo "::error::Migration count mismatch — expected $EXPECTED_MIGRATION_COUNT files, found $ACTUAL_COUNT."
