@@ -2,20 +2,39 @@ import { NextRequest, NextResponse } from 'next/server';
 import Stripe from 'stripe';
 import { createClient as createServiceClient } from '@supabase/supabase-js';
 
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
-  apiVersion: '2026-05-27.dahlia',
-});
+// This route must run per-request; never statically collected at build time.
+export const dynamic = 'force-dynamic';
 
-const supabaseAdmin = createServiceClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!,
-  { auth: { persistSession: false } }
-);
+// Lazy singletons: constructing these at module scope throws during `next build`
+// page-data collection, when the env vars aren't present.
+let _stripe: Stripe | null = null;
+function getStripe(): Stripe {
+  if (!_stripe) {
+    _stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
+      apiVersion: '2026-05-27.dahlia',
+    });
+  }
+  return _stripe;
+}
+
+function makeSupabaseAdmin() {
+  return createServiceClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!,
+    { auth: { persistSession: false } }
+  );
+}
+let _supabaseAdmin: ReturnType<typeof makeSupabaseAdmin> | null = null;
+function getSupabaseAdmin() {
+  if (!_supabaseAdmin) _supabaseAdmin = makeSupabaseAdmin();
+  return _supabaseAdmin;
+}
 
 // supabase-js admin exposes no email lookup, so page through listUsers.
 // Capped at 10 pages (1000 users) to bound webhook latency; metadata.orgId
 // is the primary path, so this fallback runs only for Payment Link buyers.
 async function findUserIdByEmail(email: string): Promise<string | null> {
+  const supabaseAdmin = getSupabaseAdmin();
   for (let page = 1; page <= 10; page++) {
     const { data, error } = await supabaseAdmin.auth.admin.listUsers({ page, perPage: 100 });
     if (error || !data?.users?.length) break;
@@ -29,6 +48,7 @@ async function findUserIdByEmail(email: string): Promise<string | null> {
 // Idempotency: skip events we've already processed (Stripe redelivers on retry).
 // Returns true if this event is new and should be handled.
 async function claimEvent(event: Stripe.Event): Promise<boolean> {
+  const supabaseAdmin = getSupabaseAdmin();
   const { error } = await supabaseAdmin
     .from('stripe_processed_events')
     .insert({ event_id: event.id, type: event.type });
@@ -50,7 +70,7 @@ export async function POST(req: NextRequest) {
   let event: Stripe.Event;
   try {
     const body = await req.text();
-    event = stripe.webhooks.constructEvent(body, sig, process.env.STRIPE_WEBHOOK_SECRET!);
+    event = getStripe().webhooks.constructEvent(body, sig, process.env.STRIPE_WEBHOOK_SECRET!);
   } catch (err: any) {
     console.error('Webhook signature verification failed:', err.message);
     return NextResponse.json({ error: `Webhook Error: ${err.message}` }, { status: 400 });
@@ -103,6 +123,8 @@ export async function POST(req: NextRequest) {
 }
 
 async function handleCheckoutCompleted(session: Stripe.Checkout.Session) {
+  const stripe = getStripe();
+  const supabaseAdmin = getSupabaseAdmin();
   // For Payment Links + in-app checkouts we set metadata.orgId when possible.
   // Fallback: look up by customer email (Payment Links collect email).
   // orgId is set in metadata by create-checkout-session (and mirrored onto the
@@ -183,6 +205,7 @@ async function handleCheckoutCompleted(session: Stripe.Checkout.Session) {
 }
 
 async function handleSubscriptionUpdated(subscription: Stripe.Subscription) {
+  const supabaseAdmin = getSupabaseAdmin();
   const { data: org } = await supabaseAdmin
     .from('orgs')
     .select('id, plan')
@@ -215,6 +238,7 @@ async function handleSubscriptionUpdated(subscription: Stripe.Subscription) {
 }
 
 async function handleSubscriptionDeleted(subscription: Stripe.Subscription) {
+  const supabaseAdmin = getSupabaseAdmin();
   const { data: org } = await supabaseAdmin
     .from('orgs')
     .select('id')
@@ -242,6 +266,7 @@ async function handlePaymentFailed(invoice: Stripe.Invoice) {
 
   const subId = typeof subRef === 'string' ? subRef : subRef.id;
 
+  const supabaseAdmin = getSupabaseAdmin();
   const { data: org } = await supabaseAdmin
     .from('orgs')
     .select('id')

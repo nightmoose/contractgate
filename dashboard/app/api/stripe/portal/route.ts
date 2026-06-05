@@ -2,12 +2,23 @@ import { NextRequest, NextResponse } from 'next/server';
 import Stripe from 'stripe';
 import { createClient } from '@/lib/supabase/server';
 
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
-  apiVersion: '2026-05-27.dahlia',
-});
+export const dynamic = 'force-dynamic';
+
+// Lazy: constructing Stripe at module scope throws during `next build` when
+// STRIPE_SECRET_KEY isn't present.
+let _stripe: Stripe | null = null;
+function getStripe(): Stripe {
+  if (!_stripe) {
+    _stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
+      apiVersion: '2026-05-27.dahlia',
+    });
+  }
+  return _stripe;
+}
 
 export async function POST(req: NextRequest) {
   try {
+    const stripe = getStripe();
     const supabase = await createClient();
     const { data: { user } } = await supabase.auth.getUser();
 

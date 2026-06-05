@@ -8,6 +8,7 @@ target/
 # Node / Next.js
 dashboard/node_modules/
 dashboard/.next/
+dashboard/.next-verify-*/
 dashboard/out/
 dashboard/.env.local
 dashboard/.env
