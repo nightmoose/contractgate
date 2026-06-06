@@ -45,20 +45,27 @@ async function findUserIdByEmail(email: string): Promise<string | null> {
   return null;
 }
 
-// Idempotency: skip events we've already processed (Stripe redelivers on retry).
-// Returns true if this event is new and should be handled.
-async function claimEvent(event: Stripe.Event): Promise<boolean> {
+// Idempotency: Stripe redelivers events on retry. We record an event id only
+// AFTER its handler completes successfully, so an event that failed to do useful
+// work (e.g. could not resolve an org) is NOT marked done and remains replayable.
+// Returns true if this event was already fully processed and should be skipped.
+async function alreadyProcessed(eventId: string): Promise<boolean> {
   const supabaseAdmin = getSupabaseAdmin();
+  const { data } = await supabaseAdmin
+    .from('stripe_processed_events')
+    .select('event_id')
+    .eq('event_id', eventId)
+    .maybeSingle();
+  return !!data;
+}
+
+async function markProcessed(event: Stripe.Event): Promise<void> {
+  const supabaseAdmin = getSupabaseAdmin();
+  // upsert: a successful re-handle of an unmarked event must not 23505-fail.
   const { error } = await supabaseAdmin
     .from('stripe_processed_events')
-    .insert({ event_id: event.id, type: event.type });
-  if (error) {
-    // 23505 = unique_violation → already processed
-    if ((error as any).code === '23505') return false;
-    // On unexpected error, fail open (process) rather than drop the event.
-    console.error('[Stripe] claimEvent insert failed (processing anyway):', error);
-  }
-  return true;
+    .upsert({ event_id: event.id, type: event.type }, { onConflict: 'event_id' });
+  if (error) console.error('[Stripe] markProcessed failed:', error);
 }
 
 export async function POST(req: NextRequest) {
@@ -78,16 +85,21 @@ export async function POST(req: NextRequest) {
 
   console.log(`[Stripe Webhook] Received event: ${event.type} (${event.id})`);
 
-  if (!(await claimEvent(event))) {
+  if (await alreadyProcessed(event.id)) {
     console.log(`[Stripe Webhook] Duplicate event ${event.id}, skipping`);
     return NextResponse.json({ received: true, duplicate: true });
   }
 
   try {
+    // handled = the event did real work and should be recorded as processed.
+    // false means "received but no-op" (e.g. unresolved org) — leave it
+    // unmarked so a later redelivery can succeed once the data exists.
+    let handled = true;
+
     switch (event.type) {
       case 'checkout.session.completed': {
         const session = event.data.object as Stripe.Checkout.Session;
-        await handleCheckoutCompleted(session);
+        handled = await handleCheckoutCompleted(session);
         break;
       }
 
@@ -113,6 +125,8 @@ export async function POST(req: NextRequest) {
         // Ignore other events for now
         console.log(`[Stripe Webhook] Ignoring unhandled event type: ${event.type}`);
     }
+
+    if (handled) await markProcessed(event);
   } catch (err: any) {
     console.error(`[Stripe Webhook] Error handling ${event.type}:`, err);
     // Still return 200 so Stripe doesn't retry endlessly; log for manual review
@@ -122,7 +136,9 @@ export async function POST(req: NextRequest) {
   return NextResponse.json({ received: true });
 }
 
-async function handleCheckoutCompleted(session: Stripe.Checkout.Session) {
+// Returns true if the org was upgraded (event should be marked processed),
+// false if it was a no-op (unresolved org / wrong price) so the event stays replayable.
+async function handleCheckoutCompleted(session: Stripe.Checkout.Session): Promise<boolean> {
   const stripe = getStripe();
   const supabaseAdmin = getSupabaseAdmin();
   // For Payment Links + in-app checkouts we set metadata.orgId when possible.
@@ -154,7 +170,7 @@ async function handleCheckoutCompleted(session: Stripe.Checkout.Session) {
 
   if (!targetOrgId) {
     console.warn('[Stripe] Could not resolve org for checkout.session.completed', session.id);
-    return;
+    return false;
   }
 
   // Validate this checkout used one of our Growth prices (extra safety).
@@ -169,7 +185,7 @@ async function handleCheckoutCompleted(session: Stripe.Checkout.Session) {
 
   if (priceId && expectedMonthly && expectedAnnual && priceId !== expectedMonthly && priceId !== expectedAnnual) {
     console.warn(`[Stripe] Checkout session ${session.id} used unexpected price ${priceId}. Not upgrading org ${targetOrgId}.`);
-    return;
+    return false;
   }
 
   const customerId = typeof session.customer === 'string' ? session.customer : session.customer?.id;
@@ -199,9 +215,10 @@ async function handleCheckoutCompleted(session: Stripe.Checkout.Session) {
 
   if (error) {
     console.error('[Stripe] Failed to upgrade org on checkout.completed:', error);
-  } else {
-    console.log(`[Stripe] Upgraded org ${targetOrgId} to growth via price ${priceId} (session ${session.id})`);
+    return false; // DB write failed — leave unmarked so Stripe's retry can succeed.
   }
+  console.log(`[Stripe] Upgraded org ${targetOrgId} to growth via price ${priceId} (session ${session.id})`);
+  return true;
 }
 
 async function handleSubscriptionUpdated(subscription: Stripe.Subscription) {
