@@ -44,7 +44,7 @@ function BillingSuccessContent() {
 
         <div className="space-y-3">
           <Link
-            href="/dashboard"
+            href="/"
             className="block w-full py-2.5 rounded-lg bg-green-600 hover:bg-green-500 text-white font-semibold"
           >
             Go to Dashboard →

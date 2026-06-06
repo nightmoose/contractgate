@@ -2,6 +2,45 @@
 
 ---
 
+## Run: 2026-06-05 — Stripe self-serve billing: review + fixes + prod debug
+
+**Scope:** dashboard (Next.js on Vercel) + Supabase. No Rust/ingest changes; validation engine untouched.
+
+### Summary
+
+Reviewed the uncommitted Stripe Growth-plan integration, fixed several real bugs, and debugged why the in-app upgrade silently failed in production. **Root cause of the silent failure was migration drift, not code:** migration `026_plan_tier.sql` (which widens `orgs_plan_valid` to allow `'growth'`) had never been applied to the prod DB, so the webhook's `UPDATE orgs SET plan='growth'` failed with check-constraint violation `23514`. The handler swallows errors and returns 200, so it looked like success end-to-end (Stripe confirmation + cosmetic success page) while the org stayed `free`.
+
+### Bugs fixed (code)
+
+- **`webhooks/route.ts`** — `supabaseAdmin.auth.admin.getUserByEmail()` doesn't exist in installed `@supabase/auth-js`; replaced with paginated `listUsers` lookup (`findUserIdByEmail`). Fixed trial-status (read live subscription status instead of a dead ternary). Removed dead `(session as any).line_items` branch. Guarded `enterprise` from auto-downgrade in `subscription.updated`. Added idempotency via `stripe_processed_events`, recording events **after** successful handling so failed/no-op events stay replayable (`alreadyProcessed`/`markProcessed`, handler returns `boolean`). Lazy-init Stripe + Supabase clients (`getStripe`/`getSupabaseAdmin`) + `export const dynamic='force-dynamic'` — fixes Vercel build error `Neither apiKey nor config.authenticator provided` (constructor ran at module load during page-data collection).
+- **`create-checkout-session/route.ts`, `portal/route.ts`** — same lazy-init fix.
+- **`middleware.ts`** — skip auth for `/api/stripe/webhooks`; the matcher was 307-redirecting Stripe's unauthenticated POST to `/auth/login`. The webhook verifies by signature, not session.
+- **`billing/success/page.tsx`** — wrapped `useSearchParams()` in `<Suspense>` (prerender failure blocked the build).
+- **`pricing/page.tsx`** — annual/monthly bug: the page toggle and the checkout button were disconnected, so the primary CTA always checked out monthly. Button now respects the toggle.
+
+### Files added
+
+- `supabase/migrations/028_stripe_billing.sql` — `orgs` columns `stripe_customer_id`, `stripe_subscription_id`, `plan_status` (null default; null for free orgs), indexes, and `stripe_processed_events` dedup table.
+- `docs/stripe-billing-reference.md` — routes, env vars, webhook events, DB objects, flows, known limitations.
+- `.github/workflows/ci.yml` — Sentinel A3 (migration 028 columns + dedup table) + bumped `EXPECTED_MIGRATION_COUNT` 27→28.
+
+### Prod fix applied
+
+- Applied the missing `026` constraint change to prod: dropped old `orgs_plan_valid`, re-added with `('free','growth','enterprise')`. Upgrade then succeeded (org → `growth`/`trialing`).
+
+### Config gaps resolved (Vercel `contractgate` project)
+
+- Added `STRIPE_PRICE_GROWTH_MONTHLY` / `STRIPE_PRICE_GROWTH_ANNUAL` (were missing → "Missing Stripe price configuration"). `NEXT_PUBLIC_APP_URL` had to be on the **app** project, not the marketing site (controls Checkout `success_url` redirect).
+
+### Follow-ups (not done)
+
+- **Audit prod migration drift.** CI only counts migration *files* (`EXPECTED_MIGRATION_COUNT`); nothing verifies the prod DB has them applied. 026 was behind — check whether others are too (`list_migrations` vs `supabase/migrations/*`).
+- Webhook swallows handler DB errors as 200; consider alerting so a failed write isn't invisible.
+- Payment Link flow still resolves org by email (fragile); consider `client_reference_id`/metadata on the links, or steer logged-in users to in-app checkout only.
+- The `default` switch branch marks `invoice.paid`/`subscription.created` as processed despite no-op (harmless clutter); could set `handled=false`.
+
+---
+
 ## Run: 2026-05-29 — RFC-074: Org-ownership enforcement on data plane (latent P0-class)
 
 **Branch:** `nightly-maintenance-2026-05-28-rfc069-pure-fn-coverage`
