@@ -290,10 +290,22 @@ jobs:
           fi
           echo "Sentinel A3 OK: Stripe billing columns + idempotency table present (migration 028)."
 
+          # Sentinel A4 — migration 029 (Stripe failure log): verify the
+          # webhook failure-visibility table exists.
+          FAILED_TABLE=$(psql "$DATABASE_URL" -Atc \
+            "SELECT COUNT(*) FROM information_schema.tables
+             WHERE table_schema = 'public'
+               AND table_name   = 'stripe_failed_events'")
+          if [[ "$FAILED_TABLE" != "1" ]]; then
+            echo "::error::Migration 029 sentinel failed — stripe_failed_events table not found."
+            exit 1
+          fi
+          echo "Sentinel A4 OK: stripe_failed_events table present (migration 029)."
+
           # Sentinel B — file count: the loop above applies every *.sql file.
           # Assert we have exactly the expected number so a new migration
           # automatically forces this sentinel to be updated.
-          EXPECTED_MIGRATION_COUNT=28
+          EXPECTED_MIGRATION_COUNT=29
           ACTUAL_COUNT=$(ls supabase/migrations/*.sql | wc -l | tr -d ' ')
           if [[ "$ACTUAL_COUNT" != "$EXPECTED_MIGRATION_COUNT" ]]; then
             echo "::error::Migration count mismatch — expected $EXPECTED_MIGRATION_COUNT files, found $ACTUAL_COUNT."
