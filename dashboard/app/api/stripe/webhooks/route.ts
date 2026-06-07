@@ -30,19 +30,39 @@ function getSupabaseAdmin() {
   return _supabaseAdmin;
 }
 
-// supabase-js admin exposes no email lookup, so page through listUsers.
-// Capped at 10 pages (1000 users) to bound webhook latency; metadata.orgId
-// is the primary path, so this fallback runs only for Payment Link buyers.
-async function findUserIdByEmail(email: string): Promise<string | null> {
-  const supabaseAdmin = getSupabaseAdmin();
-  for (let page = 1; page <= 10; page++) {
-    const { data, error } = await supabaseAdmin.auth.admin.listUsers({ page, perPage: 100 });
-    if (error || !data?.users?.length) break;
-    const match = data.users.find((u) => u.email?.toLowerCase() === email);
-    if (match) return match.id;
-    if (data.users.length < 100) break; // last page
+// Records a webhook event that failed to do useful work into
+// stripe_failed_events so it is durable and alertable, instead of vanishing
+// into console logs. The webhook still returns 200 to Stripe; this row is the
+// signal that a paying customer may be stuck. Best-effort: a logging failure
+// here must never mask the original problem.
+type FailureReason = 'unresolved_org' | 'db_write_failed' | 'handler_error' | 'unexpected_price';
+async function recordFailure(
+  event: Stripe.Event,
+  reason: FailureReason,
+  detail: string,
+  orgId?: string | null
+): Promise<void> {
+  console.error(`[Stripe] FAILED event ${event.id} (${event.type}) reason=${reason}: ${detail}`);
+  try {
+    const supabaseAdmin = getSupabaseAdmin();
+    const { error } = await supabaseAdmin
+      .from('stripe_failed_events')
+      .upsert(
+        {
+          event_id: event.id,
+          type: event.type,
+          reason,
+          detail: detail.slice(0, 2000),
+          org_id: orgId ?? null,
+          resolved: false,
+          last_seen: new Date().toISOString(),
+        },
+        { onConflict: 'event_id' }
+      );
+    if (error) console.error('[Stripe] recordFailure persist failed:', error);
+  } catch (e) {
+    console.error('[Stripe] recordFailure threw:', e);
   }
-  return null;
 }
 
 // Idempotency: Stripe redelivers events on retry. We record an event id only
@@ -92,44 +112,49 @@ export async function POST(req: NextRequest) {
 
   try {
     // handled = the event did real work and should be recorded as processed.
-    // false means "received but no-op" (e.g. unresolved org) — leave it
-    // unmarked so a later redelivery can succeed once the data exists.
-    let handled = true;
+    // false means "received but no-op" (e.g. unresolved org, or an event type we
+    // don't act on) — leave it unmarked so a later redelivery can succeed once
+    // the data exists. Defaults to false so an unhandled branch can never
+    // silently mark itself done.
+    let handled = false;
 
     switch (event.type) {
       case 'checkout.session.completed': {
         const session = event.data.object as Stripe.Checkout.Session;
-        handled = await handleCheckoutCompleted(session);
+        handled = await handleCheckoutCompleted(event, session);
         break;
       }
 
       case 'customer.subscription.updated': {
         const subscription = event.data.object as Stripe.Subscription;
-        await handleSubscriptionUpdated(subscription);
+        handled = await handleSubscriptionUpdated(subscription);
         break;
       }
 
       case 'customer.subscription.deleted': {
         const subscription = event.data.object as Stripe.Subscription;
-        await handleSubscriptionDeleted(subscription);
+        handled = await handleSubscriptionDeleted(subscription);
         break;
       }
 
       case 'invoice.payment_failed': {
         const invoice = event.data.object as Stripe.Invoice;
-        await handlePaymentFailed(invoice);
+        handled = await handlePaymentFailed(invoice);
         break;
       }
 
       default:
-        // Ignore other events for now
+        // Event type we intentionally don't act on. Not a failure — just a
+        // no-op. Leave handled=false so we don't record a dedup row for an
+        // event we never processed.
         console.log(`[Stripe Webhook] Ignoring unhandled event type: ${event.type}`);
     }
 
     if (handled) await markProcessed(event);
   } catch (err: any) {
-    console.error(`[Stripe Webhook] Error handling ${event.type}:`, err);
-    // Still return 200 so Stripe doesn't retry endlessly; log for manual review
+    // A handler threw. Return 200 so Stripe doesn't retry-storm, but persist the
+    // failure so it's visible/alertable rather than swallowed in logs.
+    await recordFailure(event, 'handler_error', err?.message || String(err));
     return NextResponse.json({ received: true, error: err.message }, { status: 200 });
   }
 
@@ -138,38 +163,24 @@ export async function POST(req: NextRequest) {
 
 // Returns true if the org was upgraded (event should be marked processed),
 // false if it was a no-op (unresolved org / wrong price) so the event stays replayable.
-async function handleCheckoutCompleted(session: Stripe.Checkout.Session): Promise<boolean> {
+async function handleCheckoutCompleted(event: Stripe.Event, session: Stripe.Checkout.Session): Promise<boolean> {
   const stripe = getStripe();
   const supabaseAdmin = getSupabaseAdmin();
-  // For Payment Links + in-app checkouts we set metadata.orgId when possible.
-  // Fallback: look up by customer email (Payment Links collect email).
-  // orgId is set in metadata by create-checkout-session (and mirrored onto the
-  // subscription via subscription_data.metadata, which surfaces here as session.metadata).
-  const orgId = session.metadata?.orgId;
-
-  let targetOrgId: string | null = orgId || null;
-
-  if (!targetOrgId) {
-    // Fallback for marketing-site Payment Link flows: match on email.
-    // supabase-js admin has no getUserByEmail; look the user up via listUsers.
-    const email = (session.customer_email || session.customer_details?.email)?.toLowerCase();
-    if (email) {
-      const userId = await findUserIdByEmail(email);
-      if (userId) {
-        const { data: membership } = await supabaseAdmin
-          .from('org_memberships')
-          .select('org_id')
-          .eq('user_id', userId)
-          .order('joined_at', { ascending: true })
-          .limit(1)
-          .single();
-        targetOrgId = membership?.org_id || null;
-      }
-    }
-  }
+  // Option A (in-app-only): org resolution is deterministic via metadata.orgId,
+  // stamped by create-checkout-session on both the session and the subscription.
+  // There is no public Payment Link funnel, so the old email-match fallback was
+  // removed — email matching silently no-ops when the Stripe email differs from
+  // the signup email, which is the kind of invisible failure we're eliminating.
+  const targetOrgId: string | null = session.metadata?.orgId || null;
 
   if (!targetOrgId) {
-    console.warn('[Stripe] Could not resolve org for checkout.session.completed', session.id);
+    // No orgId on the session. Under Option A this should never happen for a
+    // legitimate in-app checkout; record it so it's visible rather than silent.
+    await recordFailure(
+      event,
+      'unresolved_org',
+      `checkout.session.completed ${session.id} had no metadata.orgId (in-app checkout should always set it)`
+    );
     return false;
   }
 
@@ -184,7 +195,12 @@ async function handleCheckoutCompleted(session: Stripe.Checkout.Session): Promis
   const expectedAnnual = process.env.STRIPE_PRICE_GROWTH_ANNUAL;
 
   if (priceId && expectedMonthly && expectedAnnual && priceId !== expectedMonthly && priceId !== expectedAnnual) {
-    console.warn(`[Stripe] Checkout session ${session.id} used unexpected price ${priceId}. Not upgrading org ${targetOrgId}.`);
+    await recordFailure(
+      event,
+      'unexpected_price',
+      `session ${session.id} used unexpected price ${priceId}; not upgrading`,
+      targetOrgId
+    );
     return false;
   }
 
@@ -214,14 +230,20 @@ async function handleCheckoutCompleted(session: Stripe.Checkout.Session): Promis
     .eq('id', targetOrgId);
 
   if (error) {
-    console.error('[Stripe] Failed to upgrade org on checkout.completed:', error);
-    return false; // DB write failed — leave unmarked so Stripe's retry can succeed.
+    // DB write failed — leave unmarked so Stripe's retry can succeed, AND
+    // record it so a persistent failure (e.g. schema drift like the 2026-06-05
+    // plan-constraint bug) is visible instead of silently 200-ing.
+    await recordFailure(event, 'db_write_failed', error.message, targetOrgId);
+    return false;
   }
   console.log(`[Stripe] Upgraded org ${targetOrgId} to growth via price ${priceId} (session ${session.id})`);
   return true;
 }
 
-async function handleSubscriptionUpdated(subscription: Stripe.Subscription) {
+// Returns true if an org was updated; false if no org matched the subscription
+// (a benign no-op — e.g. a subscription we never recorded). DB-write errors
+// throw and are caught by the POST handler, which records them.
+async function handleSubscriptionUpdated(subscription: Stripe.Subscription): Promise<boolean> {
   const supabaseAdmin = getSupabaseAdmin();
   const { data: org } = await supabaseAdmin
     .from('orgs')
@@ -229,7 +251,7 @@ async function handleSubscriptionUpdated(subscription: Stripe.Subscription) {
     .eq('stripe_subscription_id', subscription.id)
     .single();
 
-  if (!org) return;
+  if (!org) return false;
 
   const status = subscription.status; // active, trialing, past_due, canceled, etc.
 
@@ -243,18 +265,17 @@ async function handleSubscriptionUpdated(subscription: Stripe.Subscription) {
     }
   }
 
-  await supabaseAdmin
+  const { error } = await supabaseAdmin
     .from('orgs')
-    .update({
-      plan: newPlan,
-      plan_status: status,
-    })
+    .update({ plan: newPlan, plan_status: status })
     .eq('id', org.id);
+  if (error) throw new Error(`subscription.updated org ${org.id}: ${error.message}`);
 
   console.log(`[Stripe] Subscription ${subscription.id} updated → org ${org.id} plan=${newPlan} status=${status}`);
+  return true;
 }
 
-async function handleSubscriptionDeleted(subscription: Stripe.Subscription) {
+async function handleSubscriptionDeleted(subscription: Stripe.Subscription): Promise<boolean> {
   const supabaseAdmin = getSupabaseAdmin();
   const { data: org } = await supabaseAdmin
     .from('orgs')
@@ -262,9 +283,9 @@ async function handleSubscriptionDeleted(subscription: Stripe.Subscription) {
     .eq('stripe_subscription_id', subscription.id)
     .single();
 
-  if (!org) return;
+  if (!org) return false;
 
-  await supabaseAdmin
+  const { error } = await supabaseAdmin
     .from('orgs')
     .update({
       plan: 'free',
@@ -272,14 +293,16 @@ async function handleSubscriptionDeleted(subscription: Stripe.Subscription) {
       stripe_subscription_id: null,
     })
     .eq('id', org.id);
+  if (error) throw new Error(`subscription.deleted org ${org.id}: ${error.message}`);
 
   console.log(`[Stripe] Subscription deleted → downgraded org ${org.id} to free`);
+  return true;
 }
 
-async function handlePaymentFailed(invoice: Stripe.Invoice) {
+async function handlePaymentFailed(invoice: Stripe.Invoice): Promise<boolean> {
   // Stripe SDK v22: the subscription moved under parent.subscription_details.
   const subRef = invoice.parent?.subscription_details?.subscription;
-  if (!subRef) return;
+  if (!subRef) return false;
 
   const subId = typeof subRef === 'string' ? subRef : subRef.id;
 
@@ -290,12 +313,14 @@ async function handlePaymentFailed(invoice: Stripe.Invoice) {
     .eq('stripe_subscription_id', subId)
     .single();
 
-  if (!org) return;
+  if (!org) return false;
 
-  await supabaseAdmin
+  const { error } = await supabaseAdmin
     .from('orgs')
     .update({ plan_status: 'past_due' })
     .eq('id', org.id);
+  if (error) throw new Error(`invoice.payment_failed org ${org.id}: ${error.message}`);
 
   console.log(`[Stripe] Payment failed for org ${org.id} (invoice ${invoice.id})`);
+  return true;
 }

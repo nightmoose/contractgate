@@ -2,6 +2,35 @@
 
 ---
 
+## Run: 2026-06-07 — Stripe launch follow-ups (Option A + failure visibility)
+
+**Scope:** dashboard (Next.js) + Supabase. No Rust/ingest changes; validation engine untouched.
+**Suggested branch:** `nightly-maintenance-2026-06-07-stripe-launch-followups`
+
+### Migration-drift audit (launch-blocker item 1) — GREEN
+Audited prod schema directly (object-probing, since the `supabase_migrations` tracking table is unreliable here — it lists only 003/004/005 + early_access). All launch-critical objects from 026/027/028/022 are present in prod: `orgs_plan_valid` allows `growth`, all stripe columns + `plan_status`, `api_keys`, `public_contracts`, `stripe_processed_events`. **No real drift.** Repo has 28 migration files; the public catalog table is named `public_contracts` and the Stripe dedup table `stripe_processed_events` (tracking-table names were the only mismatch).
+
+### Option A: in-app-only checkout (launch-blocker item 2)
+- Confirmed `create-checkout-session` already stamps `metadata.orgId` on both session and subscription → deterministic resolution. No public Payment Link is referenced anywhere in the dashboard.
+- **Removed the email-match fallback** from `handleCheckoutCompleted` (and deleted `findUserIdByEmail`) — it silently no-ops when the Stripe email ≠ signup email. Resolution is now `metadata.orgId` only; a missing orgId records a visible failure.
+
+### Silent-200 fix (launch-blocker item 3) + default-branch handled flag
+- New table `stripe_failed_events` (migration 029, **applied to prod**) persists every webhook event that fails to do useful work: `unresolved_org`, `unexpected_price`, `db_write_failed`, `handler_error`. Webhook still returns 200 (no retry-storm) but failures are now durable/alertable instead of log-only. This would have surfaced the 2026-06-05 `23514` bug immediately.
+- `handled` now defaults to `false`; only branches that do real work mark the event processed. The `default`/unhandled branch and all no-op paths (unmatched subscription) leave the event unrecorded so a redelivery can still succeed. Subscription handlers now return `boolean` and throw on DB-write error (caught → recorded).
+
+### Verify
+- `dashboard`: `tsc --noEmit` clean (run in sandbox). No dangling refs to removed helper.
+- Migration 029 verified live in prod (8 columns, index present).
+
+### Handoff to Alex (I don't run git/cargo/npm-deploy)
+1. `git fetch && git checkout -b nightly-maintenance-2026-06-07-stripe-launch-followups origin/main`
+2. `cd dashboard && npm run build` (full Next build check)
+3. Commit: migration `029_stripe_failed_events.sql`, `dashboard/app/api/stripe/webhooks/route.ts`, `docs/stripe-billing-reference.md`, this log.
+4. Deploy dashboard to Vercel. Migration 029 is already applied to prod, so no DB step needed on deploy.
+5. **Remaining before public signup:** run one real fresh-signup → upgrade end-to-end (the one thing code can't prove). Optionally wire `stripe_failed_events` to a real alerter.
+
+---
+
 ## Run: 2026-06-05 — Stripe self-serve billing: review + fixes + prod debug
 
 **Scope:** dashboard (Next.js on Vercel) + Supabase. No Rust/ingest changes; validation engine untouched.
