@@ -54,6 +54,12 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Missing Stripe price configuration' }, { status: 500 });
     }
 
+    // Trial length for new Growth subscriptions started via in-app Checkout.
+    // This is the code-controlled path (used when a logged-in user upgrades from /pricing).
+    // Note: Direct Stripe Payment Links (if any still exist) have their own trial setting
+    // configured in the Stripe dashboard and are not affected by this value.
+    const TRIAL_PERIOD_DAYS = 30;
+
     const successUrl = `${process.env.NEXT_PUBLIC_APP_URL}/billing/success?session_id={CHECKOUT_SESSION_ID}`;
     const cancelUrl = `${process.env.NEXT_PUBLIC_APP_URL}/pricing`;
 
@@ -64,7 +70,7 @@ export async function POST(req: NextRequest) {
       customer_email: org.stripe_customer_id ? undefined : user.email,
       line_items: [{ price, quantity: 1 }],
       subscription_data: {
-        trial_period_days: 14,
+        trial_period_days: TRIAL_PERIOD_DAYS,
         metadata: { orgId: org.id },
       },
       metadata: { orgId: org.id },

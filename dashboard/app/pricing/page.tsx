@@ -39,7 +39,7 @@ const TIERS = [
     tagline: "Explore & prototype",
     price: { monthly: "$0", annual: "$0" },
     cta: "Start free",
-    ctaHref: "https://app.datacontractgate.com/signup",
+    ctaHref: "https://app.datacontractgate.com/auth/signup",
     highlight: false,
     color: "border-[#1f2937]",
     badge: null,
@@ -339,7 +339,7 @@ export default function PricingPage() {
           },
           {
             q: "Do you offer a trial?",
-            a: "Growth comes with a 14-day free trial, no credit card required. Enterprise prospects get a POC environment on request.",
+            a: "Growth comes with a 30-day free trial, no credit card required. Enterprise prospects get a POC environment on request.",
           },
           {
             q: "What does 'patent pending' mean for my stack?",
@@ -386,7 +386,8 @@ function GrowthUpgradeButton({ annual, onToggleAnnual }: { annual: boolean; onTo
 
   async function startUpgrade(annual: boolean) {
     if (!org) {
-      // Not logged in or no org — send to public marketing site which has the Payment Links
+      // Not logged in or no org — send to the public marketing site to start signup.
+      // (Growth upgrades for authenticated users use the in-app Stripe Checkout flow below.)
       window.location.href = 'https://datacontractgate.com/#pricing';
       return;
     }
@@ -434,7 +435,7 @@ function GrowthUpgradeButton({ annual, onToggleAnnual }: { annual: boolean; onTo
       >
         {loadingUpgrade
           ? 'Starting checkout…'
-          : `Start 14-day trial (${annual ? 'annual' : 'monthly'})`}
+          : `Start 30-day trial (${annual ? 'annual' : 'monthly'})`}
       </button>
       <button
         onClick={() => onToggleAnnual(!annual)}

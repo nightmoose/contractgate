@@ -379,7 +379,7 @@ function AccountContent() {
             )}
           </div>
           <p className="text-[11px] text-slate-500">
-            Self-serve upgrades use Stripe Checkout. The marketing site Payment Links also provision Growth access via webhook.
+            Self-serve upgrades use Stripe Checkout (in-app from the pricing page).
           </p>
         </div>
       )}

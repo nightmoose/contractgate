@@ -39,7 +39,7 @@ Body (optional):
 - `annual` selects `STRIPE_PRICE_GROWTH_ANNUAL` vs `STRIPE_PRICE_GROWTH_MONTHLY`.
 - `priceId` overrides the env price (rarely needed).
 - Rejects with 400 if the org is already on `growth`/`enterprise`.
-- Sets a 14-day trial and stamps `metadata.orgId` on both session and subscription.
+- Sets a 30-day trial and stamps `metadata.orgId` on both session and subscription.
 
 Returns `{ "url": "<checkout-url>" }`.
 
