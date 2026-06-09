@@ -11,7 +11,10 @@
  *
  * Shared helpers/primitives:
  *   _lib.tsx              — TooltipWrap, ConfirmActionModal, ConfirmReplayModal,
- *                           ReplaySummaryModal, inferFields, buildYaml, etc.
+ *                           ReplaySummaryModal, version-picker helpers, etc.
+ *                           (RFC-079: client-side inference removed — the
+ *                           Generate-from-Sample tab now calls the Rust engine
+ *                           via inferSamples() / POST /contracts/infer.)
  */
 
 import { useState, useEffect, useMemo } from "react";
@@ -42,6 +45,7 @@ import {
   fetchPublished,
   importPublished,
   inferCsv,
+  inferSamples,
 } from "@/lib/api";
 import type {
   ContractSummary,
@@ -67,14 +71,8 @@ import { CollaborateTab } from "./_tabs/collaborate";
 import {
   pickDefaultVersion,
   newestVersionString,
-  inferFields,
-  buildYaml,
-  InferredField,
 } from "./_lib";
 import clsx from "clsx";
-
-// Re-export for VisualBuilder / tests that import from this file
-export type { InferredField };
 
 // ---------------------------------------------------------------------------
 // Edit Contract Modal
@@ -1090,18 +1088,30 @@ function GeneratorTab({ onSaved }: { onSaved: () => void }) {
   const [contractName, setContractName] = useState("my_events");
   const [generatedYaml, setGeneratedYaml] = useState<string | null>(null);
   const [parseError, setParseError] = useState<string | null>(null);
+  const [generating, setGenerating] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
 
-  const handleGenerate = () => {
+  // RFC-079: inference runs on the Rust engine via POST /contracts/infer — the
+  // same engine as CSV/URL inference — so nested objects produce
+  // `type: object` + `properties` correctly. JSON is parsed locally first so
+  // syntax errors stay instant; only the parsed samples are sent to the server.
+  const handleGenerate = async () => {
     setParseError(null); setGeneratedYaml(null); setSaveError(null);
     let parsed: unknown;
     try { parsed = JSON.parse(sample); }
     catch (e) { setParseError(`Invalid JSON: ${e instanceof Error ? e.message : String(e)}`); return; }
-    const records: Record<string, unknown>[] = Array.isArray(parsed)
-      ? parsed : [parsed as Record<string, unknown>];
+    const records: unknown[] = Array.isArray(parsed) ? parsed : [parsed];
     if (records.length === 0) { setParseError("Sample data is empty — paste at least one event."); return; }
-    setGeneratedYaml(buildYaml(contractName, inferFields(records)));
+    setGenerating(true);
+    try {
+      const res = await inferSamples({ name: contractName, samples: records });
+      setGeneratedYaml(res.yaml_content);
+    } catch (e) {
+      setParseError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setGenerating(false);
+    }
   };
 
   const handleSave = async () => {
@@ -1117,6 +1127,11 @@ function GeneratorTab({ onSaved }: { onSaved: () => void }) {
       <p className="text-sm text-slate-400">
         Paste one or more sample events as JSON. The generator will infer field types, detect patterns,
         and produce a ready-to-edit YAML contract.
+      </p>
+      <p className="text-xs text-slate-500 bg-[#111827] border border-[#1f2937] rounded-lg p-3">
+        Sample data is sent to ContractGate to generate the contract. To keep
+        data fully local, use <span className="text-slate-300">Start Blank</span>{" "}
+        (YAML editor) or run <code className="text-slate-300">cg test</code> locally.
       </p>
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <div>
@@ -1178,9 +1193,10 @@ function GeneratorTab({ onSaved }: { onSaved: () => void }) {
         </div>
         <button
           onClick={handleGenerate}
-          className="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white text-sm font-medium rounded-lg transition-colors"
+          disabled={generating || !sample.trim()}
+          className="px-4 py-2 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white text-sm font-medium rounded-lg transition-colors"
         >
-          ✦ Generate Contract
+          {generating ? "Generating…" : "✦ Generate Contract"}
         </button>
         {generatedYaml && (
           <button onClick={handleSave} disabled={saving}
@@ -1199,10 +1215,10 @@ function GeneratorTab({ onSaved }: { onSaved: () => void }) {
         <div className="bg-[#111827] border border-[#1f2937] rounded-xl p-4">
           <p className="text-xs font-medium text-slate-400 uppercase tracking-wider mb-3">What was inferred</p>
           <div className="flex flex-wrap gap-x-6 gap-y-1 text-xs text-slate-500">
-            <span>🔵 Types from JSON values (string / integer / number / boolean)</span>
+            <span>🔵 Types from JSON values (string / integer / number / boolean / object / array)</span>
             <span>🟢 Required = field present in every sample</span>
-            <span>🟡 Enum = ≤6 distinct string values</span>
-            <span>🔷 Pattern = UUID / email / date / URL / alphanumeric ID detected</span>
+            <span>🟡 Enum / pattern detected from string values</span>
+            <span>🔷 Nested objects inferred as type: object with properties</span>
             <span>🟠 min: 0 suggested for non-negative numbers</span>
           </div>
         </div>
