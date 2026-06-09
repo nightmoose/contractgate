@@ -1,0 +1,32 @@
+# Kinesis ingress contract (RFC-078 walkthrough example)
+#
+# Producers write to cg-{contract_id}-raw; valid events route to
+# cg-{contract_id}-clean, invalid to cg-{contract_id}-quarantine.
+# Requires the gateway built with --features kinesis-ingress.
+version: "1.0"
+name: "telemetry"
+description: "Device telemetry ingested over AWS Kinesis"
+
+ontology:
+  entities:
+    - name: device_id
+      type: string
+      required: true
+      pattern: "^[a-zA-Z0-9_-]+$"
+    - name: metric
+      type: string
+      required: true
+      enum: ["cpu", "mem", "temp", "battery"]
+    - name: value
+      type: number
+      required: true
+      min: 0
+    - name: timestamp
+      type: integer
+      required: true
+
+quality:
+  - field: timestamp
+    type: freshness
+    max_age_seconds: 3600       # telemetry older than 1h is stale
+    description: "Drop stale telemetry samples"
