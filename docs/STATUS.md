@@ -90,6 +90,7 @@ signed off (may be planning docs or UI-only); **Draft** = under review;
 | 077 | [RAG-Ingestion Contract Profile](rfcs/077-rag-ingestion-contract-profile.md) | Draft | TBD |
 | 078 | [Cross-Surface Pipeline Walkthrough Template](rfcs/078-pipeline-walkthrough-template.md) | Draft | TBD |
 | 079 | [Unify Inference on the Rust Engine](rfcs/079-unify-inference-on-rust-engine.md) | Draft | TBD |
+| 080 | [Visual Builder Nested-Object Support](rfcs/080-visual-builder-object-support.md) | Draft | TBD |
 
 ---
 

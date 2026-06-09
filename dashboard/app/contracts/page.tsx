@@ -1954,7 +1954,7 @@ function ContractsContent() {
               {t === "build" && "🧱 Visual Builder"}
               {t === "generate" && "✦ Generate from Sample"}
               {t === "csv" && "📊 From CSV"}
-              {t === "quarantine" && "🔒 Quarantine"}
+              {t === "quarantine" && "☣️ Quarantine"}
               {locked && <span className="text-[10px] text-amber-500" title="Growth plan required">🔒</span>}
             </button>
           );
