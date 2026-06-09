@@ -87,6 +87,8 @@ signed off (may be planning docs or UI-only); **Draft** = under review;
 | 074 | [Org-Ownership Enforcement on Data Plane (latent P0-class)](rfcs/074-org-ownership-enforcement-data-plane.md) | Implemented | `nightly-maintenance-2026-05-28-rfc069-pure-fn-coverage` |
 | 075 | [Auth-On Isolation Test Lane](rfcs/075-auth-on-isolation-test-lane.md) | Draft | TBD |
 | 076 | [`cg test`: Local Contract Dry-Run](rfcs/076-contract-test-dry-run.md) | Implemented | `nightly-maintenance-2026-06-01-rfc076-contract-test-dry-run` |
+| 077 | [RAG-Ingestion Contract Profile](rfcs/077-rag-ingestion-contract-profile.md) | Draft | TBD |
+| 078 | [Cross-Surface Pipeline Walkthrough Template](rfcs/078-pipeline-walkthrough-template.md) | Draft | TBD |
 
 ---
 

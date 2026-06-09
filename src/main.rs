@@ -71,6 +71,8 @@ pub mod observability;
 mod odcs;
 mod public_catalog;
 mod publication;
+#[cfg(test)]
+mod rag_contract_tests;
 mod rate_limit;
 mod replay;
 mod scaffold_handler;

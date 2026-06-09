@@ -75,32 +75,42 @@ dashboard can recognize the profile.
 
 ### Convention: the `_cg` envelope
 
-A RAG record is `{ ...payload, _cg: { ...envelope } }`. The contract validates
-the `_cg.*` paths via dot-notation (already supported by `QualityRule.field`).
+A RAG record is `{ ...payload, _cg: { ...envelope } }`. The envelope is declared
+as a **nested `object` entity** so ontology validation descends into it
+(`validate_fields` resolves each level by literal key via `obj.get`, then
+recurses into `FieldType::Object` `properties`). Quality rules target the same
+fields by **dot-notation path** (`check_completeness` / `check_freshness` use
+`get_nested_value`, which splits on `.`). Both mechanisms already exist; the
+envelope must be a real nested object — flat dotted entity names like
+`_cg.source` do **not** resolve and would always read as missing.
 
 ```yaml
 version: "1.0"
 name: "rag_corpus_ingest"
 description: "RAG ingestion contract — enforces provenance + PII attestation"
-compliance_mode: true          # reject undeclared envelope keys
+compliance_mode: true          # reject undeclared TOP-LEVEL keys (see note)
 
 ontology:
   entities:
-    - name: _cg.source
-      type: string
+    - name: _cg
+      type: object
       required: true
-      enum: ["confluence", "gdrive", "s3-curated", "support-tickets"]
-    - name: _cg.doc_id
-      type: string
-      required: true
-      pattern: "^[a-zA-Z0-9_:-]+$"
-    - name: _cg.ingested_at
-      type: integer
-      required: true
-    - name: _cg.pii_redacted
-      type: boolean
-      required: true
-      enum: [true]             # attestation must be explicit true
+      properties:
+        - name: source
+          type: string
+          required: true
+          enum: ["confluence", "gdrive", "s3-curated", "support-tickets"]
+        - name: doc_id
+          type: string
+          required: true
+          pattern: "^[a-zA-Z0-9_:-]+$"
+        - name: ingested_at
+          type: integer
+          required: true
+        - name: pii_redacted
+          type: boolean
+          required: true
+          enum: [true]         # attestation must be explicit true
     - name: text
       type: string
       required: true
@@ -113,13 +123,19 @@ quality:
   - field: _cg.doc_id
     type: uniqueness
     scope: batch               # dedupe within an ingest batch
-  - field: _cg.source
-    type: validity
 ```
 
 No engine code is required to make the above work — it is valid against the
-current parser and validator today. (Verification step below confirms this
-rather than asserting it.)
+current parser and validator today. The verification step below confirms this
+rather than asserting it.
+
+**Caveat (compliance_mode is top-level only):** `declared_top_level_fields` is
+built from top-level entity names, so `compliance_mode` rejects undeclared
+*top-level* keys but does **not** police undeclared keys *inside* `_cg`. If we
+want strict "no stray envelope keys," that is either a small engine change
+(recurse the undeclared-field check into declared objects) or its own RFC. Out
+of scope for 077 — noted so the docs don't overclaim. The `enum: [true]`
+attestation and required-field checks inside `_cg` still hold.
 
 ### What we actually build
 
