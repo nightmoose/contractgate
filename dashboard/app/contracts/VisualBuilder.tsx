@@ -168,11 +168,16 @@ function emitField(f: FieldState, itemIndent: number): string[] {
     `${keyPad}required: ${f.required}`,
   ];
 
-  if (f.type === "object" && f.properties && f.properties.length > 0) {
-    lines.push(`${keyPad}properties:`);
-    const childItemIndent = keyIndent + 2; // children listed under "properties:"
-    for (const child of f.properties.filter((c) => c.name.trim())) {
-      lines.push(...emitField(child, childItemIndent));
+  if (f.type === "object") {
+    // Only emit `properties:` when at least one child has a name — avoids
+    // a bare `properties:` key (YAML null) when all children are still unnamed.
+    const namedChildren = (f.properties || []).filter((c) => c.name.trim());
+    if (namedChildren.length > 0) {
+      lines.push(`${keyPad}properties:`);
+      const childItemIndent = keyIndent + 2; // children listed under "properties:"
+      for (const child of namedChildren) {
+        lines.push(...emitField(child, childItemIndent));
+      }
     }
   } else {
     // Scalar attribute emission (unchanged behavior for non-object fields).
