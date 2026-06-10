@@ -9,7 +9,7 @@ import clsx from "clsx";
 // Types
 // ---------------------------------------------------------------------------
 
-type FieldType = "string" | "integer" | "number" | "boolean" | "date";
+type FieldType = "string" | "integer" | "number" | "boolean" | "date" | "object";
 
 interface FieldState {
   id: string;
@@ -39,6 +39,9 @@ interface FieldState {
   // server-side default — we emit the `style:` key in YAML only when
   // the user explicitly picks a non-default (i.e. `format_preserving`).
   maskStyle: MaskStyle | "";
+  // For type: object — recursive child fields. Ignored for scalar types.
+  // Mirrors the YAML `properties:` under a `type: object` entity.
+  properties?: FieldState[];
 }
 
 interface MetricState {
@@ -80,6 +83,7 @@ const TYPE_COLORS: Record<FieldType, string> = {
   number:  "bg-orange-900/40 text-orange-300 border-orange-700/50",
   boolean: "bg-teal-900/40 text-teal-300 border-teal-700/50",
   date:    "bg-rose-900/40 text-rose-300 border-rose-700/50",
+  object:  "bg-indigo-900/40 text-indigo-300 border-indigo-700/50",
 };
 
 // ---------------------------------------------------------------------------
@@ -115,53 +119,23 @@ function buildYaml(state: BuilderState): string {
     lines.push("    [] # add fields above");
   } else {
     for (const f of validFields) {
-      lines.push(`    - name: ${f.name.trim()}`);
-      lines.push(`      type: ${f.type}`);
-      lines.push(`      required: ${f.required}`);
-      const pattern = resolvedPattern(f);
-      if (f.type === "string" && pattern) {
-        lines.push(`      pattern: "${pattern}"`);
-      }
-      if (f.type === "string" && f.enumValues.length > 0 && !pattern) {
-        lines.push("      enum:");
-        for (const v of f.enumValues) lines.push(`        - "${v}"`);
-      }
-      if ((f.type === "integer" || f.type === "number") && f.min !== "") {
-        lines.push(`      min: ${f.min}`);
-      }
-      if ((f.type === "integer" || f.type === "number") && f.max !== "") {
-        lines.push(`      max: ${f.max}`);
-      }
-      if (f.type === "string" && f.minLength !== "") {
-        lines.push(`      min_length: ${f.minLength}`);
-      }
-      if (f.type === "string" && f.maxLength !== "") {
-        lines.push(`      max_length: ${f.maxLength}`);
-      }
-      // RFC-004: emit the PII transform block when declared.  Only
-      // strings can carry transforms (gated in the UI); emit `style`
-      // only for mask, and only when non-default (opaque is default).
-      if (f.type === "string" && f.transformKind) {
-        lines.push("      transform:");
-        lines.push(`        kind: ${f.transformKind}`);
-        if (f.transformKind === "mask" && f.maskStyle === "format_preserving") {
-          lines.push(`        style: format_preserving`);
-        }
-      }
+      lines.push(...emitField(f, 4));
     }
   }
 
-  // Glossary — only fields that have a description
-  const withDesc = validFields.filter((f) => f.description.trim());
+  // Glossary — only fields that have a description.
+  // For nested objects we use dot-paths (e.g. _cg.source) so the server
+  // glossary + quality rules can target them (see RFC-077 RAG profile).
+  const withDesc = collectDescribedFields(validFields);
   lines.push("", "glossary:");
   if (withDesc.length === 0) {
     lines[lines.length - 1] = "glossary: []";
   } else {
-    for (const f of withDesc) {
-      lines.push(`  - field: "${f.name.trim()}"`);
-      lines.push(`    description: "${f.description.trim()}"`);
-      if (f.constraints.trim()) {
-        lines.push(`    constraints: "${f.constraints.trim()}"`);
+    for (const entry of withDesc) {
+      lines.push(`  - field: "${entry.path}"`);
+      lines.push(`    description: "${entry.description}"`);
+      if (entry.constraints) {
+        lines.push(`    constraints: "${entry.constraints}"`);
       }
     }
   }
@@ -179,6 +153,89 @@ function buildYaml(state: BuilderState): string {
   }
 
   return lines.join("\n") + "\n";
+}
+
+// Recursive emitter for a single entity (supports type: object + properties).
+// itemIndent is the column for the leading "- " (e.g. 4 for top-level entities).
+function emitField(f: FieldState, itemIndent: number): string[] {
+  const keyIndent = itemIndent + 2;
+  const itemPad = " ".repeat(itemIndent);
+  const keyPad = " ".repeat(keyIndent);
+
+  const lines: string[] = [
+    `${itemPad}- name: ${f.name.trim()}`,
+    `${keyPad}type: ${f.type}`,
+    `${keyPad}required: ${f.required}`,
+  ];
+
+  if (f.type === "object") {
+    // Only emit `properties:` when at least one child has a name — avoids
+    // a bare `properties:` key (YAML null) when all children are still unnamed.
+    const namedChildren = (f.properties || []).filter((c) => c.name.trim());
+    if (namedChildren.length > 0) {
+      lines.push(`${keyPad}properties:`);
+      const childItemIndent = keyIndent + 2; // children listed under "properties:"
+      for (const child of namedChildren) {
+        lines.push(...emitField(child, childItemIndent));
+      }
+    }
+  } else {
+    // Scalar attribute emission (unchanged behavior for non-object fields).
+    const pattern = resolvedPattern(f);
+    if (f.type === "string" && pattern) {
+      lines.push(`${keyPad}pattern: "${pattern}"`);
+    }
+    if (f.type === "string" && f.enumValues.length > 0 && !pattern) {
+      lines.push(`${keyPad}enum:`);
+      for (const v of f.enumValues) lines.push(`${keyPad}  - "${v}"`);
+    }
+    if ((f.type === "integer" || f.type === "number") && f.min !== "") {
+      lines.push(`${keyPad}min: ${f.min}`);
+    }
+    if ((f.type === "integer" || f.type === "number") && f.max !== "") {
+      lines.push(`${keyPad}max: ${f.max}`);
+    }
+    if (f.type === "string" && f.minLength !== "") {
+      lines.push(`${keyPad}min_length: ${f.minLength}`);
+    }
+    if (f.type === "string" && f.maxLength !== "") {
+      lines.push(`${keyPad}max_length: ${f.maxLength}`);
+    }
+    // RFC-004: emit the PII transform block when declared.  Only
+    // strings can carry transforms (gated in the UI); emit `style`
+    // only for mask, and only when non-default (opaque is default).
+    if (f.type === "string" && f.transformKind) {
+      lines.push(`${keyPad}transform:`);
+      lines.push(`${keyPad}  kind: ${f.transformKind}`);
+      if (f.transformKind === "mask" && f.maskStyle === "format_preserving") {
+        lines.push(`${keyPad}  style: format_preserving`);
+      }
+    }
+  }
+
+  return lines;
+}
+
+// Collect (path, description, constraints) for glossary.
+// For nested objects we emit dot-paths so quality rules and the server
+// can target them (e.g. "_cg.source").
+function collectDescribedFields(fields: FieldState[], prefix = ""): Array<{ path: string; description: string; constraints: string }> {
+  const out: Array<{ path: string; description: string; constraints: string }> = [];
+  for (const f of fields) {
+    if (!f.name.trim()) continue;
+    const path = prefix ? `${prefix}.${f.name.trim()}` : f.name.trim();
+    if (f.description.trim()) {
+      out.push({
+        path,
+        description: f.description.trim(),
+        constraints: f.constraints.trim(),
+      });
+    }
+    if (f.type === "object" && f.properties) {
+      out.push(...collectDescribedFields(f.properties, path));
+    }
+  }
+  return out;
 }
 
 // ---------------------------------------------------------------------------
@@ -214,6 +271,79 @@ function defaultMetric(): MetricState {
 }
 
 // ---------------------------------------------------------------------------
+// Recursive tree helpers for nested object fields (RFC-080)
+// ---------------------------------------------------------------------------
+
+function updateFieldTree(fields: FieldState[], id: string, patch: Partial<FieldState>): FieldState[] {
+  return fields.map((f) => {
+    if (f.id === id) {
+      return { ...f, ...patch };
+    }
+    if (f.properties && f.properties.length > 0) {
+      return {
+        ...f,
+        properties: updateFieldTree(f.properties, id, patch),
+      };
+    }
+    return f;
+  });
+}
+
+function removeFieldTree(fields: FieldState[], id: string): FieldState[] {
+  const filtered = fields.filter((f) => f.id !== id);
+  return filtered.map((f) => {
+    if (f.properties && f.properties.length > 0) {
+      return {
+        ...f,
+        properties: removeFieldTree(f.properties, id),
+      };
+    }
+    return f;
+  });
+}
+
+function addFieldToTree(fields: FieldState[], parentId: string, newField: FieldState): FieldState[] {
+  return fields.map((f) => {
+    if (f.id === parentId) {
+      const existing = f.properties || [];
+      return {
+        ...f,
+        properties: [...existing, newField],
+      };
+    }
+    if (f.properties && f.properties.length > 0) {
+      return {
+        ...f,
+        properties: addFieldToTree(f.properties, parentId, newField),
+      };
+    }
+    return f;
+  });
+}
+
+function moveFieldInTree(fields: FieldState[], id: string, dir: -1 | 1): FieldState[] {
+  for (let i = 0; i < fields.length; i++) {
+    const f = fields[i];
+    if (f.id === id) {
+      const newIdx = i + dir;
+      if (newIdx < 0 || newIdx >= fields.length) return fields;
+      const next = [...fields];
+      [next[i], next[newIdx]] = [next[newIdx], next[i]];
+      return next;
+    }
+    if (f.properties && f.properties.length > 0) {
+      const updated = moveFieldInTree(f.properties, id, dir);
+      if (updated !== f.properties) {
+        return fields.map((ff, idx) =>
+          idx === i ? { ...ff, properties: updated } : ff
+        );
+      }
+    }
+  }
+  return fields;
+}
+
+// ---------------------------------------------------------------------------
 // FieldCard
 // ---------------------------------------------------------------------------
 
@@ -221,17 +351,24 @@ function FieldCard({
   field,
   index,
   total,
-  onChange,
-  onDelete,
-  onMove,
+  updateField,
+  deleteField,
+  moveField,
+  addChildTo,
 }: {
   field: FieldState;
   index: number;
   total: number;
-  onChange: (patch: Partial<FieldState>) => void;
-  onDelete: () => void;
-  onMove: (dir: -1 | 1) => void;
+  updateField: (id: string, patch: Partial<FieldState>) => void;
+  deleteField: (id: string) => void;
+  moveField: (id: string, dir: -1 | 1) => void;
+  addChildTo?: (parentId: string) => void;
 }) {
+  // Bind the tree-aware dispatchers to this field's id so the rest of the
+  // (large) FieldCard body can continue to use the original onChange/onDelete/onMove names.
+  const onChange = (patch: Partial<FieldState>) => updateField(field.id, patch);
+  const onDelete = () => deleteField(field.id);
+  const onMove = (dir: -1 | 1) => moveField(field.id, dir);
   const handleEnumKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === "Enter" || e.key === ",") {
       e.preventDefault();
@@ -284,10 +421,30 @@ function FieldCard({
 
         {/* Type selector */}
         <div className="flex gap-1 shrink-0">
-          {(["string", "integer", "number", "boolean", "date"] as FieldType[]).map((t) => (
+          {(["string", "integer", "number", "boolean", "date", "object"] as FieldType[]).map((t) => (
             <button
               key={t}
-              onClick={() => onChange({ type: t, enumValues: [], patternPreset: "", customPattern: "", min: "", max: "", minLength: "", maxLength: "", transformKind: "", maskStyle: "" })}
+              onClick={() => {
+                const base: Partial<FieldState> = {
+                  type: t,
+                  enumValues: [],
+                  patternPreset: "",
+                  customPattern: "",
+                  min: "",
+                  max: "",
+                  minLength: "",
+                  maxLength: "",
+                  transformKind: "",
+                  maskStyle: "",
+                };
+                if (t === "object") {
+                  base.properties = field.properties || [];
+                } else if (field.type === "object") {
+                  // switching away from object: drop children (can be re-added)
+                  base.properties = undefined;
+                }
+                onChange(base);
+              }}
               className={clsx(
                 "px-2.5 py-1 text-xs rounded-lg border font-medium transition-colors",
                 field.type === t
@@ -320,6 +477,36 @@ function FieldCard({
           title="Remove field"
         >×</button>
       </div>
+
+      {/* Nested object editor (RFC-080) */}
+      {field.type === "object" && (
+        <div className="pl-7 mt-1 border-l-2 border-[#1f2937] space-y-2">
+          <div className="flex items-center justify-between">
+            <span className="text-xs text-slate-500">Properties</span>
+            <button
+              onClick={() => addChildTo?.(field.id)}
+              className="px-2 py-0.5 text-[10px] bg-blue-600/70 hover:bg-blue-600 text-white rounded transition-colors"
+            >
+              + Add field
+            </button>
+          </div>
+          {(field.properties || []).length === 0 && (
+            <div className="text-[10px] text-slate-600 italic pl-1">No nested fields — add children for the object</div>
+          )}
+          {(field.properties || []).map((child, j) => (
+            <FieldCard
+              key={child.id}
+              field={child}
+              index={j}
+              total={(field.properties || []).length}
+              updateField={updateField}
+              deleteField={deleteField}
+              moveField={moveField}
+              addChildTo={addChildTo}
+            />
+          ))}
+        </div>
+      )}
 
       {/* String options */}
       {field.type === "string" && (
@@ -611,28 +798,33 @@ export default function VisualBuilder({ onSaved }: { onSaved: () => void }) {
   const patchField = useCallback((id: string, patch: Partial<FieldState>) => {
     setState((s) => ({
       ...s,
-      fields: s.fields.map((f) => (f.id === id ? { ...f, ...patch } : f)),
+      fields: updateFieldTree(s.fields, id, patch),
     }));
   }, []);
+
+  const deleteField = (id: string) => {
+    setState((s) => ({
+      ...s,
+      fields: removeFieldTree(s.fields, id),
+    }));
+  };
+
+  const moveField = (id: string, dir: -1 | 1) => {
+    setState((s) => ({
+      ...s,
+      fields: moveFieldInTree(s.fields, id, dir),
+    }));
+  };
 
   const addField = () => {
     setState((s) => ({ ...s, fields: [...s.fields, defaultField()] }));
   };
 
-  const deleteField = (id: string) => {
-    setState((s) => ({ ...s, fields: s.fields.filter((f) => f.id !== id) }));
-  };
-
-  const moveField = (id: string, dir: -1 | 1) => {
-    setState((s) => {
-      const idx = s.fields.findIndex((f) => f.id === id);
-      if (idx < 0) return s;
-      const next = [...s.fields];
-      const swap = idx + dir;
-      if (swap < 0 || swap >= next.length) return s;
-      [next[idx], next[swap]] = [next[swap], next[idx]];
-      return { ...s, fields: next };
-    });
+  const addChildTo = (parentId: string) => {
+    setState((s) => ({
+      ...s,
+      fields: addFieldToTree(s.fields, parentId, defaultField()),
+    }));
   };
 
   const patchMetric = (id: string, patch: Partial<MetricState>) => {
@@ -764,9 +956,10 @@ export default function VisualBuilder({ onSaved }: { onSaved: () => void }) {
               field={f}
               index={i}
               total={state.fields.length}
-              onChange={(patch) => patchField(f.id, patch)}
-              onDelete={() => deleteField(f.id)}
-              onMove={(dir) => moveField(f.id, dir)}
+              updateField={patchField}
+              deleteField={deleteField}
+              moveField={moveField}
+              addChildTo={addChildTo}
             />
           ))}
         </section>
