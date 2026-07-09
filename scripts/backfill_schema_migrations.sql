@@ -12,9 +12,18 @@
 -- EXECUTED against prod 2026-07-09. Kept for audit trail; re-running is a
 -- no-op (ON CONFLICT DO NOTHING).
 --
--- 024 / 025 are NOT in this list: they were missing from prod entirely and
--- were applied for real on 2026-07-09 (tracked automatically with real
--- timestamps 20260709233344 / 20260709233353).
+-- NOT in this list (applied for real on 2026-07-09, auto-tracked with real
+-- timestamps):
+--   024_api_key_hash_algorithm_docs    (was missing from prod)
+--   025_api_key_hash_length_check_safe (was missing from prod)
+--   027_api_keys_server_side_issuance  (RFC-056; was missing from prod)
+--
+-- Naming notes:
+--   * '028_stripe_billing' row below covers origin/main's 028 file; all its
+--     objects (incl. orgs.plan_status + both stripe indexes) verified in prod.
+--   * early_access is tracked as 'create_early_access' (20260504212436);
+--     its retroactive repo file is 030_early_access.sql. Name mismatch in
+--     the ledger is cosmetic and left as-is.
 --
 -- Already tracked (skipped): 003, 004, 005, create_early_access (= repo file
 -- 027_early_access.sql), 029_stripe_failed_events.

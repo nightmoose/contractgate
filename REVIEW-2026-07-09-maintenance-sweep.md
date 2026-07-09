@@ -16,6 +16,18 @@ Repo has files `001–026`. Two-way drift:
 
 This is the exact failure mode behind the 2026-06-05 silent Stripe webhook 23514. Action: dump prod schema, diff against concatenated migration files, commit missing 027–029 files, backfill the migration table so CI file-count checks mean something.
 
+> **CORRECTION (same day):** the review above ran against a stale checkout
+> (`RFC-080_GrokPass` / stale local main). origin/main already had files
+> 027–029 (027 = RFC-056 api_keys server-side issuance, 028 = Stripe billing
+> incl. `orgs.plan_status`, 029 = stripe_failed_events). Only `early_access`
+> truly lacked a file (now `030_early_access.sql`).
+>
+> **RESOLVED 2026-07-09:** prod was missing 024, 025, and 027 — all three
+> applied and verified. Ledger backfilled for 001–023, 026, 028
+> (see scripts/backfill_schema_migrations.sql). Prod and repo now match
+> through 030. Remaining lesson: branch from origin/main, and the CI
+> file-count drift check should compare against the prod ledger.
+
 ### 2. Supabase security advisors — 4 ERRORs + serious WARNs
 - **ERROR — SECURITY DEFINER views**: `v_ingestion_summary`, `provider_scorecard`, `provider_field_health`, `active_contracts_public`. These bypass the querying user's RLS via PostgREST. Scorecard views summarize `audit_log` cross-org → any authenticated user can read other orgs' quality data. Switch to `security_invoker = true` (PG15+) or gate behind backend-only access.
 - **WARN — `provider_field_baseline` policy `auth_all` is `USING (true) WITH CHECK (true)` for ALL/authenticated**: any signed-in user can read/write every org's baselines. Contradicts RFC-074 data-plane isolation. Scope with `get_my_org_ids()` per the RLS helper rule.

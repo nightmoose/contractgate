@@ -1,4 +1,4 @@
--- 027_early_access.sql
+-- 030_early_access.sql
 --
 -- RETROACTIVE FILE (2026-07-09 drift reconciliation). This table was created
 -- directly in prod on 2026-05-04 (tracked in supabase_migrations as
