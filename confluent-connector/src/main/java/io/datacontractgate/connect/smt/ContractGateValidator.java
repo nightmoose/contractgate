@@ -7,6 +7,12 @@ import io.datacontractgate.connect.client.ContractGateClient.ContractGateApiExce
 import io.datacontractgate.connect.client.IngestResponse;
 import io.datacontractgate.connect.client.IngestResponse.IngestEventResult;
 import io.datacontractgate.connect.client.ViolationDetail;
+import io.datacontractgate.connect.smt.dlq.DlqRoutingConfig;
+import io.datacontractgate.connect.smt.dlq.DlqRouter;
+import io.datacontractgate.connect.smt.dlq.KafkaDlqProducer;
+import io.datacontractgate.connect.smt.reload.ContractVersionCheck;
+import io.datacontractgate.connect.smt.reload.ContractVersionInfo;
+import io.datacontractgate.connect.smt.reload.DynamicContractReloader;
 import org.apache.kafka.common.config.ConfigDef;
 import org.apache.kafka.connect.connector.ConnectRecord;
 import org.apache.kafka.connect.data.Schema;
@@ -19,6 +25,7 @@ import org.slf4j.LoggerFactory;
 
 import java.nio.charset.StandardCharsets;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicReference;
 
 /**
  * Kafka Connect Single Message Transform (SMT) that validates every record
@@ -33,6 +40,18 @@ import java.util.Map;
  *   <li><b>TAG_AND_PASS</b> — adds violation headers and passes the record
  *       downstream unchanged. Consumers decide what to do.</li>
  * </ul>
+ *
+ * <h2>RFC-064: Dynamic contract reload</h2>
+ * <p>When {@code contractgate.reload.enabled=true}, a background thread polls
+ * the gateway for contract version changes and hot-swaps the current version
+ * info via an {@link AtomicReference}.  The {@code apply()} hot path does one
+ * volatile read per record — no contention with the reloader thread.</p>
+ *
+ * <h2>RFC-064: Per-violation DLQ routing</h2>
+ * <p>When {@code contractgate.dlq.routing.enabled=true}, a dedicated
+ * {@link KafkaDlqProducer} routes failing records to different topics based
+ * on violation metadata.  With both flags disabled, behavior is byte-identical
+ * to the pre-RFC-064 baseline.</p>
  *
  * <h2>Connector configuration example</h2>
  * <pre>{@code
@@ -62,6 +81,19 @@ public class ContractGateValidator<R extends ConnectRecord<R>> implements Transf
     private ContractGateClient client;
     private final ObjectMapper mapper = new ObjectMapper();
 
+    // RFC-064: currently known contract version info (set on first successful
+    // reload poll; null until then).  Volatile read in apply() is safe because
+    // AtomicReference.get() is a single volatile read with no locking.
+    private final AtomicReference<ContractVersionInfo> currentVersionInfo =
+        new AtomicReference<>(null);
+
+    // RFC-064: reload feature components (null when reload.enabled=false).
+    private DynamicContractReloader reloader;
+
+    // RFC-064: DLQ routing components (null when dlq.routing.enabled=false).
+    private DlqRouter dlqRouter;
+    private KafkaDlqProducer dlqProducer;
+
     // ── Transformation lifecycle ──────────────────────────────────────────────
 
     @Override
@@ -81,13 +113,57 @@ public class ContractGateValidator<R extends ConnectRecord<R>> implements Transf
             config.connectTimeoutMs(),
             config.requestTimeoutMs()
         );
-        log.info("ContractGateValidator configured — onFailure={} addHeaders={} dryRun={}",
-            config.onFailure(), config.addResultHeaders(), config.dryRun());
+
+        // RFC-064 Feature 1: start the background contract reloader if enabled.
+        if (config.reloadEnabled()) {
+            ContractVersionCheck versionCheck = new ContractVersionCheck(
+                config.apiUrl(),
+                config.contractId(),
+                config.apiKey(),
+                config.connectTimeoutMs(),
+                config.requestTimeoutMs()
+            );
+            reloader = new DynamicContractReloader(
+                versionCheck,
+                config.reloadPollMs(),
+                config.reloadFailureAction(),
+                null,                          // initial version unknown until first poll
+                currentVersionInfo::set        // swap callback — thread-safe AtomicReference set
+            );
+            reloader.start();
+            log.info("Dynamic contract reload enabled — poll.ms={} failure.action={}",
+                config.reloadPollMs(), config.reloadFailureAction());
+        }
+
+        // RFC-064 Feature 2: wire per-violation DLQ routing if enabled.
+        if (config.dlqRoutingEnabled()) {
+            DlqRoutingConfig routingConfig = DlqRoutingConfig.parse(
+                config.dlqRoutingRules(),
+                config.dlqRoutingDefault(),
+                config.dlqRoutingProducerBootstrapServers()
+            );
+            dlqRouter   = new DlqRouter(routingConfig.rules(), routingConfig.defaultTopic());
+            dlqProducer = new KafkaDlqProducer(props, routingConfig.bootstrapServers());
+            log.info("Per-violation DLQ routing enabled — {} rule(s), default={}",
+                routingConfig.rules().size(), routingConfig.defaultTopic());
+        }
+
+        log.info("ContractGateValidator configured — onFailure={} addHeaders={} dryRun={} " +
+            "reloadEnabled={} dlqRoutingEnabled={}",
+            config.onFailure(), config.addResultHeaders(), config.dryRun(),
+            config.reloadEnabled(), config.dlqRoutingEnabled());
     }
 
     @Override
     public void close() {
-        // HttpClient has no close method; GC handles it.
+        // Stop the background reloader thread if it was started.
+        if (reloader != null) {
+            reloader.stop();
+        }
+        // Close the DLQ producer (flushes in-flight sends).
+        if (dlqProducer != null) {
+            dlqProducer.close();
+        }
         log.debug("ContractGateValidator closed.");
     }
 
@@ -95,6 +171,13 @@ public class ContractGateValidator<R extends ConnectRecord<R>> implements Transf
 
     @Override
     public R apply(R record) {
+        // If a fail-task reload failure is pending, propagate it now.
+        // This causes Kafka Connect to mark the task failed — only triggered
+        // when contractgate.reload.failure.action=fail-task.
+        if (reloader != null) {
+            reloader.rethrowPendingFailureIfAny();
+        }
+
         // Tombstones (value == null) bypass validation — they signal deletions.
         if (record.value() == null) {
             log.debug("Skipping tombstone record on topic={} partition={} offset={}",
@@ -109,9 +192,7 @@ public class ContractGateValidator<R extends ConnectRecord<R>> implements Transf
             response = client.validate(json, config.requestTimeoutMs());
         } catch (ContractGateApiException e) {
             // API unreachable / bad response — fail open with a warning so a
-            // transient outage does not halt the connector. Operators can tighten
-            // this by setting on.failure=DLQ and letting Connect's retry logic
-            // handle it at the task level if desired.
+            // transient outage does not halt the connector.
             log.warn("ContractGate API unavailable for topic={} offset={}: {}. Passing record through.",
                 record.topic(), recordOffset(record), e.getMessage());
             return record;
@@ -131,6 +212,15 @@ public class ContractGateValidator<R extends ConnectRecord<R>> implements Transf
 
         ContractGateValidatorConfig.OnFailure onFailure = config.onFailure();
         if (onFailure == ContractGateValidatorConfig.OnFailure.DLQ) {
+            // RFC-064: if DLQ routing is enabled, send to the routed topic via
+            // our dedicated producer, then throw a DataException so Connect's
+            // own error handling still fires (DLQ headers, error context, etc.).
+            if (dlqRouter != null && dlqProducer != null) {
+                String targetTopic = dlqRouter.routeFirst(result.violations, config.contractId());
+                dlqProducer.send(targetTopic, record);
+                log.debug("Routed failing record to DLQ topic='{}' — topic={} offset={}",
+                    targetTopic, record.topic(), recordOffset(record));
+            }
             // DataException causes Kafka Connect to route the original record
             // to errors.deadletterqueue.topic.name (if configured).
             throw new DataException(buildDlqMessage(record, result));
@@ -210,7 +300,7 @@ public class ContractGateValidator<R extends ConnectRecord<R>> implements Transf
      * <ol>
      *   <li>{@code String} — already JSON (or plain text); sent as-is.</li>
      *   <li>{@code byte[]} — treated as a UTF-8 JSON string.</li>
-     *   <li>{@link Struct} — converted to a field→value {@link Map} then
+     *   <li>{@link Struct} — converted to a field→value {@link java.util.Map} then
      *       serialised to JSON.</li>
      *   <li>{@code Map} — serialised directly to JSON.</li>
      *   <li>Everything else — Jackson serialises via reflection; works for

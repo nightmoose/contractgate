@@ -1,0 +1,4 @@
+[
+  {"user_id": "alice", "event_type": "click", "timestamp": 1700000001},
+  {"user_id": "bob", "event_type": "login", "timestamp": 1700000002}
+]

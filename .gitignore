@@ -39,3 +39,6 @@ sdks/python/.ruff_cache/
 
 # Claude
 .claude/
+/dashboard/.next-verify-1780692881
+/dashboard/.next-verify-1780692927
+/dashboard/.next-verify-1780692957

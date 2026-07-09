@@ -1,6 +1,6 @@
 # RFC-051 — API-key cache hardening
 
-**Status:** Draft  
+**Status:** Accepted  
 **Date:** 2026-05-22  
 **Branch:** nightly-maintenance-2026-05-22-rfc051  
 **Addresses:** REVIEW-2026-05-22-launch-readiness H1, M2  

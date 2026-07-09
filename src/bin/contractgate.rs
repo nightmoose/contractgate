@@ -1,12 +1,12 @@
 //! `contractgate` CLI binary.
 //!
-//! Subcommands: push, pull, validate, scaffold, enforce, infer.
+//! Subcommands: push, pull, validate, scaffold, enforce, infer, test.
 //! Auth via CONTRACTGATE_API_KEY env var or --api-key flag.
 //! Config via .contractgate.yml (walk-up from cwd, stop at git root).
 
 use clap::{Parser, Subcommand};
 use contractgate::cli::{
-    commands::{deploy, enforce, infer, pull, push, scaffold, validate},
+    commands::{deploy, enforce, infer, pull, push, scaffold, test, validate},
     config::CliConfig,
 };
 use std::{path::PathBuf, process};
@@ -80,6 +80,22 @@ enum Cmd {
     ///   newman run collection.json --reporters json --reporter-json-export out.json
     ///   cg infer --from-newman out.json --out contracts/orders.yaml --odcs
     Infer(infer::InferArgs),
+    /// Dry-run a contract against local sample data. No server, no Kafka. (RFC-076)
+    ///
+    /// Loads the contract YAML, runs every record through the validation engine,
+    /// and prints a pass/fail summary with per-record violation detail.
+    ///
+    /// Accepts NDJSON, a JSON array, or a single JSON object.
+    /// Use `-` as --data to read from stdin (chainable with `cg infer`).
+    ///
+    /// Exit codes: 0 = all pass, 1 = violations found, 2 = load/parse error.
+    ///
+    /// Examples:
+    ///   cg test --contract contracts/events.yaml --data samples.ndjson
+    ///   cg test --contract c.yaml --data events.json --format json
+    ///   cg test --contract c.yaml --data '[{"user_id":"x"}]'
+    ///   cg infer --from-stdin --name orders | cg test --contract orders.yaml --data -
+    Test(test::TestArgs),
     /// Emit the JSON Schema for .contractgate.yml.
     #[command(hide = true)]
     ConfigSchema,
@@ -118,10 +134,15 @@ fn main() {
             pull::run(args, &cfg, &key)
         }
 
-        // Scaffold, enforce, and infer do not need gateway config or an API key.
+        // Scaffold, enforce, infer, and test do not need gateway config or an API key.
         Cmd::Scaffold(args) => scaffold::run(args),
         Cmd::Enforce(args) => enforce::run(args),
         Cmd::Infer(args) => infer::run(args),
+        Cmd::Test(args) => test::run(args).map_err(|e| {
+            // Load/parse errors from test::run propagate as exit 2, not 10.
+            eprintln!("error: {e:#}");
+            process::exit(2);
+        }),
 
         Cmd::ConfigSchema => {
             // Emit a minimal JSON Schema describing .contractgate.yml.

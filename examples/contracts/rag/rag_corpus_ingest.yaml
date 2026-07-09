@@ -1,0 +1,52 @@
+# RAG corpus ingestion contract (RFC-077)
+#
+# Gates documents BEFORE they reach chunking/embedding. ContractGate enforces
+# the structured envelope (provenance + PII attestation + freshness); your
+# pipeline still does the chunking, embedding, and any content scoring.
+#
+# Record shape: { "text": "...", "_cg": { source, doc_id, ingested_at, pii_redacted } }
+version: "1.0"
+name: "rag_corpus_ingest"
+description: "RAG ingestion contract — enforces provenance + PII attestation before embedding"
+compliance_mode: true            # reject undeclared top-level keys
+
+ontology:
+  entities:
+    - name: _cg
+      type: object
+      required: true
+      properties:
+        - name: source
+          type: string
+          required: true
+          enum: ["confluence", "gdrive", "s3-curated", "support-tickets"]
+        - name: doc_id
+          type: string
+          required: true
+          pattern: "^[a-zA-Z0-9_:-]+$"
+        - name: ingested_at
+          type: integer
+          required: true
+        - name: pii_redacted
+          type: boolean
+          required: true
+          enum: [true]           # attestation must be explicit true
+    - name: text
+      type: string
+      required: true
+      min_length: 1
+
+glossary:
+  - field: _cg.pii_redacted
+    description: "Caller attests PII was removed/redacted before ingest"
+    constraints: "must be true; the gate does not detect PII, it enforces the attestation"
+
+quality:
+  - field: _cg.ingested_at
+    type: freshness
+    max_age_seconds: 2592000     # 30 days — drop stale docs before embedding
+    description: "Reject documents older than 30 days at ingest"
+  - field: _cg.doc_id
+    type: uniqueness
+    scope: batch                 # dedupe within an ingest batch
+    description: "No duplicate documents within a single ingest batch"

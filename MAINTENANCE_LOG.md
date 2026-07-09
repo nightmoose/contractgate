@@ -2,6 +2,790 @@
 
 ---
 
+## Run: 2026-06-07 — Stripe launch follow-ups (Option A + failure visibility)
+
+**Scope:** dashboard (Next.js) + Supabase. No Rust/ingest changes; validation engine untouched.
+**Suggested branch:** `nightly-maintenance-2026-06-07-stripe-launch-followups`
+
+### Migration-drift audit (launch-blocker item 1) — GREEN
+Audited prod schema directly (object-probing, since the `supabase_migrations` tracking table is unreliable here — it lists only 003/004/005 + early_access). All launch-critical objects from 026/027/028/022 are present in prod: `orgs_plan_valid` allows `growth`, all stripe columns + `plan_status`, `api_keys`, `public_contracts`, `stripe_processed_events`. **No real drift.** Repo has 28 migration files; the public catalog table is named `public_contracts` and the Stripe dedup table `stripe_processed_events` (tracking-table names were the only mismatch).
+
+### Option A: in-app-only checkout (launch-blocker item 2)
+- Confirmed `create-checkout-session` already stamps `metadata.orgId` on both session and subscription → deterministic resolution. No public Payment Link is referenced anywhere in the dashboard.
+- **Removed the email-match fallback** from `handleCheckoutCompleted` (and deleted `findUserIdByEmail`) — it silently no-ops when the Stripe email ≠ signup email. Resolution is now `metadata.orgId` only; a missing orgId records a visible failure.
+
+### Silent-200 fix (launch-blocker item 3) + default-branch handled flag
+- New table `stripe_failed_events` (migration 029, **applied to prod**) persists every webhook event that fails to do useful work: `unresolved_org`, `unexpected_price`, `db_write_failed`, `handler_error`. Webhook still returns 200 (no retry-storm) but failures are now durable/alertable instead of log-only. This would have surfaced the 2026-06-05 `23514` bug immediately.
+- `handled` now defaults to `false`; only branches that do real work mark the event processed. The `default`/unhandled branch and all no-op paths (unmatched subscription) leave the event unrecorded so a redelivery can still succeed. Subscription handlers now return `boolean` and throw on DB-write error (caught → recorded).
+
+### Verify
+- `dashboard`: `tsc --noEmit` clean (run in sandbox). No dangling refs to removed helper.
+- Migration 029 verified live in prod (8 columns, index present).
+
+### Handoff to Alex (I don't run git/cargo/npm-deploy)
+1. `git fetch && git checkout -b nightly-maintenance-2026-06-07-stripe-launch-followups origin/main`
+2. `cd dashboard && npm run build` (full Next build check)
+3. Commit: migration `029_stripe_failed_events.sql`, `dashboard/app/api/stripe/webhooks/route.ts`, `docs/stripe-billing-reference.md`, this log.
+4. Deploy dashboard to Vercel. Migration 029 is already applied to prod, so no DB step needed on deploy.
+5. **Remaining before public signup:** run one real fresh-signup → upgrade end-to-end (the one thing code can't prove). Optionally wire `stripe_failed_events` to a real alerter.
+
+---
+
+## Run: 2026-06-05 — Stripe self-serve billing: review + fixes + prod debug
+
+**Scope:** dashboard (Next.js on Vercel) + Supabase. No Rust/ingest changes; validation engine untouched.
+
+### Summary
+
+Reviewed the uncommitted Stripe Growth-plan integration, fixed several real bugs, and debugged why the in-app upgrade silently failed in production. **Root cause of the silent failure was migration drift, not code:** migration `026_plan_tier.sql` (which widens `orgs_plan_valid` to allow `'growth'`) had never been applied to the prod DB, so the webhook's `UPDATE orgs SET plan='growth'` failed with check-constraint violation `23514`. The handler swallows errors and returns 200, so it looked like success end-to-end (Stripe confirmation + cosmetic success page) while the org stayed `free`.
+
+### Bugs fixed (code)
+
+- **`webhooks/route.ts`** — `supabaseAdmin.auth.admin.getUserByEmail()` doesn't exist in installed `@supabase/auth-js`; replaced with paginated `listUsers` lookup (`findUserIdByEmail`). Fixed trial-status (read live subscription status instead of a dead ternary). Removed dead `(session as any).line_items` branch. Guarded `enterprise` from auto-downgrade in `subscription.updated`. Added idempotency via `stripe_processed_events`, recording events **after** successful handling so failed/no-op events stay replayable (`alreadyProcessed`/`markProcessed`, handler returns `boolean`). Lazy-init Stripe + Supabase clients (`getStripe`/`getSupabaseAdmin`) + `export const dynamic='force-dynamic'` — fixes Vercel build error `Neither apiKey nor config.authenticator provided` (constructor ran at module load during page-data collection).
+- **`create-checkout-session/route.ts`, `portal/route.ts`** — same lazy-init fix.
+- **`middleware.ts`** — skip auth for `/api/stripe/webhooks`; the matcher was 307-redirecting Stripe's unauthenticated POST to `/auth/login`. The webhook verifies by signature, not session.
+- **`billing/success/page.tsx`** — wrapped `useSearchParams()` in `<Suspense>` (prerender failure blocked the build).
+- **`pricing/page.tsx`** — annual/monthly bug: the page toggle and the checkout button were disconnected, so the primary CTA always checked out monthly. Button now respects the toggle.
+
+### Files added
+
+- `supabase/migrations/028_stripe_billing.sql` — `orgs` columns `stripe_customer_id`, `stripe_subscription_id`, `plan_status` (null default; null for free orgs), indexes, and `stripe_processed_events` dedup table.
+- `docs/stripe-billing-reference.md` — routes, env vars, webhook events, DB objects, flows, known limitations.
+- `.github/workflows/ci.yml` — Sentinel A3 (migration 028 columns + dedup table) + bumped `EXPECTED_MIGRATION_COUNT` 27→28.
+
+### Prod fix applied
+
+- Applied the missing `026` constraint change to prod: dropped old `orgs_plan_valid`, re-added with `('free','growth','enterprise')`. Upgrade then succeeded (org → `growth`/`trialing`).
+
+### Config gaps resolved (Vercel `contractgate` project)
+
+- Added `STRIPE_PRICE_GROWTH_MONTHLY` / `STRIPE_PRICE_GROWTH_ANNUAL` (were missing → "Missing Stripe price configuration"). `NEXT_PUBLIC_APP_URL` had to be on the **app** project, not the marketing site (controls Checkout `success_url` redirect).
+
+### Follow-ups (not done)
+
+- **Audit prod migration drift.** CI only counts migration *files* (`EXPECTED_MIGRATION_COUNT`); nothing verifies the prod DB has them applied. 026 was behind — check whether others are too (`list_migrations` vs `supabase/migrations/*`).
+- Webhook swallows handler DB errors as 200; consider alerting so a failed write isn't invisible.
+- Payment Link flow still resolves org by email (fragile); consider `client_reference_id`/metadata on the links, or steer logged-in users to in-app checkout only.
+- The `default` switch branch marks `invoice.paid`/`subscription.created` as processed despite no-op (harmless clutter); could set `handled=false`.
+
+---
+
+## Run: 2026-05-29 — RFC-074: Org-ownership enforcement on data plane (latent P0-class)
+
+**Branch:** `nightly-maintenance-2026-05-28-rfc069-pure-fn-coverage`
+**Severity:** **Latent P0-class (cross-tenant write, BOLA/IDOR) — found by code
+inspection, NOT reproduced under auth.**
+**Surfaced by:** triaging why RFC-073's `cross_org_ingest_is_rejected` returned
+200 in the compose-smoke lane.
+
+**What:** While chasing the 200, found that `ingest_handler`, `egress_handler`,
+and `v1_ingest_handler` resolve the caller's `org_id` from the validated key but
+pass `None` to `get_contract_identity`/`get_version`. With auth on, the only
+per-request scope check is then RFC-065's per-key allow-list, which is `None`
+(unrestricted) for all JWT/dashboard keys — so an unrestricted key could write
+to another org's contract. The storage layer was already org-aware; the handlers
+just never passed `org_id`.
+
+**Important — the 200 was NOT a demonstrated breach.** The compose stack runs
+`CONTRACTGATE_DEV_NO_AUTH=1`, which short-circuits `require_api_key` and attaches
+no `ValidatedKey`, so `org_id` is `None` regardless of the fix. The 200 means
+"auth is off in this stack," not "isolation was bypassed." The bug is real in
+production code; it was not reproduced end-to-end.
+
+**Fix:** Threaded the resolved `org_id` into the identity + version lookups on
+all three handlers (`src/ingest.rs`, `src/egress.rs`, `src/v1_ingest.rs`). With
+auth on, a cross-org caller now 404s at the identity load, before any write. No
+storage, schema, or signature change. Dev-mode / demo-seeder (`org_id = None`)
+still matches all orgs, so smoke-stack contract publishing is unaffected.
+
+**Not verified by smoke lane.** Because `DEV_NO_AUTH=1`,
+`cross_org_ingest_is_rejected` returns 200 with or without this fix — a false
+signal. Verified by code inspection + (pending) `cargo test`. The test-lane fix
+to run the isolation test against an auth-on gateway is tracked as an RFC-073
+follow-up and must land before the smoke lane can prove isolation.
+
+**Deferred (in RFC):** `get_latest_stable_version`/`resolve_version` lack an
+`org_id` param (defense-in-depth only — unreachable cross-org after the identity
+fix); `ingest_stats_handler` has no auth extension at all (separate P1 read-side
+exposure).
+
+---
+
+## Run: 2026-05-28 — RFC-073: Org-isolation test in compose-smoke lane
+
+**Branch:** `nightly-maintenance-2026-05-28-rfc069-pure-fn-coverage`
+**Severity:** P2 — closes the last "tenant isolation never runs in CI" gap
+**Addresses:** docs/reviews/test-hardening-handoff-2026-05-28.md — Task 1 (tail)
+
+**What:** Wired the cross-tenant isolation integration test
+(`tests/rfc_001_isolation.rs::integration::cross_org_ingest_is_rejected`) into
+the existing compose-smoke lane. Org B's API key POSTing to org A's contract
+must be rejected (403/404). New compose-only seed
+`ops/postgres/seed/098_isolation_test.sql` provides two orgs, one contract owned
+by A (+ stable version), and one API key per org (precomputed
+`base64(SHA-256(raw_key))` hashes; raw keys are throwaway fixtures in the smoke
+script). `tests/compose_demo_smoke.sh` exports `TEST_BASE_URL`/`TEST_API_KEY_A`/
+`TEST_API_KEY_B`/`TEST_CONTRACT_ID_A` and runs the one `--ignored --exact` test
+with a `1 passed; 0 failed` false-green guard. The test is read-only (asserts a
+rejection, never mutates) so it's safe against the shared smoke stack.
+
+Scoped to the single highest-value test; the other three Class-2 tests
+(`soft_delete_hides_from_list`, `v1_ingest` round-trips, `expired_invite_rejected`,
+`metrics`, `cli_push_pull`) are tracked as follow-ups in the RFC.
+
+**Verified here:** seed SQL parses (sqlglot, postgres dialect); every column
+referenced confirmed against migrations 006/007/012 (all later `api_keys` adds
+are nullable/defaulted); key→org auth uses `api_keys.org_id` directly (no
+`org_memberships` row needed); module path is `integration::`, not `tests::`.
+Could NOT run the stack (no docker/postgres in agent env).
+
+**Verify:** `bash tests/compose_demo_smoke.sh` → existing smoke assertions pass,
+then `1 passed; 0 failed` from the isolation test. No product/schema change; the
+new SQL is compose-only seed, never runs in real Supabase.
+
+---
+
+## Run: 2026-05-28 — RFC-072: Quarantine→replay race-guard test
+
+**Branch:** `nightly-maintenance-2026-05-28-rfc069-pure-fn-coverage`
+**Severity:** P3 — test hardening; no runtime impact
+**Addresses:** docs/reviews/test-hardening-handoff-2026-05-28.md — Task 3
+
+**What:** Added a self-seeding Class-1 DB test
+(`tests::org_scoping::quarantine_replay_race_guard`) for the untested race guard
+in `storage::mark_quarantine_replayed_batch`. Seeds an org+contract+pending
+quarantine row, calls the batch mark twice with two distinct audit ids, and
+asserts only the first wins the conditional UPDATE — the row is stamped
+`replayed` once and links to the winning audit id. Wired into the
+`migrations-check` named-test list (false-green guard bumped 3→4 passed).
+Inference happy-path coverage (the other Task 3 tail item) was investigated and
+skipped — all five formats already have happy-path tests.
+
+**Verify:** `bash scripts/test-db-up.sh` then
+`DATABASE_URL=… cargo test --bin contractgate-server -- --ignored --exact tests::org_scoping::quarantine_replay_race_guard`
+→ expect `1 passed; 0 failed`. No product/schema change.
+
+---
+
+## Run: 2026-05-28 — RFC-071: Coverage ratchet gate
+
+**Branch:** `nightly-maintenance-2026-05-28-rfc069-pure-fn-coverage`
+**Severity:** P3 — process/quality; no runtime impact
+**Addresses:** docs/reviews/test-hardening-handoff-2026-05-28.md — Task 2
+
+**What:** Added a `cargo-llvm-cov` coverage gate to CI with ratchet semantics
+(fail only on a *decrease* beyond tolerance vs a committed baseline — never a
+fixed high bar). Unit-tests only, so the number is deterministic (DB-backed
+tests run elsewhere). The `coverage` job is deliberately NOT in `deploy-fly`'s
+`needs` so a regression flags the PR without blocking the main deploy while the
+gate beds in.
+
+**Files:**
+- `scripts/check-coverage.sh` — measures `cargo llvm-cov --summary-only`, parses
+  the TOTAL *Lines* %, compares to `coverage-baseline.txt` with a 0.5pp
+  tolerance, auto-seeds the baseline when absent (non-blocking first land), and
+  ratchets the baseline up on improvement. Parser + all five gate paths (seed,
+  equal, regression, improvement, within-tolerance) verified locally with a
+  stubbed llvm-cov.
+- `.github/workflows/ci.yml` — new `coverage` job (llvm-tools-preview +
+  cargo-llvm-cov, runs the script, uploads baseline artifact).
+
+**ACTION REQUIRED (maintainer):** baseline not committed (cargo unavailable in
+this session). Seed once and commit to activate the ratchet:
+```
+cargo install cargo-llvm-cov --locked
+bash scripts/check-coverage.sh
+git add coverage-baseline.txt && git commit -m "RFC-071: seed coverage baseline"
+```
+Until committed, every CI run re-seeds from the ephemeral checkout (always
+green) — correct but inert.
+
+---
+
+## Run: 2026-05-28 — RFC-070: Org-scope tests for version-mutating storage fns
+
+**Branch:** `nightly-maintenance-2026-05-28-rfc069-pure-fn-coverage`
+**Severity:** P2 — write-side cross-tenant denial paths partially untested
+**Addresses:** docs/reviews/test-hardening-handoff-2026-05-28.md — Task 3 (storage org-scope)
+
+**Problem:** RFC-068's version-isolation test covered `get_version` and
+`promote_version` denial, but `patch_version_yaml`, `deprecate_version`, and
+`delete_version` carry the same `org_id` guard and had no wrong-org test — the
+write-side BOLA surface.
+
+**Fix (test-only):** Extended `org_scoping::two_org_get_version_isolation` with
+three org-B denial assertions (each expects `VersionNotFound`). Reuses the
+already-seeded org A contract/version; no new fixture, no CI change (the test
+runs by exact name in the RFC-068 CI step).
+
+**Verification:** `cargo test --bin contractgate-server -- --ignored --exact tests::org_scoping::two_org_get_version_isolation` against a migrated Postgres; `cargo test` unit suite.
+
+---
+
+## Run: 2026-05-28 — RFC-069: Unit coverage for untested pure functions
+
+**Branch:** `nightly-maintenance-2026-05-28-rfc069-pure-fn-coverage`
+**Severity:** P2 — silent correctness regressions in untested pure functions
+**Addresses:** docs/reviews/test-hardening-handoff-2026-05-28.md — Task 3 (auth, partial)
+
+**Problem:** Task 3 asks for critical-path coverage (auth first). Most auth is
+DB/network-backed (Class-1/2 lanes), but three pure functions had zero tests
+despite running in plain `cargo test`. The hottest:
+`jwt_auth::jwks_url_from_database_url` hand-parses two Supabase connection-string
+formats; a silent regression breaks all dashboard JWT auth at startup.
+
+**Fix (test-only, no product code):**
+- `src/jwt_auth.rs` — `jwks_url_from_database_url` cases: direct host, direct
+  host without `db.` prefix, pooler (`postgres.<ref>` username), non-Supabase
+  host → None, no-`@` → None, empty pooler ref → None. Plus `JwtAuthError`
+  Display wording locked for all four variants.
+- `src/storage.rs` — new `tests` mod covering `PublicationRow::is_revoked`
+  (true/false). `visibility_parsed` deliberately skipped — already covered via
+  `PublicationVisibility::FromStr` tests in `src/tests.rs`.
+
+**Verification:** `cargo test` (full unit suite). No schema/config/behavior change.
+
+**Follow-ups:** Task 2 coverage gate (`cargo-llvm-cov` ratchet); Task 3 storage
+org-scope guard tests (DB-backed, Class-1 lane); quarantine/replay + inference
+happy-path coverage.
+
+---
+
+## Run: 2026-05-28 — RFC-068: Run Org-Isolation DB Tests in CI
+
+**Branch:** `nightly-maintenance-2026-05-28-rfc068-isolation-ci`
+**Severity:** P1 — multi-tenant isolation asserted in code but never executed in CI
+**Addresses:** docs/reviews/test-hardening-handoff-2026-05-28.md — Task 1 (partial: self-contained subset)
+
+**Problem:** CI runs plain `cargo test`, which skips `#[ignore]`d tests — so the
+DB-backed org-isolation tests (the product's core guarantee) never ran on PRs.
+The handoff's "just add `cargo test -- --ignored`" was insufficient: the ignored
+tests split into self-contained (need only a migrated Postgres) and
+gateway-dependent (need a running server + external seed). Worse, even the
+self-contained two-org tests would have failed in bare CI — they create
+contracts with random org UUIDs but never seeded the `orgs` rows that
+`contracts.org_id` FK-references (migration 007); they implicitly relied on a
+pre-seeded dev DB.
+
+**Fix:**
+- `src/tests.rs` — `two_org_get_contract_isolation` and
+  `two_org_get_version_isolation` now insert their own `orgs(id,name,slug)` rows
+  before creating contracts and delete them in cleanup (slugs UUID-suffixed for
+  rerun safety). Runnable against any migrated Postgres, zero external seed.
+- `.github/workflows/ci.yml` — new step in `migrations-check` (after migrations
+  apply) runs the three self-contained ignored tests by name via
+  `cargo test --bin contractgate-server -- --ignored --exact …`, with a
+  `3 passed; 0 failed` assertion to defeat the silent-false-green that `cargo
+  test` produces when a name filter matches zero tests.
+
+**Deliberately out of scope:** gateway-dependent Class-2 tests
+(`rfc_001_isolation`, `v1_ingest`, `metrics`, `cli_push_pull`) — they belong to
+the compose-smoke lane, not the migrations job. Tracked as remaining handoff work.
+
+**Result:** a change that breaks org scoping in `storage.rs` now fails CI on the
+PR instead of shipping.
+
+**Docs:** STATUS.md updated; RFC at `docs/rfcs/068-org-isolation-tests-in-ci.md`.
+
+**Verification:** pending maintainer `cargo test` + the new explicit `--ignored`
+invocation against a migrated Postgres.
+
+---
+
+## Run: 2026-05-28 — RFC-067: Request-Path Panic Hardening
+
+**Branch:** `nightly-maintenance-2026-05-28-rfc067-panic-hardening`
+**Severity:** P2 — latent DoS (worker panic on an authenticated request)
+
+**Source:** external read-only "cheap findings" scan
+(`docs/reviews/cheap-findings-2026-05-28.md`). Of ~48 flagged items, only the
+six request-path panics below were acted on; the `transform.rs` HMAC/UTF-8
+`expect`s and `len() as i32` casts are provably safe under current input bounds
+and were left in place.
+
+**Problem:** Six call sites turned a violated-but-unreachable invariant into a
+panic instead of an HTTP error — each guarded today, but coupled by convention
+(not the type system), so a future refactor could re-arm them.
+
+**Fix:**
+- `collaboration.rs` (186, 262, 329, 356) — `org_id.expect("…")` →
+  `org_id.ok_or(AppError::Unauthorized)?`. Missing org → 401, consistent with
+  the existing idiom at `collaboration.rs:86`.
+- `replay.rs` (419, 436) — `*ordinal_for_id.get(&source_id).unwrap()` →
+  `let Some(&idx) = … else { continue };`. Matches the already-graceful
+  slot-take at `replay.rs:449`.
+
+**Behaviour:** No API/DB/config change. Identical output for all
+reachable-today inputs; only the failure *mode* of a should-be-impossible state
+changes (clean 401 / dropped slot instead of panic). No test changes (changed
+branches are unreachable under current invariants).
+
+**Docs:** STATUS.md updated; RFC at
+`docs/rfcs/067-request-path-panic-hardening.md`; findings doc archived at
+`docs/reviews/cheap-findings-2026-05-28.md`.
+
+**Verification:** pending maintainer `cargo check` + `cargo test`.
+
+---
+
+## Run: 2026-05-28 — RFC-066: Remove Legacy env-var `API_KEY` Master Key
+
+**Branch:** `nightly-maintenance-2026-05-28-rfc065-ingest-egress-scope` (bundled with RFC-065)
+**Severity:** P0 — cross-tenant authorization (last broad-impersonation path)
+
+**Problem:** The env-var `API_KEY`, presented as `x-api-key`, authenticated with
+**no org and no contract scope** (`org_id: None`, `allowed_contract_ids: None`) —
+read/write to every contract in every org. RFC-065 closed the scoped-key gap but
+this master key bypassed all of it. The field also doubled as the implicit
+dev-mode no-auth switch (`auth_configured()` keyed off an empty `api_key`).
+
+**Fix (scope: "master key only"):**
+- Deleted the env-var master key + its `provided == state.api_key` branch.
+- Split the dual-purpose field: `AppState.api_key: String` → `dev_no_auth: bool`,
+  driven by explicit `CONTRACTGATE_DEV_NO_AUTH=1` (defaults off, never silent in prod).
+  `auth_configured()` = `!dev_no_auth`; dev passthrough gated on `state.dev_no_auth`.
+- `docker-compose.yml`: added `CONTRACTGATE_DEV_NO_AUTH: "1"` to gateway (keeps
+  `make demo` + CI smoke working). Demo-seeder unchanged (its `cg_demo_key` now ignored).
+- `.env.example`, `docs/auth-reference.md` updated. `src/tests.rs` fixtures →
+  `AppState::new(pool, true, …)` to preserve dev-mode-unscoped intent.
+
+**Result:** only auth paths now are Bearer JWT (dashboard) or DB-backed `x-api-key`
+(connectors/SDKs). Neither → 401, unless `CONTRACTGATE_DEV_NO_AUTH=1` (local only).
+
+**Breaking:** any caller using the env-var key as a credential. No DB migration.
+
+**Docs:** STATUS.md updated; RFC at `docs/rfcs/066-remove-legacy-api-key.md`.
+
+**Verification:** pending maintainer `cargo check` + `cargo test`.
+
+---
+
+## Run: 2026-05-28 — RFC-065: Ingest/Egress Contract-Scope Enforcement
+
+**Branch:** `nightly-maintenance-2026-05-28-rfc065-ingest-egress-scope`
+**Severity:** P0 — cross-tenant authorization gap (BOLA on hot paths)
+
+**Problem:** `ingest.rs` and `egress.rs` carried a comment claiming the path was
+scoped by `key.allowed_contract_ids` but had **no enforcement code**. Only
+`v1_ingest.rs` actually checked. Any valid restricted-scope API key could
+ingest to / egress from any `contract_id` across orgs by UUID enumeration.
+
+**Fix:**
+- Added `ValidatedKey::permits_contract(contract_id)` helper in `api_key_auth.rs`
+  (`None` allowlist = unrestricted; `Some` = membership check) + 3 unit tests.
+- Wired it into `ingest_handler` and `egress_handler` (before identity load, so
+  wrong-scope keys 401 without learning the contract exists).
+- Refactored `v1_ingest` to the shared helper (removed duplicated logic).
+- Changed `key_ext.map(...)` → `key_ext.as_ref().map(...)` so the extension
+  survives for the scope check.
+
+**Out of scope (follow-up):** retiring/strictly scoping the legacy env-var
+`API_KEY` master key (issued with `allowed_contract_ids: None`, unrestricted).
+
+**Docs:** behavior now matches the already-correct `docs/auth-reference.md`
+scoping table. STATUS.md updated; RFC at `docs/rfcs/065-ingest-egress-contract-scope.md`.
+
+**Verification:** pending maintainer `cargo check` + `cargo test`.
+
+---
+
+## Run: 2026-05-27 — RFC-064: Kafka Connect SMT — Dynamic Reload + Per-Violation DLQ Routing
+
+**Branch:** `nightly-maintenance-2026-05-27-rfc064-smt-reload-dlq`
+
+### Summary
+
+Community-tier feature pair for the `confluent-connector/` SMT (single-module Java plugin). Both features default to off — existing behaviour is byte-identical with both flags unset.
+
+**Dynamic contract reload** (`contractgate.reload.enabled=true`): background daemon thread polls `GET /v1/contracts/{id}/version` every `poll.ms` ms. On hash change it fetches the full body for a sanity check, then atomically swaps the `AtomicReference<ContractVersionInfo>` used by `apply()`. Failure action: `warn` (keep old contract) or `fail-task` (surface ConnectException on next `apply()` call). Exposes two `AtomicLong` counters: `reloadSuccessCount`, `reloadFailureCount`.
+
+**Per-violation DLQ routing** (`contractgate.dlq.routing.enabled=true`): rule engine evaluates a JSON rule array top-to-bottom against the first violation's context (`severity`, `type`, `field`, `contract`) and sends the failing record to the matched topic via a dedicated `KafkaProducer` before throwing `DataException`. Falls back to `dlq.routing.default` if no rule matches.
+
+**Server-side version probe** (Rust, `src/main.rs`): `GET /v1/contracts/{contract_id}/version` returns `{"version":"…","hash":"<sha256>"}`. Cheap polling target — only the full body is fetched when the hash changes.
+
+All 40 tests pass (`mvn verify` clean). Confluent Hub ZIP rebuilt.
+
+### Files added
+
+- `src/main/java/io/datacontractgate/connect/smt/reload/ContractVersionInfo.java`
+- `src/main/java/io/datacontractgate/connect/smt/reload/ContractVersionCheck.java`
+- `src/main/java/io/datacontractgate/connect/smt/reload/DynamicContractReloader.java`
+- `src/main/java/io/datacontractgate/connect/smt/dlq/DlqRule.java`
+- `src/main/java/io/datacontractgate/connect/smt/dlq/DlqRoutingConfig.java`
+- `src/main/java/io/datacontractgate/connect/smt/dlq/DlqRouter.java`
+- `src/main/java/io/datacontractgate/connect/smt/dlq/KafkaDlqProducer.java`
+- `src/test/java/…/reload/DynamicContractReloaderTest.java`
+- `src/test/java/…/reload/ContractReloadIntegrationTest.java`
+- `src/test/java/…/dlq/DlqRouterTest.java`
+- `src/test/java/…/dlq/DlqRoutingIntegrationTest.java`
+
+### Files modified
+
+- `src/main.rs` — added `v1_contract_version_handler` + route
+- `confluent-connector/pom.xml` — WireMock dep, `jackson-core` scope fix, Surefire Byte Buddy flag
+- `src/main/java/…/smt/ContractGateValidatorConfig.java` — RFC-064 config keys + cross-field validation
+- `src/main/java/…/smt/ContractGateValidator.java` — reload + DLQ routing wired in
+- `confluent-connector/README.md` — Dynamic Reload, Per-Violation DLQ Routing, server-side version probe sections
+- `docs/STATUS.md` — RFC-064 marked Accepted
+
+---
+
+## Run: 2026-05-24 — RFC-057: Documentation completeness for public launch
+
+**Branch:** `nightly-maintenance-2026-05-24-rfc057`
+
+### Summary
+
+Docs-only pass closing the last item (M2) on the 2026-05-22 launch-readiness
+review. All six missing feature reference docs written; RFC status index created;
+CLAUDE.md code-review-graph section made conditional; deprecated schema columns
+documented; README latency claim softened and flagged for measured benchmark.
+
+### Files added
+
+- `docs/kinesis-ingress-reference.md` — Kinesis Ingress API (RFC-026): endpoints, IAM policy, encryption, DB objects, edge cases
+- `docs/csv-inference-reference.md` — CSV contract inference (RFC-035): delimiter detection, coercion table, limits, examples
+- `docs/url-inference-reference.md` — URL contract inference (RFC-037): SSRF blocked ranges, redirect policy, format detection, examples
+- `docs/public-catalog-reference.md` — Public Catalog fork+export (RFC-034): all four endpoints, fork filter, source formats
+- `docs/date-type-reference.md` — Native `date` field type (RFC-044): validation rules, violation messages, ODCS mapping
+- `docs/plan-gating-reference.md` — Plan tiers and feature gating (RFC-045): tier matrix, PlanGate component, FreeLimitBanner, DB schema
+- `docs/STATUS.md` — RFC status index: all 58 RFCs with status and shipped branch
+- `docs/schema-notes.md` — Deprecated columns note: `contracts.version/active/yaml_content` confirmed unused; drop deferred
+
+### Files modified
+
+- `docs/rfcs/057-launch-documentation-completeness.md` — Status: Draft → Accepted
+- `README.md` — Three `<10 µs p99` claims softened to "sub-millisecond per-event"; latency note added flagging need for measured benchmark; STATUS.md linked from architecture and contributing sections
+- `CLAUDE.md` — `code-review-graph` MCP section gated on MCP actually being connected; ALWAYS gate removed; STATUS.md link added
+
+### Items deferred
+
+- **Migration 028** (`COMMENT ON COLUMN` on deprecated columns): skipped to keep RFC-057 strictly docs-only. Documented in `docs/schema-notes.md`. CI count stays at 27.
+- **README latency number**: softened but not replaced with a real measured benchmark. **Alex must supply the measured p99 from a reproducible bench run before the launch announcement.** See HTML comment in README.md.
+
+### Cargo / CI
+
+No Rust source changes. `cargo check`, `cargo test`, and `cargo clippy` are not required for this branch. `npm run build` not required (no dashboard changes).
+
+### Acceptance criteria (RFC-057)
+
+- [x] Six missing reference docs written and linked
+- [x] `docs/STATUS.md` row count matches RFC file count (58 RFCs, 60 files including the two 001-* variants)
+- [ ] README latency figure backed by a benchmark — **FLAGGED, needs Alex's input**
+
+---
+
+## Run: 2026-05-24 — RFC-056: Server-side API key issuance
+
+**Branch:** `nightly-maintenance-2026-05-24-rfc056`
+
+### Summary
+
+P2-M1 from the 2026-05-22 launch-readiness review. Three commits.
+
+**ITEM 1 — `dashboard/app/api/keys/route.ts`** (new file):
+
+New Next.js route handler. `POST` validates the Supabase session, generates the
+raw key server-side with `crypto.randomBytes(24)` → `cg_live_` + 48 hex chars,
+computes `key_prefix` (first 12 chars) and `key_hash`
+(`base64(sha256(raw_key))` — exact match to `api_key_auth.rs`), inserts via
+the Supabase service role with `org_id` resolved from `org_memberships` (never
+client-supplied), and returns the raw key exactly once. `DELETE` revokes by
+`id` after verifying the key belongs to the session user's org; a different
+org's key ID returns 404. Both methods enforce a same-origin CSRF check
+(Origin/Referer vs. Host).
+
+**ITEM 2 — `supabase/migrations/027_api_keys_server_side_issuance.sql`**:
+
+Drops the `authenticated` INSERT and UPDATE policies on `api_keys`. Adds a
+`service_role` INSERT policy so the route handler can insert rows. Rewrites
+the SELECT policy to use `get_my_org_ids()` (avoids PG 42P17 recursion).
+Asserts the existing `service role can update last_used_at` policy is still
+present. Migration ordered after route deployment so issuance is never broken
+in between.
+
+CI gate: `EXPECTED_MIGRATION_COUNT` bumped 26 → 27. Sentinel A2 added:
+verifies `authenticated` INSERT policy is gone and `service_role` INSERT policy
+exists on `api_keys`.
+
+**ITEM 3 — `dashboard/app/account/page.tsx`**:
+
+`handleCreateKey` now calls `POST /api/keys` instead of
+`supabase.from("api_keys").insert(...)`. `handleRevoke` now calls
+`DELETE /api/keys`. Client-side `generateRawKey()` and `hashKey()` helpers
+removed. The Supabase client is no longer used for key writes. Read path
+(`loadKeys` SELECT) is unchanged.
+
+**Docs:**
+
+- `docs/auth-reference.md`: updated "DB-backed API key" section to describe
+  server-side issuance and link to the new reference.
+- `docs/key-management-reference.md` (new): full reference for `POST /api/keys`
+  and `DELETE /api/keys` — request/response shapes, error table, key format
+  spec, RLS posture after migration 027, `api_keys` column table.
+
+### Verification needed (user must run)
+
+```
+cd dashboard && npm run build
+```
+
+No Rust changes in this branch — `cargo check / cargo test` not required.
+
+### Remaining
+
+RFC-057 (docs completeness pass + STATUS.md RFC index + CLAUDE.md cleanup) —
+pure docs, the final pre-launch task.
+
+---
+
+## Run: 2026-05-23 — RFC-052 follow-up + RFC-055: JWKS debounce fix + CI toolchain fix
+
+**Branch:** `nightly-maintenance-2026-05-23-rfc055`
+
+### Summary
+
+Two commits; P1 CI correctness and a one-line backend safety fix.
+
+**RFC-052 follow-up — JWKS unknown-kid debounce on failure path** (`src/main.rs`,
+`src/tests.rs`):
+
+The failure branch of `maybe_refresh_jwks_on_unknown_kid` was calling
+`state.jwks_last_kid_refresh.store(last, Ordering::Relaxed)`, resetting the
+atomic back to the *old* timestamp after a failed fetch.  This undid the CAS
+that had already written `now`, leaving the debounce window empty — every
+subsequent unknown-kid request triggered its own re-fetch against a down JWKS
+endpoint (thundering herd).
+
+Fix: removed the reset store.  The CAS already writes `now`; leaving it there
+means failures are debounced to at most once per 60 s, same as successes.
+Comment updated to make this explicit.
+
+Added `rfc052_debounce_tests::failed_refresh_debounces_subsequent_calls` which
+asserts the atomic stays at `now` after a failed fetch and the second call is
+debounced without a network attempt.
+
+**RFC-055 — CI sqlx-cli version drift + stale migration sentinel**
+(`.github/workflows/ci.yml`):
+
+1. `sqlx-cli` was pinned to `0.7.4` while `Cargo.toml` is on `sqlx = "0.8"`.
+   The `.sqlx/` metadata format changed between majors, making
+   `cargo sqlx prepare --check` silently inert or failing for wrong reasons.
+   Fixed: version now derived from `Cargo.lock` via `awk` so they can never
+   drift.  Current lockfile resolves to `sqlx = 0.8.6 → sqlx-cli 0.8.6`.
+
+2. Migration sentinel replaced.  Was: checked only migration 009
+   (`github_integrations` table, "Expected all 9 migrations").  Now: two-part
+   check — Sentinel A verifies migration 026's `orgs_plan_valid` constraint
+   contains `'growth'`; Sentinel B asserts `EXPECTED_MIGRATION_COUNT=26` file
+   count (fails CI when a new migration is added without updating the gate).
+
+3. Job header comment updated: 9 migrations → 26 migrations.
+
+### Status
+
+- RFC-052 follow-up: merged (commit `4de357a`)
+- RFC-055: Accepted, merged (commit `f380e79`)
+- P0 blockers: all closed (RFC-047–050)
+- P1 blockers: all closed (RFC-051–055)
+- Remaining: P2 — RFC-056 (server-side API key issuance), RFC-057 (docs + RFC index)
+
+### Commands to run
+
+```
+cargo check
+cargo test
+cargo clippy --all-targets -- -D warnings
+```
+
+---
+
+## Run: 2026-05-24 — RFC-052 + RFC-053: JWKS refresh + /ready readiness probe
+
+**Branch:** `nightly-maintenance-2026-05-24-rfc052-053`
+
+### Summary
+
+Two P1 availability hardening fixes that both touch `AppState` and startup
+in `src/main.rs`, landed in a single branch to avoid merge churn.
+
+**RFC-052 — Periodic Supabase JWKS refresh** (`src/main.rs`, `src/jwt_auth.rs`,
+`Cargo.toml`):
+
+1. **ArcSwap field.** `AppState.supabase_jwks` changed from
+   `Option<Arc<JwkSet>>` to `Arc<ArcSwap<Option<JwkSet>>>`.  The `arc-swap`
+   crate (lock-free atomic pointer swap) is added to `Cargo.toml`.
+
+2. **Background refresh task.** `jwt_auth::spawn_jwks_refresh_task` is called
+   at startup.  It wakes every 10 minutes and atomically swaps in the new
+   `JwkSet` on success.  A failed fetch logs a warning and keeps the previous
+   keys — the store is never blanked.
+
+3. **Refresh-on-unknown-kid.** `maybe_refresh_jwks_on_unknown_kid` in
+   `src/main.rs` performs an out-of-band fetch when `verify_supabase_jwt`
+   returns `NoMatchingKey`.  Debounced to at most one fetch per 60 seconds
+   via `AtomicU64` CAS.  `require_api_key` retries once after a successful
+   refresh.
+
+4. **Startup resilience.** A failed initial JWKS fetch no longer permanently
+   disables JWT auth — the background task will recover once the network is up.
+
+5. **New AppState fields:** `supabase_jwks_url: Option<String>` and
+   `jwks_last_kid_refresh: Arc<AtomicU64>`.
+
+**RFC-053 — Real `/ready` readiness probe** (`src/main.rs`, `fly.toml`,
+`docker-compose.yml`, `docs/health-reference.md`):
+
+1. **`GET /ready`** added to the public router.  Runs `SELECT 1` with a 2-second
+   timeout.  Returns `200 {"status":"ready","db":"ok","version":"...","pool":{...}}`
+   on success, `503 {"status":"degraded","db":"error"}` on timeout or error.
+
+2. **`GET /health`** unchanged — liveness only, no DB.
+
+3. `fly.toml` health check renamed from `[checks.health]` to `[checks.ready]`
+   and path changed from `/health` → `/ready`.
+
+4. `docker-compose.yml` gateway healthcheck path changed `/health` → `/ready`.
+
+5. `docs/health-reference.md` added — documents both probes, platform config,
+   and JWKS refresh behaviour.
+
+### Tests added
+
+- `src/jwt_auth.rs` `#[cfg(test)] mod tests`: 3 unit tests — swap visibility,
+  failing-refresh preserves keys, debounce logic.
+- `src/tests.rs` `mod rfc053_ready_tests`: `/ready` 503 on closed pool,
+  `/health` always 200 (no-DB tests); `/ready` 200 against live DB
+  (`#[ignore]`, requires `DATABASE_URL`).
+
+### Commands to run
+
+```
+cargo check
+cargo test
+cargo clippy --all-targets -- -D warnings
+cargo sqlx prepare
+```
+
+---
+
+## Run: 2026-05-23 — RFC-051 + RFC-054: API-key cache hardening + lock-poison recovery
+
+**Branch:** `nightly-maintenance-2026-05-23-rfc051-054`
+
+### Summary
+
+Two P1 availability hardening fixes to in-process caches. Both touch `api_key_auth.rs`'s
+lock internals, so they land in a single branch to avoid merge conflicts.
+
+**RFC-051 — API-key cache hardening** (`src/api_key_auth.rs`):
+
+1. **Three-state result.** `verify_against_db` now returns
+   `Result<Option<ValidatedKey>, ()>`: `Ok(Some)` = valid, `Ok(None)` = definitive
+   miss (key not found or hash mismatch), `Err(())` = transient DB error. Only
+   `Ok(Some)` and `Ok(None)` are cached. A DB error returns 401 immediately without
+   writing the cache so the next request re-queries — eliminating the prior bug where
+   a 60-second outage window was stamped in on the first blip.
+
+2. **Cache key is SHA-256 hex of the raw key.** The map no longer holds any plaintext
+   `cg_` key material. The digest was already computed for hash verification; storing
+   it costs nothing extra.
+
+3. **Background sweeper.** `ApiKeyCache::spawn_sweeper` is called once at startup.
+   It wakes every 5 minutes, evicts all expired entries, and enforces a hard cap of
+   10 000 entries (oldest evicted first). Opportunistic per-miss eviction retained as
+   belt-and-braces.
+
+4. **`last_used_at` errors are logged.** `let _ = sqlx::query(...)` replaced with
+   `match ... Err(e) => tracing::warn!(...)` so a vanished column or dropped row
+   surfaces in logs instead of being swallowed silently.
+
+**RFC-054 — Lock-poison recovery** (`src/main.rs`, `src/api_key_auth.rs`,
+`src/rate_limit.rs`):
+
+All six lock accessors (`cache_read`, `cache_write` in `main.rs`; `lock_cache` in
+`api_key_auth.rs`; bucket lock in `rate_limit.rs`) now recover via
+`unwrap_or_else(|e| { tracing::error!(...); e.into_inner() })` instead of
+`.expect(...)`. A panicked thread poisoning the lock no longer crashes the process
+for every subsequent caller. Critical sections between acquisition and guard drop
+were audited — all are pure map/float ops with no panic sources.
+
+### Files Changed
+
+- **`src/api_key_auth.rs`** — complete rewrite of cache internals; sweeper added;
+  `lock_cache` poison-recovered; unit tests added (cache key no plaintext, sweeper
+  evicts expired, stale not returned, poisoned mutex recovered).
+- **`src/main.rs`** — `cache_read` / `cache_write` poison-recovered; sweeper spawn
+  added after `warm_cache`.
+- **`src/rate_limit.rs`** — bucket mutex lock poison-recovered.
+- **`docs/rfcs/051-api-key-cache-hardening.md`** — status: Draft → Accepted.
+- **`docs/rfcs/054-lock-poison-recovery.md`** — status: Draft → Accepted.
+
+### No Migration
+
+Application-only changes. No schema changes.
+
+---
+
+## Run: 2026-05-22 — RFC-047 completion + RFC-049 + RFC-050: Replay IDOR close, SSRF hardening, CORS allowlist
+
+**Branch:** `nightly-maintenance-2026-05-22-rfc049-050`
+
+### Summary
+
+Three P0 security fixes. RFC-047 merge had left `src/replay.rs` unscoped —
+both replay endpoints called `get_contract_identity` / `get_version` with
+`None`, making them the same cross-org IDOR the original RFC set out to close.
+RFC-049 closes an SSRF redirect bypass in `/contracts/infer/url`: the reqwest
+client now uses `Policy::none()` so a 3xx from an upstream returns 400 instead
+of following the redirect to an unchecked host (e.g. the cloud metadata
+endpoint). RFC-050 replaces the wildcard `allow_origin(Any)` with two scoped
+CORS layers: an explicit `DASHBOARD_ORIGIN` allowlist on authenticated routes,
+and a permissive wildcard only on genuinely public routes.
+
+### Files Changed
+
+- **`src/main.rs`** — `OrgId` struct made `pub(crate)` so `replay.rs` can
+  import it. CORS: single wildcard layer split into `protected_cors`
+  (origin-allowlist from `DASHBOARD_ORIGIN`) and `public_cors` (wildcard).
+  `AllowOrigin` added to `tower_http::cors` imports.
+
+- **`src/replay.rs`** — `OrgId` imported from `crate`. `replay_handler`:
+  `OrgId(org_id): OrgId` extractor added (before `Json` — `FromRequestParts`
+  must precede `FromRequest`), `auth_configured` guard, `org_id` threaded into
+  `get_contract_identity` and `resolve_replay_target`. `replay_history_handler`:
+  same guard + `get_contract_identity` ownership check before returning history.
+  `resolve_replay_target`: `org_id: Option<Uuid>` param threaded into
+  `get_version`. Wrong-org → 404, never 403.
+
+- **`src/infer_url.rs`** — `.redirect(reqwest::redirect::Policy::none())`
+  added to `ClientBuilder`. Audit comment confirms `infer_openapi` / `avro` /
+  `proto` parse in-memory only (no change needed). Two new unit tests:
+  `non_success_http_status_is_bad_request`, `redirect_policy_none_is_set`.
+
+- **`.env.example`** — `DASHBOARD_ORIGIN` documented with example value.
+- **`docker-compose.yml`** — commented placeholder for production override.
+- **`fly.toml`** — note to set via `fly secrets`, not committed to source.
+- **`docs/auth-reference.md`** — CORS policy section added: two-layer model,
+  `DASHBOARD_ORIGIN` reference table, `fly secrets set` example.
+- **`docs/rfcs/049-ssrf-redirect-hardening.md`** — status: Draft → Accepted.
+- **`docs/rfcs/050-cors-origin-allowlist.md`** — status: Draft → Accepted.
+
+### No Migration
+
+Application-only. No schema changes.
+
+### Commands to run
+
+```sh
+cargo check
+cargo test
+cargo clippy --all-targets -- -D warnings
+cargo sqlx prepare
+```
+
+---
+
 ## Run: 2026-05-22 — RFC-047 + RFC-048: Backend org scoping + x-org-id removal
 
 **Branch:** `nightly-maintenance-2026-05-22-rfc047-048`

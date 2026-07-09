@@ -221,8 +221,8 @@ pub async fn ingest_handler(
     key_ext: Option<Extension<ValidatedKey>>,
     Json(body): Json<Value>,
 ) -> AppResult<axum::response::Response> {
-    // DB-backed key wins; fall back to x-org-id header in legacy/dev mode.
-    let org_id: Option<Uuid> = key_ext.map(|Extension(k)| k.org_id).or_else(|| {
+    // DB-backed key wins; fall back to x-org-id header in dev mode (CONTRACTGATE_DEV_NO_AUTH).
+    let org_id: Option<Uuid> = key_ext.as_ref().map(|Extension(k)| k.org_id).or_else(|| {
         headers
             .get("x-org-id")
             .and_then(|v| v.to_str().ok())
@@ -230,23 +230,35 @@ pub async fn ingest_handler(
     });
     // --- Parse path + headers -----------------------------------------------
     let (contract_id, path_version) = parse_ingest_path(&raw_id)?;
+
+    // --- Per-key contract-scope enforcement (RFC-065) ----------------------
+    // Hot path is scoped by key.allowed_contract_ids, not org_id. Check before
+    // loading identity so a wrong-scope key never learns the contract exists.
+    if let Some(Extension(ref k)) = key_ext {
+        if !k.permits_contract(contract_id) {
+            return Err(AppError::Unauthorized);
+        }
+    }
+
     let header_version = headers
         .get("x-contract-version")
         .and_then(|v| v.to_str().ok())
         .map(|s| s.trim().to_string())
         .filter(|s| !s.is_empty());
 
-    // --- Load contract identity (404 if unknown) ---------------------------
-    // Ingest hot path is scoped by key.allowed_contract_ids, not org_id — pass None.
+    // --- Load contract identity (404 if unknown OR not owned by caller's org)
+    // RFC-074: scope by org_id so a key cannot ingest into another org's
+    // contract. 404 (not 403) so a wrong-org key never learns it exists.
     let identity: ContractIdentity =
-        storage::get_contract_identity(&state.db, contract_id, None).await?;
+        storage::get_contract_identity(&state.db, contract_id, org_id).await?;
 
     // --- Resolve which version to use --------------------------------------
     let (resolved_version, pin_source) =
         resolve_version(&state, contract_id, header_version, path_version).await?;
 
     // --- Fetch version row so we know its state (draft/stable/deprecated) --
-    let version_row = storage::get_version(&state.db, contract_id, &resolved_version, None).await?;
+    let version_row =
+        storage::get_version(&state.db, contract_id, &resolved_version, org_id).await?;
 
     tracing::debug!(
         contract_id = %contract_id,

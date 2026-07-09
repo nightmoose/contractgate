@@ -12,6 +12,10 @@ primary_region = 'iad'
 [env]
   PORT = '3001'
   RUST_LOG = 'contractgate=info,tower_http=warn'
+  # RFC-050: DASHBOARD_ORIGIN is intentionally NOT set here — it contains the
+  # production origin and must be injected via fly secrets so it is never
+  # committed to source control.
+  # fly secrets set DASHBOARD_ORIGIN=https://app.datacontractgate.com
 
 [http_service]
   internal_port = 3001
@@ -26,14 +30,17 @@ primary_region = 'iad'
     soft_limit = 400
 
 [checks]
-  [checks.health]
+  # RFC-053: readiness probe (SELECT 1 against the DB pool).
+  # /health is the liveness probe (process-up, no DB); use /ready for
+  # platform routing so a dead DB pool drains traffic from this instance.
+  [checks.ready]
     port = 3001
     type = 'http'
     interval = '15s'
     timeout = '5s'
     grace_period = '10s'
     method = 'GET'
-    path = '/health'
+    path = '/ready'
 
 [[vm]]
   cpu_kind = 'shared'

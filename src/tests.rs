@@ -2386,7 +2386,7 @@ mod org_scoping {
     // ---- Unit: OrgId extractor ------------------------------------------------
 
     /// `OrgId` extractor returns `None` when no `ValidatedKey` is in extensions.
-    /// Covers dev mode (no auth) and the legacy env-var key path.
+    /// Covers dev mode (`CONTRACTGATE_DEV_NO_AUTH`) where no key is injected.
     #[test]
     fn org_id_none_when_no_validated_key() {
         use axum::extract::FromRequestParts;
@@ -2501,6 +2501,20 @@ glossary: []
 metrics: []
 "#;
 
+        // Seed the two orgs. `contracts.org_id` is a FK to orgs(id) (migration
+        // 007), so the contract insert below fails without these rows. Seeding
+        // here makes the test runnable against any migrated Postgres with no
+        // external seed data (RFC-068).
+        for (org, slug) in [(org_a, "iso-test-a"), (org_b, "iso-test-b")] {
+            sqlx::query("INSERT INTO orgs (id, name, slug) VALUES ($1, $2, $3)")
+                .bind(org)
+                .bind("isolation test org")
+                .bind(format!("{slug}-{}", org.simple()))
+                .execute(&pool)
+                .await
+                .expect("seed org");
+        }
+
         // Org A creates a contract.
         let (identity, _) = super::super::storage::create_contract(
             &pool,
@@ -2575,9 +2589,17 @@ metrics: []
             .await
             .expect("dev mode (org_id=None) should serve unscoped");
 
-        // Cleanup: hard-delete the test row so reruns don't collide.
+        // Cleanup: delete the contract first, then the orgs. (Deleting the org
+        // would cascade to the contract via ON DELETE CASCADE, but we delete
+        // the contract explicitly so the intent is obvious and a future FK
+        // change can't silently leave orphan rows.)
         sqlx::query("DELETE FROM contracts WHERE id = $1")
             .bind(contract_id)
+            .execute(&pool)
+            .await
+            .unwrap();
+        sqlx::query("DELETE FROM orgs WHERE id = ANY($1)")
+            .bind(vec![org_a, org_b])
             .execute(&pool)
             .await
             .unwrap();
@@ -2605,6 +2627,18 @@ ontology:
 glossary: []
 metrics: []
 "#;
+
+        // Seed the two orgs (FK target for contracts.org_id, migration 007).
+        // See two_org_get_contract_isolation for rationale (RFC-068).
+        for (org, slug) in [(org_a, "iso-ver-a"), (org_b, "iso-ver-b")] {
+            sqlx::query("INSERT INTO orgs (id, name, slug) VALUES ($1, $2, $3)")
+                .bind(org)
+                .bind("isolation test org")
+                .bind(format!("{slug}-{}", org.simple()))
+                .execute(&pool)
+                .await
+                .expect("seed org");
+        }
 
         let (identity, _) = super::super::storage::create_contract(
             &pool,
@@ -2638,16 +2672,371 @@ metrics: []
             super::super::error::AppError::VersionNotFound { .. }
         ));
 
+        // Org B: write-side denials (RFC-070). Each of these guards via
+        // get_version(.., org_id) and must return VersionNotFound before any
+        // state check — a regression dropping org_id would let one tenant
+        // mutate/delete another tenant's version.
+        let err = super::super::storage::patch_version_yaml(
+            &pool,
+            contract_id,
+            "1.0.0",
+            minimal_yaml,
+            Some(org_b),
+        )
+        .await
+        .unwrap_err();
+        assert!(
+            matches!(err, super::super::error::AppError::VersionNotFound { .. }),
+            "org B patch_version_yaml should be VersionNotFound, got: {:?}",
+            err
+        );
+
+        let err =
+            super::super::storage::deprecate_version(&pool, contract_id, "1.0.0", Some(org_b))
+                .await
+                .unwrap_err();
+        assert!(
+            matches!(err, super::super::error::AppError::VersionNotFound { .. }),
+            "org B deprecate_version should be VersionNotFound, got: {:?}",
+            err
+        );
+
+        let err = super::super::storage::delete_version(&pool, contract_id, "1.0.0", Some(org_b))
+            .await
+            .unwrap_err();
+        assert!(
+            matches!(err, super::super::error::AppError::VersionNotFound { .. }),
+            "org B delete_version should be VersionNotFound, got: {:?}",
+            err
+        );
+
         // Org A: GET version succeeds.
         super::super::storage::get_version(&pool, contract_id, "1.0.0", Some(org_a))
             .await
             .expect("org A should still read its own version");
 
-        // Cleanup.
+        // Cleanup (contract first, then orgs — see sibling test).
         sqlx::query("DELETE FROM contracts WHERE id = $1")
             .bind(contract_id)
             .execute(&pool)
             .await
             .unwrap();
+        sqlx::query("DELETE FROM orgs WHERE id = ANY($1)")
+            .bind(vec![org_a, org_b])
+            .execute(&pool)
+            .await
+            .unwrap();
+    }
+
+    /// RFC-072: the conditional UPDATE in `mark_quarantine_replayed_batch` is
+    /// the double-replay race guard. Two concurrent replays of the same source
+    /// row must result in at most one stamp; the loser sees the row already
+    /// `replayed` and is re-categorized as `already_replayed` by the handler.
+    ///
+    /// Self-seeding Class-1 test (RFC-068): seeds an org + contract + one
+    /// pending quarantine row, then calls the batch mark twice with two
+    /// distinct audit IDs. The first call must return the source ID (it won
+    /// the UPDATE); the second must return empty (status no longer
+    /// `pending`/`reviewed`). Verifies the persisted row is stamped exactly
+    /// once and links to the *first* audit ID.
+    #[tokio::test]
+    #[ignore = "requires DATABASE_URL and a live Supabase/Postgres instance"]
+    async fn quarantine_replay_race_guard() {
+        let db_url = std::env::var("DATABASE_URL").expect("DATABASE_URL must be set");
+        let pool = sqlx::PgPool::connect(&db_url).await.unwrap();
+
+        let org = uuid::Uuid::new_v4();
+
+        let minimal_yaml = r#"
+version: "1.0"
+name: "replay_race_test"
+description: "Replay race-guard test"
+ontology:
+  entities:
+    - name: id
+      type: string
+      required: true
+glossary: []
+metrics: []
+"#;
+
+        sqlx::query("INSERT INTO orgs (id, name, slug) VALUES ($1, $2, $3)")
+            .bind(org)
+            .bind("replay race test org")
+            .bind(format!("replay-race-{}", org.simple()))
+            .execute(&pool)
+            .await
+            .expect("seed org");
+
+        let (identity, _) = super::super::storage::create_contract(
+            &pool,
+            "replay_race_test",
+            None,
+            minimal_yaml,
+            Default::default(),
+            Some(org),
+        )
+        .await
+        .expect("seed contract");
+        let contract_id = identity.id;
+
+        // Seed one pending quarantine row. `quarantine_event` doesn't return
+        // the id, so read it back via list-by-contract through a direct SELECT.
+        super::super::storage::quarantine_event(
+            &pool,
+            contract_id,
+            "1.0.0",
+            super::super::transform::TransformedPayload::from_stored(
+                serde_json::json!({ "id": "evt-1" }),
+            ),
+            1,
+            serde_json::json!([{ "field": "id", "rule": "required" }]),
+            42,
+            Some("203.0.113.7"),
+            "ingress",
+        )
+        .await
+        .expect("seed quarantine row");
+
+        let (quar_id,): (uuid::Uuid,) =
+            sqlx::query_as("SELECT id FROM quarantine_events WHERE contract_id = $1")
+                .bind(contract_id)
+                .fetch_one(&pool)
+                .await
+                .expect("read back quarantine id");
+
+        // replayed_into_audit_id is a FK to audit_log(id), so the two "audit
+        // rows a replay produced" must really exist. Seed them directly.
+        let now = chrono::Utc::now();
+        let audit_first = uuid::Uuid::new_v4();
+        let audit_second = uuid::Uuid::new_v4();
+        for audit_id in [audit_first, audit_second] {
+            sqlx::query(
+                r#"
+                INSERT INTO audit_log
+                    (id, contract_id, org_id, contract_version, passed,
+                     violation_count, violation_details, raw_event,
+                     validation_us, source_ip, source, direction, created_at)
+                VALUES ($1, $2, $3, '1.0.0', true, 0, '[]'::jsonb,
+                        '{"id":"evt-1"}'::jsonb, 42, NULL, 'replay', 'ingress', NOW())
+                "#,
+            )
+            .bind(audit_id)
+            .bind(contract_id)
+            .bind(org)
+            .execute(&pool)
+            .await
+            .expect("seed audit row");
+        }
+
+        // First replay wins the conditional UPDATE.
+        let marked_first = super::super::storage::mark_quarantine_replayed_batch(
+            &pool,
+            &[(quar_id, audit_first)],
+            now,
+        )
+        .await
+        .expect("first mark");
+        assert_eq!(
+            marked_first,
+            vec![quar_id],
+            "first replay should win the race and mark the row"
+        );
+
+        // Second replay loses: status is no longer pending/reviewed.
+        let marked_second = super::super::storage::mark_quarantine_replayed_batch(
+            &pool,
+            &[(quar_id, audit_second)],
+            now,
+        )
+        .await
+        .expect("second mark");
+        assert!(
+            marked_second.is_empty(),
+            "second replay must lose the race (no row marked), got: {:?}",
+            marked_second
+        );
+
+        // Persisted row is stamped once and links to the FIRST audit id.
+        let rows = super::super::storage::list_quarantine_by_ids(&pool, &[quar_id])
+            .await
+            .expect("list by id");
+        let row = rows
+            .into_iter()
+            .find(|r| r.id == quar_id)
+            .expect("row should exist");
+        assert_eq!(row.status, "replayed", "row should be stamped replayed");
+        assert_eq!(
+            row.replayed_into_audit_id,
+            Some(audit_first),
+            "row must link to the winning (first) audit id, not the loser"
+        );
+
+        // Cleanup. quarantine_events references audit_log, so delete quarantine
+        // rows first, then audit rows, then contract, then org.
+        sqlx::query("DELETE FROM quarantine_events WHERE contract_id = $1")
+            .bind(contract_id)
+            .execute(&pool)
+            .await
+            .unwrap();
+        sqlx::query("DELETE FROM audit_log WHERE contract_id = $1")
+            .bind(contract_id)
+            .execute(&pool)
+            .await
+            .unwrap();
+        sqlx::query("DELETE FROM contracts WHERE id = $1")
+            .bind(contract_id)
+            .execute(&pool)
+            .await
+            .unwrap();
+        sqlx::query("DELETE FROM orgs WHERE id = $1")
+            .bind(org)
+            .execute(&pool)
+            .await
+            .unwrap();
+    }
+}
+
+// ---------------------------------------------------------------------------
+// RFC-053 — /ready readiness-probe tests
+//
+// These tests do NOT require a live DB: they construct a minimal AppState with
+// a deliberately closed pool to exercise the 503 path, and rely on axum-test
+// to drive the 200 path against a live pool (guarded by `#[ignore]` + DATABASE_URL).
+// ---------------------------------------------------------------------------
+
+#[cfg(test)]
+mod rfc053_ready_tests {
+    use axum::http::StatusCode;
+    use axum_test::TestServer;
+
+    /// Build a test router with only the /ready route wired.
+    async fn make_server(pool: sqlx::PgPool) -> TestServer {
+        let state = std::sync::Arc::new(super::super::AppState::new(pool, true, None, None));
+        let app = axum::Router::new()
+            .route("/ready", axum::routing::get(super::super::ready_handler))
+            .with_state(state);
+        // axum-test 20: TestServer::new returns TestServer directly, not Result.
+        TestServer::new(app)
+    }
+
+    /// /ready returns 503 when the pool is closed (cannot serve SELECT 1).
+    #[tokio::test]
+    async fn ready_returns_503_on_closed_pool() {
+        // Build a pool with no valid connection string — close it immediately.
+        let pool = sqlx::PgPool::connect_lazy("postgres://invalid:5432/none")
+            .expect("lazy connect should succeed");
+        pool.close().await;
+
+        let server = make_server(pool).await;
+        let resp = server.get("/ready").await;
+        assert_eq!(resp.status_code(), StatusCode::SERVICE_UNAVAILABLE);
+
+        // axum-test 20: use .json::<T>() to deserialise the body.
+        let body = resp.json::<serde_json::Value>();
+        assert_eq!(body["status"], "degraded");
+        assert_eq!(body["db"], "error");
+    }
+
+    /// /health always returns 200 regardless of DB state.
+    #[tokio::test]
+    async fn health_always_200() {
+        let pool = sqlx::PgPool::connect_lazy("postgres://invalid:5432/none")
+            .expect("lazy connect should succeed");
+        pool.close().await;
+
+        let state = std::sync::Arc::new(super::super::AppState::new(pool, true, None, None));
+        let app = axum::Router::new()
+            .route("/health", axum::routing::get(super::super::health_handler))
+            .with_state(state);
+        let server = TestServer::new(app);
+
+        let resp: axum_test::TestResponse = server.get("/health").await;
+        assert_eq!(resp.status_code(), StatusCode::OK);
+    }
+
+    /// /ready returns 200 against a live DB.
+    /// Requires DATABASE_URL; run with: `cargo test ready_returns_200 -- --ignored`
+    #[tokio::test]
+    #[ignore]
+    async fn ready_returns_200_live_db() {
+        let db_url = std::env::var("DATABASE_URL").expect("DATABASE_URL must be set");
+        let pool = sqlx::PgPool::connect(&db_url).await.unwrap();
+        let server = make_server(pool).await;
+
+        let resp = server.get("/ready").await;
+        assert_eq!(resp.status_code(), StatusCode::OK);
+
+        let body = resp.json::<serde_json::Value>();
+        assert_eq!(body["status"], "ready");
+        assert_eq!(body["db"], "ok");
+    }
+}
+
+// ---------------------------------------------------------------------------
+// RFC-052 follow-up: unknown-kid debounce on the failure path
+// ---------------------------------------------------------------------------
+//
+// Regression guard for the bug where a failed JWKS fetch reset the atomic
+// back to `last` (the old timestamp), letting every subsequent request
+// attempt its own re-fetch — a thundering herd against a down endpoint.
+// After the fix the atomic stays at `now` after a failure, so the 60-second
+// debounce applies to failures as well as successes.
+
+#[cfg(test)]
+mod rfc052_debounce_tests {
+    use std::sync::atomic::Ordering;
+    use std::sync::Arc;
+
+    /// Build a minimal AppState whose JWKS URL points to a port that always
+    /// refuses connections, so `fetch_jwks` returns Err instantly.
+    fn make_state() -> Arc<super::super::AppState> {
+        let pool = sqlx::PgPool::connect_lazy("postgres://invalid:5432/none")
+            .expect("lazy connect should succeed");
+        Arc::new(super::super::AppState::new(
+            pool,
+            true,
+            None,
+            // Port 1 is always closed on loopback — connection refused is
+            // instant, keeping the test fast.
+            Some("http://127.0.0.1:1/.well-known/jwks.json".into()),
+        ))
+    }
+
+    /// After a failed JWKS refresh the atomic must remain at `now`, not be
+    /// reset to the prior value.  A second call within 60 s must be debounced.
+    #[tokio::test]
+    async fn failed_refresh_debounces_subsequent_calls() {
+        let state = make_state();
+
+        // Atomic starts at 0; first call should attempt a fetch (not debounced).
+        // fetch_jwks will fail → should return false.
+        let refreshed = super::super::maybe_refresh_jwks_on_unknown_kid(&state).await;
+        assert!(!refreshed, "expected false on a failed fetch");
+
+        // The atomic must now be near `now`, NOT 0.
+        // If the bug is present, store(last) resets it back to 0 here.
+        let stamp = state.jwks_last_kid_refresh.load(Ordering::Relaxed);
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
+        assert!(
+            stamp > 0 && now.saturating_sub(stamp) < 5,
+            "jwks_last_kid_refresh should be near `now` after a failed fetch, got {stamp} (now={now})"
+        );
+
+        // Second call immediately after must be debounced (stamp is recent,
+        // saturating_sub < 60).  It must NOT attempt another fetch.
+        let refreshed2 = super::super::maybe_refresh_jwks_on_unknown_kid(&state).await;
+        assert!(!refreshed2, "expected debounce on second call within 60 s");
+
+        // The atomic must still equal the stamp from the first call — a
+        // debounced call must not touch the atomic.
+        let stamp2 = state.jwks_last_kid_refresh.load(Ordering::Relaxed);
+        assert_eq!(
+            stamp, stamp2,
+            "debounced call must not modify jwks_last_kid_refresh"
+        );
     }
 }
