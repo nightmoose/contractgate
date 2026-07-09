@@ -4,6 +4,7 @@ import org.apache.kafka.common.config.AbstractConfig;
 import org.apache.kafka.common.config.ConfigDef;
 import org.apache.kafka.common.config.ConfigDef.Importance;
 import org.apache.kafka.common.config.ConfigDef.Type;
+import org.apache.kafka.common.config.ConfigException;
 
 import java.util.Map;
 
@@ -12,6 +13,14 @@ import java.util.Map;
  *
  * <p>All keys are namespaced under {@code contractgate.*} to avoid clashes with
  * other SMTs in a connector chain.</p>
+ *
+ * <h2>RFC-064 additions</h2>
+ * <ul>
+ *   <li>Dynamic contract reload: {@code contractgate.reload.*}</li>
+ *   <li>Per-violation DLQ routing: {@code contractgate.dlq.routing.*}</li>
+ * </ul>
+ * Both features are opt-in via {@code *.enabled=false} defaults.
+ * With both disabled, behavior is byte-identical to the pre-RFC-064 baseline.
  */
 public class ContractGateValidatorConfig extends AbstractConfig {
 
@@ -96,6 +105,67 @@ public class ContractGateValidatorConfig extends AbstractConfig {
         "High violation counts can bloat headers; cap at a useful number. Default: 5.";
     private static final int MAX_VIOLATION_HEADERS_DEFAULT = 5;
 
+    // ── RFC-064: Dynamic contract reload ──────────────────────────────────────
+
+    public static final String RELOAD_ENABLED_CONFIG = "contractgate.reload.enabled";
+    private static final String RELOAD_ENABLED_DOC =
+        "Enable dynamic contract reload via polling. When false (default), the contract " +
+        "reference is fixed at task start — same behaviour as before RFC-064. " +
+        "When true, a background thread polls GET /v1/contracts/{id}/version every " +
+        "contractgate.reload.poll.ms milliseconds and hot-swaps the contract on change.";
+    private static final boolean RELOAD_ENABLED_DEFAULT = false;
+
+    public static final String RELOAD_POLL_MS_CONFIG = "contractgate.reload.poll.ms";
+    private static final String RELOAD_POLL_MS_DOC =
+        "How often the background reloader polls the ContractGate gateway for a " +
+        "contract version change, in milliseconds. Minimum 5000. Default: 30000.";
+    private static final int RELOAD_POLL_MS_DEFAULT = 30_000;
+    private static final int RELOAD_POLL_MS_MIN     = 5_000;
+
+    public static final String RELOAD_FAILURE_ACTION_CONFIG = "contractgate.reload.failure.action";
+    private static final String RELOAD_FAILURE_ACTION_DOC =
+        "What to do when a contract reload fails (e.g. server unreachable, unparseable YAML).\n" +
+        "  warn      — Log WARN, keep old contract (default). The SMT continues " +
+                        "processing with the last good version.\n" +
+        "  fail-task — Mark the Connect task as failed. Use when running with a " +
+                        "stale contract is worse than downtime (strict compliance scenarios).";
+    private static final String RELOAD_FAILURE_ACTION_DEFAULT = "warn";
+
+    // ── RFC-064: Per-violation DLQ routing ───────────────────────────────────
+
+    public static final String DLQ_ROUTING_ENABLED_CONFIG = "contractgate.dlq.routing.enabled";
+    private static final String DLQ_ROUTING_ENABLED_DOC =
+        "Enable per-violation DLQ routing. When false (default), all violations are " +
+        "routed to the single errors.deadletterqueue.topic.name configured on the connector. " +
+        "When true, violations are routed according to contractgate.dlq.routing.rules.";
+    private static final boolean DLQ_ROUTING_ENABLED_DEFAULT = false;
+
+    public static final String DLQ_ROUTING_RULES_CONFIG = "contractgate.dlq.routing.rules";
+    private static final String DLQ_ROUTING_RULES_DOC =
+        "JSON array of routing rules evaluated top-to-bottom (first match wins). " +
+        "Each rule: {\"match\": {\"severity\": \"error\", \"type\": \"pii_leak\"}, " +
+        "\"topic\": \"audit.pii_failures\"}. " +
+        "Match fields: severity (error|warn), type (violation kind), " +
+        "field (field path), contract (contract UUID). " +
+        "Default: [] (all violations go to contractgate.dlq.routing.default).";
+    private static final String DLQ_ROUTING_RULES_DEFAULT = "[]";
+
+    public static final String DLQ_ROUTING_DEFAULT_CONFIG = "contractgate.dlq.routing.default";
+    private static final String DLQ_ROUTING_DEFAULT_DOC =
+        "Fallback DLQ topic when no routing rule matches. " +
+        "Required when contractgate.dlq.routing.enabled=true.";
+    private static final String DLQ_ROUTING_DEFAULT_DEFAULT = "";
+
+    public static final String DLQ_ROUTING_PRODUCER_BOOTSTRAP_SERVERS_CONFIG =
+        "contractgate.dlq.routing.producer.bootstrap.servers";
+    private static final String DLQ_ROUTING_PRODUCER_BOOTSTRAP_SERVERS_DOC =
+        "bootstrap.servers for the internal DLQ routing producer. " +
+        "Required when contractgate.dlq.routing.enabled=true. " +
+        "Use the same value as the Connect worker's bootstrap.servers. " +
+        "Additional producer settings can be passed as " +
+        "contractgate.dlq.routing.producer.<key>=<value>.";
+    private static final String DLQ_ROUTING_PRODUCER_BOOTSTRAP_SERVERS_DEFAULT = "";
+
     // ── Config definition ─────────────────────────────────────────────────────
 
     public static final ConfigDef CONFIG_DEF = new ConfigDef()
@@ -139,12 +209,38 @@ public class ContractGateValidatorConfig extends AbstractConfig {
         .define(MAX_VIOLATION_HEADERS_CONFIG,
                 Type.INT, MAX_VIOLATION_HEADERS_DEFAULT,
                 ConfigDef.Range.between(0, 50),
-                Importance.LOW, MAX_VIOLATION_HEADERS_DOC);
+                Importance.LOW, MAX_VIOLATION_HEADERS_DOC)
+        // RFC-064: Dynamic contract reload
+        .define(RELOAD_ENABLED_CONFIG,
+                Type.BOOLEAN, RELOAD_ENABLED_DEFAULT,
+                Importance.MEDIUM, RELOAD_ENABLED_DOC)
+        .define(RELOAD_POLL_MS_CONFIG,
+                Type.INT, RELOAD_POLL_MS_DEFAULT,
+                ConfigDef.Range.atLeast(RELOAD_POLL_MS_MIN),
+                Importance.LOW, RELOAD_POLL_MS_DOC)
+        .define(RELOAD_FAILURE_ACTION_CONFIG,
+                Type.STRING, RELOAD_FAILURE_ACTION_DEFAULT,
+                ConfigDef.ValidString.in("warn", "fail-task"),
+                Importance.LOW, RELOAD_FAILURE_ACTION_DOC)
+        // RFC-064: Per-violation DLQ routing
+        .define(DLQ_ROUTING_ENABLED_CONFIG,
+                Type.BOOLEAN, DLQ_ROUTING_ENABLED_DEFAULT,
+                Importance.MEDIUM, DLQ_ROUTING_ENABLED_DOC)
+        .define(DLQ_ROUTING_RULES_CONFIG,
+                Type.STRING, DLQ_ROUTING_RULES_DEFAULT,
+                Importance.MEDIUM, DLQ_ROUTING_RULES_DOC)
+        .define(DLQ_ROUTING_DEFAULT_CONFIG,
+                Type.STRING, DLQ_ROUTING_DEFAULT_DEFAULT,
+                Importance.MEDIUM, DLQ_ROUTING_DEFAULT_DOC)
+        .define(DLQ_ROUTING_PRODUCER_BOOTSTRAP_SERVERS_CONFIG,
+                Type.STRING, DLQ_ROUTING_PRODUCER_BOOTSTRAP_SERVERS_DEFAULT,
+                Importance.MEDIUM, DLQ_ROUTING_PRODUCER_BOOTSTRAP_SERVERS_DOC);
 
     // ── Constructor ───────────────────────────────────────────────────────────
 
     public ContractGateValidatorConfig(Map<String, ?> props) {
         super(CONFIG_DEF, props);
+        validate();
     }
 
     // ── Typed accessors ───────────────────────────────────────────────────────
@@ -187,5 +283,52 @@ public class ContractGateValidatorConfig extends AbstractConfig {
 
     public int maxViolationHeaders() {
         return getInt(MAX_VIOLATION_HEADERS_CONFIG);
+    }
+
+    // RFC-064 accessors
+
+    public boolean reloadEnabled() {
+        return getBoolean(RELOAD_ENABLED_CONFIG);
+    }
+
+    public int reloadPollMs() {
+        return getInt(RELOAD_POLL_MS_CONFIG);
+    }
+
+    public String reloadFailureAction() {
+        return getString(RELOAD_FAILURE_ACTION_CONFIG);
+    }
+
+    public boolean dlqRoutingEnabled() {
+        return getBoolean(DLQ_ROUTING_ENABLED_CONFIG);
+    }
+
+    public String dlqRoutingRules() {
+        return getString(DLQ_ROUTING_RULES_CONFIG);
+    }
+
+    public String dlqRoutingDefault() {
+        return getString(DLQ_ROUTING_DEFAULT_CONFIG).trim();
+    }
+
+    public String dlqRoutingProducerBootstrapServers() {
+        return getString(DLQ_ROUTING_PRODUCER_BOOTSTRAP_SERVERS_CONFIG).trim();
+    }
+
+    // ── Cross-field validation ────────────────────────────────────────────────
+
+    private void validate() {
+        // dlq.routing: validate that required fields are present when enabled.
+        // Full JSON parse is deferred to DlqRoutingConfig.parse() in configure().
+        if (dlqRoutingEnabled()) {
+            if (dlqRoutingDefault().isEmpty()) {
+                throw new ConfigException(DLQ_ROUTING_DEFAULT_CONFIG,
+                    "required when contractgate.dlq.routing.enabled=true");
+            }
+            if (dlqRoutingProducerBootstrapServers().isEmpty()) {
+                throw new ConfigException(DLQ_ROUTING_PRODUCER_BOOTSTRAP_SERVERS_CONFIG,
+                    "required when contractgate.dlq.routing.enabled=true");
+            }
+        }
     }
 }

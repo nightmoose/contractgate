@@ -1,8 +1,8 @@
 # RFC-055 — Fix CI sqlx-cli version drift and the stale migration sentinel
 
-**Status:** Draft  
+**Status:** Accepted  
 **Date:** 2026-05-22  
-**Branch:** nightly-maintenance-2026-05-22-rfc055  
+**Branch:** nightly-maintenance-2026-05-23-rfc055  
 **Addresses:** REVIEW-2026-05-22-launch-readiness H5, M7  
 **Severity:** P1 — high (CI correctness)
 

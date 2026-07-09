@@ -1,0 +1,28 @@
+# Kafka ingress contract (RFC-078 walkthrough example)
+#
+# Producers write to cg-{contract_id}-raw; valid events route to
+# cg-{contract_id}-clean, invalid to cg-{contract_id}-quarantine.
+# Same validation engine as the HTTP path.
+version: "1.0"
+name: "clickstream"
+description: "Clickstream events ingested over Kafka"
+
+ontology:
+  entities:
+    - name: user_id
+      type: string
+      required: true
+      pattern: "^[a-zA-Z0-9_-]+$"
+    - name: event_type
+      type: string
+      required: true
+      enum: ["click", "view", "scroll", "login"]
+    - name: timestamp
+      type: integer
+      required: true
+
+quality:
+  - field: timestamp
+    type: freshness
+    max_age_seconds: 86400      # reject events older than 24h at ingest
+    description: "Drop stale / replayed clickstream events"

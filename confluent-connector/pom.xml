@@ -38,7 +38,7 @@
 
     <!-- Keep in sync with your Kafka / Confluent Platform version -->
     <kafka.version>3.6.0</kafka.version>
-    <jackson.version>2.15.2</jackson.version>
+    <jackson.version>2.18.6</jackson.version>
     <slf4j.version>2.0.9</slf4j.version>
     <junit.version>5.10.0</junit.version>
     <mockito.version>5.7.0</mockito.version>
@@ -113,6 +113,23 @@
       <version>${slf4j.version}</version>
       <scope>test</scope>
     </dependency>
+    <!-- WireMock standalone — mock HTTP gateway for contract reload integration tests.
+         Uses the JRE8 variant for Java 11 compatibility (wiremock 3.x requires Java 17). -->
+    <dependency>
+      <groupId>com.github.tomakehurst</groupId>
+      <artifactId>wiremock-jre8-standalone</artifactId>
+      <version>2.35.2</version>
+      <scope>test</scope>
+    </dependency>
+    <!-- jackson-core is provided by the Connect runtime (same as jackson-databind above).
+         Declared explicitly because Maven does not automatically surface transitive
+         deps of provided artifacts onto the compile classpath. -->
+    <dependency>
+      <groupId>com.fasterxml.jackson.core</groupId>
+      <artifactId>jackson-core</artifactId>
+      <version>${jackson.version}</version>
+      <scope>provided</scope>
+    </dependency>
   </dependencies>
 
   <build>
@@ -137,6 +154,12 @@
         <groupId>org.apache.maven.plugins</groupId>
         <artifactId>maven-surefire-plugin</artifactId>
         <version>3.1.2</version>
+        <configuration>
+          <!-- Byte Buddy 1.14 only officially supports up to Java 22;
+               experimental mode enables Java 23+ (including 25) without
+               upgrading the Mockito/Byte Buddy bundle. -->
+          <argLine>-Dnet.bytebuddy.experimental=true</argLine>
+        </configuration>
       </plugin>
 
       <!-- ── Confluent Hub packaging ───────────────────────────────────── -->

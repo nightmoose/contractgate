@@ -629,6 +629,29 @@ export const inferCsv = (params: {
   body: JSON.stringify(params),
 });
 
+/** Response from `POST /contracts/infer` (JSON samples, RFC-079). */
+export interface InferSamplesResponse {
+  yaml_content: string;
+  field_count: number;
+  sample_count: number;
+}
+
+/**
+ * Infer a contract from one or more JSON sample objects (RFC-079).
+ * Routes through the Rust inference engine — the same engine as CSV/URL
+ * inference — so nested objects produce `type: object` + `properties`
+ * correctly. Samples are sent to the backend; surface that to the user
+ * (see GeneratorTab privacy notice).
+ */
+export const inferSamples = (params: {
+  name: string;
+  description?: string;
+  samples: unknown[];
+}) => apiFetch<InferSamplesResponse>("/contracts/infer", {
+  method: "POST",
+  body: JSON.stringify(params),
+});
+
 /** Response from `POST /contracts/infer/url` (RFC-037). */
 export interface InferUrlResponse {
   yaml_content: string;

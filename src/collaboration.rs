@@ -183,7 +183,7 @@ pub async fn grant_collaborator_handler(
         .map_err(|e| AppError::BadRequest(e.to_string()))?;
 
     validate_collaborator_role(&body.role)?;
-    let granted_by = org_id.expect("owner check guarantees org_id is set");
+    let granted_by = org_id.ok_or(AppError::Unauthorized)?;
     let row = storage::grant_collaborator(
         &state.db,
         &contract_name,
@@ -259,7 +259,7 @@ pub async fn add_comment_handler(
     let org_id = crate::org_id_from_req(&req);
     require_role(&state, &contract_name, org_id, CallerRole::Viewer).await?;
 
-    let caller_org = org_id.expect("viewer check guarantees org_id is set");
+    let caller_org = org_id.ok_or(AppError::Unauthorized)?;
     let Json(body): Json<AddCommentRequest> = axum::Json::from_request(req, &state)
         .await
         .map_err(|e| AppError::BadRequest(e.to_string()))?;
@@ -326,7 +326,7 @@ pub async fn create_proposal_handler(
     // Only editors (and owners) may open proposals.
     require_role(&state, &contract_name, org_id, CallerRole::Editor).await?;
 
-    let caller_org = org_id.expect("editor check guarantees org_id is set");
+    let caller_org = org_id.ok_or(AppError::Unauthorized)?;
     let Json(body): Json<CreateProposalRequest> = axum::Json::from_request(req, &state)
         .await
         .map_err(|e| AppError::BadRequest(e.to_string()))?;
@@ -353,7 +353,7 @@ pub async fn decide_proposal_handler(
     // Reviewers and owners may decide.
     require_role(&state, &contract_name, org_id, CallerRole::Reviewer).await?;
 
-    let caller_org = org_id.expect("reviewer check guarantees org_id is set");
+    let caller_org = org_id.ok_or(AppError::Unauthorized)?;
     let Json(body): Json<DecideProposalRequest> = axum::Json::from_request(req, &state)
         .await
         .map_err(|e| AppError::BadRequest(e.to_string()))?;

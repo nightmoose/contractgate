@@ -138,7 +138,11 @@ impl RateLimitState {
             .entry(key_id)
             .or_insert_with(|| Mutex::new(Bucket::new(rate, burst)));
 
-        let mut bucket = entry.lock().expect("rate-limit bucket mutex poisoned");
+        // RFC-054: recover from poison instead of crashing the process.
+        let mut bucket = entry.lock().unwrap_or_else(|e| {
+            tracing::error!("rate-limit bucket Mutex was poisoned — recovering inner value");
+            e.into_inner()
+        });
 
         // Update effective rate/burst if the key's override changed since the
         // bucket was created (e.g. after a DB-backed key cache miss).

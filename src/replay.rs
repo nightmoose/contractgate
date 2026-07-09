@@ -36,7 +36,7 @@ use crate::error::{AppError, AppResult};
 use crate::storage;
 use crate::transform::TransformedPayload;
 use crate::validation::{validate, CompiledContract, ValidationResult, Violation};
-use crate::AppState;
+use crate::{AppState, OrgId};
 
 // ---------------------------------------------------------------------------
 // Public request / response types
@@ -127,18 +127,23 @@ pub enum ReplayItemOutcome {
 /// `POST /contracts/:id/quarantine/replay`
 pub async fn replay_handler(
     State(state): State<Arc<AppState>>,
+    OrgId(org_id): OrgId,
     Path(contract_id): Path<Uuid>,
     Json(req): Json<ReplayRequest>,
 ) -> AppResult<Json<ReplayResponse>> {
+    // RFC-047 completion: require authenticated org context in production.
+    if state.auth_configured() && org_id.is_none() {
+        return Err(AppError::Unauthorized);
+    }
+
     req.validate_bounds()?;
 
-    // Verify the contract identity exists (404s early if not).
-    // Replay is an internal operation; org scoping is handled at the route auth layer.
-    let identity = storage::get_contract_identity(&state.db, contract_id, None).await?;
+    // Verify the contract identity exists and belongs to this org (404 on mismatch).
+    let identity = storage::get_contract_identity(&state.db, contract_id, org_id).await?;
 
     // ----- 1. Resolve target version --------------------------------------
     let (target_version, target_source, target_is_draft) =
-        resolve_replay_target(&state, contract_id, req.target_version.as_deref()).await?;
+        resolve_replay_target(&state, contract_id, req.target_version.as_deref(), org_id).await?;
 
     // ----- 2. Load source rows + categorize -------------------------------
     let rows = storage::list_quarantine_by_ids(&state.db, &req.ids).await?;
@@ -411,7 +416,9 @@ pub async fn replay_handler(
                 audit_id,
                 matched_version,
             } => {
-                let idx = *ordinal_for_id.get(&source_id).unwrap();
+                let Some(&idx) = ordinal_for_id.get(&source_id) else {
+                    continue;
+                };
                 if stamped.contains(&source_id) {
                     slot[idx] = Some(ReplayItemOutcome::Replayed {
                         replayed_into_audit_id: audit_id,
@@ -428,7 +435,9 @@ pub async fn replay_handler(
                 attempted_version,
                 violations,
             } => {
-                let idx = *ordinal_for_id.get(&source_id).unwrap();
+                let Some(&idx) = ordinal_for_id.get(&source_id) else {
+                    continue;
+                };
                 slot[idx] = Some(ReplayItemOutcome::StillQuarantined {
                     new_quarantine_id: new_quar_id,
                     contract_version_attempted: attempted_version,
@@ -467,8 +476,15 @@ pub async fn replay_handler(
 /// `GET /contracts/:id/quarantine/:quar_id/replay-history`
 pub async fn replay_history_handler(
     State(state): State<Arc<AppState>>,
+    OrgId(org_id): OrgId,
     Path((contract_id, quar_id)): Path<(Uuid, Uuid)>,
 ) -> AppResult<Json<Vec<storage::ReplayHistoryEntry>>> {
+    // RFC-047 completion: require authenticated org context in production.
+    if state.auth_configured() && org_id.is_none() {
+        return Err(AppError::Unauthorized);
+    }
+    // Verify contract belongs to this org before returning history (404 on mismatch).
+    storage::get_contract_identity(&state.db, contract_id, org_id).await?;
     let chain = storage::replay_history_for(&state.db, contract_id, quar_id).await?;
     Ok(Json(chain))
 }
@@ -482,15 +498,17 @@ pub async fn replay_history_handler(
 /// Returns `(version, source, is_draft)`:
 /// - `source` is `"explicit"` or `"default_stable"`.
 /// - `is_draft` is `true` when the resolved version is in `draft` state.
+/// - `org_id` is forwarded to `get_version` for BOLA protection (RFC-047).
 pub async fn resolve_replay_target(
     state: &AppState,
     contract_id: Uuid,
     requested: Option<&str>,
+    org_id: Option<Uuid>,
 ) -> AppResult<(String, &'static str, bool)> {
     match requested {
         Some(v) => {
-            // Verify it exists — 404 if not.
-            let row = storage::get_version(&state.db, contract_id, v, None).await?;
+            // Verify it exists and belongs to this org — 404 on mismatch.
+            let row = storage::get_version(&state.db, contract_id, v, org_id).await?;
             Ok((row.version, "explicit", row.state == VersionState::Draft))
         }
         None => {

@@ -2764,3 +2764,40 @@ async fn get_latest_draft_version(pool: &PgPool, contract_id: Uuid) -> AppResult
 
     Ok(row.map(|(v,)| v))
 }
+
+// ---------------------------------------------------------------------------
+// Tests
+// ---------------------------------------------------------------------------
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // RFC-069: PublicationRow::is_revoked reflects revoked_at presence.
+    fn publication_row(revoked: bool) -> PublicationRow {
+        PublicationRow {
+            publication_ref: "pub_test".into(),
+            contract_id: Uuid::new_v4(),
+            version_id: Uuid::new_v4(),
+            contract_name: "user_events".into(),
+            contract_version: "1.0".into(),
+            yaml_content: String::new(),
+            visibility: "public".into(),
+            link_token: None,
+            org_id: None,
+            published_by: None,
+            published_at: chrono::Utc::now(),
+            revoked_at: revoked.then(chrono::Utc::now),
+        }
+    }
+
+    #[test]
+    fn is_revoked_true_when_revoked_at_set() {
+        assert!(publication_row(true).is_revoked());
+    }
+
+    #[test]
+    fn is_revoked_false_when_revoked_at_none() {
+        assert!(!publication_row(false).is_revoked());
+    }
+}

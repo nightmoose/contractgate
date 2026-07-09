@@ -9,6 +9,10 @@ import AuthGate from "@/components/AuthGate";
 import { DEMO_MODE } from "@/lib/demo";
 import DemoFeatureUnavailable from "@/components/DemoFeatureUnavailable";
 
+// RFC-056: API key issuance and revocation now go through /api/keys (server-side).
+// The browser no longer generates or hashes keys; the raw key is returned once
+// from POST /api/keys and must be shown to the user immediately.
+
 // ── Types ─────────────────────────────────────────────────────────────────────
 interface ApiKey {
   id: string;
@@ -34,27 +38,6 @@ interface OrgInvite {
   role: "admin" | "member";
   expires_at: string;
   created_at: string;
-}
-
-// ── Key generation ────────────────────────────────────────────────────────────
-// Generates a secure random API key in the format: cg_live_<48 random hex chars>
-// 24 random bytes → 48 hex chars → 192 bits of entropy (RFC-043 fix-6).
-function generateRawKey(): string {
-  const bytes = new Uint8Array(24);
-  crypto.getRandomValues(bytes);
-  const hex = Array.from(bytes).map((b) => b.toString(16).padStart(2, "0")).join("");
-  return `cg_live_${hex}`;
-}
-
-// SHA-256 hash of the raw key, base64-encoded via SubtleCrypto.
-// This IS the final stored value — api_key_auth.rs verifies with the same
-// SHA-256/base64 digest.  High-entropy keys (192 bits) make SHA-256
-// equivalent to bcrypt here.  See RFC-041 / migration 024.
-async function hashKey(raw: string): Promise<string> {
-  const encoder = new TextEncoder();
-  const data = encoder.encode(raw);
-  const hashBuf = await crypto.subtle.digest("SHA-256", data);
-  return btoa(String.fromCharCode(...new Uint8Array(hashBuf)));
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -161,27 +144,29 @@ function AccountContent() {
     });
   }, [supabase, router, loadKeys, loadGitHubConfig]);
 
+  // RFC-056: key creation goes through POST /api/keys (server-side).
+  // The route generates the raw key, hashes it, and inserts via service role.
+  // The raw key is returned exactly once and must never be stored client-side.
   async function handleCreateKey(e: React.FormEvent) {
     e.preventDefault();
     if (!newKeyName.trim() || !user) return;
     setCreating(true);
 
     try {
-      const rawKey = generateRawKey();
-      const keyHash = await hashKey(rawKey);
-      const keyPrefix = rawKey.substring(0, 12); // "cg_live_XXXX"
-
-      const { error } = await supabase.from("api_keys").insert({
-        user_id: user.id,
-        org_id: org?.org_id ?? null,
-        name: newKeyName.trim(),
-        key_prefix: keyPrefix,
-        key_hash: keyHash,
+      const res = await fetch("/api/keys", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: newKeyName.trim() }),
       });
 
-      if (error) throw error;
+      const data = await res.json();
+      if (!res.ok) {
+        console.error("Failed to create key:", data.error ?? res.status);
+        return;
+      }
 
-      setCreatedKey(rawKey);
+      // raw_key is returned exactly once — surface it to the user immediately.
+      setCreatedKey(data.raw_key as string);
       setNewKeyName("");
       setShowNewKeyForm(false);
       await loadKeys();
@@ -192,10 +177,23 @@ function AccountContent() {
     }
   }
 
+  // RFC-056: revocation goes through DELETE /api/keys (server-side, service role).
   async function handleRevoke(keyId: string) {
     if (!confirm("Revoke this API key? Any connector using it will stop authenticating within 60 seconds.")) return;
     setRevoking(keyId);
-    await supabase.from("api_keys").update({ revoked_at: new Date().toISOString() }).eq("id", keyId);
+    try {
+      const res = await fetch("/api/keys", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: keyId }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        console.error("Failed to revoke key:", data.error ?? res.status);
+      }
+    } catch (err) {
+      console.error("Failed to revoke key:", err);
+    }
     await loadKeys();
     setRevoking(null);
   }
@@ -348,6 +346,43 @@ function AccountContent() {
           Sign out
         </button>
       </div>
+
+      {/* Billing / Stripe status */}
+      {org && (
+        <div className="bg-[#111827] border border-[#1f2937] rounded-2xl p-6 mb-8">
+          <div className="flex items-center justify-between mb-3">
+            <div>
+              <div className="text-sm font-semibold text-slate-200">Billing</div>
+              <div className="text-xs text-slate-500">
+                Plan: <span className="font-medium capitalize text-slate-300">{org.plan}</span>
+                {org.plan_status && <span className="ml-1 text-slate-400">({org.plan_status})</span>}
+              </div>
+            </div>
+            {org.plan === 'free' ? (
+              <a href="/pricing" className="text-xs px-3 py-1 rounded bg-green-600 hover:bg-green-500 text-white font-medium">Upgrade</a>
+            ) : (
+              <button
+                onClick={async () => {
+                  try {
+                    const res = await fetch('/api/stripe/portal', { method: 'POST' });
+                    const data = await res.json();
+                    if (data.url) window.location.href = data.url;
+                    else alert(data.error || 'Could not open billing portal');
+                  } catch {
+                    alert('Failed to open Stripe portal');
+                  }
+                }}
+                className="text-xs px-3 py-1 rounded bg-[#1f2937] hover:bg-[#374151] text-slate-200 font-medium"
+              >
+                Manage subscription →
+              </button>
+            )}
+          </div>
+          <p className="text-[11px] text-slate-500">
+            Self-serve upgrades use Stripe Checkout (in-app from the pricing page).
+          </p>
+        </div>
+      )}
 
       {/* Newly created key banner — shown once, then dismissed */}
       {createdKey && (

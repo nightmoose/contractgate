@@ -1,6 +1,6 @@
 # RFC-050 — Replace wildcard CORS with an explicit origin allowlist
 
-**Status:** Draft  
+**Status:** Accepted  
 **Date:** 2026-05-22  
 **Branch:** nightly-maintenance-2026-05-22-rfc050  
 **Addresses:** REVIEW-2026-05-22-launch-readiness B4  

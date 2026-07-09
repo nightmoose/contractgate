@@ -26,6 +26,14 @@ function isPublic(pathname: string) {
 }
 
 export async function middleware(request: NextRequest) {
+  // Stripe webhooks are unauthenticated server-to-server POSTs (verified by
+  // signature in the route handler, not by a Supabase session). They must skip
+  // the auth gate, or the middleware 307-redirects them to /auth/login and the
+  // event is never processed.
+  if (request.nextUrl.pathname.startsWith("/api/stripe/webhooks")) {
+    return NextResponse.next({ request });
+  }
+
   // Demo mode: no Supabase env vars required — skip auth entirely.
   if (DEMO_MODE) {
     return NextResponse.next({ request });

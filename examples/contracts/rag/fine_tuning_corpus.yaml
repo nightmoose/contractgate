@@ -1,0 +1,62 @@
+# Fine-tuning corpus contract (RFC-077)
+#
+# Gates prompt/completion pairs before they enter a fine-tuning dataset.
+# Same governance boundary as rag_corpus_ingest: ContractGate enforces the
+# structured envelope; it does NOT score content quality.
+#
+# Record shape:
+#   { "prompt": "...", "completion": "...",
+#     "_cg": { source, example_id, ingested_at, pii_redacted, license_ok } }
+version: "1.0"
+name: "fine_tuning_corpus"
+description: "Fine-tuning corpus contract — provenance, PII attestation, license attestation"
+compliance_mode: true
+
+ontology:
+  entities:
+    - name: _cg
+      type: object
+      required: true
+      properties:
+        - name: source
+          type: string
+          required: true
+          enum: ["human-labeled", "synthetic", "curated-export"]
+        - name: example_id
+          type: string
+          required: true
+          pattern: "^[a-zA-Z0-9_:-]+$"
+        - name: ingested_at
+          type: integer
+          required: true
+        - name: pii_redacted
+          type: boolean
+          required: true
+          enum: [true]
+        - name: license_ok
+          type: boolean
+          required: true
+          enum: [true]           # attest training-use rights were cleared
+    - name: prompt
+      type: string
+      required: true
+      min_length: 1
+    - name: completion
+      type: string
+      required: true
+      min_length: 1
+
+glossary:
+  - field: _cg.license_ok
+    description: "Caller attests this example is cleared for training use"
+    constraints: "must be true"
+
+quality:
+  - field: _cg.ingested_at
+    type: freshness
+    max_age_seconds: 7776000     # 90 days
+    description: "Reject examples older than 90 days at ingest"
+  - field: _cg.example_id
+    type: uniqueness
+    scope: batch
+    description: "No duplicate examples within a single ingest batch"

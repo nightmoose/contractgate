@@ -13,7 +13,7 @@ export default function NotFound() {
       </p>
 
       <Link
-        href="/contracts"
+        href="/"
         className="px-5 py-2.5 bg-green-600 hover:bg-green-500 text-white rounded-lg text-sm font-medium transition-colors"
       >
         Back to dashboard

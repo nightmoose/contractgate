@@ -13,6 +13,7 @@
 //! Version resolution + fallback semantics live in `ingest.rs`; this module
 //! is just wiring.
 
+use arc_swap::ArcSwap;
 use axum::extract::Request;
 use axum::{
     extract::{FromRequest, Path, Query, State},
@@ -27,10 +28,13 @@ use sqlx::PgPool;
 use std::{
     collections::HashMap,
     net::SocketAddr,
-    sync::{Arc, RwLock, RwLockReadGuard, RwLockWriteGuard},
+    sync::{
+        atomic::{AtomicU64, Ordering},
+        Arc, RwLock, RwLockReadGuard, RwLockWriteGuard,
+    },
 };
 use tower_http::{
-    cors::{Any, CorsLayer},
+    cors::{AllowOrigin, Any, CorsLayer},
     timeout::TimeoutLayer,
     trace::TraceLayer,
 };
@@ -67,6 +71,8 @@ pub mod observability;
 mod odcs;
 mod public_catalog;
 mod publication;
+#[cfg(test)]
+mod rag_contract_tests;
 mod rate_limit;
 mod replay;
 mod scaffold_handler;
@@ -83,6 +89,7 @@ use contract::{
     NameHistoryEntry, PatchContractRequest, PatchVersionRequest, VersionResponse, VersionSummary,
 };
 use error::{AppError, AppResult};
+use sha2::{Digest, Sha256};
 use validation::CompiledContract;
 
 // ---------------------------------------------------------------------------
@@ -99,9 +106,12 @@ pub struct AppState {
     pub db: PgPool,
     /// (contract_id, version) → compiled contract.
     contract_cache: RwLock<HashMap<(Uuid, String), Arc<CompiledContract>>>,
-    /// Legacy single env-var key (empty = disabled).  Kept for zero-downtime
-    /// migration: if set, it still grants access alongside DB-issued keys.
-    pub api_key: String,
+    /// RFC-066: explicit local-dev escape hatch. `true` ⇒ the authenticated
+    /// surface accepts unauthenticated requests (and trusts `x-org-id`) for
+    /// local/compose/demo use only. Driven by `CONTRACTGATE_DEV_NO_AUTH=1`;
+    /// defaults to `false` so production can never silently run open. There is
+    /// no longer any env-var master key — auth is JWT or a DB-backed key.
+    pub dev_no_auth: bool,
     /// DB-backed API key cache with 60-second TTL.
     pub key_cache: Arc<api_key_auth::ApiKeyCache>,
     /// Per-API-key token-bucket rate limiter (RFC-021).
@@ -112,24 +122,37 @@ pub struct AppState {
     pub kafka_consumers: kafka_consumer::ConsumerPool,
     /// RFC-026: platform-side Kinesis consumer pool (one task per enabled contract).
     pub kinesis_consumers: kinesis_consumer::ConsumerPool,
-    /// RFC-039: Supabase JWKS for verifying RS256 session tokens from the dashboard.
-    /// Fetched once at startup from the project's JWKS endpoint.  None = JWT auth
-    /// disabled (local dev without a Supabase DATABASE_URL).
-    pub supabase_jwks: Option<Arc<JwkSet>>,
+    // RFC-052: live-swappable JWKS — replaced by the background refresh task
+    // every ~10 min and on unknown-kid hits.  Inner Option is None when JWT
+    // auth is disabled (no Supabase URL configured or initial fetch failed).
+    pub supabase_jwks: Arc<ArcSwap<Option<JwkSet>>>,
+    /// JWKS URL for the background refresh task and on-demand kid-refresh.
+    /// None = no Supabase URL derived at startup.
+    pub supabase_jwks_url: Option<String>,
+    /// Unix-epoch-seconds of the last out-of-band kid-refresh attempt.
+    /// Used to debounce refresh-on-unknown-kid to at most once per 60 s.
+    pub jwks_last_kid_refresh: Arc<AtomicU64>,
 }
 
 impl AppState {
-    pub fn new(db: PgPool, api_key: String, supabase_jwks: Option<Arc<JwkSet>>) -> Self {
+    pub fn new(
+        db: PgPool,
+        dev_no_auth: bool,
+        supabase_jwks: Option<JwkSet>,
+        supabase_jwks_url: Option<String>,
+    ) -> Self {
         AppState {
             db,
             contract_cache: RwLock::new(HashMap::new()),
-            api_key,
+            dev_no_auth,
             key_cache: Arc::new(api_key_auth::ApiKeyCache::default()),
             rate_limiter: Arc::new(rate_limit::RateLimitState::default()),
             stream_demo: std::sync::Arc::new(stream_demo::StreamDemoState::new()),
             kafka_consumers: kafka_consumer::ConsumerPool::new(),
             kinesis_consumers: kinesis_consumer::ConsumerPool::new(),
-            supabase_jwks,
+            supabase_jwks: Arc::new(ArcSwap::from_pointee(supabase_jwks)),
+            supabase_jwks_url,
+            jwks_last_kid_refresh: Arc::new(AtomicU64::new(0)),
         }
     }
 
@@ -144,15 +167,19 @@ impl AppState {
     // one-liners and the rationale lives in exactly one place.
 
     fn cache_read(&self) -> RwLockReadGuard<'_, HashMap<(Uuid, String), Arc<CompiledContract>>> {
-        self.contract_cache
-            .read()
-            .expect("contract cache RwLock poisoned (a prior holder panicked)")
+        // RFC-054: recover from poison instead of re-panicking.  A poisoned
+        // RwLock means a prior holder panicked; the inner value is intact.
+        self.contract_cache.read().unwrap_or_else(|e| {
+            tracing::error!("contract cache RwLock was poisoned — recovering inner value");
+            e.into_inner()
+        })
     }
 
     fn cache_write(&self) -> RwLockWriteGuard<'_, HashMap<(Uuid, String), Arc<CompiledContract>>> {
-        self.contract_cache
-            .write()
-            .expect("contract cache RwLock poisoned (a prior holder panicked)")
+        self.contract_cache.write().unwrap_or_else(|e| {
+            tracing::error!("contract cache RwLock was poisoned — recovering inner value");
+            e.into_inner()
+        })
     }
 
     /// Load every stable + deprecated version into the cache.  Drafts are
@@ -241,12 +268,15 @@ impl AppState {
         cache.retain(|(cid, _), _| *cid != contract_id);
     }
 
-    /// Returns true when any auth mechanism is configured (env-var key or
-    /// Supabase JWKS).  Used by org-scoped handlers to decide whether a
-    /// missing `org_id` should be treated as dev-mode unscoped (false) or
-    /// as an unauthenticated request that must be rejected with 401 (true).
+    /// Returns true when auth is required (the normal case). Used by org-scoped
+    /// handlers to decide whether a missing `org_id` is dev-mode unscoped
+    /// (false) or an unauthenticated request to reject with 401 (true).
+    ///
+    /// RFC-066: auth is always required unless the explicit `dev_no_auth`
+    /// escape hatch is set, so this is simply `!dev_no_auth`. (Previously this
+    /// also keyed off the env-var master key, which has been removed.)
     pub fn auth_configured(&self) -> bool {
-        !self.api_key.is_empty() || self.supabase_jwks.is_some()
+        !self.dev_no_auth
     }
 }
 
@@ -289,10 +319,10 @@ async fn identity_to_response(db: &PgPool, id: ContractIdentity) -> AppResult<Co
 // The `x-org-id` header fallback has been removed — it was spoofable by any
 // caller holding the legacy env-var key and allowed full tenant impersonation.
 //
-// Returns `None` in dev mode (no auth configured) or when the legacy env-var
-// key path is used (no ValidatedKey injected).  Callers that require org
-// context must check `state.auth_configured()` and return 401 when this
-// returns None in a production environment.
+// Returns `None` only in dev mode (`CONTRACTGATE_DEV_NO_AUTH`), where no
+// ValidatedKey is injected.  In production every authenticated request carries
+// a ValidatedKey, so callers still check `state.auth_configured()` and return
+// 401 if this is None (defense in depth).
 // ---------------------------------------------------------------------------
 
 fn org_id_from_req(req: &axum::extract::Request) -> Option<uuid::Uuid> {
@@ -309,7 +339,7 @@ fn org_id_from_req(req: &axum::extract::Request) -> Option<uuid::Uuid> {
 // Always succeeds (never 400/401 on its own); the 401 check is in handlers.
 // ---------------------------------------------------------------------------
 
-struct OrgId(Option<Uuid>);
+pub(crate) struct OrgId(pub(crate) Option<Uuid>);
 
 impl<S: Send + Sync> axum::extract::FromRequestParts<S> for OrgId {
     type Rejection = std::convert::Infallible;
@@ -335,7 +365,28 @@ async fn create_contract_handler(
     req: axum::extract::Request,
 ) -> AppResult<(StatusCode, Json<ContractResponse>)> {
     let org_id = org_id_from_req(&req);
-    // Extract JSON body after reading extensions
+
+    // RFC-048 removed the x-org-id header fallback from org_id_from_req to
+    // prevent tenant impersonation in production.  However, contracts.org_id
+    // is NOT NULL, so an INSERT with org_id = None crashes with a DB error in
+    // dev / compose mode where no ValidatedKey is injected.
+    //
+    // Fix: when auth is not configured (compose smoke, local dev) trust the
+    // x-org-id header as a convenience so the smoke tests and demo seeder can
+    // operate without a full auth setup.  This branch is gated on
+    // !auth_configured() — it never executes in production, so RFC-048's
+    // spoofability protection is fully preserved for all real deployments.
+    let org_id = if org_id.is_none() && !state.auth_configured() {
+        req.headers()
+            .get("x-org-id")
+            .and_then(|v| v.to_str().ok())
+            .and_then(|s| Uuid::parse_str(s).ok())
+    } else {
+        org_id
+    };
+
+    // Extract JSON body after reading extensions (req move must come after
+    // the header read above, which is a borrow — order is safe).
     let Json(body_req): Json<CreateContractRequest> =
         axum::Json::from_request(req, &state)
             .await
@@ -775,15 +826,70 @@ async fn global_stats_handler(
 }
 
 // ---------------------------------------------------------------------------
-// Health check
+// Health / readiness probes
 // ---------------------------------------------------------------------------
 
+/// `GET /health` — liveness probe.
+///
+/// Cheap, no DB.  Returns 200 as long as the process is up.  Used by Fly /
+/// orchestrators to decide whether to restart the pod.  Must NOT depend on
+/// the database — a DB outage should not cause the orchestrator to kill an
+/// otherwise-live process.
 async fn health_handler() -> Json<serde_json::Value> {
     Json(serde_json::json!({
         "status": "ok",
         "version": env!("CARGO_PKG_VERSION"),
         "service": "contractgate"
     }))
+}
+
+/// `GET /ready` — readiness probe (RFC-053).
+///
+/// Runs `SELECT 1` against the DB pool with a 2-second timeout.
+/// - `200 {"status":"ready","db":"ok"}` — pool is healthy.
+/// - `503 {"status":"degraded","db":"error"}` — pool exhausted or Supabase down.
+///
+/// Platform health checks (Fly, docker-compose) should point at `/ready`;
+/// `/health` is the liveness probe and intentionally never touches the DB.
+async fn ready_handler(State(state): State<Arc<AppState>>) -> impl IntoResponse {
+    let db = &state.db;
+    let probe = tokio::time::timeout(
+        std::time::Duration::from_secs(2),
+        sqlx::query("SELECT 1").execute(db),
+    )
+    .await;
+
+    let size = db.size();
+    let idle = db.num_idle();
+
+    match probe {
+        Ok(Ok(_)) => (
+            StatusCode::OK,
+            Json(serde_json::json!({
+                "status": "ready",
+                "db": "ok",
+                "version": env!("CARGO_PKG_VERSION"),
+                "pool": { "size": size, "idle": idle },
+            })),
+        )
+            .into_response(),
+        Ok(Err(e)) => {
+            tracing::warn!("readiness probe DB error: {e}");
+            (
+                StatusCode::SERVICE_UNAVAILABLE,
+                Json(serde_json::json!({ "status": "degraded", "db": "error" })),
+            )
+                .into_response()
+        }
+        Err(_elapsed) => {
+            tracing::warn!("readiness probe timed out after 2s");
+            (
+                StatusCode::SERVICE_UNAVAILABLE,
+                Json(serde_json::json!({ "status": "degraded", "db": "error" })),
+            )
+                .into_response()
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -841,6 +947,63 @@ async fn playground_handler(
 }
 
 // ---------------------------------------------------------------------------
+// RFC-052: out-of-band JWKS kid-refresh helper
+// ---------------------------------------------------------------------------
+
+/// Attempt an out-of-band JWKS refresh when a token's kid is not in the
+/// cached set.  Debounced to at most one network fetch per 60 seconds to
+/// avoid hammering the Supabase JWKS endpoint under a sustained rotation.
+///
+/// Returns `true` if a refresh was attempted AND succeeded (the store has
+/// been updated).  Returns `false` on debounce hit or fetch failure
+/// (previous keys are preserved either way).
+async fn maybe_refresh_jwks_on_unknown_kid(state: &AppState) -> bool {
+    let Some(url) = &state.supabase_jwks_url else {
+        return false;
+    };
+
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs();
+
+    let last = state.jwks_last_kid_refresh.load(Ordering::Relaxed);
+    if now.saturating_sub(last) < 60 {
+        tracing::debug!(
+            secs_since_last = now.saturating_sub(last),
+            "JWKS kid-refresh debounced"
+        );
+        return false;
+    }
+
+    // CAS to claim the refresh slot — prevents concurrent duplicate fetches.
+    if state
+        .jwks_last_kid_refresh
+        .compare_exchange(last, now, Ordering::AcqRel, Ordering::Relaxed)
+        .is_err()
+    {
+        return false; // another task won the race
+    }
+
+    tracing::info!("Triggering out-of-band JWKS refresh (unknown kid)");
+    match jwt_auth::fetch_jwks(url).await {
+        Ok(new_jwks) => {
+            tracing::info!(keys = new_jwks.keys.len(), "JWKS refreshed on unknown kid");
+            state.supabase_jwks.store(Arc::new(Some(new_jwks)));
+            true
+        }
+        Err(e) => {
+            tracing::warn!("JWKS kid-refresh fetch failed: {e}");
+            // Leave jwks_last_kid_refresh at `now` (already written by the
+            // CAS above).  Failures are debounced to at most once per 60 s —
+            // same as successes — so a down JWKS endpoint cannot cause a
+            // thundering herd of concurrent re-fetches.
+            false
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Auth middleware
 // ---------------------------------------------------------------------------
 
@@ -859,8 +1022,32 @@ async fn require_api_key(
         .and_then(|v| v.strip_prefix("Bearer "))
         .map(str::to_owned)
     {
-        if let Some(jwks) = &state.supabase_jwks {
-            match jwt_auth::verify_supabase_jwt(&bearer, jwks, &state.db).await {
+        // RFC-052: load the live JWKS snapshot (lock-free ArcSwap read).
+        let jwks_guard = state.supabase_jwks.load();
+        if let Some(jwks) = jwks_guard.as_ref() {
+            // First verification attempt with the current key set.
+            let result = jwt_auth::verify_supabase_jwt(&bearer, jwks, &state.db).await;
+
+            // On NoMatchingKey, attempt a debounced out-of-band refresh and
+            // retry once.  This makes key rotation near-instant instead of
+            // waiting up to 10 min for the next periodic tick.
+            let result = match result {
+                Err(jwt_auth::JwtAuthError::NoMatchingKey) => {
+                    if maybe_refresh_jwks_on_unknown_kid(&state).await {
+                        let new_guard = state.supabase_jwks.load();
+                        if let Some(new_jwks) = new_guard.as_ref() {
+                            jwt_auth::verify_supabase_jwt(&bearer, new_jwks, &state.db).await
+                        } else {
+                            Err(jwt_auth::JwtAuthError::NoMatchingKey)
+                        }
+                    } else {
+                        Err(jwt_auth::JwtAuthError::NoMatchingKey)
+                    }
+                }
+                other => other,
+            };
+
+            match result {
                 Ok(validated) => {
                     // RFC-043 fix-1: key by user_id, not api_key_id (nil UUID).
                     // api_key_id = Uuid::nil() is the "JWT session" sentinel used
@@ -895,16 +1082,15 @@ async fn require_api_key(
         .unwrap_or("")
         .to_owned();
 
-    // Dev mode: no auth configured at all — pass through.
-    if state.api_key.is_empty() {
+    // RFC-066: explicit local-dev escape hatch — pass through unauthenticated.
+    // Never set in production (defaults off).
+    if state.dev_no_auth {
         return Ok(next.run(request).await);
     }
 
-    // DB-backed key: validate via cache (60-second TTL).
-    // Checked FIRST so that if the same value is also set as the legacy
-    // env-var key, the DB path wins and ValidatedKey (with org_id) is
-    // injected.  Without this ordering, the legacy short-circuit fires,
-    // org_id stays None, and deploy/ingest writes fail the NOT NULL constraint.
+    // DB-backed key: validate via cache (60-second TTL). This is now the only
+    // `x-api-key` credential path — the legacy env-var master key was removed
+    // in RFC-066.
     if !provided.is_empty() {
         match state.key_cache.validate(&provided, &state.db).await {
             Ok(validated) => {
@@ -929,14 +1115,55 @@ async fn require_api_key(
         }
     }
 
-    // Legacy env-var key: still accepted for zero-downtime migration.
-    // Remove this branch once all connectors are issuing DB-backed keys.
-    if !provided.is_empty() && provided == state.api_key {
-        return Ok(next.run(request).await);
-    }
-
     tracing::warn!("Rejected request: missing or invalid x-api-key");
     Err(error::AppError::Unauthorized)
+}
+
+// ---------------------------------------------------------------------------
+// RFC-064: SMT version probe
+// ---------------------------------------------------------------------------
+
+/// Response body for `GET /v1/contracts/{contract_id}/version`.
+#[derive(serde::Serialize)]
+struct ContractVersionProbe {
+    /// Semver string of the latest stable version.
+    version: String,
+    /// SHA-256 hex digest of the YAML content.  The SMT polls this and swaps
+    /// its cached contract only when the hash changes — avoids a full body
+    /// fetch on every poll interval.
+    hash: String,
+}
+
+/// `GET /v1/contracts/{contract_id}/version` — cheap version probe for the
+/// Kafka Connect SMT (RFC-064 dynamic contract reload).
+///
+/// Returns the latest stable version string and a SHA-256 hash of its YAML
+/// content.  The SMT polls this endpoint and triggers a reload only when the
+/// hash changes, keeping the hot-path cost to a single small JSON GET per
+/// `contractgate.reload.poll.ms`.
+///
+/// Auth: same `x-api-key` / Bearer JWT as all other protected routes.
+async fn v1_contract_version_handler(
+    State(state): State<Arc<AppState>>,
+    OrgId(org_id): OrgId,
+    Path(contract_id): Path<Uuid>,
+) -> AppResult<Json<ContractVersionProbe>> {
+    if state.auth_configured() && org_id.is_none() {
+        return Err(AppError::Unauthorized);
+    }
+    // Verify the caller can see this contract (org-scoped check).
+    let _ = storage::get_contract_identity(&state.db, contract_id, org_id).await?;
+
+    let v = storage::get_latest_stable_version(&state.db, contract_id)
+        .await?
+        .ok_or(AppError::NoStableVersion { contract_id })?;
+
+    let hash = hex::encode(Sha256::digest(v.yaml_content.as_bytes()));
+
+    Ok(Json(ContractVersionProbe {
+        version: v.version,
+        hash,
+    }))
 }
 
 // ---------------------------------------------------------------------------
@@ -944,7 +1171,42 @@ async fn require_api_key(
 // ---------------------------------------------------------------------------
 
 fn build_router(state: Arc<AppState>) -> Router {
-    let cors = CorsLayer::new()
+    // RFC-050: two CORS layers with different scopes.
+    //
+    // `protected_cors` — authenticated surface (protected, infer, v1 routers).
+    // Origins come from DASHBOARD_ORIGIN (comma-separated).  Unset → warn +
+    // fall back to http://localhost:3000 for local dev.
+    let allowed_origins: Vec<axum::http::HeaderValue> = std::env::var("DASHBOARD_ORIGIN")
+        .unwrap_or_else(|_| {
+            tracing::warn!(
+                "DASHBOARD_ORIGIN is not set — CORS restricted to http://localhost:3000. \
+                 Set DASHBOARD_ORIGIN in production."
+            );
+            "http://localhost:3000".to_string()
+        })
+        .split(',')
+        .map(|s| s.trim().to_owned())
+        .filter(|s| !s.is_empty())
+        .filter_map(|s| s.parse::<axum::http::HeaderValue>().ok())
+        .collect();
+
+    let protected_cors = CorsLayer::new()
+        .allow_origin(AllowOrigin::list(allowed_origins))
+        .allow_methods([
+            axum::http::Method::GET,
+            axum::http::Method::POST,
+            axum::http::Method::PATCH,
+            axum::http::Method::DELETE,
+            axum::http::Method::OPTIONS,
+        ])
+        .allow_headers([
+            axum::http::header::AUTHORIZATION,
+            axum::http::header::CONTENT_TYPE,
+        ]);
+
+    // `public_cors` — genuinely public endpoints (no tenant data, no bearer
+    // tokens).  Permissive so browsers and third-party tools can embed them.
+    let public_cors = CorsLayer::new()
         .allow_origin(Any)
         .allow_methods(Any)
         .allow_headers(Any);
@@ -952,6 +1214,9 @@ fn build_router(state: Arc<AppState>) -> Router {
     // Public routes — no auth required
     let public = Router::new()
         .route("/health", get(health_handler))
+        // RFC-053: readiness probe — SELECT 1 with 2s timeout.
+        // Platform health checks should point here; /health is liveness only.
+        .route("/ready", get(ready_handler))
         .route("/openapi.json", get(v1_ingest::openapi_handler))
         // Prometheus metrics scrape endpoint (RFC-016).
         // Open by default; Bearer-auth gated when METRICS_AUTH_TOKEN is set.
@@ -1212,6 +1477,13 @@ fn build_router(state: Arc<AppState>) -> Router {
             "/v1/ingest/{contract_id}",
             post(v1_ingest::v1_ingest_handler),
         )
+        // RFC-064: SMT version probe — cheap GET for dynamic contract reload.
+        // Placed in the v1 router so the SMT can use the same API key and
+        // namespace as the ingest route.
+        .route(
+            "/v1/contracts/{contract_id}/version",
+            get(v1_contract_version_handler),
+        )
         .layer(tower_http::limit::RequestBodyLimitLayer::new(
             10 * 1024 * 1024, // 10 MB — RFC-021
         ))
@@ -1220,12 +1492,21 @@ fn build_router(state: Arc<AppState>) -> Router {
             require_api_key,
         ));
 
-    Router::new()
-        .merge(public)
+    // RFC-050: scoped CORS layers.
+    // public routes get the permissive wildcard layer;
+    // authenticated routers get the origin-allowlist layer.
+    // Layer order matters in Axum: .layer() wraps from outermost in,
+    // so we apply CORS after merging so it wraps the correct sub-tree.
+    let public_router = public.layer(public_cors);
+    let auth_router = Router::new()
         .merge(protected)
         .merge(infer)
         .merge(v1)
-        .layer(cors)
+        .layer(protected_cors);
+
+    Router::new()
+        .merge(public_router)
+        .merge(auth_router)
         .layer(middleware::from_fn(observability::track_requests))
         .layer(TraceLayer::new_for_http())
         .layer(TimeoutLayer::new(std::time::Duration::from_secs(30)))
@@ -1277,11 +1558,18 @@ async fn main() -> anyhow::Result<()> {
     let pool = PgPool::connect(&database_url).await?;
     tracing::info!("Connected to database");
 
-    let api_key = std::env::var("API_KEY").unwrap_or_default();
-    if api_key.is_empty() {
-        tracing::warn!("API_KEY is not set — running without authentication (dev mode only)");
+    // RFC-066: explicit local-dev escape hatch. Defaults off so production is
+    // always authenticated (JWT or DB-backed key). The legacy env-var master
+    // key was removed.
+    let dev_no_auth = std::env::var("CONTRACTGATE_DEV_NO_AUTH")
+        .map(|v| matches!(v.trim(), "1" | "true" | "TRUE"))
+        .unwrap_or(false);
+    if dev_no_auth {
+        tracing::warn!(
+            "CONTRACTGATE_DEV_NO_AUTH is set — authenticated surface is OPEN (local/dev only)"
+        );
     } else {
-        tracing::info!("API key authentication enabled");
+        tracing::info!("Authentication required (JWT + DB-backed API keys)");
     }
 
     // RFC-039: fetch Supabase JWKS for RS256 dashboard session auth.
@@ -1294,26 +1582,33 @@ async fn main() -> anyhow::Result<()> {
         .map(|u| format!("{}/auth/v1/.well-known/jwks.json", u.trim_end_matches('/')))
         .or_else(|| jwt_auth::jwks_url_from_database_url(&database_url));
 
-    let supabase_jwks: Option<Arc<JwkSet>> = match jwks_url {
-        Some(url) => match jwt_auth::fetch_jwks(&url).await {
+    // RFC-052: initial fetch does not wrap in Arc — AppState::new does that.
+    // A fetch failure is non-fatal: the background task will recover once the
+    // network is up (today a startup failure was permanent until restart).
+    let supabase_jwks: Option<JwkSet> = match &jwks_url {
+        Some(url) => match jwt_auth::fetch_jwks(url).await {
             Ok(jwks) => {
                 tracing::info!("Supabase JWKS loaded from {url} — Bearer JWT auth enabled");
-                Some(Arc::new(jwks))
+                Some(jwks)
             }
             Err(e) => {
                 tracing::warn!(
-                    "Failed to fetch Supabase JWKS from {url}: {e} — Bearer JWT auth disabled"
+                    "Failed to fetch Supabase JWKS from {url}: {e} — \
+                     JWT auth disabled at startup; background task will retry"
                 );
                 None
             }
         },
         None => {
-            tracing::warn!("Could not derive Supabase URL from DATABASE_URL and SUPABASE_URL is not set — Bearer JWT auth disabled");
+            tracing::warn!(
+                "Could not derive Supabase URL from DATABASE_URL and SUPABASE_URL is \
+                 not set — Bearer JWT auth disabled"
+            );
             None
         }
     };
 
-    let state = Arc::new(AppState::new(pool, api_key, supabase_jwks));
+    let state = Arc::new(AppState::new(pool, dev_no_auth, supabase_jwks, jwks_url));
 
     // Warm the compiled-contract cache with every stable + deprecated
     // version.  Failure here is logged but does not block boot.
@@ -1331,6 +1626,19 @@ async fn main() -> anyhow::Result<()> {
         .restore_all(Arc::clone(&state))
         .await;
     tracing::info!("kinesis consumer pool restored");
+
+    // RFC-051: spawn the API-key cache sweeper — runs every 5 min, evicts
+    // expired entries and enforces the MAX_CACHE_ENTRIES cap.
+    api_key_auth::ApiKeyCache::spawn_sweeper(state.key_cache.clone());
+    tracing::info!("api-key cache sweeper spawned");
+
+    // RFC-052: spawn the JWKS background refresh task (every ~10 min).
+    // No-op when supabase_jwks_url is None (no Supabase URL configured).
+    jwt_auth::spawn_jwks_refresh_task(
+        Arc::clone(&state.supabase_jwks),
+        state.supabase_jwks_url.clone(),
+    );
+    tracing::info!("JWKS background refresh task spawned");
 
     // Spawn background gauge-refresh tasks (RFC-016 §Decisions Q5).
     // Must be spawned after the pool is created and the recorder is installed.

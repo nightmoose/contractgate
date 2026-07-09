@@ -1,8 +1,9 @@
 # RFC-053 — Real `/health` with a database probe
 
-**Status:** Draft  
+**Status:** Accepted  
 **Date:** 2026-05-22  
-**Branch:** nightly-maintenance-2026-05-22-rfc053  
+**Implemented:** 2026-05-24  
+**Branch:** nightly-maintenance-2026-05-24-rfc052-053  
 **Addresses:** REVIEW-2026-05-22-launch-readiness H3  
 **Severity:** P1 — high
 

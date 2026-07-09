@@ -480,16 +480,16 @@ pub async fn v1_ingest_handler(
     }
 
     // --- 7. Load contract identity + scope check --------------------------
-    // v1 ingest hot path — scoped by key.allowed_contract_ids, not org_id.
+    // RFC-074: org-scoped identity load (404 if the caller's org doesn't own
+    // it) closes the cross-tenant write hole; RFC-065 per-key allow-list still
+    // applies on top.
     let identity: ContractIdentity =
-        storage::get_contract_identity(&state.db, contract_id, None).await?;
+        storage::get_contract_identity(&state.db, contract_id, org_id).await?;
 
-    // API key contract-scope enforcement.
+    // API key contract-scope enforcement (RFC-065 shared helper).
     if let Some(Extension(ref k)) = key_ext {
-        if let Some(ref allowed) = k.allowed_contract_ids {
-            if !allowed.contains(&contract_id) {
-                return Err(AppError::Unauthorized);
-            }
+        if !k.permits_contract(contract_id) {
+            return Err(AppError::Unauthorized);
         }
     }
 
@@ -497,7 +497,8 @@ pub async fn v1_ingest_handler(
     let (resolved_version, pin_source) =
         resolve_version(&state, contract_id, query.version).await?;
 
-    let version_row = storage::get_version(&state.db, contract_id, &resolved_version, None).await?;
+    let version_row =
+        storage::get_version(&state.db, contract_id, &resolved_version, org_id).await?;
 
     tracing::debug!(
         contract_id = %contract_id,

@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import clsx from "clsx";
+import { useOrg } from "@/lib/org";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -38,7 +39,7 @@ const TIERS = [
     tagline: "Explore & prototype",
     price: { monthly: "$0", annual: "$0" },
     cta: "Start free",
-    ctaHref: "https://app.datacontractgate.com/signup",
+    ctaHref: "https://app.datacontractgate.com/auth/signup",
     highlight: false,
     color: "border-[#1f2937]",
     badge: null,
@@ -49,8 +50,8 @@ const TIERS = [
     tagline: "Production workloads",
     price: { monthly: "$299", annual: "$249" },
     priceSub: { monthly: "per month", annual: "per month, billed annually" },
-    cta: "Get in touch",
-    ctaHref: "mailto:datacontractgate@nightmoose.com?subject=ContractGate%20Growth%20Plan&body=Hi%2C%20I%27m%20interested%20in%20the%20Growth%20plan.",
+    cta: "Upgrade to Growth",
+    ctaHref: "#upgrade", // handled by onClick when logged in
     highlight: true,
     color: "border-green-700/60",
     badge: "Most popular",
@@ -240,17 +241,21 @@ export default function PricingPage() {
               )}
             </div>
 
-            <a
-              href={tier.ctaHref}
-              className={clsx(
-                "block text-center py-2.5 rounded-lg text-sm font-semibold transition-colors mb-6",
-                tier.highlight
-                  ? "bg-green-600 hover:bg-green-500 text-white"
-                  : "bg-[#1f2937] hover:bg-[#2a3449] text-slate-200"
-              )}
-            >
-              {tier.cta}
-            </a>
+            {tier.key === "growth" ? (
+              <GrowthUpgradeButton annual={annual} onToggleAnnual={setAnnual} />
+            ) : (
+              <a
+                href={tier.ctaHref}
+                className={clsx(
+                  "block text-center py-2.5 rounded-lg text-sm font-semibold transition-colors mb-6",
+                  tier.highlight
+                    ? "bg-green-600 hover:bg-green-500 text-white"
+                    : "bg-[#1f2937] hover:bg-[#2a3449] text-slate-200"
+                )}
+              >
+                {tier.cta}
+              </a>
+            )}
 
             {/* Quick feature list for card */}
             <ul className="space-y-2.5 text-sm flex-1">
@@ -334,7 +339,7 @@ export default function PricingPage() {
           },
           {
             q: "Do you offer a trial?",
-            a: "Growth comes with a 14-day free trial, no credit card required. Enterprise prospects get a POC environment on request.",
+            a: "Growth comes with a 30-day free trial, no credit card required. Enterprise prospects get a POC environment on request.",
           },
           {
             q: "What does 'patent pending' mean for my stack?",
@@ -367,6 +372,79 @@ export default function PricingPage() {
           Talk to sales →
         </a>
       </div>
+    </div>
+  );
+}
+
+// Client component for the in-app Growth upgrade flow (uses the new /api/stripe/create-checkout-session).
+// `annual` is driven by the page-level billing toggle so the CTA and the displayed price stay in sync.
+function GrowthUpgradeButton({ annual, onToggleAnnual }: { annual: boolean; onToggleAnnual: (v: boolean) => void }) {
+  const { org, loading } = useOrg();
+  const [loadingUpgrade, setLoadingUpgrade] = useState(false);
+
+  const isPaid = org && (org.plan === 'growth' || org.plan === 'enterprise');
+
+  async function startUpgrade(annual: boolean) {
+    if (!org) {
+      // Not logged in or no org — send to the public marketing site to start signup.
+      // (Growth upgrades for authenticated users use the in-app Stripe Checkout flow below.)
+      window.location.href = 'https://datacontractgate.com/#pricing';
+      return;
+    }
+    setLoadingUpgrade(true);
+    try {
+      const res = await fetch('/api/stripe/create-checkout-session', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ annual }),
+      });
+      const data = await res.json();
+      if (data.url) {
+        window.location.href = data.url;
+      } else {
+        alert(data.error || 'Could not start checkout. Please try the website or contact support.');
+      }
+    } catch (e) {
+      alert('Network error starting checkout. Please try again or use the marketing site links.');
+    } finally {
+      setLoadingUpgrade(false);
+    }
+  }
+
+  if (loading) {
+    return <div className="block text-center py-2.5 rounded-lg text-sm font-semibold mb-6 bg-[#1f2937] text-slate-400">Loading…</div>;
+  }
+
+  if (isPaid) {
+    return (
+      <a
+        href="/account"
+        className="block text-center py-2.5 rounded-lg text-sm font-semibold transition-colors mb-6 bg-[#1f2937] hover:bg-[#2a3449] text-slate-200"
+      >
+        Manage subscription
+      </a>
+    );
+  }
+
+  return (
+    <div className="mb-6">
+      <button
+        onClick={() => startUpgrade(annual)}
+        disabled={loadingUpgrade}
+        className="w-full py-2.5 rounded-lg text-sm font-semibold transition-colors bg-green-600 hover:bg-green-500 text-white disabled:opacity-60"
+      >
+        {loadingUpgrade
+          ? 'Starting checkout…'
+          : `Start 30-day trial (${annual ? 'annual' : 'monthly'})`}
+      </button>
+      <button
+        onClick={() => onToggleAnnual(!annual)}
+        disabled={loadingUpgrade}
+        className="w-full mt-2 py-1.5 text-xs rounded-lg text-green-400 hover:text-green-300 underline disabled:opacity-60"
+      >
+        {annual ? 'or switch to monthly billing' : 'or annual billing (save 17%)'}
+      </button>
+      <p className="text-[10px] text-slate-500 mt-1">You will be redirected to Stripe Checkout.</p>
     </div>
   );
 }

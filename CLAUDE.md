@@ -78,16 +78,23 @@ Create branch: nightly-maintenance-$(date +%Y-%m-%d)-<rfc-slug> for changes (e.g
 
 Start now.
 
+## RFC Status Index
+
+[`docs/STATUS.md`](docs/STATUS.md) — shipped-vs-draft view of all 58 RFCs.
+
 <!-- code-review-graph MCP tools -->
-## MCP Tools: code-review-graph
+## MCP Tools: code-review-graph (optional)
 
-**IMPORTANT: This project has a knowledge graph. ALWAYS use the
-code-review-graph MCP tools BEFORE using Grep/Glob/Read to explore
-the codebase.** The graph is faster, cheaper (fewer tokens), and gives
-you structural context (callers, dependents, test coverage) that file
-scanning cannot.
+> **This section only applies if the `code-review-graph` MCP server is
+> connected in your environment.** Check with `list_connected_mcps` or look for
+> tools named `detect_changes`, `query_graph`, etc. in your tool list. If the
+> MCP is **not** connected, use Grep/Glob/Read normally — skip this section.
 
-### When to use graph tools FIRST
+When the `code-review-graph` MCP **is** connected, prefer it over file
+scanning: the graph is faster, cheaper (fewer tokens), and surfaces structural
+context (callers, dependents, test coverage) that grep cannot.
+
+### When to use graph tools (if connected)
 
 - **Exploring code**: `semantic_search_nodes` or `query_graph` instead of Grep
 - **Understanding impact**: `get_impact_radius` instead of manually tracing imports
@@ -95,7 +102,8 @@ scanning cannot.
 - **Finding relationships**: `query_graph` with callers_of/callees_of/imports_of/tests_for
 - **Architecture questions**: `get_architecture_overview` + `list_communities`
 
-Fall back to Grep/Glob/Read **only** when the graph doesn't cover what you need.
+Fall back to Grep/Glob/Read when the graph is not connected or does not cover
+what you need.
 
 ### Key Tools
 
@@ -110,7 +118,7 @@ Fall back to Grep/Glob/Read **only** when the graph doesn't cover what you need.
 | `get_architecture_overview` | Understanding high-level codebase structure |
 | `refactor_tool` | Planning renames, finding dead code |
 
-### Workflow
+### Workflow (when connected)
 
 1. The graph auto-updates on file changes (via hooks).
 2. Use `detect_changes` for code review.
