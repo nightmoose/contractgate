@@ -32,9 +32,6 @@ name = "rand_core"
 name = "redox_syscall"
 
 [[bans.skip]]
-name = "tower"
-
-[[bans.skip]]
 name = "tower-http"
 
 [[bans.skip]]
