@@ -10,13 +10,12 @@
 //! also needs it for the publication-import flow.
 
 use crate::contract::{
-    Contract, ContractIdentity, ContractSummary, ContractVersion, EgressLeakageMode,
-    ImportSource, MultiStableResolution, NameHistoryEntry, VersionState, VersionSummary,
+    Contract, ContractIdentity, ContractSummary, ContractVersion, EgressLeakageMode, ImportSource,
+    MultiStableResolution, NameHistoryEntry, VersionState, VersionSummary,
 };
 use crate::error::{AppError, AppResult, DbOpContext};
 use sqlx::PgPool;
 use uuid::Uuid;
-
 
 // ---------------------------------------------------------------------------
 // Internal row helpers — map directly to the `contracts` and

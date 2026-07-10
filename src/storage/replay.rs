@@ -7,7 +7,6 @@ use crate::error::{AppError, AppResult};
 use sqlx::PgPool;
 use uuid::Uuid;
 
-
 // ---------------------------------------------------------------------------
 // Replay (RFC-003) — manual Replay Quarantine
 // ---------------------------------------------------------------------------

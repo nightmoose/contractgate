@@ -8,7 +8,6 @@ use crate::error::{AppError, AppResult, DbOpContext};
 use sqlx::PgPool;
 use uuid::Uuid;
 
-
 // =============================================================================
 // RFC-033 — Provider-Consumer Collaboration storage
 // =============================================================================

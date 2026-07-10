@@ -9,7 +9,6 @@ use crate::transform::TransformedPayload;
 use sqlx::PgPool;
 use uuid::Uuid;
 
-
 // ---------------------------------------------------------------------------
 // Internal row helpers for aggregate stats.
 // ---------------------------------------------------------------------------
