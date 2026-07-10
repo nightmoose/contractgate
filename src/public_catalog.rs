@@ -381,7 +381,7 @@ fn detect_csv_delimiter(data: &[u8]) -> Option<u8> {
     if lines.len() < 2 {
         return None;
     }
-    let candidates = [b',', b'\t', b';'];
+    let candidates = *b",\t;";
     candidates.into_iter().max_by_key(|&d| {
         let counts: Vec<usize> = lines
             .iter()
