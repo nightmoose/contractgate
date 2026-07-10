@@ -2,6 +2,95 @@
 
 ---
 
+## Run: 2026-07-10 — Item 3: split src/storage.rs into storage/ (pure refactor)
+
+**Scope:** Rust module structure only. Zero signature/query/behavior changes.
+**Suggested branch:** `nightly-maintenance-2026-07-10-storage-module-split`
+**Source:** `docs/punchlist/2026-07-10-sonnet-worklist.md` item 3 (P1).
+
+### What shipped
+`src/storage.rs` (2,803 lines, 53 fns) → `src/storage/{mod,contracts,audit,replay,publication,collaboration}.rs`. Original file preserved untouched at **`src/storage.rs.pre-split-backup`** (renamed, not deleted — kept for diffing/rollback since I can't compile-check this myself).
+
+**Grouping deviates from the worklist's proposed layout** because the code didn't support it: there are no `api_keys` or `kafka`/`kinesis` functions in this file (they already live in their own top-level modules), so `storage/keys.rs` and `storage/ingress.rs` were dropped. Actual split, by verified usage:
+- `contracts.rs` (~1023 lines) — contract identity + version CRUD together. Over the ~600-line guideline deliberately: `create_contract` and `deploy_contract_version` both need `ContractIdentityRow` *and* `ContractVersionRow` in one transaction, so splitting further would just trade in-file privacy for `pub(super)` cross-file coupling.
+- `audit.rs` (~700 lines) — ingest-path audit/quarantine/forward writes + reporting reads (`ingestion_stats`, etc). Also over 600 for the same reason (shared private row types across writes/reads).
+- `replay.rs` (~278 lines) — quarantine replay history + batch replay-marking.
+- `publication.rs` (~444 lines) — RFC-028 publish/revoke + RFC-034 catalog fork/import.
+- `collaboration.rs` (~406 lines) — RFC-033 collaborator roles/comments/proposals.
+- `mod.rs` — module doc + `pub use {mod}::*;` re-exports so every existing `storage::foo(...)` call site in the crate keeps working unchanged.
+
+**Cross-module coupling** (the only real complexity in this split): `import_published_contract` (publication.rs) needs `ContractVersionRow`/`into_version` from contracts.rs — made `pub(super)` (visible within `storage` and its submodules only, not part of the public API) — plus calls `get_contract_identity`/`get_version` (already `pub`) and `ensure_viewer_collaborator` (collaboration.rs, already `pub`), referenced via explicit `super::contracts::`/`super::collaboration::` paths rather than globs, so the dependency is visible at a glance.
+
+### How I verified this without cargo (I can't run it)
+1. **Byte-exact reconstruction**: wrote a script that re-slices the original file by the same line ranges used to build each new file, applies the two deliberate visibility edits, and diffs against what's actually in each new file — **all 5 files matched exactly**, and total characters accounted for equal the original body exactly (95,323 chars, zero lost/duplicated/altered beyond the 2 intended edits).
+2. **Brace balance**: every new file has equal `{`/`}` counts.
+3. **No missed top-level items**: grepped the whole original file for `#[cfg(test)]`/`mod ` — found exactly one test module (`PublicationRow::is_revoked` tests) at the very end; confirmed it landed correctly in `publication.rs`.
+4. **Import correctness**: manually traced every bare (non-fully-qualified) use of `crate::contract::*` types, `AppError`/`AppResult`/`DbOpContext`, `TransformedPayload`, `PgPool`, `Uuid` per line-range to build exact, non-redundant `use` blocks per file (confirmed via grep — e.g. `audit.rs` needs zero `crate::contract::` imports and never bare-references `AppError`; `replay.rs` never calls `.db_op()` so doesn't need `DbOpContext`).
+5. **External call-site coverage**: extracted all 60 distinct `storage::X` identifiers referenced elsewhere in the crate (main.rs, collaboration.rs, publication.rs, ingest paths, tests.rs) and confirmed every one still resolves to a `pub` item somewhere in the new files — **zero missing**.
+6. **sqlx risk**: confirmed `storage.rs`'s own module doc says it uses **runtime** (non-macro) sqlx queries, not `query!`/`query_as!` macros — verified zero macro invocations in the file. `.sqlx/` is currently empty regardless (pre-existing, unrelated to this change), so `cargo sqlx prepare --check` has nothing to invalidate either way.
+
+### What I did NOT verify (needs Alex — this is the real gap)
+I cannot run `cargo check`/`cargo test`/`cargo clippy`/`cargo sqlx prepare --check` myself. Everything above is static analysis, not a compiler. Rust module visibility/import rules are exacting — there could still be something I missed (e.g. a trait bound, an edge case in how `pub(super)` resolves, an orphaned doc-link). **Run `cargo check` first, before anything else, on this branch.**
+
+### Verify (I don't run cargo/git)
+1. `git fetch && git checkout -b nightly-maintenance-2026-07-10-storage-module-split origin/main`
+2. **`cargo check`** — if this fails, the error will point at exactly what I got wrong; the backup file (`src/storage.rs.pre-split-backup`) has the original for comparison. Delete the backup file once `cargo check`/`cargo test` are green (or keep it one extra commit for reviewer diffing, your call).
+3. `cargo test` (103+ tests expected per the worklist acceptance criteria) and `cargo clippy --all-targets -- -D warnings`.
+4. `cargo sqlx prepare --check` — expected to pass trivially; `.sqlx/` was already empty before this change.
+5. If green: delete `src/storage.rs.pre-split-backup` (I didn't delete it myself per the "confirm before deleting" rule).
+
+---
+
+## Run: 2026-07-10 — Item 2: migration drift CI workflow
+
+**Scope:** CI/ops only. No Rust/dashboard/Supabase schema changes.
+**Suggested branch:** `nightly-maintenance-2026-07-10-migration-drift-check`
+**Source:** `docs/punchlist/2026-07-10-sonnet-worklist.md` item 2 (P1).
+
+### What shipped
+- **`scripts/check_migration_drift.sh`** — diffs `supabase/migrations/*.sql` basenames against prod's `supabase_migrations.schema_migrations` ledger, through a hard-coded alias map (`create_early_access` ↔ `030_early_access`). Supports `--ledger-file <path>` to run the diff logic against a plain text file instead of a live DB, for local testing. Ran three local dry-runs before wiring it into CI: exact match passes, a missing ledger row fails, a phantom ledger row with no file fails — all three behaved correctly (also caught and fixed a bash gotcha: `${!ALIAS_MAP[*]:-default}` parses as indirect expansion, not "keys with a default"; split into two statements).
+- **`.github/workflows/migration-drift.yml`** — daily cron (06:15 UTC) + manual dispatch, reads a new `PROD_DATABASE_URL` secret. Deliberately not on `pull_request` (needs a prod credential; fork PRs must not get secrets). Fails fast with a doc pointer if the secret isn't set yet, instead of a raw psql error.
+- **`docs/migration-drift-check-reference.md`** — what it checks, the read-only role SQL Alex needs to run against prod once, the secret to add, and the local dry-run recipe.
+
+### Not done here (needs Alex — this touches prod)
+1. Run the `CREATE ROLE migration_drift_reader ...` grant in `docs/migration-drift-check-reference.md` against prod.
+2. Add the `PROD_DATABASE_URL` repo secret (Settings → Secrets and variables → Actions) using that role's connection string.
+3. Until both are done, the scheduled workflow will fail every run with a clear "secret not set" message (harmless — just noise until configured).
+
+### Verify (I don't run cargo/git)
+1. `git fetch && git checkout -b nightly-maintenance-2026-07-10-migration-drift-check origin/main`
+2. `yamllint`/GitHub's own validation on push will catch any workflow syntax issues; I validated both `.yml` files parse with `python3 -c "import yaml; yaml.safe_load(...)"` locally, but haven't run this in real GitHub Actions.
+3. After adding the secret, trigger via `workflow_dispatch` once manually to confirm it connects and reports green (matches current reconciled state through migration 030 — see `project_prod_migration_drift` — plus new migration 031 from item 1 above, which will need the alias map or ledger row to exist once applied to prod).
+
+---
+
+## Run: 2026-07-10 — Item 1: security-advisor fixes (migration 031)
+
+**Scope:** Supabase only. No Rust/ingest changes; validation engine untouched.
+**Suggested branch:** `nightly-maintenance-2026-07-10-security-advisor-fixes`
+**Source:** `docs/punchlist/2026-07-10-sonnet-worklist.md` item 1 (P0), prepared from the 2026-07-09 advisor sweep.
+
+### What shipped
+- **`supabase/migrations/031_security_advisor_fixes.sql`** — 5 fixes:
+  1. `security_invoker = true` on 4 views: `provider_scorecard`, `provider_field_health`, `active_contracts_public`, `v_ingestion_summary`. **Real finding, not just lint compliance:** `active_contracts_public` and `v_ingestion_summary` were created before org tenancy (migrations 007/012/013) tightened `contracts`/`contract_versions` RLS to per-org policies. Because views run with the owner's RLS visibility by default, both views currently leak every org's data (including deployed contract YAML) to any authenticated user. This migration closes that. Verified `provider_scorecard`/`provider_field_health` are read only via the Rust backend's direct `DATABASE_URL` pool (src/scorecard.rs) — unaffected by this change either way — and confirmed via grep that no dashboard code queries any of the four views directly.
+  2. Dropped the blanket `authenticated` policy on `provider_field_baseline` (any signed-in user could read/write every provider's drift baseline — table has no org_id). Rollup job writes via service role; `service_all` policy untouched.
+  3. Revoked anon-callable `handle_new_user()` and the anon grant on `get_my_org_ids()` (kept `authenticated` on the latter — RLS policies call it as the querying user). `rls_auto_enable()` is flagged by the advisor but defined in **no migration file** in this repo — likely created directly in prod outside version control. Handled with an existence-guarded `DO` block (no-op on fresh/CI Postgres, revokes on prod if present). **Flagged for Alex:** if this fires on prod, `rls_auto_enable()` should get reverse-engineered into its own migration so it stops being untracked drift.
+  4. Pinned `search_path = public` on the 8 flagged trigger functions.
+  5. `COMMENT ON TABLE` (no policy change) on the 4 intentional RLS-no-policy tables so future advisor runs don't re-flag them.
+- **`.github/workflows/ci.yml`** — Sentinel A6 (asserts `provider_scorecard` reloptions contain `security_invoker=true`), `EXPECTED_MIGRATION_COUNT` 30→31, fixed a stale header comment that still said "027/27".
+
+### Not done here
+- "Leaked password protection" advisor item is an Auth dashboard toggle, not SQL — **Alex needs to flip it manually** (Supabase dashboard → Auth → Providers).
+
+### Verify (I don't run cargo/git)
+1. `git fetch && git checkout -b nightly-maintenance-2026-07-10-security-advisor-fixes origin/main`
+2. Apply migration 031 to a local/staging Postgres and re-run the Supabase advisor to confirm all 4 ERROR + relevant WARN items clear.
+3. `cargo check && cargo test && cargo clippy --all-targets -- -D warnings` (CI will also run this).
+4. Confirm `cargo sqlx prepare --check` still passes — this migration doesn't touch any table/column the Rust queries select, only view/function security options and one policy, so query metadata shouldn't need regenerating, but verify.
+5. **Do not apply to prod directly** — migration file only, per ground rules. Alex applies after CI is green.
+
+---
+
 ## Run: 2026-06-07 — Stripe launch follow-ups (Option A + failure visibility)
 
 **Scope:** dashboard (Next.js) + Supabase. No Rust/ingest changes; validation engine untouched.

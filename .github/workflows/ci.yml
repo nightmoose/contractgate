@@ -176,9 +176,9 @@ jobs:
   # 1. Spins a Postgres 16 service container.
   # 2. Applies every file in supabase/migrations/ in numeric order (ls -v).
   # 3. Asserts `cargo sqlx prepare --check` still matches the committed
-  #    .sqlx/ query metadata — catches storage.rs changes that add/change
-  #    queries without regenerating .sqlx/.
-  # 4. Sentinel check: confirms latest migration (027) and total count (27)
+  #    .sqlx/ query metadata — catches src/storage/*.rs changes (split from
+  #    storage.rs 2026-07-10) that add/change queries without regenerating .sqlx/.
+  # 4. Sentinel check: confirms latest migration (031) and total count (31)
   #    applied cleanly.  Update EXPECTED_MIGRATION_COUNT when adding new
   #    migrations; add a new sentinel assertion for the latest schema object.
   #
@@ -314,10 +314,23 @@ jobs:
           fi
           echo "Sentinel A5 OK: early_access table present (migration 030)."
 
+          # Sentinel A6 — migration 031 (security advisor fixes): verify
+          # provider_scorecard carries security_invoker=true in its
+          # reloptions (proxy for "the ALTER VIEW ... SET applied").
+          SECURITY_INVOKER_OK=$(psql "$DATABASE_URL" -Atc \
+            "SELECT COUNT(*) FROM pg_class
+             WHERE relname = 'provider_scorecard'
+               AND 'security_invoker=true' = ANY(reloptions)")
+          if [[ "$SECURITY_INVOKER_OK" != "1" ]]; then
+            echo "::error::Migration 031 sentinel failed — provider_scorecard is missing security_invoker=true."
+            exit 1
+          fi
+          echo "Sentinel A6 OK: provider_scorecard has security_invoker=true (migration 031)."
+
           # Sentinel B — file count: the loop above applies every *.sql file.
           # Assert we have exactly the expected number so a new migration
           # automatically forces this sentinel to be updated.
-          EXPECTED_MIGRATION_COUNT=30
+          EXPECTED_MIGRATION_COUNT=31
           ACTUAL_COUNT=$(ls supabase/migrations/*.sql | wc -l | tr -d ' ')
           if [[ "$ACTUAL_COUNT" != "$EXPECTED_MIGRATION_COUNT" ]]; then
             echo "::error::Migration count mismatch — expected $EXPECTED_MIGRATION_COUNT files, found $ACTUAL_COUNT."
@@ -362,7 +375,8 @@ jobs:
         run: cargo sqlx prepare --check --workspace
         # Fails if:
         #   (a) .sqlx/ directory is missing — run `cargo sqlx prepare --workspace` locally
-        #   (b) a sqlx::query! in storage.rs was added/changed without regenerating .sqlx/
+        #   (b) a sqlx::query! anywhere in src/ (incl. src/storage/*.rs, split from
+        #       storage.rs 2026-07-10) was added/changed without regenerating .sqlx/
         #   (c) schema changes caused query types to drift from the cached metadata
 
       # RFC-068: the org-isolation guarantee is the product's core selling point,
