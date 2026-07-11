@@ -19,9 +19,13 @@
 
 name: Migration drift check
 
+# Runs when a migration lands on main (the only time drift can be introduced
+# from the repo side) or on demand. No daily cron — pointless when dormant.
 on:
-  schedule:
-    - cron: '15 6 * * *'  # 06:15 UTC daily
+  push:
+    branches: [main]
+    paths:
+      - 'supabase/migrations/**'
   workflow_dispatch: {}
 
 permissions:
