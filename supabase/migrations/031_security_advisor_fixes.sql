@@ -23,16 +23,22 @@
 --
 -- active_contracts_public (migration 016): GRANT SELECT ... TO authenticated
 -- only — there is no `TO anon` grant anywhere in the migration history, so
--- despite the "public" name this was never meant for anonymous reads; it is
--- an internal auditor view. Underlying `contracts` / `contract_versions` RLS
--- was tightened to per-org policies by migrations 007/012/013 (see
--- get_my_org_ids()), well after this view was written against the original
--- migration-001/003 blanket "auth_all USING (true)" policies. Net effect
--- today: this view is a live cross-org leak — any authenticated user, from
--- any org, can currently read every org's deployed contract YAML
--- (parsed_json) through it. security_invoker = true closes that: reads
--- become scoped to the caller's own org, matching every other authenticated
--- surface in the app. There is no anon path to preserve.
+-- despite the "public" name this was never meant for anonymous reads.
+-- NOTE: the dashboard DOES query this view via supabase-js as the signed-in
+-- user (dashboard/app/contracts/page.tsx — deploy-metadata map, RFC-028).
+-- Underlying `contracts` / `contract_versions` RLS was tightened to per-org
+-- policies by migrations 007/012/013 (see get_my_org_ids()), well after this
+-- view was written against the original migration-001/003 blanket "auth_all
+-- USING (true)" policies. Net effect today: this view is a live cross-org
+-- leak — any authenticated user, from any org, can currently read every
+-- org's deployed contract YAML (parsed_json) through it.
+-- security_invoker = true closes that: reads become scoped to the caller's
+-- own org, matching every other authenticated surface in the app.
+-- Dashboard impact (deliberate behavior change): the deploy-metadata map now
+-- shows only the caller's own org's contracts instead of all orgs'. The
+-- query keeps working — `authenticated` retains table-level grants on
+-- contracts/contract_versions (verified in relacl) and the org SELECT
+-- policies from 013/023 provide the rows. There is no anon path to preserve.
 --
 -- v_ingestion_summary (migration 001/003): same reasoning as
 -- active_contracts_public — no application code queries it directly
@@ -74,11 +80,18 @@ DROP POLICY IF EXISTS "auth_all" ON public.provider_field_baseline;
 --                        need an EXECUTE grant to the invoking session role.
 --   get_my_org_ids()   — must stay executable by `authenticated`: every
 --                        org-scoped RLS policy in this schema calls it as
---                        the querying user (migrations 008/013). Only the
---                        `anon` grant is a mistake — revoke that one only.
+--                        the querying user (migrations 008/013).
+--
+-- IMPORTANT: PUBLIC must be in every revoke. Verified on prod (pg_proc.proacl
+-- = `{=X/postgres, ...}`): these functions carry an EXECUTE grant to PUBLIC,
+-- so revoking only anon/authenticated is a no-op — those roles would retain
+-- EXECUTE via PUBLIC and the advisor lint would keep firing. Explicit grants
+-- to postgres / service_role (and, for get_my_org_ids, authenticated) exist
+-- in proacl and survive the PUBLIC revoke, so nothing that should work stops
+-- working.
 
-REVOKE EXECUTE ON FUNCTION public.handle_new_user() FROM anon, authenticated;
-REVOKE EXECUTE ON FUNCTION public.get_my_org_ids()  FROM anon;
+REVOKE EXECUTE ON FUNCTION public.handle_new_user() FROM PUBLIC, anon, authenticated;
+REVOKE EXECUTE ON FUNCTION public.get_my_org_ids()  FROM PUBLIC, anon;
 
 -- rls_auto_enable(): flagged by the 2026-07-09 advisor scan but NOT defined
 -- by any migration file in this repo — grepped the full history, no match.
@@ -100,7 +113,7 @@ BEGIN
     LIMIT 1;
 
     IF fn_sig IS NOT NULL THEN
-        EXECUTE format('REVOKE EXECUTE ON FUNCTION %s FROM anon, authenticated', fn_sig);
+        EXECUTE format('REVOKE EXECUTE ON FUNCTION %s FROM PUBLIC, anon, authenticated', fn_sig);
         RAISE NOTICE 'rls_auto_enable() found and revoked from anon, authenticated: %', fn_sig;
     ELSE
         RAISE NOTICE 'rls_auto_enable() not found in public schema — nothing to revoke (expected on fresh/CI databases).';
