@@ -59,7 +59,7 @@ kinesis-ingress = ["dep:aws-sdk-kinesis", "dep:aws-sdk-iam", "dep:aws-config", "
 # Web framework
 axum = { version = "0.8", features = ["macros"] }
 tower = "0.5"
-tower-http = { version = "0.6", features = ["cors", "trace", "timeout", "limit"] }
+tower-http = { version = "0.7", features = ["cors", "trace", "timeout", "limit"] }
 
 # Async runtime
 tokio = { version = "1", features = ["full"] }
@@ -156,14 +156,20 @@ metrics-exporter-prometheus = { version = "0.18", default-features = false, feat
 rdkafka = { version = "0.39", features = ["tokio", "sasl", "cmake-build"], optional = true }
 
 # AES-256-GCM encryption for secrets at rest (RFC-025 Confluent, RFC-026 IAM).
-# Pure-Rust, no system deps.
-aes-gcm = { version = "0.10", optional = true }
+# Pure-Rust, no system deps. `getrandom` enables Nonce::generate() (0.11 API).
+aes-gcm = { version = "0.11", optional = true, features = ["getrandom"] }
 
 # AWS SDK for Kinesis ingress (RFC-026). Pure-Rust, no system deps.
 # Gated behind `kinesis-ingress` feature — not compiled in default builds.
-aws-sdk-kinesis = { version = "1", optional = true }
-aws-sdk-iam = { version = "1", optional = true }
-aws-config = { version = "1", optional = true }
+#
+# default-features = false + only `default-https-client` (not the legacy
+# `rustls` feature): AWS SDK defaults still enable `rustls` →
+# `aws-smithy-runtime/tls-rustls` → hyper-rustls 0.24 / rustls 0.21 /
+# rustls-webpki 0.101.7 (Dependabot alerts #2/#3/#5). The modern path uses
+# rustls 0.23 + rustls-webpki ≥ 0.103.13 via `default-https-client`.
+aws-sdk-kinesis = { version = "1", optional = true, default-features = false, features = ["rt-tokio", "default-https-client"] }
+aws-sdk-iam = { version = "1", optional = true, default-features = false, features = ["rt-tokio", "default-https-client"] }
+aws-config = { version = "1", optional = true, default-features = false, features = ["rt-tokio", "default-https-client", "credentials-process", "sso"] }
 bytes = "1.11.1"
 
 # RFC-039: Supabase JWT verification for dashboard browser sessions.

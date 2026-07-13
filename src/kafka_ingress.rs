@@ -36,9 +36,12 @@ use crate::{
 // and retrieve Confluent secrets), but the aes_gcm crate is optional.
 #[cfg(feature = "kafka-ingress")]
 use aes_gcm::{
-    aead::{Aead, KeyInit, OsRng},
-    AeadCore, Aes256Gcm, Key, Nonce,
+    aead::{Aead, KeyInit},
+    Aes256Gcm, Key, Nonce,
 };
+// aes-gcm 0.11: Nonce::generate() lives on the `Generate` trait (needs `getrandom`).
+#[cfg(feature = "kafka-ingress")]
+use aes_gcm::aead::Generate;
 #[cfg(feature = "kafka-ingress")]
 use base64::{engine::general_purpose::STANDARD as B64, Engine};
 
@@ -83,7 +86,9 @@ fn encryption_key() -> anyhow::Result<Key<Aes256Gcm>> {
     if bytes.len() != 32 {
         anyhow::bail!("ENCRYPTION_KEY must be exactly 32 bytes (64 hex chars)");
     }
-    Ok(*Key::<Aes256Gcm>::from_slice(&bytes))
+    // aes-gcm 0.11: Key::from_slice is deprecated; use TryFrom.
+    Key::<Aes256Gcm>::try_from(bytes.as_slice())
+        .map_err(|_| anyhow::anyhow!("ENCRYPTION_KEY must be exactly 32 bytes"))
 }
 
 // ---------------------------------------------------------------------------
@@ -96,7 +101,8 @@ fn encryption_key() -> anyhow::Result<Key<Aes256Gcm>> {
 fn encrypt(plaintext: &str) -> anyhow::Result<String> {
     let key = encryption_key()?;
     let cipher = Aes256Gcm::new(&key);
-    let nonce = Aes256Gcm::generate_nonce(&mut OsRng);
+    // aes-gcm 0.11: generate via Nonce::generate() (was Aes256Gcm::generate_nonce(&mut OsRng)).
+    let nonce = Nonce::generate();
     let ciphertext = cipher
         .encrypt(&nonce, plaintext.as_bytes())
         .map_err(|e| anyhow::anyhow!("encryption failed: {e}"))?;
@@ -126,9 +132,11 @@ pub fn decrypt_secret(encoded: &str) -> anyhow::Result<String> {
         anyhow::bail!("ciphertext blob too short");
     }
     let (nonce_bytes, ciphertext) = blob.split_at(12);
-    let nonce = Nonce::from_slice(nonce_bytes);
+    // aes-gcm 0.11: Nonce::from_slice is deprecated; use TryFrom.
+    let nonce = Nonce::try_from(nonce_bytes)
+        .map_err(|_| anyhow::anyhow!("invalid nonce length"))?;
     let plaintext = cipher
-        .decrypt(nonce, ciphertext)
+        .decrypt(&nonce, ciphertext)
         .map_err(|e| anyhow::anyhow!("decryption failed: {e}"))?;
     Ok(String::from_utf8(plaintext)?)
 }
