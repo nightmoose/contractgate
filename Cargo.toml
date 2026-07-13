@@ -59,7 +59,7 @@ kinesis-ingress = ["dep:aws-sdk-kinesis", "dep:aws-sdk-iam", "dep:aws-config", "
 # Web framework
 axum = { version = "0.8", features = ["macros"] }
 tower = "0.5"
-tower-http = { version = "0.6", features = ["cors", "trace", "timeout", "limit"] }
+tower-http = { version = "0.7", features = ["cors", "trace", "timeout", "limit"] }
 
 # Async runtime
 tokio = { version = "1", features = ["full"] }
@@ -157,7 +157,7 @@ rdkafka = { version = "0.39", features = ["tokio", "sasl", "cmake-build"], optio
 
 # AES-256-GCM encryption for secrets at rest (RFC-025 Confluent, RFC-026 IAM).
 # Pure-Rust, no system deps.
-aes-gcm = { version = "0.10", optional = true }
+aes-gcm = { version = "0.11", optional = true }
 
 # AWS SDK for Kinesis ingress (RFC-026). Pure-Rust, no system deps.
 # Gated behind `kinesis-ingress` feature — not compiled in default builds.
