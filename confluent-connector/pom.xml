@@ -39,9 +39,9 @@
     <!-- Keep in sync with your Kafka / Confluent Platform version -->
     <kafka.version>3.6.0</kafka.version>
     <jackson.version>2.22.1</jackson.version>
-    <slf4j.version>2.0.9</slf4j.version>
+    <slf4j.version>2.0.18</slf4j.version>
     <junit.version>5.10.0</junit.version>
-    <mockito.version>5.7.0</mockito.version>
+    <mockito.version>5.23.0</mockito.version>
   </properties>
 
   <dependencies>
@@ -138,7 +138,7 @@
       <plugin>
         <groupId>org.apache.maven.plugins</groupId>
         <artifactId>maven-compiler-plugin</artifactId>
-        <version>3.11.0</version>
+        <version>3.15.0</version>
         <configuration>
           <source>${java.version}</source>
           <target>${java.version}</target>
@@ -153,7 +153,7 @@
       <plugin>
         <groupId>org.apache.maven.plugins</groupId>
         <artifactId>maven-surefire-plugin</artifactId>
-        <version>3.1.2</version>
+        <version>3.5.6</version>
         <configuration>
           <!-- Byte Buddy 1.14 only officially supports up to Java 22;
                experimental mode enables Java 23+ (including 25) without
@@ -175,7 +175,7 @@
       <plugin>
         <groupId>org.apache.maven.plugins</groupId>
         <artifactId>maven-assembly-plugin</artifactId>
-        <version>3.6.0</version>
+        <version>3.8.0</version>
         <configuration>
           <descriptors>
             <descriptor>src/assembly/confluent-hub.xml</descriptor>
