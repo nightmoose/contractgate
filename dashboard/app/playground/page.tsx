@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useMemo } from "react";
 import useSWR from "swr";
-import yaml from "js-yaml";
+import * as yaml from "js-yaml";
 import { playgroundValidate, listContracts, getLatestStableVersion, listVersions, getVersion } from "@/lib/api";
 import type { PlaygroundResponse, ContractSummary, Violation } from "@/lib/api";
 import clsx from "clsx";
