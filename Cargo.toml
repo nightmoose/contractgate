@@ -59,7 +59,7 @@ kinesis-ingress = ["dep:aws-sdk-kinesis", "dep:aws-sdk-iam", "dep:aws-config", "
 # Web framework
 axum = { version = "0.8", features = ["macros"] }
 tower = "0.5"
-tower-http = { version = "0.5", features = ["cors", "trace", "timeout", "limit"] }
+tower-http = { version = "0.6", features = ["cors", "trace", "timeout", "limit"] }
 
 # Async runtime
 tokio = { version = "1", features = ["full"] }
@@ -77,8 +77,8 @@ regex = "1"
 # PII transforms (RFC-004): HMAC-256 for `kind: hash`, seeded StdRng
 # for `mask: format_preserving`.  Pure-Rust, no system deps — portable
 # across CI + sandbox builds.
-sha2 = "0.10"
-hmac = "0.12"
+sha2 = "0.11"
+hmac = "0.13"
 hex = "0.4"
 base64 = "0.22"
 rand = { version = "0.8", features = ["small_rng"] }
@@ -90,7 +90,7 @@ rayon = "1"
 
 # Concurrent hashmap for per-key rate-limit buckets (RFC-021).  Lock-free
 # reads; no RwLock wrapping needed.
-dashmap = "5"
+dashmap = "6"
 
 # IDs & time
 uuid = { version = "1", features = ["v4", "serde"] }
@@ -147,7 +147,7 @@ hdrhistogram = "7"
 # metrics 0.24 + metrics-exporter-prometheus 0.16 are tested against
 # tokio 1.x and have no system deps (pure Rust).
 metrics = "0.24"
-metrics-exporter-prometheus = { version = "0.16", default-features = false, features = ["http-listener"] }
+metrics-exporter-prometheus = { version = "0.18", default-features = false, features = ["http-listener"] }
 
 # Kafka transport (bundles librdkafka via cmake — needs cmake + a C compiler
 # available on the build host).  Used by the `demo` binary and the
@@ -168,14 +168,14 @@ bytes = "1.11.1"
 
 # RFC-039: Supabase JWT verification for dashboard browser sessions.
 # `jwk` feature enables JWK/JWKS support for RS256 key sets.
-jsonwebtoken = { version = "9", features = ["use_pem"] }
+jsonwebtoken = { version = "10", features = ["use_pem"] }
 
 # RFC-052: lock-free atomic swap for the live JWKS key set so the background
 # refresh task can replace it without blocking request handlers.
 arc-swap = "1"
 
 [dev-dependencies]
-axum-test = "20"
+axum-test = "21"
 tokio-test = "0.4"
 serde_json = "1"
 # Integration tests for v1 ingest (RFC-021) — same flags as the main reqwest dep.
