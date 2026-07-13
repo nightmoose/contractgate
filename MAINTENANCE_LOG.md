@@ -2,6 +2,32 @@
 
 ---
 
+## Run: 2026-07-13 — Dependabot follow-ups (aes-gcm / tower-http / AWS TLS / config)
+
+**Scope:** Dependabot hygiene + the major upgrades Dependabot couldn't land green (#133/#134 closed; #130 already merged).
+**Branch:** `fix/dependabot-followups-2026-07-13`
+
+### What shipped
+1. **`.github/dependabot.yml`**
+   - Cargo + npm groups limited to **minor/patch** (majors were landing broken).
+   - Explicit major ignores for `aes-gcm`, `tower-http`, `eslint`, `typescript` (and `@types/node`).
+   - Added **Maven** ecosystem for `/confluent-connector` (was security-only before).
+2. **`aes-gcm` 0.10 → 0.11** (+ `getrandom` feature)
+   - Migrated `kafka_ingress` / `kinesis_ingress` off `OsRng` / `generate_nonce` to `Nonce::generate()` and `TryFrom` for key/nonce.
+3. **`tower-http` 0.6 → 0.7** — no call-site changes (cors/trace/timeout/limit still valid).
+4. **Drop legacy AWS TLS path** (Dependabot alerts #2/#3/#5 — `rustls-webpki` 0.101.7)
+   - AWS SDK crates default-enabled `rustls` → `tls-rustls` → hyper-rustls 0.24 / rustls 0.21 / webpki 0.101.7.
+   - Now: `default-features = false` + only `default-https-client` + `rt-tokio` (modern rustls 0.23 / webpki 0.103.13).
+   - Lockfile no longer contains `rustls 0.21` or `rustls-webpki 0.101.7`.
+
+### Verify
+- `cargo check`
+- `cargo check --features kinesis-ingress --bin contractgate-server`
+- `cargo check --features kafka-ingress,kinesis-ingress,scaffold --bin contractgate-server`
+- `cargo test --lib` (95 passed)
+
+---
+
 ## Run: 2026-07-10 — Item 3: split src/storage.rs into storage/ (pure refactor)
 
 **Scope:** Rust module structure only. Zero signature/query/behavior changes.

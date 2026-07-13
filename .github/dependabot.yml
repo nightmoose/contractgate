@@ -1,5 +1,6 @@
 version: 2
 updates:
+  # ── Rust (Cargo) ──────────────────────────────────────────────────────────
   - package-ecosystem: "cargo"
     directory: "/"
     schedule:
@@ -9,7 +10,20 @@ updates:
       cargo-all:
         patterns:
           - "*"
+        # Keep majors out of the auto group — they routinely need code changes
+        # (see aes-gcm 0.10→0.11 / tower-http 0.6→0.7). Handle majors manually.
+        update-types:
+          - "minor"
+          - "patch"
+    ignore:
+      # Majors that previously landed as broken Dependabot PRs (#134).
+      # Remove an entry once a human migration PR has landed that major.
+      - dependency-name: "aes-gcm"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "tower-http"
+        update-types: ["version-update:semver-major"]
 
+  # ── Dashboard (npm) ───────────────────────────────────────────────────────
   - package-ecosystem: "npm"
     directory: "/dashboard"
     schedule:
@@ -19,7 +33,35 @@ updates:
       npm-all:
         patterns:
           - "*"
+        update-types:
+          - "minor"
+          - "patch"
+    ignore:
+      # Majors that break eslint-config-next peer ranges (#133).
+      - dependency-name: "eslint"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "typescript"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "@types/node"
+        update-types: ["version-update:semver-major"]
 
+  # ── Confluent connector (Maven) ───────────────────────────────────────────
+  # Security PRs already fire without this entry; adding the ecosystem so
+  # routine non-security bumps (Jackson, JUnit, etc.) are version-updated too.
+  - package-ecosystem: "maven"
+    directory: "/confluent-connector"
+    schedule:
+      interval: "monthly"
+    open-pull-requests-limit: 1
+    groups:
+      maven-all:
+        patterns:
+          - "*"
+        update-types:
+          - "minor"
+          - "patch"
+
+  # ── Docker base images ────────────────────────────────────────────────────
   - package-ecosystem: "docker"
     directory: "/"
     schedule:
