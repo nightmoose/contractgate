@@ -133,8 +133,8 @@ pub fn decrypt_secret(encoded: &str) -> anyhow::Result<String> {
     }
     let (nonce_bytes, ciphertext) = blob.split_at(12);
     // aes-gcm 0.11: Nonce::from_slice is deprecated; use TryFrom.
-    let nonce = Nonce::try_from(nonce_bytes)
-        .map_err(|_| anyhow::anyhow!("invalid nonce length"))?;
+    let nonce =
+        Nonce::try_from(nonce_bytes).map_err(|_| anyhow::anyhow!("invalid nonce length"))?;
     let plaintext = cipher
         .decrypt(&nonce, ciphertext)
         .map_err(|e| anyhow::anyhow!("decryption failed: {e}"))?;
