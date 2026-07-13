@@ -13,7 +13,7 @@
 
 import { useState, useCallback, useRef, useEffect } from "react";
 import clsx from "clsx";
-import jsYaml from "js-yaml";
+import * as jsYaml from "js-yaml";
 import { useOrg, planAtLeast } from "@/lib/org";
 import { deployContract } from "@/lib/api";
 

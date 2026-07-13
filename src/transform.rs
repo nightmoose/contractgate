@@ -23,7 +23,7 @@
 
 use crate::contract::{MaskStyle, TransformKind};
 use crate::validation::CompiledContract;
-use hmac::{Hmac, Mac};
+use hmac::{Hmac, KeyInit, Mac};
 use rand::SeedableRng;
 use serde_json::{json, Value};
 use sha2::Sha256;

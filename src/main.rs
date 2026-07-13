@@ -1509,7 +1509,10 @@ fn build_router(state: Arc<AppState>) -> Router {
         .merge(auth_router)
         .layer(middleware::from_fn(observability::track_requests))
         .layer(TraceLayer::new_for_http())
-        .layer(TimeoutLayer::new(std::time::Duration::from_secs(30)))
+        .layer(TimeoutLayer::with_status_code(
+            StatusCode::REQUEST_TIMEOUT,
+            std::time::Duration::from_secs(30),
+        ))
         .with_state(state)
 }
 
