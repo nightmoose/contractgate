@@ -508,6 +508,29 @@ jobs:
           SEEDER_DURATION: "30s"
           MIN_AUDIT_ROWS: "500"
 
+  # ── Compose auth-on isolation lane (RFC-075) ──────────────
+  # Boots Postgres + a SECOND gateway with auth ON (port 8081) and proves
+  # cross-tenant isolation end-to-end: no-key→401 sanity gate, org B key →
+  # org A contract → 403/404, org A key → org A contract → 2xx. This is the
+  # honest replacement for the RFC-073 compose-smoke isolation step, which was
+  # a false green under CONTRACTGATE_DEV_NO_AUTH=1. Pure curl — no Rust
+  # toolchain needed, and no `cargo test` false-green (zero-tests-ran) risk.
+  compose-isolation-smoke:
+    name: Compose — auth-on isolation lane
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Run auth-on isolation smoke test
+        run: bash tests/compose_isolation_smoke.sh
+        env:
+          TAG: ci
+
   # ── Deploy to Fly.io (main only) ──────────────────────────
   # Runs only on push to main (not on PRs).
   # All other CI jobs must be green before deploy fires.
@@ -525,6 +548,7 @@ jobs:
       - security
       - compose-smoke
       - compose-demo-smoke
+      - compose-isolation-smoke
     runs-on: ubuntu-latest
     permissions:
       contents: read
