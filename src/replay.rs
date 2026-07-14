@@ -53,18 +53,20 @@ pub struct ReplayRequest {
 }
 
 impl ReplayRequest {
-    /// 400 if the batch is empty or exceeds the replay cap.
-    pub fn validate_bounds(&self) -> AppResult<()> {
+    /// 400 if the batch is empty or exceeds the replay cap. Shared by the
+    /// contracts-scoped and RFC-081 top-level replay paths (both work from a
+    /// bare id list).
+    pub fn validate_ids_bounds(ids: &[Uuid]) -> AppResult<()> {
         const MAX: usize = 1_000;
-        if self.ids.is_empty() {
+        if ids.is_empty() {
             return Err(AppError::BadRequest(
                 "replay request must include at least one id".into(),
             ));
         }
-        if self.ids.len() > MAX {
+        if ids.len() > MAX {
             return Err(AppError::BadRequest(format!(
                 "replay request exceeds cap of {MAX} ids (got {})",
-                self.ids.len()
+                ids.len()
             )));
         }
         Ok(())
@@ -131,32 +133,47 @@ pub async fn replay_handler(
     Path(contract_id): Path<Uuid>,
     Json(req): Json<ReplayRequest>,
 ) -> AppResult<Json<ReplayResponse>> {
+    let resp = replay_for_contract(&state, org_id, contract_id, req.ids, req.target_version).await?;
+    Ok(Json(resp))
+}
+
+/// Core per-contract replay engine, shared by the contracts-scoped route
+/// (`replay_handler`) and the org-scoped top-level route (RFC-081
+/// `replay_all_handler`, which groups event ids by contract and calls this
+/// once per contract). Behavior is identical to the pre-RFC-081 handler.
+pub async fn replay_for_contract(
+    state: &Arc<AppState>,
+    org_id: Option<Uuid>,
+    contract_id: Uuid,
+    ids: Vec<Uuid>,
+    target_version: Option<String>,
+) -> AppResult<ReplayResponse> {
     // RFC-047 completion: require authenticated org context in production.
     if state.auth_configured() && org_id.is_none() {
         return Err(AppError::Unauthorized);
     }
 
-    req.validate_bounds()?;
+    ReplayRequest::validate_ids_bounds(&ids)?;
 
     // Verify the contract identity exists and belongs to this org (404 on mismatch).
     let identity = storage::get_contract_identity(&state.db, contract_id, org_id).await?;
 
     // ----- 1. Resolve target version --------------------------------------
     let (target_version, target_source, target_is_draft) =
-        resolve_replay_target(&state, contract_id, req.target_version.as_deref(), org_id).await?;
+        resolve_replay_target(state, contract_id, target_version.as_deref(), org_id).await?;
 
     // ----- 2. Load source rows + categorize -------------------------------
-    let rows = storage::list_quarantine_by_ids(&state.db, &req.ids).await?;
+    let rows = storage::list_quarantine_by_ids(&state.db, &ids).await?;
     let mut by_id: std::collections::HashMap<Uuid, storage::QuarantineRow> =
         rows.into_iter().map(|r| (r.id, r)).collect();
 
-    // Allocations downstream are bounded by `validate_bounds()` (≤ MAX_REPLAY_IDS)
+    // Allocations downstream are bounded by `validate_ids_bounds()` (≤ MAX_REPLAY_IDS)
     // but CodeQL's taint tracker can't follow that early-return guard.  Use the
     // constant directly in `with_capacity` so the allocation size is provably
     // independent of request input — the const reservation upper-bounds memory
     // at MAX_REPLAY_IDS * sizeof(T) regardless of what the client sent.
     const MAX_REPLAY_IDS: usize = 1_000;
-    let bounded_ids_len = req.ids.len().min(MAX_REPLAY_IDS);
+    let bounded_ids_len = ids.len().min(MAX_REPLAY_IDS);
     let mut results: Vec<ReplayItemResult> = Vec::with_capacity(MAX_REPLAY_IDS);
     // Collected for the eligible (need-to-validate) fork below.
     struct Eligible {
@@ -172,7 +189,7 @@ pub async fn replay_handler(
     let mut ordinal_for_id: std::collections::HashMap<Uuid, usize> =
         std::collections::HashMap::with_capacity(bounded_ids_len);
 
-    for (idx, id) in req.ids.iter().enumerate() {
+    for (idx, id) in ids.iter().enumerate() {
         ordinal_for_id.insert(*id, idx);
         match by_id.remove(id) {
             None => slot[idx] = Some(ReplayItemOutcome::NotFound),
@@ -449,7 +466,7 @@ pub async fn replay_handler(
     }
 
     // ----- 8. Assemble response ------------------------------------------
-    for (idx, id) in req.ids.iter().enumerate() {
+    for (idx, id) in ids.iter().enumerate() {
         let outcome = slot[idx].take().unwrap_or(ReplayItemOutcome::NotFound);
         results.push(ReplayItemResult {
             quarantine_id: *id,
@@ -458,7 +475,7 @@ pub async fn replay_handler(
     }
 
     let counts = tally(&results);
-    Ok(Json(ReplayResponse {
+    Ok(ReplayResponse {
         total: results.len(),
         replayed: counts.replayed,
         still_quarantined: counts.still_quarantined,
@@ -470,7 +487,7 @@ pub async fn replay_handler(
         target_version_source: target_source,
         target_is_draft,
         results,
-    }))
+    })
 }
 
 /// `GET /contracts/:id/quarantine/:quar_id/replay-history`
@@ -569,7 +586,7 @@ mod tests {
             ids: vec![],
             target_version: None,
         };
-        let err = r.validate_bounds().unwrap_err();
+        let err = ReplayRequest::validate_ids_bounds(&r.ids).unwrap_err();
         assert!(matches!(err, AppError::BadRequest(_)));
     }
 
@@ -579,7 +596,7 @@ mod tests {
             ids: (0..1_001).map(|_| Uuid::new_v4()).collect(),
             target_version: None,
         };
-        let err = r.validate_bounds().unwrap_err();
+        let err = ReplayRequest::validate_ids_bounds(&r.ids).unwrap_err();
         assert!(matches!(err, AppError::BadRequest(_)));
     }
 
@@ -589,7 +606,7 @@ mod tests {
             ids: (0..1_000).map(|_| Uuid::new_v4()).collect(),
             target_version: None,
         };
-        r.validate_bounds().unwrap();
+        ReplayRequest::validate_ids_bounds(&r.ids).unwrap();
     }
 
     #[test]
@@ -598,7 +615,7 @@ mod tests {
             ids: vec![Uuid::new_v4()],
             target_version: None,
         };
-        r.validate_bounds().unwrap();
+        ReplayRequest::validate_ids_bounds(&r.ids).unwrap();
     }
 
     // ---- Q2: tally consistency with ReplayItemOutcome variants ----------

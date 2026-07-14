@@ -133,6 +133,120 @@ pub async fn mark_quarantine_replayed_batch(
     Ok(updated.into_iter().map(|(id,)| id).collect())
 }
 
+// ---------------------------------------------------------------------------
+// RFC-081 — org-scoped top-level quarantine list + id→contract resolution
+// ---------------------------------------------------------------------------
+
+/// A source quarantine row plus its derived replay summary, as returned by
+/// `GET /quarantine` (RFC-081). Only source rows (`replay_of_quarantine_id IS
+/// NULL`) are listed; the derived fields summarize the replay attempts made
+/// against each.
+#[derive(sqlx::FromRow)]
+pub struct QuarantineListRow {
+    pub id: Uuid,
+    pub contract_id: Uuid,
+    pub contract_version: Option<String>,
+    pub payload: serde_json::Value,
+    pub violation_details: serde_json::Value,
+    pub violation_count: i32,
+    pub source_ip: Option<String>,
+    pub created_at: chrono::DateTime<chrono::Utc>,
+    /// Number of replay attempts made against this source row (passes + fails).
+    pub replay_count: i64,
+    pub last_replayed_at: Option<chrono::DateTime<chrono::Utc>>,
+    /// Whether the most-recent attempt passed (true), failed (false), or there
+    /// were no attempts (NULL).
+    pub last_replay_passed: Option<bool>,
+}
+
+/// List source quarantine rows for the caller's org, newest first, with the
+/// derived replay summary computed in a single lateral join (no N+1).
+///
+/// - `org_id = None` (dev-no-auth only) skips the org filter, matching the rest
+///   of the dev surface. In production the handler guarantees `Some`.
+/// - `contract_id = None` lists across all of the org's contracts.
+pub async fn list_quarantine_events(
+    pool: &PgPool,
+    org_id: Option<Uuid>,
+    contract_id: Option<Uuid>,
+    limit: i64,
+    offset: i64,
+) -> AppResult<Vec<QuarantineListRow>> {
+    let rows: Vec<QuarantineListRow> = sqlx::query_as(
+        r#"
+        SELECT
+            qe.id,
+            qe.contract_id,
+            qe.contract_version,
+            qe.payload,
+            qe.violation_details,
+            qe.violation_count,
+            qe.source_ip,
+            qe.created_at,
+            COALESCE(att.replay_count, 0) AS replay_count,
+            att.last_replayed_at,
+            att.last_replay_passed
+        FROM quarantine_events qe
+        JOIN contracts c ON c.id = qe.contract_id
+        LEFT JOIN LATERAL (
+            SELECT
+                count(*)                                        AS replay_count,
+                max(a.ts)                                       AS last_replayed_at,
+                (array_agg(a.passed ORDER BY a.ts DESC))[1]     AS last_replay_passed
+            FROM (
+                SELECT created_at AS ts, true  AS passed
+                FROM audit_log
+                WHERE replay_of_quarantine_id = qe.id AND passed = true
+                UNION ALL
+                SELECT created_at AS ts, false AS passed
+                FROM quarantine_events
+                WHERE replay_of_quarantine_id = qe.id
+            ) a
+        ) att ON true
+        WHERE qe.replay_of_quarantine_id IS NULL
+          AND ($1::uuid IS NULL OR qe.contract_id = $1)
+          AND ($2::uuid IS NULL OR c.org_id = $2)
+        ORDER BY qe.created_at DESC
+        LIMIT $3 OFFSET $4
+        "#,
+    )
+    .bind(contract_id)
+    .bind(org_id)
+    .bind(limit)
+    .bind(offset)
+    .fetch_all(pool)
+    .await?;
+
+    Ok(rows)
+}
+
+/// Resolve `(quarantine_id, contract_id)` for the given ids, **org-scoped**.
+/// Ids that don't exist or belong to another org are simply omitted, so the
+/// caller treats them as not-found and never leaks cross-org existence.
+pub async fn resolve_quarantine_contracts(
+    pool: &PgPool,
+    org_id: Option<Uuid>,
+    ids: &[Uuid],
+) -> AppResult<Vec<(Uuid, Uuid)>> {
+    if ids.is_empty() {
+        return Ok(vec![]);
+    }
+    let rows: Vec<(Uuid, Uuid)> = sqlx::query_as(
+        r#"
+        SELECT qe.id, qe.contract_id
+        FROM quarantine_events qe
+        JOIN contracts c ON c.id = qe.contract_id
+        WHERE qe.id = ANY($1::uuid[])
+          AND ($2::uuid IS NULL OR c.org_id = $2)
+        "#,
+    )
+    .bind(ids)
+    .bind(org_id)
+    .fetch_all(pool)
+    .await?;
+    Ok(rows)
+}
+
 /// One entry in the replay-history chain returned by
 /// `GET /contracts/:id/quarantine/:quar_id/replay-history`.
 #[derive(Debug, Clone, serde::Serialize)]
