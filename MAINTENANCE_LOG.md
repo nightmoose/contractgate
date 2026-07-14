@@ -2,6 +2,48 @@
 
 ---
 
+## Run: 2026-07-14 — CORS allowlist: add `x-api-key` + `Accept`
+
+**Scope:** RFC-050 protected CORS layer hardening after browser console
+errors on `app.datacontractgate.com` → `contractgate-api.fly.dev/contracts`.
+**Branch:** `nightly-maintenance-2026-07-14-cors-x-api-key`
+
+### Diagnosis
+Live probes (`OPTIONS` + `GET` with `Origin: https://app.datacontractgate.com`)
+showed the API healthy and already returning
+`access-control-allow-origin: https://app.datacontractgate.com` — so
+`DASHBOARD_ORIGIN` is set correctly on Fly.
+
+The console mix of **CORS blocked** + **502 Bad Gateway** is the classic
+Fly-proxy failure mode: when the edge returns 502 (deploy window, machine
+restart, OOM), that response has **no** CORS headers, and Chrome reports
+CORS instead of the real 502.
+
+Separately, the protected allowlist only permitted `Authorization` and
+`Content-Type`. The dashboard (`dashboard/lib/api.ts`) falls back to
+`x-api-key` when no Supabase session is ready — a preflight that requests
+`x-api-key` would fail pure-CORS even when the machine is up.
+
+### What shipped
+1. **`src/main.rs`** — protected `CorsLayer` `allow_headers` now includes
+   `Accept` and `x-api-key` in addition to `Authorization` / `Content-Type`.
+2. **`docs/auth-reference.md`** — header list updated; note on 502-vs-CORS
+   misdiagnosis.
+
+### Verify
+- `cargo check --bin contractgate-server`
+- After deploy: preflight with
+  `Access-Control-Request-Headers: authorization,content-type,x-api-key`
+  must list those headers in `access-control-allow-headers`.
+
+### Ops (if 502s continue)
+- `fly logs -a contractgate-api` — look for OOM / panic (VM is 256 MB).
+- `curl -sS https://contractgate-api.fly.dev/health` and `/ready`.
+- Confirm secret still set: `fly secrets list -a contractgate-api`
+  (`DASHBOARD_ORIGIN`).
+
+---
+
 ## Run: 2026-07-13 — Dependabot follow-ups (aes-gcm / tower-http / AWS TLS / config)
 
 **Scope:** Dependabot hygiene + the major upgrades Dependabot couldn't land green (#133/#134 closed; #130 already merged).
