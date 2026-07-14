@@ -69,6 +69,12 @@ I cannot run `cargo check`/`cargo test`/`cargo clippy`/`cargo sqlx prepare --che
 
 ## Run: 2026-07-10 — Item 2: migration drift CI workflow
 
+> **REMOVED 2026-07-10 (same day):** workflow, script, and reference doc
+> deleted; `drift_check` prod role dropped. Decision: migrations are now
+> applied exclusively by Claude via the Supabase MCP immediately after the
+> file is committed, so ledger drift can't recur; a scheduled prod-DB check
+> wasn't worth the secret/role upkeep. Entry kept for history.
+
 **Scope:** CI/ops only. No Rust/dashboard/Supabase schema changes.
 **Suggested branch:** `nightly-maintenance-2026-07-10-migration-drift-check`
 **Source:** `docs/punchlist/2026-07-10-sonnet-worklist.md` item 2 (P1).
