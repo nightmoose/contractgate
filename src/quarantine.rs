@@ -244,8 +244,7 @@ pub async fn replay_history_all_handler(
         return Err(AppError::Unauthorized);
     }
     // Resolve the event's contract, org-scoped. Unknown/cross-org → empty.
-    let resolved =
-        storage::resolve_quarantine_contracts(&state.db, org_id, &[q.event_id]).await?;
+    let resolved = storage::resolve_quarantine_contracts(&state.db, org_id, &[q.event_id]).await?;
     let Some((_, contract_id)) = resolved.into_iter().next() else {
         return Ok(Json(vec![]));
     };

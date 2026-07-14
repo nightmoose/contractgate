@@ -133,7 +133,8 @@ pub async fn replay_handler(
     Path(contract_id): Path<Uuid>,
     Json(req): Json<ReplayRequest>,
 ) -> AppResult<Json<ReplayResponse>> {
-    let resp = replay_for_contract(&state, org_id, contract_id, req.ids, req.target_version).await?;
+    let resp =
+        replay_for_contract(&state, org_id, contract_id, req.ids, req.target_version).await?;
     Ok(Json(resp))
 }
 

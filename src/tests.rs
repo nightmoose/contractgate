@@ -2669,18 +2669,20 @@ metrics: []
         .expect("seed quarantine row");
 
         // Org A sees it.
-        let a_list = super::super::storage::list_quarantine_events(&pool, Some(org_a), None, 100, 0)
-            .await
-            .unwrap();
+        let a_list =
+            super::super::storage::list_quarantine_events(&pool, Some(org_a), None, 100, 0)
+                .await
+                .unwrap();
         assert!(
             a_list.iter().any(|r| r.id == quar_id),
             "org A must see its own quarantine row"
         );
 
         // Org B must NOT see it.
-        let b_list = super::super::storage::list_quarantine_events(&pool, Some(org_b), None, 100, 0)
-            .await
-            .unwrap();
+        let b_list =
+            super::super::storage::list_quarantine_events(&pool, Some(org_b), None, 100, 0)
+                .await
+                .unwrap();
         assert!(
             !b_list.iter().any(|r| r.id == quar_id),
             "org B must NOT see org A's quarantine row"
