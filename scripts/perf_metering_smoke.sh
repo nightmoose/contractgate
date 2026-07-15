@@ -55,9 +55,18 @@ red() { printf '\e[31m%s\e[0m\n' "$1"; }
 
 tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
 
-# ── Deploy a throwaway single-field contract (fast to validate) ─────────────
-bold "[1/4] Deploying throwaway contract '$NAME'"
-CONTRACT_YAML=$(cat <<YAML
+# ── Contract: reuse an existing one (CONTRACT_ID) or deploy a throwaway ──────
+# Override EVENT to match the target contract's required fields. Default matches
+# the throwaway contract deployed below; the isolation seed needs {"user_id":..}.
+if [[ -z "${EVENT:-}" ]]; then EVENT='{"id":"perf-smoke"}'; fi
+
+if [[ -n "${CONTRACT_ID:-}" ]]; then
+    # Skip deploy (the deploy endpoint doesn't honor x-org-id in dev-no-auth).
+    bold "[1/4] Using existing contract $CONTRACT_ID (skipping deploy)"
+    CID="$CONTRACT_ID"
+else
+    bold "[1/4] Deploying throwaway contract '$NAME'"
+    CONTRACT_YAML=$(cat <<YAML
 version: "1.0.0"
 name: "$NAME"
 description: "RFC-083 metering perf smoke — throwaway"
@@ -70,16 +79,20 @@ glossary: []
 metrics: []
 YAML
 )
-deploy_body=$(jq -n --arg n "$NAME" --arg y "$CONTRACT_YAML" \
-    '{name:$n, yaml_content:$y, source:"perf-smoke", deployed_by:"perf_metering_smoke.sh"}')
-resp=$(curl -s -w $'\n%{http_code}' -X POST "$HOST/contracts/deploy" "${AUTH[@]}" "${JSON[@]}" -d "$deploy_body")
-status=$(printf '%s' "$resp" | tail -n1)
-json=$(printf '%s' "$resp" | sed '$d')
-if [[ "$status" != "201" ]]; then red "  deploy failed ($status): $json"; exit 1; fi
-CID=$(echo "$json" | jq -r '.contract_id')
+    deploy_body=$(jq -n --arg n "$NAME" --arg y "$CONTRACT_YAML" \
+        '{name:$n, yaml_content:$y, source:"perf-smoke", deployed_by:"perf_metering_smoke.sh"}')
+    resp=$(curl -s -w $'\n%{http_code}' -X POST "$HOST/contracts/deploy" "${AUTH[@]}" "${JSON[@]}" -d "$deploy_body")
+    status=$(printf '%s' "$resp" | tail -n1)
+    json=$(printf '%s' "$resp" | sed '$d')
+    if [[ "$status" != "201" ]]; then
+        red "  deploy failed ($status): $json"
+        red "  (dev-no-auth? the deploy endpoint ignores x-org-id — pass CONTRACT_ID=<existing> instead.)"
+        exit 1
+    fi
+    CID=$(echo "$json" | jq -r '.contract_id')
+fi
 green "  contract_id=$CID"
 
-EVENT='{"id":"perf-smoke"}'
 post() {
     curl -s -o /dev/null -w '%{time_total} %{http_code}\n' \
         -X POST "$HOST/ingest/$CID" "${AUTH[@]}" "${JSON[@]}" -d "$EVENT"
@@ -133,7 +146,11 @@ if [[ "$errors" -gt 0 ]]; then
 fi
 if awk -v v="$p99" -v b="$P99_BUDGET_MS" 'BEGIN{exit !(v>b)}'; then
     red "WARN: steady-state p99 ${p99} ms exceeds budget ${P99_BUDGET_MS} ms."
-    red "      Investigate the metering reads (consider merging plan+usage into one query)."
+    red "      NOTE: on Docker Desktop for Mac, localhost adds a VM/port-proxy tax"
+    red "      (p50 well above ~1 ms means the environment, not metering, dominates)."
+    red "      Isolate metering: rerun with the org set to plan='enterprise' (skips the"
+    red "      counter read). If p99 is ~unchanged, the reads aren't the cost. To collapse"
+    red "      plan+usage into one query, ask — it halves the metered read count."
     exit 2
 fi
 green "PASS: steady-state p99 ${p99} ms within ${P99_BUDGET_MS} ms budget (metering overhead acceptable)."

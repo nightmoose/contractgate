@@ -59,6 +59,35 @@ pub async fn get_monthly_usage_events(
     Ok(row.map(|(e,)| e))
 }
 
+/// One-round-trip read of the org's plan **and** current-period counter, for
+/// the hot-path enforcement check (RFC-083 Phase 2). `plan` is `None` when the
+/// org row is missing; `events` is `None` when no counter row exists yet for
+/// this period (caller bootstraps). Collapses the previous two reads (plan +
+/// counter) into a single indexed query.
+pub async fn get_org_plan_and_usage(
+    pool: &PgPool,
+    org_id: Uuid,
+    period: &str,
+) -> AppResult<(Option<String>, Option<i64>)> {
+    let row: Option<(String, Option<i64>)> = sqlx::query_as(
+        r#"
+        SELECT o.plan, u.events
+        FROM public.orgs o
+        LEFT JOIN public.org_monthly_usage u
+          ON u.org_id = o.id AND u.period = $2
+        WHERE o.id = $1
+        "#,
+    )
+    .bind(org_id)
+    .bind(period)
+    .fetch_optional(pool)
+    .await?;
+    Ok(match row {
+        Some((plan, events)) => (Some(plan), events),
+        None => (None, None),
+    })
+}
+
 /// Ensure a counter row exists for this org/period. If missing, seed from a
 /// live `audit_log` count since `period_start` (one-time cost per org/month).
 /// Returns the current event count.

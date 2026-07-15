@@ -53,33 +53,47 @@ pub async fn enforce_plan_limit(pool: &PgPool, org_id: Option<Uuid>) -> Result<(
     let Some(org_id) = org_id else {
         return Ok(());
     };
-
-    let plan = match storage::get_org_plan(pool, org_id).await {
-        Ok(p) => p.unwrap_or_else(|| "free".to_string()),
-        Err(e) => {
-            tracing::warn!(org_id = %org_id, "RFC-083: plan lookup failed, allowing ingest (fail-open): {e:?}");
-            return Ok(());
-        }
-    };
-    let limit = monthly_event_limit(&plan);
-    if limit.is_none() {
-        return Ok(());
-    }
-
     let period = current_period_key();
-    let period_start = current_month_start();
-    let used = match storage::ensure_monthly_usage(pool, org_id, &period, period_start).await {
-        Ok(u) => u,
+
+    // One round-trip: plan + current-period counter (steady state is a single
+    // indexed read; matches the Enterprise fast path).
+    let (plan_opt, events_opt) = match storage::get_org_plan_and_usage(pool, org_id, &period).await
+    {
+        Ok(t) => t,
         Err(e) => {
-            tracing::warn!(org_id = %org_id, period = %period, "RFC-083: usage read failed, allowing ingest (fail-open): {e:?}");
+            tracing::warn!(org_id = %org_id, "RFC-083: plan/usage lookup failed, allowing ingest (fail-open): {e:?}");
             return Ok(());
         }
     };
 
-    if is_at_or_over_cap(used, limit) {
+    // Unknown org (no row) → unmetered; a missing org can't own a counter anyway.
+    let Some(plan) = plan_opt else {
+        return Ok(());
+    };
+    let Some(limit) = monthly_event_limit(&plan) else {
+        return Ok(()); // Enterprise / unlimited
+    };
+
+    // Fast path: counter row present → no extra read. Otherwise bootstrap once
+    // this month from audit_log.
+    let used = match events_opt {
+        Some(n) => n,
+        None => {
+            let period_start = current_month_start();
+            match storage::ensure_monthly_usage(pool, org_id, &period, period_start).await {
+                Ok(u) => u,
+                Err(e) => {
+                    tracing::warn!(org_id = %org_id, period = %period, "RFC-083: usage bootstrap failed, allowing ingest (fail-open): {e:?}");
+                    return Ok(());
+                }
+            }
+        }
+    };
+
+    if is_at_or_over_cap(used, Some(limit)) {
         return Err(AppError::PlanLimitExceeded {
             plan,
-            limit: limit.unwrap_or(0),
+            limit,
             used,
             period,
         });
