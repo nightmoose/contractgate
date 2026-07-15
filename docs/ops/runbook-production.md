@@ -81,6 +81,7 @@ Set via `fly secrets set` (never commit).
 | `PORT` | No | Default 3001 (matches `fly.toml`) |
 | `RUST_LOG` | No | e.g. `contractgate=info,tower_http=warn` |
 | `SUPABASE_URL` | If pooler breaks JWKS | Explicit project URL for JWKS fetch |
+| `USAGE_RECONCILE_INTERVAL_SECS` | No | RFC-083 counter reconcile period (default `21600` = 6h, min 300) |
 | `CONTRACTGATE_DEV_NO_AUTH` | **Never in prod** | Disables auth when `1` |
 
 Dashboard (Vercel) separately needs Supabase anon/service keys, Stripe, `NEXT_PUBLIC_API_URL`, etc.
@@ -155,7 +156,23 @@ When adding a migration:
 1. Add `supabase/migrations/NNN_*.sql`
 2. Bump `EXPECTED_MIGRATION_COUNT` + sentinel in `.github/workflows/ci.yml`
 3. Document in `MAINTENANCE_LOG.md`
-4. Alex applies to prod Supabase
+4. Alex applies to prod Supabase **before** (or with) the binary that depends on it
+
+**RFC-083 / migration 032:** `org_monthly_usage` must exist for plan caps to
+enforce. Metering **fails open** if the table is missing (ingest continues,
+unmetered), but apply 032 first so Free/Growth limits actually work.
+
+**Drift detection:** scheduled workflow
+[`.github/workflows/migration-drift.yml`](../../.github/workflows/migration-drift.yml)
+(daily + manual) compares repo files to prod `supabase_migrations.schema_migrations`
+via read-only secret `PROD_DATABASE_URL`. Not on the PR path.
+
+One-shot counter repair (up-only vs audit):
+
+```bash
+# Against a DATABASE_URL that can write org_monthly_usage
+cargo run --bin contractgate-server -- usage-reconcile
+```
 
 ---
 
@@ -169,7 +186,8 @@ When adding a migration:
 | Dashboard | Hard-refresh contracts list signed-in |
 | DB | Supabase dashboard status |
 
-**Escalation:** founder / NightMoose — product is pre-public-scale; no 24/7 rotation yet. Document customer-facing SLO only after Growth support commitments.
+**Escalation:** founder / NightMoose — product is pre-public-scale; no 24/7 rotation yet.
+Customer-facing targets: [Support SLA](../support-sla.md).
 
 ---
 

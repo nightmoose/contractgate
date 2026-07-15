@@ -150,3 +150,41 @@ pub async fn increment_monthly_usage(
     .await?;
     Ok(events)
 }
+
+/// Reconcile `org_monthly_usage` for the given period against live `audit_log`
+/// counts. **Up-only:** `events = GREATEST(events, audit_count)` so a late
+/// bootstrap or fire-and-forget under-count is repaired without erasing
+/// counters that may include rows not yet (or never) in audit.
+///
+/// Returns the number of org rows that were inserted or raised.
+pub async fn reconcile_monthly_usage_from_audit(
+    pool: &PgPool,
+    period: &str,
+    period_start: chrono::DateTime<chrono::Utc>,
+) -> AppResult<u64> {
+    // One statement: seed missing rows and raise any counter that drifted
+    // below the audit truth for this UTC month.
+    let result = sqlx::query(
+        r#"
+        WITH counts AS (
+            SELECT org_id, count(*)::bigint AS n
+            FROM public.audit_log
+            WHERE org_id IS NOT NULL
+              AND created_at >= $1
+            GROUP BY org_id
+        )
+        INSERT INTO public.org_monthly_usage (org_id, period, events)
+        SELECT c.org_id, $2, c.n
+        FROM counts c
+        ON CONFLICT (org_id, period) DO UPDATE
+          SET events = GREATEST(org_monthly_usage.events, EXCLUDED.events),
+              updated_at = now()
+        WHERE org_monthly_usage.events < EXCLUDED.events
+        "#,
+    )
+    .bind(period_start)
+    .bind(period)
+    .execute(pool)
+    .await?;
+    Ok(result.rows_affected())
+}

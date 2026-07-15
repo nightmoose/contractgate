@@ -73,10 +73,14 @@ curl -H "x-api-key: $KEY" https://contractgate-api.fly.dev/usage
 
 - `used` prefers the O(1) `org_monthly_usage` counter (migration 032), bootstrapped
   once per org/month from `audit_log` if the row is missing.
-- Billable unit = validated HTTP events (pass or fail). Normal path increments
-  after a successful audit write (same spawn). Envelope path increments from
-  `passed + quarantined` without writing audit (legacy short-circuit).
-- Not billable: `dry_run`, self-hosted (no org), Kafka/Kinesis streaming (v1).
+- Billable unit = validated **HTTP** events (pass or fail), including envelope
+  (MRI) records. Increment runs after a successful audit write (same spawn).
+- A background **reconcile** (default 6h) raises any counter that drifted below
+  the live `audit_log` count for the UTC month (`GREATEST` — never decreases).
+  One-shot: `cargo run --bin contractgate-server -- usage-reconcile`.
+- Not billable / not metered in v1: `dry_run`, self-hosted (no org),
+  **Kafka/Kinesis streaming** (prefer Enterprise; Growth stream traffic will
+  under-report `/usage` until org-stamped stream audit lands).
 
 ### Plan-limit 429 body (Phase 2)
 

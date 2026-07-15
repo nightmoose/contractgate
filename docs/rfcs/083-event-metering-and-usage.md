@@ -72,18 +72,24 @@ Response:
   so enforcement actually works.
 - **`dry_run` is not billable:** cap check is skipped when `?dry_run=true` so
   over-cap orgs can still validate.
-- **Increment:** on the normal HTTP path, UPSERT runs in the *same* `tokio::spawn`
-  as the audit write (only after audit succeeds) so crash/restart under-counts
-  both together rather than diverging. Envelope path (no audit today) uses its
-  own fire-and-forget spawn.
-- **Envelope (MRI/Findigs) is billable:** `passed + quarantined` records are
-  counted even though the legacy short-circuit still skips `audit_log` (pre-
-  existing audit gap; meter independently so caps stay honest).
-- **Kafka / Kinesis unmetered in v1:** streaming ingress does not check or
-  increment the counter (429-ing a consumer loop is impractical). Prefer
-  Enterprise for streaming orgs so the gap is moot; document that `/usage` may
-  under-report for Free/Growth streaming traffic. Follow-up: increment only
-  (no 429) on stream paths if Growth needs streaming.
+- **Increment:** on the HTTP path (including envelope), UPSERT runs in the
+  *same* `tokio::spawn` as the audit write (only after audit succeeds) so
+  crash/restart under-counts both together rather than diverging.
+- **Envelope (MRI/Findigs) is billable and audited:** per-record
+  audit/quarantine/forward after `validate_envelope_batch` (P0 fix), then
+  meter from audit row count.
+- **Kafka / Kinesis unmetered in v1 (product decision):** streaming ingress does
+  not enforce the cap and does not increment the counter (429 on a consumer
+  loop is impractical). Stream audit rows currently store `org_id = NULL`, so
+  they also do not seed `/usage`. **Prefer Enterprise** for streaming orgs
+  (unlimited → gap moot). Growth may enable Kafka/Kinesis UI tabs, but
+  Free/Growth stream traffic under-reports usage until a follow-up wires
+  contract→org_id + increment-only on stream paths.
+- **Reconcile job:** background task (default every 6h, env
+  `USAGE_RECONCILE_INTERVAL_SECS`) and CLI `usage-reconcile` raise counters
+  with `events = GREATEST(events, audit_count)` for the current UTC month —
+  up-only so fire-and-forget under-count is repaired without erasing higher
+  counters.
 - Batch that *crosses* the cap while still under is allowed once
   (`used < limit` before the batch).
 - Enterprise / no-org (self-host): never blocked.
@@ -106,8 +112,8 @@ Response:
 
 - Counting *validated HTTP events* (pass or fail). Phase 1 live-count used
   `audit_log`; Phase 2 prefers `org_monthly_usage`, bootstrapped once from audit.
-  Envelope traffic is billable but not yet audited (pre-existing gap).
+  Envelope traffic is billable and audited (per-record durable path).
 - Self-hosted (no org) is unmetered; `/usage` requires org context (401 in prod
   without it).
-- Soft-quota v1 accepts rare async under-count (process death after response)
-  and rare bootstrap over-count; optional later: reconcile job from `audit_log`.
+- Soft-quota v1 accepts rare async under-count until the next reconcile cycle;
+  rare bootstrap over-count remains bounded.

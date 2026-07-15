@@ -1,0 +1,102 @@
+# Prod migration-drift check (dual-sell #17 / next-steps P1 #5).
+#
+# Compares supabase/migrations/*.sql filenames to the prod ledger
+# `supabase_migrations.schema_migrations` via a read-only DATABASE URL.
+#
+# NOT on the PR path — secrets on fork PRs are a risk. Daily cron + manual.
+# Skips cleanly when PROD_DATABASE_URL is not configured (local forks / dry org).
+
+name: Prod migration drift
+
+on:
+  schedule:
+    # 13:00 UTC daily (~09:00 ET)
+    - cron: "0 13 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  compare:
+    name: Compare repo migrations vs prod ledger
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Require secret or skip
+        id: gate
+        env:
+          PROD_DATABASE_URL: ${{ secrets.PROD_DATABASE_URL }}
+        run: |
+          if [[ -z "${PROD_DATABASE_URL}" ]]; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            echo "::notice::PROD_DATABASE_URL secret not set — skipping drift check (configure a read-only Supabase URL to enable)."
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Install psql
+        if: steps.gate.outputs.skip != 'true'
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq postgresql-client
+
+      - name: Diff migrations
+        if: steps.gate.outputs.skip != 'true'
+        env:
+          PROD_DATABASE_URL: ${{ secrets.PROD_DATABASE_URL }}
+        run: |
+          set -euo pipefail
+
+          # Repo versions: leading NNN from NNN_description.sql
+          ls -1 supabase/migrations/*.sql \
+            | xargs -n1 basename \
+            | sed -E 's/^([0-9]+)_.*\.sql$/\1/' \
+            | sort -n \
+            > /tmp/repo_versions.txt
+
+          # Prod ledger: supabase CLI / hosted use version = NNN (numeric string)
+          # Also tolerate full filenames if present.
+          psql "$PROD_DATABASE_URL" -v ON_ERROR_STOP=1 -At -c \
+            "SELECT version FROM supabase_migrations.schema_migrations ORDER BY version" \
+            > /tmp/prod_raw.txt
+
+          # Normalize prod to bare NNN when version looks like 032_foo or 32
+          sed -E 's/^([0-9]+).*/\1/' /tmp/prod_raw.txt \
+            | sed 's/^0*//' \
+            | awk '{ printf "%03d\n", $1+0 }' \
+            | sort -n \
+            | uniq \
+            > /tmp/prod_versions.txt
+
+          # Normalize repo the same way
+          sed 's/^0*//' /tmp/repo_versions.txt \
+            | awk '{ printf "%03d\n", $1+0 }' \
+            | sort -n \
+            > /tmp/repo_norm.txt
+
+          echo "=== Repo migrations ==="
+          cat /tmp/repo_norm.txt
+          echo "=== Prod ledger ==="
+          cat /tmp/prod_versions.txt
+
+          # Missing in prod (in repo, not in prod) — the dangerous Stripe-class gap
+          missing=$(comm -23 /tmp/repo_norm.txt /tmp/prod_versions.txt || true)
+          # Extra in prod (applied but not in repo) — unusual, flag only
+          extra=$(comm -13 /tmp/repo_norm.txt /tmp/prod_versions.txt || true)
+
+          fail=0
+          if [[ -n "$missing" ]]; then
+            echo "::error::Migrations present in repo but missing from prod ledger:"
+            echo "$missing"
+            fail=1
+          fi
+          if [[ -n "$extra" ]]; then
+            echo "::warning::Migrations in prod ledger but not in repo (investigate):"
+            echo "$extra"
+          fi
+
+          if [[ "$fail" -ne 0 ]]; then
+            echo "Drift detected. Apply missing files to prod (operator) then re-run."
+            exit 1
+          fi
+          echo "OK — prod ledger matches repo migration set."
