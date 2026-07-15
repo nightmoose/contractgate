@@ -624,6 +624,17 @@ async fn deploy_contract_handler(
     req: axum::extract::Request,
 ) -> AppResult<(StatusCode, Json<DeployContractResponse>)> {
     let org_id = org_id_from_req(&req);
+    // Same dev-gated x-org-id fallback as create_contract_handler: contracts.org_id
+    // is NOT NULL, so deploy with org_id=None 500s in compose/dev-no-auth. Only when
+    // !auth_configured() — never in prod (RFC-048: x-org-id not trusted).
+    let org_id = if org_id.is_none() && !state.auth_configured() {
+        req.headers()
+            .get("x-org-id")
+            .and_then(|v| v.to_str().ok())
+            .and_then(|s| Uuid::parse_str(s).ok())
+    } else {
+        org_id
+    };
     let Json(body): Json<DeployContractRequest> = axum::Json::from_request(req, &state)
         .await
         .map_err(|e| AppError::BadRequest(e.to_string()))?;

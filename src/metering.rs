@@ -105,6 +105,10 @@ pub async fn enforce_plan_limit(pool: &PgPool, org_id: Option<Uuid>) -> Result<(
 /// Prefer [`record_batch_usage_blocking`] when already inside the audit spawn
 /// so audit + meter stay ordered together.
 /// Safe to call when `org_id` is None (no-op).
+///
+/// Kept for paths without an existing spawn (e.g. future stream metering).
+/// HTTP ingest uses the blocking form inside the audit task.
+#[allow(dead_code)]
 pub fn record_batch_usage(pool: PgPool, org_id: Option<Uuid>, event_count: usize) {
     let Some(org_id) = org_id else {
         return;

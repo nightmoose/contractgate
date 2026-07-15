@@ -33,6 +33,9 @@
 //!      payload is what gets persisted/forwarded; the original is dropped).
 //!   5. Persist audit rows for every event, quarantine rows for failures,
 //!      and forward passing events to the configured sink — all batched.
+//!      Envelope contracts (RFC-038) take the same durable path after
+//!      `validate_envelope_batch` so pilot report / quarantine / replay
+//!      work for MRI-style ICP traffic.
 //!
 //! ### Version resolution (RFC-002)
 //! Order of precedence for picking which `contract_versions` row to use:
@@ -91,13 +94,13 @@ use serde_json::{json, Value};
 use std::sync::Arc;
 use uuid::Uuid;
 
-use crate::contract::{ContractIdentity, MultiStableResolution, VersionState};
+use crate::contract::{ContractIdentity, EnvelopeConfig, MultiStableResolution, VersionState};
 use crate::error::{AppError, AppResult};
 use crate::storage;
 use crate::transform::{apply_transforms, TransformedPayload};
 use crate::validation::{
-    check_uniqueness_batch, validate, validate_envelope_batch, BatchValidationResult,
-    CompiledContract, ValidationResult,
+    check_uniqueness_batch, validate, validate_envelope_batch, BatchRecordViolation,
+    BatchValidationResult, CompiledContract, ValidationResult, Violation,
 };
 use crate::AppState;
 use std::collections::HashMap;
@@ -336,11 +339,11 @@ pub async fn ingest_handler(
     let mut compiled_by_version: HashMap<String, Arc<CompiledContract>> = HashMap::new();
     compiled_by_version.insert(resolved_version.clone(), Arc::clone(&compiled));
 
-    // --- RFC-038: envelope contract short-circuit ----------------------------
+    // --- RFC-038: envelope contract path -------------------------------------
     // When the contract declares an `envelope` stanza the inbound payload is a
     // single JSON object wrapping a records array (e.g. MRI MIX API responses).
-    // We route directly to `validate_envelope_batch` and return a batch result
-    // without going through the per-record validation / fallback / audit path.
+    // Validate via `validate_envelope_batch`, then persist audit + quarantine
+    // per record so pilot report / quarantine tab / replay work for MRI ICP.
     if let Some(envelope_cfg) = compiled.contract.envelope.clone() {
         if events.len() != 1 {
             return Err(AppError::BadRequest(
@@ -361,13 +364,33 @@ pub async fn ingest_handler(
             "envelope batch validated"
         );
 
-        // RFC-083: envelope traffic is billable (MRI/Findigs-style ICP). The
-        // legacy envelope short-circuit still skips audit_log (pre-existing);
-        // we still count validated records so plan caps stay honest. Not dry_run
-        // here — envelope path has no dry_run short-circuit above.
+        // dry_run: validate only. atomic + any fail: summary audit only (same
+        // semantics as the per-record path), no per-record persist.
+        // RFC-083: envelope is billable — metering runs inside the audit spawn
+        // after a successful write (same coupling as the non-envelope path).
         if !query.dry_run {
-            let n = result.passed.saturating_add(result.quarantined);
-            crate::metering::record_batch_usage(state.db.clone(), org_id, n);
+            if query.atomic && result.quarantined > 0 {
+                write_envelope_atomic_rejected_audit(
+                    &state,
+                    contract_id,
+                    org_id,
+                    &resolved_version,
+                    &result,
+                    source_ip.as_deref(),
+                );
+            } else if !query.atomic {
+                persist_envelope_batch(
+                    &state,
+                    contract_id,
+                    org_id,
+                    &resolved_version,
+                    &compiled,
+                    &envelope_cfg,
+                    payload,
+                    &result,
+                    source_ip.clone(),
+                );
+            }
         }
 
         return Ok(axum::Json(result).into_response());
@@ -932,6 +955,287 @@ fn write_batch_rejected_audit(
 }
 
 // ---------------------------------------------------------------------------
+// Envelope (RFC-038) audit / quarantine persistence
+// ---------------------------------------------------------------------------
+
+/// Map envelope batch violations into per-record `Violation` lists.
+///
+/// Wrapper-level failures (missing `data`, bad `success`/`pagination`, non-object
+/// root) assign the same violation set to every extracted record so quarantine
+/// still has inspectable row payloads. Structural failures with no extractable
+/// records fall back to a single synthetic row over the raw envelope.
+fn envelope_per_record_results(
+    envelope_cfg: &EnvelopeConfig,
+    payload: &Value,
+    batch: &BatchValidationResult,
+) -> Vec<(Value, ValidationResult)> {
+    let records: Option<Vec<Value>> = payload
+        .as_object()
+        .and_then(|o| o.get(&envelope_cfg.records_path))
+        .and_then(|v| v.as_array())
+        .cloned();
+
+    let wrapper_level = batch.violations.iter().all(|v| {
+        v.field == "<root>"
+            || v.field == "success"
+            || v.field.starts_with("pagination")
+            || v.field == envelope_cfg.records_path
+    }) && !batch.violations.is_empty()
+        && batch.passed == 0;
+
+    let to_violation = |v: &BatchRecordViolation| Violation {
+        field: v.field.clone(),
+        message: v.message.clone(),
+        kind: v.kind.clone(),
+    };
+
+    match records {
+        Some(records) if records.is_empty() => {
+            // Valid empty `data: []` — nothing to audit or quarantine.
+            Vec::new()
+        }
+        Some(records) => {
+            let mut by_idx: HashMap<usize, Vec<Violation>> = HashMap::new();
+            if !wrapper_level {
+                for v in &batch.violations {
+                    by_idx
+                        .entry(v.record_index)
+                        .or_default()
+                        .push(to_violation(v));
+                }
+            }
+            let shared_wrapper: Vec<Violation> = if wrapper_level {
+                batch.violations.iter().map(to_violation).collect()
+            } else {
+                Vec::new()
+            };
+
+            records
+                .into_iter()
+                .enumerate()
+                .map(|(idx, record)| {
+                    let violations = if wrapper_level {
+                        shared_wrapper.clone()
+                    } else {
+                        by_idx.remove(&idx).unwrap_or_default()
+                    };
+                    let passed = violations.is_empty();
+                    (
+                        record,
+                        ValidationResult {
+                            passed,
+                            violations,
+                            validation_us: batch.validation_us,
+                        },
+                    )
+                })
+                .collect()
+        }
+        None => {
+            // No extractable records (malformed envelope). One durable row so
+            // the quarantine tab / pilot report are not empty.
+            let violations: Vec<Violation> = if batch.violations.is_empty() {
+                vec![Violation {
+                    field: envelope_cfg.records_path.clone(),
+                    message: "Envelope produced no extractable records".into(),
+                    kind: crate::validation::ViolationKind::MissingRequiredField,
+                }]
+            } else {
+                batch.violations.iter().map(to_violation).collect()
+            };
+            vec![(
+                payload.clone(),
+                ValidationResult {
+                    passed: false,
+                    violations,
+                    validation_us: batch.validation_us,
+                },
+            )]
+        }
+    }
+}
+
+/// Fire-and-forget audit + quarantine (+ forward) for an envelope batch.
+/// Mirrors the per-record path so MRI/Findigs envelope traffic produces the
+/// same pilot-report and quarantine/replay artifacts.
+#[allow(clippy::too_many_arguments)]
+fn persist_envelope_batch(
+    state: &AppState,
+    contract_id: Uuid,
+    org_id: Option<Uuid>,
+    contract_version: &str,
+    compiled: &CompiledContract,
+    envelope_cfg: &EnvelopeConfig,
+    payload: &Value,
+    batch: &BatchValidationResult,
+    source_ip: Option<String>,
+) {
+    let per_record = envelope_per_record_results(envelope_cfg, payload, batch);
+    if per_record.is_empty() {
+        return;
+    }
+
+    // Transform once per record; reuse for audit / quarantine / forward.
+    let prepared: Vec<(TransformedPayload, &ValidationResult)> = per_record
+        .iter()
+        .map(|(record, vr)| (apply_transforms(compiled, record.clone()), vr))
+        .collect();
+
+    let audit_rows: Vec<storage::AuditEntryInsert> = prepared
+        .iter()
+        .map(|(transformed, vr)| storage::AuditEntryInsert {
+            contract_id,
+            org_id,
+            contract_version: contract_version.to_string(),
+            passed: vr.passed,
+            violation_count: vr.violations.len() as i32,
+            violation_details: serde_json::to_value(&vr.violations)
+                .unwrap_or_else(|_| Value::Array(vec![])),
+            raw_event: transformed.clone(),
+            validation_us: vr.validation_us as i64,
+            source_ip: source_ip.clone(),
+            source: "http".to_string(),
+            pre_assigned_id: None,
+            replay_of_quarantine_id: None,
+            direction: "ingress".to_string(),
+        })
+        .collect();
+
+    let quarantine_rows: Vec<storage::QuarantineEventInsert> = prepared
+        .iter()
+        .filter(|(_, vr)| !vr.passed)
+        .map(|(transformed, vr)| storage::QuarantineEventInsert {
+            contract_id,
+            contract_version: contract_version.to_string(),
+            payload: transformed.clone(),
+            violation_count: vr.violations.len() as i32,
+            violation_details: serde_json::to_value(&vr.violations)
+                .unwrap_or_else(|_| Value::Array(vec![])),
+            validation_us: vr.validation_us as i64,
+            source_ip: source_ip.clone(),
+            replay_of_quarantine_id: None,
+            pre_assigned_id: None,
+            direction: "ingress".to_string(),
+        })
+        .collect();
+
+    let forward_rows: Vec<storage::ForwardEventInsert> = prepared
+        .iter()
+        .filter(|(_, vr)| vr.passed)
+        .map(|(transformed, _)| storage::ForwardEventInsert {
+            contract_id,
+            contract_version: contract_version.to_string(),
+            payload: transformed.clone(),
+        })
+        .collect();
+
+    {
+        let cid = contract_id.to_string();
+        for (_, vr) in &prepared {
+            for violation in &vr.violations {
+                let kind = serde_json::to_string(&violation.kind)
+                    .unwrap_or_default()
+                    .trim_matches('"')
+                    .to_string();
+                metrics::counter!(
+                    "contractgate_violations_total",
+                    "contract_id" => cid.clone(),
+                    "kind" => kind,
+                )
+                .increment(1);
+            }
+        }
+        if !quarantine_rows.is_empty() {
+            metrics::counter!(
+                "contractgate_quarantined_total",
+                "contract_id" => cid,
+            )
+            .increment(quarantine_rows.len() as u64);
+        }
+    }
+
+    if !audit_rows.is_empty() {
+        // RFC-083: meter in the same spawn after audit succeeds so crash
+        // under-counts both together (envelope is billable MRI/Findigs traffic).
+        let n = audit_rows.len();
+        let pool = state.db.clone();
+        let meter_org = org_id;
+        tokio::spawn(async move {
+            if let Err(e) = storage::log_audit_entries_batch(&pool, &audit_rows).await {
+                tracing::warn!("envelope: failed to write batch audit log: {e:?}");
+                return;
+            }
+            crate::metering::record_batch_usage_blocking(&pool, meter_org, n).await;
+        });
+    }
+    if !quarantine_rows.is_empty() {
+        let pool = state.db.clone();
+        tokio::spawn(async move {
+            if let Err(e) = storage::quarantine_events_batch(&pool, &quarantine_rows).await {
+                tracing::warn!("envelope: failed to batch-quarantine events: {e:?}");
+            }
+        });
+    }
+    if !forward_rows.is_empty() {
+        let pool = state.db.clone();
+        let row_count = forward_rows.len();
+        tokio::spawn(async move {
+            if let Err(e) = storage::forward_events_batch(&pool, &forward_rows).await {
+                tracing::warn!("envelope: failed to batch-forward {row_count} events: {e:?}");
+            }
+        });
+    }
+}
+
+/// Atomic envelope rejection: one summary audit row (no per-record quarantine).
+fn write_envelope_atomic_rejected_audit(
+    state: &AppState,
+    contract_id: Uuid,
+    org_id: Option<Uuid>,
+    contract_version: &str,
+    batch: &BatchValidationResult,
+    source_ip: Option<&str>,
+) {
+    let details = serde_json::to_value(&batch.violations).unwrap_or_else(|_| Value::Array(vec![]));
+    let summary = json!({
+        "batch_rejected": true,
+        "atomic": true,
+        "envelope": true,
+        "passed": batch.passed,
+        "quarantined": batch.quarantined,
+        "violation_count": batch.violations.len(),
+    });
+    let pool = state.db.clone();
+    let source_ip_owned = source_ip.map(|s| s.to_string());
+    let version = contract_version.to_string();
+    let violation_count = batch.quarantined as i32;
+    let summary_payload = TransformedPayload::from_stored(summary);
+
+    tokio::spawn(async move {
+        if let Err(e) = storage::log_audit_entry(
+            &pool,
+            contract_id,
+            org_id,
+            &version,
+            false,
+            violation_count,
+            details,
+            summary_payload,
+            0,
+            source_ip_owned.as_deref(),
+            "http",
+            "ingress",
+        )
+        .await
+        {
+            tracing::warn!(
+                "envelope: failed to write atomic batch-rejected audit for contract {contract_id}: {e:?}"
+            );
+        }
+    });
+}
+
+// ---------------------------------------------------------------------------
 // Handler: GET /ingest/{contract_id}/stats
 // ---------------------------------------------------------------------------
 
@@ -948,6 +1252,102 @@ pub async fn ingest_stats_handler(
 // ---------------------------------------------------------------------------
 // Tests for path parsing (pure function, no DB needed)
 // ---------------------------------------------------------------------------
+
+#[cfg(test)]
+mod envelope_persist_tests {
+    use super::*;
+    use crate::validation::ViolationKind;
+
+    fn cfg() -> EnvelopeConfig {
+        EnvelopeConfig {
+            records_path: "data".into(),
+            validate_wrapper: false,
+        }
+    }
+
+    #[test]
+    fn per_record_split_pass_and_fail() {
+        let payload = json!({
+            "data": [
+                {"id": 1},
+                {"id": 2}
+            ]
+        });
+        let batch = BatchValidationResult {
+            passed: 1,
+            quarantined: 1,
+            violations: vec![BatchRecordViolation {
+                record_index: 1,
+                field: "id".into(),
+                message: "bad".into(),
+                kind: ViolationKind::TypeMismatch,
+            }],
+            validation_us: 42,
+        };
+        let rows = envelope_per_record_results(&cfg(), &payload, &batch);
+        assert_eq!(rows.len(), 2);
+        assert!(rows[0].1.passed);
+        assert!(!rows[1].1.passed);
+        assert_eq!(rows[1].1.violations.len(), 1);
+    }
+
+    #[test]
+    fn wrapper_failure_applies_to_all_records() {
+        let payload = json!({
+            "success": "nope",
+            "data": [{"id": 1}, {"id": 2}]
+        });
+        let batch = BatchValidationResult {
+            passed: 0,
+            quarantined: 2,
+            violations: vec![BatchRecordViolation {
+                record_index: 0,
+                field: "success".into(),
+                message: "must be boolean".into(),
+                kind: ViolationKind::TypeMismatch,
+            }],
+            validation_us: 1,
+        };
+        let rows = envelope_per_record_results(&cfg(), &payload, &batch);
+        assert_eq!(rows.len(), 2);
+        assert!(rows.iter().all(|(_, vr)| !vr.passed));
+        assert!(rows
+            .iter()
+            .all(|(_, vr)| vr.violations[0].field == "success"));
+    }
+
+    #[test]
+    fn malformed_envelope_single_row() {
+        let payload = json!("not-an-object");
+        let batch = BatchValidationResult {
+            passed: 0,
+            quarantined: 1,
+            violations: vec![BatchRecordViolation {
+                record_index: 0,
+                field: "<root>".into(),
+                message: "must be object".into(),
+                kind: ViolationKind::TypeMismatch,
+            }],
+            validation_us: 1,
+        };
+        let rows = envelope_per_record_results(&cfg(), &payload, &batch);
+        assert_eq!(rows.len(), 1);
+        assert!(!rows[0].1.passed);
+    }
+
+    #[test]
+    fn empty_data_array_no_rows() {
+        let payload = json!({ "data": [] });
+        let batch = BatchValidationResult {
+            passed: 0,
+            quarantined: 0,
+            violations: vec![],
+            validation_us: 1,
+        };
+        let rows = envelope_per_record_results(&cfg(), &payload, &batch);
+        assert!(rows.is_empty());
+    }
+}
 
 #[cfg(test)]
 mod path_tests {
