@@ -174,11 +174,12 @@ bytes = "1.11.1"
 
 # RFC-039: Supabase JWT verification for dashboard browser sessions.
 # `use_pem` — PEM decoding for JWKS keys.
-# `rust_crypto` — pure-Rust crypto backend required by jsonwebtoken 10.
-# Without it, the first Bearer JWT verify panics:
-#   "Could not automatically determine the process-level CryptoProvider"
-# which SIGABRTs the process → Fly crash-loop → 502 (browser reports as CORS).
-jsonwebtoken = { version = "10", features = ["use_pem", "rust_crypto"] }
+# jsonwebtoken 10 requires exactly one crypto backend feature.
+# Prefer `aws_lc_rs` over `rust_crypto`: the latter pulls `rsa` 0.9.x which
+# is RUSTSEC-advised (Marvin Attack timing sidechannel) with no safe upgrade.
+# `aws_lc_rs` uses AWS-LC and does not depend on that `rsa` crate.
+# Without any crypto feature, Bearer JWT verify panics → SIGABRT → Fly 502.
+jsonwebtoken = { version = "10", default-features = false, features = ["use_pem", "aws_lc_rs"] }
 
 # RFC-052: lock-free atomic swap for the live JWKS key set so the background
 # refresh task can replace it without blocking request handlers.

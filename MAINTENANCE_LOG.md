@@ -2,6 +2,35 @@
 
 ---
 
+## Run: 2026-07-15 — cargo-deny: jsonwebtoken `aws_lc_rs` (drop advised `rsa`)
+
+**Scope:** CI `Security — audit / deny / container scan` fails after PR #141.
+**Branch:** `nightly-maintenance-2026-07-15-jwt-aws-lc`
+
+### Cause
+`jsonwebtoken` feature `rust_crypto` pulls `rsa` 0.9.x → **RUSTSEC-2023-0071**
+(Marvin Attack timing sidechannel). Advisory: no safe upgrade of `rsa`.
+`cargo deny check advisories` hard-fails.
+
+Also warns on yanked `spin` 0.9.8 (transitive); advisories were the exit-1.
+
+### Fix
+```toml
+jsonwebtoken = { version = "10", default-features = false, features = ["use_pem", "aws_lc_rs"] }
+```
+AWS-LC backend; removes `rsa` from the tree (`cargo tree -i rsa` empty). Still
+satisfies jsonwebtoken 10's required crypto provider (no CryptoProvider panic).
+
+**Build note:** `aws-lc-sys` needs C/cmake. Already present in Fly Dockerfile
+(rdkafka) and GitHub Actions runners.
+
+### Verify
+- `cargo check --bin contractgate-server`
+- `cargo tree -i rsa` → none
+- CI Security job green after merge/deploy of this PR
+
+---
+
 ## Run: 2026-07-14 — P0: jsonwebtoken 10 CryptoProvider panic (prod 502)
 
 **Scope:** Production API crash-looping on every dashboard Bearer JWT request.
