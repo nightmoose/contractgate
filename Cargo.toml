@@ -173,8 +173,12 @@ aws-config = { version = "1", optional = true, default-features = false, feature
 bytes = "1.11.1"
 
 # RFC-039: Supabase JWT verification for dashboard browser sessions.
-# `jwk` feature enables JWK/JWKS support for RS256 key sets.
-jsonwebtoken = { version = "10", features = ["use_pem"] }
+# `use_pem` — PEM decoding for JWKS keys.
+# `rust_crypto` — pure-Rust crypto backend required by jsonwebtoken 10.
+# Without it, the first Bearer JWT verify panics:
+#   "Could not automatically determine the process-level CryptoProvider"
+# which SIGABRTs the process → Fly crash-loop → 502 (browser reports as CORS).
+jsonwebtoken = { version = "10", features = ["use_pem", "rust_crypto"] }
 
 # RFC-052: lock-free atomic swap for the live JWKS key set so the background
 # refresh task can replace it without blocking request handlers.

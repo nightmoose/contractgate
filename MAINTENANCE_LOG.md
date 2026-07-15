@@ -2,8 +2,41 @@
 
 ---
 
-<<<<<<< Updated upstream
-=======
+## Run: 2026-07-14 — P0: jsonwebtoken 10 CryptoProvider panic (prod 502)
+
+**Scope:** Production API crash-looping on every dashboard Bearer JWT request.
+**Branch:** `nightly-maintenance-2026-07-14-jwt-crypto-provider`
+**Symptom:** Browser shows CORS errors + 502 on `GET /contracts`; Fly machines
+`stopped` after max restart count.
+
+### Root cause
+`jsonwebtoken` was bumped 9 → 10 with only `features = ["use_pem"]`. In v10,
+crypto requires an explicit backend feature (`rust_crypto` or `aws_lc_rs`).
+Without it, the first Bearer JWT verify panics:
+
+```
+thread 'tokio-rt-worker' panicked at jsonwebtoken-10.4.0/src/crypto/mod.rs:125:42:
+Could not automatically determine the process-level CryptoProvider
+```
+
+Release profile uses `panic = "abort"` → SIGABRT → Fly restarts → after 10
+restarts machine stays stopped → proxy 502 with **no** CORS headers → Chrome
+reports "blocked by CORS". Unauthenticated `/health` kept returning 200,
+masking the outage until a logged-in dashboard hit `/contracts`.
+
+### Fix
+```toml
+jsonwebtoken = { version = "10", features = ["use_pem", "rust_crypto"] }
+```
+Pure-Rust backend; no system OpenSSL. Also cleaned leftover merge-conflict
+markers in this log from the RFC-081 merge.
+
+### Verify
+- `cargo check --bin contractgate-server`
+- After deploy: machines `started`; dashboard `/contracts` loads when signed in.
+
+---
+
 ## Run: 2026-07-14 — RFC-081 quarantine list + replay reconciliation
 
 **Scope:** fix the dashboard Quarantine tab, which was wired to backend routes
@@ -61,7 +94,6 @@ that never existed (no list endpoint; path + payload mismatch on replay).
 
 ---
 
->>>>>>> Stashed changes
 ## Run: 2026-07-13 — Dependabot follow-ups (aes-gcm / tower-http / AWS TLS / config)
 
 **Scope:** Dependabot hygiene + the major upgrades Dependabot couldn't land green (#133/#134 closed; #130 already merged).
