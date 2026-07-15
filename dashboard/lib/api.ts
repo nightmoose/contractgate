@@ -336,6 +336,20 @@ export interface ReplayResponse {
 // Contracts — identity-level CRUD
 // ---------------------------------------------------------------------------
 
+// Usage / metering (RFC-083). `limit`/`remaining`/`pct` are null for unlimited
+// (Enterprise); `unlimited` is the explicit flag.
+export interface UsageResponse {
+  plan: string;
+  period_start: string;
+  used: number;
+  limit: number | null;
+  remaining: number | null;
+  pct: number | null;
+  unlimited: boolean;
+}
+
+export const getUsage = () => apiFetch<UsageResponse>("/usage");
+
 export const listContracts = () => apiFetch<ContractSummary[]>("/contracts");
 
 export const getContract = (id: string) =>

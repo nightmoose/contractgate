@@ -2,6 +2,29 @@
 
 ---
 
+## Run: 2026-07-15 — RFC-083 Phase 3 (dashboard usage widget)
+
+**Scope:** dual-sell #7 — make metering visible. Frontend only; reads the
+already-merged `GET /usage`.
+**Branch:** `nightly-maintenance-2026-07-15-rfc083-widget`
+
+### What shipped
+1. **`components/UsageWidget.tsx`** — SWR-backed card: events used / plan limit,
+   progress bar (green→amber≥80%→red at cap), upgrade CTA to `/pricing` when
+   near/over limit, "Unlimited" for Enterprise. Non-fatal on load error.
+2. **`lib/api.ts`** — `UsageResponse` type + `getUsage()`.
+3. **`app/account/page.tsx`** — widget placed in the Billing section (org-only).
+
+### Verified
+- `npx tsc --noEmit` clean. (Run `npm run build` in CI as usual.)
+
+### Still open
+- **Phase 2 enforcement** — ingest 429 at the cap + cached counter. Deferred on
+  purpose: it touches the validation hot path (multiple ingest branches) and
+  needs a live p99 smoke, which the check sandbox can't run.
+
+---
+
 ## Run: 2026-07-15 — RFC-083 event metering, Phase 1 (usage read API)
 
 **Scope:** dual-sell #5–7 commercial spine, read-side first. No migration, **no
