@@ -69,6 +69,7 @@ mod kinesis_consumer;
 mod kinesis_ingress;
 pub mod observability;
 mod odcs;
+mod plan;
 mod public_catalog;
 mod publication;
 mod quarantine;
@@ -76,12 +77,14 @@ mod quarantine;
 mod rag_contract_tests;
 mod rate_limit;
 mod replay;
+mod report;
 mod scaffold_handler;
 mod scorecard;
 mod storage;
 mod stream_demo;
 #[cfg(test)]
 mod tests;
+mod usage;
 mod v1_ingest;
 
 use contract::{
@@ -1338,6 +1341,10 @@ fn build_router(state: Arc<AppState>) -> Router {
             "/contracts/{id}/quarantine/{quar_id}/replay-history",
             get(replay::replay_history_handler),
         )
+        // Exportable pilot report (RFC-082) — JSON or CSV, org-scoped.
+        .route("/contracts/{id}/report", get(report::report_handler))
+        // Per-org event usage vs plan limit (RFC-083 Phase 1).
+        .route("/usage", get(usage::usage_handler))
         // Org-scoped top-level quarantine API (RFC-081) — backs the dashboard
         // Quarantine tab: list, replay-by-event-id, and per-event history.
         .route("/quarantine", get(quarantine::list_quarantine_handler))

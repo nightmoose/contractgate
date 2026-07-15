@@ -2724,6 +2724,208 @@ metrics: []
             .unwrap();
     }
 
+    /// RFC-082: the pilot-report aggregation computes correct per-version
+    /// pass/quarantine counts and top violations over the audit log.
+    #[tokio::test]
+    #[ignore = "requires DATABASE_URL and a live Supabase/Postgres instance"]
+    async fn pilot_report_aggregation() {
+        let db_url = std::env::var("DATABASE_URL").expect("DATABASE_URL must be set");
+        let pool = sqlx::PgPool::connect(&db_url).await.unwrap();
+
+        let org_a = uuid::Uuid::new_v4();
+        let minimal_yaml = r#"
+version: "1.0.0"
+name: "report_agg_contract"
+description: "RFC-082 report aggregation test"
+ontology:
+  entities:
+    - name: id
+      type: string
+      required: true
+glossary: []
+metrics: []
+"#;
+
+        sqlx::query("INSERT INTO orgs (id, name, slug) VALUES ($1, $2, $3)")
+            .bind(org_a)
+            .bind("report agg org")
+            .bind(format!("report-agg-{}", org_a.simple()))
+            .execute(&pool)
+            .await
+            .expect("seed org");
+
+        let (identity, _) = super::super::storage::create_contract(
+            &pool,
+            "report_agg_contract",
+            Some("RFC-082 report aggregation test"),
+            minimal_yaml,
+            Default::default(),
+            Some(org_a),
+        )
+        .await
+        .expect("org A creates contract");
+        let cid = identity.id;
+
+        // Seed audit rows: v1.0.0 → 3 pass / 1 quarantine (method/invalid_enum);
+        // v1.1.0 → 2 pass / 0 quarantine.
+        let bad = r#"[{"field":"method","kind":"invalid_enum","message":"bad"}]"#;
+        for (ver, passed, details, n) in [
+            ("1.0.0", true, "[]", 3),
+            ("1.0.0", false, bad, 1),
+            ("1.1.0", true, "[]", 2),
+        ] {
+            for _ in 0..n {
+                sqlx::query(
+                    "INSERT INTO audit_log
+                     (contract_id, org_id, contract_version, passed, violation_count, violation_details)
+                     VALUES ($1, $2, $3, $4, $5, $6::jsonb)",
+                )
+                .bind(cid)
+                .bind(org_a)
+                .bind(ver)
+                .bind(passed)
+                .bind(if passed { 0 } else { 1 })
+                .bind(details)
+                .execute(&pool)
+                .await
+                .expect("seed audit row");
+            }
+        }
+
+        // Per-version counts.
+        let versions = super::super::storage::report_by_version(&pool, cid, None, None)
+            .await
+            .unwrap();
+        let v10 = versions
+            .iter()
+            .find(|r| r.contract_version.as_deref() == Some("1.0.0"))
+            .expect("v1.0.0 row");
+        assert_eq!((v10.total, v10.passed, v10.quarantined), (4, 3, 1));
+        let v11 = versions
+            .iter()
+            .find(|r| r.contract_version.as_deref() == Some("1.1.0"))
+            .expect("v1.1.0 row");
+        assert_eq!((v11.total, v11.passed, v11.quarantined), (2, 2, 0));
+
+        // Top violations.
+        let viols = super::super::storage::report_top_violations(&pool, cid, None, None)
+            .await
+            .unwrap();
+        assert_eq!(viols.len(), 1);
+        assert_eq!(viols[0].field.as_deref(), Some("method"));
+        assert_eq!(viols[0].kind.as_deref(), Some("invalid_enum"));
+        assert_eq!(viols[0].count, 1);
+
+        // Cleanup (audit rows cascade with the contract).
+        sqlx::query("DELETE FROM contracts WHERE id = $1")
+            .bind(cid)
+            .execute(&pool)
+            .await
+            .unwrap();
+        sqlx::query("DELETE FROM orgs WHERE id = $1")
+            .bind(org_a)
+            .execute(&pool)
+            .await
+            .unwrap();
+    }
+
+    /// RFC-083: `monthly_event_count` counts only the org's events inside the
+    /// window, and `get_org_plan` returns the org's plan.
+    #[tokio::test]
+    #[ignore = "requires DATABASE_URL and a live Supabase/Postgres instance"]
+    async fn usage_monthly_count() {
+        let db_url = std::env::var("DATABASE_URL").expect("DATABASE_URL must be set");
+        let pool = sqlx::PgPool::connect(&db_url).await.unwrap();
+
+        let org_a = uuid::Uuid::new_v4();
+        let minimal_yaml = r#"
+version: "1.0.0"
+name: "usage_count_contract"
+description: "RFC-083 usage count test"
+ontology:
+  entities:
+    - name: id
+      type: string
+      required: true
+glossary: []
+metrics: []
+"#;
+
+        // orgs.plan defaults to 'free' (migration 007).
+        sqlx::query("INSERT INTO orgs (id, name, slug) VALUES ($1, $2, $3)")
+            .bind(org_a)
+            .bind("usage org")
+            .bind(format!("usage-{}", org_a.simple()))
+            .execute(&pool)
+            .await
+            .expect("seed org");
+
+        let (identity, _) = super::super::storage::create_contract(
+            &pool,
+            "usage_count_contract",
+            Some("RFC-083 usage count test"),
+            minimal_yaml,
+            Default::default(),
+            Some(org_a),
+        )
+        .await
+        .expect("org A creates contract");
+        let cid = identity.id;
+
+        let now = chrono::Utc::now();
+        // One event now, one two days ago.
+        for ts in [now, now - chrono::Duration::days(2)] {
+            sqlx::query(
+                "INSERT INTO audit_log
+                 (contract_id, org_id, contract_version, passed, violation_count,
+                  violation_details, created_at)
+                 VALUES ($1, $2, '1.0.0', true, 0, '[]'::jsonb, $3)",
+            )
+            .bind(cid)
+            .bind(org_a)
+            .bind(ts)
+            .execute(&pool)
+            .await
+            .expect("seed audit row");
+        }
+
+        // Window of the last day → only the recent event.
+        let recent = super::super::storage::monthly_event_count(
+            &pool,
+            Some(org_a),
+            now - chrono::Duration::days(1),
+        )
+        .await
+        .unwrap();
+        assert_eq!(recent, 1);
+
+        // Window of the last three days → both events.
+        let both = super::super::storage::monthly_event_count(
+            &pool,
+            Some(org_a),
+            now - chrono::Duration::days(3),
+        )
+        .await
+        .unwrap();
+        assert_eq!(both, 2);
+
+        let plan = super::super::storage::get_org_plan(&pool, org_a)
+            .await
+            .unwrap();
+        assert_eq!(plan.as_deref(), Some("free"));
+
+        sqlx::query("DELETE FROM contracts WHERE id = $1")
+            .bind(cid)
+            .execute(&pool)
+            .await
+            .unwrap();
+        sqlx::query("DELETE FROM orgs WHERE id = $1")
+            .bind(org_a)
+            .execute(&pool)
+            .await
+            .unwrap();
+    }
+
     /// Org B's key gets VersionNotFound on GET for org A's version.
     #[tokio::test]
     #[ignore = "requires DATABASE_URL and a live Supabase/Postgres instance"]
