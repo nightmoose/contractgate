@@ -178,7 +178,7 @@ jobs:
   # 3. Asserts `cargo sqlx prepare --check` still matches the committed
   #    .sqlx/ query metadata — catches src/storage/*.rs changes (split from
   #    storage.rs 2026-07-10) that add/change queries without regenerating .sqlx/.
-  # 4. Sentinel check: confirms latest migration (031) and total count (31)
+  # 4. Sentinel check: confirms latest migration (032) and total count (32)
   #    applied cleanly.  Update EXPECTED_MIGRATION_COUNT when adding new
   #    migrations; add a new sentinel assertion for the latest schema object.
   #
@@ -327,10 +327,21 @@ jobs:
           fi
           echo "Sentinel A6 OK: provider_scorecard has security_invoker=true (migration 031)."
 
+          # Sentinel A7 — migration 032 (RFC-083 Phase 2 org_monthly_usage):
+          OMU_TABLE=$(psql "$DATABASE_URL" -Atc \
+            "SELECT COUNT(*) FROM information_schema.tables
+             WHERE table_schema = 'public'
+               AND table_name   = 'org_monthly_usage'")
+          if [[ "$OMU_TABLE" != "1" ]]; then
+            echo "::error::Migration 032 sentinel failed — org_monthly_usage table not found."
+            exit 1
+          fi
+          echo "Sentinel A7 OK: org_monthly_usage table present (migration 032)."
+
           # Sentinel B — file count: the loop above applies every *.sql file.
           # Assert we have exactly the expected number so a new migration
           # automatically forces this sentinel to be updated.
-          EXPECTED_MIGRATION_COUNT=31
+          EXPECTED_MIGRATION_COUNT=32
           ACTUAL_COUNT=$(ls supabase/migrations/*.sql | wc -l | tr -d ' ')
           if [[ "$ACTUAL_COUNT" != "$EXPECTED_MIGRATION_COUNT" ]]; then
             echo "::error::Migration count mismatch — expected $EXPECTED_MIGRATION_COUNT files, found $ACTUAL_COUNT."
