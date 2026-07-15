@@ -42,14 +42,25 @@ pub fn is_at_or_over_cap(used: i64, limit: Option<i64>) -> bool {
 
 /// Load plan + current usage and return `Err(PlanLimitExceeded)` when blocked.
 /// No-op (Ok) when `org_id` is `None` (dev / self-host) or plan is unlimited.
+///
+/// **Fails open on infrastructure errors.** Metering must never take down the
+/// ingest hot path: if the plan lookup or the counter read errors (DB blip, or
+/// `org_monthly_usage` not yet migrated), we log and *allow* the request rather
+/// than 500. The only error this returns is the intentional `PlanLimitExceeded`.
+/// This also de-risks deploy ordering — shipping the binary before migration 032
+/// simply means "not yet enforcing", not "every ingest 500s".
 pub async fn enforce_plan_limit(pool: &PgPool, org_id: Option<Uuid>) -> Result<(), AppError> {
     let Some(org_id) = org_id else {
         return Ok(());
     };
 
-    let plan = storage::get_org_plan(pool, org_id)
-        .await?
-        .unwrap_or_else(|| "free".to_string());
+    let plan = match storage::get_org_plan(pool, org_id).await {
+        Ok(p) => p.unwrap_or_else(|| "free".to_string()),
+        Err(e) => {
+            tracing::warn!(org_id = %org_id, "RFC-083: plan lookup failed, allowing ingest (fail-open): {e:?}");
+            return Ok(());
+        }
+    };
     let limit = monthly_event_limit(&plan);
     if limit.is_none() {
         return Ok(());
@@ -57,7 +68,13 @@ pub async fn enforce_plan_limit(pool: &PgPool, org_id: Option<Uuid>) -> Result<(
 
     let period = current_period_key();
     let period_start = current_month_start();
-    let used = storage::ensure_monthly_usage(pool, org_id, &period, period_start).await?;
+    let used = match storage::ensure_monthly_usage(pool, org_id, &period, period_start).await {
+        Ok(u) => u,
+        Err(e) => {
+            tracing::warn!(org_id = %org_id, period = %period, "RFC-083: usage read failed, allowing ingest (fail-open): {e:?}");
+            return Ok(());
+        }
+    };
 
     if is_at_or_over_cap(used, limit) {
         return Err(AppError::PlanLimitExceeded {
@@ -70,7 +87,9 @@ pub async fn enforce_plan_limit(pool: &PgPool, org_id: Option<Uuid>) -> Result<(
     Ok(())
 }
 
-/// Schedule a fire-and-forget counter increment for this batch.
+/// Schedule a fire-and-forget counter increment for this batch (own spawn).
+/// Prefer [`record_batch_usage_blocking`] when already inside the audit spawn
+/// so audit + meter stay ordered together.
 /// Safe to call when `org_id` is None (no-op).
 pub fn record_batch_usage(pool: PgPool, org_id: Option<Uuid>, event_count: usize) {
     let Some(org_id) = org_id else {
@@ -79,18 +98,33 @@ pub fn record_batch_usage(pool: PgPool, org_id: Option<Uuid>, event_count: usize
     if event_count == 0 {
         return;
     }
+    tokio::spawn(async move {
+        record_batch_usage_blocking(&pool, Some(org_id), event_count).await;
+    });
+}
+
+/// Awaited increment (call from an existing spawn, e.g. after audit succeeds).
+pub async fn record_batch_usage_blocking(
+    pool: &PgPool,
+    org_id: Option<Uuid>,
+    event_count: usize,
+) {
+    let Some(org_id) = org_id else {
+        return;
+    };
+    if event_count == 0 {
+        return;
+    }
     let period = current_period_key();
     let delta = event_count as i64;
-    tokio::spawn(async move {
-        if let Err(e) = storage::increment_monthly_usage(&pool, org_id, &period, delta).await {
-            tracing::warn!(
-                org_id = %org_id,
-                period = %period,
-                delta,
-                "RFC-083: failed to increment org_monthly_usage: {e:?}"
-            );
-        }
-    });
+    if let Err(e) = storage::increment_monthly_usage(pool, org_id, &period, delta).await {
+        tracing::warn!(
+            org_id = %org_id,
+            period = %period,
+            delta,
+            "RFC-083: failed to increment org_monthly_usage: {e:?}"
+        );
+    }
 }
 
 #[cfg(test)]

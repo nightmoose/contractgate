@@ -480,7 +480,10 @@ pub async fn v1_ingest_handler(
     }
 
     // --- 6b. RFC-083 Phase 2: plan monthly event cap ----------------------
-    crate::metering::enforce_plan_limit(&state.db, org_id).await?;
+    // dry_run is not billable — over-cap orgs may still validate.
+    if !query.dry_run {
+        crate::metering::enforce_plan_limit(&state.db, org_id).await?;
+    }
 
     // --- 7. Load contract identity + scope check --------------------------
     // RFC-074: org-scoped identity load (404 if the caller's org doesn't own
@@ -721,12 +724,14 @@ pub async fn v1_ingest_handler(
         if !audit_rows.is_empty() {
             let n = audit_rows.len();
             let pool = state.db.clone();
+            let meter_org = org_id;
             tokio::spawn(async move {
                 if let Err(e) = storage::log_audit_entries_batch(&pool, &audit_rows).await {
                     tracing::warn!("v1 ingest: audit write failed: {e:?}");
+                    return;
                 }
+                crate::metering::record_batch_usage_blocking(&pool, meter_org, n).await;
             });
-            crate::metering::record_batch_usage(state.db.clone(), org_id, n);
         }
         if !quarantine_rows.is_empty() {
             let pool = state.db.clone();

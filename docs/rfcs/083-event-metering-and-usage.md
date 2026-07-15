@@ -66,8 +66,24 @@ Response:
 - **Check:** `ensure_monthly_usage` (PK read; one-time audit bootstrap if missing)
   then `used >= limit` → **429** `plan_limit_exceeded` with
   `{error, plan, limit, used, period, upgrade_url, status}`.
-- **Increment:** fire-and-forget UPSERT after audit batch is scheduled on
-  `/ingest` and `/v1/ingest` (same spawn pattern as audit).
+- **Fail-open on infra errors:** plan/counter DB failures log and *allow* the
+  request. Metering must never 500 the ingest hot path. Binary-before-migration
+  means "not yet enforcing," not "every ingest 500s." Apply migration 032 first
+  so enforcement actually works.
+- **`dry_run` is not billable:** cap check is skipped when `?dry_run=true` so
+  over-cap orgs can still validate.
+- **Increment:** on the normal HTTP path, UPSERT runs in the *same* `tokio::spawn`
+  as the audit write (only after audit succeeds) so crash/restart under-counts
+  both together rather than diverging. Envelope path (no audit today) uses its
+  own fire-and-forget spawn.
+- **Envelope (MRI/Findigs) is billable:** `passed + quarantined` records are
+  counted even though the legacy short-circuit still skips `audit_log` (pre-
+  existing audit gap; meter independently so caps stay honest).
+- **Kafka / Kinesis unmetered in v1:** streaming ingress does not check or
+  increment the counter (429-ing a consumer loop is impractical). Prefer
+  Enterprise for streaming orgs so the gap is moot; document that `/usage` may
+  under-report for Free/Growth streaming traffic. Follow-up: increment only
+  (no 429) on stream paths if Growth needs streaming.
 - Batch that *crosses* the cap while still under is allowed once
   (`used < limit` before the batch).
 - Enterprise / no-org (self-host): never blocked.
@@ -88,8 +104,10 @@ Response:
 
 ## Notes
 
-- Counting *audit_log* rows = billable validated events (accepted into
-  validation), matching the RFC-081 metering intent. Idempotent-retry dedup lands
-  with the Phase-2 counter.
+- Counting *validated HTTP events* (pass or fail). Phase 1 live-count used
+  `audit_log`; Phase 2 prefers `org_monthly_usage`, bootstrapped once from audit.
+  Envelope traffic is billable but not yet audited (pre-existing gap).
 - Self-hosted (no org) is unmetered; `/usage` requires org context (401 in prod
   without it).
+- Soft-quota v1 accepts rare async under-count (process death after response)
+  and rare bootstrap over-count; optional later: reconcile job from `audit_log`.

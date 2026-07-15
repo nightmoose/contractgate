@@ -10,7 +10,10 @@ the **Usage this month** card on the account Billing page.
 **Phase 2 enforcement:** when the org is already at/over its Free or Growth
 monthly cap, `POST /ingest/*` and `POST /v1/ingest/*` return **429**
 `plan_limit_exceeded` (see below). Enterprise is unlimited. Self-hosted (no org)
-is unmetered.
+is unmetered. Metering **fails open** on DB errors (logs + allows). `?dry_run=true`
+skips the cap check. Envelope contracts (MRI/Findigs) count toward the limit.
+**Kafka / Kinesis ingress is not metered in v1** — prefer Enterprise for
+streaming orgs; `/usage` may under-report Free/Growth stream traffic.
 
 ---
 
@@ -70,8 +73,10 @@ curl -H "x-api-key: $KEY" https://contractgate-api.fly.dev/usage
 
 - `used` prefers the O(1) `org_monthly_usage` counter (migration 032), bootstrapped
   once per org/month from `audit_log` if the row is missing.
-- Billable unit = validated events written to audit (pass or fail), matching ingest
-  batch size.
+- Billable unit = validated HTTP events (pass or fail). Normal path increments
+  after a successful audit write (same spawn). Envelope path increments from
+  `passed + quarantined` without writing audit (legacy short-circuit).
+- Not billable: `dry_run`, self-hosted (no org), Kafka/Kinesis streaming (v1).
 
 ### Plan-limit 429 body (Phase 2)
 
