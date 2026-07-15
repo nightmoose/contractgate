@@ -1,0 +1,5 @@
+[
+  {"request_id": "3f2504e0-4f89-41d3-9a0c-0305e82c3401", "method": "CONNECT", "path": "proxy.internal:443", "status": 200, "latency_ms": 12, "timestamp": 1752000100},
+  {"request_id": "3f2504e0-4f89-41d3-9a0c-0305e82c3402", "method": "CONNECT", "path": "proxy.internal:443", "status": 200, "latency_ms": 15, "timestamp": 1752000101},
+  {"request_id": "3f2504e0-4f89-41d3-9a0c-0305e82c3403", "method": "CONNECT", "path": "proxy.us-east:443",  "status": 200, "latency_ms": 19, "timestamp": 1752000102}
+]

@@ -3,7 +3,21 @@
 version = 2
 db-path = "~/.cargo/advisory-db"
 db-urls = ["https://github.com/rustsec/advisory-db"]
-ignore = []
+ignore = [
+    # RUSTSEC-2023-0071 — RSA "Marvin Attack" timing sidechannel. No fixed
+    # `rsa` release exists. NOT exploitable in ContractGate:
+    #   * `rsa` is pulled ONLY transitively by jsonwebtoken's `rust_crypto`
+    #     backend (cargo tree -i rsa → jsonwebtoken → contractgate).
+    #   * We only *verify* Supabase RS256/ES256 JWTs with the public JWKS key
+    #     (src/jwt_auth.rs: decode + DecodingKey::from_jwk). We never hold an
+    #     RSA private key or perform RSA decryption — the only operation whose
+    #     timing the attack can leak.
+    # `rust_crypto` is retained deliberately. Do NOT "fix" this by switching
+    # jsonwebtoken to `aws_lc_rs`: that reintroduces the 2026-07-14 prod
+    # CryptoProvider panic (two rustls providers, no install_default in-tree →
+    # SIGABRT → 502). See docs/reviews/incident-2026-07-14-jwt-crypto-provider.md.
+    "RUSTSEC-2023-0071",
+]
 
 [bans]
 # Warn on duplicates — don't fail the build.  The duplicates in this tree

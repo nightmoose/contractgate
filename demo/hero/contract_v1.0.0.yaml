@@ -1,0 +1,37 @@
+version: "1.0.0"
+name: "hero_events"
+description: "HTTP request events — strict method set (v1.0.0)."
+
+ontology:
+  entities:
+    - name: request_id
+      type: string
+      required: true
+      pattern: "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+    - name: method
+      type: string
+      required: true
+      # v1.0.0 predates the proxy fleet — CONNECT is NOT allowed here.
+      enum: ["GET", "POST", "PUT", "PATCH", "DELETE"]
+    - name: path
+      type: string
+      required: true
+    - name: status
+      type: integer
+      required: true
+      min: 100
+      max: 599
+    - name: latency_ms
+      type: integer
+      required: true
+      min: 0
+    - name: timestamp
+      type: integer
+      required: true
+
+glossary:
+  - field: method
+    description: "HTTP method"
+    constraints: "must be one of the allowed verbs"
+
+metrics: []

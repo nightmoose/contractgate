@@ -1,0 +1,37 @@
+version: "1.1.0"
+name: "hero_events"
+description: "HTTP request events — relaxed to allow CONNECT (v1.1.0)."
+
+ontology:
+  entities:
+    - name: request_id
+      type: string
+      required: true
+      pattern: "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+    - name: method
+      type: string
+      required: true
+      # v1.1.0 adds CONNECT (the proxy fleet is legitimate traffic).
+      enum: ["GET", "POST", "PUT", "PATCH", "DELETE", "CONNECT"]
+    - name: path
+      type: string
+      required: true
+    - name: status
+      type: integer
+      required: true
+      min: 100
+      max: 599
+    - name: latency_ms
+      type: integer
+      required: true
+      min: 0
+    - name: timestamp
+      type: integer
+      required: true
+
+glossary:
+  - field: method
+    description: "HTTP method"
+    constraints: "must be one of the allowed verbs"
+
+metrics: []

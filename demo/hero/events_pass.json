@@ -1,0 +1,6 @@
+[
+  {"request_id": "3f2504e0-4f89-41d3-9a0c-0305e82c3301", "method": "GET",    "path": "/api/users",       "status": 200, "latency_ms": 42,  "timestamp": 1752000000},
+  {"request_id": "3f2504e0-4f89-41d3-9a0c-0305e82c3302", "method": "POST",   "path": "/api/orders",      "status": 201, "latency_ms": 88,  "timestamp": 1752000001},
+  {"request_id": "3f2504e0-4f89-41d3-9a0c-0305e82c3303", "method": "PATCH",  "path": "/api/orders/9a1", "status": 200, "latency_ms": 51,  "timestamp": 1752000002},
+  {"request_id": "3f2504e0-4f89-41d3-9a0c-0305e82c3304", "method": "DELETE", "path": "/api/sessions/x", "status": 204, "latency_ms": 30,  "timestamp": 1752000003}
+]

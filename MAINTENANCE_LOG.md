@@ -2,6 +2,33 @@
 
 ---
 
+## Run: 2026-07-15 — Clear CI Security (rsa RUSTSEC-2023-0071) the SAFE way
+
+**Scope:** unblock the `Security — cargo deny` CI job without re-arming the
+2026-07-14 JWT CryptoProvider incident.
+**Branch:** `consolidate-2026-07-15`
+
+**Problem:** cargo-deny fails on `rsa 0.9.10` (RUSTSEC-2023-0071, Marvin timing
+attack, no fixed release). `rsa` is pulled only by `jsonwebtoken`'s `rust_crypto`
+backend.
+
+**Rejected fix:** PR #143 (`jwt-aws-lc`) swaps `rust_crypto` → `aws_lc_rs`. That
+contradicts the incident postmortem ("DO NOT remove rust_crypto") and is unsafe:
+there is **no `rustls CryptoProvider::install_default` in the tree**, so adding a
+second provider (aws-lc-rs alongside ring) makes rustls 0.23 panic at the first
+TLS call → the exact SIGABRT→502 incident, likely green in CI but dead in prod.
+**→ Close #143.**
+
+**Fix applied:** keep `rust_crypto`; add a documented `ignore` for
+RUSTSEC-2023-0071 in `deny.toml`. Justified: we only *verify* Supabase RS256/ES256
+JWTs with the public JWKS key (`src/jwt_auth.rs`); we never hold an RSA private
+key or decrypt, which is the only operation the timing attack can leak. Full
+rationale in the `deny.toml` comment + `incident-2026-07-14-jwt-crypto-provider.md`.
+
+**Verify:** `cargo deny check advisories` (green in CI). No Cargo.toml/lock change.
+
+---
+
 ## Run: 2026-07-14 — RFC-075 auth-on isolation lane + security overview
 
 **Scope:** dual-sell worklist review follow-through. No Rust changes.
