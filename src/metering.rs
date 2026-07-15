@@ -104,11 +104,7 @@ pub fn record_batch_usage(pool: PgPool, org_id: Option<Uuid>, event_count: usize
 }
 
 /// Awaited increment (call from an existing spawn, e.g. after audit succeeds).
-pub async fn record_batch_usage_blocking(
-    pool: &PgPool,
-    org_id: Option<Uuid>,
-    event_count: usize,
-) {
+pub async fn record_batch_usage_blocking(pool: &PgPool, org_id: Option<Uuid>, event_count: usize) {
     let Some(org_id) = org_id else {
         return;
     };
