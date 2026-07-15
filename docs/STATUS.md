@@ -44,10 +44,10 @@ signed off (may be planning docs or UI-only); **Draft** = under review;
 | 031 | [Provider Data-Quality Scorecard](rfcs/031-provider-data-quality-scorecard.md) | Shipped | `nightly-maintenance-2026-05-15` |
 | 032 | [Contract Sharing & Publication](rfcs/032-contract-sharing-publication.md) | Shipped | `nightly-maintenance-2026-05-15` |
 | 033 | [Provider-Consumer Collaboration](rfcs/033-provider-consumer-collaboration.md) | Shipped | `nightly-maintenance-2026-05-15` |
-| 034 | [Public Data Source Contracts + Forking](rfcs/034-public-data-source-contracts.md) | Shipped (RFC Draft) | `nightly-maintenance-2026-05-15` |
-| 035 | [CSV Contract Inference](rfcs/035-csv-contract-inference.md) | Shipped (RFC Draft) | `nightly-maintenance-2026-05-15` |
+| 034 | [Public Data Source Contracts + Forking](rfcs/034-public-data-source-contracts.md) | Shipped | `nightly-maintenance-2026-05-15` |
+| 035 | [CSV Contract Inference](rfcs/035-csv-contract-inference.md) | Shipped | `nightly-maintenance-2026-05-15` |
 | 036 | [Source-First New Contract Flow](rfcs/036-source-first-contract-creation.md) | Draft | — |
-| 037 | [API Endpoint as Contract Source (URL Inference)](rfcs/037-api-source-contract-creation.md) | Shipped (RFC Draft) | `nightly-maintenance-2026-05-15` |
+| 037 | [API Endpoint as Contract Source (URL Inference)](rfcs/037-api-source-contract-creation.md) | Shipped | `nightly-maintenance-2026-05-15` |
 | 038 | [MRI API Contracts for Findigs Integration](rfcs/038-mri-api-contracts.md) | Draft | — |
 | 039 | [Supabase-JWT Dashboard Auth](rfcs/039-supabase-jwt-auth.md) | Accepted | `nightly-maintenance-2026-05-16` |
 | 040 | [Fix RLS on contract_versions + quarantine_events](rfcs/040-rls-contract-versions-quarantine.md) | Accepted | `dev/p02-rls-contract-versions` |
@@ -56,7 +56,7 @@ signed off (may be planning docs or UI-only); **Draft** = under review;
 | 043 | [RFC-042 Follow-up Fixes + P0-3 Loose Ends](rfcs/043-rfc042-followup-fixes.md) | Accepted | `nightly-maintenance-2026-05-17-rfc043` |
 | 044 | [Native `date` Field Type](rfcs/044-date-type.md) | Accepted | `nightly-maintenance-2026-05-17-rfc044-date-type` |
 | 045 | [Plan-Based Feature Gating](rfcs/045-plan-gating.md) | Accepted | `nightly-maintenance-2026-05-17-rfc045-plan-gating` |
-| 046 | [API Workbench](rfcs/046-api-workbench.md) | Draft | `nightly-maintenance-2026-05-18-rfc046-api-workbench` |
+| 046 | [API Workbench](rfcs/046-api-workbench.md) | Shipped | `nightly-maintenance-2026-05-18-rfc046-api-workbench` |
 | 047 | [Backend Org Scoping (IDOR fix)](rfcs/047-backend-org-scoping.md) | Accepted | `nightly-maintenance-2026-05-22-rfc047-048` |
 | 048 | [Remove Trusted x-org-id Header](rfcs/048-drop-x-org-id-header-trust.md) | Accepted | `nightly-maintenance-2026-05-22-rfc047-048` |
 | 049 | [SSRF Redirect Hardening](rfcs/049-ssrf-redirect-hardening.md) | Accepted | `nightly-maintenance-2026-05-22-rfc049-050` |

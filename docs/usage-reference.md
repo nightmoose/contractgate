@@ -1,10 +1,15 @@
 # Usage Reference
 
-**RFC:** 083 — Per-org event metering (Phase 1)
+**RFC:** 083 — Per-org event metering  
+**Status:** Phase 1 (API) + Phase 3 (dashboard widget) shipped · Phase 2 (ingest 429) open  
 **Since:** nightly-2026-07-15
 
 Per-org event usage for the current calendar month against the plan limit. Backs
-the dashboard usage widget. Read-only; no enforcement yet (see RFC-083 Phase 2).
+the **Usage this month** card on the account Billing page.
+
+**Important:** this surface is **read-only**. Exceeding Free/Growth caps does **not**
+yet return HTTP 429 on ingest (see RFC-083 Phase 2). Treat the widget as visibility
+and upgrade prompting, not hard metering, until Phase 2 lands.
 
 ---
 
@@ -65,4 +70,8 @@ curl -H "x-api-key: $KEY" https://contractgate-api.fly.dev/usage
 - `used` is a live count over `audit_log` (billable validated events), backed by
   `audit_log_org_id_created_idx`. Cheap for a dashboard read; not on the ingest
   hot path.
-- Enforcement (429 at the cap) and a cached counter arrive in RFC-083 Phase 2.
+- **Phase 2 (open):** when `used >= limit` for Free/Growth, ingest paths will
+  return **429** with a clear JSON body (`plan`, `limit`, `used`, `period`,
+  `upgrade_url`). Counter will be O(1) via a cached table (not a full
+  `audit_log` count on every request). Requires p99 smoke before merge.
+- Enterprise stays unlimited (`unlimited: true`, no 429 from plan caps).

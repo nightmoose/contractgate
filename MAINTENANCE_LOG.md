@@ -2,6 +2,23 @@
 
 ---
 
+## Run: 2026-07-15 — Diligence follow-ups (licenses CI, npm inventory, polish)
+
+**Scope:** Five safe items while Phase 2 metering stays with Claude. No hot path.
+**Branch:** `nightly-maintenance-2026-07-15-data-room-runbook-licenses`
+
+### What shipped
+1. **`deny.toml` `[licenses]` allowlist** + CI `cargo deny check … licenses`.
+2. **`docs/data-room/dashboard-dependency-licenses.md`** — npm production scan
+   (notes LGPL via sharp/libvips optional natives).
+3. **STATUS hygiene** — 034/035/037/046 → Shipped; 075–083 already Shipped.
+4. **Usage + pilot report docs** — clearer Phase 2 disclaimer; pilot when-to-use.
+5. **UsageWidget copy** — honest “hard block not enabled yet” when at cap.
+
+Website resources section is a separate PR on `datacontractgate_website`.
+
+---
+
 ## Run: 2026-07-15 — Data-room package + ops runbook + cargo-about
 
 **Scope:** diligence packaging (Claude's architecture/data-room + Grok's ops

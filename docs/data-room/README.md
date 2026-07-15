@@ -32,6 +32,8 @@ reviewer. Every link below is a file in this repo. Last updated 2026-07-15.
   patent docket, trademarks (**owner action — see open items**)
 - [Third-party Rust dependency licenses](./dependency-licenses.md) — cargo-about
   inventory (regenerate: see file header)
+- [Dashboard (npm) dependency licenses](./dashboard-dependency-licenses.md) —
+  production `license-checker` scan
 
 ## Ops & reliability
 - [Production runbook](../ops/runbook-production.md) — deploy, health, secrets, incidents
@@ -57,8 +59,8 @@ These are known and tracked, not hidden:
 3. **SOC 2** — not started; treat as "posture + readiness," not a committed date.
 4. **RFC-083 Phase 2** — ingest **429** at plan cap + cached counter (hot path;
    needs live p99 smoke). Usage **read** API + dashboard widget are shipped.
-5. **cargo-deny `[licenses]` CI gate** — inventory exists (`dependency-licenses.md` +
-   `about.toml`); optional next step is wiring license allowlist into CI deny.
+5. **npm copyleft note** — dashboard production tree includes optional
+   `sharp`/libvips LGPL natives; documented in dashboard license inventory.
 
 Owner/legal items (#1–3) are outside the engineering backlog. Phase 2 metering
 is tracked in RFC-083.

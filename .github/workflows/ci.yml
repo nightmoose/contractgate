@@ -441,7 +441,7 @@ jobs:
         run: cargo audit
 
       - name: Run cargo deny (advisories + licenses)
-        run: cargo deny check advisories bans sources
+        run: cargo deny check advisories bans sources licenses
 
       - name: Trivy filesystem scan (SARIF)
         uses: aquasecurity/trivy-action@master
