@@ -78,6 +78,13 @@ Create branch: nightly-maintenance-$(date +%Y-%m-%d)-<rfc-slug> for changes (e.g
 
 Start now.
 
+## Prod gotchas (read before “fixing” dashboard/API)
+
+- **Dashboard CORS + 502 on `contractgate-api.fly.dev` is often a crash-loop, not CORS.** Fly 502s have no `Access-Control-Allow-Origin`. Check `fly logs -a contractgate-api` for panics first.
+- **2026-07-14 outage:** `jsonwebtoken` 10 without `rust_crypto` panicked on every Bearer JWT → SIGABRT → 502. Fix: keep `features = ["use_pem", "rust_crypto"]` in `Cargo.toml`. Full write-up: [`docs/reviews/incident-2026-07-14-jwt-crypto-provider.md`](docs/reviews/incident-2026-07-14-jwt-crypto-provider.md).
+- **Merged to `main` ≠ prod fixed.** Confirm Fly release advanced (`fly releases -a contractgate-api`). Never run multiple concurrent `fly deploy`s.
+- **`/health` 200 does not prove JWT auth works.**
+
 ## RFC Status Index
 
 [`docs/STATUS.md`](docs/STATUS.md) — shipped-vs-draft view of all 58 RFCs.

@@ -6,6 +6,8 @@
 **Audience:** Human + Claude (review / implement / challenge priorities)  
 **Context:** Work that advances **both** (A) selling ContractGate to customers and (B) selling the company/product as an asset. Prefer intersection work; defer pure feature expansion.
 
+> **2026-07-15 prod note:** Same-day outage (JWT `CryptoProvider` panic, not CORS) was fixed on Fly **v126**. Agents: read [`incident-2026-07-14-jwt-crypto-provider.md`](incident-2026-07-14-jwt-crypto-provider.md) before touching CORS or Fly deploys.
+
 ---
 
 ## Framing

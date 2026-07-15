@@ -5,7 +5,9 @@
 ## Run: 2026-07-14 — P0: jsonwebtoken 10 CryptoProvider panic (prod 502)
 
 **Scope:** Production API crash-looping on every dashboard Bearer JWT request.
-**Branch:** `nightly-maintenance-2026-07-14-jwt-crypto-provider`
+**Branch:** `nightly-maintenance-2026-07-14-jwt-crypto-provider` (merged as PR #141)
+**PRs:** #141 (JWT fix + folded CORS allowlist), #140 (CORS-only, merged first)
+**Canonical write-up for agents:** `docs/reviews/incident-2026-07-14-jwt-crypto-provider.md`
 **Symptom:** Browser shows CORS errors + 502 on `GET /contracts`; Fly machines
 `stopped` after max restart count.
 
@@ -29,11 +31,29 @@ masking the outage until a logged-in dashboard hit `/contracts`.
 jsonwebtoken = { version = "10", features = ["use_pem", "rust_crypto"] }
 ```
 Pure-Rust backend; no system OpenSSL. Also cleaned leftover merge-conflict
-markers in this log from the RFC-081 merge.
+markers in this log from the RFC-081 merge. CORS allowlist gained `x-api-key`
++ `Accept` (secondary; not the outage root cause).
+
+### Resolution (prod)
+- Code on `main` via PR #141 (`98d1fef`).
+- **Fly release v126** (manual deploy by Alex) restored contracts on
+  `app.datacontractgate.com`. v125 and earlier still panic on real JWTs.
+- CI `Deploy — Fly.io` did **not** get the fix out fast enough (long smoke
+  gates + interrupted/competing local `fly deploy` attempts). Prefer one
+  intentional deploy and confirm **new release number** before declaring fixed.
 
 ### Verify
 - `cargo check --bin contractgate-server`
-- After deploy: machines `started`; dashboard `/contracts` loads when signed in.
+- Fly Activity shows version **≥ v126** (not v125)
+- Signed-in dashboard `/contracts` loads; Fly logs show no `CryptoProvider` panic
+- Fake/malformed Bearer → clean **401**, not machine SIGABRT
+
+### Lessons for agents (do not re-learn the hard way)
+1. **CORS in Chrome + 502 on Fly ≠ CORS config bug.** Check `fly logs` for panics first.
+2. **`/health` 200 does not mean auth works.** JWT path can still be crash-looping.
+3. **Never run multiple concurrent `fly deploy`s** — they fight; finish one, check `fly releases`.
+4. **jsonwebtoken 10 must keep `rust_crypto` or `aws_lc_rs`.** Do not strip features on Dependabot bumps.
+5. Merging to `main` ≠ prod fixed until **Fly release** advances.
 
 ---
 
