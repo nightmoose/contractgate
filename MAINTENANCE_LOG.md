@@ -37,6 +37,27 @@ markers in this log from the RFC-081 merge.
 
 ---
 
+## Run: 2026-07-14 — CORS allowlist: add `x-api-key` + `Accept`
+
+**Scope:** RFC-050 protected CORS layer hardening after browser console
+errors on `app.datacontractgate.com` → `contractgate-api.fly.dev/contracts`.
+**Branch:** `nightly-maintenance-2026-07-14-cors-x-api-key`
+
+### Diagnosis
+Live probes showed `DASHBOARD_ORIGIN` correct; console CORS+502 is usually
+Fly proxy 502 without ACAO. Also fixed missing `x-api-key`/`Accept` on
+protected CORS allowlist (dashboard fallback path).
+
+### What shipped
+1. **`src/main.rs`** — allow `Accept` + `x-api-key` on protected CorsLayer.
+2. **`docs/auth-reference.md`** — header list + 502-vs-CORS note.
+
+### Verify
+- `cargo check --bin contractgate-server`
+- Preflight with `x-api-key` lists it in `access-control-allow-headers`.
+
+---
+
 ## Run: 2026-07-14 — RFC-081 quarantine list + replay reconciliation
 
 **Scope:** fix the dashboard Quarantine tab, which was wired to backend routes

@@ -1200,9 +1200,16 @@ fn build_router(state: Arc<AppState>) -> Router {
             axum::http::Method::DELETE,
             axum::http::Method::OPTIONS,
         ])
+        // authorization — dashboard Bearer JWT (RFC-039)
+        // content-type — JSON bodies
+        // x-api-key — CLI/SDK and dashboard fallback when no session (api.ts)
+        // Accept is sometimes listed by browsers on preflight; allow it so
+        // preflight does not fail on a harmless header.
         .allow_headers([
             axum::http::header::AUTHORIZATION,
             axum::http::header::CONTENT_TYPE,
+            axum::http::header::ACCEPT,
+            axum::http::HeaderName::from_static("x-api-key"),
         ]);
 
     // `public_cors` — genuinely public endpoints (no tenant data, no bearer

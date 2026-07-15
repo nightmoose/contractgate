@@ -108,7 +108,13 @@ in `DASHBOARD_ORIGIN` receive an `Access-Control-Allow-Origin` header.  Requests
 from any other origin receive no CORS header and are rejected by the browser.
 
 Allowed methods: `GET, POST, PATCH, DELETE, OPTIONS`.  
-Allowed headers: `Authorization, Content-Type`.
+Allowed headers: `Authorization, Content-Type, Accept, x-api-key`.
+
+> **Note on browser “CORS” errors:** If Fly returns **502 Bad Gateway**
+> (machine restart, deploy, OOM), the proxy response has **no** CORS
+> headers. Chrome then reports a CORS failure even though the root cause is
+> the 502. Check `https://contractgate-api.fly.dev/health` and Fly logs
+> before changing CORS config.
 
 **Public surface** (`/health`, `/metrics`, `/openapi.json`, `/demo/*`,
 `/public-contracts`, `/catalog`, `/published/*`): wildcard `*` — these routes
