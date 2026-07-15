@@ -189,7 +189,9 @@ fn csv_response(r: &PilotReport) -> Response {
     );
     headers.insert(
         header::CONTENT_DISPOSITION,
-        format!("attachment; filename=\"{filename}\"").parse().unwrap(),
+        format!("attachment; filename=\"{filename}\"")
+            .parse()
+            .unwrap(),
     );
     (StatusCode::OK, headers, csv).into_response()
 }

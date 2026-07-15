@@ -398,14 +398,15 @@ jobs:
             tests::org_scoping::two_org_get_version_isolation \
             tests::org_scoping::two_org_quarantine_list_isolation \
             tests::org_scoping::pilot_report_aggregation \
+            tests::org_scoping::usage_monthly_count \
             tests::org_scoping::quarantine_replay_race_guard \
             tests::rfc053_ready_tests::ready_returns_200_live_db \
             2>&1 | tee /tmp/iso_test.out
           # Guard against the silent false-green: `cargo test` exits 0 even when
           # a filter matches zero tests (e.g. a future rename). Assert exactly
           # the 5 expected tests actually ran.
-          if ! grep -qE '6 passed; 0 failed' /tmp/iso_test.out; then
-            echo "::error::Expected '6 passed; 0 failed' from the isolation/readiness tests — got something else. A test may have been renamed or skipped."
+          if ! grep -qE '7 passed; 0 failed' /tmp/iso_test.out; then
+            echo "::error::Expected '7 passed; 0 failed' from the isolation/readiness tests — got something else. A test may have been renamed or skipped."
             exit 1
           fi
 
