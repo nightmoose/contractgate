@@ -100,13 +100,13 @@ two ops/diligence docs). P2 as capacity allows.
 
 | Item | Status |
 |------|--------|
-| P0 #1 envelope audit + quarantine | **PR #151** (merge when CI green) — audit/quarantine/forward + meter after audit |
-| P0 #2 deploy `x-org-id` | **PR #151** |
+| P0 #1 envelope audit + quarantine | **Merged #151** — audit/quarantine/forward + meter after audit |
+| P0 #2 deploy `x-org-id` | **Merged #151** |
 | P1 #3 Kafka/Kinesis decision | **Documented** — unmetered v1, prefer Enterprise; stream audit `org_id` null noted as follow-up |
-| P1 #3 reconcile job | **In branch** `nightly-maintenance-2026-07-15-p1-billing-ops` — 6h bg + `usage-reconcile` CLI, up-only GREATEST |
-| P1 #4 ops runbook | **Polished** in same P1 branch (032, reconcile, drift CI, SLA link) |
-| P1 #5 migration-drift CI | **Added** `.github/workflows/migration-drift.yml` (needs `PROD_DATABASE_URL`) |
-| P2 #8 support SLA | **Added** `docs/support-sla.md` |
+| P1 #3 reconcile job | **PR #152** — 6h bg + `usage-reconcile` CLI, up-only GREATEST |
+| P1 #4 ops runbook | **PR #152** (032, reconcile, drift CI, SLA link) |
+| P1 #5 migration-drift CI | **PR #152** — needs `PROD_DATABASE_URL` secret |
+| P2 #8 support SLA | **PR #152** — `docs/support-sla.md` |
 
 *Legal/founder items (patent docket, SOC 2, IP assignment, DPA) are tracked in
 `docs/data-room/ip-assignment-checklist.md` — not engineering work.*
