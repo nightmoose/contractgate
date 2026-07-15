@@ -1,6 +1,6 @@
 # RFC-083 — Per-org event metering + usage API
 
-**Status:** Draft
+**Status:** Draft (Phase 1 implementation landed 2026-07-15, pending merge; Phase 2/3 open)
 **Date:** 2026-07-15
 **Branch:** nightly-maintenance-2026-07-15-rfc083
 **Depends on:** RFC-045 (plan gating), RFC-047 (org scoping)

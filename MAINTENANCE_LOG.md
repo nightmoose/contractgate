@@ -2,6 +2,36 @@
 
 ---
 
+## Run: 2026-07-15 — RFC-083 event metering, Phase 1 (usage read API)
+
+**Scope:** dual-sell #5–7 commercial spine, read-side first. No migration, **no
+hot-path change** (enforcement is a deliberate Phase 2).
+**Branch:** `nightly-maintenance-2026-07-15-rfc083`
+
+### What shipped (Phase 1)
+1. **`GET /usage`** — org-scoped current-UTC-month event usage vs plan limit:
+   `{plan, period_start, used, limit, remaining, pct, unlimited}`
+   (`src/usage.rs` + route).
+2. **`src/plan.rs`** — canonical `monthly_event_limit`: free 1M / growth 50M /
+   enterprise unlimited. Backend is the source of truth; the endpoint returns the
+   limit so the dashboard never hardcodes it.
+3. **Storage** (`src/storage/usage.rs`): `get_org_plan` + `monthly_event_count`
+   (live count over `audit_log`, backed by `audit_log_org_id_created_idx`).
+
+### Deferred (documented in RFC-083)
+- **Phase 2** — cached counter table + ingest **429** enforcement (touches the
+  hot path; own review + p99 check + migration).
+- **Phase 3** — dashboard usage widget (frontend, calls `/usage`).
+
+### Verified (cargo in-session)
+- `cargo check --tests`, `cargo clippy --all-targets -- -D warnings`; unit tests
+  (plan limits, month-start, `/usage` wire shape) green.
+- DB-backed `tests::org_scoping::usage_monthly_count` wired into `migrations-check`
+  (count 6→7). Needs live Postgres → runs in CI.
+- Docs: `usage-reference.md`, RFC-083, STATUS.
+
+---
+
 ## Run: 2026-07-15 — RFC-082 exportable pilot report
 
 **Scope:** dual-sell #11 — the "value delivered" artifact for design partners.
