@@ -8,6 +8,7 @@ import type { User } from "@supabase/supabase-js";
 import AuthGate from "@/components/AuthGate";
 import { DEMO_MODE } from "@/lib/demo";
 import DemoFeatureUnavailable from "@/components/DemoFeatureUnavailable";
+import UsageWidget from "@/components/UsageWidget";
 
 // RFC-056: API key issuance and revocation now go through /api/keys (server-side).
 // The browser no longer generates or hashes keys; the raw key is returned once
@@ -383,6 +384,9 @@ function AccountContent() {
           </p>
         </div>
       )}
+
+      {/* Per-org monthly usage (RFC-083) */}
+      {org && <UsageWidget />}
 
       {/* Newly created key banner — shown once, then dismissed */}
       {createdKey && (
