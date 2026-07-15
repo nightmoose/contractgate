@@ -91,6 +91,7 @@ signed off (may be planning docs or UI-only); **Draft** = under review;
 | 078 | [Cross-Surface Pipeline Walkthrough Template](rfcs/078-pipeline-walkthrough-template.md) | Draft | TBD |
 | 079 | [Unify Inference on the Rust Engine](rfcs/079-unify-inference-on-rust-engine.md) | Draft | TBD |
 | 080 | [Visual Builder Nested-Object Support](rfcs/080-visual-builder-object-support.md) | Draft | TBD |
+| 081 | [Quarantine List + Replay Reconciliation](rfcs/081-quarantine-list-and-replay-reconciliation.md) | Draft (impl landed, pending merge) | `nightly-maintenance-2026-07-14-rfc081` |
 
 ---
 

@@ -71,6 +71,7 @@ pub mod observability;
 mod odcs;
 mod public_catalog;
 mod publication;
+mod quarantine;
 #[cfg(test)]
 mod rag_contract_tests;
 mod rate_limit;
@@ -1336,6 +1337,14 @@ fn build_router(state: Arc<AppState>) -> Router {
         .route(
             "/contracts/{id}/quarantine/{quar_id}/replay-history",
             get(replay::replay_history_handler),
+        )
+        // Org-scoped top-level quarantine API (RFC-081) — backs the dashboard
+        // Quarantine tab: list, replay-by-event-id, and per-event history.
+        .route("/quarantine", get(quarantine::list_quarantine_handler))
+        .route("/quarantine/replay", post(quarantine::replay_all_handler))
+        .route(
+            "/quarantine/replay-history",
+            get(quarantine::replay_history_all_handler),
         )
         // Kafka Ingress (RFC-025)
         .route(

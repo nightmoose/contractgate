@@ -2605,6 +2605,125 @@ metrics: []
             .unwrap();
     }
 
+    /// RFC-081: the org-scoped quarantine LIST + id-resolution helpers never
+    /// surface another org's quarantine rows. Org B must not see or resolve org
+    /// A's quarantined event; dev mode (org_id=None) sees all.
+    #[tokio::test]
+    #[ignore = "requires DATABASE_URL and a live Supabase/Postgres instance"]
+    async fn two_org_quarantine_list_isolation() {
+        let db_url = std::env::var("DATABASE_URL").expect("DATABASE_URL must be set");
+        let pool = sqlx::PgPool::connect(&db_url).await.unwrap();
+
+        let org_a = uuid::Uuid::new_v4();
+        let org_b = uuid::Uuid::new_v4();
+
+        let minimal_yaml = r#"
+version: "1.0"
+name: "quarantine_iso_contract"
+description: "RFC-081 quarantine isolation test"
+ontology:
+  entities:
+    - name: id
+      type: string
+      required: true
+glossary: []
+metrics: []
+"#;
+
+        for (org, slug) in [(org_a, "q-iso-a"), (org_b, "q-iso-b")] {
+            sqlx::query("INSERT INTO orgs (id, name, slug) VALUES ($1, $2, $3)")
+                .bind(org)
+                .bind("quarantine isolation org")
+                .bind(format!("{slug}-{}", org.simple()))
+                .execute(&pool)
+                .await
+                .expect("seed org");
+        }
+
+        let (identity, _) = super::super::storage::create_contract(
+            &pool,
+            "quarantine_iso_contract",
+            Some("RFC-081 quarantine isolation test"),
+            minimal_yaml,
+            Default::default(),
+            Some(org_a),
+        )
+        .await
+        .expect("org A creates contract");
+        let contract_id = identity.id;
+
+        // Seed one quarantined (source) row on org A's contract.
+        let quar_id = uuid::Uuid::new_v4();
+        sqlx::query(
+            r#"
+            INSERT INTO quarantine_events
+                (id, contract_id, contract_version, payload, violation_count,
+                 violation_details, status)
+            VALUES ($1, $2, '1.0.0', '{"id":123}'::jsonb, 1, '[]'::jsonb, 'pending')
+            "#,
+        )
+        .bind(quar_id)
+        .bind(contract_id)
+        .execute(&pool)
+        .await
+        .expect("seed quarantine row");
+
+        // Org A sees it.
+        let a_list =
+            super::super::storage::list_quarantine_events(&pool, Some(org_a), None, 100, 0)
+                .await
+                .unwrap();
+        assert!(
+            a_list.iter().any(|r| r.id == quar_id),
+            "org A must see its own quarantine row"
+        );
+
+        // Org B must NOT see it.
+        let b_list =
+            super::super::storage::list_quarantine_events(&pool, Some(org_b), None, 100, 0)
+                .await
+                .unwrap();
+        assert!(
+            !b_list.iter().any(|r| r.id == quar_id),
+            "org B must NOT see org A's quarantine row"
+        );
+
+        // Org B must NOT resolve org A's id (→ empty, treated as not-found).
+        let resolved_b =
+            super::super::storage::resolve_quarantine_contracts(&pool, Some(org_b), &[quar_id])
+                .await
+                .unwrap();
+        assert!(
+            resolved_b.is_empty(),
+            "org B must not resolve org A's quarantine id"
+        );
+
+        // Org A resolves its own id to the owning contract.
+        let resolved_a =
+            super::super::storage::resolve_quarantine_contracts(&pool, Some(org_a), &[quar_id])
+                .await
+                .unwrap();
+        assert_eq!(resolved_a, vec![(quar_id, contract_id)]);
+
+        // Dev mode (org_id=None) is unscoped and sees the row.
+        let dev_list = super::super::storage::list_quarantine_events(&pool, None, None, 100, 0)
+            .await
+            .unwrap();
+        assert!(dev_list.iter().any(|r| r.id == quar_id));
+
+        // Cleanup (contract delete cascades the quarantine row).
+        sqlx::query("DELETE FROM contracts WHERE id = $1")
+            .bind(contract_id)
+            .execute(&pool)
+            .await
+            .unwrap();
+        sqlx::query("DELETE FROM orgs WHERE id = ANY($1)")
+            .bind(vec![org_a, org_b])
+            .execute(&pool)
+            .await
+            .unwrap();
+    }
+
     /// Org B's key gets VersionNotFound on GET for org A's version.
     #[tokio::test]
     #[ignore = "requires DATABASE_URL and a live Supabase/Postgres instance"]

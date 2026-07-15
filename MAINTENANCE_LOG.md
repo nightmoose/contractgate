@@ -44,6 +44,63 @@ Separately, the protected allowlist only permitted `Authorization` and
 
 ---
 
+## Run: 2026-07-14 — RFC-081 quarantine list + replay reconciliation
+
+**Scope:** fix the dashboard Quarantine tab, which was wired to backend routes
+that never existed (no list endpoint; path + payload mismatch on replay).
+**Branch:** `nightly-maintenance-2026-07-14-rfc081`
+
+### What shipped
+1. **Extract-refactor** `replay::replay_handler` → `replay_for_contract(...)`
+   (pure move; contracts-scoped route + tests unchanged).
+2. **New org-scoped top-level routes** matching the shipped dashboard client:
+   `GET /quarantine`, `POST /quarantine/replay`, `GET /quarantine/replay-history`
+   (`src/quarantine.rs` + `src/main.rs`).
+3. **Storage** (`src/storage/replay.rs`): `list_quarantine_events` (org-joined,
+   derived `replay_count`/`last_replayed_at`/`last_replay_passed` via one lateral
+   join) + `resolve_quarantine_contracts` (org-scoped id→contract).
+4. **No migration** — all fields already exist; derived fields computed in SQL.
+5. **Docs**: `docs/quarantine-replay-reference.md`; STATUS + RFC-081.
+6. **Frontend**: no change needed — the backend now matches the existing
+   `dashboard/lib/api.ts` shapes exactly (that was the point).
+
+### Verified (cargo in-session, `CARGO_TARGET_DIR=/tmp`)
+- `cargo check --tests`, `cargo clippy --all-targets -- -D warnings`,
+  `cargo test --lib --bins` → 297 passed / 0 failed.
+- Serde-contract unit tests lock `QuarantinedEvent` / `ReplayOutcome` /
+  `ReplayResponse` wire shapes to `api.ts` (guards against the exact drift that
+  caused the bug).
+- New DB-backed `tests::org_scoping::two_org_quarantine_list_isolation` added to
+  the `migrations-check` named list (count 4→5). Needs live Postgres → runs in
+  CI, not the check sandbox.
+
+---
+
+## Run: 2026-07-14 — RFC-075 auth-on isolation lane + security overview
+
+**Scope:** dual-sell worklist review follow-through. No Rust changes.
+**Branch:** `nightly-maintenance-2026-07-14-rfc075`
+
+### What shipped
+1. **RFC-075 auth-on isolation lane** — `tests/compose.isolation.yml` (second
+   gateway, auth ON, :8081) + `tests/compose_isolation_smoke.sh` (no-key→401
+   sanity gate, org B→org A→403/404 isolation, org A→org A→2xx positive) + new
+   `compose-isolation-smoke` CI job wired into `deploy-fly` needs. Replaces the
+   RFC-073 compose-smoke isolation step that was a false green under
+   `DEV_NO_AUTH=1`. Disabled block in `compose_demo_smoke.sh` re-annotated.
+2. **`docs/security-overview.md`** — diligence/sales security one-pager.
+3. **Advisor recheck** — migration 031 confirmed applied to prod; 0 ERRORs;
+   residual items are by-design (no migration 032 needed).
+
+### Verified
+- `cargo check --tests`, `cargo clippy --all-targets`, `cargo test --lib --bins`
+  (295 passed / 0 failed / 4 ignored) — green baseline; no Rust touched.
+- `bash -n` + YAML parse on the new lane files.
+- Integration `cross_org_ingest_is_rejected` needs live docker+Postgres — run
+  the compose lane to exercise it (not runnable in the check sandbox).
+
+---
+
 ## Run: 2026-07-13 — Dependabot follow-ups (aes-gcm / tower-http / AWS TLS / config)
 
 **Scope:** Dependabot hygiene + the major upgrades Dependabot couldn't land green (#133/#134 closed; #130 already merged).
