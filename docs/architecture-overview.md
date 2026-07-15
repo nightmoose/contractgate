@@ -1,96 +1,69 @@
 # ContractGate — Architecture Overview
 
-**One-pager for security questionnaires and data-room review.**  
-Last updated: 2026-07-15
+**One-pager for security questionnaires and data-room review.**
+Last updated: 2026-07-15.
 
-## Product in one line
+> Stop bad events **before** they hit the warehouse — semantic contracts enforced
+> at ingest, with quarantine/replay and sub-millisecond validation.
 
-Producer → **auth (org)** → **contract** → **validate** (Rust, sub-ms) → **audit** · **forward** or **quarantine** → optional **replay**.
-
-Stop bad events **before** the warehouse.
-
----
-
-## Components
-
-| Layer | Tech | Role |
-|---|---|---|
-| Validation gateway | Rust + Axum (`contractgate-server`) | Ingest, validate, quarantine, API |
-| Dashboard | Next.js 15 (Vercel) | Contracts UI, playground, billing, usage |
-| Data store | Supabase Postgres | Contracts, versions, audit, quarantine, orgs, keys |
-| Auth | Supabase JWT (RS256 JWKS) + DB-backed API keys | Browser sessions vs machine keys |
-| Ingress (optional) | Kafka consumer pool, Kinesis, HTTP | Platform-side stream pull |
-| Self-host | Docker Compose + `make demo` | Local full stack, no signup |
-
----
-
-## Request path (management + ingest)
+## Request flow
 
 ```mermaid
 flowchart LR
-  P[Producer / Dashboard] --> A{Auth}
-  A -->|Bearer JWT| J[JWKS verify]
-  A -->|x-api-key| K[Key cache + org]
-  J --> O[Org scope]
-  K --> O
-  O --> C[Resolve contract version]
-  C --> V[CompiledContract validate]
-  V -->|pass| F[Audit + optional forward]
-  V -->|fail| Q[Quarantine + audit]
-  Q --> R[Replay when fixed]
+    P[Producer or pipeline] -->|HTTP, Kafka, Kinesis| GW
+
+    subgraph GW[ContractGate gateway - Rust Axum on Fly.io]
+      A[Auth: API key or Bearer JWT] --> O[Resolve org + key scope]
+      O --> C[Resolve contract + version]
+      C --> V[Validate - compile once, validate many, p99 under 15ms]
+    end
+
+    V -->|pass| F[Forward downstream + audit_log]
+    V -->|fail| Q[quarantine_events - held, not forwarded]
+    Q -->|manual replay vs target version| V
+
+    GW --- DB[(Supabase Postgres - contracts, audit, quarantine, keys, usage)]
+    DASH[Dashboard - Next.js / Vercel] -->|Bearer JWT| GW
 ```
 
-**Hot path rules:** `validate()` is total (no panic); contracts compile once (regex, etc.); p99 budget **&lt; 15 ms** end-to-end for typical events. Release builds use `panic = "abort"`.
+## Components
 
----
+| Component | Tech | Role |
+|---|---|---|
+| Validation gateway | Rust (Axum), Fly.io `iad` | The engine. Compile-once/validate-many; panic-free hot path; p99 ~31µs measured (target < 15 ms). |
+| Dashboard | Next.js + TS + Tailwind, Vercel | Contracts, quarantine/replay, usage, keys, billing. |
+| Data store | Supabase Postgres (`us-east-2`, PG 17) | Contracts/versions, `audit_log`, `quarantine_events`, `api_keys` (hashed), org/tenancy, usage. |
+| Billing | Stripe Checkout + webhooks | Growth self-serve; plan status on `orgs`. |
 
 ## Ingress surfaces
 
-| Surface | Auth | Notes |
-|---|---|---|
-| `POST /ingest/{id}` | API key / JWT | Legacy path |
-| `POST /v1/ingest/{id}` | API key / JWT | Preferred (idempotency, body caps) |
-| `POST /egress/{id}` | API key / JWT | Outbound shape / leakage modes |
-| Kafka / Kinesis ingress | Platform config + keys | Feature-flagged binaries |
-| Dashboard REST | Bearer JWT | Org from membership |
+HTTP `POST /ingest/{id}[@version]` and `/v1/ingest` (batch/NDJSON), Kafka ingress
+(RFC-025), Kinesis ingress (RFC-026). All share the one validation engine.
 
----
+## Tenancy & auth (summary)
 
-## Multi-tenancy
+Per-org isolation enforced at the application layer (service-role DB connection)
+and via RLS for browser/PostgREST access; per-key `allowed_contract_ids` bounds
+the hot path. Wrong-org access returns 404 (never reveals existence). Auth-on
+isolation is proven in CI (RFC-075). Detail: [`auth-reference.md`](./auth-reference.md),
+[`security-overview.md`](./security-overview.md).
 
-- **Org** is the isolation unit (`orgs` + memberships).
-- Backend uses the **service-role** DB URL (bypasses RLS) and **re-implements** org scope in application queries (RFC-047+).
-- Supabase RLS still protects PostgREST paths (`get_my_org_ids()`).
-- API keys may further restrict `allowed_contract_ids` (RFC-065).
-- Dev escape: `CONTRACTGATE_DEV_NO_AUTH=1` — **never** production.
+## Key flows
 
-Auth-on isolation lane: `tests/compose.isolation.yml` + `tests/compose_isolation_smoke.sh` (RFC-075).
+- **Ingest** → validate → pass forwards + audits; fail quarantines (RFC-004 PII
+  masking applied before anything durable).
+- **Quarantine → replay** (RFC-003/081): inspect held events, replay against a
+  target version; passes drain the backlog.
+- **Deploy** (RFC-028): promote a contract version to stable; blocked while
+  quarantine is pending.
+- **Metering** (RFC-083): per-org monthly usage vs plan limit (`/usage`).
 
----
+## Data classes & residency
 
-## Metering (RFC-083)
-
-| Phase | Status |
-|---|---|
-| Phase 1 — `GET /usage` live count | Shipped |
-| Phase 3 — dashboard usage widget | Shipped |
-| Phase 2 — ingest 429 + cached counter | **Open** (hot-path; needs p99 smoke) |
-
-Plan limits (backend-owned): Free 1M / Growth 50M / Enterprise unlimited events per UTC calendar month.
-
----
-
-## Hosting & residency
-
-| Piece | Typical deployment |
-|---|---|
-| API | Fly.io (`contractgate-api`, primary region `iad`) |
-| Dashboard | Vercel (`app.datacontractgate.com`) |
-| Database | Supabase Postgres (project region per env) |
-
-Secrets (examples): `DATABASE_URL`, `DASHBOARD_ORIGIN`, Stripe keys (dashboard), optional `SUPABASE_URL` for JWKS when pooler URLs break derivation.
-
----
+US-only today: app data in Supabase `us-east-2`, compute on Fly.io `iad`. Classes:
+contracts/versions, audit log, quarantined events, API-key **hashes** (never raw
+keys), Stripe event records, per-org usage. See retention notes in
+[`security-overview.md`](./security-overview.md).
 
 ## Further reading
 
@@ -98,4 +71,4 @@ Secrets (examples): `DATABASE_URL`, `DASHBOARD_ORIGIN`, Stripe keys (dashboard),
 - [Auth reference](./auth-reference.md)
 - [Usage reference](./usage-reference.md)
 - [Data room index](./data-room/README.md)
-- [Ops runbook](./ops/runbook-production.md)
+- [Ops production runbook](./ops/runbook-production.md)

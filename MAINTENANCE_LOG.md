@@ -2,37 +2,36 @@
 
 ---
 
-## Run: 2026-07-15 — Data-room package + ops runbook + cargo-about (while Claude naps)
+## Run: 2026-07-15 — Data-room package + ops runbook + cargo-about
 
-**Scope:** Close data-room open items that are pure docs/tooling. **Does not**
-touch RFC-083 Phase 2 (ingest 429 / hot path).
-**Branch:** `nightly-maintenance-2026-07-15-data-room-runbook-licenses`
+**Scope:** diligence packaging (Claude's architecture/data-room + Grok's ops
+runbook + cargo-about inventory). **Does not** touch RFC-083 Phase 2 (hot path).
+**Branch:** `nightly-maintenance-2026-07-15-data-room-runbook-licenses` (merged with
+Claude's concurrent data-room push on main).
 
-### Confirmed already on main (Claude)
-- RFC-075 isolation lane files + security-overview
-- RFC-081 quarantine list API
-- RFC-082 pilot report export
-- RFC-083 Phase 1 (`GET /usage`) + Phase 3 (UsageWidget)
-- Hero demo (`demo/hero/` + script)
-- JWT CryptoProvider fix (prod); deny ignore for RUSTSEC-2023-0071
-
-### What this run adds
-1. **`docs/architecture-overview.md`** — one-pager + mermaid flow (was claimed but missing from tree).
+### What shipped (combined)
+1. **`docs/architecture-overview.md`** — one-pager + mermaid request-flow diagram.
 2. **`docs/data-room/README.md`** — diligence index + honest open items.
-3. **`docs/data-room/ip-assignment-checklist.md`** — owner/legal checklist.
-4. **`docs/ops/runbook-production.md`** — deploy, health, secrets, common incidents.
-5. **`cargo-about` inventory** — `about.toml`, `docs/data-room/about.hbs`,
-   generated `docs/data-room/dependency-licenses.md` (MIT-heavy tree; no GPL).
-6. **`Cargo.toml` `license = "MIT"`** so cargo-about stops warning on root crate.
-7. **STATUS.md** — 075/081/082/083 marked Shipped (Phase 2 called out for 083).
+3. **`docs/data-room/ip-assignment-checklist.md`** — founder/contractor IP checklist.
+4. **`docs/reviews/incident-2026-07-14-jwt-crypto-provider.md`** — JWT CryptoProvider
+   postmortem (linked from data room).
+5. **`docs/ops/runbook-production.md`** — deploy, health, secrets, common incidents.
+6. **`cargo-about` inventory** — `about.toml`, `docs/data-room/about.hbs`,
+   generated `docs/data-room/dependency-licenses.md` (MIT-heavy; no GPL).
+7. **`Cargo.toml` `license = "MIT"`** — silences cargo-about root-crate warning.
+8. **STATUS.md** — RFCs 075/081/082/083 marked Shipped (083 notes Phase 2 open).
 
-### Still open (unchanged)
-- RFC-083 **Phase 2 enforcement** (429 + counter) — p99-sensitive; leave for dedicated pass.
+### Still open
+- RFC-083 **Phase 2 enforcement** (429 + counter) — p99-sensitive.
 - Patent docket / IP assignment signatures / SOC 2 — owner/legal.
+- Optional: wire `deny.toml` `[licenses]` into CI (inventory already generated).
 
-### Verify
-- Relative links from data-room README resolve.
+### Verified
+- Data-room relative links resolve.
 - `cargo about generate docs/data-room/about.hbs -o docs/data-room/dependency-licenses.md` succeeds.
+
+---
+
 
 ---
 

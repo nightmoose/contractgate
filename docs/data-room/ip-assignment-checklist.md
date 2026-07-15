@@ -1,46 +1,52 @@
-# IP assignment checklist (owner / legal)
+# IP Assignment & Ownership Checklist
 
-**Not automated.** Complete offline and attach evidence to the data room package
-you send externally. Engineering maintains the checklist structure only.
+**Owner:** Alex (founder). Purpose: give an acquirer a clean, unambiguous chain of
+title to the ContractGate IP. These are **non-code** items; engineering can't
+close them, but diligence will ask for every one. Fill in and attach the
+supporting documents to the data room.
 
-Last updated: 2026-07-15
+Status legend: ✅ done · ⬜ open · ❔ confirm
 
----
+## Chain of title
 
-## Entity & ownership
-
-- [ ] Operating entity name and jurisdiction documented
-- [ ] Product trademarks / domain ownership confirmed (`datacontractgate.com`, etc.)
-- [ ] GitHub org ownership and admin access documented
-
-## Founder / employee IP
-
-- [ ] Founder IP assignment / invention assignment agreement signed to the entity
-- [ ] Any prior open-source contributions to this codebase covered by assignment or CLA
-- [ ] No uncleared co-founders or informal collaborators with residual claims
-
-## Contractors / freelancers
-
-- [ ] All paid contractors signed work-for-hire / IP assignment covering ContractGate
-- [ ] List of contractor GitHub handles + date ranges (optional appendix)
+- ⬜ **Founder IP assignment** — a signed agreement assigning all ContractGate IP
+  (code, designs, docs, the patent application) from Alex Suarez personally to
+  the owning entity (nightmoose / the legal entity being sold). Attach.
+- ⬜ **Contractor / contributor assignments** — for anyone (paid or unpaid) who
+  contributed code, designs, or content: a signed IP-assignment or work-for-hire.
+  If there are none, state "sole author" explicitly. Check the git contributor
+  list against this.
+- ❔ **Prior-employer / moonlighting clearance** — confirm no current/former
+  employer has a claim (invention-assignment clauses, developed-on-company-time).
+- ⬜ **Entity ownership** — cap table / who owns the entity that owns the IP.
 
 ## Patent
 
-- [ ] Patent counsel name
-- [ ] Application serial number(s)
-- [ ] Filing date(s)
-- [ ] Status: provisional / non-provisional / pending / granted
-- [ ] Relationship to MIT-licensed code clarified for counterparties (see `NOTICE`)
+- ⬜ **Docket details** — the repo asserts "Patent Pending." Record:
+  application/serial number, filing date, jurisdiction(s), status, and counsel of
+  record. Attach the filing receipt.
+- ❔ **Assignment recorded** — confirm the application is assigned to the entity
+  (not the individual) and recorded with the patent office.
 
-## Third-party code
+## Trademarks & brand
 
-- [ ] MIT `LICENSE` + `NOTICE` current
-- [ ] Dependency license inventory reviewed (`docs/data-room/dependency-licenses.md`)
-- [ ] No known GPL/AGPL contamination in the Rust production binary path
-- [ ] Dashboard npm licenses acceptable for distribution model (optional separate scan)
+- ❔ **"ContractGate" / "nightmoose"** — any registered or common-law marks;
+  domains (`datacontractgate.com`, `nightmoose.com`) and who holds them.
 
-## Evidence to attach (external package)
+## Open-source & licensing
 
-- Signed assignment PDFs (redact as needed)
-- Patent filing receipt / docket export
-- Generated `dependency-licenses.md` (or HTML from cargo-about)
+- ✅ Project license: **MIT** ([LICENSE](../../LICENSE), [NOTICE](../../NOTICE)).
+- ✅ **Dependency license inventory** — Rust tree: [dependency-licenses.md](./dependency-licenses.md)
+  (cargo-about; regenerate via `about.toml` + `about.hbs`). Optional follow-up:
+  npm dashboard scan + `deny.toml` `[licenses]` CI allowlist.
+- ❔ **Third-party assets** — fonts, icons, sample datasets (e.g. ACS catalog
+  data): confirm redistribution rights.
+
+## Data & privacy
+
+- ❔ **Customer data ownership / DPA** — for hosted pilots, confirm terms on who
+  owns ingested data and any processing agreements.
+
+---
+
+*Rust dependency inventory is in-tree. Remaining items are legal/founder work.*
