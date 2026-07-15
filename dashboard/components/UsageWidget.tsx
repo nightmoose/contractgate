@@ -66,11 +66,7 @@ export default function UsageWidget() {
           <div className="mt-2 flex items-center justify-between gap-2">
             <span className="text-[11px] text-slate-500">
               {clampedPct.toFixed(1)}% of plan limit
-              {over
-                ? " · hard block not enabled yet (visibility only)"
-                : warn
-                  ? " · approaching cap"
-                  : ""}
+              {over ? " · ingest blocked until next month or upgrade" : warn ? " · approaching cap" : ""}
             </span>
             {(over || warn) && (
               <Link
@@ -83,8 +79,8 @@ export default function UsageWidget() {
           </div>
           {over && (
             <p className="mt-2 text-[11px] text-slate-500">
-              Ingest is not rejected at the cap yet (RFC-083 Phase 2). Upgrade for
-              headroom when hard limits land.
+              Free/Growth monthly caps return HTTP 429 on ingest when exceeded.
+              Upgrade for more headroom, or wait until the next UTC month.
             </p>
           )}
         </>

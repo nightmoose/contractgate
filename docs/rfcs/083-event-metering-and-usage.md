@@ -1,8 +1,8 @@
 # RFC-083 — Per-org event metering + usage API
 
-**Status:** Draft (Phase 1 + Phase 3 landed 2026-07-15; Phase 2 enforcement open)
+**Status:** Implemented (Phase 1 + 2 + 3; Phase 2 on branch for review)
 **Date:** 2026-07-15
-**Branch:** nightly-maintenance-2026-07-15-rfc083
+**Branch:** nightly-maintenance-2026-07-15-rfc083-phase2
 **Depends on:** RFC-045 (plan gating), RFC-047 (org scoping)
 **Dual-sell:** #5 (counter), #6 (enforcement), #7 (dashboard widget)
 
@@ -60,16 +60,34 @@ Response:
 
 `limit`/`remaining`/`pct` are null and `unlimited: true` for Enterprise.
 
-### Phase 2 — enforcement (next push, separate RFC-scoped review)
+### Phase 2 — enforcement (landed on `nightly-maintenance-2026-07-15-rfc083-phase2`)
 
-- Cached counter table `org_monthly_usage(org_id, period, events)` incremented
-  once per ingest **batch** (single UPSERT — marginal vs the audit write already
-  on that path), so enforcement reads O(1) instead of counting.
-- Ingest returns **429** with a clear JSON body
-  (`{error, plan, limit, used, period, upgrade_url}`) when the org is at/over its
-  cap. Batch-granularity check (a batch that crosses the cap is allowed once).
-- Migration + `EXPECTED_MIGRATION_COUNT` bump + sentinel.
-- Load-check p99 stays < 15 ms before merge (the reason this is its own push).
+- Cached counter table `org_monthly_usage(org_id, period, events)` (migration 032).
+- **Check:** `ensure_monthly_usage` (PK read; one-time audit bootstrap if missing)
+  then `used >= limit` → **429** `plan_limit_exceeded` with
+  `{error, plan, limit, used, period, upgrade_url, status}`.
+- **Fail-open on infra errors:** plan/counter DB failures log and *allow* the
+  request. Metering must never 500 the ingest hot path. Binary-before-migration
+  means "not yet enforcing," not "every ingest 500s." Apply migration 032 first
+  so enforcement actually works.
+- **`dry_run` is not billable:** cap check is skipped when `?dry_run=true` so
+  over-cap orgs can still validate.
+- **Increment:** on the normal HTTP path, UPSERT runs in the *same* `tokio::spawn`
+  as the audit write (only after audit succeeds) so crash/restart under-counts
+  both together rather than diverging. Envelope path (no audit today) uses its
+  own fire-and-forget spawn.
+- **Envelope (MRI/Findigs) is billable:** `passed + quarantined` records are
+  counted even though the legacy short-circuit still skips `audit_log` (pre-
+  existing audit gap; meter independently so caps stay honest).
+- **Kafka / Kinesis unmetered in v1:** streaming ingress does not check or
+  increment the counter (429-ing a consumer loop is impractical). Prefer
+  Enterprise for streaming orgs so the gap is moot; document that `/usage` may
+  under-report for Free/Growth streaming traffic. Follow-up: increment only
+  (no 429) on stream paths if Growth needs streaming.
+- Batch that *crosses* the cap while still under is allowed once
+  (`used < limit` before the batch).
+- Enterprise / no-org (self-host): never blocked.
+- CI: `EXPECTED_MIGRATION_COUNT=32` + Sentinel A7.
 
 ### Phase 3 — dashboard usage widget (#7)
 
@@ -86,8 +104,10 @@ Response:
 
 ## Notes
 
-- Counting *audit_log* rows = billable validated events (accepted into
-  validation), matching the RFC-081 metering intent. Idempotent-retry dedup lands
-  with the Phase-2 counter.
+- Counting *validated HTTP events* (pass or fail). Phase 1 live-count used
+  `audit_log`; Phase 2 prefers `org_monthly_usage`, bootstrapped once from audit.
+  Envelope traffic is billable but not yet audited (pre-existing gap).
 - Self-hosted (no org) is unmetered; `/usage` requires org context (401 in prod
   without it).
+- Soft-quota v1 accepts rare async under-count (process death after response)
+  and rare bootstrap over-count; optional later: reconcile job from `audit_log`.

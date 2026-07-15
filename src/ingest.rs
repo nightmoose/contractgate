@@ -284,6 +284,13 @@ pub async fn ingest_handler(
         )));
     }
 
+    // --- RFC-083 Phase 2: plan monthly event cap (O(1) counter read) -------
+    // dry_run is not billable — allow over-cap orgs to still validate.
+    // A batch that *crosses* the cap while still under is allowed once; at/over → 429.
+    if !query.dry_run {
+        crate::metering::enforce_plan_limit(&state.db, org_id).await?;
+    }
+
     // --- Capture source IP --------------------------------------------------
     let source_ip = headers
         .get("x-forwarded-for")
@@ -353,6 +360,15 @@ pub async fn ingest_handler(
             violation_count = result.violations.len(),
             "envelope batch validated"
         );
+
+        // RFC-083: envelope traffic is billable (MRI/Findigs-style ICP). The
+        // legacy envelope short-circuit still skips audit_log (pre-existing);
+        // we still count validated records so plan caps stay honest. Not dry_run
+        // here — envelope path has no dry_run short-circuit above.
+        if !query.dry_run {
+            let n = result.passed.saturating_add(result.quarantined);
+            crate::metering::record_batch_usage(state.db.clone(), org_id, n);
+        }
 
         return Ok(axum::Json(result).into_response());
     }
@@ -622,11 +638,18 @@ pub async fn ingest_handler(
         }
 
         if !audit_rows.is_empty() {
+            // RFC-083: increment counter in the *same* spawn as audit so a
+            // crash either loses both or keeps them consistent (fail-open
+            // under-count, never audit without a chance to meter).
+            let n = audit_rows.len();
             let pool = state.db.clone();
+            let meter_org = org_id;
             tokio::spawn(async move {
                 if let Err(e) = storage::log_audit_entries_batch(&pool, &audit_rows).await {
                     tracing::warn!("Failed to write batch audit log: {:?}", e);
+                    return;
                 }
+                crate::metering::record_batch_usage_blocking(&pool, meter_org, n).await;
             });
         }
         if !quarantine_rows.is_empty() {

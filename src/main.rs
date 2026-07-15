@@ -67,6 +67,7 @@ mod kafka_consumer;
 mod kafka_ingress;
 mod kinesis_consumer;
 mod kinesis_ingress;
+mod metering;
 pub mod observability;
 mod odcs;
 mod plan;

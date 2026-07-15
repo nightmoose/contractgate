@@ -32,6 +32,15 @@ pub enum AppError {
     #[error("Rate limit exceeded — too many requests")]
     RateLimitExceeded,
 
+    /// RFC-083 Phase 2: org monthly event plan cap reached.  429.
+    #[error("Plan event limit exceeded for plan '{plan}' ({used}/{limit} in {period})")]
+    PlanLimitExceeded {
+        plan: String,
+        limit: i64,
+        used: i64,
+        period: String,
+    },
+
     // -----------------------------------------------------------------------
     // Versioning (RFC-002)
     // -----------------------------------------------------------------------
@@ -144,6 +153,28 @@ impl IntoResponse for AppError {
             AppError::PayloadTooLarge(_) => (StatusCode::PAYLOAD_TOO_LARGE, self.to_string()),
             AppError::Unauthorized => (StatusCode::UNAUTHORIZED, self.to_string()),
             AppError::RateLimitExceeded => (StatusCode::TOO_MANY_REQUESTS, self.to_string()),
+            // Plan-limit body is richer; handled specially below.
+            AppError::PlanLimitExceeded { .. } => {
+                let body = match &self {
+                    AppError::PlanLimitExceeded {
+                        plan,
+                        limit,
+                        used,
+                        period,
+                    } => Json(json!({
+                        "error": "plan_limit_exceeded",
+                        "detail": self.to_string(),
+                        "plan": plan,
+                        "limit": limit,
+                        "used": used,
+                        "period": period,
+                        "upgrade_url": "https://app.datacontractgate.com/pricing",
+                        "status": 429,
+                    })),
+                    _ => unreachable!(),
+                };
+                return (StatusCode::TOO_MANY_REQUESTS, body).into_response();
+            }
 
             AppError::VersionConflict { .. } => (StatusCode::CONFLICT, self.to_string()),
             AppError::VersionImmutable { .. } => (StatusCode::CONFLICT, self.to_string()),
