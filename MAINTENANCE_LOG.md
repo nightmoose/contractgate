@@ -2,6 +2,37 @@
 
 ---
 
+## Run: 2026-07-15 — Data-room package + close-out cleanup
+
+**Scope:** dual-sell asset-sale readiness (#14 architecture one-pager, #16
+data-room index) + IP stub, plus doc cleanup. Docs only.
+
+### What shipped
+1. **`docs/architecture-overview.md`** — one-pager + mermaid request-flow diagram
+   (producer → auth/org → contract → validate → pass/forward or quarantine →
+   replay); components, ingress surfaces, residency. Serves security
+   questionnaires + data room.
+2. **`docs/data-room/README.md`** — single index of diligence materials; every
+   link verified to resolve. Honest "open diligence items" section.
+3. **`docs/data-room/ip-assignment-checklist.md`** — founder/contractor IP,
+   patent docket, trademark, dependency-license items for Alex to close.
+4. **`docs/reviews/incident-2026-07-14-jwt-crypto-provider.md`** — the P0 JWT
+   CryptoProvider postmortem was stranded on its branch and never merged; brought
+   into the tree here and linked from the data room.
+5. **STATUS.md** — marked RFC-075/081/082/083 **Shipped** (were stale
+   "pending merge"); RFC-083 notes Phase 2 enforcement still open.
+
+### Still open (tracked in the data-room index)
+- No dependency-license inventory (`deny.toml [licenses]` empty; CI checks
+  advisories/bans/sources only). Recommend `cargo-about` + a `[licenses]` allowlist.
+- Ops production runbook (#13); patent docket, SOC 2, IP assignment (owner/legal).
+- RFC-083 **Phase 2 enforcement** (ingest 429 + counter) — needs a live p99 smoke.
+
+### Verified
+- All relative links in the data-room index resolve.
+
+---
+
 ## Run: 2026-07-15 — RFC-083 Phase 3 (dashboard usage widget)
 
 **Scope:** dual-sell #7 — make metering visible. Frontend only; reads the
