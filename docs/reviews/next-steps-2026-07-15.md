@@ -68,10 +68,8 @@ data-room staple + "who runs this?" acquirer question. Grok can draft from the
 incident doc + `fly.toml` + CLAUDE.md. Size: ~1 day.
 
 ### 5. Prod migration-drift scheduled CI (dual-sell #17)
-Daily (cron + manual) compare `supabase_migrations.schema_migrations` (prod, via a
-read-only `PROD_DATABASE_URL` secret) to `supabase/migrations/*.sql`. Not in the PR
-path (fork-secret risk). Prevents the next Stripe-class silent drift. Size: ~1 day
-+ a secret/role.
+**Deferred / not shipping.** Operator applies migrations manually; no scheduled
+prod DB secret in CI for now.
 
 ---
 
@@ -105,7 +103,7 @@ two ops/diligence docs). P2 as capacity allows.
 | P1 #3 Kafka/Kinesis decision | **Documented** — unmetered v1, prefer Enterprise; stream audit `org_id` null noted as follow-up |
 | P1 #3 reconcile job | **PR #152** — 6h bg + `usage-reconcile` CLI, up-only GREATEST |
 | P1 #4 ops runbook | **PR #152** (032, reconcile, drift CI, SLA link) |
-| P1 #5 migration-drift CI | **PR #152** — needs `PROD_DATABASE_URL` secret |
+| P1 #5 migration-drift CI | **Dropped** — no scheduled CI / no prod DB secret |
 | P2 #8 support SLA | **PR #152** — `docs/support-sla.md` |
 
 *Legal/founder items (patent docket, SOC 2, IP assignment, DPA) are tracked in

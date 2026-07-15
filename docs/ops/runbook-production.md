@@ -162,10 +162,9 @@ When adding a migration:
 enforce. Metering **fails open** if the table is missing (ingest continues,
 unmetered), but apply 032 first so Free/Growth limits actually work.
 
-**Drift detection:** scheduled workflow
-[`.github/workflows/migration-drift.yml`](../../.github/workflows/migration-drift.yml)
-(daily + manual) compares repo files to prod `supabase_migrations.schema_migrations`
-via read-only secret `PROD_DATABASE_URL`. Not on the PR path.
+**Drift detection:** operator-owned — compare `supabase/migrations/*.sql` to
+prod `supabase_migrations.schema_migrations` when applying (no scheduled CI;
+deliberately not automated).
 
 One-shot counter repair (up-only vs audit):
 

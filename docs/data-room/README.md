@@ -61,7 +61,6 @@ These are known and tracked, not hidden:
    `sharp`/libvips LGPL natives; documented in dashboard license inventory.
 
 **Shipped engineering diligence (see also architecture + runbook):** RFC-083
-metering + support SLA doc ([../support-sla.md](../support-sla.md)); prod
-migration-drift workflow (needs `PROD_DATABASE_URL` secret).
+metering + support SLA doc ([../support-sla.md](../support-sla.md)).
 
 Owner/legal items (#1–3) are outside the engineering backlog.
