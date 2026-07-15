@@ -93,7 +93,7 @@ signed off (may be planning docs or UI-only); **Draft** = under review;
 | 080 | [Visual Builder Nested-Object Support](rfcs/080-visual-builder-object-support.md) | Draft | TBD |
 | 081 | [Quarantine List + Replay Reconciliation](rfcs/081-quarantine-list-and-replay-reconciliation.md) | Shipped | `nightly-maintenance-2026-07-14-rfc081` |
 | 082 | [Exportable Pilot Report](rfcs/082-exportable-pilot-report.md) | Shipped | `nightly-maintenance-2026-07-15-rfc082` |
-| 083 | [Event Metering + Usage API](rfcs/083-event-metering-and-usage.md) | Shipped (Phase 1+3; Phase 2 open) | `nightly-maintenance-2026-07-15-rfc083` + widget |
+| 083 | [Event Metering + Usage API](rfcs/083-event-metering-and-usage.md) | Shipped (Phases 1–3) | `nightly-maintenance-2026-07-15-rfc083-phase2` |
 
 ---
 

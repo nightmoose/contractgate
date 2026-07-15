@@ -1,14 +1,15 @@
-//! RFC-083 Phase 1 — `GET /usage`.
+//! RFC-083 — `GET /usage`.
 //!
-//! Org-scoped current-month event usage against the org's plan limit. Read-only,
-//! live count over `audit_log` — no counter table and no hot-path change (that
-//! arrives with Phase 2 enforcement).
+//! Org-scoped current-month event usage against the org's plan limit.
+//! Phase 2 prefers the O(1) `org_monthly_usage` counter (bootstrapped from
+//! audit_log once per org/month); falls back cleanly for unlimited plans.
 
 use axum::{extract::State, Json};
 use serde::Serialize;
 use std::sync::Arc;
 
 use crate::error::{AppError, AppResult};
+use crate::metering::{current_month_start, current_period_key};
 use crate::plan::monthly_event_limit;
 use crate::storage;
 use crate::{AppState, OrgId};
@@ -37,7 +38,13 @@ pub async fn usage_handler(
     }
 
     let period_start = current_month_start();
-    let used = storage::monthly_event_count(&state.db, org_id, period_start).await?;
+    let period = current_period_key();
+
+    let used = match org_id {
+        Some(o) => storage::ensure_monthly_usage(&state.db, o, &period, period_start).await?,
+        // Dev-no-auth: live count across all orgs (unchanged Phase 1 behaviour).
+        None => storage::monthly_event_count(&state.db, None, period_start).await?,
+    };
 
     let plan = match org_id {
         Some(o) => storage::get_org_plan(&state.db, o)
@@ -66,15 +73,6 @@ pub async fn usage_handler(
         pct,
         unlimited,
     }))
-}
-
-/// First instant of the current UTC calendar month.
-fn current_month_start() -> chrono::DateTime<chrono::Utc> {
-    use chrono::{Datelike, TimeZone, Utc};
-    let now = Utc::now();
-    Utc.with_ymd_and_hms(now.year(), now.month(), 1, 0, 0, 0)
-        .single()
-        .expect("first of month at midnight is always a valid, unambiguous UTC instant")
 }
 
 #[cfg(test)]

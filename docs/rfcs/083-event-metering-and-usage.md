@@ -1,8 +1,8 @@
 # RFC-083 — Per-org event metering + usage API
 
-**Status:** Draft (Phase 1 + Phase 3 landed 2026-07-15; Phase 2 enforcement open)
+**Status:** Implemented (Phase 1 + 2 + 3; Phase 2 on branch for review)
 **Date:** 2026-07-15
-**Branch:** nightly-maintenance-2026-07-15-rfc083
+**Branch:** nightly-maintenance-2026-07-15-rfc083-phase2
 **Depends on:** RFC-045 (plan gating), RFC-047 (org scoping)
 **Dual-sell:** #5 (counter), #6 (enforcement), #7 (dashboard widget)
 
@@ -60,16 +60,18 @@ Response:
 
 `limit`/`remaining`/`pct` are null and `unlimited: true` for Enterprise.
 
-### Phase 2 — enforcement (next push, separate RFC-scoped review)
+### Phase 2 — enforcement (landed on `nightly-maintenance-2026-07-15-rfc083-phase2`)
 
-- Cached counter table `org_monthly_usage(org_id, period, events)` incremented
-  once per ingest **batch** (single UPSERT — marginal vs the audit write already
-  on that path), so enforcement reads O(1) instead of counting.
-- Ingest returns **429** with a clear JSON body
-  (`{error, plan, limit, used, period, upgrade_url}`) when the org is at/over its
-  cap. Batch-granularity check (a batch that crosses the cap is allowed once).
-- Migration + `EXPECTED_MIGRATION_COUNT` bump + sentinel.
-- Load-check p99 stays < 15 ms before merge (the reason this is its own push).
+- Cached counter table `org_monthly_usage(org_id, period, events)` (migration 032).
+- **Check:** `ensure_monthly_usage` (PK read; one-time audit bootstrap if missing)
+  then `used >= limit` → **429** `plan_limit_exceeded` with
+  `{error, plan, limit, used, period, upgrade_url, status}`.
+- **Increment:** fire-and-forget UPSERT after audit batch is scheduled on
+  `/ingest` and `/v1/ingest` (same spawn pattern as audit).
+- Batch that *crosses* the cap while still under is allowed once
+  (`used < limit` before the batch).
+- Enterprise / no-org (self-host): never blocked.
+- CI: `EXPECTED_MIGRATION_COUNT=32` + Sentinel A7.
 
 ### Phase 3 — dashboard usage widget (#7)
 

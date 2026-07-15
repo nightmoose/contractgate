@@ -284,6 +284,11 @@ pub async fn ingest_handler(
         )));
     }
 
+    // --- RFC-083 Phase 2: plan monthly event cap (O(1) counter read) -------
+    // Checked after batch size is known, before validation work. A batch that
+    // *crosses* the cap while still under is allowed once; at/over → 429.
+    crate::metering::enforce_plan_limit(&state.db, org_id).await?;
+
     // --- Capture source IP --------------------------------------------------
     let source_ip = headers
         .get("x-forwarded-for")
@@ -622,12 +627,15 @@ pub async fn ingest_handler(
         }
 
         if !audit_rows.is_empty() {
+            let n = audit_rows.len();
             let pool = state.db.clone();
             tokio::spawn(async move {
                 if let Err(e) = storage::log_audit_entries_batch(&pool, &audit_rows).await {
                     tracing::warn!("Failed to write batch audit log: {:?}", e);
                 }
             });
+            // RFC-083 Phase 2: count every validated event (pass or fail).
+            crate::metering::record_batch_usage(state.db.clone(), org_id, n);
         }
         if !quarantine_rows.is_empty() {
             let pool = state.db.clone();

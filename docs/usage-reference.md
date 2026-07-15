@@ -1,15 +1,16 @@
 # Usage Reference
 
 **RFC:** 083 — Per-org event metering  
-**Status:** Phase 1 (API) + Phase 3 (dashboard widget) shipped · Phase 2 (ingest 429) open  
-**Since:** nightly-2026-07-15
+**Status:** Phase 1 (API) + Phase 2 (ingest 429) + Phase 3 (widget)  
+**Since:** nightly-2026-07-15 (Phase 2: `nightly-maintenance-2026-07-15-rfc083-phase2`)
 
 Per-org event usage for the current calendar month against the plan limit. Backs
 the **Usage this month** card on the account Billing page.
 
-**Important:** this surface is **read-only**. Exceeding Free/Growth caps does **not**
-yet return HTTP 429 on ingest (see RFC-083 Phase 2). Treat the widget as visibility
-and upgrade prompting, not hard metering, until Phase 2 lands.
+**Phase 2 enforcement:** when the org is already at/over its Free or Growth
+monthly cap, `POST /ingest/*` and `POST /v1/ingest/*` return **429**
+`plan_limit_exceeded` (see below). Enterprise is unlimited. Self-hosted (no org)
+is unmetered.
 
 ---
 
@@ -67,11 +68,28 @@ curl -H "x-api-key: $KEY" https://contractgate-api.fly.dev/usage
 
 ## Notes
 
-- `used` is a live count over `audit_log` (billable validated events), backed by
-  `audit_log_org_id_created_idx`. Cheap for a dashboard read; not on the ingest
-  hot path.
-- **Phase 2 (open):** when `used >= limit` for Free/Growth, ingest paths will
-  return **429** with a clear JSON body (`plan`, `limit`, `used`, `period`,
-  `upgrade_url`). Counter will be O(1) via a cached table (not a full
-  `audit_log` count on every request). Requires p99 smoke before merge.
-- Enterprise stays unlimited (`unlimited: true`, no 429 from plan caps).
+- `used` prefers the O(1) `org_monthly_usage` counter (migration 032), bootstrapped
+  once per org/month from `audit_log` if the row is missing.
+- Billable unit = validated events written to audit (pass or fail), matching ingest
+  batch size.
+
+### Plan-limit 429 body (Phase 2)
+
+```json
+{
+  "error": "plan_limit_exceeded",
+  "detail": "Plan event limit exceeded for plan 'free' (1000000/1000000 in 2026-07)",
+  "plan": "free",
+  "limit": 1000000,
+  "used": 1000000,
+  "period": "2026-07",
+  "upgrade_url": "https://app.datacontractgate.com/pricing",
+  "status": 429
+}
+```
+
+- Counter table: `org_monthly_usage` (migration 032). First read in a month may
+  bootstrap from `audit_log` once; subsequent checks are PK lookups.
+- A batch that *crosses* the cap while still under is allowed once; the next
+  request after `used >= limit` is blocked.
+- Enterprise stays unlimited (`unlimited: true`, no plan-cap 429).
