@@ -68,10 +68,8 @@ data-room staple + "who runs this?" acquirer question. Grok can draft from the
 incident doc + `fly.toml` + CLAUDE.md. Size: ~1 day.
 
 ### 5. Prod migration-drift scheduled CI (dual-sell #17)
-Daily (cron + manual) compare `supabase_migrations.schema_migrations` (prod, via a
-read-only `PROD_DATABASE_URL` secret) to `supabase/migrations/*.sql`. Not in the PR
-path (fork-secret risk). Prevents the next Stripe-class silent drift. Size: ~1 day
-+ a secret/role.
+**Deferred / not shipping.** Operator applies migrations manually; no scheduled
+prod DB secret in CI for now.
 
 ---
 
@@ -96,13 +94,17 @@ P0 #1 (envelope) and #2 (deploy) first — #1 is the biggest first-sale risk, #2
 a quick win that also unblocks local demos. Then P1 #3–5 (billing integrity + the
 two ops/diligence docs). P2 as capacity allows.
 
-## Status (Grok, same day)
+## Status (Grok)
 
 | Item | Status |
 |------|--------|
-| P0 #1 envelope audit + quarantine | **In PR** `nightly-maintenance-2026-07-15-envelope-audit-deploy` — route through same audit/quarantine/forward path as per-record |
-| P0 #2 deploy `x-org-id` | **In same PR** — dev-gated fallback matching create_contract |
-| P1–P2 | Not started |
+| P0 #1 envelope audit + quarantine | **Merged #151** — audit/quarantine/forward + meter after audit |
+| P0 #2 deploy `x-org-id` | **Merged #151** |
+| P1 #3 Kafka/Kinesis decision | **Documented** — unmetered v1, prefer Enterprise; stream audit `org_id` null noted as follow-up |
+| P1 #3 reconcile job | **PR #152** — 6h bg + `usage-reconcile` CLI, up-only GREATEST |
+| P1 #4 ops runbook | **PR #152** (032, reconcile, drift CI, SLA link) |
+| P1 #5 migration-drift CI | **Dropped** — no scheduled CI / no prod DB secret |
+| P2 #8 support SLA | **PR #152** — `docs/support-sla.md` |
 
 *Legal/founder items (patent docket, SOC 2, IP assignment, DPA) are tracked in
 `docs/data-room/ip-assignment-checklist.md` — not engineering work.*

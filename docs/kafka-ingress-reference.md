@@ -94,6 +94,14 @@ Every event processed via Kafka is written to the audit log with
 `source = 'kafka'`. The `contract_version` field always reflects the version
 that produced the validation decision (audit honesty rule).
 
+## Metering (RFC-083)
+
+Kafka (and Kinesis) ingress is **not plan-capped and not counter-incremented in
+v1** — rejecting a consumer poll with 429 is impractical. Audit rows currently
+omit `org_id`, so they also do not seed `GET /usage`. **Prefer Enterprise** for
+production streaming so the Free/Growth monthly cap is not the billing story.
+HTTP envelope/batch ingest remains the metered path for Free/Growth.
+
 ---
 
 ## Credential Rotation

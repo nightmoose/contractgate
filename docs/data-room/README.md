@@ -57,10 +57,10 @@ These are known and tracked, not hidden:
 2. **Patent docket** — "Patent Pending" is asserted; capture serial no. / filing
    date / counsel in the checklist.
 3. **SOC 2** — not started; treat as "posture + readiness," not a committed date.
-4. **RFC-083 Phase 2** — shipped on branch for review (`org_monthly_usage` +
-   ingest 429). Confirm p99 smoke in CI/review before treating as prod-closed.
-5. **npm copyleft note** — dashboard production tree includes optional
+4. **npm copyleft note** — dashboard production tree includes optional
    `sharp`/libvips LGPL natives; documented in dashboard license inventory.
 
-Owner/legal items (#1–3) are outside the engineering backlog. Phase 2 metering
-is tracked in RFC-083.
+**Shipped engineering diligence (see also architecture + runbook):** RFC-083
+metering + support SLA doc ([../support-sla.md](../support-sla.md)).
+
+Owner/legal items (#1–3) are outside the engineering backlog.

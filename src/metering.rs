@@ -141,6 +141,48 @@ pub async fn record_batch_usage_blocking(pool: &PgPool, org_id: Option<Uuid>, ev
     }
 }
 
+/// One-shot reconcile: raise counters that drifted below `audit_log` truth.
+/// Safe to run concurrently with ingest (up-only `GREATEST`).
+pub async fn reconcile_current_period(pool: &PgPool) -> Result<u64, AppError> {
+    let period = current_period_key();
+    let period_start = current_month_start();
+    storage::reconcile_monthly_usage_from_audit(pool, &period, period_start).await
+}
+
+/// Background loop: reconcile every `interval` (default 6h via env
+/// `USAGE_RECONCILE_INTERVAL_SECS`, min 300s). Failures are logged; never
+/// panics the process.
+pub fn spawn_usage_reconcile_task(pool: PgPool) {
+    let secs: u64 = std::env::var("USAGE_RECONCILE_INTERVAL_SECS")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(6 * 3600)
+        .max(300);
+    tokio::spawn(async move {
+        // Stagger first run so boot / deploy smoke is not competing with a
+        // full-month COUNT on a large audit_log.
+        tokio::time::sleep(std::time::Duration::from_secs(120)).await;
+        loop {
+            match reconcile_current_period(&pool).await {
+                Ok(n) => {
+                    if n > 0 {
+                        tracing::info!(
+                            rows_raised = n,
+                            "RFC-083: usage reconcile raised {n} org counter(s)"
+                        );
+                    } else {
+                        tracing::debug!("RFC-083: usage reconcile — no counters needed raising");
+                    }
+                }
+                Err(e) => {
+                    tracing::warn!("RFC-083: usage reconcile failed (will retry): {e:?}");
+                }
+            }
+            tokio::time::sleep(std::time::Duration::from_secs(secs)).await;
+        }
+    });
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

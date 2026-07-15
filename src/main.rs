@@ -1577,6 +1577,24 @@ async fn main() -> anyhow::Result<()> {
         return Ok(());
     }
 
+    // ── CLI subcommand: usage-reconcile ───────────────────────────────────────
+    // One-shot up-only reconcile of org_monthly_usage from audit_log (RFC-083).
+    // Usage: cargo run --bin contractgate-server -- usage-reconcile
+    if std::env::args().any(|a| a == "usage-reconcile") {
+        tracing_subscriber::registry()
+            .with(
+                tracing_subscriber::EnvFilter::try_from_default_env()
+                    .unwrap_or_else(|_| "contractgate=info".into()),
+            )
+            .with(tracing_subscriber::fmt::layer())
+            .init();
+        let database_url = std::env::var("DATABASE_URL").expect("DATABASE_URL must be set");
+        let pool = sqlx::PgPool::connect(&database_url).await?;
+        let n = metering::reconcile_current_period(&pool).await?;
+        tracing::info!(rows_raised = n, "usage-reconcile complete");
+        return Ok(());
+    }
+
     tracing_subscriber::registry()
         .with(
             tracing_subscriber::EnvFilter::try_from_default_env()
@@ -1682,6 +1700,11 @@ async fn main() -> anyhow::Result<()> {
     // Must be spawned after the pool is created and the recorder is installed.
     observability::spawn_gauge_tasks(state.db.clone());
     tracing::info!("metrics gauge-refresh tasks spawned");
+
+    // RFC-083: periodic up-only reconcile of org_monthly_usage vs audit_log
+    // (repairs fire-and-forget under-count; never lowers a counter).
+    metering::spawn_usage_reconcile_task(state.db.clone());
+    tracing::info!("usage reconcile background task spawned");
 
     let app = build_router(state);
 
