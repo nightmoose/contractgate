@@ -2,6 +2,26 @@
 
 ---
 
+## Run: 2026-07-15 — RFC-083 Phase 2 (plan-limit enforcement)
+
+**Scope:** dual-sell #6 — hard monthly event caps on ingest. Hot-path aware.
+**Branch / PR:** `nightly-maintenance-2026-07-15-rfc083-phase2` / #150 (Claude review)
+
+### What shipped
+1. Migration **032** — `org_monthly_usage(org_id, period, events)`.
+2. `src/metering.rs` — O(1) cap check + fire-and-forget batch increment.
+3. Hooks on `/ingest` + `/v1/ingest`; 429 `plan_limit_exceeded` JSON body.
+4. `GET /usage` uses counter with one-time audit bootstrap.
+5. CI count 32 + Sentinel A7; docs + UsageWidget updated for hard block.
+
+### Reviewer notes
+- Crossing batch allowed once while still under cap.
+- Enterprise / no-org unmetered.
+- Kafka/Kinesis not hooked (follow-up).
+- Apply migration 032 before prod binary deploy.
+
+---
+
 ## Run: 2026-07-15 — Diligence follow-ups (licenses CI, npm inventory, polish)
 
 **Scope:** Five safe items while Phase 2 metering stays with Claude. No hot path.
