@@ -85,15 +85,15 @@ signed off (may be planning docs or UI-only); **Draft** = under review;
 | 072 | [Quarantine→Replay Race-Guard Test](rfcs/072-quarantine-replay-race-guard-test.md) | Implemented | `nightly-maintenance-2026-05-28-rfc069-pure-fn-coverage` |
 | 073 | [Org-Isolation Test in Compose-Smoke](rfcs/073-org-isolation-test-in-compose-smoke.md) | Implemented | `nightly-maintenance-2026-05-28-rfc069-pure-fn-coverage` |
 | 074 | [Org-Ownership Enforcement on Data Plane (latent P0-class)](rfcs/074-org-ownership-enforcement-data-plane.md) | Implemented | `nightly-maintenance-2026-05-28-rfc069-pure-fn-coverage` |
-| 075 | [Auth-On Isolation Test Lane](rfcs/075-auth-on-isolation-test-lane.md) | Draft | TBD |
+| 075 | [Auth-On Isolation Test Lane](rfcs/075-auth-on-isolation-test-lane.md) | Shipped | `consolidate-2026-07-15` / compose isolation lane |
 | 076 | [`cg test`: Local Contract Dry-Run](rfcs/076-contract-test-dry-run.md) | Implemented | `nightly-maintenance-2026-06-01-rfc076-contract-test-dry-run` |
 | 077 | [RAG-Ingestion Contract Profile](rfcs/077-rag-ingestion-contract-profile.md) | Draft | TBD |
 | 078 | [Cross-Surface Pipeline Walkthrough Template](rfcs/078-pipeline-walkthrough-template.md) | Draft | TBD |
 | 079 | [Unify Inference on the Rust Engine](rfcs/079-unify-inference-on-rust-engine.md) | Draft | TBD |
 | 080 | [Visual Builder Nested-Object Support](rfcs/080-visual-builder-object-support.md) | Draft | TBD |
-| 081 | [Quarantine List + Replay Reconciliation](rfcs/081-quarantine-list-and-replay-reconciliation.md) | Draft (impl landed, pending merge) | `nightly-maintenance-2026-07-14-rfc081` |
-| 082 | [Exportable Pilot Report](rfcs/082-exportable-pilot-report.md) | Draft (impl landed, pending merge) | `nightly-maintenance-2026-07-15-rfc082` |
-| 083 | [Event Metering + Usage API](rfcs/083-event-metering-and-usage.md) | Draft (Phase 1 landed, pending merge) | `nightly-maintenance-2026-07-15-rfc083` |
+| 081 | [Quarantine List + Replay Reconciliation](rfcs/081-quarantine-list-and-replay-reconciliation.md) | Shipped | `nightly-maintenance-2026-07-14-rfc081` |
+| 082 | [Exportable Pilot Report](rfcs/082-exportable-pilot-report.md) | Shipped | `nightly-maintenance-2026-07-15-rfc082` |
+| 083 | [Event Metering + Usage API](rfcs/083-event-metering-and-usage.md) | Shipped (Phase 1+3; Phase 2 open) | `nightly-maintenance-2026-07-15-rfc083` + widget |
 
 ---
 

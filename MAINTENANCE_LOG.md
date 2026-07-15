@@ -2,6 +2,40 @@
 
 ---
 
+## Run: 2026-07-15 — Data-room package + ops runbook + cargo-about (while Claude naps)
+
+**Scope:** Close data-room open items that are pure docs/tooling. **Does not**
+touch RFC-083 Phase 2 (ingest 429 / hot path).
+**Branch:** `nightly-maintenance-2026-07-15-data-room-runbook-licenses`
+
+### Confirmed already on main (Claude)
+- RFC-075 isolation lane files + security-overview
+- RFC-081 quarantine list API
+- RFC-082 pilot report export
+- RFC-083 Phase 1 (`GET /usage`) + Phase 3 (UsageWidget)
+- Hero demo (`demo/hero/` + script)
+- JWT CryptoProvider fix (prod); deny ignore for RUSTSEC-2023-0071
+
+### What this run adds
+1. **`docs/architecture-overview.md`** — one-pager + mermaid flow (was claimed but missing from tree).
+2. **`docs/data-room/README.md`** — diligence index + honest open items.
+3. **`docs/data-room/ip-assignment-checklist.md`** — owner/legal checklist.
+4. **`docs/ops/runbook-production.md`** — deploy, health, secrets, common incidents.
+5. **`cargo-about` inventory** — `about.toml`, `docs/data-room/about.hbs`,
+   generated `docs/data-room/dependency-licenses.md` (MIT-heavy tree; no GPL).
+6. **`Cargo.toml` `license = "MIT"`** so cargo-about stops warning on root crate.
+7. **STATUS.md** — 075/081/082/083 marked Shipped (Phase 2 called out for 083).
+
+### Still open (unchanged)
+- RFC-083 **Phase 2 enforcement** (429 + counter) — p99-sensitive; leave for dedicated pass.
+- Patent docket / IP assignment signatures / SOC 2 — owner/legal.
+
+### Verify
+- Relative links from data-room README resolve.
+- `cargo about generate docs/data-room/about.hbs -o docs/data-room/dependency-licenses.md` succeeds.
+
+---
+
 ## Run: 2026-07-15 — RFC-083 Phase 3 (dashboard usage widget)
 
 **Scope:** dual-sell #7 — make metering visible. Frontend only; reads the

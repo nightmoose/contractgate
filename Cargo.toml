@@ -4,6 +4,7 @@ version = "0.1.0"
 edition = "2021"
 description = "High-performance semantic contract enforcement gateway (Patent Pending)"
 authors = ["ContractGate Team"]
+license = "MIT"
 
 [lib]
 name = "contractgate"
