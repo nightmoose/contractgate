@@ -2,6 +2,31 @@
 
 ---
 
+## Run: 2026-07-14 — RFC-075 auth-on isolation lane + security overview
+
+**Scope:** dual-sell worklist review follow-through. No Rust changes.
+**Branch:** `nightly-maintenance-2026-07-14-rfc075`
+
+### What shipped
+1. **RFC-075 auth-on isolation lane** — `tests/compose.isolation.yml` (second
+   gateway, auth ON, :8081) + `tests/compose_isolation_smoke.sh` (no-key→401
+   sanity gate, org B→org A→403/404 isolation, org A→org A→2xx positive) + new
+   `compose-isolation-smoke` CI job wired into `deploy-fly` needs. Replaces the
+   RFC-073 compose-smoke isolation step that was a false green under
+   `DEV_NO_AUTH=1`. Disabled block in `compose_demo_smoke.sh` re-annotated.
+2. **`docs/security-overview.md`** — diligence/sales security one-pager.
+3. **Advisor recheck** — migration 031 confirmed applied to prod; 0 ERRORs;
+   residual items are by-design (no migration 032 needed).
+
+### Verified
+- `cargo check --tests`, `cargo clippy --all-targets`, `cargo test --lib --bins`
+  (295 passed / 0 failed / 4 ignored) — green baseline; no Rust touched.
+- `bash -n` + YAML parse on the new lane files.
+- Integration `cross_org_ingest_is_rejected` needs live docker+Postgres — run
+  the compose lane to exercise it (not runnable in the check sandbox).
+
+---
+
 ## Run: 2026-07-14 — P0: jsonwebtoken 10 CryptoProvider panic (prod 502)
 
 **Scope:** Production API crash-looping on every dashboard Bearer JWT request.
