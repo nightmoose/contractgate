@@ -45,7 +45,9 @@ export default function UsageWidget() {
       <div className="flex items-center justify-between mb-3">
         <div>
           <div className="text-sm font-semibold text-slate-200">Usage this month</div>
-          <div className="text-xs text-slate-500">{periodLabel}</div>
+          <div className="text-xs text-slate-500">
+            {periodLabel} · validated events (UTC month)
+          </div>
         </div>
         <div className="text-sm text-slate-300 font-medium tabular-nums">
           {fmt(used)}
@@ -61,22 +63,35 @@ export default function UsageWidget() {
               style={{ width: `${clampedPct}%` }}
             />
           </div>
-          <div className="mt-2 flex items-center justify-between">
+          <div className="mt-2 flex items-center justify-between gap-2">
             <span className="text-[11px] text-slate-500">
-              {clampedPct.toFixed(1)}% of your monthly limit
+              {clampedPct.toFixed(1)}% of plan limit
+              {over
+                ? " · hard block not enabled yet (visibility only)"
+                : warn
+                  ? " · approaching cap"
+                  : ""}
             </span>
             {(over || warn) && (
               <Link
                 href="/pricing"
-                className="text-[11px] px-2.5 py-1 rounded bg-green-600 hover:bg-green-500 text-white font-medium"
+                className="text-[11px] px-2.5 py-1 rounded bg-green-600 hover:bg-green-500 text-white font-medium shrink-0"
               >
-                {over ? "Limit reached — upgrade" : "Upgrade"}
+                {over ? "Upgrade plan" : "Upgrade"}
               </Link>
             )}
           </div>
+          {over && (
+            <p className="mt-2 text-[11px] text-slate-500">
+              Ingest is not rejected at the cap yet (RFC-083 Phase 2). Upgrade for
+              headroom when hard limits land.
+            </p>
+          )}
         </>
       ) : (
-        <p className="text-xs text-slate-500">Unlimited events on your plan.</p>
+        <p className="text-xs text-slate-500">
+          Unlimited events on your plan (Enterprise).
+        </p>
       )}
     </div>
   );

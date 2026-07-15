@@ -2,34 +2,53 @@
 
 ---
 
-## Run: 2026-07-15 — Data-room package + close-out cleanup
+## Run: 2026-07-15 — Diligence follow-ups (licenses CI, npm inventory, polish)
 
-**Scope:** dual-sell asset-sale readiness (#14 architecture one-pager, #16
-data-room index) + IP stub, plus doc cleanup. Docs only.
+**Scope:** Five safe items while Phase 2 metering stays with Claude. No hot path.
+**Branch:** `nightly-maintenance-2026-07-15-data-room-runbook-licenses`
 
 ### What shipped
-1. **`docs/architecture-overview.md`** — one-pager + mermaid request-flow diagram
-   (producer → auth/org → contract → validate → pass/forward or quarantine →
-   replay); components, ingress surfaces, residency. Serves security
-   questionnaires + data room.
-2. **`docs/data-room/README.md`** — single index of diligence materials; every
-   link verified to resolve. Honest "open diligence items" section.
-3. **`docs/data-room/ip-assignment-checklist.md`** — founder/contractor IP,
-   patent docket, trademark, dependency-license items for Alex to close.
-4. **`docs/reviews/incident-2026-07-14-jwt-crypto-provider.md`** — the P0 JWT
-   CryptoProvider postmortem was stranded on its branch and never merged; brought
-   into the tree here and linked from the data room.
-5. **STATUS.md** — marked RFC-075/081/082/083 **Shipped** (were stale
-   "pending merge"); RFC-083 notes Phase 2 enforcement still open.
+1. **`deny.toml` `[licenses]` allowlist** + CI `cargo deny check … licenses`.
+2. **`docs/data-room/dashboard-dependency-licenses.md`** — npm production scan
+   (notes LGPL via sharp/libvips optional natives).
+3. **STATUS hygiene** — 034/035/037/046 → Shipped; 075–083 already Shipped.
+4. **Usage + pilot report docs** — clearer Phase 2 disclaimer; pilot when-to-use.
+5. **UsageWidget copy** — honest “hard block not enabled yet” when at cap.
 
-### Still open (tracked in the data-room index)
-- No dependency-license inventory (`deny.toml [licenses]` empty; CI checks
-  advisories/bans/sources only). Recommend `cargo-about` + a `[licenses]` allowlist.
-- Ops production runbook (#13); patent docket, SOC 2, IP assignment (owner/legal).
-- RFC-083 **Phase 2 enforcement** (ingest 429 + counter) — needs a live p99 smoke.
+Website resources section is a separate PR on `datacontractgate_website`.
+
+---
+
+## Run: 2026-07-15 — Data-room package + ops runbook + cargo-about
+
+**Scope:** diligence packaging (Claude's architecture/data-room + Grok's ops
+runbook + cargo-about inventory). **Does not** touch RFC-083 Phase 2 (hot path).
+**Branch:** `nightly-maintenance-2026-07-15-data-room-runbook-licenses` (merged with
+Claude's concurrent data-room push on main).
+
+### What shipped (combined)
+1. **`docs/architecture-overview.md`** — one-pager + mermaid request-flow diagram.
+2. **`docs/data-room/README.md`** — diligence index + honest open items.
+3. **`docs/data-room/ip-assignment-checklist.md`** — founder/contractor IP checklist.
+4. **`docs/reviews/incident-2026-07-14-jwt-crypto-provider.md`** — JWT CryptoProvider
+   postmortem (linked from data room).
+5. **`docs/ops/runbook-production.md`** — deploy, health, secrets, common incidents.
+6. **`cargo-about` inventory** — `about.toml`, `docs/data-room/about.hbs`,
+   generated `docs/data-room/dependency-licenses.md` (MIT-heavy; no GPL).
+7. **`Cargo.toml` `license = "MIT"`** — silences cargo-about root-crate warning.
+8. **STATUS.md** — RFCs 075/081/082/083 marked Shipped (083 notes Phase 2 open).
+
+### Still open
+- RFC-083 **Phase 2 enforcement** (429 + counter) — p99-sensitive.
+- Patent docket / IP assignment signatures / SOC 2 — owner/legal.
+- Optional: wire `deny.toml` `[licenses]` into CI (inventory already generated).
 
 ### Verified
-- All relative links in the data-room index resolve.
+- Data-room relative links resolve.
+- `cargo about generate docs/data-room/about.hbs -o docs/data-room/dependency-licenses.md` succeeds.
+
+---
+
 
 ---
 

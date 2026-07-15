@@ -36,10 +36,9 @@ Status legend: ✅ done · ⬜ open · ❔ confirm
 ## Open-source & licensing
 
 - ✅ Project license: **MIT** ([LICENSE](../../LICENSE), [NOTICE](../../NOTICE)).
-- ⬜ **Dependency license inventory** — generate a `cargo-about` report over the
-  Rust tree (+ an npm license summary for the dashboard) to show no
-  GPL/AGPL/copyleft contamination. Add a `[licenses]` allowlist to `deny.toml`
-  so CI enforces it going forward. (Engineering can produce this — ask.)
+- ✅ **Dependency license inventory** — Rust tree: [dependency-licenses.md](./dependency-licenses.md)
+  (cargo-about; regenerate via `about.toml` + `about.hbs`). Optional follow-up:
+  npm dashboard scan + `deny.toml` `[licenses]` CI allowlist.
 - ❔ **Third-party assets** — fonts, icons, sample datasets (e.g. ACS catalog
   data): confirm redistribution rights.
 
@@ -50,5 +49,4 @@ Status legend: ✅ done · ⬜ open · ❔ confirm
 
 ---
 
-*Engineering can generate the dependency-license inventory on request. Everything
-else here is legal/founder work.*
+*Rust dependency inventory is in-tree. Remaining items are legal/founder work.*

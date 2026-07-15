@@ -64,3 +64,11 @@ US-only today: app data in Supabase `us-east-2`, compute on Fly.io `iad`. Classe
 contracts/versions, audit log, quarantined events, API-key **hashes** (never raw
 keys), Stripe event records, per-org usage. See retention notes in
 [`security-overview.md`](./security-overview.md).
+
+## Further reading
+
+- [Security overview](./security-overview.md)
+- [Auth reference](./auth-reference.md)
+- [Usage reference](./usage-reference.md)
+- [Data room index](./data-room/README.md)
+- [Ops production runbook](./ops/runbook-production.md)

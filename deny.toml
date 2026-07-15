@@ -70,8 +70,30 @@ name = "windows_x86_64_gnullvm"
 name = "windows_x86_64_msvc"
 
 [licenses]
-# License check not included in the CI command (advisories bans sources only).
+# Enforced in CI: `cargo deny check advisories bans sources licenses`
+# Align with about.toml accepted list for diligence consistency.
 version = 2
+confidence-threshold = 0.8
+allow = [
+    "MIT",
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "ISC",
+    "Zlib",
+    "Unicode-3.0",
+    "Unicode-DFS-2016",
+    "CC0-1.0",
+    "MPL-2.0",
+    "OpenSSL",
+    "0BSD",
+    "BSL-1.0",
+    "Unlicense",
+    "CDLA-Permissive-2.0",
+]
+# Root crate license is declared in Cargo.toml; keep exceptions empty for now.
+exceptions = []
 
 [sources]
 # Only allow crates from crates.io.
