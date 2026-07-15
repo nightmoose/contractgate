@@ -2,6 +2,28 @@
 
 ---
 
+## Run: 2026-07-15 — RFC-082 exportable pilot report
+
+**Scope:** dual-sell #11 — the "value delivered" artifact for design partners.
+**Branch:** `nightly-maintenance-2026-07-15-rfc082` (built on `consolidate-2026-07-15`)
+
+### What shipped
+1. **`GET /contracts/{id}/report?from=&to=&format=json|csv`** — org-scoped,
+   windowed pilot report: totals + pass rate, per-version split, top violations.
+   JSON (default) or downloadable CSV (`src/report.rs` + route in `main.rs`).
+2. **Storage** (`src/storage/report.rs`): `report_by_version` +
+   `report_top_violations` — windowed audit_log aggregation; violations unnested
+   from `violation_details` JSONB. No new columns; uses existing indexes.
+3. **Docs**: `docs/pilot-report-reference.md`; STATUS + RFC-082.
+
+### Verified (cargo in-session, `CARGO_TARGET_DIR=/tmp`)
+- `cargo check --tests`, `cargo clippy --all-targets -- -D warnings`, report
+  unit tests (serde wire-shape + CSV) green.
+- DB-backed `tests::org_scoping::pilot_report_aggregation` added to the
+  `migrations-check` named list (count 5→6). Needs live Postgres → runs in CI.
+
+---
+
 ## Run: 2026-07-15 — Clear CI Security (rsa RUSTSEC-2023-0071) the SAFE way
 
 **Scope:** unblock the `Security — cargo deny` CI job without re-arming the

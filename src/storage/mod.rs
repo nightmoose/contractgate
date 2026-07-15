@@ -24,9 +24,11 @@ mod collaboration;
 mod contracts;
 mod publication;
 mod replay;
+mod report;
 
 pub use audit::*;
 pub use collaboration::*;
 pub use contracts::*;
 pub use publication::*;
 pub use replay::*;
+pub use report::*;
