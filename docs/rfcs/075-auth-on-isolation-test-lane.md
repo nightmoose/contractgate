@@ -1,8 +1,8 @@
 # RFC-075 — Auth-on test lane for cross-tenant isolation
 
-**Status:** Draft
+**Status:** Draft (implementation landed 2026-07-14, pending merge)
 **Date:** 2026-05-29
-**Branch:** TBD
+**Branch:** nightly-maintenance-2026-07-14-rfc075
 **Depends on:** RFC-074 (org-ownership enforcement on the data plane)
 **Supersedes the verification claim in:** RFC-073
 
@@ -90,6 +90,37 @@ Expect: no-key request → 401 (sanity gate); org B key → org A contract → 4
 (isolation). To prove the test bites, revert RFC-074's `org_id` arg on
 `src/ingest.rs` and confirm the isolation step goes red while the 401 gate stays
 green.
+
+## Implementation (2026-07-14)
+
+Landed as a **dedicated CI lane**, pure curl — no `cargo test` inside the Docker
+job. This deviates from the "reuse the cargo test + false-green guard" suggestion
+above, deliberately: the false-green risk the guard exists for (`cargo test`
+reporting a green exit when the test name is mistyped/filtered to zero) does not
+exist for a direct curl status assertion, which either observes the status or
+fails. Curl also needs no Rust toolchain in the Docker job and matches the
+existing smoke-script idiom.
+
+Files:
+
+- `tests/compose.isolation.yml` — overlay adding `gateway-authon` (same image,
+  `CONTRACTGATE_DEV_NO_AUTH` unset, host port 8081, same Postgres).
+- `tests/compose_isolation_smoke.sh` — boots `postgres gateway-authon`, then:
+  0. **no-key → 401** sanity gate (proves auth is on; fails loudly otherwise);
+  1. org B key → org A contract → **403/404** (isolation);
+  2. org A key → org A contract → **2xx** (proves the correct key is accepted,
+     so assertion 1 can't pass merely because everything is rejected).
+- `.github/workflows/ci.yml` — new `compose-isolation-smoke` job, added to the
+  `deploy-fly` needs list (blocks deploy).
+
+The `cargo test` `cross_org_ingest_is_rejected` in `tests/rfc_001_isolation.rs`
+is retained as the dev-local asset; run it against the auth-on instance with
+`TEST_BASE_URL=http://localhost:8081`.
+
+To prove the lane bites: revert RFC-074's `org_id` arg on `src/ingest.rs` and
+confirm assertion 1 goes red while the 401 gate (0) stays green.
+
+Phase 2 (remaining Class-2 tests) is still open.
 
 ## Out of scope
 

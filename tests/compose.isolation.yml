@@ -1,0 +1,45 @@
+# tests/compose.isolation.yml — RFC-075 auth-on isolation lane.
+#
+# Overlay for docker-compose.yml. Adds a SECOND gateway instance that runs
+# with auth ON (CONTRACTGATE_DEV_NO_AUTH unset), so cross-tenant isolation can
+# be proven end-to-end — the base `gateway` service runs DEV_NO_AUTH=1 for
+# seeding and CANNOT prove isolation (every key is accepted for every org).
+#
+# The auth-on instance shares the same Postgres (seeded at initdb time by
+# ops/postgres/seed/098_isolation_test.sql: two orgs, one org-A contract, one
+# API key per org). It is only consumed by tests/compose_isolation_smoke.sh.
+#
+# Usage:
+#   docker compose -f docker-compose.yml -f tests/compose.isolation.yml \
+#       up -d postgres gateway-authon
+#
+# Naming just `postgres gateway-authon` starts only those two services (plus
+# gateway-authon's postgres dependency) — the base `gateway`, seeder, Grafana,
+# etc. do not start.
+
+services:
+  gateway-authon:
+    image: ghcr.io/contractgate/gateway:${TAG:-latest}
+    ports:
+      # Host 8081 → container 8080. Distinct host port from the base gateway
+      # (8080) so both can run side by side if needed.
+      - "8081:8080"
+    environment:
+      PORT: "8080"
+      DATABASE_URL: postgres://cg:cg@postgres/contractgate
+      # The whole point of this lane: auth is ON. Do NOT set
+      # CONTRACTGATE_DEV_NO_AUTH here. A no-key request must return 401
+      # (asserted as a sanity gate before the isolation check).
+      METRICS_AUTH_TOKEN: ""
+      # No DASHBOARD_ORIGIN needed: the smoke script talks to the API
+      # server-to-server with curl, not from a browser origin.
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/ready"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 10s
+    restart: unless-stopped

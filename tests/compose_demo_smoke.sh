@@ -151,11 +151,12 @@ echo "  audit_log total_events=$TOTAL ✓"
 # (worse) a green lane would mean nothing either.
 #
 # Org isolation is auth-dependent and MUST be exercised against a gateway with
-# auth ON (DEV_NO_AUTH=0) and real keys. That dedicated auth-on test lane is
-# tracked in docs/rfcs/075-auth-on-isolation-test-lane.md. The seed
-# (ops/postgres/seed/098_isolation_test.sql) and the test
-# (tests/rfc_001_isolation.rs::integration::cross_org_ingest_is_rejected) are
-# kept in place for that lane to consume.
+# auth ON (DEV_NO_AUTH=0) and real keys. That dedicated auth-on lane is now
+# IMPLEMENTED in tests/compose_isolation_smoke.sh (RFC-075): it stands up a
+# second gateway with auth ON on :8081 (tests/compose.isolation.yml) and runs a
+# no-key->401 sanity gate before the cross-org assertion. This block stays
+# disabled on purpose — do not re-enable it here against the DEV_NO_AUTH stack.
+# The seed (ops/postgres/seed/098_isolation_test.sql) feeds the new lane.
 #
 # echo "=== compose_demo_smoke: cross-org isolation test (RFC-073) ==="
 # export TEST_BASE_URL="http://localhost:8080"
