@@ -9,6 +9,7 @@ target/
 dashboard/node_modules/
 dashboard/.next/
 dashboard/.next-verify*/
+dashboard/.next-stale*/
 dashboard/out/
 dashboard/.env.local
 dashboard/.env

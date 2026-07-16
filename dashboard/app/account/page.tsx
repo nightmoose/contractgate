@@ -80,6 +80,11 @@ function AccountContent() {
   // Revocation state
   const [revoking, setRevoking] = useState<string | null>(null);
 
+  // RFC-085: per-member role change / remove state (owner/admin only).
+  const [memberActionError, setMemberActionError] = useState<string | null>(null);
+  const [changingRole, setChangingRole] = useState<string | null>(null);
+  const [removingMember, setRemovingMember] = useState<string | null>(null);
+
   // GitHub integration state
   interface GitHubConfig {
     id?: string;
@@ -263,6 +268,55 @@ function AccountContent() {
     setRevokingInvite(null);
   }
 
+  // RFC-085: change a member's role via PATCH /api/org/members.
+  async function handleChangeRole(userId: string, role: "owner" | "admin" | "member") {
+    if (!org) return;
+    setChangingRole(userId);
+    setMemberActionError(null);
+    try {
+      const res = await fetch("/api/org/members", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ org_id: org.org_id, user_id: userId, role }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setMemberActionError(data.error ?? "Failed to change role");
+        return;
+      }
+      await loadOrgData(org.org_id);
+    } catch {
+      setMemberActionError("Network error — please try again");
+    } finally {
+      setChangingRole(null);
+    }
+  }
+
+  // RFC-085: soft-remove a member via DELETE /api/org/members.
+  async function handleRemoveMember(userId: string, email: string | null) {
+    if (!org) return;
+    if (!confirm(`Remove ${email ?? "this member"} from the org? They will lose access immediately.`)) return;
+    setRemovingMember(userId);
+    setMemberActionError(null);
+    try {
+      const res = await fetch("/api/org/members", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ org_id: org.org_id, user_id: userId }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setMemberActionError(data.error ?? "Failed to remove member");
+        return;
+      }
+      await loadOrgData(org.org_id);
+    } catch {
+      setMemberActionError("Network error — please try again");
+    } finally {
+      setRemovingMember(null);
+    }
+  }
+
   async function handleSaveGitHubConfig(e: React.FormEvent) {
     e.preventDefault();
     setGhSaving(true);
@@ -323,6 +377,10 @@ function AccountContent() {
 
   const activeKeys = keys.filter((k) => k.is_active);
   const revokedKeys = keys.filter((k) => !k.is_active);
+
+  // RFC-085: management controls (invite, revoke, change-role, remove) render
+  // only for owner/admin. A plain member sees a read-only roster.
+  const canManage = org?.role === "owner" || org?.role === "admin";
 
   return (
     <div className="max-w-2xl mx-auto py-10 px-4">
@@ -554,7 +612,7 @@ function AccountContent() {
                 {members.length} member{members.length !== 1 ? "s" : ""}
               </p>
             </div>
-            {(org.role === "owner" || org.role === "admin") && !showInviteForm && (
+            {canManage && !showInviteForm && (
               <button
                 onClick={() => { setShowInviteForm(true); setInviteSent(null); setInviteError(null); }}
                 className="text-sm bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg px-4 py-2 transition-colors"
@@ -563,6 +621,14 @@ function AccountContent() {
               </button>
             )}
           </div>
+
+          {/* Member action errors (role change / remove) — 403/409 surfaced inline */}
+          {memberActionError && (
+            <div className="mb-4 bg-red-900/20 border border-red-700/40 rounded-xl px-4 py-3 flex items-center justify-between">
+              <p className="text-sm text-red-400">{memberActionError}</p>
+              <button onClick={() => setMemberActionError(null)} className="text-slate-500 hover:text-slate-300 ml-4">×</button>
+            </div>
+          )}
 
           {/* Invite success flash */}
           {inviteSent && (
@@ -632,6 +698,12 @@ function AccountContent() {
           <div className="space-y-2">
             {members.map((m) => {
               const isYou = m.user_id === user?.id;
+              // Row actions never render on the current user's own row —
+              // both as sane UX and belt-and-suspenders against a user
+              // demoting/removing themselves out of the last-owner slot
+              // (the authoritative guard is server-side, see lib/org/authz.ts).
+              const showRowActions = canManage && !isYou;
+              const isBusy = changingRole === m.user_id || removingMember === m.user_id;
               return (
                 <div
                   key={m.user_id}
@@ -653,15 +725,42 @@ function AccountContent() {
                       Joined {formatDate(m.joined_at)}
                     </p>
                   </div>
-                  <span className={`text-xs px-2 py-0.5 rounded-full font-medium capitalize ${
-                    m.role === "owner"
-                      ? "bg-amber-900/30 text-amber-400"
-                      : m.role === "admin"
-                      ? "bg-indigo-900/30 text-indigo-400"
-                      : "bg-slate-800 text-slate-400"
-                  }`}>
-                    {m.role}
-                  </span>
+
+                  {showRowActions ? (
+                    <>
+                      <select
+                        value={m.role}
+                        disabled={isBusy || (m.role === "owner" && org.role !== "owner")}
+                        onChange={(e) => handleChangeRole(m.user_id, e.target.value as "owner" | "admin" | "member")}
+                        className="text-xs bg-[#0a0d12] border border-[#374151] rounded-lg px-2 py-1 text-slate-300 capitalize disabled:opacity-40 focus:outline-none focus:border-indigo-600"
+                        title={m.role === "owner" && org.role !== "owner" ? "Only an owner can change another owner's role" : "Change role"}
+                      >
+                        <option value="member">Member</option>
+                        <option value="admin">Admin</option>
+                        {/* Owner option only offered when the actor is themselves an owner. */}
+                        {(org.role === "owner" || m.role === "owner") && (
+                          <option value="owner">Owner</option>
+                        )}
+                      </select>
+                      <button
+                        onClick={() => handleRemoveMember(m.user_id, m.email)}
+                        disabled={isBusy || (m.role === "owner" && org.role !== "owner")}
+                        className="text-xs text-slate-600 hover:text-red-400 disabled:opacity-40 transition-colors whitespace-nowrap"
+                      >
+                        {removingMember === m.user_id ? "Removing…" : "Remove"}
+                      </button>
+                    </>
+                  ) : (
+                    <span className={`text-xs px-2 py-0.5 rounded-full font-medium capitalize ${
+                      m.role === "owner"
+                        ? "bg-amber-900/30 text-amber-400"
+                        : m.role === "admin"
+                        ? "bg-indigo-900/30 text-indigo-400"
+                        : "bg-slate-800 text-slate-400"
+                    }`}>
+                      {m.role}
+                    </span>
+                  )}
                 </div>
               );
             })}

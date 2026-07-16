@@ -25,7 +25,7 @@ function isPublic(pathname: string) {
   return PUBLIC_ROUTES.some((r) => pathname === r || pathname.startsWith(r + "/"));
 }
 
-export async function middleware(request: NextRequest) {
+export async function proxy(request: NextRequest) {
   // Stripe webhooks are unauthenticated server-to-server POSTs (verified by
   // signature in the route handler, not by a Supabase session). They must skip
   // the auth gate, or the middleware 307-redirects them to /auth/login and the
