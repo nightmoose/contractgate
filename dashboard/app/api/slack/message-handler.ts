@@ -1,0 +1,337 @@
+/**
+ * ContractGate Slack Bot — message handler
+ *
+ * Handles incoming Slack messages (app_mentions and DMs) by:
+ *   1. Loading/creating per-thread conversation state from Supabase
+ *   2. Detecting intake intent and running the 5-question intake flow
+ *   3. Calling Claude (claude-sonnet-4-6) for general Q&A
+ *   4. Posting the reply back to Slack and persisting the updated state
+ */
+
+import Anthropic from "@anthropic-ai/sdk";
+import { createClient as createServiceClient } from "@supabase/supabase-js";
+
+// ── Lazy singletons (build-time safe) ─────────────────────────────────────────
+
+let _anthropic: Anthropic | null = null;
+function getAnthropic(): Anthropic {
+  if (!_anthropic) {
+    _anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY! });
+  }
+  return _anthropic;
+}
+
+function getSupabaseAdmin() {
+  return createServiceClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!,
+    { auth: { persistSession: false } }
+  );
+}
+
+// ── Types ─────────────────────────────────────────────────────────────────────
+
+interface SlackMessage {
+  role: "user" | "assistant";
+  content: string;
+}
+
+interface IntakeAnswers {
+  name_company?: string;
+  email?: string;
+  stack?: string;
+  use_case?: string;
+  onboarding_pref?: string;
+}
+
+interface IntakeState {
+  step: number; // 0-4 (which question we're waiting to receive an answer for)
+  answers: IntakeAnswers;
+}
+
+interface ConversationRow {
+  workspace: string;
+  thread_ts: string;
+  user_id: string;
+  channel_id: string;
+  messages: SlackMessage[];
+  intake_state: IntakeState | null;
+  lead_id: string | null;
+}
+
+export interface HandleMessageArgs {
+  userId: string;
+  workspaceId: string;
+  channelId: string;
+  threadTs: string; // Slack thread identifier (ts of the first message)
+  text: string;     // user message text (mentions stripped by caller)
+}
+
+// ── Intake configuration ──────────────────────────────────────────────────────
+
+const INTAKE_QUESTIONS = [
+  "What's your name and what company are you with?",
+  "What's your email so we can follow up with you?",
+  "What does your current data stack look like? Rough is totally fine — Kafka, Kinesis, flat files, etc.",
+  "What's the main pain point you're hoping ContractGate helps you solve?",
+  "Would you prefer a self-serve pilot or a guided walkthrough with our team?",
+] as const;
+
+const INTAKE_ANSWER_KEYS: (keyof IntakeAnswers)[] = [
+  "name_company",
+  "email",
+  "stack",
+  "use_case",
+  "onboarding_pref",
+];
+
+/** Patterns that trigger the intake flow */
+const INTAKE_TRIGGERS = [
+  /i'?m interested/i,
+  /want to try/i,
+  /sign me up/i,
+  /tell me more about pricing/i,
+  /tell me more about.*pilot/i,
+  /interested in.*pilot/i,
+  /how do i get (started|access|a demo)/i,
+  /can i get (access|a demo|a trial)/i,
+  /request (access|a demo|a pilot)/i,
+];
+
+function detectsIntakeIntent(text: string): boolean {
+  return INTAKE_TRIGGERS.some((re) => re.test(text));
+}
+
+// ── System prompt ─────────────────────────────────────────────────────────────
+
+const SYSTEM_PROMPT = `You are the ContractGate assistant — a knowledgeable, friendly, and concise bot that helps data teams learn about ContractGate.
+
+About ContractGate:
+ContractGate is a data contract enforcement platform. It sits between your producers and consumers, validates every event against a schema contract, and routes violations to a quarantine queue for inspection and replay. Key features include:
+- **Schema ingestion**: import contracts from YAML/JSON (ODCS format), GitHub, or the API
+- **Multi-source ingestion**: Kafka, Kinesis, HTTP webhooks, flat file upload
+- **Real-time quarantine**: invalid events are held, not dropped — inspect and replay once fixed
+- **PII masking**: field-level transforms before events reach consumers
+- **Egress validation**: validate outbound data too
+- **Scoring & reporting**: per-provider data quality scorecards
+- **Team collaboration**: org-scoped access, shared contract libraries, audit logs
+- **Plan tiers**: free, pro, enterprise — with usage-based billing via Stripe
+
+Tone and style:
+- Friendly, direct, and concise — no marketing fluff
+- Use plain language; avoid jargon unless the user introduced it
+- Technical depth is fine: users are data engineers
+- Never be pushy; if someone isn't ready to try it, that's totally fine
+- Keep answers focused — 1-3 short paragraphs is usually right
+- Don't volunteer the intake/signup flow unless the user expresses genuine interest
+
+If asked about something you don't know (pricing details, unreleased features, SLAs), say so honestly and suggest they reach out via the website or Slack.`;
+
+// ── Slack API helpers ─────────────────────────────────────────────────────────
+
+async function postSlackMessage(
+  channelId: string,
+  text: string,
+  threadTs?: string
+): Promise<void> {
+  const body: Record<string, string> = { channel: channelId, text };
+  if (threadTs) body.thread_ts = threadTs;
+
+  const res = await fetch("https://slack.com/api/chat.postMessage", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${process.env.SLACK_BOT_TOKEN}`,
+    },
+    body: JSON.stringify(body),
+  });
+
+  const json = (await res.json()) as { ok: boolean; error?: string };
+  if (!json.ok) {
+    console.error("[Slack] postMessage failed:", json.error);
+  }
+}
+
+// ── Conversation persistence ───────────────────────────────────────────────────
+
+const MAX_HISTORY_MESSAGES = 20; // keep last 10 turns (user + assistant)
+
+async function loadConversation(
+  workspace: string,
+  threadTs: string,
+  userId: string,
+  channelId: string
+): Promise<ConversationRow> {
+  const supabase = getSupabaseAdmin();
+  const { data, error } = await supabase
+    .from("slack_conversations")
+    .select("*")
+    .eq("workspace", workspace)
+    .eq("thread_ts", threadTs)
+    .maybeSingle();
+
+  if (error) {
+    console.error("[SlackBot] loadConversation error:", error.message);
+  }
+
+  if (data) {
+    return data as ConversationRow;
+  }
+
+  // New thread — insert a fresh row
+  const fresh: ConversationRow = {
+    workspace,
+    thread_ts: threadTs,
+    user_id: userId,
+    channel_id: channelId,
+    messages: [],
+    intake_state: null,
+    lead_id: null,
+  };
+  await supabase.from("slack_conversations").insert(fresh);
+  return fresh;
+}
+
+async function saveConversation(conv: ConversationRow): Promise<void> {
+  // Trim history to the most recent MAX_HISTORY_MESSAGES entries
+  const trimmed = conv.messages.slice(-MAX_HISTORY_MESSAGES);
+  const supabase = getSupabaseAdmin();
+  const { error } = await supabase
+    .from("slack_conversations")
+    .update({
+      messages: trimmed,
+      intake_state: conv.intake_state,
+      lead_id: conv.lead_id,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("workspace", conv.workspace)
+    .eq("thread_ts", conv.thread_ts);
+
+  if (error) {
+    console.error("[SlackBot] saveConversation error:", error.message);
+  }
+}
+
+// ── Intake flow ───────────────────────────────────────────────────────────────
+
+async function saveLead(
+  conv: ConversationRow,
+  answers: IntakeAnswers
+): Promise<string | null> {
+  const supabase = getSupabaseAdmin();
+  const { data, error } = await supabase
+    .from("slack_leads")
+    .insert({
+      slack_user_id: conv.user_id,
+      slack_workspace: conv.workspace,
+      name: answers.name_company ?? null,
+      email: answers.email ?? null,
+      company: null, // parsed from name_company if needed downstream
+      stack: answers.stack ?? null,
+      use_case: answers.use_case ?? null,
+      onboarding_pref: answers.onboarding_pref ?? null,
+      status: "new",
+    })
+    .select("id")
+    .single();
+
+  if (error) {
+    console.error("[SlackBot] saveLead error:", error.message);
+    return null;
+  }
+  return (data as { id: string }).id;
+}
+
+/**
+ * Handle a message while in intake mode.
+ * Records the answer for the current step, advances to the next question,
+ * and saves the lead when all 5 answers are collected.
+ * Returns the bot's reply text.
+ */
+async function handleIntakeStep(
+  conv: ConversationRow,
+  userText: string
+): Promise<string> {
+  const state = conv.intake_state!;
+  const key = INTAKE_ANSWER_KEYS[state.step];
+  state.answers[key] = userText.trim();
+
+  const nextStep = state.step + 1;
+
+  if (nextStep < INTAKE_QUESTIONS.length) {
+    // More questions to ask
+    conv.intake_state = { step: nextStep, answers: state.answers };
+    return INTAKE_QUESTIONS[nextStep];
+  }
+
+  // All answers collected — save lead and finish
+  conv.intake_state = null;
+  const leadId = await saveLead(conv, state.answers);
+  conv.lead_id = leadId;
+
+  return (
+    "Thanks — I've got everything I need! 🎉\n\n" +
+    "Someone from the ContractGate team will follow up with you shortly. " +
+    "In the meantime, feel free to keep asking questions here — I'm happy to help."
+  );
+}
+
+// ── Claude call ───────────────────────────────────────────────────────────────
+
+async function callClaude(
+  history: SlackMessage[],
+  userMessage: string
+): Promise<string> {
+  const messages: Array<{ role: "user" | "assistant"; content: string }> = [
+    ...history,
+    { role: "user", content: userMessage },
+  ];
+
+  const response = await getAnthropic().messages.create({
+    model: "claude-sonnet-4-6",
+    max_tokens: 1024,
+    system: SYSTEM_PROMPT,
+    messages,
+  });
+
+  const block = response.content[0];
+  if (block.type === "text" && "text" in block && typeof block.text === "string") {
+    return block.text;
+  }
+  return "Sorry, I couldn't generate a response. Please try again.";
+}
+
+// ── Main entry point ──────────────────────────────────────────────────────────
+
+export async function handleSlackMessage(args: HandleMessageArgs): Promise<void> {
+  const { userId, workspaceId, channelId, threadTs, text } = args;
+
+  // Load (or create) conversation state
+  const conv = await loadConversation(workspaceId, threadTs, userId, channelId);
+
+  let replyText: string;
+
+  if (conv.intake_state !== null) {
+    // Already in intake flow — record this message as the answer to the current question
+    replyText = await handleIntakeStep(conv, text);
+  } else if (detectsIntakeIntent(text)) {
+    // Transition into intake flow — start with question 0
+    conv.intake_state = { step: 0, answers: {} };
+    replyText =
+      "Great, I'd love to learn more about your situation! Just a few quick questions.\n\n" +
+      INTAKE_QUESTIONS[0];
+  } else {
+    // General Q&A via Claude
+    replyText = await callClaude(conv.messages, text);
+  }
+
+  // Append this turn to history
+  conv.messages.push({ role: "user", content: text });
+  conv.messages.push({ role: "assistant", content: replyText });
+
+  // Persist updated state and post the reply in parallel
+  await Promise.all([
+    saveConversation(conv),
+    postSlackMessage(channelId, replyText, threadTs),
+  ]);
+}

@@ -34,6 +34,13 @@ export async function middleware(request: NextRequest) {
     return NextResponse.next({ request });
   }
 
+  // Slack Events API and announce endpoint are unauthenticated server-to-server
+  // POSTs. The events route verifies Slack's HMAC signature; the announce route
+  // uses a shared secret. Both must bypass the Supabase session gate.
+  if (request.nextUrl.pathname.startsWith("/api/slack/")) {
+    return NextResponse.next({ request });
+  }
+
   // Demo mode: no Supabase env vars required — skip auth entirely.
   if (DEMO_MODE) {
     return NextResponse.next({ request });
