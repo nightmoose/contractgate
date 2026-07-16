@@ -100,6 +100,11 @@ rate-limited and the system prompt refuses off-topic “free Grok” use. Set
 `SLACK_ALLOWED_TEAM_IDS` to your workspace team ID if the app is only for
 internal + invited workspaces.
 
+**Product knowledge:** Q&A is grounded in
+`dashboard/app/api/slack/bot-knowledge.md` (loaded into the system prompt at
+runtime). Update that file when plans, architecture, or positioning change —
+do not dump entire RFCs into the prompt.
+
 After setting variables, **redeploy** the Vercel project so they take effect.
 
 ---
