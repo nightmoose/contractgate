@@ -8,8 +8,8 @@
  *   2. Respond to Slack's url_verification challenge
  *   3. Dispatch app_mention and message.im events to the message handler
  *
- * Security note: this route is exempt from Supabase auth middleware (see
- * middleware.ts). Authentication is provided by Slack's request signature.
+ * Security note: this route is exempt from Supabase auth proxy (see
+ * proxy.ts). Authentication is provided by Slack's request signature.
  *
  * Slack requires HTTP 200 within ~3 seconds. We always ack immediately and run
  * LLM/intake work via Next.js `after()` so the isolate stays alive without
