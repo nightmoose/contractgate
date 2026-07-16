@@ -73,7 +73,7 @@ bold "[1/5] Deploying hero_events v1.0.0 (strict) + v1.1.0 (relaxed) as '$NAME'"
 tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
 for v in 1.0.0 1.1.0; do
     # Rename the contract in the YAML to the unique per-run name.
-    sed "s/\"hero_events\"/\"$NAME\"/" "$FIX/contract_$v.yaml" > "$tmp/c_$v.yaml"
+    sed "s/\"hero_events\"/\"$NAME\"/" "$FIX/contract_v$v.yaml" > "$tmp/c_$v.yaml"
     body=$(jq -n --arg n "$NAME" --arg y "$(cat "$tmp/c_$v.yaml")" \
         '{name:$n, yaml_content:$y, source:"hero-demo", deployed_by:"hero_demo.sh"}')
     echo "$body" > "$tmp/deploy_$v.json"
@@ -91,9 +91,18 @@ green "  ✓ $PASSED events passed"
 
 # ── 3. Legacy CONNECT traffic, pinned to strict v1.0.0 → quarantined ────────
 bold "[3/5] Ingesting events_quarantine.json PINNED to v1.0.0 (expect quarantine)"
-# @1.0.0 forces validation against the strict version even though 1.1.0 is stable.
-post_file "$HOST/ingest/$CID@1.0.0" "$FIX/events_quarantine.json" 200 >/dev/null
-green "  ✓ ingest accepted (validated against v1.0.0)"
+# @1.0.0 forces the pinned version. Sequential deploy of v1.1.0 deprecates
+# v1.0.0, so the pin path returns 422 (deprecated-pin wholesale quarantine)
+# rather than 200/207 per-event failures — both leave durable quarantine rows.
+# Accept either so the demo stays green either way.
+resp=$(curl -s -w $'\n%{http_code}' -X POST "$HOST/ingest/$CID@1.0.0" \
+    "${AUTH[@]}" "${JSON[@]}" --data-binary @"$FIX/events_quarantine.json")
+status=$(printf '%s' "$resp" | tail -n1)
+json=$(printf '%s' "$resp" | sed '$d')
+case "$status" in
+    200|207|422) green "  ✓ ingest accepted (HTTP $status, validated against v1.0.0)" ;;
+    *) red "  ✗ pin ingest → HTTP $status (expected 200/207/422)"; echo "$json" | jq . 2>/dev/null || echo "$json"; exit 1 ;;
+esac
 
 # ── 4. Inspect the quarantine (RFC-081 GET /quarantine) ─────────────────────
 bold "[4/5] Listing quarantined events for this contract"
