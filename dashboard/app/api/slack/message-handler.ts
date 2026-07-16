@@ -48,6 +48,8 @@ function getSupabaseAdmin() {
 interface SlackMessage {
   role: "user" | "assistant";
   content: string;
+  /** How the assistant message was produced — used for rate limits (LLM only). */
+  via?: "llm" | "intake" | "limit" | "block";
 }
 
 interface IntakeAnswers {
@@ -118,7 +120,11 @@ function detectsIntakeIntent(text: string): boolean {
 
 // ── System prompt ─────────────────────────────────────────────────────────────
 
-const SYSTEM_PROMPT = `You are the ContractGate assistant — a knowledgeable, friendly, and concise bot that helps data teams learn about ContractGate.
+const SYSTEM_PROMPT = `You are the ContractGate product assistant — not a general-purpose chatbot.
+
+Your ONLY job is to help people understand ContractGate (data contracts at ingest,
+quarantine, replay, pilot reports, plans, integrations). You are NOT Grok, ChatGPT,
+or a free coding/writing tutor.
 
 About ContractGate:
 ContractGate is a data contract enforcement platform. It sits between your producers and consumers, validates every event against a schema contract, and routes violations to a quarantine queue for inspection and replay. Key features include:
@@ -129,17 +135,135 @@ ContractGate is a data contract enforcement platform. It sits between your produ
 - **Egress validation**: validate outbound data too
 - **Scoring & reporting**: per-provider data quality scorecards
 - **Team collaboration**: org-scoped access, shared contract libraries, audit logs
-- **Plan tiers**: free, pro, enterprise — with usage-based billing via Stripe
+- **Plan tiers**: free, growth, enterprise — with usage-based metering
 
-Tone and style:
-- Friendly, direct, and concise — no marketing fluff
-- Use plain language; avoid jargon unless the user introduced it
-- Technical depth is fine: users are data engineers
-- Never be pushy; if someone isn't ready to try it, that's totally fine
-- Keep answers focused — 1-3 short paragraphs is usually right
-- Don't volunteer the intake/signup flow unless the user expresses genuine interest
+Hard rules:
+- If the user asks for something unrelated to ContractGate / data contracts / data quality
+  pipelines (e.g. general coding, homework, recipes, other products, roleplay), refuse in
+  1–2 short sentences and invite them to ask about ContractGate or say "I'm interested"
+  for a pilot/advisory intake. Do NOT answer the off-topic request.
+- Do not write long code, essays, or multi-step tutorials for unrelated tools.
+- Keep answers to 1–3 short paragraphs. Prefer bullets over walls of text.
+- Never claim to be a general AI assistant or that you can help with anything.
 
-If asked about something you don't know (pricing details, unreleased features, SLAs), say so honestly and suggest they reach out via the website or Slack.`;
+Tone: friendly, direct, concise. Technical depth is fine for data engineers.
+If you don't know a pricing/SLA detail, say so and suggest the website or intake.`;
+
+// ── Abuse / cost controls (env-overridable) ───────────────────────────────────
+
+function envInt(name: string, fallback: number): number {
+  const raw = process.env[name]?.trim();
+  if (!raw) return fallback;
+  const n = parseInt(raw, 10);
+  return Number.isFinite(n) && n >= 0 ? n : fallback;
+}
+
+/** Max LLM replies per Slack user per rolling hour (default 10). */
+function llmPerUserHour(): number {
+  return envInt("SLACK_LLM_PER_USER_HOUR", 10);
+}
+
+/** Max LLM replies per Slack user per UTC day (default 30). */
+function llmPerUserDay(): number {
+  return envInt("SLACK_LLM_PER_USER_DAY", 30);
+}
+
+/** Max LLM replies in a single thread/DM (default 12). */
+function llmPerThread(): number {
+  return envInt("SLACK_LLM_PER_THREAD", 12);
+}
+
+/** Max completion tokens per LLM call (default 512). */
+function llmMaxTokens(): number {
+  return envInt("SLACK_LLM_MAX_TOKENS", 512);
+}
+
+/** How many prior messages to send the model (default 8 = ~4 turns). */
+function llmHistoryLimit(): number {
+  return envInt("SLACK_LLM_HISTORY_LIMIT", 8);
+}
+
+/**
+ * Optional comma-separated Slack team IDs allowed to use the bot.
+ * Empty = all workspaces where the app is installed.
+ */
+function allowedTeamIds(): Set<string> | null {
+  const raw = process.env.SLACK_ALLOWED_TEAM_IDS?.trim();
+  if (!raw) return null;
+  return new Set(
+    raw
+      .split(",")
+      .map((s) => s.trim())
+      .filter(Boolean)
+  );
+}
+
+const RATE_LIMIT_REPLY =
+  "You've hit the free Q&A limit for now (we cap this so the bot stays useful for " +
+  "people evaluating ContractGate, not as a general chatbot).\n\n" +
+  "• Say *I'm interested* to leave your details for a pilot/advisory seat\n" +
+  "• Or try again later with a ContractGate-specific question";
+
+const THREAD_LIMIT_REPLY =
+  "This thread has reached the Q&A limit. Start a fresh DM or say *I'm interested* " +
+  "if you'd like a pilot/advisory follow-up.";
+
+const WORKSPACE_BLOCKED_REPLY =
+  "This Slack workspace isn't enabled for the ContractGate bot. " +
+  "DM us via the workspace where you installed the app, or visit the website.";
+
+/** Count LLM assistant turns only (excludes intake / rate-limit notices). */
+function countLlmAssistantTurns(messages: SlackMessage[]): number {
+  return messages.filter(
+    (m) =>
+      m.role === "assistant" &&
+      m.via !== "intake" &&
+      m.via !== "limit" &&
+      m.via !== "block"
+  ).length;
+}
+
+/**
+ * Count this user's assistant turns across recent conversations (durable,
+ * works across serverless instances). Best-effort — on DB error, allow the call.
+ */
+async function countUserAssistantTurns(
+  workspace: string,
+  userId: string,
+  sinceIso: string
+): Promise<number> {
+  const supabase = getSupabaseAdmin();
+  const { data, error } = await supabase
+    .from("slack_conversations")
+    .select("messages")
+    .eq("workspace", workspace)
+    .eq("user_id", userId)
+    .gte("updated_at", sinceIso);
+
+  if (error || !data) {
+    if (error) {
+      console.warn("[SlackBot] rate-limit count failed:", error.message);
+    }
+    return 0;
+  }
+
+  let n = 0;
+  for (const row of data) {
+    const msgs = row.messages as SlackMessage[] | null;
+    if (Array.isArray(msgs)) n += countLlmAssistantTurns(msgs);
+  }
+  return n;
+}
+
+function hoursAgoIso(hours: number): string {
+  return new Date(Date.now() - hours * 3600 * 1000).toISOString();
+}
+
+function utcDayStartIso(): string {
+  const d = new Date();
+  d.setUTCHours(0, 0, 0, 0);
+  return d.toISOString();
+}
 
 // ── Slack API helpers ─────────────────────────────────────────────────────────
 
@@ -304,7 +428,7 @@ async function callAnthropic(
   const model = process.env.ANTHROPIC_MODEL?.trim() || "claude-sonnet-4-6";
   const response = await getAnthropic().messages.create({
     model,
-    max_tokens: 1024,
+    max_tokens: llmMaxTokens(),
     system: SYSTEM_PROMPT,
     messages,
   });
@@ -342,8 +466,8 @@ async function callXai(
     body: JSON.stringify({
       model,
       messages,
-      max_tokens: 1024,
-      temperature: 0.7,
+      max_tokens: llmMaxTokens(),
+      temperature: 0.4,
     }),
   });
 
@@ -385,32 +509,68 @@ async function callLlm(
 export async function handleSlackMessage(args: HandleMessageArgs): Promise<void> {
   const { userId, workspaceId, channelId, threadTs, text } = args;
 
+  // Optional workspace allowlist (blocks freeloaders on random installs)
+  const teams = allowedTeamIds();
+  if (teams && !teams.has(workspaceId)) {
+    await postSlackMessage(channelId, WORKSPACE_BLOCKED_REPLY, threadTs);
+    return;
+  }
+
   // Load (or create) conversation state
   const conv = await loadConversation(workspaceId, threadTs, userId, channelId);
 
   let replyText: string;
+  let via: SlackMessage["via"] = "intake";
 
   if (conv.intake_state !== null) {
-    // Already in intake flow — record this message as the answer to the current question
+    // Intake is free (no LLM) — always allowed
     replyText = await handleIntakeStep(conv, text);
+    via = "intake";
   } else if (detectsIntakeIntent(text)) {
-    // Transition into intake flow — start with question 0
     conv.intake_state = { step: 0, answers: {} };
     replyText =
       "Great, I'd love to learn more about your situation! Just a few quick questions.\n\n" +
       INTAKE_QUESTIONS[0];
+    via = "intake";
   } else {
-    // General Q&A via configured LLM (LLM_PROVIDER=xai|anthropic)
-    replyText = await callLlm(conv.messages, text);
+    // ── LLM gate: thread cap + per-user hour/day caps ───────────────────────
+    const threadTurns = countLlmAssistantTurns(conv.messages);
+    if (threadTurns >= llmPerThread()) {
+      replyText = THREAD_LIMIT_REPLY;
+      via = "limit";
+    } else {
+      const hourLimit = llmPerUserHour();
+      const dayLimit = llmPerUserDay();
+      const [hourCount, dayCount] = await Promise.all([
+        countUserAssistantTurns(workspaceId, userId, hoursAgoIso(1)),
+        countUserAssistantTurns(workspaceId, userId, utcDayStartIso()),
+      ]);
+
+      if (hourCount >= hourLimit || dayCount >= dayLimit) {
+        console.info(
+          `[SlackBot] rate limit user=${userId} hour=${hourCount}/${hourLimit} day=${dayCount}/${dayLimit}`
+        );
+        replyText = RATE_LIMIT_REPLY;
+        via = "limit";
+      } else {
+        const history = conv.messages
+          .filter((m) => m.via !== "limit" && m.via !== "block")
+          .slice(-llmHistoryLimit());
+        replyText = await callLlm(history, text);
+        via = "llm";
+      }
+    }
   }
 
-  // Append this turn to history
   conv.messages.push({ role: "user", content: text });
-  conv.messages.push({ role: "assistant", content: replyText });
+  conv.messages.push({ role: "assistant", content: replyText, via });
 
-  // Persist updated state and post the reply in parallel
   await Promise.all([
     saveConversation(conv),
     postSlackMessage(channelId, replyText, threadTs),
   ]);
+
+  if (via === "llm") {
+    console.info(`[SlackBot] LLM reply user=${userId} workspace=${workspaceId}`);
+  }
 }

@@ -88,6 +88,17 @@ following server-side (non-`NEXT_PUBLIC_`) variables:
 | `ANTHROPIC_MODEL` | Optional; default `claude-sonnet-4-6` |
 | `SUPABASE_SERVICE_ROLE_KEY` | Supabase dashboard → Project Settings → API |
 | `NEXT_PUBLIC_SUPABASE_URL` | Supabase dashboard → Project Settings → API |
+| `SLACK_LLM_PER_USER_HOUR` | Optional; default `10` — max LLM replies per user per hour |
+| `SLACK_LLM_PER_USER_DAY` | Optional; default `30` — max LLM replies per user per UTC day |
+| `SLACK_LLM_PER_THREAD` | Optional; default `12` — max LLM replies per DM/thread |
+| `SLACK_LLM_MAX_TOKENS` | Optional; default `512` — completion size cap |
+| `SLACK_LLM_HISTORY_LIMIT` | Optional; default `8` — prior messages sent to the model |
+| `SLACK_ALLOWED_TEAM_IDS` | Optional; comma-separated Slack team IDs; empty = any install |
+
+**Abuse note:** Intake (`I'm interested`) never calls the LLM. General Q&A is
+rate-limited and the system prompt refuses off-topic “free Grok” use. Set
+`SLACK_ALLOWED_TEAM_IDS` to your workspace team ID if the app is only for
+internal + invited workspaces.
 
 After setting variables, **redeploy** the Vercel project so they take effect.
 
