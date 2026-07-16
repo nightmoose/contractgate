@@ -338,10 +338,24 @@ jobs:
           fi
           echo "Sentinel A7 OK: org_monthly_usage table present (migration 032)."
 
+          # Sentinel A8 — migration 033 (RFC-084 slack_leads): present AND RLS on.
+          # The whole point of 033's fix is that the lead-PII tables are not
+          # exposed via PostgREST, so assert row-level security is enabled.
+          SLACK_RLS=$(psql "$DATABASE_URL" -Atc \
+            "SELECT COUNT(*) FROM pg_class c
+             JOIN pg_namespace n ON n.oid = c.relnamespace
+             WHERE n.nspname = 'public' AND c.relname = 'slack_leads'
+               AND c.relrowsecurity")
+          if [[ "$SLACK_RLS" != "1" ]]; then
+            echo "::error::Migration 033 sentinel failed — slack_leads missing or RLS not enabled."
+            exit 1
+          fi
+          echo "Sentinel A8 OK: slack_leads present with RLS enabled (migration 033)."
+
           # Sentinel B — file count: the loop above applies every *.sql file.
           # Assert we have exactly the expected number so a new migration
           # automatically forces this sentinel to be updated.
-          EXPECTED_MIGRATION_COUNT=32
+          EXPECTED_MIGRATION_COUNT=33
           ACTUAL_COUNT=$(ls supabase/migrations/*.sql | wc -l | tr -d ' ')
           if [[ "$ACTUAL_COUNT" != "$EXPECTED_MIGRATION_COUNT" ]]; then
             echo "::error::Migration count mismatch — expected $EXPECTED_MIGRATION_COUNT files, found $ACTUAL_COUNT."
