@@ -11,13 +11,14 @@
  * Security note: this route is exempt from Supabase auth middleware (see
  * middleware.ts). Authentication is provided by Slack's request signature.
  *
- * Slack requires a response within 3 seconds. We return 200 immediately after
- * signature verification and process the event synchronously. Claude API calls
- * are typically <2 s; if occasionally slower, Slack will retry — we dedup
- * retries via the event_id check against the already-responded thread.
+ * Slack requires HTTP 200 within ~3 seconds. We always ack immediately and run
+ * LLM/intake work via Next.js `after()` so the isolate stays alive without
+ * blocking the response. Slow models no longer trigger Slack retries that
+ * double-post answers. We also claim `event_id` once per process to skip
+ * residual duplicate deliveries.
  */
 
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest, NextResponse, after } from "next/server";
 import crypto from "crypto";
 import { handleSlackMessage } from "../message-handler";
 
@@ -51,11 +52,31 @@ async function verifySlackSignature(req: NextRequest, rawBody: string): Promise<
     .digest("hex");
   const expected = `v0=${hmac}`;
 
-  // Constant-time comparison to prevent timing attacks
-  return crypto.timingSafeEqual(
-    Buffer.from(slackSig, "utf8"),
-    Buffer.from(expected, "utf8")
-  );
+  const a = Buffer.from(slackSig, "utf8");
+  const b = Buffer.from(expected, "utf8");
+  // timingSafeEqual throws if lengths differ
+  if (a.length !== b.length) return false;
+  return crypto.timingSafeEqual(a, b);
+}
+
+// ── Event-id dedupe (same isolate; survives rapid Slack retries) ───────────────
+
+const RECENT_EVENT_TTL_MS = 10 * 60 * 1000;
+const recentEventIds = new Map<string, number>();
+
+/** Returns true if this is the first time we've seen eventId recently. */
+function claimEventId(eventId: string | undefined): boolean {
+  if (!eventId) return true;
+  const now = Date.now();
+  for (const [id, ts] of recentEventIds) {
+    if (now - ts > RECENT_EVENT_TTL_MS) recentEventIds.delete(id);
+  }
+  if (recentEventIds.has(eventId)) {
+    console.info("[Slack] Skipping duplicate event_id:", eventId);
+    return false;
+  }
+  recentEventIds.set(eventId, now);
+  return true;
 }
 
 // ── Slack event types (minimal subset we need) ────────────────────────────────
@@ -105,6 +126,51 @@ function stripMention(text: string): string {
   return text.replace(/^<@[A-Z0-9]+>\s*/i, "").trim();
 }
 
+// ── Dispatch (runs after HTTP 200) ─────────────────────────────────────────────
+
+async function dispatchEventCallback(payload: SlackEventCallback): Promise<void> {
+  const { event, team_id, event_id } = payload;
+
+  if (!claimEventId(event_id)) {
+    return;
+  }
+
+  if (event.type === "app_mention") {
+    const ev = event as SlackAppMentionEvent;
+    if (ev.bot_id) return;
+
+    const text = stripMention(ev.text);
+    if (!text) return;
+
+    const threadTs = ev.thread_ts ?? ev.ts;
+    await handleSlackMessage({
+      userId: ev.user,
+      workspaceId: team_id,
+      channelId: ev.channel,
+      threadTs,
+      text,
+    });
+    return;
+  }
+
+  if (event.type === "message") {
+    const ev = event as SlackMessageImEvent;
+    // Ignore bot messages and subtypes (joins, leaves, etc.)
+    if (ev.bot_id || ev.subtype || ev.channel_type !== "im") {
+      return;
+    }
+
+    const threadTs = ev.thread_ts ?? ev.ts;
+    await handleSlackMessage({
+      userId: ev.user,
+      workspaceId: team_id,
+      channelId: ev.channel,
+      threadTs,
+      text: ev.text?.trim() ?? "",
+    });
+  }
+}
+
 // ── Route handler ─────────────────────────────────────────────────────────────
 
 export async function POST(req: NextRequest): Promise<NextResponse> {
@@ -131,63 +197,16 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     return NextResponse.json({ challenge });
   }
 
-  // 2. event_callback
+  // 2. event_callback — ack first, process in after() so Slack does not retry
   if (payload.type === "event_callback") {
-    const { event, team_id } = payload as SlackEventCallback;
-
-    // Handle app_mention
-    if (event.type === "app_mention") {
-      const ev = event as SlackAppMentionEvent;
-
-      // Ignore messages from bots (including ourselves)
-      if (ev.bot_id) {
-        return NextResponse.json({ ok: true });
+    const callback = payload as SlackEventCallback;
+    after(async () => {
+      try {
+        await dispatchEventCallback(callback);
+      } catch (e) {
+        console.error("[Slack] Background event dispatch failed:", e);
       }
-
-      const text = stripMention(ev.text);
-      if (!text) return NextResponse.json({ ok: true });
-
-      // Thread context: if the mention is already inside a thread, reply there.
-      // Otherwise start a new thread from this message.
-      const threadTs = ev.thread_ts ?? ev.ts;
-
-      // Acknowledge immediately, then process (fits within Slack's 3 s window
-      // for typical Claude response times; Slack retries with the same event_id
-      // if we exceed it, which is safely idempotent given our state model).
-      await handleSlackMessage({
-        userId: ev.user,
-        workspaceId: team_id,
-        channelId: ev.channel,
-        threadTs,
-        text,
-      });
-
-      return NextResponse.json({ ok: true });
-    }
-
-    // Handle DMs (message.im)
-    if (event.type === "message") {
-      const ev = event as SlackMessageImEvent;
-
-      // Ignore bot messages and subtypes (joins, leaves, etc.)
-      if (ev.bot_id || ev.subtype || ev.channel_type !== "im") {
-        return NextResponse.json({ ok: true });
-      }
-
-      const threadTs = ev.thread_ts ?? ev.ts;
-
-      await handleSlackMessage({
-        userId: ev.user,
-        workspaceId: team_id,
-        channelId: ev.channel,
-        threadTs,
-        text: ev.text?.trim() ?? "",
-      });
-
-      return NextResponse.json({ ok: true });
-    }
-
-    // Unhandled event type — acknowledge silently
+    });
     return NextResponse.json({ ok: true });
   }
 
