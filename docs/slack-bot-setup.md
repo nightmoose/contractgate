@@ -81,7 +81,11 @@ following server-side (non-`NEXT_PUBLIC_`) variables:
 | `SLACK_BOT_TOKEN` | **OAuth & Permissions** → Bot User OAuth Token (`xoxb-...`) |
 | `SLACK_SIGNING_SECRET` | **Basic Information** → App Credentials → Signing Secret |
 | `SLACK_ANNOUNCE_SECRET` | Generate locally: `openssl rand -hex 32` |
-| `ANTHROPIC_API_KEY` | https://console.anthropic.com/ |
+| `LLM_PROVIDER` | `xai` or `anthropic` (default). Q&A model backend. |
+| `XAI_API_KEY` | Required when `LLM_PROVIDER=xai` — https://console.x.ai/ |
+| `XAI_MODEL` | Optional; default `grok-4` |
+| `ANTHROPIC_API_KEY` | Required when `LLM_PROVIDER=anthropic` — https://console.anthropic.com/ |
+| `ANTHROPIC_MODEL` | Optional; default `claude-sonnet-4-6` |
 | `SUPABASE_SERVICE_ROLE_KEY` | Supabase dashboard → Project Settings → API |
 | `NEXT_PUBLIC_SUPABASE_URL` | Supabase dashboard → Project Settings → API |
 

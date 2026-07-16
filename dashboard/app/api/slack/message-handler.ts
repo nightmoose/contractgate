@@ -4,7 +4,8 @@
  * Handles incoming Slack messages (app_mentions and DMs) by:
  *   1. Loading/creating per-thread conversation state from Supabase
  *   2. Detecting intake intent and running the 5-question intake flow
- *   3. Calling Claude (claude-sonnet-4-6) for general Q&A
+ *   3. Calling the configured LLM for general Q&A
+ *      (`LLM_PROVIDER=xai|anthropic`, default anthropic)
  *   4. Posting the reply back to Slack and persisting the updated state
  */
 
@@ -16,9 +17,22 @@ import { createClient as createServiceClient } from "@supabase/supabase-js";
 let _anthropic: Anthropic | null = null;
 function getAnthropic(): Anthropic {
   if (!_anthropic) {
-    _anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY! });
+    const key = process.env.ANTHROPIC_API_KEY;
+    if (!key) {
+      throw new Error("ANTHROPIC_API_KEY is not set (required when LLM_PROVIDER=anthropic)");
+    }
+    _anthropic = new Anthropic({ apiKey: key });
   }
   return _anthropic;
+}
+
+type LlmProvider = "xai" | "anthropic";
+
+/** `LLM_PROVIDER` env: `xai` | `anthropic` (default). Case-insensitive. */
+function getLlmProvider(): LlmProvider {
+  const raw = (process.env.LLM_PROVIDER ?? "anthropic").trim().toLowerCase();
+  if (raw === "xai") return "xai";
+  return "anthropic";
 }
 
 function getSupabaseAdmin() {
@@ -276,9 +290,9 @@ async function handleIntakeStep(
   );
 }
 
-// ── Claude call ───────────────────────────────────────────────────────────────
+// ── LLM call (xAI or Anthropic) ───────────────────────────────────────────────
 
-async function callClaude(
+async function callAnthropic(
   history: SlackMessage[],
   userMessage: string
 ): Promise<string> {
@@ -287,8 +301,9 @@ async function callClaude(
     { role: "user", content: userMessage },
   ];
 
+  const model = process.env.ANTHROPIC_MODEL?.trim() || "claude-sonnet-4-6";
   const response = await getAnthropic().messages.create({
-    model: "claude-sonnet-4-6",
+    model,
     max_tokens: 1024,
     system: SYSTEM_PROMPT,
     messages,
@@ -299,6 +314,70 @@ async function callClaude(
     return block.text;
   }
   return "Sorry, I couldn't generate a response. Please try again.";
+}
+
+/** xAI chat completions (OpenAI-compatible). Docs: https://docs.x.ai/docs */
+async function callXai(
+  history: SlackMessage[],
+  userMessage: string
+): Promise<string> {
+  const apiKey = process.env.XAI_API_KEY;
+  if (!apiKey) {
+    throw new Error("XAI_API_KEY is not set (required when LLM_PROVIDER=xai)");
+  }
+
+  const model = process.env.XAI_MODEL?.trim() || "grok-4";
+  const messages: Array<{ role: "system" | "user" | "assistant"; content: string }> = [
+    { role: "system", content: SYSTEM_PROMPT },
+    ...history.map((m) => ({ role: m.role, content: m.content })),
+    { role: "user", content: userMessage },
+  ];
+
+  const res = await fetch("https://api.x.ai/v1/chat/completions", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${apiKey}`,
+    },
+    body: JSON.stringify({
+      model,
+      messages,
+      max_tokens: 1024,
+      temperature: 0.7,
+    }),
+  });
+
+  if (!res.ok) {
+    const errText = await res.text().catch(() => "");
+    console.error("[SlackBot] xAI API error:", res.status, errText.slice(0, 500));
+    throw new Error(`xAI API request failed (${res.status})`);
+  }
+
+  const json = (await res.json()) as {
+    choices?: Array<{ message?: { content?: string | null } }>;
+  };
+  const text = json.choices?.[0]?.message?.content?.trim();
+  if (text) return text;
+  return "Sorry, I couldn't generate a response. Please try again.";
+}
+
+async function callLlm(
+  history: SlackMessage[],
+  userMessage: string
+): Promise<string> {
+  const provider = getLlmProvider();
+  try {
+    if (provider === "xai") {
+      return await callXai(history, userMessage);
+    }
+    return await callAnthropic(history, userMessage);
+  } catch (e) {
+    console.error(`[SlackBot] LLM call failed (provider=${provider}):`, e);
+    return (
+      "Sorry — I'm having trouble reaching the language model right now. " +
+      "Please try again in a moment, or start with “I'm interested” to leave your details."
+    );
+  }
 }
 
 // ── Main entry point ──────────────────────────────────────────────────────────
@@ -321,8 +400,8 @@ export async function handleSlackMessage(args: HandleMessageArgs): Promise<void>
       "Great, I'd love to learn more about your situation! Just a few quick questions.\n\n" +
       INTAKE_QUESTIONS[0];
   } else {
-    // General Q&A via Claude
-    replyText = await callClaude(conv.messages, text);
+    // General Q&A via configured LLM (LLM_PROVIDER=xai|anthropic)
+    replyText = await callLlm(conv.messages, text);
   }
 
   // Append this turn to history

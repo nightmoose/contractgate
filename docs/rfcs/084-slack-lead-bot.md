@@ -23,9 +23,10 @@ Slack app → Vercel routes on the dashboard → Supabase (service-role):
   anything, handles the URL-verification challenge, then dispatches to the message
   handler.
 - **`message-handler.ts`** — conversational intake. Loads/updates per-thread state
-  from `slack_conversations`, runs the exchange (Claude via `ANTHROPIC_API_KEY`),
-  and on completion inserts a row into `slack_leads`. Uses the **service-role**
-  Supabase client (`SUPABASE_SERVICE_ROLE_KEY`).
+  from `slack_conversations`, runs the exchange (LLM via `LLM_PROVIDER` —
+  `xai` + `XAI_API_KEY` or `anthropic` + `ANTHROPIC_API_KEY`), and on completion
+  inserts a row into `slack_leads`. Uses the **service-role** Supabase client
+  (`SUPABASE_SERVICE_ROLE_KEY`).
 - **`POST /api/slack/announce`** — outbound helper, guarded by a shared secret
   (`SLACK_ANNOUNCE_SECRET`, timing-safe).
 
@@ -57,7 +58,8 @@ per-thread store.
 ## Env vars
 
 `SLACK_BOT_TOKEN`, `SLACK_SIGNING_SECRET`, `SLACK_ANNOUNCE_SECRET`,
-`SUPABASE_SERVICE_ROLE_KEY`, `ANTHROPIC_API_KEY` (+ `NEXT_PUBLIC_SUPABASE_URL`).
+`SUPABASE_SERVICE_ROLE_KEY`, `LLM_PROVIDER` (`xai`|`anthropic`), plus
+`XAI_API_KEY` and/or `ANTHROPIC_API_KEY` (+ `NEXT_PUBLIC_SUPABASE_URL`).
 See `.env.example` and `docs/slack-bot-setup.md`.
 
 ## Rollout checklist
