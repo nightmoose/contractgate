@@ -11,6 +11,8 @@
 
 import Anthropic from "@anthropic-ai/sdk";
 import { createClient as createServiceClient } from "@supabase/supabase-js";
+import { readFileSync } from "fs";
+import { join } from "path";
 
 // ── Lazy singletons (build-time safe) ─────────────────────────────────────────
 
@@ -118,6 +120,23 @@ function detectsIntakeIntent(text: string): boolean {
   return INTAKE_TRIGGERS.some((re) => re.test(text));
 }
 
+// ── Product knowledge (curated; keep bot-knowledge.md in sync with reality) ────
+
+function loadBotKnowledge(): string {
+  try {
+    // Next.js server cwd is the `dashboard/` package root on Vercel.
+    return readFileSync(join(process.cwd(), "app/api/slack/bot-knowledge.md"), "utf8");
+  } catch (e) {
+    console.error("[SlackBot] failed to load bot-knowledge.md:", e);
+    return (
+      "ContractGate enforces semantic data contracts at ingest with quarantine, " +
+      "replay, and pilot reports. The validation gateway is Rust (Axum)."
+    );
+  }
+}
+
+const BOT_KNOWLEDGE = loadBotKnowledge();
+
 // ── System prompt ─────────────────────────────────────────────────────────────
 
 const SYSTEM_PROMPT = `You are the ContractGate product assistant — not a general-purpose chatbot.
@@ -126,24 +145,16 @@ Your ONLY job is to help people understand ContractGate (data contracts at inges
 quarantine, replay, pilot reports, plans, integrations). You are NOT Grok, ChatGPT,
 or a free coding/writing tutor.
 
-About ContractGate:
-ContractGate is a data contract enforcement platform. It sits between your producers and consumers, validates every event against a schema contract, and routes violations to a quarantine queue for inspection and replay. Key features include:
-- **Schema ingestion**: import contracts from YAML/JSON (ODCS format), GitHub, or the API
-- **Multi-source ingestion**: Kafka, Kinesis, HTTP webhooks, flat file upload
-- **Real-time quarantine**: invalid events are held, not dropped — inspect and replay once fixed
-- **PII masking**: field-level transforms before events reach consumers
-- **Egress validation**: validate outbound data too
-- **Scoring & reporting**: per-provider data quality scorecards
-- **Team collaboration**: org-scoped access, shared contract libraries, audit logs
-- **Plan tiers**: free, growth, enterprise — with usage-based metering
-
 Hard rules:
+- Ground product answers in PRODUCT KNOWLEDGE below. Prefer those facts over guessing.
 - If the user asks for something unrelated to ContractGate / data contracts / data quality
   pipelines (e.g. general coding, homework, recipes, other products, roleplay), refuse in
   1–2 short sentences and invite them to ask about ContractGate or say "I'm interested"
   for a pilot/advisory intake. Do NOT answer the off-topic request.
 - Do not write long code, essays, or multi-step tutorials for unrelated tools.
 - Never claim to be a general AI assistant or that you can help with anything.
+- Do NOT say a product fact is "not documented" if it appears in PRODUCT KNOWLEDGE
+  (e.g. Rust validation engine, plan limits, quarantine/replay).
 
 Default answer style (important):
 - Be concise by default: 2–5 short sentences OR a handful of tight bullets. Lead with the
@@ -154,7 +165,12 @@ Default answer style (important):
   go deeper, or asks a follow-up that clearly needs more depth.
 - Technical depth is fine for data engineers — still keep the first reply short.
 
-If you don't know a pricing/SLA detail, say so and suggest the website or intake.`;
+If you don't know a pricing/SLA/detail beyond PRODUCT KNOWLEDGE, say so and suggest the
+website or intake — do not invent RFCs, prices, or customers.
+
+=== PRODUCT KNOWLEDGE ===
+${BOT_KNOWLEDGE}
+=== END PRODUCT KNOWLEDGE ===`;
 
 // ── Abuse / cost controls (env-overridable) ───────────────────────────────────
 
