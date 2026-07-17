@@ -2,6 +2,31 @@
 
 ---
 
+## Run: 2026-07-17 — new-user funnel walk (browser) + UsageWidget month fix
+
+Walked the onboarding funnel live (Chrome + prod API) to find silent breaks.
+
+**Funnel result (post-auth):** API-key issuance ✓, `POST /contracts/deploy` ✓,
+`POST /v1/ingest` ✓ (pass forwarded, fail quarantined with correct enum+range
+violations + `quarantine_id`), `/audit` ✓, `/usage` ✓ (`period_start` 2026-07-01,
+`used` counted correctly). Cold-signup backend ✓: `on_auth_user_created AFTER INSERT
+ON auth.users` provisions org+membership at signup; 36/36 users have an org, 0 orphans.
+
+**Bug found + fixed — UsageWidget month label.** `dashboard/components/UsageWidget.tsx`
+formatted the UTC `period_start` (`2026-07-01T00:00:00Z`) with `toLocaleDateString` in
+**local** time while labeling it "(UTC month)". For any viewer west of UTC the
+first-of-month instant falls on the previous day → widget showed "June 2026" in July.
+Fix: added `timeZone: "UTC"` to the format options. tsc clean. Frontend-only; needs a
+dashboard deploy. (Backend `/usage` was always correct.)
+
+**Not verifiable without a real inbox (flagged, not code):** confirmation-email
+**deliverability** on cold signup — highest-risk unknown given the past nightmoose
+SPF/DMARC junking. Recommend one real signup + inbox/spam check.
+
+**Cleanup:** revoked the smoke API key (`onboarding_smoke_2026-07-16`, raw value had
+appeared in-session). Left the throwaway `onboarding_smoke_20260716` contract + its 2
+audit / 1 quarantine rows as harmless test data (deletable from the Contracts UI).
+
 ## Run: 2026-07-16 — hygiene (freshness examples) + billing integrity (stream metering) + CI path-filter
 
 **Scope:** three self-contained passes. No migration. No `.sqlx/` change (stream
