@@ -48,6 +48,10 @@ is shown once).
 
 ## 3. A passing record
 
+> ⏱ **Freshness:** this contract's `freshness` rule rejects stale timestamps, so the
+> passing record's `timestamp` must be recent. The committed example is kept current
+> by `scripts/refresh_example_freshness.py` — run it before validating.
+
 A producer writes to `cg-{contract_id}-raw`:
 
 ```python

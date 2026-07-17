@@ -226,6 +226,18 @@ mod inner {
             }
         };
 
+        // RFC-083 billing integrity: resolve the owning org once per poll cycle
+        // so stream audit rows carry org_id. The periodic up-only usage reconcile
+        // counts audit rows per-org (audit_log is the source of truth), so streamed
+        // events are metered without a per-record counter write. A NULL org_id here
+        // makes stream events invisible to /usage (reconcile filters org_id IS NOT NULL).
+        let meter_org: Option<Uuid> =
+            sqlx::query_scalar::<_, Option<Uuid>>("SELECT org_id FROM contracts WHERE id = $1")
+                .bind(contract_id)
+                .fetch_one(&state.db)
+                .await
+                .unwrap_or(None);
+
         for (shard_id, maybe_iter) in shard_iterators.iter_mut() {
             let iter = match maybe_iter {
                 Some(i) => i.clone(),
@@ -309,7 +321,7 @@ mod inner {
                 // Audit entry — contract_version = matched version (audit honesty).
                 audit_entries.push(AuditEntryInsert {
                     contract_id,
-                    org_id: None, // consumer runs platform-side; no HTTP API key context
+                    org_id: meter_org, // RFC-083: owning org so usage reconcile meters stream events
                     contract_version: version_row.version.clone(),
                     passed: result.passed,
                     violation_count: result.violations.len() as i32,

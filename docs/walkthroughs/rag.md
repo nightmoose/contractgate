@@ -60,6 +60,11 @@ cg test --contract examples/contracts/rag/rag_corpus_ingest.yaml --data corpus.n
 
 ## 3. A passing record
 
+> ⏱ **Freshness:** this contract's `freshness` rule rejects documents older than 30 days,
+> so the passing record's `_cg.ingested_at` must be recent. The committed examples
+> (`examples/contracts/rag/pass.json`, `fail.json`) are kept current by
+> `scripts/refresh_example_freshness.py` — run it before validating.
+
 ```json
 {
   "text": "Quarterly revenue grew 12% QoQ.",

@@ -2,6 +2,49 @@
 
 ---
 
+## Run: 2026-07-16 — hygiene (freshness examples) + billing integrity (stream metering) + CI path-filter
+
+**Scope:** three self-contained passes. No migration. No `.sqlx/` change (stream
+org lookup uses runtime `sqlx::query_scalar`, not the compile-time macro).
+
+### 1. Hygiene — freshness-example rot
+- Kafka/Kinesis/RAG walkthrough "passing" records pinned fixed epochs that age past
+  the contract `freshness` rule (1h window on Kinesis), so passing examples stopped passing.
+- Added `scripts/refresh_example_freshness.py` — stamps current epoch into the
+  freshness-sensitive records (kafka/kinesis `pass.json`, rag `pass.json`+`fail.json`;
+  kafka/kinesis `fail.json` intentionally left stale to demo the rule biting).
+- Added `examples/contracts/rag/{pass,fail}.json` (parity; rag previously had inline-only records).
+- Added a freshness note to `docs/walkthroughs/{kafka,kinesis,rag}.md`.
+- Verified with `cg test`: kafka/kinesis/rag pass → exit 0; rag fail → pii-only enum_violation.
+
+### 2. Billing integrity — stream metering + null org_id
+- **Root bug:** `kafka_consumer.rs` and `kinesis_consumer.rs` wrote `audit_log` rows with
+  `org_id = None`. The usage reconcile (`storage/usage.rs`) filters `org_id IS NOT NULL
+  GROUP BY org_id`, so streamed events were invisible to `/usage` — a Growth org could
+  stream unmetered.
+- **Fix:** both consumers now resolve the contract's owning `org_id` once
+  (`SELECT org_id FROM contracts WHERE id = $1`, runtime query_scalar) and stamp it on
+  audit rows. The existing up-only reconcile then counts stream events per-org — no
+  per-message counter write, no hot-path cost, `<15ms` budget untouched. No real-time
+  429 on streams (impractical on a consumer loop) — by design.
+- Docs updated: `docs/usage-reference.md`, RFC-083 follow-up note.
+- **Verify:** `cargo check --features kinesis-ingress` green in-session. `kafka-ingress`
+  needs libsasl2/cmake (not installable in the sandbox) — **CI's `docker` job builds
+  `--features kafka-ingress,scaffold,kinesis-ingress` (Dockerfile:51), so it compiles the
+  Kafka path.** Kafka edits mirror the verified Kinesis ones.
+
+### 3. CI — path-filtered jobs (docs-only PRs skip the matrix)
+- Added a `changes` job (`dorny/paths-filter`) emitting `heavy=true` unless the change
+  touches ONLY `**/*.md` / `docs/**` / `examples/**` / LICENSE / NOTICE.
+- Gated all build/test jobs (rust-check, coverage, dashboard, docker, migrations-check,
+  security, 3× compose) and `deploy-fly` on `heavy == 'true'`. Docs-only changes skip
+  them; skipped jobs post a "skipped" check-run, which branch protection treats as passing.
+- **Action for Alex:** confirm the repo's required-status-checks still merge cleanly on a
+  docs-only PR (job names are unchanged, so they should). Finer per-area splits (rust vs
+  dashboard) are a possible follow-up — kept a single docs-gate to minimize risk.
+
+---
+
 ## Run: 2026-07-16 — RFC-079 unify inference + RFC-080 Visual Builder nesting
 
 **Scope:** frontend-only, per `docs/punchlist/2026-07-16-rfc079-unify-inference.md`

@@ -12,8 +12,14 @@ monthly cap, `POST /ingest/*` and `POST /v1/ingest/*` return **429**
 `plan_limit_exceeded` (see below). Enterprise is unlimited. Self-hosted (no org)
 is unmetered. Metering **fails open** on DB errors (logs + allows). `?dry_run=true`
 skips the cap check. Envelope contracts (MRI/Findigs) count toward the limit.
-**Kafka / Kinesis ingress is not metered in v1** — prefer Enterprise for
-streaming orgs; `/usage` may under-report Free/Growth stream traffic.
+**Kafka / Kinesis ingress is metered via reconcile, not in real time.** Stream
+consumers stamp the owning `org_id` on their `audit_log` rows; the periodic
+up-only usage reconcile (audit_log is the source of truth) rolls those into
+`org_monthly_usage`, so `/usage` reflects stream traffic — eventually consistent
+within the reconcile interval, not instantly. There is **no real-time 429 on
+streams** (a mid-stream cap is impractical on a consumer loop), so streaming does
+not hard-block at the cap; Enterprise is still recommended for heavy streaming.
+Run `contractgate usage-reconcile` to force an immediate refresh.
 
 ---
 
