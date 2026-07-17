@@ -175,6 +175,18 @@ mod inner {
                 }
             };
 
+            // RFC-083 billing integrity: resolve the owning org once per (re)connect
+            // so stream audit rows carry org_id. The periodic up-only usage reconcile
+            // counts audit rows per-org (audit_log is the source of truth), so streamed
+            // events are metered without a per-message counter write. A NULL org_id here
+            // makes stream events invisible to /usage (reconcile filters org_id IS NOT NULL).
+            let meter_org: Option<Uuid> =
+                sqlx::query_scalar::<_, Option<Uuid>>("SELECT org_id FROM contracts WHERE id = $1")
+                    .bind(contract_id)
+                    .fetch_one(&state.db)
+                    .await
+                    .unwrap_or(None);
+
             tracing::info!(contract_id = %contract_id, topic = %raw_topic, "consumer polling");
 
             loop {
@@ -189,7 +201,8 @@ mod inner {
                             Some(b) => b.to_vec(),
                             None => continue,
                         };
-                        process_message(&state, &producer, contract_id, payload_bytes).await;
+                        process_message(&state, &producer, contract_id, meter_org, payload_bytes)
+                            .await;
                     }
                 }
             }
@@ -202,6 +215,7 @@ mod inner {
         state: &AppState,
         producer: &FutureProducer,
         contract_id: Uuid,
+        meter_org: Option<Uuid>,
         payload_bytes: Vec<u8>,
     ) {
         // 1. Parse JSON — route to quarantine on failure.
@@ -284,7 +298,7 @@ mod inner {
         // 6. Write audit log — source = 'kafka', version = matched version (audit honesty).
         let audit = AuditEntryInsert {
             contract_id,
-            org_id: None, // consumer runs platform-side; no HTTP API key context
+            org_id: meter_org, // RFC-083: owning org so usage reconcile meters stream events
             contract_version: version_row.version.clone(),
             passed: result.passed,
             violation_count: result.violations.len() as i32,

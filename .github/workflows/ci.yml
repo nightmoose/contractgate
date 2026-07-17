@@ -29,9 +29,40 @@ env:
   SQLX_OFFLINE: "true"
 
 jobs:
+  # ── Change detection ──────────────────────────────────────
+  # Emits heavy=true unless the push/PR touches ONLY docs/examples/markdown.
+  # The build/test/deploy jobs gate on this so a docs-only change skips the full
+  # Rust + dashboard + compose matrix. Skipped jobs still post a "skipped" check
+  # run, which branch protection treats as satisfied — required checks stay green.
+  # If a change touches any non-doc file, heavy=true and everything runs as before.
+  changes:
+    name: Change detection
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      heavy: ${{ steps.filter.outputs.heavy }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          # "match everything, then subtract docs": heavy is true if any changed
+          # path is NOT under the docs allowlist below.
+          filters: |
+            heavy:
+              - '**'
+              - '!**/*.md'
+              - '!docs/**'
+              - '!examples/**'
+              - '!LICENSE'
+              - '!NOTICE'
+
   # ── Rust ──────────────────────────────────────────────────
   rust-check:
     name: Rust — check / clippy / test
+    needs: changes
+    if: ${{ needs.changes.outputs.heavy == 'true' }}
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -75,6 +106,8 @@ jobs:
   # without blocking the main-branch deploy while the gate beds in.
   coverage:
     name: Coverage — ratchet gate
+    needs: changes
+    if: ${{ needs.changes.outputs.heavy == 'true' }}
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -119,6 +152,8 @@ jobs:
   # ── Next.js dashboard ─────────────────────────────────────
   dashboard:
     name: Dashboard — type-check / lint
+    needs: changes
+    if: ${{ needs.changes.outputs.heavy == 'true' }}
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -153,6 +188,8 @@ jobs:
   # ── Docker build smoke-test ───────────────────────────────
   docker:
     name: Docker — build smoke-test
+    needs: changes
+    if: ${{ needs.changes.outputs.heavy == 'true' }}
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -192,6 +229,8 @@ jobs:
   #   commit the generated files). See RFC-019 rollout step 2.
   migrations-check:
     name: Migrations — apply + sqlx metadata check
+    needs: changes
+    if: ${{ needs.changes.outputs.heavy == 'true' }}
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -437,6 +476,8 @@ jobs:
 
   security:
     name: Security — audit / deny / container scan
+    needs: changes
+    if: ${{ needs.changes.outputs.heavy == 'true' }}
     runs-on: ubuntu-latest
     permissions:
       security-events: write
@@ -491,6 +532,8 @@ jobs:
   # contract can be created and an event validated end-to-end.
   compose-smoke:
     name: Compose — stack smoke test
+    needs: changes
+    if: ${{ needs.changes.outputs.heavy == 'true' }}
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -516,6 +559,8 @@ jobs:
   # CI wall-clock time short.
   compose-demo-smoke:
     name: Compose — demo profile smoke test
+    needs: changes
+    if: ${{ needs.changes.outputs.heavy == 'true' }}
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -545,6 +590,8 @@ jobs:
   # toolchain needed, and no `cargo test` false-green (zero-tests-ran) risk.
   compose-isolation-smoke:
     name: Compose — auth-on isolation lane
+    needs: changes
+    if: ${{ needs.changes.outputs.heavy == 'true' }}
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -569,6 +616,7 @@ jobs:
     name: Deploy — Fly.io
     if: github.event_name == 'push'
     needs:
+      - changes
       - rust-check
       - dashboard
       - docker

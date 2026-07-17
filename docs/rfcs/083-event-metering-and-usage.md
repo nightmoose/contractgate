@@ -85,6 +85,11 @@ Response:
   (unlimited → gap moot). Growth may enable Kafka/Kinesis UI tabs, but
   Free/Growth stream traffic under-reports usage until a follow-up wires
   contract→org_id + increment-only on stream paths.
+  **UPDATE 2026-07-16 (billing-integrity pass):** the Kafka/Kinesis consumers now
+  resolve the contract's owning `org_id` and stamp it on their `audit_log` rows,
+  so the up-only reconcile counts stream events per-org and `/usage` no longer
+  under-reports them (eventually consistent within the reconcile interval). Real-time
+  429 on streams remains out of scope by design.
 - **Reconcile job:** background task (default every 6h, env
   `USAGE_RECONCILE_INTERVAL_SECS`) and CLI `usage-reconcile` raise counters
   with `events = GREATEST(events, audit_count)` for the current UTC month —
