@@ -1,6 +1,6 @@
 # RFC-079 — Unify contract inference on the Rust engine
 
-**Status:** Draft
+**Status:** Implemented
 **Date:** 2026-06-08
 **Branch:** TBD
 **Addresses:** Nested-object inference bug found during 2026-06-08 hosted-product

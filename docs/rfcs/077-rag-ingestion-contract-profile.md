@@ -1,6 +1,6 @@
 # RFC-077 — RAG-ingestion contract profile
 
-**Status:** Draft
+**Status:** Accepted — contract + examples + reference doc shipped and engine-validated; GA promotion deferred until a RAG prospect is active (do not feature in the primary walkthrough index / pitch until then)
 **Date:** 2026-06-08
 **Branch:** TBD
 **Addresses:** Positioning ContractGate as the data-contract layer upstream of

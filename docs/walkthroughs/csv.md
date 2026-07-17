@@ -44,7 +44,9 @@ ontology:
 ```
 
 > The draft is a starting point. Review the inferred `enum`/`required`/`min`
-> and tighten before promoting to stable.
+> and tighten before promoting to stable. The reviewed contract used for the
+> rest of this walkthrough is saved at
+> [`examples/contracts/csv/signups.yaml`](../../examples/contracts/csv/signups.yaml).
 
 ## 2. The command
 
@@ -66,6 +68,8 @@ cg test --contract signups.yaml --data signups.ndjson
 
 ## 3. A passing record
 
+[`examples/contracts/csv/pass.json`](../../examples/contracts/csv/pass.json):
+
 ```json
 { "user_id": "u_1001", "plan": "pro", "signup_ts": 1714000000, "mrr": 49.99 }
 ```
@@ -78,7 +82,8 @@ contract: signups (v1.0)
 
 ## 4. A failing record
 
-`plan` is outside the inferred allowlist and `mrr` is negative:
+`plan` is outside the inferred allowlist and `mrr` is negative
+([`examples/contracts/csv/fail.json`](../../examples/contracts/csv/fail.json)):
 
 ```json
 { "user_id": "u_9999", "plan": "trial", "signup_ts": 1714000500, "mrr": -10 }
@@ -86,7 +91,7 @@ contract: signups (v1.0)
 
 ```
   FAIL  1
-record   0  plan   enum_violation    Field 'plan' value "trial" not in allowed set: [pro, free, enterprise]
+record   0  plan   enum_violation    Field 'plan' value "trial" not in allowed set: ["pro", "free", "enterprise"]
 record   0  mrr    range_violation   Field 'mrr' value -10 is below minimum 0
 ```
 

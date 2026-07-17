@@ -1,6 +1,6 @@
 # RFC-078 — Cross-surface pipeline walkthrough template
 
-**Status:** Draft
+**Status:** Implemented (RAG instance present but not GA-promoted; see RFC-077)
 **Date:** 2026-06-08
 **Branch:** TBD
 **Depends on:** RFC-077 (RAG-ingestion profile — first walkthrough instance)
