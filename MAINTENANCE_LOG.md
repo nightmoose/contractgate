@@ -2,6 +2,95 @@
 
 ---
 
+## Run: 2026-07-16 — RFC-079 unify inference + RFC-080 Visual Builder nesting
+
+**Scope:** frontend-only, per `docs/punchlist/2026-07-16-rfc079-unify-inference.md`
+and `docs/punchlist/2026-07-16-rfc080-visual-builder-nesting.md`. No Rust/backend
+change — engine already correct.
+
+### What shipped
+1. **RFC-079** — `dashboard/lib/api.ts` `inferSamples()`; `GeneratorTab` (page.tsx)
+   now calls the Rust engine (`POST /contracts/infer`) instead of the client-side
+   JS inferrer; privacy notice added. `_lib.tsx` no longer carries `inferFields`/
+   `buildYaml`/`sniffPattern` (header comment updated). Nested-object samples
+   (e.g. the RAG `_cg` envelope) now infer as `type: object` + `properties`
+   instead of `enum: ["[object Object]"]`.
+2. **RFC-080** — `dashboard/app/contracts/VisualBuilder.tsx`: `FieldType` gained
+   `"object"`; `FieldState` gained recursive `properties?`; `updateFieldTree` /
+   `removeFieldTree` / `addFieldToTree` / `moveFieldInTree` walk the tree;
+   `FieldCard` renders a nested indented editor with its own add/remove;
+   `buildYaml`/`emitField` recurse for object fields. Scalar (non-object) emit
+   path unchanged — flat contracts still emit identical YAML.
+
+### Verification notes
+- Both RFCs' code were already present in the working tree when this run
+  started (implemented in a prior session); this run's job was verification.
+- `npx tsc --noEmit` — clean, exit 0.
+- `npm run build` — Turbopack compile, "Running TypeScript", and static page
+  generation (31/31) all succeeded on every attempt; the final build step
+  hit a sandbox-only `EPERM` on `rmdir` cleaning a scratch `export/` dir,
+  reproduced across three separate output directories — a virtiofs mount
+  issue in this environment, not a code defect. **Alex: please run
+  `npm run build` once locally to get a clean final signal** — all signals
+  short of that final cleanup step are green.
+- RFC-080 nested-YAML shape verified two ways: (1) read `src/contract.rs`
+  (`FieldDefinition.properties: Option<Vec<FieldDefinition>>`) and
+  `src/validation.rs` (`validate_fields`/`compile_field_patterns` recurse into
+  `properties` when `FieldType::Object`) — confirms the engine's expected
+  shape; (2) ran the exact `emitField`/`buildYaml` logic standalone against
+  the RAG `_cg` sample (`source`, `doc_id`, `ingested_at`, `pii_redacted`) and
+  confirmed the output is `type: object` + indented `properties:` list,
+  matching (1). Could not spin up the Rust binary in this session (no cargo
+  installed) to do a live Playground POST — static verification only.
+- Left over from build-verification attempts: `dashboard/tmp/` (three
+  directories/one broken symlink) could not be deleted — same virtiofs lock
+  blocking all `rm`/`rmdir` in this session. **Not gitignored — Alex, please
+  `rm -rf dashboard/tmp/` locally before committing.**
+- `dashboard/next.config.ts` was temporarily edited (env-gated `distDir`
+  override) to diagnose the above, then reverted — confirmed byte-identical
+  to original.
+
+---
+
+## Run: 2026-07-16 — RFC-078 cross-surface walkthroughs (API/CSV/Kafka/Kinesis)
+
+**Scope:** docs + runnable examples only, per
+`docs/punchlist/2026-07-16-rfc078-walkthroughs.md`. No engine/API/contract-format
+change. RAG walkthrough out of scope (depends on deferred RFC-077).
+
+### What shipped
+1. Filled the missing per-surface literal example inputs: added
+   `pass.json`/`fail.json` to `examples/contracts/{api,csv,kafka,kinesis}/`
+   (the spine's `_TEMPLATE.md` and all four walkthrough pages already existed
+   on this branch) and `examples/contracts/csv/signups.yaml` (the reviewed
+   CSV-inference draft contract, previously only shown inline in the doc).
+2. Linked each walkthrough's beats 3/4 to its literal `pass.json`/`fail.json`
+   file so doc and example can't drift.
+3. Corrected enum-violation message formatting in `api.md`, `csv.md`,
+   `kafka.md`, `kinesis.md` to match actual `cg test` output (quoted list
+   items) and refreshed the illustrative freshness "age" numbers.
+
+### Validated
+Built `contractgate` (the `cg` CLI) with `CARGO_TARGET_DIR=/tmp/cgtarget` and
+ran `cg test --contract <file> --data <file>` on every pass/fail pair — all 8
+runs matched the documented exit codes and violation text (API, CSV: exit
+0/1; Kafka, Kinesis: exit 0/1, freshness rule also verified).
+
+### Finding
+`examples/contracts/rag/` and `docs/walkthroughs/rag.md` already exist on
+this branch (RFC-077 appears speculatively implemented here even though
+STATUS.md marks RFC-077 **Draft**). Left untouched per scope — not rebuilt,
+not stubbed, not deleted. Flagging for maintainer reconciliation between
+branch state and STATUS.md.
+
+### Reviewer notes
+- Kafka/Kinesis `pass.json` pin a fixed epoch (`1784249150`, 2026-07-16) for
+  repeatable CI runs; regenerate `timestamp` to the current epoch before
+  re-running months later — inherent to `freshness` quality rules, not a bug.
+- No `dashboard/**` or `src/**` files touched.
+
+---
+
 ## Run: 2026-07-15 — RFC-083 Phase 2 (plan-limit enforcement)
 
 **Scope:** dual-sell #6 — hard monthly event caps on ingest. Hot-path aware.

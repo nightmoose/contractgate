@@ -1,0 +1,23 @@
+# CSV inference output for examples/contracts/csv/signups.csv
+# (RFC-078 walkthrough example — draft contract as returned by
+#  POST /contracts/infer/csv, reviewed and saved for local `cg test` use.)
+version: "1.0"
+name: "signups"
+description: "Contract for signup events inferred from a CSV sample"
+
+ontology:
+  entities:
+    - name: user_id
+      type: string
+      required: true
+    - name: plan
+      type: string
+      required: true
+      enum: ["pro", "free", "enterprise"]
+    - name: signup_ts
+      type: integer
+      required: true
+    - name: mrr
+      type: float
+      required: true
+      min: 0

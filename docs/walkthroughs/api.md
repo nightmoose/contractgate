@@ -49,6 +49,8 @@ curl -X POST https://app.datacontractgate.com/v1/ingest/{contract_id} \
 
 ## 3. A passing record
 
+[`examples/contracts/api/pass.json`](../../examples/contracts/api/pass.json):
+
 ```json
 { "user_id": "u_123", "event_type": "purchase", "timestamp": 1714000000, "amount": 49.99 }
 ```
@@ -64,7 +66,8 @@ Over HTTP the response is `200` with a per-event `results` array; each entry has
 
 ## 4. A failing record
 
-`event_type` is not in the allowlist, and `amount` is negative:
+`event_type` is not in the allowlist, and `amount` is negative
+([`examples/contracts/api/fail.json`](../../examples/contracts/api/fail.json)):
 
 ```json
 { "user_id": "u_123", "event_type": "delete", "timestamp": 1714000000, "amount": -5 }
@@ -72,7 +75,7 @@ Over HTTP the response is `200` with a per-event `results` array; each entry has
 
 ```
   FAIL  1
-record   0  event_type   enum_violation    Field 'event_type' value "delete" not in allowed set: [click, view, purchase, login]
+record   0  event_type   enum_violation    Field 'event_type' value "delete" not in allowed set: ["click", "view", "purchase", "login"]
 record   0  amount       range_violation   Field 'amount' value -5 is below minimum 0
 ```
 

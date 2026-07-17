@@ -1,6 +1,6 @@
 # RFC-080 — Visual Builder nested-object support
 
-**Status:** Draft
+**Status:** Implemented
 **Date:** 2026-06-08
 **Branch:** TBD
 **Depends on / follows:** RFC-079 (unified inference on the Rust engine —

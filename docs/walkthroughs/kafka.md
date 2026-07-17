@@ -55,6 +55,15 @@ event = '{"user_id": "u1", "event_type": "click", "timestamp": <recent_epoch>}'
 p.produce("cg-<contract_id>-raw", value=event)
 ```
 
+[`examples/contracts/kafka/pass.json`](../../examples/contracts/kafka/pass.json)
+pins a fixed epoch for repeatable `cg test` runs — regenerate `timestamp` to
+the current epoch before re-running; the `freshness` rule rejects anything
+older than `max_age_seconds`:
+
+```json
+{ "user_id": "u1", "event_type": "click", "timestamp": 1784249150 }
+```
+
 Valid events land on `cg-{contract_id}-clean` with a `cg-contract-version`
 header. Locally, `cg test` reports:
 
@@ -65,7 +74,8 @@ header. Locally, `cg test` reports:
 
 ## 4. A failing record
 
-`event_type` is off the allowlist:
+`event_type` is off the allowlist, and the timestamp is stale
+([`examples/contracts/kafka/fail.json`](../../examples/contracts/kafka/fail.json)):
 
 ```json
 { "user_id": "u1", "event_type": "delete", "timestamp": 1714000000 }
@@ -73,8 +83,8 @@ header. Locally, `cg test` reports:
 
 ```
   FAIL  1
-record   0  event_type   enum_violation       Field 'event_type' value "delete" not in allowed set: [click, view, scroll, login]
-record   0  timestamp    freshness_violation  Quality freshness: field 'timestamp' timestamp is 31536000s old (max 86400s)
+record   0  event_type   enum_violation       Field 'event_type' value "delete" not in allowed set: ["click", "view", "scroll", "login"]
+record   0  timestamp    freshness_violation  Quality freshness: field 'timestamp' timestamp is 70249301s old (max 86400s)
 ```
 
 In the stream, this event routes to `cg-{contract_id}-quarantine` with

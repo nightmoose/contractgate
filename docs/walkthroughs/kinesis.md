@@ -62,6 +62,15 @@ A producer writes to `cg-{contract_id}-raw`:
 { "device_id": "dev-01", "metric": "cpu", "value": 42.5, "timestamp": <recent_epoch> }
 ```
 
+[`examples/contracts/kinesis/pass.json`](../../examples/contracts/kinesis/pass.json)
+pins a fixed epoch for repeatable `cg test` runs — regenerate `timestamp` to
+the current epoch before re-running; the 1-hour `freshness` window here is
+tighter than Kafka's:
+
+```json
+{ "device_id": "dev-01", "metric": "cpu", "value": 42.5, "timestamp": 1784249150 }
+```
+
 Valid records land on `cg-{contract_id}-clean`. Locally, `cg test` reports:
 
 ```
@@ -71,7 +80,8 @@ Valid records land on `cg-{contract_id}-clean`. Locally, `cg test` reports:
 
 ## 4. A failing record
 
-`metric` is off the allowlist and `value` is negative:
+`metric` is off the allowlist, `value` is negative, and the timestamp is stale
+([`examples/contracts/kinesis/fail.json`](../../examples/contracts/kinesis/fail.json)):
 
 ```json
 { "device_id": "dev-01", "metric": "disk", "value": -3, "timestamp": 1714000000 }
@@ -79,9 +89,9 @@ Valid records land on `cg-{contract_id}-clean`. Locally, `cg test` reports:
 
 ```
   FAIL  1
-record   0  metric     enum_violation       Field 'metric' value "disk" not in allowed set: [cpu, mem, temp, battery]
+record   0  metric     enum_violation       Field 'metric' value "disk" not in allowed set: ["cpu", "mem", "temp", "battery"]
 record   0  value      range_violation      Field 'value' value -3 is below minimum 0
-record   0  timestamp  freshness_violation  Quality freshness: field 'timestamp' timestamp is 31536000s old (max 3600s)
+record   0  timestamp  freshness_violation  Quality freshness: field 'timestamp' timestamp is 70249301s old (max 3600s)
 ```
 
 In the stream, this record routes to `cg-{contract_id}-quarantine` for
