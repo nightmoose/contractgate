@@ -94,6 +94,8 @@ signed off (may be planning docs or UI-only); **Draft** = under review;
 | 081 | [Quarantine List + Replay Reconciliation](rfcs/081-quarantine-list-and-replay-reconciliation.md) | Shipped | `nightly-maintenance-2026-07-14-rfc081` |
 | 082 | [Exportable Pilot Report](rfcs/082-exportable-pilot-report.md) | Shipped | `nightly-maintenance-2026-07-15-rfc082` |
 | 083 | [Event Metering + Usage API](rfcs/083-event-metering-and-usage.md) | Shipped (Phases 1–3) | `nightly-maintenance-2026-07-15-rfc083-phase2` |
+| 084 | [Slack Lead-Intake Bot](rfcs/084-slack-lead-bot.md) | Shipped | `nightly-maintenance-2026-07-15-rfc084-slack-bot` |
+| 085 | [Org Admin / Team Management](rfcs/085-org-admin-team-management.md) | Shipped | `nightly-maintenance-2026-07-16-rfc085-team-admin` |
 
 ---
 

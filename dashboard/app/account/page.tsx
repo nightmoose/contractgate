@@ -422,12 +422,22 @@ function AccountContent() {
             ) : (
               <button
                 onClick={async () => {
+                  // Open the tab synchronously inside the click gesture; browsers
+                  // block window.open() after an await (gesture context is lost),
+                  // so we grab the tab now and set its URL once the portal responds.
+                  const portalTab = window.open('', '_blank', 'noopener');
                   try {
                     const res = await fetch('/api/stripe/portal', { method: 'POST' });
                     const data = await res.json();
-                    if (data.url) window.location.href = data.url;
-                    else alert(data.error || 'Could not open billing portal');
+                    if (data.url) {
+                      if (portalTab) portalTab.location.href = data.url;
+                      else window.open(data.url, '_blank', 'noopener'); // popup blocked: retry
+                    } else {
+                      portalTab?.close();
+                      alert(data.error || 'Could not open billing portal');
+                    }
                   } catch {
+                    portalTab?.close();
                     alert('Failed to open Stripe portal');
                   }
                 }}
