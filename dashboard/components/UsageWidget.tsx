@@ -30,9 +30,14 @@ export default function UsageWidget() {
   }
 
   const { used, limit, pct, unlimited, period_start } = data;
+  // period_start is a UTC month boundary (e.g. 2026-07-01T00:00:00Z). Format in
+  // UTC to match the "(UTC month)" label — otherwise a viewer west of UTC sees the
+  // first-of-month instant fall on the last day of the previous month (e.g. "June"
+  // in July). RFC-083.
   const periodLabel = new Date(period_start).toLocaleDateString(undefined, {
     month: "long",
     year: "numeric",
+    timeZone: "UTC",
   });
   const hasLimit = !unlimited && limit != null;
   const clampedPct = pct == null ? 0 : Math.min(pct, 100);
