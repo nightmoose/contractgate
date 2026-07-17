@@ -1,6 +1,6 @@
 # RFC-085 — Org admin / team management
 
-**Status:** Draft
+**Status:** Implemented
 **Date:** 2026-07-16
 **Author:** Claude (proposes) → Sonnet (executes)
 **Branch:** `nightly-maintenance-2026-07-16-rfc085-team-admin` (Alex creates/commits — no agent git)
