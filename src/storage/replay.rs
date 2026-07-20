@@ -24,7 +24,10 @@ pub struct QuarantineRow {
     pub id: Uuid,
     pub contract_id: Uuid,
     pub contract_version: String,
-    pub payload: serde_json::Value,
+    /// RFC-086: `None` when the body was never stored or was purged
+    /// (`payload_redacted = true`). Such rows are non-replayable.
+    pub payload: Option<serde_json::Value>,
+    pub payload_redacted: bool,
     pub status: String,
     pub replayed_at: Option<chrono::DateTime<chrono::Utc>>,
     pub replayed_into_audit_id: Option<Uuid>,
@@ -37,7 +40,8 @@ struct QuarantineRowRaw {
     id: Uuid,
     contract_id: Uuid,
     contract_version: String,
-    payload: serde_json::Value,
+    payload: Option<serde_json::Value>,
+    payload_redacted: bool,
     status: String,
     replayed_at: Option<chrono::DateTime<chrono::Utc>>,
     replayed_into_audit_id: Option<Uuid>,
@@ -52,6 +56,7 @@ impl From<QuarantineRowRaw> for QuarantineRow {
             contract_id: r.contract_id,
             contract_version: r.contract_version,
             payload: r.payload,
+            payload_redacted: r.payload_redacted,
             status: r.status,
             replayed_at: r.replayed_at,
             replayed_into_audit_id: r.replayed_into_audit_id,
@@ -74,7 +79,7 @@ pub async fn list_quarantine_by_ids(pool: &PgPool, ids: &[Uuid]) -> AppResult<Ve
     let rows: Vec<QuarantineRowRaw> = sqlx::query_as(
         r#"
         SELECT
-            id, contract_id, contract_version, payload, status,
+            id, contract_id, contract_version, payload, payload_redacted, status,
             replayed_at, replayed_into_audit_id, source_ip, created_at
         FROM quarantine_events
         WHERE id = ANY($1::uuid[])
@@ -146,7 +151,8 @@ pub struct QuarantineListRow {
     pub id: Uuid,
     pub contract_id: Uuid,
     pub contract_version: Option<String>,
-    pub payload: serde_json::Value,
+    pub payload: Option<serde_json::Value>,
+    pub payload_redacted: bool,
     pub violation_details: serde_json::Value,
     pub violation_count: i32,
     pub source_ip: Option<String>,
@@ -179,6 +185,7 @@ pub async fn list_quarantine_events(
             qe.contract_id,
             qe.contract_version,
             qe.payload,
+            qe.payload_redacted,
             qe.violation_details,
             qe.violation_count,
             qe.source_ip,

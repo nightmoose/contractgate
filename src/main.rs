@@ -81,6 +81,7 @@ mod replay;
 mod report;
 mod scaffold_handler;
 mod scorecard;
+mod settings;
 mod storage;
 mod stream_demo;
 #[cfg(test)]
@@ -1364,6 +1365,19 @@ fn build_router(state: Arc<AppState>) -> Router {
         .route(
             "/quarantine/replay-history",
             get(quarantine::replay_history_all_handler),
+        )
+        // RFC-086: event-payload storage settings + purge.
+        .route(
+            "/settings/payload-storage",
+            get(settings::get_payload_storage_handler).put(settings::set_payload_storage_handler),
+        )
+        .route(
+            "/contracts/{id}/payload-storage",
+            axum::routing::patch(settings::set_contract_payload_storage_handler),
+        )
+        .route(
+            "/contracts/{id}/purge-bodies",
+            post(settings::purge_contract_bodies_handler),
         )
         // Kafka Ingress (RFC-025)
         .route(

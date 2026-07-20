@@ -336,6 +336,7 @@ mod tests {
             created_at: Utc::now(),
             updated_at: Utc::now(),
             pii_salt: vec![],
+            store_event_payloads: true,
         }
     }
 

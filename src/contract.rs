@@ -671,6 +671,9 @@ pub struct ContractIdentity {
     /// Per-contract 32-byte salt for PII transforms.  NEVER serialize.
     #[serde(skip_serializing)]
     pub pii_salt: Vec<u8>,
+    /// RFC-086: per-contract override for event-body storage. Only consulted
+    /// when the org master switch is on; `false` opts this pipeline out.
+    pub store_event_payloads: bool,
 }
 
 /// Version row — one per `(contract_id, version)` pair.  Frozen once state
@@ -823,6 +826,8 @@ pub struct ContractSummary {
     pub multi_stable_resolution: MultiStableResolution,
     pub latest_stable_version: Option<String>,
     pub version_count: i64,
+    /// RFC-086: per-contract event-body storage override.
+    pub store_event_payloads: bool,
 }
 
 /// Full response for a single version — includes YAML so the dashboard can

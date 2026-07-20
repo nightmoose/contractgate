@@ -82,6 +82,7 @@ pub struct ReplayResponse {
     pub not_found: usize,
     pub wrong_contract: usize,
     pub purged: usize,
+    pub redacted: usize,
     pub target_version: String,
     pub target_version_source: &'static str, // "explicit" | "default_stable"
     pub target_is_draft: bool,
@@ -120,6 +121,10 @@ pub enum ReplayItemOutcome {
     WrongContract,
     /// Row exists but is in terminal `purged` state.
     Purged,
+    /// RFC-086: the source body was never stored, or was purged
+    /// (`payload_redacted`), so there is nothing to re-validate. Non-replayable;
+    /// source row untouched.
+    Redacted,
 }
 
 // ---------------------------------------------------------------------------
@@ -203,10 +208,16 @@ pub async fn replay_for_contract(
             Some(r) if r.status == "replayed" || r.replayed_at.is_some() => {
                 slot[idx] = Some(ReplayItemOutcome::AlreadyReplayed);
             }
+            // RFC-086: body not stored / purged → nothing to replay.
+            Some(r) if r.payload_redacted || r.payload.is_none() => {
+                slot[idx] = Some(ReplayItemOutcome::Redacted);
+            }
             Some(r) => {
                 eligible.push(Eligible {
                     id: r.id,
-                    payload: r.payload,
+                    payload: r
+                        .payload
+                        .expect("payload present: prior arm handles redacted/None"),
                     source_ip: r.source_ip,
                 });
             }
@@ -399,8 +410,10 @@ pub async fn replay_for_contract(
     }
 
     // ----- 5. Execute DB writes -------------------------------------------
-    storage::log_audit_entries_batch(&state.db, &audit_inserts).await?;
-    storage::quarantine_events_batch(&state.db, &quar_inserts).await?;
+    // RFC-086: replay only runs on rows whose body was stored (paid + opted-in),
+    // so a re-quarantined failed replay stays storable for re-replay: store.
+    storage::log_audit_entries_batch(&state.db, &audit_inserts, true).await?;
+    storage::quarantine_events_batch(&state.db, &quar_inserts, true).await?;
     // Fire-and-forget forwarding on replay-passes, mirroring ingest path.
     if !forward_inserts.is_empty() {
         let pool = state.db.clone();
@@ -484,6 +497,7 @@ pub async fn replay_for_contract(
         not_found: counts.not_found,
         wrong_contract: counts.wrong_contract,
         purged: counts.purged,
+        redacted: counts.redacted,
         target_version,
         target_version_source: target_source,
         target_is_draft,
@@ -547,6 +561,7 @@ pub(crate) struct Tally {
     pub not_found: usize,
     pub wrong_contract: usize,
     pub purged: usize,
+    pub redacted: usize,
 }
 
 pub(crate) fn tally(results: &[ReplayItemResult]) -> Tally {
@@ -557,6 +572,7 @@ pub(crate) fn tally(results: &[ReplayItemResult]) -> Tally {
         not_found: 0,
         wrong_contract: 0,
         purged: 0,
+        redacted: 0,
     };
     for r in results {
         match r.outcome {
@@ -566,6 +582,7 @@ pub(crate) fn tally(results: &[ReplayItemResult]) -> Tally {
             ReplayItemOutcome::NotFound => t.not_found += 1,
             ReplayItemOutcome::WrongContract => t.wrong_contract += 1,
             ReplayItemOutcome::Purged => t.purged += 1,
+            ReplayItemOutcome::Redacted => t.redacted += 1,
         }
     }
     t
@@ -650,6 +667,7 @@ mod tests {
             fake_item(ReplayItemOutcome::WrongContract),
             fake_item(ReplayItemOutcome::Purged),
             fake_item(ReplayItemOutcome::Purged),
+            fake_item(ReplayItemOutcome::Redacted),
         ];
         let t = tally(&results);
         assert_eq!(t.replayed, 2);
@@ -658,13 +676,15 @@ mod tests {
         assert_eq!(t.not_found, 1);
         assert_eq!(t.wrong_contract, 1);
         assert_eq!(t.purged, 2);
+        assert_eq!(t.redacted, 1);
         // Counts roll up to input length — fundamental invariant.
         let sum = t.replayed
             + t.still_quarantined
             + t.already_replayed
             + t.not_found
             + t.wrong_contract
-            + t.purged;
+            + t.purged
+            + t.redacted;
         assert_eq!(sum, results.len());
     }
 

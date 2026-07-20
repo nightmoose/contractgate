@@ -15,6 +15,8 @@ import {
   listQuarantinedEvents,
   replayEvents,
   getReplayHistory,
+  setContractPayloadStorage,
+  purgeContractBodies,
 } from "@/lib/api";
 import type {
   ContractSummary,
@@ -171,8 +173,10 @@ export function QuarantineTab({ contracts }: { contracts?: ContractSummary[] }) 
     return true;
   });
 
-  // Selection helpers
-  const allIds = filteredEvents.map((e) => e.id);
+  // Selection helpers — only replayable rows (not purged, body stored) are selectable.
+  const allIds = filteredEvents
+    .filter((e) => e.status !== "purged" && !e.payload_redacted)
+    .map((e) => e.id);
   const allSelected = allIds.length > 0 && allIds.every((id) => selected.has(id));
 
   const toggleAll = () => setSelected(allSelected ? new Set() : new Set(allIds));
@@ -319,6 +323,14 @@ export function QuarantineTab({ contracts }: { contracts?: ContractSummary[] }) 
         )}
       </div>
 
+      {/* ── Per-contract payload storage controls (RFC-086) ── */}
+      {contractFilter && (() => {
+        const c = contracts?.find((x) => x.id === contractFilter);
+        return c ? (
+          <PerContractStorageControls contract={c} onPurged={() => mutateEvents()} />
+        ) : null;
+      })()}
+
       {/* ── Replay action bar ── */}
       {someSelected && (
         <div className="flex items-center gap-3 flex-wrap bg-[#111827] border border-indigo-700/40 rounded-xl px-4 py-3">
@@ -409,6 +421,7 @@ export function QuarantineTab({ contracts }: { contracts?: ContractSummary[] }) 
                   contracts?.find((c) => c.id === ev.contract_id)?.name ??
                   ev.contract_id.slice(0, 8) + "…";
                 const isPurged = ev.status === "purged";
+                const isRedacted = ev.payload_redacted;
                 return (
                   <tr
                     key={ev.id}
@@ -423,7 +436,7 @@ export function QuarantineTab({ contracts }: { contracts?: ContractSummary[] }) 
                         type="checkbox"
                         checked={selected.has(ev.id)}
                         onChange={() => toggleOne(ev.id)}
-                        disabled={isPurged}
+                        disabled={isPurged || isRedacted}
                         className="rounded border-[#374151] bg-[#0a0d12] accent-indigo-500 cursor-pointer disabled:opacity-30"
                       />
                     </td>
@@ -469,6 +482,12 @@ export function QuarantineTab({ contracts }: { contracts?: ContractSummary[] }) 
                           <TooltipWrap content="Event purged — past retention window. Replay is no longer possible.">
                             <span className="text-xs text-slate-600 cursor-default px-2 py-1">
                               ⊘
+                            </span>
+                          </TooltipWrap>
+                        ) : isRedacted ? (
+                          <TooltipWrap content="Body not stored — event payload storage is off for this contract. Replay is unavailable until storage is enabled.">
+                            <span className="text-xs text-slate-600 cursor-default px-2 py-1">
+                              🚫
                             </span>
                           </TooltipWrap>
                         ) : (
@@ -519,6 +538,108 @@ export function QuarantineTab({ contracts }: { contracts?: ContractSummary[] }) 
           onClose={closeDrawer}
         />
       )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// PerContractStorageControls (RFC-086) — per-contract toggle + purge
+// ---------------------------------------------------------------------------
+
+function PerContractStorageControls({
+  contract,
+  onPurged,
+}: {
+  contract: ContractSummary;
+  onPurged: () => void;
+}) {
+  const [enabled, setEnabled] = useState(contract.store_event_payloads);
+  const [saving, setSaving] = useState(false);
+  const [purging, setPurging] = useState(false);
+  const [msg, setMsg] = useState<string | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+
+  // Re-sync when the selected contract changes.
+  useEffect(() => {
+    setEnabled(contract.store_event_payloads);
+    setMsg(null);
+    setErr(null);
+  }, [contract.id, contract.store_event_payloads]);
+
+  async function toggle() {
+    const next = !enabled;
+    setSaving(true);
+    setErr(null);
+    setMsg(null);
+    try {
+      await setContractPayloadStorage(contract.id, next);
+      setEnabled(next);
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : String(e));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function purge() {
+    const ok = confirm(
+      `Purge stored event bodies for "${contract.name}"?\n\n` +
+        "This removes the source body from every audit and quarantine row for this " +
+        "contract. Audit history and violations are kept; affected events can no " +
+        "longer be replayed. This cannot be undone."
+    );
+    if (!ok) return;
+    setPurging(true);
+    setErr(null);
+    setMsg(null);
+    try {
+      const r = await purgeContractBodies(contract.id);
+      setMsg(
+        `Purged ${r.quarantine_bodies_redacted} quarantine + ${r.audit_bodies_redacted} audit bodies.`
+      );
+      onPurged();
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : String(e));
+    } finally {
+      setPurging(false);
+    }
+  }
+
+  return (
+    <div className="flex flex-wrap items-center gap-3 bg-[#111827] border border-[#1f2937] rounded-xl px-4 py-3">
+      <span className="text-xs text-slate-500 uppercase tracking-wider whitespace-nowrap">
+        Payload storage
+      </span>
+      <button
+        role="switch"
+        aria-checked={enabled}
+        onClick={toggle}
+        disabled={saving}
+        className={clsx(
+          "relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors disabled:opacity-50",
+          enabled ? "bg-green-600" : "bg-[#374151]"
+        )}
+      >
+        <span
+          className={clsx(
+            "inline-block h-3.5 w-3.5 transform rounded-full bg-white transition-transform",
+            enabled ? "translate-x-5" : "translate-x-1"
+          )}
+        />
+      </button>
+      <span className="text-xs text-slate-400">
+        {enabled ? "Storing bodies" : "Metadata only"}
+      </span>
+      <span className="text-slate-700">·</span>
+      <button
+        onClick={purge}
+        disabled={purging}
+        className="text-xs text-slate-500 hover:text-red-400 disabled:opacity-40 transition-colors"
+      >
+        {purging ? "Purging…" : "Purge body history"}
+      </button>
+      {msg && <span className="text-xs text-green-400">{msg}</span>}
+      {err && <span className="text-xs text-red-400">{err}</span>}
     </div>
   );
 }
@@ -646,18 +767,34 @@ function PayloadPreviewDrawer({
 
         {/* Payload */}
         <div className="flex-1 overflow-auto px-6 py-4">
-          <div className="flex items-center justify-between mb-2">
-            <p className="text-xs text-slate-500 uppercase tracking-wider">Stored payload</p>
-            <button
-              onClick={onCopy}
-              className="text-xs px-2.5 py-1 bg-[#1f2937] hover:bg-[#374151] border border-[#374151] rounded text-slate-300 transition-colors"
-            >
-              {copied ? "✓ Copied" : "Copy JSON"}
-            </button>
-          </div>
-          <pre className="text-xs text-green-300 font-mono bg-[#0a0d12] border border-[#1f2937] rounded-lg p-3 whitespace-pre-wrap break-all">
-            {prettyJson}
-          </pre>
+          {event.payload_redacted ? (
+            <div className="flex flex-col items-center justify-center h-full text-center text-slate-500 px-4">
+              <p className="text-4xl mb-4">🚫</p>
+              <p className="text-sm text-slate-400">Body not stored</p>
+              <p className="text-xs mt-2 text-slate-600 max-w-xs">
+                Event payload storage is off for this contract (or the body was
+                purged). The failure and its violations are recorded above, but
+                the source data was not retained — so this event can&apos;t be
+                replayed. Enable payload storage in Settings to retain bodies
+                going forward.
+              </p>
+            </div>
+          ) : (
+            <>
+              <div className="flex items-center justify-between mb-2">
+                <p className="text-xs text-slate-500 uppercase tracking-wider">Stored payload</p>
+                <button
+                  onClick={onCopy}
+                  className="text-xs px-2.5 py-1 bg-[#1f2937] hover:bg-[#374151] border border-[#374151] rounded text-slate-300 transition-colors"
+                >
+                  {copied ? "✓ Copied" : "Copy JSON"}
+                </button>
+              </div>
+              <pre className="text-xs text-green-300 font-mono bg-[#0a0d12] border border-[#1f2937] rounded-lg p-3 whitespace-pre-wrap break-all">
+                {prettyJson}
+              </pre>
+            </>
+          )}
         </div>
       </div>
     </>

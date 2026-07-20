@@ -312,7 +312,11 @@ mod inner {
             direction: "ingress".to_string(),
         };
 
-        if let Err(e) = log_audit_entries_batch(&state.db, &[audit]).await {
+        // RFC-086: gate event-body storage for this contract (one indexed read).
+        let store_payloads = crate::storage::contract_stores_payloads(&state.db, contract_id)
+            .await
+            .unwrap_or(false);
+        if let Err(e) = log_audit_entries_batch(&state.db, &[audit], store_payloads).await {
             tracing::error!(contract_id = %contract_id, "audit log write: {e}");
         }
     }
