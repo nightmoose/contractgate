@@ -183,7 +183,8 @@ pub async fn create_contract(
         INSERT INTO contracts
             (id, org_id, name, description, multi_stable_resolution, created_at, updated_at)
         VALUES ($1, $2, $3, $4, $5, NOW(), NOW())
-        RETURNING id, name, description, multi_stable_resolution, created_at, updated_at, pii_salt
+        RETURNING id, name, description, multi_stable_resolution, created_at, updated_at,
+                  pii_salt, store_event_payloads
         "#,
     )
     .bind(contract_id)
@@ -405,7 +406,8 @@ pub async fn patch_contract_identity(
             multi_stable_resolution = COALESCE($4, multi_stable_resolution),
             updated_at              = NOW()
         WHERE id = $1 AND ($5 IS NULL OR org_id = $5)
-        RETURNING id, name, description, multi_stable_resolution, created_at, updated_at, pii_salt
+        RETURNING id, name, description, multi_stable_resolution, created_at, updated_at,
+                  pii_salt, store_event_payloads
         "#,
     )
     .bind(id)
@@ -666,7 +668,8 @@ pub async fn deploy_contract_version(
     // ── 1. Find or create contract identity by name ───────────────────────────
     let maybe_identity = sqlx::query_as::<_, ContractIdentityRow>(
         r#"
-        SELECT id, name, description, multi_stable_resolution, created_at, updated_at, pii_salt
+        SELECT id, name, description, multi_stable_resolution, created_at, updated_at,
+               pii_salt, store_event_payloads
         FROM contracts
         WHERE name = $1
         "#,
