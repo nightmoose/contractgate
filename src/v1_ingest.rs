@@ -883,6 +883,7 @@ pub async fn v1_ingest_handler(
 // Deprecated-version wholesale quarantine
 // ---------------------------------------------------------------------------
 
+#[allow(clippy::too_many_arguments)]
 async fn deprecated_quarantine(
     state: &AppState,
     contract_id: Uuid,

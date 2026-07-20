@@ -284,7 +284,10 @@ pub async fn set_contract_store_payloads(
 /// as dead code in the default build.
 #[allow(dead_code)]
 pub async fn contract_stores_payloads(pool: &PgPool, contract_id: Uuid) -> AppResult<bool> {
-    let row: Option<(Option<String>, Option<bool>, bool, Option<Uuid>)> = sqlx::query_as(
+    // (plan, org_switch, contract_switch, contract.org_id) — org fields are
+    // NULL when the contract has no owning org (self-host).
+    type PayloadPolicyRow = (Option<String>, Option<bool>, bool, Option<Uuid>);
+    let row: Option<PayloadPolicyRow> = sqlx::query_as(
         r#"
         SELECT o.plan, o.store_event_payloads, c.store_event_payloads, c.org_id
         FROM contracts c
