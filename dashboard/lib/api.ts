@@ -143,6 +143,8 @@ export interface ContractSummary {
   multi_stable_resolution: MultiStableResolution;
   latest_stable_version: string | null;
   version_count: number;
+  /** RFC-086: per-contract event-body storage override. */
+  store_event_payloads: boolean;
 }
 
 /**
@@ -306,6 +308,9 @@ export interface QuarantinedEvent {
   contract_id: string;
   contract_version: string | null;
   raw_event: unknown;
+  /** RFC-086: body was never stored or was purged; `raw_event` is null and the
+   * row is non-replayable. */
+  payload_redacted: boolean;
   violation_details: Violation[];
   violation_count: number;
   source_ip: string | null;
@@ -569,6 +574,48 @@ export const getReplayHistory = (params?: {
   if (params?.limit != null) qs.set("limit", String(params.limit));
   return apiFetch<ReplayOutcome[]>(`/quarantine/replay-history?${qs}`);
 };
+
+// ---------------------------------------------------------------------------
+// Event-payload storage (RFC-086)
+// ---------------------------------------------------------------------------
+
+/** Org master switch + plan eligibility for event-body storage. */
+export interface PayloadStorageStatus {
+  /** The org-level master switch. */
+  enabled: boolean;
+  plan: string;
+  /** Plan is paid, so the switch is meaningful (else inert). */
+  eligible: boolean;
+}
+
+/** Result of a per-contract body purge. */
+export interface PurgeResult {
+  quarantine_bodies_redacted: number;
+  audit_bodies_redacted: number;
+}
+
+export const getPayloadStorage = () =>
+  apiFetch<PayloadStorageStatus>("/settings/payload-storage");
+
+/** Flip the org master switch. Disabling purges all stored bodies org-wide. */
+export const setPayloadStorage = (enabled: boolean) =>
+  apiFetch<PayloadStorageStatus>("/settings/payload-storage", {
+    method: "PUT",
+    body: JSON.stringify({ enabled }),
+  });
+
+/** Per-contract override (write-forward; does not purge history). */
+export const setContractPayloadStorage = (contractId: string, enabled: boolean) =>
+  apiFetch<{ enabled: boolean }>(`/contracts/${contractId}/payload-storage`, {
+    method: "PATCH",
+    body: JSON.stringify({ enabled }),
+  });
+
+/** Redact stored bodies for one contract, retaining all audit history. */
+export const purgeContractBodies = (contractId: string) =>
+  apiFetch<PurgeResult>(`/contracts/${contractId}/purge-bodies`, {
+    method: "POST",
+  });
 
 // ---------------------------------------------------------------------------
 // Playground

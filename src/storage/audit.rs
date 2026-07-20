@@ -485,7 +485,17 @@ pub struct ForwardEventInsert {
 /// Uses `UNNEST` of typed arrays so one SQL statement handles the whole batch
 /// regardless of size.  Rows in the input slice keep their order; the
 /// database assigns each a fresh UUID via `uuid_generate_v4()`.
-pub async fn log_audit_entries_batch(pool: &PgPool, entries: &[AuditEntryInsert]) -> AppResult<()> {
+///
+/// RFC-086: `store_payloads` gates the event body. When `false`, every row's
+/// `raw_event` is written as `'{}'` and `raw_event_redacted` is set — the audit
+/// record (contract, version, pass/fail, violations, timing) is retained, the
+/// source body is not. A single ingest batch is one contract/org, so the
+/// decision is uniform across the batch.
+pub async fn log_audit_entries_batch(
+    pool: &PgPool,
+    entries: &[AuditEntryInsert],
+    store_payloads: bool,
+) -> AppResult<()> {
     if entries.is_empty() {
         return Ok(());
     }
@@ -507,10 +517,18 @@ pub async fn log_audit_entries_batch(pool: &PgPool, entries: &[AuditEntryInsert]
         .map(|e| e.violation_details.clone())
         .collect();
     // RFC-004 §6: extract the underlying JSON only at the SQL bind boundary.
+    // RFC-086: when storage is gated off, redact the body to `'{}'` and mark it.
     let raw_events: Vec<serde_json::Value> = entries
         .iter()
-        .map(|e| e.raw_event.as_value().clone())
+        .map(|e| {
+            if store_payloads {
+                e.raw_event.as_value().clone()
+            } else {
+                serde_json::json!({})
+            }
+        })
         .collect();
+    let raw_event_redacted: Vec<bool> = vec![!store_payloads; entries.len()];
     let validation_us: Vec<i64> = entries.iter().map(|e| e.validation_us).collect();
     let source_ips: Vec<String> = entries
         .iter()
@@ -534,7 +552,7 @@ pub async fn log_audit_entries_batch(pool: &PgPool, entries: &[AuditEntryInsert]
         INSERT INTO audit_log
             (id, contract_id, org_id, contract_version, passed, violation_count,
              violation_details, raw_event, validation_us, source_ip, source,
-             replay_of_quarantine_id, direction, created_at)
+             replay_of_quarantine_id, direction, raw_event_redacted, created_at)
         SELECT
             COALESCE(NULLIF(pre_assigned_id, '00000000-0000-0000-0000-000000000000'::uuid),
                      uuid_generate_v4()),
@@ -546,14 +564,15 @@ pub async fn log_audit_entries_batch(pool: &PgPool, entries: &[AuditEntryInsert]
             source,
             NULLIF(replay_of_quarantine_id, '00000000-0000-0000-0000-000000000000'::uuid),
             direction,
+            raw_event_redacted,
             NOW()
         FROM UNNEST(
             $1::uuid[], $2::uuid[], $3::text[], $4::bool[], $5::int[], $6::jsonb[],
             $7::jsonb[], $8::bigint[], $9::text[], $10::text[], $11::uuid[], $12::uuid[],
-            $13::text[]
+            $13::text[], $14::bool[]
         ) AS t(contract_id, org_id, contract_version, passed, violation_count,
                violation_details, raw_event, validation_us, source_ip, source,
-               pre_assigned_id, replay_of_quarantine_id, direction)
+               pre_assigned_id, replay_of_quarantine_id, direction, raw_event_redacted)
         "#,
     )
     .bind(&contract_ids)
@@ -569,6 +588,7 @@ pub async fn log_audit_entries_batch(pool: &PgPool, entries: &[AuditEntryInsert]
     .bind(&pre_assigned_ids)
     .bind(&replay_of)
     .bind(&directions)
+    .bind(&raw_event_redacted)
     .execute(pool)
     .await
     .db_op("log_audit_entries_batch")?;
@@ -577,9 +597,16 @@ pub async fn log_audit_entries_batch(pool: &PgPool, entries: &[AuditEntryInsert]
 }
 
 /// Batch-insert quarantine entries in a single round-trip.
+///
+/// RFC-086: `store_payloads` gates the event body. When `false`, every row's
+/// `payload` is written as SQL `NULL` and `payload_redacted` is set — the
+/// quarantine record (contract, version, violations, timing) is retained but
+/// the source body is not, so the row is non-replayable. One ingest batch is
+/// one contract/org, so the decision is uniform across the batch.
 pub async fn quarantine_events_batch(
     pool: &PgPool,
     entries: &[QuarantineEventInsert],
+    store_payloads: bool,
 ) -> AppResult<()> {
     if entries.is_empty() {
         return Ok(());
@@ -589,11 +616,12 @@ pub async fn quarantine_events_batch(
     let contract_versions: Vec<String> =
         entries.iter().map(|e| e.contract_version.clone()).collect();
     // RFC-004 §6: same pattern as `log_audit_entries_batch` — unwrap to
-    // `Value` only at the SQL boundary.
-    let payloads: Vec<serde_json::Value> = entries
+    // `Value` only at the SQL boundary. RFC-086: NULL body when gated off.
+    let payloads: Vec<Option<serde_json::Value>> = entries
         .iter()
-        .map(|e| e.payload.as_value().clone())
+        .map(|e| store_payloads.then(|| e.payload.as_value().clone()))
         .collect();
+    let payload_redacted: Vec<bool> = vec![!store_payloads; entries.len()];
     let violation_counts: Vec<i32> = entries.iter().map(|e| e.violation_count).collect();
     let violation_details: Vec<serde_json::Value> = entries
         .iter()
@@ -625,7 +653,7 @@ pub async fn quarantine_events_batch(
         INSERT INTO quarantine_events
             (id, contract_id, contract_version, payload, violation_count,
              violation_details, validation_us, source_ip,
-             replay_of_quarantine_id, direction, status, created_at)
+             replay_of_quarantine_id, direction, payload_redacted, status, created_at)
         SELECT
             COALESCE(NULLIF(pre_assigned_id, '00000000-0000-0000-0000-000000000000'::uuid),
                      uuid_generate_v4()),
@@ -634,14 +662,15 @@ pub async fn quarantine_events_batch(
             NULLIF(source_ip, ''),
             NULLIF(replay_of_quarantine_id, '00000000-0000-0000-0000-000000000000'::uuid),
             direction,
+            payload_redacted,
             'pending',
             NOW()
         FROM UNNEST(
             $1::uuid[], $2::text[], $3::jsonb[], $4::int[], $5::jsonb[],
-            $6::bigint[], $7::text[], $8::uuid[], $9::uuid[], $10::text[]
+            $6::bigint[], $7::text[], $8::uuid[], $9::uuid[], $10::text[], $11::bool[]
         ) AS t(contract_id, contract_version, payload, violation_count,
                violation_details, validation_us, source_ip,
-               replay_of_quarantine_id, pre_assigned_id, direction)
+               replay_of_quarantine_id, pre_assigned_id, direction, payload_redacted)
         "#,
     )
     .bind(&contract_ids)
@@ -654,11 +683,60 @@ pub async fn quarantine_events_batch(
     .bind(&replay_of)
     .bind(&pre_assigned_ids)
     .bind(&directions)
+    .bind(&payload_redacted)
     .execute(pool)
     .await
     .db_op("quarantine_events_batch")?;
 
     Ok(())
+}
+
+/// RFC-086: redact stored event bodies **in place** — org-wide when
+/// `contract_id` is `None`, or for a single contract when `Some`. Every
+/// `audit_log` and `quarantine_events` row and all its metadata is retained;
+/// only the body column is nulled and the `*_redacted` marker set. This never
+/// deletes a row. Idempotent: already-redacted rows are skipped.
+///
+/// Returns `(quarantine_rows_redacted, audit_rows_redacted)`.
+pub async fn purge_bodies(
+    pool: &PgPool,
+    org_id: Option<Uuid>,
+    contract_id: Option<Uuid>,
+) -> AppResult<(u64, u64)> {
+    // quarantine_events has no org_id column — scope via the owning contract.
+    let q = sqlx::query(
+        r#"
+        UPDATE quarantine_events qe
+        SET payload = NULL, payload_redacted = true
+        FROM contracts c
+        WHERE qe.contract_id = c.id
+          AND ($1::uuid IS NULL OR c.org_id = $1)
+          AND ($2::uuid IS NULL OR qe.contract_id = $2)
+          AND qe.payload IS NOT NULL
+        "#,
+    )
+    .bind(org_id)
+    .bind(contract_id)
+    .execute(pool)
+    .await
+    .db_op("purge_bodies.quarantine")?;
+
+    let a = sqlx::query(
+        r#"
+        UPDATE audit_log
+        SET raw_event = '{}'::jsonb, raw_event_redacted = true
+        WHERE ($1::uuid IS NULL OR org_id = $1)
+          AND ($2::uuid IS NULL OR contract_id = $2)
+          AND raw_event_redacted = false
+        "#,
+    )
+    .bind(org_id)
+    .bind(contract_id)
+    .execute(pool)
+    .await
+    .db_op("purge_bodies.audit")?;
+
+    Ok((q.rows_affected(), a.rows_affected()))
 }
 
 /// Batch-insert forwarded events in a single round-trip.

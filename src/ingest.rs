@@ -216,6 +216,31 @@ async fn resolve_version(
 // Handler: POST /ingest/{contract_id}[@version]
 // ---------------------------------------------------------------------------
 
+/// RFC-086: resolve whether event bodies are durably stored for this
+/// org/contract. `org_id = None` (self-host / dev-no-auth) stores; a specified
+/// org must resolve to a paid plan with both the org master switch and the
+/// per-contract override on. Missing org row or a lookup error → redact
+/// (fail-closed). One indexed PK read on `orgs`, off the tight validation loop.
+pub(crate) async fn resolve_store_payloads(
+    state: &AppState,
+    org_id: Option<Uuid>,
+    contract_switch: bool,
+) -> bool {
+    let Some(org_id) = org_id else {
+        return true;
+    };
+    match storage::get_org_payload_policy(&state.db, org_id).await {
+        Ok(Some((plan, org_switch))) => {
+            crate::plan::payloads_stored(&plan, org_switch, contract_switch)
+        }
+        Ok(None) => false,
+        Err(e) => {
+            tracing::warn!(org_id = %org_id, "RFC-086: payload policy lookup failed, redacting (fail-closed): {e:?}");
+            false
+        }
+    }
+}
+
 pub async fn ingest_handler(
     State(state): State<Arc<AppState>>,
     Path(raw_id): Path<String>,
@@ -301,6 +326,14 @@ pub async fn ingest_handler(
         .and_then(|v| v.to_str().ok())
         .map(|s| s.split(',').next().unwrap_or(s).trim().to_string());
 
+    // --- RFC-086: does this org/contract store event bodies? ---------------
+    // Paid plan + org master switch + per-contract override. Self-host/dev
+    // (`org_id = None`) stores; any specified org must resolve to a paid,
+    // enabled policy or we redact (fail-closed — never store what we're not
+    // paid/permitted to hold). Threaded into every persistence path below.
+    let store_payloads =
+        resolve_store_payloads(&state, org_id, identity.store_event_payloads).await;
+
     // --- Deprecated-pin short-circuit (RFC-002 §5) --------------------------
     //
     // Any traffic that resolves to a deprecated version is rejected wholesale:
@@ -325,6 +358,7 @@ pub async fn ingest_handler(
             source_ip,
             query,
             deprecated_compiled,
+            store_payloads,
         )
         .await;
     }
@@ -389,6 +423,7 @@ pub async fn ingest_handler(
                     payload,
                     &result,
                     source_ip.clone(),
+                    store_payloads,
                 );
             }
         }
@@ -668,7 +703,9 @@ pub async fn ingest_handler(
             let pool = state.db.clone();
             let meter_org = org_id;
             tokio::spawn(async move {
-                if let Err(e) = storage::log_audit_entries_batch(&pool, &audit_rows).await {
+                if let Err(e) =
+                    storage::log_audit_entries_batch(&pool, &audit_rows, store_payloads).await
+                {
                     tracing::warn!("Failed to write batch audit log: {:?}", e);
                     return;
                 }
@@ -678,7 +715,9 @@ pub async fn ingest_handler(
         if !quarantine_rows.is_empty() {
             let pool = state.db.clone();
             tokio::spawn(async move {
-                if let Err(e) = storage::quarantine_events_batch(&pool, &quarantine_rows).await {
+                if let Err(e) =
+                    storage::quarantine_events_batch(&pool, &quarantine_rows, store_payloads).await
+                {
                     tracing::warn!("Failed to batch-quarantine events: {:?}", e);
                 }
             });
@@ -760,6 +799,7 @@ async fn deprecated_pin_quarantine(
     source_ip: Option<String>,
     query: IngestQuery,
     compiled: Arc<CompiledContract>,
+    store_payloads: bool,
 ) -> AppResult<axum::response::Response> {
     let total = events.len();
     let synthetic_violation = json!({
@@ -811,7 +851,8 @@ async fn deprecated_pin_quarantine(
         let pool_q = state.db.clone();
         let q_rows = quarantine_rows.clone();
         tokio::spawn(async move {
-            if let Err(e) = storage::quarantine_events_batch(&pool_q, &q_rows).await {
+            if let Err(e) = storage::quarantine_events_batch(&pool_q, &q_rows, store_payloads).await
+            {
                 tracing::warn!("Failed to batch-quarantine deprecated-pin events: {:?}", e);
             }
         });
@@ -1069,6 +1110,7 @@ fn persist_envelope_batch(
     payload: &Value,
     batch: &BatchValidationResult,
     source_ip: Option<String>,
+    store_payloads: bool,
 ) {
     let per_record = envelope_per_record_results(envelope_cfg, payload, batch);
     if per_record.is_empty() {
@@ -1161,7 +1203,9 @@ fn persist_envelope_batch(
         let pool = state.db.clone();
         let meter_org = org_id;
         tokio::spawn(async move {
-            if let Err(e) = storage::log_audit_entries_batch(&pool, &audit_rows).await {
+            if let Err(e) =
+                storage::log_audit_entries_batch(&pool, &audit_rows, store_payloads).await
+            {
                 tracing::warn!("envelope: failed to write batch audit log: {e:?}");
                 return;
             }
@@ -1171,7 +1215,9 @@ fn persist_envelope_batch(
     if !quarantine_rows.is_empty() {
         let pool = state.db.clone();
         tokio::spawn(async move {
-            if let Err(e) = storage::quarantine_events_batch(&pool, &quarantine_rows).await {
+            if let Err(e) =
+                storage::quarantine_events_batch(&pool, &quarantine_rows, store_payloads).await
+            {
                 tracing::warn!("envelope: failed to batch-quarantine events: {e:?}");
             }
         });

@@ -9,6 +9,8 @@ import AuthGate from "@/components/AuthGate";
 import { DEMO_MODE } from "@/lib/demo";
 import DemoFeatureUnavailable from "@/components/DemoFeatureUnavailable";
 import UsageWidget from "@/components/UsageWidget";
+import { getPayloadStorage, setPayloadStorage } from "@/lib/api";
+import type { PayloadStorageStatus } from "@/lib/api";
 
 // RFC-056: API key issuance and revocation now go through /api/keys (server-side).
 // The browser no longer generates or hashes keys; the raw key is returned once
@@ -455,6 +457,9 @@ function AccountContent() {
 
       {/* Per-org monthly usage (RFC-083) */}
       {org && <UsageWidget />}
+
+      {/* Event payload storage (RFC-086) — owner/admin only */}
+      {org && canManage && <EventPayloadStorageSection />}
 
       {/* Newly created key banner — shown once, then dismissed */}
       {createdKey && (
@@ -974,6 +979,98 @@ transforms.contractgate.contractgate.contract.id=<your contract UUID>`}
         </p>
       </section>
     </div>
+  );
+}
+
+// ── Event payload storage (RFC-086) ────────────────────────────────────────────
+function EventPayloadStorageSection() {
+  const [status, setStatus] = useState<PayloadStorageStatus | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    getPayloadStorage()
+      .then(setStatus)
+      .catch((e) => setError(e instanceof Error ? e.message : String(e)))
+      .finally(() => setLoading(false));
+  }, []);
+
+  async function toggle(next: boolean) {
+    if (!next) {
+      const ok = confirm(
+        "Turn off event payload storage?\n\nThis immediately PURGES every stored event body for your org (audit + quarantine). " +
+          "Audit records and violation history are kept — only the source data is removed. " +
+          "Quarantined events without a stored body can no longer be replayed. This cannot be undone."
+      );
+      if (!ok) return;
+    }
+    setSaving(true);
+    setError(null);
+    try {
+      setStatus(await setPayloadStorage(next));
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  if (loading || !status) return null;
+
+  return (
+    <section className="bg-[#111827] border border-[#1f2937] rounded-2xl p-6 mb-8">
+      <div className="flex items-center justify-between gap-4">
+        <div className="min-w-0">
+          <div className="text-sm font-semibold text-slate-200">Event Payload Storage</div>
+          <p className="text-xs text-slate-500 mt-1 max-w-md">
+            When on, ContractGate retains the (post-transform) body of each event
+            in the audit log and quarantine store. Required for quarantine replay.
+            When off, only metadata is kept — what failed and why, never the source
+            data.
+          </p>
+        </div>
+
+        {status.eligible ? (
+          <button
+            onClick={() => toggle(!status.enabled)}
+            disabled={saving}
+            role="switch"
+            aria-checked={status.enabled}
+            className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors disabled:opacity-50 ${
+              status.enabled ? "bg-green-600" : "bg-[#374151]"
+            }`}
+          >
+            <span
+              className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                status.enabled ? "translate-x-6" : "translate-x-1"
+              }`}
+            />
+          </button>
+        ) : (
+          <a
+            href="/pricing"
+            className="text-xs px-3 py-1 rounded bg-green-600 hover:bg-green-500 text-white font-medium whitespace-nowrap"
+          >
+            Upgrade to enable
+          </a>
+        )}
+      </div>
+
+      <p className="text-[11px] text-slate-500 mt-3">
+        {status.eligible
+          ? status.enabled
+            ? "On — event bodies are stored. Turning this off purges all stored bodies org-wide."
+            : "Off — only metadata is stored. Quarantined events can't be replayed until this is on."
+          : "Event payload storage is a paid-plan feature (Growth or Enterprise)."}
+      </p>
+
+      {error && (
+        <p className="text-sm text-red-400 bg-red-900/20 border border-red-800/40 rounded p-2 mt-3">
+          {error}
+        </p>
+      )}
+    </section>
   );
 }
 

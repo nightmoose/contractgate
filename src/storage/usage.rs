@@ -14,6 +14,32 @@ pub async fn get_org_plan(pool: &PgPool, org_id: Uuid) -> AppResult<Option<Strin
     Ok(row.map(|(p,)| p))
 }
 
+/// RFC-086: the org's `(plan, store_event_payloads)` for the payload-storage
+/// gate. `None` when the org row is missing (dev / self-hosted — caller treats
+/// that as "store"). One indexed primary-key read on `orgs`, off the tight
+/// validation loop.
+pub async fn get_org_payload_policy(
+    pool: &PgPool,
+    org_id: Uuid,
+) -> AppResult<Option<(String, bool)>> {
+    let row: Option<(String, bool)> =
+        sqlx::query_as("SELECT plan, store_event_payloads FROM orgs WHERE id = $1")
+            .bind(org_id)
+            .fetch_optional(pool)
+            .await?;
+    Ok(row)
+}
+
+/// RFC-086: set the org-level `store_event_payloads` master switch.
+pub async fn set_org_store_payloads(pool: &PgPool, org_id: Uuid, enabled: bool) -> AppResult<()> {
+    sqlx::query("UPDATE orgs SET store_event_payloads = $2 WHERE id = $1")
+        .bind(org_id)
+        .bind(enabled)
+        .execute(pool)
+        .await?;
+    Ok(())
+}
+
 /// Count of `audit_log` events for an org since `since` (inclusive). When
 /// `org_id` is `None` (dev-no-auth) counts across all orgs. Backed by
 /// `audit_log_org_id_created_idx` (migration 007).

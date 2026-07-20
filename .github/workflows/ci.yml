@@ -391,10 +391,33 @@ jobs:
           fi
           echo "Sentinel A8 OK: slack_leads present with RLS enabled (migration 033)."
 
+          # Sentinel A9 — migration 034 (RFC-086 gated payload storage): the
+          # org master switch column exists and quarantine_events.payload was
+          # relaxed to NULLable (so metadata-only / purged rows can be written).
+          STORE_FLAG=$(psql "$DATABASE_URL" -Atc \
+            "SELECT COUNT(*) FROM information_schema.columns
+             WHERE table_schema = 'public'
+               AND table_name   = 'orgs'
+               AND column_name  = 'store_event_payloads'")
+          if [[ "$STORE_FLAG" != "1" ]]; then
+            echo "::error::Migration 034 sentinel failed — orgs.store_event_payloads column not found."
+            exit 1
+          fi
+          PAYLOAD_NULLABLE=$(psql "$DATABASE_URL" -Atc \
+            "SELECT is_nullable FROM information_schema.columns
+             WHERE table_schema = 'public'
+               AND table_name   = 'quarantine_events'
+               AND column_name  = 'payload'")
+          if [[ "$PAYLOAD_NULLABLE" != "YES" ]]; then
+            echo "::error::Migration 034 sentinel failed — quarantine_events.payload is not NULLable."
+            exit 1
+          fi
+          echo "Sentinel A9 OK: store_event_payloads present + payload NULLable (migration 034)."
+
           # Sentinel B — file count: the loop above applies every *.sql file.
           # Assert we have exactly the expected number so a new migration
           # automatically forces this sentinel to be updated.
-          EXPECTED_MIGRATION_COUNT=33
+          EXPECTED_MIGRATION_COUNT=34
           ACTUAL_COUNT=$(ls supabase/migrations/*.sql | wc -l | tr -d ' ')
           if [[ "$ACTUAL_COUNT" != "$EXPECTED_MIGRATION_COUNT" ]]; then
             echo "::error::Migration count mismatch — expected $EXPECTED_MIGRATION_COUNT files, found $ACTUAL_COUNT."
@@ -465,12 +488,15 @@ jobs:
             tests::org_scoping::usage_monthly_count \
             tests::org_scoping::quarantine_replay_race_guard \
             tests::rfc053_ready_tests::ready_returns_200_live_db \
+            tests::rfc086_payload_storage::rfc086_redaction_on_insert \
+            tests::rfc086_payload_storage::rfc086_purge_preserves_rows \
+            tests::rfc086_payload_storage::rfc086_contract_stores_payloads_gate \
             2>&1 | tee /tmp/iso_test.out
           # Guard against the silent false-green: `cargo test` exits 0 even when
           # a filter matches zero tests (e.g. a future rename). Assert exactly
-          # the 5 expected tests actually ran.
-          if ! grep -qE '7 passed; 0 failed' /tmp/iso_test.out; then
-            echo "::error::Expected '7 passed; 0 failed' from the isolation/readiness tests — got something else. A test may have been renamed or skipped."
+          # the expected tests actually ran.
+          if ! grep -qE '10 passed; 0 failed' /tmp/iso_test.out; then
+            echo "::error::Expected '10 passed; 0 failed' from the isolation/readiness/RFC-086 tests — got something else. A test may have been renamed or skipped."
             exit 1
           fi
 

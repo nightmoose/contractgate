@@ -379,7 +379,11 @@ pub async fn egress_handler(
         .filter(|s| !s.is_empty());
 
     // --- Load contract identity (RFC-074: org-scoped; 404 if not owned) -----
-    let _identity = storage::get_contract_identity(&state.db, contract_id, org_id).await?;
+    let identity = storage::get_contract_identity(&state.db, contract_id, org_id).await?;
+
+    // RFC-086: gate egress event-body storage the same way ingest does.
+    let store_payloads =
+        crate::ingest::resolve_store_payloads(&state, org_id, identity.store_event_payloads).await;
 
     // --- Resolve version ----------------------------------------------------
     let (resolved_version, _pin_source) =
@@ -526,7 +530,9 @@ pub async fn egress_handler(
         if !audit_rows.is_empty() {
             let pool = state.db.clone();
             tokio::spawn(async move {
-                if let Err(e) = storage::log_audit_entries_batch(&pool, &audit_rows).await {
+                if let Err(e) =
+                    storage::log_audit_entries_batch(&pool, &audit_rows, store_payloads).await
+                {
                     tracing::warn!("egress: audit write failed: {:?}", e);
                 }
             });
@@ -534,7 +540,9 @@ pub async fn egress_handler(
         if !quarantine_rows.is_empty() {
             let pool = state.db.clone();
             tokio::spawn(async move {
-                if let Err(e) = storage::quarantine_events_batch(&pool, &quarantine_rows).await {
+                if let Err(e) =
+                    storage::quarantine_events_batch(&pool, &quarantine_rows, store_payloads).await
+                {
                     tracing::warn!("egress: quarantine write failed: {:?}", e);
                 }
             });

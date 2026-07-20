@@ -53,6 +53,9 @@ pub struct QuarantinedEventOut {
     pub contract_id: Uuid,
     pub contract_version: Option<String>,
     pub raw_event: serde_json::Value,
+    /// RFC-086: body was never stored or was purged; `raw_event` is `null` and
+    /// the row is non-replayable.
+    pub payload_redacted: bool,
     pub violation_details: serde_json::Value,
     pub violation_count: i32,
     pub source_ip: Option<String>,
@@ -82,7 +85,8 @@ pub async fn list_quarantine_handler(
             id: r.id,
             contract_id: r.contract_id,
             contract_version: r.contract_version,
-            raw_event: r.payload,
+            raw_event: r.payload.unwrap_or(serde_json::Value::Null),
+            payload_redacted: r.payload_redacted,
             violation_details: r.violation_details,
             violation_count: r.violation_count,
             source_ip: r.source_ip,
@@ -186,7 +190,8 @@ pub async fn replay_all_handler(
                 ReplayItemOutcome::AlreadyReplayed
                 | ReplayItemOutcome::NotFound
                 | ReplayItemOutcome::WrongContract
-                | ReplayItemOutcome::Purged => (false, target.clone(), Vec::new()),
+                | ReplayItemOutcome::Purged
+                | ReplayItemOutcome::Redacted => (false, target.clone(), Vec::new()),
             };
             outcome_for.insert(
                 item.quarantine_id,
@@ -298,6 +303,7 @@ mod tests {
             contract_id: Uuid::nil(),
             contract_version: Some("1.0.0".into()),
             raw_event: serde_json::json!({"k": "v"}),
+            payload_redacted: false,
             violation_details: serde_json::json!([]),
             violation_count: 0,
             source_ip: None,
@@ -314,6 +320,7 @@ mod tests {
             "contract_id",
             "contract_version",
             "raw_event",
+            "payload_redacted",
             "violation_details",
             "violation_count",
             "source_ip",

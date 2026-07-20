@@ -124,3 +124,9 @@ replay attempt (passes and fails), newest first. An unknown or cross-org
   exactly one winner.
 - The stored `raw_event` is already in post-transform form (PII masking from
   RFC-004 is applied at ingest and carried forward on replay).
+- **RFC-086:** replay requires a stored body. If event-payload storage was off
+  for the contract (Free plan, org/contract opted out, or the body was purged),
+  the quarantine row is returned with `payload_redacted: true` and `raw_event:
+  null`, and replay reports it as `redacted` (non-replayable) rather than
+  re-validating an empty body. See
+  [event-payload-storage-reference.md](event-payload-storage-reference.md).

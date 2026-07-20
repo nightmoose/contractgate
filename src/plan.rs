@@ -14,9 +14,33 @@ pub fn monthly_event_limit(plan: &str) -> Option<i64> {
     }
 }
 
+/// Whether an event body should be durably stored for this org/contract.
+///
+/// RFC-086: bodies are stored only on a paid plan (`growth`/`enterprise`) with
+/// the org master switch on and the per-contract override on. Free/unknown
+/// plans never store, regardless of the flags. Self-host/dev (no org row) is
+/// handled by the caller before this is reached.
+pub fn payloads_stored(plan: &str, org_switch: bool, contract_switch: bool) -> bool {
+    let paid = matches!(plan, "growth" | "enterprise");
+    paid && org_switch && contract_switch
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn payloads_stored_truth_table() {
+        // Free never stores, whatever the flags say.
+        assert!(!payloads_stored("free", true, true));
+        assert!(!payloads_stored("bogus", true, true));
+        // Paid stores only when both switches are on.
+        assert!(payloads_stored("growth", true, true));
+        assert!(payloads_stored("enterprise", true, true));
+        assert!(!payloads_stored("growth", false, true)); // org master off
+        assert!(!payloads_stored("growth", true, false)); // per-contract off
+        assert!(!payloads_stored("enterprise", false, false));
+    }
 
     #[test]
     fn limits_per_plan() {

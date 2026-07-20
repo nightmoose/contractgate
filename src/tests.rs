@@ -776,6 +776,7 @@ mod odcs_tests {
             created_at: Utc::now(),
             updated_at: Utc::now(),
             pii_salt: vec![0u8; 32],
+            store_event_payloads: true,
         }
     }
 
@@ -3359,5 +3360,343 @@ mod rfc052_debounce_tests {
             stamp, stamp2,
             "debounced call must not modify jwks_last_kid_refresh"
         );
+    }
+}
+
+// ---------------------------------------------------------------------------
+// RFC-086 — gated event-payload storage (DB integration)
+//
+// These require DATABASE_URL and a migrated Postgres (through migration 034).
+// Run with:
+//   cargo test rfc086 -- --ignored
+// ---------------------------------------------------------------------------
+
+#[cfg(test)]
+mod rfc086_payload_storage {
+    use serde_json::json;
+    use uuid::Uuid;
+
+    use super::super::storage::{self, AuditEntryInsert, QuarantineEventInsert};
+    use super::super::transform::TransformedPayload;
+
+    const YAML: &str = r#"
+version: "1.0"
+name: "rfc086_contract"
+description: "RFC-086 payload storage test"
+ontology:
+  entities:
+    - name: id
+      type: string
+      required: true
+glossary: []
+metrics: []
+"#;
+
+    async fn connect() -> sqlx::PgPool {
+        let db_url = std::env::var("DATABASE_URL").expect("DATABASE_URL must be set");
+        sqlx::PgPool::connect(&db_url).await.unwrap()
+    }
+
+    async fn seed_org(pool: &sqlx::PgPool, org: Uuid, slug: &str) {
+        sqlx::query("INSERT INTO orgs (id, name, slug) VALUES ($1, $2, $3)")
+            .bind(org)
+            .bind("rfc086 org")
+            .bind(format!("{slug}-{}", org.simple()))
+            .execute(pool)
+            .await
+            .expect("seed org");
+    }
+
+    async fn cleanup(pool: &sqlx::PgPool, contract_id: Uuid, org: Uuid) {
+        // Contract delete cascades audit_log + quarantine_events.
+        sqlx::query("DELETE FROM contracts WHERE id = $1")
+            .bind(contract_id)
+            .execute(pool)
+            .await
+            .unwrap();
+        sqlx::query("DELETE FROM orgs WHERE id = $1")
+            .bind(org)
+            .execute(pool)
+            .await
+            .unwrap();
+    }
+
+    fn quar_insert(contract_id: Uuid) -> QuarantineEventInsert {
+        QuarantineEventInsert {
+            contract_id,
+            contract_version: "1.0.0".to_string(),
+            payload: TransformedPayload::from_stored(json!({"id": "secret-body"})),
+            violation_count: 1,
+            violation_details: json!([{"field":"id","kind":"x","message":"m"}]),
+            validation_us: 5,
+            source_ip: Some("203.0.113.1".to_string()),
+            replay_of_quarantine_id: None,
+            pre_assigned_id: None,
+            direction: "ingress".to_string(),
+        }
+    }
+
+    fn audit_insert(contract_id: Uuid, org: Uuid, passed: bool) -> AuditEntryInsert {
+        AuditEntryInsert {
+            contract_id,
+            org_id: Some(org),
+            contract_version: "1.0.0".to_string(),
+            passed,
+            violation_count: if passed { 0 } else { 1 },
+            violation_details: if passed {
+                json!([])
+            } else {
+                json!([{"field":"id","kind":"x","message":"m"}])
+            },
+            raw_event: TransformedPayload::from_stored(json!({"id": "secret-body"})),
+            validation_us: 5,
+            source_ip: Some("203.0.113.1".to_string()),
+            source: "http".to_string(),
+            pre_assigned_id: None,
+            replay_of_quarantine_id: None,
+            direction: "ingress".to_string(),
+        }
+    }
+
+    /// `store_payloads = false` writes metadata rows: quarantine `payload`
+    /// NULL + `payload_redacted`, audit `raw_event` `{}` + `raw_event_redacted`;
+    /// all other columns intact. `store_payloads = true` writes real bodies.
+    #[tokio::test]
+    #[ignore = "requires DATABASE_URL and a live Postgres migrated through 034"]
+    async fn rfc086_redaction_on_insert() {
+        let pool = connect().await;
+        let org = Uuid::new_v4();
+        seed_org(&pool, org, "rfc086-redact").await;
+        let (identity, _) = storage::create_contract(
+            &pool,
+            "rfc086_contract",
+            Some("t"),
+            YAML,
+            Default::default(),
+            Some(org),
+        )
+        .await
+        .expect("create contract");
+        let cid = identity.id;
+
+        // --- Redacted (store_payloads = false) ---
+        storage::quarantine_events_batch(&pool, &[quar_insert(cid)], false)
+            .await
+            .unwrap();
+        storage::log_audit_entries_batch(&pool, &[audit_insert(cid, org, false)], false)
+            .await
+            .unwrap();
+
+        let rows = storage::list_quarantine_events(&pool, Some(org), Some(cid), 100, 0)
+            .await
+            .unwrap();
+        assert_eq!(rows.len(), 1, "one source quarantine row");
+        assert!(rows[0].payload.is_none(), "redacted payload must be NULL");
+        assert!(rows[0].payload_redacted, "payload_redacted must be set");
+        assert_eq!(rows[0].violation_count, 1, "metadata retained");
+        assert_eq!(rows[0].contract_version.as_deref(), Some("1.0.0"));
+
+        let (raw, redacted): (serde_json::Value, bool) = sqlx::query_as(
+            "SELECT raw_event, raw_event_redacted FROM audit_log WHERE contract_id = $1",
+        )
+        .bind(cid)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert!(redacted, "audit raw_event_redacted must be set");
+        assert_eq!(raw, json!({}), "redacted raw_event must be '{{}}'");
+
+        // --- Stored (store_payloads = true) ---
+        storage::quarantine_events_batch(&pool, &[quar_insert(cid)], true)
+            .await
+            .unwrap();
+        storage::log_audit_entries_batch(&pool, &[audit_insert(cid, org, false)], true)
+            .await
+            .unwrap();
+
+        let stored: i64 = sqlx::query_scalar(
+            "SELECT count(*) FROM quarantine_events \
+             WHERE contract_id = $1 AND payload IS NOT NULL AND payload_redacted = false",
+        )
+        .bind(cid)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(stored, 1, "store=true keeps the body, unredacted");
+        let stored_audit: i64 = sqlx::query_scalar(
+            "SELECT count(*) FROM audit_log \
+             WHERE contract_id = $1 AND raw_event_redacted = false",
+        )
+        .bind(cid)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(stored_audit, 1, "store=true audit body unredacted");
+
+        cleanup(&pool, cid, org).await;
+    }
+
+    /// Purge redacts bodies in place and NEVER deletes a row: row counts are
+    /// unchanged, all bodies become NULL/`{}` + redacted, and a second purge is
+    /// idempotent (nothing left to redact).
+    #[tokio::test]
+    #[ignore = "requires DATABASE_URL and a live Postgres migrated through 034"]
+    async fn rfc086_purge_preserves_rows() {
+        let pool = connect().await;
+        let org = Uuid::new_v4();
+        seed_org(&pool, org, "rfc086-purge").await;
+        let (identity, _) = storage::create_contract(
+            &pool,
+            "rfc086_contract",
+            Some("t"),
+            YAML,
+            Default::default(),
+            Some(org),
+        )
+        .await
+        .expect("create contract");
+        let cid = identity.id;
+
+        // Seed 3 quarantine + 3 audit rows WITH bodies.
+        let quars: Vec<_> = (0..3).map(|_| quar_insert(cid)).collect();
+        let audits: Vec<_> = (0..3).map(|_| audit_insert(cid, org, false)).collect();
+        storage::quarantine_events_batch(&pool, &quars, true)
+            .await
+            .unwrap();
+        storage::log_audit_entries_batch(&pool, &audits, true)
+            .await
+            .unwrap();
+
+        let q_before: i64 =
+            sqlx::query_scalar("SELECT count(*) FROM quarantine_events WHERE contract_id = $1")
+                .bind(cid)
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        let a_before: i64 =
+            sqlx::query_scalar("SELECT count(*) FROM audit_log WHERE contract_id = $1")
+                .bind(cid)
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        assert_eq!((q_before, a_before), (3, 3));
+
+        // Purge this contract.
+        let (q_redacted, a_redacted) = storage::purge_bodies(&pool, Some(org), Some(cid))
+            .await
+            .unwrap();
+        assert_eq!(q_redacted, 3, "all 3 quarantine bodies redacted");
+        assert_eq!(a_redacted, 3, "all 3 audit bodies redacted");
+
+        // Row counts UNCHANGED — nothing deleted.
+        let q_after: i64 =
+            sqlx::query_scalar("SELECT count(*) FROM quarantine_events WHERE contract_id = $1")
+                .bind(cid)
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        let a_after: i64 =
+            sqlx::query_scalar("SELECT count(*) FROM audit_log WHERE contract_id = $1")
+                .bind(cid)
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        assert_eq!(
+            (q_after, a_after),
+            (q_before, a_before),
+            "purge must not delete rows"
+        );
+
+        // Every body is now redacted.
+        let q_unredacted: i64 = sqlx::query_scalar(
+            "SELECT count(*) FROM quarantine_events \
+             WHERE contract_id = $1 AND (payload IS NOT NULL OR payload_redacted = false)",
+        )
+        .bind(cid)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(q_unredacted, 0, "no quarantine body survives purge");
+        let a_unredacted: i64 = sqlx::query_scalar(
+            "SELECT count(*) FROM audit_log WHERE contract_id = $1 AND raw_event_redacted = false",
+        )
+        .bind(cid)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(a_unredacted, 0, "no audit body survives purge");
+
+        // Idempotent: nothing left to redact.
+        let (q2, a2) = storage::purge_bodies(&pool, Some(org), Some(cid))
+            .await
+            .unwrap();
+        assert_eq!((q2, a2), (0, 0), "second purge is a no-op");
+
+        cleanup(&pool, cid, org).await;
+    }
+
+    /// The storage gate (`contract_stores_payloads`) applied end-to-end:
+    /// free → never; paid needs org master switch AND per-contract override on.
+    #[tokio::test]
+    #[ignore = "requires DATABASE_URL and a live Postgres migrated through 034"]
+    async fn rfc086_contract_stores_payloads_gate() {
+        let pool = connect().await;
+        let org = Uuid::new_v4();
+        seed_org(&pool, org, "rfc086-gate").await; // default plan 'free'
+        let (identity, _) = storage::create_contract(
+            &pool,
+            "rfc086_contract",
+            Some("t"),
+            YAML,
+            Default::default(),
+            Some(org),
+        )
+        .await
+        .expect("create contract");
+        let cid = identity.id;
+
+        // Free plan → never stores, whatever the switches.
+        storage::set_org_store_payloads(&pool, org, true)
+            .await
+            .unwrap();
+        assert!(
+            !storage::contract_stores_payloads(&pool, cid).await.unwrap(),
+            "free plan never stores"
+        );
+
+        // Upgrade to a paid plan.
+        sqlx::query("UPDATE orgs SET plan = 'growth' WHERE id = $1")
+            .bind(org)
+            .execute(&pool)
+            .await
+            .unwrap();
+
+        // Paid + org switch on + contract default (true) → stores.
+        assert!(storage::contract_stores_payloads(&pool, cid).await.unwrap());
+        // get_org_payload_policy reflects (plan, switch).
+        let (plan, switch) = storage::get_org_payload_policy(&pool, org)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!((plan.as_str(), switch), ("growth", true));
+
+        // Per-contract opt-out → does not store.
+        assert!(
+            storage::set_contract_store_payloads(&pool, cid, Some(org), false)
+                .await
+                .unwrap()
+        );
+        assert!(!storage::contract_stores_payloads(&pool, cid).await.unwrap());
+
+        // Contract back on, org master off → does not store.
+        storage::set_contract_store_payloads(&pool, cid, Some(org), true)
+            .await
+            .unwrap();
+        storage::set_org_store_payloads(&pool, org, false)
+            .await
+            .unwrap();
+        assert!(!storage::contract_stores_payloads(&pool, cid).await.unwrap());
+
+        cleanup(&pool, cid, org).await;
     }
 }

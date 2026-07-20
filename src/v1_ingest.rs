@@ -522,6 +522,11 @@ pub async fn v1_ingest_handler(
         .and_then(|v| v.to_str().ok())
         .map(|s| s.split(',').next().unwrap_or(s).trim().to_string());
 
+    // RFC-086: gate event-body storage for this org/contract (same rule as the
+    // v0 ingest path — a paid, opted-in org stores; everyone else is redacted).
+    let store_payloads =
+        crate::ingest::resolve_store_payloads(&state, org_id, identity.store_event_payloads).await;
+
     // Deprecated-pin: quarantine wholesale (reuse existing logic shape).
     if version_row.state == VersionState::Deprecated {
         return deprecated_quarantine(
@@ -532,6 +537,7 @@ pub async fn v1_ingest_handler(
             events,
             source_ip,
             query.dry_run,
+            store_payloads,
         )
         .await;
     }
@@ -726,7 +732,9 @@ pub async fn v1_ingest_handler(
             let pool = state.db.clone();
             let meter_org = org_id;
             tokio::spawn(async move {
-                if let Err(e) = storage::log_audit_entries_batch(&pool, &audit_rows).await {
+                if let Err(e) =
+                    storage::log_audit_entries_batch(&pool, &audit_rows, store_payloads).await
+                {
                     tracing::warn!("v1 ingest: audit write failed: {e:?}");
                     return;
                 }
@@ -736,7 +744,9 @@ pub async fn v1_ingest_handler(
         if !quarantine_rows.is_empty() {
             let pool = state.db.clone();
             tokio::spawn(async move {
-                if let Err(e) = storage::quarantine_events_batch(&pool, &quarantine_rows).await {
+                if let Err(e) =
+                    storage::quarantine_events_batch(&pool, &quarantine_rows, store_payloads).await
+                {
                     tracing::warn!("v1 ingest: quarantine write failed: {e:?}");
                 }
             });
@@ -873,6 +883,7 @@ pub async fn v1_ingest_handler(
 // Deprecated-version wholesale quarantine
 // ---------------------------------------------------------------------------
 
+#[allow(clippy::too_many_arguments)]
 async fn deprecated_quarantine(
     state: &AppState,
     contract_id: Uuid,
@@ -881,6 +892,7 @@ async fn deprecated_quarantine(
     events: Vec<Value>,
     source_ip: Option<String>,
     dry_run: bool,
+    store_payloads: bool,
 ) -> AppResult<Response> {
     let total = events.len();
     let compiled = state.get_compiled(contract_id, pinned_version).await?;
@@ -925,7 +937,7 @@ async fn deprecated_quarantine(
             .collect();
         let pool = state.db.clone();
         tokio::spawn(async move {
-            if let Err(e) = storage::quarantine_events_batch(&pool, &qrows).await {
+            if let Err(e) = storage::quarantine_events_batch(&pool, &qrows, store_payloads).await {
                 tracing::warn!("v1 ingest: deprecated quarantine write failed: {e:?}");
             }
         });

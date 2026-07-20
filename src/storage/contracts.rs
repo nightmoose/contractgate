@@ -33,6 +33,8 @@ struct ContractIdentityRow {
     updated_at: chrono::DateTime<chrono::Utc>,
     /// RFC-004: per-contract 32-byte secret salt.  BYTEA in Postgres.
     pii_salt: Vec<u8>,
+    /// RFC-086: per-contract event-body storage override.
+    store_event_payloads: bool,
 }
 
 impl ContractIdentityRow {
@@ -51,6 +53,7 @@ impl ContractIdentityRow {
             created_at: self.created_at,
             updated_at: self.updated_at,
             pii_salt: self.pii_salt,
+            store_event_payloads: self.store_event_payloads,
         })
     }
 }
@@ -115,6 +118,7 @@ struct ContractSummaryRow {
     multi_stable_resolution: String,
     latest_stable_version: Option<String>,
     version_count: i64,
+    store_event_payloads: bool,
 }
 
 impl ContractSummaryRow {
@@ -131,6 +135,7 @@ impl ContractSummaryRow {
             multi_stable_resolution: resolution,
             latest_stable_version: self.latest_stable_version,
             version_count: self.version_count,
+            store_event_payloads: self.store_event_payloads,
         })
     }
 }
@@ -178,7 +183,8 @@ pub async fn create_contract(
         INSERT INTO contracts
             (id, org_id, name, description, multi_stable_resolution, created_at, updated_at)
         VALUES ($1, $2, $3, $4, $5, NOW(), NOW())
-        RETURNING id, name, description, multi_stable_resolution, created_at, updated_at, pii_salt
+        RETURNING id, name, description, multi_stable_resolution, created_at, updated_at,
+                  pii_salt, store_event_payloads
         "#,
     )
     .bind(contract_id)
@@ -228,7 +234,8 @@ pub async fn get_contract_identity(
 ) -> AppResult<ContractIdentity> {
     let row = sqlx::query_as::<_, ContractIdentityRow>(
         r#"
-        SELECT id, name, description, multi_stable_resolution, created_at, updated_at, pii_salt
+        SELECT id, name, description, multi_stable_resolution, created_at, updated_at,
+               pii_salt, store_event_payloads
         FROM contracts
         WHERE id = $1 AND deleted_at IS NULL AND ($2 IS NULL OR org_id = $2)
         "#,
@@ -241,6 +248,68 @@ pub async fn get_contract_identity(
     .ok_or(AppError::ContractNotFound(id))?;
 
     row.into_identity()
+}
+
+/// RFC-086: set a contract's per-contract `store_event_payloads` override,
+/// org-scoped. Returns `false` if no matching (non-deleted, owned) contract
+/// exists so the caller can 404. `org_id = None` (dev) skips the org filter.
+pub async fn set_contract_store_payloads(
+    pool: &PgPool,
+    contract_id: Uuid,
+    org_id: Option<Uuid>,
+    enabled: bool,
+) -> AppResult<bool> {
+    let res = sqlx::query(
+        r#"
+        UPDATE contracts
+        SET store_event_payloads = $3
+        WHERE id = $1 AND deleted_at IS NULL AND ($2 IS NULL OR org_id = $2)
+        "#,
+    )
+    .bind(contract_id)
+    .bind(org_id)
+    .bind(enabled)
+    .execute(pool)
+    .await
+    .db_op("set_contract_store_payloads")?;
+    Ok(res.rows_affected() > 0)
+}
+
+/// RFC-086: resolve, in one join, whether a contract's event bodies should be
+/// stored — for paths that only hold a `contract_id` (Kafka/Kinesis consumers).
+/// A contract with no owning org is self-host → store. Otherwise applies the
+/// same rule as the ingest path: paid plan + org master switch + per-contract
+/// override. Unknown/deleted contract → `false` (redact, fail-closed).
+///
+/// Only reached from the Kafka/Kinesis consumers (feature-gated), so it reads
+/// as dead code in the default build.
+#[allow(dead_code)]
+pub async fn contract_stores_payloads(pool: &PgPool, contract_id: Uuid) -> AppResult<bool> {
+    // (plan, org_switch, contract_switch, contract.org_id) — org fields are
+    // NULL when the contract has no owning org (self-host).
+    type PayloadPolicyRow = (Option<String>, Option<bool>, bool, Option<Uuid>);
+    let row: Option<PayloadPolicyRow> = sqlx::query_as(
+        r#"
+        SELECT o.plan, o.store_event_payloads, c.store_event_payloads, c.org_id
+        FROM contracts c
+        LEFT JOIN orgs o ON o.id = c.org_id
+        WHERE c.id = $1 AND c.deleted_at IS NULL
+        "#,
+    )
+    .bind(contract_id)
+    .fetch_optional(pool)
+    .await
+    .db_op("contract_stores_payloads")?;
+
+    Ok(match row {
+        // No owning org → self-host / dev: store.
+        Some((_, _, _, None)) => true,
+        Some((Some(plan), Some(org_switch), contract_switch, Some(_org))) => {
+            crate::plan::payloads_stored(&plan, org_switch, contract_switch)
+        }
+        // Org id present but the org row/flags didn't resolve → fail-closed.
+        _ => false,
+    })
 }
 
 /// List contracts with aggregated version info — suitable for the dashboard
@@ -269,7 +338,8 @@ pub async fn list_contracts(
                     SELECT COUNT(*)::bigint
                     FROM contract_versions cv
                     WHERE cv.contract_id = c.id
-                ) AS version_count
+                ) AS version_count,
+                c.store_event_payloads
             FROM contracts c
             WHERE c.org_id = $1 AND c.deleted_at IS NULL
             ORDER BY c.created_at DESC
@@ -296,7 +366,8 @@ pub async fn list_contracts(
                     SELECT COUNT(*)::bigint
                     FROM contract_versions cv
                     WHERE cv.contract_id = c.id
-                ) AS version_count
+                ) AS version_count,
+                c.store_event_payloads
             FROM contracts c
             WHERE c.deleted_at IS NULL
             ORDER BY c.created_at DESC
@@ -335,7 +406,8 @@ pub async fn patch_contract_identity(
             multi_stable_resolution = COALESCE($4, multi_stable_resolution),
             updated_at              = NOW()
         WHERE id = $1 AND ($5 IS NULL OR org_id = $5)
-        RETURNING id, name, description, multi_stable_resolution, created_at, updated_at, pii_salt
+        RETURNING id, name, description, multi_stable_resolution, created_at, updated_at,
+                  pii_salt, store_event_payloads
         "#,
     )
     .bind(id)
@@ -596,7 +668,8 @@ pub async fn deploy_contract_version(
     // ── 1. Find or create contract identity by name ───────────────────────────
     let maybe_identity = sqlx::query_as::<_, ContractIdentityRow>(
         r#"
-        SELECT id, name, description, multi_stable_resolution, created_at, updated_at, pii_salt
+        SELECT id, name, description, multi_stable_resolution, created_at, updated_at,
+               pii_salt, store_event_payloads
         FROM contracts
         WHERE name = $1
         "#,
