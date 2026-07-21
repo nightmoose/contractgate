@@ -1,0 +1,54 @@
+version: '1.0'
+name: nyc_311
+description: NYC 311 service request slim fields. Dogfood scenario nyc_311.
+ontology:
+  entities:
+  - name: unique_key
+    type: string
+    required: true
+  - name: created_date
+    type: string
+    required: true
+  - name: closed_date
+    type: string
+    required: false
+  - name: agency
+    type: string
+    required: true
+  - name: agency_name
+    type: string
+    required: false
+  - name: complaint_type
+    type: string
+    required: true
+  - name: descriptor
+    type: string
+    required: false
+  - name: status
+    type: string
+    required: true
+  - name: borough
+    type: string
+    required: false
+    enum:
+    - BRONX
+    - BROOKLYN
+    - MANHATTAN
+    - QUEENS
+    - STATEN ISLAND
+    - Unspecified
+  - name: latitude
+    type: number
+    required: false
+    min: 40.0
+    max: 41.5
+  - name: longitude
+    type: number
+    required: false
+    min: -75.0
+    max: -73.0
+  - name: incident_zip
+    type: string
+    required: false
+glossary: []
+metrics: []

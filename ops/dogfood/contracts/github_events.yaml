@@ -1,0 +1,28 @@
+version: '1.0'
+name: github_public_events
+description: GitHub public events flattened. Dogfood scenario github_events.
+ontology:
+  entities:
+  - name: id
+    type: string
+    required: true
+  - name: type
+    type: string
+    required: true
+  - name: public
+    type: boolean
+    required: true
+  - name: created_at
+    type: string
+    required: true
+  - name: actor_login
+    type: string
+    required: true
+  - name: repo_name
+    type: string
+    required: true
+  - name: org_login
+    type: string
+    required: false
+glossary: []
+metrics: []

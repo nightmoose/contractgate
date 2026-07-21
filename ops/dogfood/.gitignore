@@ -1,0 +1,15 @@
+.venv/
+.env
+node_modules/
+fixtures/*/raw.json
+fixtures/*/events.json
+fixtures/*/*.ndjson
+fixtures/*/local_result.json
+fixtures/*/cloud_result.json
+findings/runs/browser-report/
+findings/runs/browser-artifacts/
+findings/runs/browser-last.json
+__pycache__/
+*.pyc
+test-results/
+playwright-report/

@@ -1,0 +1,75 @@
+{
+  "scenario": "open_meteo",
+  "contract_id": "76ea3e03-4e97-4ed9-bf30-014e4cb24ecc",
+  "contract_name": "open_meteo_hourly",
+  "timestamp": "2026-07-20T20:25:40.756294+00:00",
+  "ingest": {
+    "pass": {
+      "total": 24,
+      "passed": 24,
+      "failed": 0,
+      "resolved_version": "1.0.0"
+    },
+    "fail": {
+      "total": 5,
+      "passed": 0,
+      "failed": 5,
+      "resolved_version": "1.0.0"
+    },
+    "mixed": {
+      "total": 24,
+      "passed": 22,
+      "failed": 2,
+      "resolved_version": "1.0.0"
+    }
+  },
+  "report": {
+    "contract_id": "76ea3e03-4e97-4ed9-bf30-014e4cb24ecc",
+    "contract_name": "open_meteo_hourly",
+    "window": {
+      "from": null,
+      "to": null
+    },
+    "generated_at": "2026-07-20T20:25:40.486261509Z",
+    "totals": {
+      "total": 53,
+      "passed": 46,
+      "quarantined": 7,
+      "pass_rate": 0.8679245283018868
+    },
+    "by_version": [
+      {
+        "contract_version": "1.0.0",
+        "total": 53,
+        "passed": 46,
+        "quarantined": 7
+      }
+    ],
+    "top_violations": [
+      {
+        "field": "temperature_2m",
+        "kind": "range_violation",
+        "count": 3
+      },
+      {
+        "field": "time",
+        "kind": "missing_required_field",
+        "count": 2
+      },
+      {
+        "field": "precipitation",
+        "kind": "range_violation",
+        "count": 2
+      }
+    ]
+  },
+  "usage": {
+    "plan": "free",
+    "period_start": "2026-07-01T00:00:00Z",
+    "used": 343,
+    "limit": 1000000,
+    "remaining": 999657,
+    "pct": 0.0343,
+    "unlimited": false
+  }
+}

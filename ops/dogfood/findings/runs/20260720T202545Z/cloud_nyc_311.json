@@ -1,0 +1,75 @@
+{
+  "scenario": "nyc_311",
+  "contract_id": "0b9ef200-a43d-430a-aec8-519e1b948131",
+  "contract_name": "nyc_311",
+  "timestamp": "2026-07-20T20:25:45.875970+00:00",
+  "ingest": {
+    "pass": {
+      "total": 100,
+      "passed": 100,
+      "failed": 0,
+      "resolved_version": "1.0.0"
+    },
+    "fail": {
+      "total": 5,
+      "passed": 0,
+      "failed": 5,
+      "resolved_version": "1.0.0"
+    },
+    "mixed": {
+      "total": 40,
+      "passed": 36,
+      "failed": 4,
+      "resolved_version": "1.0.0"
+    }
+  },
+  "report": {
+    "contract_id": "0b9ef200-a43d-430a-aec8-519e1b948131",
+    "contract_name": "nyc_311",
+    "window": {
+      "from": null,
+      "to": null
+    },
+    "generated_at": "2026-07-20T20:25:45.610166772Z",
+    "totals": {
+      "total": 145,
+      "passed": 136,
+      "quarantined": 9,
+      "pass_rate": 0.9379310344827586
+    },
+    "by_version": [
+      {
+        "contract_version": "1.0.0",
+        "total": 145,
+        "passed": 136,
+        "quarantined": 9
+      }
+    ],
+    "top_violations": [
+      {
+        "field": "borough",
+        "kind": "enum_violation",
+        "count": 5
+      },
+      {
+        "field": "unique_key",
+        "kind": "missing_required_field",
+        "count": 3
+      },
+      {
+        "field": "latitude",
+        "kind": "range_violation",
+        "count": 1
+      }
+    ]
+  },
+  "usage": {
+    "plan": "free",
+    "period_start": "2026-07-01T00:00:00Z",
+    "used": 553,
+    "limit": 1000000,
+    "remaining": 999447,
+    "pct": 0.0553,
+    "unlimited": false
+  }
+}

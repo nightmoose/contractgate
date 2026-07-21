@@ -1,0 +1,80 @@
+{
+  "scenario": "mri_tenancy",
+  "contract_id": "f46ef3e5-c0f7-4471-8bdd-d712ef9ee59f",
+  "contract_name": "mri_tenancy_event",
+  "timestamp": "2026-07-20T20:25:38.240800+00:00",
+  "ingest": {
+    "pass": {
+      "total": 40,
+      "passed": 40,
+      "failed": 0,
+      "resolved_version": "1.0.0"
+    },
+    "fail": {
+      "total": 5,
+      "passed": 0,
+      "failed": 5,
+      "resolved_version": "1.0.0"
+    },
+    "mixed": {
+      "total": 40,
+      "passed": 36,
+      "failed": 4,
+      "resolved_version": "1.0.0"
+    }
+  },
+  "report": {
+    "contract_id": "f46ef3e5-c0f7-4471-8bdd-d712ef9ee59f",
+    "contract_name": "mri_tenancy_event",
+    "window": {
+      "from": null,
+      "to": null
+    },
+    "generated_at": "2026-07-20T20:25:37.974090491Z",
+    "totals": {
+      "total": 85,
+      "passed": 76,
+      "quarantined": 9,
+      "pass_rate": 0.8941176470588236
+    },
+    "by_version": [
+      {
+        "contract_version": "1.0.0",
+        "total": 85,
+        "passed": 76,
+        "quarantined": 9
+      }
+    ],
+    "top_violations": [
+      {
+        "field": "status",
+        "kind": "enum_violation",
+        "count": 3
+      },
+      {
+        "field": "rent_amount",
+        "kind": "range_violation",
+        "count": 2
+      },
+      {
+        "field": "tenancy_id",
+        "kind": "missing_required_field",
+        "count": 2
+      },
+      {
+        "field": "currency",
+        "kind": "enum_violation",
+        "count": 2
+      }
+    ]
+  },
+  "usage": {
+    "plan": "free",
+    "period_start": "2026-07-01T00:00:00Z",
+    "used": 290,
+    "limit": 1000000,
+    "remaining": 999710,
+    "pct": 0.029,
+    "unlimited": false
+  }
+}

@@ -1,0 +1,136 @@
+[
+  {
+    "scenario": "usgs_earthquake",
+    "contract": "/Users/alexsuarez/contractgate/ops/dogfood/contracts/usgs_earthquake.yaml",
+    "timestamp": "2026-07-20T20:23:29.965264+00:00",
+    "pass": {
+      "total": 50,
+      "passed": 50,
+      "failed": 0,
+      "pass_rate": 1.0,
+      "failures": []
+    },
+    "fail": {
+      "total": 5,
+      "passed": 0,
+      "failed": 5,
+      "pass_rate": 0.0,
+      "failures": [
+        {
+          "index": 0,
+          "mutation": "mag:wrong_type",
+          "violations": [
+            {
+              "field": "mag",
+              "kind": "type_mismatch",
+              "message": "Violation(field='mag', message=\"Field 'mag' expected type Float, got string\", kind=<ViolationKind.TYPE_MISMATCH: 'type_mismatch'>)"
+            }
+          ]
+        },
+        {
+          "index": 1,
+          "mutation": "status:bad_enum",
+          "violations": [
+            {
+              "field": "status",
+              "kind": "enum_violation",
+              "message": "Violation(field='status', message='Field \\'status\\' value \"fabricated\" not in allowed set: [\"automatic\", \"reviewed\", \"deleted\"]', kind=<ViolationKind.ENUM_VIOLATION: 'enum_violation'>)"
+            }
+          ]
+        },
+        {
+          "index": 2,
+          "mutation": "id:drop_required",
+          "violations": [
+            {
+              "field": "id",
+              "kind": "missing_required_field",
+              "message": "Violation(field='id', message=\"Required field 'id' is missing\", kind=<ViolationKind.MISSING_REQUIRED_FIELD: 'missing_required_field'>)"
+            }
+          ]
+        },
+        {
+          "index": 3,
+          "mutation": "mag:wrong_type",
+          "violations": [
+            {
+              "field": "mag",
+              "kind": "type_mismatch",
+              "message": "Violation(field='mag', message=\"Field 'mag' expected type Float, got string\", kind=<ViolationKind.TYPE_MISMATCH: 'type_mismatch'>)"
+            }
+          ]
+        },
+        {
+          "index": 4,
+          "mutation": "status:bad_enum",
+          "violations": [
+            {
+              "field": "status",
+              "kind": "enum_violation",
+              "message": "Violation(field='status', message='Field \\'status\\' value \"fabricated\" not in allowed set: [\"automatic\", \"reviewed\", \"deleted\"]', kind=<ViolationKind.ENUM_VIOLATION: 'enum_violation'>)"
+            }
+          ]
+        }
+      ]
+    },
+    "mixed": {
+      "total": 40,
+      "passed": 36,
+      "failed": 4,
+      "pass_rate": 0.9,
+      "failures": [
+        {
+          "index": 3,
+          "mutation": "mag:wrong_type",
+          "violations": [
+            {
+              "field": "mag",
+              "kind": "type_mismatch",
+              "message": "Violation(field='mag', message=\"Field 'mag' expected type Float, got string\", kind=<ViolationKind.TYPE_MISMATCH: 'type_mismatch'>)"
+            }
+          ]
+        },
+        {
+          "index": 9,
+          "mutation": "mag:wrong_type",
+          "violations": [
+            {
+              "field": "mag",
+              "kind": "type_mismatch",
+              "message": "Violation(field='mag', message=\"Field 'mag' expected type Float, got string\", kind=<ViolationKind.TYPE_MISMATCH: 'type_mismatch'>)"
+            }
+          ]
+        },
+        {
+          "index": 10,
+          "mutation": "status:bad_enum",
+          "violations": [
+            {
+              "field": "status",
+              "kind": "enum_violation",
+              "message": "Violation(field='status', message='Field \\'status\\' value \"fabricated\" not in allowed set: [\"automatic\", \"reviewed\", \"deleted\"]', kind=<ViolationKind.ENUM_VIOLATION: 'enum_violation'>)"
+            }
+          ]
+        },
+        {
+          "index": 36,
+          "mutation": "mag:wrong_type",
+          "violations": [
+            {
+              "field": "mag",
+              "kind": "type_mismatch",
+              "message": "Violation(field='mag', message=\"Field 'mag' expected type Float, got string\", kind=<ViolationKind.TYPE_MISMATCH: 'type_mismatch'>)"
+            }
+          ]
+        }
+      ]
+    },
+    "ok": true,
+    "errors": [],
+    "product_questions": [
+      "Q1: Can we infer a usable contract from a live public event feed in one shot?",
+      "Q2: Do magnitude / tsunami / status enums catch bad sensors without rejecting null optional fields?",
+      "Q3: Does mixed batch (~10% fail) produce a pilot report a gov data team would care about?"
+    ]
+  }
+]
