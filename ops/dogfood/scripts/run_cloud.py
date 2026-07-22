@@ -171,17 +171,22 @@ def run_scenario(sc: dict[str, Any], client: CloudClient) -> dict[str, Any]:
     fail_res = ingest(d / "fail.ndjson", expect_all_pass=False)
     mixed_res = ingest(d / "mixed.ndjson", expect_all_pass=False)
 
-    report = None
-    try:
-        report = client.request("GET", f"/contracts/{contract_id}/report")
-    except Exception as e:
-        report = {"error": str(e)}
-
     usage = None
     try:
         usage = client.request("GET", "/usage")
     except Exception as e:
         usage = {"error": str(e)}
+
+    # RFC-086 verification: on a Free (unpaid) plan, event bodies must NOT be
+    # stored — quarantine rows should come back with payload_redacted=true and a
+    # null raw_event. This is the one thing broad dogfooding didn't assert.
+    redaction = verify_redaction(client, contract_id, usage)
+
+    report = None
+    try:
+        report = client.request("GET", f"/contracts/{contract_id}/report")
+    except Exception as e:
+        report = {"error": str(e)}
 
     summary = {
         "scenario": sid,
@@ -193,6 +198,7 @@ def run_scenario(sc: dict[str, Any], client: CloudClient) -> dict[str, Any]:
             "fail": _slim_ingest(fail_res),
             "mixed": _slim_ingest(mixed_res),
         },
+        "redaction": redaction,
         "report": report,
         "usage": usage,
     }
@@ -203,6 +209,57 @@ def run_scenario(sc: dict[str, Any], client: CloudClient) -> dict[str, Any]:
         f"mixed={summary['ingest']['mixed']}"
     )
     return summary
+
+
+PAID_PLANS = {"growth", "enterprise"}
+
+
+def verify_redaction(client: CloudClient, contract_id: str, usage: Any) -> dict[str, Any]:
+    """RFC-086 end-to-end check against the live app.
+
+    Reads GET /quarantine for this contract and checks whether stored bodies
+    match the plan's expectation: unpaid plans must redact (payload_redacted
+    true + raw_event null); paid plans may store (we don't assert either way,
+    since the org/per-contract switch decides). Returns a structured result;
+    any `mismatches` on an unpaid plan is a real RFC-086 regression.
+    """
+    plan = (usage or {}).get("plan") if isinstance(usage, dict) else None
+    paid = plan in PAID_PLANS
+    try:
+        rows = client.request("GET", f"/quarantine?contract_id={contract_id}&limit=200")
+    except Exception as e:
+        return {"checked": 0, "error": str(e), "plan": plan}
+    rows = rows if isinstance(rows, list) else []
+
+    mismatches = []
+    redacted = 0
+    for r in rows:
+        is_redacted = bool(r.get("payload_redacted"))
+        body = r.get("raw_event")
+        if is_redacted:
+            redacted += 1
+        if not paid:
+            # Unpaid: expect redacted body + null raw_event.
+            if not is_redacted or body not in (None, {}, "null"):
+                mismatches.append(
+                    {"id": r.get("id"), "payload_redacted": is_redacted, "raw_event_null": body is None}
+                )
+
+    result = {
+        "plan": plan,
+        "paid": paid,
+        "checked": len(rows),
+        "redacted": redacted,
+        "expect_redacted": (not paid),
+        "mismatches": mismatches,
+        "ok": (len(mismatches) == 0),
+    }
+    tag = "OK" if result["ok"] else "MISMATCH"
+    print(
+        f"  [redaction:{tag}] plan={plan} rows={len(rows)} redacted={redacted} "
+        f"expect_redacted={not paid} mismatches={len(mismatches)}"
+    )
+    return result
 
 
 def _slim_ingest(res: Any) -> dict[str, Any]:

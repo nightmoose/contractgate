@@ -386,6 +386,7 @@ fn build_contract(entities: Vec<FieldDefinition>, config: &ScaffoldConfig) -> Co
         metrics: vec![],
         quality: vec![],
         envelope: None,
+        null_as_absent: false,
     }
 }
 

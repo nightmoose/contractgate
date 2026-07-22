@@ -412,6 +412,7 @@ mod tests {
             metrics: vec![],
             quality,
             envelope: None,
+            null_as_absent: false,
         }
     }
 

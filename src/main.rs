@@ -910,6 +910,68 @@ async fn ready_handler(State(state): State<Arc<AppState>>) -> impl IntoResponse 
 }
 
 // ---------------------------------------------------------------------------
+// Startup schema guard (dogfood finding 2026-07-20: a deploy ahead of its
+// migration returned user-facing 500s — "column ... does not exist" — instead
+// of failing the release). Verify the columns this binary depends on exist at
+// boot; if any are missing, refuse to start so the broken release is not
+// promoted and the previous version keeps serving.
+// ---------------------------------------------------------------------------
+
+/// (table, column) pairs the current binary's queries assume exist. Append the
+/// newest schema-critical column here whenever a migration introduces one the
+/// code reads or writes unconditionally on the hot paths.
+const REQUIRED_SCHEMA: &[(&str, &str)] = &[
+    ("orgs", "plan"),
+    ("orgs", "store_event_payloads"),      // migration 034 (RFC-086)
+    ("contracts", "store_event_payloads"), // migration 034 (RFC-086)
+    ("quarantine_events", "payload_redacted"), // migration 034 (RFC-086)
+    ("audit_log", "raw_event_redacted"),   // migration 034 (RFC-086)
+];
+
+/// Pure: turn a list of missing `table.column` names into a fatal message, or
+/// `None` when nothing is missing. Split out so it is unit-testable without a DB.
+fn schema_lag_message(missing: &[String]) -> Option<String> {
+    if missing.is_empty() {
+        return None;
+    }
+    Some(format!(
+        "schema lag detected — the database is missing required columns: {}. \
+         Apply the pending migrations in supabase/migrations/ before deploying this \
+         binary. Refusing to boot so a broken release is not promoted.",
+        missing.join(", ")
+    ))
+}
+
+/// Boot-time check: fail fast (non-zero exit) if any `REQUIRED_SCHEMA` column is
+/// absent. A handful of indexed `information_schema` lookups — negligible cost,
+/// runs once at startup.
+async fn verify_required_schema(pool: &sqlx::PgPool) -> anyhow::Result<()> {
+    let mut missing = Vec::new();
+    for (table, column) in REQUIRED_SCHEMA {
+        let present: Option<(i32,)> = sqlx::query_as(
+            "SELECT 1 FROM information_schema.columns \
+             WHERE table_schema = 'public' AND table_name = $1 AND column_name = $2",
+        )
+        .bind(table)
+        .bind(column)
+        .fetch_optional(pool)
+        .await?;
+        if present.is_none() {
+            missing.push(format!("{table}.{column}"));
+        }
+    }
+
+    if let Some(msg) = schema_lag_message(&missing) {
+        anyhow::bail!(msg);
+    }
+    tracing::info!(
+        "Schema check passed — all {} required columns present",
+        REQUIRED_SCHEMA.len()
+    );
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
 // Playground — validate a YAML + event without persisting anything
 // ---------------------------------------------------------------------------
 
@@ -1627,6 +1689,10 @@ async fn main() -> anyhow::Result<()> {
 
     let pool = PgPool::connect(&database_url).await?;
     tracing::info!("Connected to database");
+
+    // Fail fast if the DB is missing columns this binary depends on (deploy
+    // ordering guard — see dogfood finding 2026-07-20-missing-migration-034).
+    verify_required_schema(&pool).await?;
 
     // RFC-066: explicit local-dev escape hatch. Defaults off so production is
     // always authenticated (JWT or DB-backed key). The legacy env-var master

@@ -310,6 +310,7 @@ pub fn validate(compiled: &CompiledContract, event: &Value) -> ValidationResult 
         "",
         &compiled.patterns,
         &mut violations,
+        compiled.contract.null_as_absent,
     );
 
     // 2. Validate metric definitions
@@ -586,6 +587,7 @@ fn validate_fields(
     prefix: &str,
     patterns: &HashMap<String, Regex>,
     violations: &mut Vec<Violation>,
+    null_as_absent: bool,
 ) {
     let obj = match data.as_object() {
         Some(o) => o,
@@ -599,7 +601,14 @@ fn validate_fields(
             format!("{}.{}", prefix, field.name)
         };
 
-        match obj.get(&field.name) {
+        // RFC-087: when `null_as_absent` is on, a present JSON `null` is treated
+        // exactly like a missing key (optional → skip, required → missing).
+        let effective = match obj.get(&field.name) {
+            Some(v) if null_as_absent && v.is_null() => None,
+            other => other,
+        };
+
+        match effective {
             None => {
                 if field.required {
                     violations.push(Violation {
@@ -611,7 +620,7 @@ fn validate_fields(
                 // Optional and absent — nothing to validate
             }
             Some(value) => {
-                validate_value(field, value, &path, patterns, violations);
+                validate_value(field, value, &path, patterns, violations, null_as_absent);
             }
         }
     }
@@ -623,6 +632,7 @@ fn validate_value(
     path: &str,
     patterns: &HashMap<String, Regex>,
     violations: &mut Vec<Violation>,
+    null_as_absent: bool,
 ) {
     // --- Type check ---
     let type_ok = match &field.field_type {
@@ -754,7 +764,7 @@ fn validate_value(
     // --- Recurse into nested objects ---
     if field.field_type == FieldType::Object {
         if let Some(props) = &field.properties {
-            validate_fields(props, value, path, patterns, violations);
+            validate_fields(props, value, path, patterns, violations, null_as_absent);
         }
     }
 
@@ -763,7 +773,14 @@ fn validate_value(
         if let (Some(arr), Some(item_def)) = (value.as_array(), &field.items) {
             for (idx, item) in arr.iter().enumerate() {
                 let item_path = format!("{}[{}]", path, idx);
-                validate_value(item_def, item, &item_path, patterns, violations);
+                validate_value(
+                    item_def,
+                    item,
+                    &item_path,
+                    patterns,
+                    violations,
+                    null_as_absent,
+                );
             }
         }
     }
@@ -1092,6 +1109,7 @@ mod tests {
             metrics: vec![],
             quality: vec![],
             envelope: None,
+            null_as_absent: false,
         }
     }
 
@@ -1123,6 +1141,79 @@ mod tests {
             .violations
             .iter()
             .any(|v| v.kind == ViolationKind::MissingRequiredField));
+    }
+
+    // ---- RFC-087: null_as_absent -------------------------------------------
+
+    /// Base contract + one OPTIONAL string field `note`, with the flag toggled.
+    fn contract_with_optional(null_as_absent: bool) -> Contract {
+        let mut c = make_simple_contract();
+        c.null_as_absent = null_as_absent;
+        c.ontology.entities.push(FieldDefinition {
+            name: "note".into(),
+            field_type: FieldType::String,
+            required: false,
+            pattern: None,
+            allowed_values: None,
+            min: None,
+            max: None,
+            min_length: None,
+            max_length: None,
+            properties: None,
+            items: None,
+            transform: None,
+        });
+        c
+    }
+
+    fn valid_base() -> Value {
+        json!({ "user_id": "alice_01", "event_type": "click", "timestamp": 1712000000 })
+    }
+
+    #[test]
+    fn null_on_optional_field_fails_when_strict() {
+        // Default behavior: a present `null` is type-checked and fails.
+        let compiled = CompiledContract::compile(contract_with_optional(false)).unwrap();
+        let mut event = valid_base();
+        event["note"] = Value::Null;
+        let result = validate(&compiled, &event);
+        assert!(
+            !result.passed,
+            "strict mode should reject null on typed optional"
+        );
+        assert!(result
+            .violations
+            .iter()
+            .any(|v| v.field == "note" && v.kind == ViolationKind::TypeMismatch));
+    }
+
+    #[test]
+    fn null_on_optional_field_passes_when_null_as_absent() {
+        // Flag on: null == omitted, so the optional field is skipped.
+        let compiled = CompiledContract::compile(contract_with_optional(true)).unwrap();
+        let mut event = valid_base();
+        event["note"] = Value::Null;
+        let result = validate(&compiled, &event);
+        assert!(
+            result.passed,
+            "null_as_absent should treat null on an optional field as omitted: {:?}",
+            result.violations
+        );
+    }
+
+    #[test]
+    fn null_on_required_field_reports_missing_when_null_as_absent() {
+        // Flag on: null == omitted, so a required field reports missing (not a
+        // type_mismatch) — consistent "null means not there" semantics.
+        let compiled = CompiledContract::compile(contract_with_optional(true)).unwrap();
+        let mut event = valid_base();
+        event["timestamp"] = Value::Null;
+        let result = validate(&compiled, &event);
+        assert!(!result.passed);
+        assert!(result
+            .violations
+            .iter()
+            .any(|v| v.field == "timestamp" && v.kind == ViolationKind::MissingRequiredField));
     }
 
     #[test]

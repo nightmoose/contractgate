@@ -485,6 +485,7 @@ fn import_mode_b(doc: &Mapping, version: String) -> Result<ImportResult, String>
         compliance_mode: false,
         egress_leakage_mode: EgressLeakageMode::Off,
         envelope: None,
+        null_as_absent: false,
         ontology: Ontology { entities },
         glossary: vec![],
         metrics: vec![],

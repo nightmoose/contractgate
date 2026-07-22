@@ -145,6 +145,7 @@ pub fn three_way_merge(base: Option<&Contract>, ours: &Contract, theirs: &Contra
         compliance_mode: ours.compliance_mode,
         egress_leakage_mode: ours.egress_leakage_mode,
         envelope: None,
+        null_as_absent: false,
         ontology: Ontology {
             entities: result_fields,
         },
@@ -231,6 +232,7 @@ mod tests {
             metrics: vec![],
             quality: vec![],
             envelope: None,
+            null_as_absent: false,
         }
     }
 
