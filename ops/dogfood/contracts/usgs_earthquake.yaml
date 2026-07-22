@@ -1,0 +1,71 @@
+version: '1.0'
+name: usgs_earthquake
+description: USGS all_day earthquake properties (flattened core fields). Dogfood scenario
+  usgs_earthquake.
+ontology:
+  entities:
+  - name: id
+    type: string
+    required: true
+  - name: mag
+    type: number
+    required: true
+    min: -1
+    max: 10
+  - name: place
+    type: string
+    required: true
+  - name: time
+    type: integer
+    required: true
+  - name: updated
+    type: integer
+    required: false
+  - name: status
+    type: string
+    required: true
+    enum:
+    - automatic
+    - reviewed
+    - deleted
+  - name: tsunami
+    type: integer
+    required: false
+    min: 0
+    max: 1
+  - name: sig
+    type: integer
+    required: false
+  - name: net
+    type: string
+    required: false
+  - name: code
+    type: string
+    required: false
+  - name: magType
+    type: string
+    required: false
+  - name: type
+    type: string
+    required: false
+  - name: title
+    type: string
+    required: false
+  - name: url
+    type: string
+    required: false
+  - name: latitude
+    type: number
+    required: false
+    min: -90
+    max: 90
+  - name: longitude
+    type: number
+    required: false
+    min: -180
+    max: 180
+  - name: depth_km
+    type: number
+    required: false
+glossary: []
+metrics: []

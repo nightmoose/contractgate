@@ -256,6 +256,7 @@ fn make_contract(fields: &[(&str, FieldType, bool)]) -> Contract {
         metrics: vec![],
         quality: vec![],
         envelope: None,
+        null_as_absent: false,
     }
 }
 

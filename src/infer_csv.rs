@@ -132,6 +132,7 @@ pub fn infer_from_text(
         metrics: vec![],
         quality: vec![],
         envelope: None,
+        null_as_absent: false,
     };
 
     let yaml_content = serde_yaml::to_string(&contract)

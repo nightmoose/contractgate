@@ -1,0 +1,84 @@
+version: '1.0'
+name: mri_tenancy_event
+description: Contract for MRI MIX API tenancy records (Findigs integration). Validates
+  the raw MRI envelope from GET /api/v1/tenancies/{tenancyId}. [dogfood mri_tenancy]
+ontology:
+  entities:
+  - name: tenancy_id
+    type: string
+    required: true
+    pattern: ^[A-Za-z0-9_-]+$
+  - name: unit_id
+    type: string
+    required: true
+  - name: property_id
+    type: string
+    required: true
+  - name: tenant_contact_id
+    type: string
+    required: true
+  - name: start_date
+    type: string
+    required: true
+    pattern: ^\d{4}-\d{2}-\d{2}$
+  - name: end_date
+    type: string
+    required: false
+    pattern: ^\d{4}-\d{2}-\d{2}$
+  - name: rent_amount
+    type: number
+    required: true
+    min: 0
+  - name: currency
+    type: string
+    required: true
+    enum:
+    - USD
+    - EUR
+    - GBP
+    - CAD
+    - AUD
+    - MXN
+  - name: status
+    type: string
+    required: true
+    enum:
+    - active
+    - pending
+    - ended
+    - terminated
+  - name: deposit_amount
+    type: number
+    required: false
+    min: 0
+  - name: payment_frequency
+    type: string
+    required: false
+    enum:
+    - weekly
+    - monthly
+    - quarterly
+    - annually
+glossary:
+- field: tenancy_id
+  description: MRI internal tenancy identifier
+  constraints: alphanumeric, hyphens, underscores only
+- field: start_date
+  description: Tenancy commencement date (ISO 8601)
+  constraints: required; must precede end_date if provided
+- field: currency
+  description: ISO 4217 currency code
+  constraints: 'one of: USD, EUR, GBP, CAD, AUD, MXN'
+- field: status
+  description: Lifecycle state of the tenancy
+  constraints: 'one of: active, pending, ended, terminated'
+- field: deposit_amount
+  description: Security deposit held in currency units
+  constraints: must be non-negative
+metrics:
+- name: active_tenancies
+  formula: count(*) where status = 'active'
+- name: avg_rent_active
+  formula: avg(rent_amount) where status = 'active'
+- name: avg_deposit_ratio
+  formula: avg(deposit_amount / rent_amount) where deposit_amount is not null

@@ -1,0 +1,2117 @@
+[
+  {
+    "scenario": "github_events",
+    "contract": "/Users/alexsuarez/contractgate/ops/dogfood/contracts/github_events.yaml",
+    "timestamp": "2026-07-20T20:14:02.649840+00:00",
+    "pass": {
+      "total": 30,
+      "passed": 0,
+      "failed": 30,
+      "pass_rate": 0.0,
+      "failures": [
+        {
+          "index": 0,
+          "mutation": null,
+          "violations": [
+            {
+              "field": "id",
+              "kind": "type_mismatch",
+              "message": "Violation(field='id', message=\"Field 'id' expected type String, got integer\", kind=<ViolationKind.TYPE_MISMATCH: 'type_mismatch'>)"
+            }
+          ]
+        },
+        {
+          "index": 1,
+          "mutation": null,
+          "violations": [
+            {
+              "field": "id",
+              "kind": "type_mismatch",
+              "message": "Violation(field='id', message=\"Field 'id' expected type String, got integer\", kind=<ViolationKind.TYPE_MISMATCH: 'type_mismatch'>)"
+            }
+          ]
+        },
+        {
+          "index": 2,
+          "mutation": null,
+          "violations": [
+            {
+              "field": "id",
+              "kind": "type_mismatch",
+              "message": "Violation(field='id', message=\"Field 'id' expected type String, got integer\", kind=<ViolationKind.TYPE_MISMATCH: 'type_mismatch'>)"
+            }
+          ]
+        },
+        {
+          "index": 3,
+          "mutation": null,
+          "violations": [
+            {
+              "field": "id",
+              "kind": "type_mismatch",
+              "message": "Violation(field='id', message=\"Field 'id' expected type String, got integer\", kind=<ViolationKind.TYPE_MISMATCH: 'type_mismatch'>)"
+            }
+          ]
+        },
+        {
+          "index": 4,
+          "mutation": null,
+          "violations": [
+            {
+              "field": "id",
+              "kind": "type_mismatch",
+              "message": "Violation(field='id', message=\"Field 'id' expected type String, got integer\", kind=<ViolationKind.TYPE_MISMATCH: 'type_mismatch'>)"
+            }
+          ]
+        },
+        {
+          "index": 5,
+          "mutation": null,
+          "violations": [
+            {
+              "field": "id",
+              "kind": "type_mismatch",
+              "message": "Violation(field='id', message=\"Field 'id' expected type String, got integer\", kind=<ViolationKind.TYPE_MISMATCH: 'type_mismatch'>)"
+            }
+          ]
+        },
+        {
+          "index": 6,
+          "mutation": null,
+          "violations": [
+            {
+              "field": "id",
+              "kind": "type_mismatch",
+              "message": "Violation(field='id', message=\"Field 'id' expected type String, got integer\", kind=<ViolationKind.TYPE_MISMATCH: 'type_mismatch'>)"
+            }
+          ]
+        },
+        {
+          "index": 7,
+          "mutation": null,
+          "violations": [
+            {
+              "field": "id",
+              "kind": "type_mismatch",
+              "message": "Violation(field='id', message=\"Field 'id' expected type String, got integer\", kind=<ViolationKind.TYPE_MISMATCH: 'type_mismatch'>)"
+            }
+          ]
+        },
+        {
+          "index": 8,
+          "mutation": null,
+          "violations": [
+            {
+              "field": "id",
+              "kind": "type_mismatch",
+              "message": "Violation(field='id', message=\"Field 'id' expected type String, got integer\", kind=<ViolationKind.TYPE_MISMATCH: 'type_mismatch'>)"
+            }
+          ]
+        },
+        {
+          "index": 9,
+          "mutation": null,
+          "violations": [
+            {
+              "field": "id",
+              "kind": "type_mismatch",
+              "message": "Violation(field='id', message=\"Field 'id' expected type String, got integer\", kind=<ViolationKind.TYPE_MISMATCH: 'type_mismatch'>)"
+            }
+          ]
+        },
+        {
+          "index": 10,
+          "mutation": null,
+          "violations": [
+            {
+              "field": "id",
+              "kind": "type_mismatch",
+              "message": "Violation(field='id', message=\"Field 'id' expected type String, got integer\", kind=<ViolationKind.TYPE_MISMATCH: 'type_mismatch'>)"
+            }
+          ]
+        },
+        {
+          "index": 11,
+          "mutation": null,
+          "violations": [
+            {
+              "field": "id",
+              "kind": "type_mismatch",
+              "message": "Violation(field='id', message=\"Field 'id' expected type String, got integer\", kind=<ViolationKind.TYPE_MISMATCH: 'type_mismatch'>)"
+            }
+          ]
+        },
+        {
+          "index": 12,
+          "mutation": null,
+          "violations": [
+            {
+              "field": "id",
+              "kind": "type_mismatch",
+              "message": "Violation(field='id', message=\"Field 'id' expected type String, got integer\", kind=<ViolationKind.TYPE_MISMATCH: 'type_mismatch'>)"
+            }
+          ]
+        },
+        {
+          "index": 13,
+          "mutation": null,
+          "violations": [
+            {
+              "field": "id",
+              "kind": "type_mismatch",
+              "message": "Violation(field='id', message=\"Field 'id' expected type String, got integer\", kind=<ViolationKind.TYPE_MISMATCH: 'type_mismatch'>)"
+            }
+          ]
+        },
+        {
+          "index": 14,
+          "mutation": null,
+          "violations": [
+            {
+              "field": "id",
+              "kind": "type_mismatch",
+              "message": "Violation(field='id', message=\"Field 'id' expected type String, got integer\", kind=<ViolationKind.TYPE_MISMATCH: 'type_mismatch'>)"
+            }
+          ]
+        },
+        {
+          "index": 15,
+          "mutation": null,
+          "violations": [
+            {
+              "field": "id",
+              "kind": "type_mismatch",
+              "message": "Violation(field='id', message=\"Field 'id' expected type String, got integer\", kind=<ViolationKind.TYPE_MISMATCH: 'type_mismatch'>)"
+            }
+          ]
+        },
+        {
+          "index": 16,
+          "mutation": null,
+          "violations": [
+            {
+              "field": "id",
+              "kind": "type_mismatch",
+              "message": "Violation(field='id', message=\"Field 'id' expected type String, got integer\", kind=<ViolationKind.TYPE_MISMATCH: 'type_mismatch'>)"
+            }
+          ]
+        },
+        {
+          "index": 17,
+          "mutation": null,
+          "violations": [
+            {
+              "field": "id",
+              "kind": "type_mismatch",
+              "message": "Violation(field='id', message=\"Field 'id' expected type String, got integer\", kind=<ViolationKind.TYPE_MISMATCH: 'type_mismatch'>)"
+            }
+          ]
+        },
+        {
+          "index": 18,
+          "mutation": null,
+          "violations": [
+            {
+              "field": "id",
+              "kind": "type_mismatch",
+              "message": "Violation(field='id', message=\"Field 'id' expected type String, got integer\", kind=<ViolationKind.TYPE_MISMATCH: 'type_mismatch'>)"
+            }
+          ]
+        },
+        {
+          "index": 19,
+          "mutation": null,
+          "violations": [
+            {
+              "field": "id",
+              "kind": "type_mismatch",
+              "message": "Violation(field='id', message=\"Field 'id' expected type String, got integer\", kind=<ViolationKind.TYPE_MISMATCH: 'type_mismatch'>)"
+            }
+          ]
+        }
+      ]
+    },
+    "fail": {
+      "total": 5,
+      "passed": 0,
+      "failed": 5,
+      "pass_rate": 0.0,
+      "failures": [
+        {
+          "index": 0,
+          "mutation": "type:wrong_type",
+          "violations": [
+            {
+              "field": "id",
+              "kind": "type_mismatch",
+              "message": "Violation(field='id', message=\"Field 'id' expected type String, got integer\", kind=<ViolationKind.TYPE_MISMATCH: 'type_mismatch'>)"
+            },
+            {
+              "field": "type",
+              "kind": "type_mismatch",
+              "message": "Violation(field='type', message=\"Field 'type' expected type String, got integer\", kind=<ViolationKind.TYPE_MISMATCH: 'type_mismatch'>)"
+            }
+          ]
+        },
+        {
+          "index": 1,
+          "mutation": "id:drop_required",
+          "violations": [
+            {
+              "field": "id",
+              "kind": "missing_required_field",
+              "message": "Violation(field='id', message=\"Required field 'id' is missing\", kind=<ViolationKind.MISSING_REQUIRED_FIELD: 'missing_required_field'>)"
+            }
+          ]
+        },
+        {
+          "index": 2,
+          "mutation": "public:wrong_type",
+          "violations": [
+            {
+              "field": "id",
+              "kind": "type_mismatch",
+              "message": "Violation(field='id', message=\"Field 'id' expected type String, got integer\", kind=<ViolationKind.TYPE_MISMATCH: 'type_mismatch'>)"
+            },
+            {
+              "field": "public",
+              "kind": "type_mismatch",
+              "message": "Violation(field='public', message=\"Field 'public' expected type Boolean, got string\", kind=<ViolationKind.TYPE_MISMATCH: 'type_mismatch'>)"
+            }
+          ]
+        },
+        {
+          "index": 3,
+          "mutation": "created_at:drop_required",
+          "violations": [
+            {
+              "field": "id",
+              "kind": "type_mismatch",
+              "message": "Violation(field='id', message=\"Field 'id' expected type String, got integer\", kind=<ViolationKind.TYPE_MISMATCH: 'type_mismatch'>)"
+            },
+            {
+              "field": "created_at",
+              "kind": "missing_required_field",
+              "message": "Violation(field='created_at', message=\"Required field 'created_at' is missing\", kind=<ViolationKind.MISSING_REQUIRED_FIELD: 'missing_required_field'>)"
+            }
+          ]
+        },
+        {
+          "index": 4,
+          "mutation": "type:wrong_type",
+          "violations": [
+            {
+              "field": "id",
+              "kind": "type_mismatch",
+              "message": "Violation(field='id', message=\"Field 'id' expected type String, got integer\", kind=<ViolationKind.TYPE_MISMATCH: 'type_mismatch'>)"
+            },
+            {
+              "field": "type",
+              "kind": "type_mismatch",
+              "message": "Violation(field='type', message=\"Field 'type' expected type String, got integer\", kind=<ViolationKind.TYPE_MISMATCH: 'type_mismatch'>)"
+            }
+          ]
+        }
+      ]
+    },
+    "mixed": {
+      "total": 30,
+      "passed": 0,
+      "failed": 30,
+      "pass_rate": 0.0,
+      "failures": [
+        {
+          "index": 0,
+          "mutation": null,
+          "violations": [
+            {
+              "field": "id",
+              "kind": "type_mismatch",
+              "message": "Violation(field='id', message=\"Field 'id' expected type String, got integer\", kind=<ViolationKind.TYPE_MISMATCH: 'type_mismatch'>)"
+            }
+          ]
+        },
+        {
+          "index": 1,
+          "mutation": null,
+          "violations": [
+            {
+              "field": "id",
+              "kind": "type_mismatch",
+              "message": "Violation(field='id', message=\"Field 'id' expected type String, got integer\", kind=<ViolationKind.TYPE_MISMATCH: 'type_mismatch'>)"
+            }
+          ]
+        },
+        {
+          "index": 2,
+          "mutation": null,
+          "violations": [
+            {
+              "field": "id",
+              "kind": "type_mismatch",
+              "message": "Violation(field='id', message=\"Field 'id' expected type String, got integer\", kind=<ViolationKind.TYPE_MISMATCH: 'type_mismatch'>)"
+            }
+          ]
+        },
+        {
+          "index": 3,
+          "mutation": null,
+          "violations": [
+            {
+              "field": "id",
+              "kind": "type_mismatch",
+              "message": "Violation(field='id', message=\"Field 'id' expected type String, got integer\", kind=<ViolationKind.TYPE_MISMATCH: 'type_mismatch'>)"
+            }
+          ]
+        },
+        {
+          "index": 4,
+          "mutation": null,
+          "violations": [
+            {
+              "field": "id",
+              "kind": "type_mismatch",
+              "message": "Violation(field='id', message=\"Field 'id' expected type String, got integer\", kind=<ViolationKind.TYPE_MISMATCH: 'type_mismatch'>)"
+            }
+          ]
+        },
+        {
+          "index": 5,
+          "mutation": null,
+          "violations": [
+            {
+              "field": "id",
+              "kind": "type_mismatch",
+              "message": "Violation(field='id', message=\"Field 'id' expected type String, got integer\", kind=<ViolationKind.TYPE_MISMATCH: 'type_mismatch'>)"
+            }
+          ]
+        },
+        {
+          "index": 6,
+          "mutation": null,
+          "violations": [
+            {
+              "field": "id",
+              "kind": "type_mismatch",
+              "message": "Violation(field='id', message=\"Field 'id' expected type String, got integer\", kind=<ViolationKind.TYPE_MISMATCH: 'type_mismatch'>)"
+            }
+          ]
+        },
+        {
+          "index": 7,
+          "mutation": null,
+          "violations": [
+            {
+              "field": "id",
+              "kind": "type_mismatch",
+              "message": "Violation(field='id', message=\"Field 'id' expected type String, got integer\", kind=<ViolationKind.TYPE_MISMATCH: 'type_mismatch'>)"
+            }
+          ]
+        },
+        {
+          "index": 8,
+          "mutation": null,
+          "violations": [
+            {
+              "field": "id",
+              "kind": "type_mismatch",
+              "message": "Violation(field='id', message=\"Field 'id' expected type String, got integer\", kind=<ViolationKind.TYPE_MISMATCH: 'type_mismatch'>)"
+            }
+          ]
+        },
+        {
+          "index": 9,
+          "mutation": null,
+          "violations": [
+            {
+              "field": "id",
+              "kind": "type_mismatch",
+              "message": "Violation(field='id', message=\"Field 'id' expected type String, got integer\", kind=<ViolationKind.TYPE_MISMATCH: 'type_mismatch'>)"
+            }
+          ]
+        },
+        {
+          "index": 10,
+          "mutation": "public:wrong_type",
+          "violations": [
+            {
+              "field": "id",
+              "kind": "type_mismatch",
+              "message": "Violation(field='id', message=\"Field 'id' expected type String, got integer\", kind=<ViolationKind.TYPE_MISMATCH: 'type_mismatch'>)"
+            },
+            {
+              "field": "public",
+              "kind": "type_mismatch",
+              "message": "Violation(field='public', message=\"Field 'public' expected type Boolean, got string\", kind=<ViolationKind.TYPE_MISMATCH: 'type_mismatch'>)"
+            }
+          ]
+        },
+        {
+          "index": 11,
+          "mutation": null,
+          "violations": [
+            {
+              "field": "id",
+              "kind": "type_mismatch",
+              "message": "Violation(field='id', message=\"Field 'id' expected type String, got integer\", kind=<ViolationKind.TYPE_MISMATCH: 'type_mismatch'>)"
+            }
+          ]
+        },
+        {
+          "index": 12,
+          "mutation": null,
+          "violations": [
+            {
+              "field": "id",
+              "kind": "type_mismatch",
+              "message": "Violation(field='id', message=\"Field 'id' expected type String, got integer\", kind=<ViolationKind.TYPE_MISMATCH: 'type_mismatch'>)"
+            }
+          ]
+        },
+        {
+          "index": 13,
+          "mutation": null,
+          "violations": [
+            {
+              "field": "id",
+              "kind": "type_mismatch",
+              "message": "Violation(field='id', message=\"Field 'id' expected type String, got integer\", kind=<ViolationKind.TYPE_MISMATCH: 'type_mismatch'>)"
+            }
+          ]
+        },
+        {
+          "index": 14,
+          "mutation": "public:wrong_type",
+          "violations": [
+            {
+              "field": "id",
+              "kind": "type_mismatch",
+              "message": "Violation(field='id', message=\"Field 'id' expected type String, got integer\", kind=<ViolationKind.TYPE_MISMATCH: 'type_mismatch'>)"
+            },
+            {
+              "field": "public",
+              "kind": "type_mismatch",
+              "message": "Violation(field='public', message=\"Field 'public' expected type Boolean, got string\", kind=<ViolationKind.TYPE_MISMATCH: 'type_mismatch'>)"
+            }
+          ]
+        },
+        {
+          "index": 15,
+          "mutation": null,
+          "violations": [
+            {
+              "field": "id",
+              "kind": "type_mismatch",
+              "message": "Violation(field='id', message=\"Field 'id' expected type String, got integer\", kind=<ViolationKind.TYPE_MISMATCH: 'type_mismatch'>)"
+            }
+          ]
+        },
+        {
+          "index": 16,
+          "mutation": null,
+          "violations": [
+            {
+              "field": "id",
+              "kind": "type_mismatch",
+              "message": "Violation(field='id', message=\"Field 'id' expected type String, got integer\", kind=<ViolationKind.TYPE_MISMATCH: 'type_mismatch'>)"
+            }
+          ]
+        },
+        {
+          "index": 17,
+          "mutation": null,
+          "violations": [
+            {
+              "field": "id",
+              "kind": "type_mismatch",
+              "message": "Violation(field='id', message=\"Field 'id' expected type String, got integer\", kind=<ViolationKind.TYPE_MISMATCH: 'type_mismatch'>)"
+            }
+          ]
+        },
+        {
+          "index": 18,
+          "mutation": null,
+          "violations": [
+            {
+              "field": "id",
+              "kind": "type_mismatch",
+              "message": "Violation(field='id', message=\"Field 'id' expected type String, got integer\", kind=<ViolationKind.TYPE_MISMATCH: 'type_mismatch'>)"
+            }
+          ]
+        },
+        {
+          "index": 19,
+          "mutation": "created_at:drop_required",
+          "violations": [
+            {
+              "field": "id",
+              "kind": "type_mismatch",
+              "message": "Violation(field='id', message=\"Field 'id' expected type String, got integer\", kind=<ViolationKind.TYPE_MISMATCH: 'type_mismatch'>)"
+            },
+            {
+              "field": "created_at",
+              "kind": "missing_required_field",
+              "message": "Violation(field='created_at', message=\"Required field 'created_at' is missing\", kind=<ViolationKind.MISSING_REQUIRED_FIELD: 'missing_required_field'>)"
+            }
+          ]
+        }
+      ]
+    },
+    "ok": false,
+    "errors": [
+      "pass batch: expected 0 fails, got 30 (first: [{'index': 0, 'mutation': None, 'violations': [{'field': 'id', 'kind': <ViolationKind.TYPE_MISMATCH: 'type_mismatch'>, 'message': 'Violation(field=\\'id\\', message=\"Field \\'id\\' expected type String, got integer\", kind=<ViolationKind.TYPE_MISMATCH: \\'type_mismatch\\'>)'}]}, {'index': 1, 'mutation': None, 'violations': [{'field': 'id', 'kind': <ViolationKind.TYPE_MISMATCH: 'type_mismatch'>, 'message': 'Violation(field=\\'id\\', message=\"Field \\'id\\' expected type String, got integer\", kind=<ViolationKind.TYPE_MISMATCH: \\'type_mismatch\\'>)'}]}])"
+    ],
+    "product_questions": [
+      "Q1: Optional org_login / varying event types \u2014 does required inference stay honest?",
+      "Q2: Can we enum a subset of event types without rejecting rare types (any vs enum tradeoff)?",
+      "Q3: Good story for platform/SaaS buyers who already understand GitHub webhooks."
+    ]
+  },
+  {
+    "scenario": "mri_tenancy",
+    "contract": "/Users/alexsuarez/contractgate/ops/dogfood/contracts/mri_tenancy.yaml",
+    "timestamp": "2026-07-20T20:14:02.653772+00:00",
+    "pass": {
+      "total": 40,
+      "passed": 40,
+      "failed": 0,
+      "pass_rate": 1.0,
+      "failures": []
+    },
+    "fail": {
+      "total": 5,
+      "passed": 0,
+      "failed": 5,
+      "pass_rate": 0.0,
+      "failures": [
+        {
+          "index": 0,
+          "mutation": "status:bad_enum",
+          "violations": [
+            {
+              "field": "status",
+              "kind": "enum_violation",
+              "message": "Violation(field='status', message='Field \\'status\\' value \"ghost\" not in allowed set: [\"active\", \"pending\", \"ended\", \"terminated\"]', kind=<ViolationKind.ENUM_VIOLATION: 'enum_violation'>)"
+            }
+          ]
+        },
+        {
+          "index": 1,
+          "mutation": "rent_amount:below_min",
+          "violations": [
+            {
+              "field": "rent_amount",
+              "kind": "range_violation",
+              "message": "Violation(field='rent_amount', message=\"Field 'rent_amount' value -100 is below minimum 0\", kind=<ViolationKind.RANGE_VIOLATION: 'range_violation'>)"
+            }
+          ]
+        },
+        {
+          "index": 2,
+          "mutation": "currency:bad_enum",
+          "violations": [
+            {
+              "field": "currency",
+              "kind": "enum_violation",
+              "message": "Violation(field='currency', message='Field \\'currency\\' value \"BTC\" not in allowed set: [\"USD\", \"EUR\", \"GBP\", \"CAD\", \"AUD\", \"MXN\"]', kind=<ViolationKind.ENUM_VIOLATION: 'enum_violation'>)"
+            }
+          ]
+        },
+        {
+          "index": 3,
+          "mutation": "tenancy_id:drop_required",
+          "violations": [
+            {
+              "field": "tenancy_id",
+              "kind": "missing_required_field",
+              "message": "Violation(field='tenancy_id', message=\"Required field 'tenancy_id' is missing\", kind=<ViolationKind.MISSING_REQUIRED_FIELD: 'missing_required_field'>)"
+            }
+          ]
+        },
+        {
+          "index": 4,
+          "mutation": "status:bad_enum",
+          "violations": [
+            {
+              "field": "status",
+              "kind": "enum_violation",
+              "message": "Violation(field='status', message='Field \\'status\\' value \"ghost\" not in allowed set: [\"active\", \"pending\", \"ended\", \"terminated\"]', kind=<ViolationKind.ENUM_VIOLATION: 'enum_violation'>)"
+            }
+          ]
+        }
+      ]
+    },
+    "mixed": {
+      "total": 40,
+      "passed": 36,
+      "failed": 4,
+      "pass_rate": 0.9,
+      "failures": [
+        {
+          "index": 3,
+          "mutation": "tenancy_id:drop_required",
+          "violations": [
+            {
+              "field": "tenancy_id",
+              "kind": "missing_required_field",
+              "message": "Violation(field='tenancy_id', message=\"Required field 'tenancy_id' is missing\", kind=<ViolationKind.MISSING_REQUIRED_FIELD: 'missing_required_field'>)"
+            }
+          ]
+        },
+        {
+          "index": 9,
+          "mutation": "rent_amount:below_min",
+          "violations": [
+            {
+              "field": "rent_amount",
+              "kind": "range_violation",
+              "message": "Violation(field='rent_amount', message=\"Field 'rent_amount' value -100 is below minimum 0\", kind=<ViolationKind.RANGE_VIOLATION: 'range_violation'>)"
+            }
+          ]
+        },
+        {
+          "index": 10,
+          "mutation": "currency:bad_enum",
+          "violations": [
+            {
+              "field": "currency",
+              "kind": "enum_violation",
+              "message": "Violation(field='currency', message='Field \\'currency\\' value \"BTC\" not in allowed set: [\"USD\", \"EUR\", \"GBP\", \"CAD\", \"AUD\", \"MXN\"]', kind=<ViolationKind.ENUM_VIOLATION: 'enum_violation'>)"
+            }
+          ]
+        },
+        {
+          "index": 36,
+          "mutation": "status:bad_enum",
+          "violations": [
+            {
+              "field": "status",
+              "kind": "enum_violation",
+              "message": "Violation(field='status', message='Field \\'status\\' value \"ghost\" not in allowed set: [\"active\", \"pending\", \"ended\", \"terminated\"]', kind=<ViolationKind.ENUM_VIOLATION: 'enum_violation'>)"
+            }
+          ]
+        }
+      ]
+    },
+    "ok": true,
+    "errors": [],
+    "product_questions": [
+      "Q1: Does the Findigs/MRI narrative hold with envelope + semantic fields?",
+      "Q2: Currency/status enums + rent min catch the bad rows partners actually send?",
+      "Q3: Glossary + metrics make the contract readable in a sales call?"
+    ]
+  },
+  {
+    "scenario": "nyc_311",
+    "contract": "/Users/alexsuarez/contractgate/ops/dogfood/contracts/nyc_311.yaml",
+    "timestamp": "2026-07-20T20:14:02.658027+00:00",
+    "pass": {
+      "total": 100,
+      "passed": 0,
+      "failed": 100,
+      "pass_rate": 0.0,
+      "failures": [
+        {
+          "index": 0,
+          "mutation": null,
+          "violations": [
+            {
+              "field": "unique_key",
+              "kind": "type_mismatch",
+              "message": "Violation(field='unique_key', message=\"Field 'unique_key' expected type String, got integer\", kind=<ViolationKind.TYPE_MISMATCH: 'type_mismatch'>)"
+            }
+          ]
+        },
+        {
+          "index": 1,
+          "mutation": null,
+          "violations": [
+            {
+              "field": "unique_key",
+              "kind": "type_mismatch",
+              "message": "Violation(field='unique_key', message=\"Field 'unique_key' expected type String, got integer\", kind=<ViolationKind.TYPE_MISMATCH: 'type_mismatch'>)"
+            }
+          ]
+        },
+        {
+          "index": 2,
+          "mutation": null,
+          "violations": [
+            {
+              "field": "unique_key",
+              "kind": "type_mismatch",
+              "message": "Violation(field='unique_key', message=\"Field 'unique_key' expected type String, got integer\", kind=<ViolationKind.TYPE_MISMATCH: 'type_mismatch'>)"
+            }
+          ]
+        },
+        {
+          "index": 3,
+          "mutation": null,
+          "violations": [
+            {
+              "field": "unique_key",
+              "kind": "type_mismatch",
+              "message": "Violation(field='unique_key', message=\"Field 'unique_key' expected type String, got integer\", kind=<ViolationKind.TYPE_MISMATCH: 'type_mismatch'>)"
+            },
+            {
+              "field": "incident_zip",
+              "kind": "type_mismatch",
+              "message": "Violation(field='incident_zip', message=\"Field 'incident_zip' expected type String, got integer\", kind=<ViolationKind.TYPE_MISMATCH: 'type_mismatch'>)"
+            }
+          ]
+        },
+        {
+          "index": 4,
+          "mutation": null,
+          "violations": [
+            {
+              "field": "unique_key",
+              "kind": "type_mismatch",
+              "message": "Violation(field='unique_key', message=\"Field 'unique_key' expected type String, got integer\", kind=<ViolationKind.TYPE_MISMATCH: 'type_mismatch'>)"
+            },
+            {
+              "field": "incident_zip",
+              "kind": "type_mismatch",
+              "message": "Violation(field='incident_zip', message=\"Field 'incident_zip' expected type String, got integer\", kind=<ViolationKind.TYPE_MISMATCH: 'type_mismatch'>)"
+            }
+          ]
+        },
+        {
+          "index": 5,
+          "mutation": null,
+          "violations": [
+            {
+              "field": "unique_key",
+              "kind": "type_mismatch",
+              "message": "Violation(field='unique_key', message=\"Field 'unique_key' expected type String, got integer\", kind=<ViolationKind.TYPE_MISMATCH: 'type_mismatch'>)"
+            },
+            {
+              "field": "incident_zip",
+              "kind": "type_mismatch",
+              "message": "Violation(field='incident_zip', message=\"Field 'incident_zip' expected type String, got integer\", kind=<ViolationKind.TYPE_MISMATCH: 'type_mismatch'>)"
+            }
+          ]
+        },
+        {
+          "index": 6,
+          "mutation": null,
+          "violations": [
+            {
+              "field": "unique_key",
+              "kind": "type_mismatch",
+              "message": "Violation(field='unique_key', message=\"Field 'unique_key' expected type String, got integer\", kind=<ViolationKind.TYPE_MISMATCH: 'type_mismatch'>)"
+            },
+            {
+              "field": "incident_zip",
+              "kind": "type_mismatch",
+              "message": "Violation(field='incident_zip', message=\"Field 'incident_zip' expected type String, got integer\", kind=<ViolationKind.TYPE_MISMATCH: 'type_mismatch'>)"
+            }
+          ]
+        },
+        {
+          "index": 7,
+          "mutation": null,
+          "violations": [
+            {
+              "field": "unique_key",
+              "kind": "type_mismatch",
+              "message": "Violation(field='unique_key', message=\"Field 'unique_key' expected type String, got integer\", kind=<ViolationKind.TYPE_MISMATCH: 'type_mismatch'>)"
+            },
+            {
+              "field": "incident_zip",
+              "kind": "type_mismatch",
+              "message": "Violation(field='incident_zip', message=\"Field 'incident_zip' expected type String, got integer\", kind=<ViolationKind.TYPE_MISMATCH: 'type_mismatch'>)"
+            }
+          ]
+        },
+        {
+          "index": 8,
+          "mutation": null,
+          "violations": [
+            {
+              "field": "unique_key",
+              "kind": "type_mismatch",
+              "message": "Violation(field='unique_key', message=\"Field 'unique_key' expected type String, got integer\", kind=<ViolationKind.TYPE_MISMATCH: 'type_mismatch'>)"
+            },
+            {
+              "field": "incident_zip",
+              "kind": "type_mismatch",
+              "message": "Violation(field='incident_zip', message=\"Field 'incident_zip' expected type String, got integer\", kind=<ViolationKind.TYPE_MISMATCH: 'type_mismatch'>)"
+            }
+          ]
+        },
+        {
+          "index": 9,
+          "mutation": null,
+          "violations": [
+            {
+              "field": "unique_key",
+              "kind": "type_mismatch",
+              "message": "Violation(field='unique_key', message=\"Field 'unique_key' expected type String, got integer\", kind=<ViolationKind.TYPE_MISMATCH: 'type_mismatch'>)"
+            },
+            {
+              "field": "incident_zip",
+              "kind": "type_mismatch",
+              "message": "Violation(field='incident_zip', message=\"Field 'incident_zip' expected type String, got integer\", kind=<ViolationKind.TYPE_MISMATCH: 'type_mismatch'>)"
+            }
+          ]
+        },
+        {
+          "index": 10,
+          "mutation": null,
+          "violations": [
+            {
+              "field": "unique_key",
+              "kind": "type_mismatch",
+              "message": "Violation(field='unique_key', message=\"Field 'unique_key' expected type String, got integer\", kind=<ViolationKind.TYPE_MISMATCH: 'type_mismatch'>)"
+            },
+            {
+              "field": "incident_zip",
+              "kind": "type_mismatch",
+              "message": "Violation(field='incident_zip', message=\"Field 'incident_zip' expected type String, got integer\", kind=<ViolationKind.TYPE_MISMATCH: 'type_mismatch'>)"
+            }
+          ]
+        },
+        {
+          "index": 11,
+          "mutation": null,
+          "violations": [
+            {
+              "field": "unique_key",
+              "kind": "type_mismatch",
+              "message": "Violation(field='unique_key', message=\"Field 'unique_key' expected type String, got integer\", kind=<ViolationKind.TYPE_MISMATCH: 'type_mismatch'>)"
+            },
+            {
+              "field": "incident_zip",
+              "kind": "type_mismatch",
+              "message": "Violation(field='incident_zip', message=\"Field 'incident_zip' expected type String, got integer\", kind=<ViolationKind.TYPE_MISMATCH: 'type_mismatch'>)"
+            }
+          ]
+        },
+        {
+          "index": 12,
+          "mutation": null,
+          "violations": [
+            {
+              "field": "unique_key",
+              "kind": "type_mismatch",
+              "message": "Violation(field='unique_key', message=\"Field 'unique_key' expected type String, got integer\", kind=<ViolationKind.TYPE_MISMATCH: 'type_mismatch'>)"
+            },
+            {
+              "field": "incident_zip",
+              "kind": "type_mismatch",
+              "message": "Violation(field='incident_zip', message=\"Field 'incident_zip' expected type String, got integer\", kind=<ViolationKind.TYPE_MISMATCH: 'type_mismatch'>)"
+            }
+          ]
+        },
+        {
+          "index": 13,
+          "mutation": null,
+          "violations": [
+            {
+              "field": "unique_key",
+              "kind": "type_mismatch",
+              "message": "Violation(field='unique_key', message=\"Field 'unique_key' expected type String, got integer\", kind=<ViolationKind.TYPE_MISMATCH: 'type_mismatch'>)"
+            },
+            {
+              "field": "incident_zip",
+              "kind": "type_mismatch",
+              "message": "Violation(field='incident_zip', message=\"Field 'incident_zip' expected type String, got integer\", kind=<ViolationKind.TYPE_MISMATCH: 'type_mismatch'>)"
+            }
+          ]
+        },
+        {
+          "index": 14,
+          "mutation": null,
+          "violations": [
+            {
+              "field": "unique_key",
+              "kind": "type_mismatch",
+              "message": "Violation(field='unique_key', message=\"Field 'unique_key' expected type String, got integer\", kind=<ViolationKind.TYPE_MISMATCH: 'type_mismatch'>)"
+            },
+            {
+              "field": "incident_zip",
+              "kind": "type_mismatch",
+              "message": "Violation(field='incident_zip', message=\"Field 'incident_zip' expected type String, got integer\", kind=<ViolationKind.TYPE_MISMATCH: 'type_mismatch'>)"
+            }
+          ]
+        },
+        {
+          "index": 15,
+          "mutation": null,
+          "violations": [
+            {
+              "field": "unique_key",
+              "kind": "type_mismatch",
+              "message": "Violation(field='unique_key', message=\"Field 'unique_key' expected type String, got integer\", kind=<ViolationKind.TYPE_MISMATCH: 'type_mismatch'>)"
+            },
+            {
+              "field": "incident_zip",
+              "kind": "type_mismatch",
+              "message": "Violation(field='incident_zip', message=\"Field 'incident_zip' expected type String, got integer\", kind=<ViolationKind.TYPE_MISMATCH: 'type_mismatch'>)"
+            }
+          ]
+        },
+        {
+          "index": 16,
+          "mutation": null,
+          "violations": [
+            {
+              "field": "unique_key",
+              "kind": "type_mismatch",
+              "message": "Violation(field='unique_key', message=\"Field 'unique_key' expected type String, got integer\", kind=<ViolationKind.TYPE_MISMATCH: 'type_mismatch'>)"
+            },
+            {
+              "field": "incident_zip",
+              "kind": "type_mismatch",
+              "message": "Violation(field='incident_zip', message=\"Field 'incident_zip' expected type String, got integer\", kind=<ViolationKind.TYPE_MISMATCH: 'type_mismatch'>)"
+            }
+          ]
+        },
+        {
+          "index": 17,
+          "mutation": null,
+          "violations": [
+            {
+              "field": "unique_key",
+              "kind": "type_mismatch",
+              "message": "Violation(field='unique_key', message=\"Field 'unique_key' expected type String, got integer\", kind=<ViolationKind.TYPE_MISMATCH: 'type_mismatch'>)"
+            },
+            {
+              "field": "incident_zip",
+              "kind": "type_mismatch",
+              "message": "Violation(field='incident_zip', message=\"Field 'incident_zip' expected type String, got integer\", kind=<ViolationKind.TYPE_MISMATCH: 'type_mismatch'>)"
+            }
+          ]
+        },
+        {
+          "index": 18,
+          "mutation": null,
+          "violations": [
+            {
+              "field": "unique_key",
+              "kind": "type_mismatch",
+              "message": "Violation(field='unique_key', message=\"Field 'unique_key' expected type String, got integer\", kind=<ViolationKind.TYPE_MISMATCH: 'type_mismatch'>)"
+            },
+            {
+              "field": "incident_zip",
+              "kind": "type_mismatch",
+              "message": "Violation(field='incident_zip', message=\"Field 'incident_zip' expected type String, got integer\", kind=<ViolationKind.TYPE_MISMATCH: 'type_mismatch'>)"
+            }
+          ]
+        },
+        {
+          "index": 19,
+          "mutation": null,
+          "violations": [
+            {
+              "field": "unique_key",
+              "kind": "type_mismatch",
+              "message": "Violation(field='unique_key', message=\"Field 'unique_key' expected type String, got integer\", kind=<ViolationKind.TYPE_MISMATCH: 'type_mismatch'>)"
+            },
+            {
+              "field": "incident_zip",
+              "kind": "type_mismatch",
+              "message": "Violation(field='incident_zip', message=\"Field 'incident_zip' expected type String, got integer\", kind=<ViolationKind.TYPE_MISMATCH: 'type_mismatch'>)"
+            }
+          ]
+        }
+      ]
+    },
+    "fail": {
+      "total": 5,
+      "passed": 0,
+      "failed": 5,
+      "pass_rate": 0.0,
+      "failures": [
+        {
+          "index": 0,
+          "mutation": "borough:bad_enum",
+          "violations": [
+            {
+              "field": "unique_key",
+              "kind": "type_mismatch",
+              "message": "Violation(field='unique_key', message=\"Field 'unique_key' expected type String, got integer\", kind=<ViolationKind.TYPE_MISMATCH: 'type_mismatch'>)"
+            },
+            {
+              "field": "borough",
+              "kind": "enum_violation",
+              "message": "Violation(field='borough', message='Field \\'borough\\' value \"ATLANTIS\" not in allowed set: [\"BRONX\", \"BROOKLYN\", \"MANHATTAN\", \"QUEENS\", \"STATEN ISLAND\", \"Unspecified\"]', kind=<ViolationKind.ENUM_VIOLATION: 'enum_violation'>)"
+            }
+          ]
+        },
+        {
+          "index": 1,
+          "mutation": "unique_key:drop_required",
+          "violations": [
+            {
+              "field": "unique_key",
+              "kind": "missing_required_field",
+              "message": "Violation(field='unique_key', message=\"Required field 'unique_key' is missing\", kind=<ViolationKind.MISSING_REQUIRED_FIELD: 'missing_required_field'>)"
+            }
+          ]
+        },
+        {
+          "index": 2,
+          "mutation": "latitude:out_of_range",
+          "violations": [
+            {
+              "field": "unique_key",
+              "kind": "type_mismatch",
+              "message": "Violation(field='unique_key', message=\"Field 'unique_key' expected type String, got integer\", kind=<ViolationKind.TYPE_MISMATCH: 'type_mismatch'>)"
+            },
+            {
+              "field": "latitude",
+              "kind": "range_violation",
+              "message": "Violation(field='latitude', message=\"Field 'latitude' value 999 exceeds maximum 41.5\", kind=<ViolationKind.RANGE_VIOLATION: 'range_violation'>)"
+            }
+          ]
+        },
+        {
+          "index": 3,
+          "mutation": "borough:bad_enum",
+          "violations": [
+            {
+              "field": "unique_key",
+              "kind": "type_mismatch",
+              "message": "Violation(field='unique_key', message=\"Field 'unique_key' expected type String, got integer\", kind=<ViolationKind.TYPE_MISMATCH: 'type_mismatch'>)"
+            },
+            {
+              "field": "borough",
+              "kind": "enum_violation",
+              "message": "Violation(field='borough', message='Field \\'borough\\' value \"ATLANTIS\" not in allowed set: [\"BRONX\", \"BROOKLYN\", \"MANHATTAN\", \"QUEENS\", \"STATEN ISLAND\", \"Unspecified\"]', kind=<ViolationKind.ENUM_VIOLATION: 'enum_violation'>)"
+            },
+            {
+              "field": "incident_zip",
+              "kind": "type_mismatch",
+              "message": "Violation(field='incident_zip', message=\"Field 'incident_zip' expected type String, got integer\", kind=<ViolationKind.TYPE_MISMATCH: 'type_mismatch'>)"
+            }
+          ]
+        },
+        {
+          "index": 4,
+          "mutation": "unique_key:drop_required",
+          "violations": [
+            {
+              "field": "unique_key",
+              "kind": "missing_required_field",
+              "message": "Violation(field='unique_key', message=\"Required field 'unique_key' is missing\", kind=<ViolationKind.MISSING_REQUIRED_FIELD: 'missing_required_field'>)"
+            },
+            {
+              "field": "incident_zip",
+              "kind": "type_mismatch",
+              "message": "Violation(field='incident_zip', message=\"Field 'incident_zip' expected type String, got integer\", kind=<ViolationKind.TYPE_MISMATCH: 'type_mismatch'>)"
+            }
+          ]
+        }
+      ]
+    },
+    "mixed": {
+      "total": 40,
+      "passed": 0,
+      "failed": 40,
+      "pass_rate": 0.0,
+      "failures": [
+        {
+          "index": 0,
+          "mutation": null,
+          "violations": [
+            {
+              "field": "unique_key",
+              "kind": "type_mismatch",
+              "message": "Violation(field='unique_key', message=\"Field 'unique_key' expected type String, got integer\", kind=<ViolationKind.TYPE_MISMATCH: 'type_mismatch'>)"
+            }
+          ]
+        },
+        {
+          "index": 1,
+          "mutation": null,
+          "violations": [
+            {
+              "field": "unique_key",
+              "kind": "type_mismatch",
+              "message": "Violation(field='unique_key', message=\"Field 'unique_key' expected type String, got integer\", kind=<ViolationKind.TYPE_MISMATCH: 'type_mismatch'>)"
+            }
+          ]
+        },
+        {
+          "index": 2,
+          "mutation": null,
+          "violations": [
+            {
+              "field": "unique_key",
+              "kind": "type_mismatch",
+              "message": "Violation(field='unique_key', message=\"Field 'unique_key' expected type String, got integer\", kind=<ViolationKind.TYPE_MISMATCH: 'type_mismatch'>)"
+            }
+          ]
+        },
+        {
+          "index": 3,
+          "mutation": "borough:bad_enum",
+          "violations": [
+            {
+              "field": "unique_key",
+              "kind": "type_mismatch",
+              "message": "Violation(field='unique_key', message=\"Field 'unique_key' expected type String, got integer\", kind=<ViolationKind.TYPE_MISMATCH: 'type_mismatch'>)"
+            },
+            {
+              "field": "borough",
+              "kind": "enum_violation",
+              "message": "Violation(field='borough', message='Field \\'borough\\' value \"ATLANTIS\" not in allowed set: [\"BRONX\", \"BROOKLYN\", \"MANHATTAN\", \"QUEENS\", \"STATEN ISLAND\", \"Unspecified\"]', kind=<ViolationKind.ENUM_VIOLATION: 'enum_violation'>)"
+            },
+            {
+              "field": "incident_zip",
+              "kind": "type_mismatch",
+              "message": "Violation(field='incident_zip', message=\"Field 'incident_zip' expected type String, got integer\", kind=<ViolationKind.TYPE_MISMATCH: 'type_mismatch'>)"
+            }
+          ]
+        },
+        {
+          "index": 4,
+          "mutation": null,
+          "violations": [
+            {
+              "field": "unique_key",
+              "kind": "type_mismatch",
+              "message": "Violation(field='unique_key', message=\"Field 'unique_key' expected type String, got integer\", kind=<ViolationKind.TYPE_MISMATCH: 'type_mismatch'>)"
+            },
+            {
+              "field": "incident_zip",
+              "kind": "type_mismatch",
+              "message": "Violation(field='incident_zip', message=\"Field 'incident_zip' expected type String, got integer\", kind=<ViolationKind.TYPE_MISMATCH: 'type_mismatch'>)"
+            }
+          ]
+        },
+        {
+          "index": 5,
+          "mutation": null,
+          "violations": [
+            {
+              "field": "unique_key",
+              "kind": "type_mismatch",
+              "message": "Violation(field='unique_key', message=\"Field 'unique_key' expected type String, got integer\", kind=<ViolationKind.TYPE_MISMATCH: 'type_mismatch'>)"
+            },
+            {
+              "field": "incident_zip",
+              "kind": "type_mismatch",
+              "message": "Violation(field='incident_zip', message=\"Field 'incident_zip' expected type String, got integer\", kind=<ViolationKind.TYPE_MISMATCH: 'type_mismatch'>)"
+            }
+          ]
+        },
+        {
+          "index": 6,
+          "mutation": null,
+          "violations": [
+            {
+              "field": "unique_key",
+              "kind": "type_mismatch",
+              "message": "Violation(field='unique_key', message=\"Field 'unique_key' expected type String, got integer\", kind=<ViolationKind.TYPE_MISMATCH: 'type_mismatch'>)"
+            },
+            {
+              "field": "incident_zip",
+              "kind": "type_mismatch",
+              "message": "Violation(field='incident_zip', message=\"Field 'incident_zip' expected type String, got integer\", kind=<ViolationKind.TYPE_MISMATCH: 'type_mismatch'>)"
+            }
+          ]
+        },
+        {
+          "index": 7,
+          "mutation": null,
+          "violations": [
+            {
+              "field": "unique_key",
+              "kind": "type_mismatch",
+              "message": "Violation(field='unique_key', message=\"Field 'unique_key' expected type String, got integer\", kind=<ViolationKind.TYPE_MISMATCH: 'type_mismatch'>)"
+            },
+            {
+              "field": "incident_zip",
+              "kind": "type_mismatch",
+              "message": "Violation(field='incident_zip', message=\"Field 'incident_zip' expected type String, got integer\", kind=<ViolationKind.TYPE_MISMATCH: 'type_mismatch'>)"
+            }
+          ]
+        },
+        {
+          "index": 8,
+          "mutation": null,
+          "violations": [
+            {
+              "field": "unique_key",
+              "kind": "type_mismatch",
+              "message": "Violation(field='unique_key', message=\"Field 'unique_key' expected type String, got integer\", kind=<ViolationKind.TYPE_MISMATCH: 'type_mismatch'>)"
+            },
+            {
+              "field": "incident_zip",
+              "kind": "type_mismatch",
+              "message": "Violation(field='incident_zip', message=\"Field 'incident_zip' expected type String, got integer\", kind=<ViolationKind.TYPE_MISMATCH: 'type_mismatch'>)"
+            }
+          ]
+        },
+        {
+          "index": 9,
+          "mutation": "borough:bad_enum",
+          "violations": [
+            {
+              "field": "unique_key",
+              "kind": "type_mismatch",
+              "message": "Violation(field='unique_key', message=\"Field 'unique_key' expected type String, got integer\", kind=<ViolationKind.TYPE_MISMATCH: 'type_mismatch'>)"
+            },
+            {
+              "field": "borough",
+              "kind": "enum_violation",
+              "message": "Violation(field='borough', message='Field \\'borough\\' value \"ATLANTIS\" not in allowed set: [\"BRONX\", \"BROOKLYN\", \"MANHATTAN\", \"QUEENS\", \"STATEN ISLAND\", \"Unspecified\"]', kind=<ViolationKind.ENUM_VIOLATION: 'enum_violation'>)"
+            },
+            {
+              "field": "incident_zip",
+              "kind": "type_mismatch",
+              "message": "Violation(field='incident_zip', message=\"Field 'incident_zip' expected type String, got integer\", kind=<ViolationKind.TYPE_MISMATCH: 'type_mismatch'>)"
+            }
+          ]
+        },
+        {
+          "index": 10,
+          "mutation": "unique_key:drop_required",
+          "violations": [
+            {
+              "field": "unique_key",
+              "kind": "missing_required_field",
+              "message": "Violation(field='unique_key', message=\"Required field 'unique_key' is missing\", kind=<ViolationKind.MISSING_REQUIRED_FIELD: 'missing_required_field'>)"
+            },
+            {
+              "field": "incident_zip",
+              "kind": "type_mismatch",
+              "message": "Violation(field='incident_zip', message=\"Field 'incident_zip' expected type String, got integer\", kind=<ViolationKind.TYPE_MISMATCH: 'type_mismatch'>)"
+            }
+          ]
+        },
+        {
+          "index": 11,
+          "mutation": null,
+          "violations": [
+            {
+              "field": "unique_key",
+              "kind": "type_mismatch",
+              "message": "Violation(field='unique_key', message=\"Field 'unique_key' expected type String, got integer\", kind=<ViolationKind.TYPE_MISMATCH: 'type_mismatch'>)"
+            },
+            {
+              "field": "incident_zip",
+              "kind": "type_mismatch",
+              "message": "Violation(field='incident_zip', message=\"Field 'incident_zip' expected type String, got integer\", kind=<ViolationKind.TYPE_MISMATCH: 'type_mismatch'>)"
+            }
+          ]
+        },
+        {
+          "index": 12,
+          "mutation": null,
+          "violations": [
+            {
+              "field": "unique_key",
+              "kind": "type_mismatch",
+              "message": "Violation(field='unique_key', message=\"Field 'unique_key' expected type String, got integer\", kind=<ViolationKind.TYPE_MISMATCH: 'type_mismatch'>)"
+            },
+            {
+              "field": "incident_zip",
+              "kind": "type_mismatch",
+              "message": "Violation(field='incident_zip', message=\"Field 'incident_zip' expected type String, got integer\", kind=<ViolationKind.TYPE_MISMATCH: 'type_mismatch'>)"
+            }
+          ]
+        },
+        {
+          "index": 13,
+          "mutation": null,
+          "violations": [
+            {
+              "field": "unique_key",
+              "kind": "type_mismatch",
+              "message": "Violation(field='unique_key', message=\"Field 'unique_key' expected type String, got integer\", kind=<ViolationKind.TYPE_MISMATCH: 'type_mismatch'>)"
+            },
+            {
+              "field": "incident_zip",
+              "kind": "type_mismatch",
+              "message": "Violation(field='incident_zip', message=\"Field 'incident_zip' expected type String, got integer\", kind=<ViolationKind.TYPE_MISMATCH: 'type_mismatch'>)"
+            }
+          ]
+        },
+        {
+          "index": 14,
+          "mutation": null,
+          "violations": [
+            {
+              "field": "unique_key",
+              "kind": "type_mismatch",
+              "message": "Violation(field='unique_key', message=\"Field 'unique_key' expected type String, got integer\", kind=<ViolationKind.TYPE_MISMATCH: 'type_mismatch'>)"
+            },
+            {
+              "field": "incident_zip",
+              "kind": "type_mismatch",
+              "message": "Violation(field='incident_zip', message=\"Field 'incident_zip' expected type String, got integer\", kind=<ViolationKind.TYPE_MISMATCH: 'type_mismatch'>)"
+            }
+          ]
+        },
+        {
+          "index": 15,
+          "mutation": null,
+          "violations": [
+            {
+              "field": "unique_key",
+              "kind": "type_mismatch",
+              "message": "Violation(field='unique_key', message=\"Field 'unique_key' expected type String, got integer\", kind=<ViolationKind.TYPE_MISMATCH: 'type_mismatch'>)"
+            },
+            {
+              "field": "incident_zip",
+              "kind": "type_mismatch",
+              "message": "Violation(field='incident_zip', message=\"Field 'incident_zip' expected type String, got integer\", kind=<ViolationKind.TYPE_MISMATCH: 'type_mismatch'>)"
+            }
+          ]
+        },
+        {
+          "index": 16,
+          "mutation": null,
+          "violations": [
+            {
+              "field": "unique_key",
+              "kind": "type_mismatch",
+              "message": "Violation(field='unique_key', message=\"Field 'unique_key' expected type String, got integer\", kind=<ViolationKind.TYPE_MISMATCH: 'type_mismatch'>)"
+            },
+            {
+              "field": "incident_zip",
+              "kind": "type_mismatch",
+              "message": "Violation(field='incident_zip', message=\"Field 'incident_zip' expected type String, got integer\", kind=<ViolationKind.TYPE_MISMATCH: 'type_mismatch'>)"
+            }
+          ]
+        },
+        {
+          "index": 17,
+          "mutation": null,
+          "violations": [
+            {
+              "field": "unique_key",
+              "kind": "type_mismatch",
+              "message": "Violation(field='unique_key', message=\"Field 'unique_key' expected type String, got integer\", kind=<ViolationKind.TYPE_MISMATCH: 'type_mismatch'>)"
+            },
+            {
+              "field": "incident_zip",
+              "kind": "type_mismatch",
+              "message": "Violation(field='incident_zip', message=\"Field 'incident_zip' expected type String, got integer\", kind=<ViolationKind.TYPE_MISMATCH: 'type_mismatch'>)"
+            }
+          ]
+        },
+        {
+          "index": 18,
+          "mutation": null,
+          "violations": [
+            {
+              "field": "unique_key",
+              "kind": "type_mismatch",
+              "message": "Violation(field='unique_key', message=\"Field 'unique_key' expected type String, got integer\", kind=<ViolationKind.TYPE_MISMATCH: 'type_mismatch'>)"
+            },
+            {
+              "field": "incident_zip",
+              "kind": "type_mismatch",
+              "message": "Violation(field='incident_zip', message=\"Field 'incident_zip' expected type String, got integer\", kind=<ViolationKind.TYPE_MISMATCH: 'type_mismatch'>)"
+            }
+          ]
+        },
+        {
+          "index": 19,
+          "mutation": null,
+          "violations": [
+            {
+              "field": "unique_key",
+              "kind": "type_mismatch",
+              "message": "Violation(field='unique_key', message=\"Field 'unique_key' expected type String, got integer\", kind=<ViolationKind.TYPE_MISMATCH: 'type_mismatch'>)"
+            },
+            {
+              "field": "incident_zip",
+              "kind": "type_mismatch",
+              "message": "Violation(field='incident_zip', message=\"Field 'incident_zip' expected type String, got integer\", kind=<ViolationKind.TYPE_MISMATCH: 'type_mismatch'>)"
+            }
+          ]
+        }
+      ]
+    },
+    "ok": false,
+    "errors": [
+      "pass batch: expected 0 fails, got 100 (first: [{'index': 0, 'mutation': None, 'violations': [{'field': 'unique_key', 'kind': <ViolationKind.TYPE_MISMATCH: 'type_mismatch'>, 'message': 'Violation(field=\\'unique_key\\', message=\"Field \\'unique_key\\' expected type String, got integer\", kind=<ViolationKind.TYPE_MISMATCH: \\'type_mismatch\\'>)'}]}, {'index': 1, 'mutation': None, 'violations': [{'field': 'unique_key', 'kind': <ViolationKind.TYPE_MISMATCH: 'type_mismatch'>, 'message': 'Violation(field=\\'unique_key\\', message=\"Field \\'unique_key\\' expected type String, got integer\", kind=<ViolationKind.TYPE_MISMATCH: \\'type_mismatch\\'>)'}]}])"
+    ],
+    "product_questions": [
+      "Q1: How does inference behave with messy open-data strings (borough, status, agency)?",
+      "Q2: Can we constrain borough/status tightly enough for dashboards without over-enum?",
+      "Q3: Are optional closed_date nulls handled cleanly for open tickets?"
+    ]
+  },
+  {
+    "scenario": "open_meteo",
+    "contract": "/Users/alexsuarez/contractgate/ops/dogfood/contracts/open_meteo.yaml",
+    "timestamp": "2026-07-20T20:14:02.660499+00:00",
+    "pass": {
+      "total": 24,
+      "passed": 24,
+      "failed": 0,
+      "pass_rate": 1.0,
+      "failures": []
+    },
+    "fail": {
+      "total": 5,
+      "passed": 0,
+      "failed": 5,
+      "pass_rate": 0.0,
+      "failures": [
+        {
+          "index": 0,
+          "mutation": "temperature_2m:out_of_range",
+          "violations": [
+            {
+              "field": "temperature_2m",
+              "kind": "range_violation",
+              "message": "Violation(field='temperature_2m', message=\"Field 'temperature_2m' value 9999 exceeds maximum 60\", kind=<ViolationKind.RANGE_VIOLATION: 'range_violation'>)"
+            }
+          ]
+        },
+        {
+          "index": 1,
+          "mutation": "time:drop_required",
+          "violations": [
+            {
+              "field": "time",
+              "kind": "missing_required_field",
+              "message": "Violation(field='time', message=\"Required field 'time' is missing\", kind=<ViolationKind.MISSING_REQUIRED_FIELD: 'missing_required_field'>)"
+            }
+          ]
+        },
+        {
+          "index": 2,
+          "mutation": "precipitation:below_min",
+          "violations": [
+            {
+              "field": "precipitation",
+              "kind": "range_violation",
+              "message": "Violation(field='precipitation', message=\"Field 'precipitation' value -5 is below minimum 0\", kind=<ViolationKind.RANGE_VIOLATION: 'range_violation'>)"
+            }
+          ]
+        },
+        {
+          "index": 3,
+          "mutation": "temperature_2m:out_of_range",
+          "violations": [
+            {
+              "field": "temperature_2m",
+              "kind": "range_violation",
+              "message": "Violation(field='temperature_2m', message=\"Field 'temperature_2m' value 9999 exceeds maximum 60\", kind=<ViolationKind.RANGE_VIOLATION: 'range_violation'>)"
+            }
+          ]
+        },
+        {
+          "index": 4,
+          "mutation": "time:drop_required",
+          "violations": [
+            {
+              "field": "time",
+              "kind": "missing_required_field",
+              "message": "Violation(field='time', message=\"Required field 'time' is missing\", kind=<ViolationKind.MISSING_REQUIRED_FIELD: 'missing_required_field'>)"
+            }
+          ]
+        }
+      ]
+    },
+    "mixed": {
+      "total": 24,
+      "passed": 22,
+      "failed": 2,
+      "pass_rate": 0.9166666666666666,
+      "failures": [
+        {
+          "index": 5,
+          "mutation": "precipitation:below_min",
+          "violations": [
+            {
+              "field": "precipitation",
+              "kind": "range_violation",
+              "message": "Violation(field='precipitation', message=\"Field 'precipitation' value -5 is below minimum 0\", kind=<ViolationKind.RANGE_VIOLATION: 'range_violation'>)"
+            }
+          ]
+        },
+        {
+          "index": 15,
+          "mutation": "temperature_2m:out_of_range",
+          "violations": [
+            {
+              "field": "temperature_2m",
+              "kind": "range_violation",
+              "message": "Violation(field='temperature_2m', message=\"Field 'temperature_2m' value 9999 exceeds maximum 60\", kind=<ViolationKind.RANGE_VIOLATION: 'range_violation'>)"
+            }
+          ]
+        }
+      ]
+    },
+    "ok": true,
+    "errors": [],
+    "product_questions": [
+      "Q1: Can time-series rows (flattened hourly) form a stable contract?",
+      "Q2: Do min/max on temperature and precipitation reject sensor glitches?",
+      "Q3: Is ISO-ish time string typing clear enough for operators?"
+    ]
+  },
+  {
+    "scenario": "usgs_earthquake",
+    "contract": "/Users/alexsuarez/contractgate/ops/dogfood/contracts/usgs_earthquake.yaml",
+    "timestamp": "2026-07-20T20:14:02.664561+00:00",
+    "pass": {
+      "total": 50,
+      "passed": 19,
+      "failed": 31,
+      "pass_rate": 0.38,
+      "failures": [
+        {
+          "index": 0,
+          "mutation": null,
+          "violations": [
+            {
+              "field": "code",
+              "kind": "type_mismatch",
+              "message": "Violation(field='code', message=\"Field 'code' expected type String, got integer\", kind=<ViolationKind.TYPE_MISMATCH: 'type_mismatch'>)"
+            }
+          ]
+        },
+        {
+          "index": 2,
+          "mutation": null,
+          "violations": [
+            {
+              "field": "code",
+              "kind": "type_mismatch",
+              "message": "Violation(field='code', message=\"Field 'code' expected type String, got integer\", kind=<ViolationKind.TYPE_MISMATCH: 'type_mismatch'>)"
+            }
+          ]
+        },
+        {
+          "index": 3,
+          "mutation": null,
+          "violations": [
+            {
+              "field": "code",
+              "kind": "type_mismatch",
+              "message": "Violation(field='code', message=\"Field 'code' expected type String, got integer\", kind=<ViolationKind.TYPE_MISMATCH: 'type_mismatch'>)"
+            }
+          ]
+        },
+        {
+          "index": 5,
+          "mutation": null,
+          "violations": [
+            {
+              "field": "code",
+              "kind": "type_mismatch",
+              "message": "Violation(field='code', message=\"Field 'code' expected type String, got integer\", kind=<ViolationKind.TYPE_MISMATCH: 'type_mismatch'>)"
+            }
+          ]
+        },
+        {
+          "index": 7,
+          "mutation": null,
+          "violations": [
+            {
+              "field": "code",
+              "kind": "type_mismatch",
+              "message": "Violation(field='code', message=\"Field 'code' expected type String, got integer\", kind=<ViolationKind.TYPE_MISMATCH: 'type_mismatch'>)"
+            }
+          ]
+        },
+        {
+          "index": 8,
+          "mutation": null,
+          "violations": [
+            {
+              "field": "code",
+              "kind": "type_mismatch",
+              "message": "Violation(field='code', message=\"Field 'code' expected type String, got integer\", kind=<ViolationKind.TYPE_MISMATCH: 'type_mismatch'>)"
+            }
+          ]
+        },
+        {
+          "index": 9,
+          "mutation": null,
+          "violations": [
+            {
+              "field": "code",
+              "kind": "type_mismatch",
+              "message": "Violation(field='code', message=\"Field 'code' expected type String, got integer\", kind=<ViolationKind.TYPE_MISMATCH: 'type_mismatch'>)"
+            }
+          ]
+        },
+        {
+          "index": 10,
+          "mutation": null,
+          "violations": [
+            {
+              "field": "code",
+              "kind": "type_mismatch",
+              "message": "Violation(field='code', message=\"Field 'code' expected type String, got integer\", kind=<ViolationKind.TYPE_MISMATCH: 'type_mismatch'>)"
+            }
+          ]
+        },
+        {
+          "index": 12,
+          "mutation": null,
+          "violations": [
+            {
+              "field": "code",
+              "kind": "type_mismatch",
+              "message": "Violation(field='code', message=\"Field 'code' expected type String, got integer\", kind=<ViolationKind.TYPE_MISMATCH: 'type_mismatch'>)"
+            }
+          ]
+        },
+        {
+          "index": 15,
+          "mutation": null,
+          "violations": [
+            {
+              "field": "code",
+              "kind": "type_mismatch",
+              "message": "Violation(field='code', message=\"Field 'code' expected type String, got integer\", kind=<ViolationKind.TYPE_MISMATCH: 'type_mismatch'>)"
+            }
+          ]
+        },
+        {
+          "index": 18,
+          "mutation": null,
+          "violations": [
+            {
+              "field": "code",
+              "kind": "type_mismatch",
+              "message": "Violation(field='code', message=\"Field 'code' expected type String, got integer\", kind=<ViolationKind.TYPE_MISMATCH: 'type_mismatch'>)"
+            }
+          ]
+        },
+        {
+          "index": 19,
+          "mutation": null,
+          "violations": [
+            {
+              "field": "code",
+              "kind": "type_mismatch",
+              "message": "Violation(field='code', message=\"Field 'code' expected type String, got integer\", kind=<ViolationKind.TYPE_MISMATCH: 'type_mismatch'>)"
+            }
+          ]
+        },
+        {
+          "index": 21,
+          "mutation": null,
+          "violations": [
+            {
+              "field": "code",
+              "kind": "type_mismatch",
+              "message": "Violation(field='code', message=\"Field 'code' expected type String, got integer\", kind=<ViolationKind.TYPE_MISMATCH: 'type_mismatch'>)"
+            }
+          ]
+        },
+        {
+          "index": 22,
+          "mutation": null,
+          "violations": [
+            {
+              "field": "code",
+              "kind": "type_mismatch",
+              "message": "Violation(field='code', message=\"Field 'code' expected type String, got integer\", kind=<ViolationKind.TYPE_MISMATCH: 'type_mismatch'>)"
+            }
+          ]
+        },
+        {
+          "index": 24,
+          "mutation": null,
+          "violations": [
+            {
+              "field": "code",
+              "kind": "type_mismatch",
+              "message": "Violation(field='code', message=\"Field 'code' expected type String, got integer\", kind=<ViolationKind.TYPE_MISMATCH: 'type_mismatch'>)"
+            }
+          ]
+        },
+        {
+          "index": 26,
+          "mutation": null,
+          "violations": [
+            {
+              "field": "code",
+              "kind": "type_mismatch",
+              "message": "Violation(field='code', message=\"Field 'code' expected type String, got integer\", kind=<ViolationKind.TYPE_MISMATCH: 'type_mismatch'>)"
+            }
+          ]
+        },
+        {
+          "index": 27,
+          "mutation": null,
+          "violations": [
+            {
+              "field": "code",
+              "kind": "type_mismatch",
+              "message": "Violation(field='code', message=\"Field 'code' expected type String, got integer\", kind=<ViolationKind.TYPE_MISMATCH: 'type_mismatch'>)"
+            }
+          ]
+        },
+        {
+          "index": 28,
+          "mutation": null,
+          "violations": [
+            {
+              "field": "code",
+              "kind": "type_mismatch",
+              "message": "Violation(field='code', message=\"Field 'code' expected type String, got integer\", kind=<ViolationKind.TYPE_MISMATCH: 'type_mismatch'>)"
+            }
+          ]
+        },
+        {
+          "index": 29,
+          "mutation": null,
+          "violations": [
+            {
+              "field": "code",
+              "kind": "type_mismatch",
+              "message": "Violation(field='code', message=\"Field 'code' expected type String, got integer\", kind=<ViolationKind.TYPE_MISMATCH: 'type_mismatch'>)"
+            }
+          ]
+        },
+        {
+          "index": 30,
+          "mutation": null,
+          "violations": [
+            {
+              "field": "code",
+              "kind": "type_mismatch",
+              "message": "Violation(field='code', message=\"Field 'code' expected type String, got integer\", kind=<ViolationKind.TYPE_MISMATCH: 'type_mismatch'>)"
+            }
+          ]
+        }
+      ]
+    },
+    "fail": {
+      "total": 5,
+      "passed": 0,
+      "failed": 5,
+      "pass_rate": 0.0,
+      "failures": [
+        {
+          "index": 0,
+          "mutation": "mag:wrong_type",
+          "violations": [
+            {
+              "field": "mag",
+              "kind": "type_mismatch",
+              "message": "Violation(field='mag', message=\"Field 'mag' expected type Float, got string\", kind=<ViolationKind.TYPE_MISMATCH: 'type_mismatch'>)"
+            },
+            {
+              "field": "code",
+              "kind": "type_mismatch",
+              "message": "Violation(field='code', message=\"Field 'code' expected type String, got integer\", kind=<ViolationKind.TYPE_MISMATCH: 'type_mismatch'>)"
+            }
+          ]
+        },
+        {
+          "index": 1,
+          "mutation": "status:bad_enum",
+          "violations": [
+            {
+              "field": "status",
+              "kind": "enum_violation",
+              "message": "Violation(field='status', message='Field \\'status\\' value \"fabricated\" not in allowed set: [\"automatic\", \"reviewed\", \"deleted\"]', kind=<ViolationKind.ENUM_VIOLATION: 'enum_violation'>)"
+            }
+          ]
+        },
+        {
+          "index": 2,
+          "mutation": "id:drop_required",
+          "violations": [
+            {
+              "field": "id",
+              "kind": "missing_required_field",
+              "message": "Violation(field='id', message=\"Required field 'id' is missing\", kind=<ViolationKind.MISSING_REQUIRED_FIELD: 'missing_required_field'>)"
+            },
+            {
+              "field": "code",
+              "kind": "type_mismatch",
+              "message": "Violation(field='code', message=\"Field 'code' expected type String, got integer\", kind=<ViolationKind.TYPE_MISMATCH: 'type_mismatch'>)"
+            }
+          ]
+        },
+        {
+          "index": 3,
+          "mutation": "mag:wrong_type",
+          "violations": [
+            {
+              "field": "mag",
+              "kind": "type_mismatch",
+              "message": "Violation(field='mag', message=\"Field 'mag' expected type Float, got string\", kind=<ViolationKind.TYPE_MISMATCH: 'type_mismatch'>)"
+            },
+            {
+              "field": "code",
+              "kind": "type_mismatch",
+              "message": "Violation(field='code', message=\"Field 'code' expected type String, got integer\", kind=<ViolationKind.TYPE_MISMATCH: 'type_mismatch'>)"
+            }
+          ]
+        },
+        {
+          "index": 4,
+          "mutation": "status:bad_enum",
+          "violations": [
+            {
+              "field": "status",
+              "kind": "enum_violation",
+              "message": "Violation(field='status', message='Field \\'status\\' value \"fabricated\" not in allowed set: [\"automatic\", \"reviewed\", \"deleted\"]', kind=<ViolationKind.ENUM_VIOLATION: 'enum_violation'>)"
+            }
+          ]
+        }
+      ]
+    },
+    "mixed": {
+      "total": 40,
+      "passed": 16,
+      "failed": 24,
+      "pass_rate": 0.4,
+      "failures": [
+        {
+          "index": 0,
+          "mutation": null,
+          "violations": [
+            {
+              "field": "code",
+              "kind": "type_mismatch",
+              "message": "Violation(field='code', message=\"Field 'code' expected type String, got integer\", kind=<ViolationKind.TYPE_MISMATCH: 'type_mismatch'>)"
+            }
+          ]
+        },
+        {
+          "index": 2,
+          "mutation": null,
+          "violations": [
+            {
+              "field": "code",
+              "kind": "type_mismatch",
+              "message": "Violation(field='code', message=\"Field 'code' expected type String, got integer\", kind=<ViolationKind.TYPE_MISMATCH: 'type_mismatch'>)"
+            }
+          ]
+        },
+        {
+          "index": 3,
+          "mutation": "mag:wrong_type",
+          "violations": [
+            {
+              "field": "mag",
+              "kind": "type_mismatch",
+              "message": "Violation(field='mag', message=\"Field 'mag' expected type Float, got string\", kind=<ViolationKind.TYPE_MISMATCH: 'type_mismatch'>)"
+            },
+            {
+              "field": "code",
+              "kind": "type_mismatch",
+              "message": "Violation(field='code', message=\"Field 'code' expected type String, got integer\", kind=<ViolationKind.TYPE_MISMATCH: 'type_mismatch'>)"
+            }
+          ]
+        },
+        {
+          "index": 5,
+          "mutation": null,
+          "violations": [
+            {
+              "field": "code",
+              "kind": "type_mismatch",
+              "message": "Violation(field='code', message=\"Field 'code' expected type String, got integer\", kind=<ViolationKind.TYPE_MISMATCH: 'type_mismatch'>)"
+            }
+          ]
+        },
+        {
+          "index": 7,
+          "mutation": null,
+          "violations": [
+            {
+              "field": "code",
+              "kind": "type_mismatch",
+              "message": "Violation(field='code', message=\"Field 'code' expected type String, got integer\", kind=<ViolationKind.TYPE_MISMATCH: 'type_mismatch'>)"
+            }
+          ]
+        },
+        {
+          "index": 8,
+          "mutation": null,
+          "violations": [
+            {
+              "field": "code",
+              "kind": "type_mismatch",
+              "message": "Violation(field='code', message=\"Field 'code' expected type String, got integer\", kind=<ViolationKind.TYPE_MISMATCH: 'type_mismatch'>)"
+            }
+          ]
+        },
+        {
+          "index": 9,
+          "mutation": "mag:wrong_type",
+          "violations": [
+            {
+              "field": "mag",
+              "kind": "type_mismatch",
+              "message": "Violation(field='mag', message=\"Field 'mag' expected type Float, got string\", kind=<ViolationKind.TYPE_MISMATCH: 'type_mismatch'>)"
+            },
+            {
+              "field": "code",
+              "kind": "type_mismatch",
+              "message": "Violation(field='code', message=\"Field 'code' expected type String, got integer\", kind=<ViolationKind.TYPE_MISMATCH: 'type_mismatch'>)"
+            }
+          ]
+        },
+        {
+          "index": 10,
+          "mutation": "status:bad_enum",
+          "violations": [
+            {
+              "field": "status",
+              "kind": "enum_violation",
+              "message": "Violation(field='status', message='Field \\'status\\' value \"fabricated\" not in allowed set: [\"automatic\", \"reviewed\", \"deleted\"]', kind=<ViolationKind.ENUM_VIOLATION: 'enum_violation'>)"
+            },
+            {
+              "field": "code",
+              "kind": "type_mismatch",
+              "message": "Violation(field='code', message=\"Field 'code' expected type String, got integer\", kind=<ViolationKind.TYPE_MISMATCH: 'type_mismatch'>)"
+            }
+          ]
+        },
+        {
+          "index": 12,
+          "mutation": null,
+          "violations": [
+            {
+              "field": "code",
+              "kind": "type_mismatch",
+              "message": "Violation(field='code', message=\"Field 'code' expected type String, got integer\", kind=<ViolationKind.TYPE_MISMATCH: 'type_mismatch'>)"
+            }
+          ]
+        },
+        {
+          "index": 15,
+          "mutation": null,
+          "violations": [
+            {
+              "field": "code",
+              "kind": "type_mismatch",
+              "message": "Violation(field='code', message=\"Field 'code' expected type String, got integer\", kind=<ViolationKind.TYPE_MISMATCH: 'type_mismatch'>)"
+            }
+          ]
+        },
+        {
+          "index": 18,
+          "mutation": null,
+          "violations": [
+            {
+              "field": "code",
+              "kind": "type_mismatch",
+              "message": "Violation(field='code', message=\"Field 'code' expected type String, got integer\", kind=<ViolationKind.TYPE_MISMATCH: 'type_mismatch'>)"
+            }
+          ]
+        },
+        {
+          "index": 19,
+          "mutation": null,
+          "violations": [
+            {
+              "field": "code",
+              "kind": "type_mismatch",
+              "message": "Violation(field='code', message=\"Field 'code' expected type String, got integer\", kind=<ViolationKind.TYPE_MISMATCH: 'type_mismatch'>)"
+            }
+          ]
+        },
+        {
+          "index": 21,
+          "mutation": null,
+          "violations": [
+            {
+              "field": "code",
+              "kind": "type_mismatch",
+              "message": "Violation(field='code', message=\"Field 'code' expected type String, got integer\", kind=<ViolationKind.TYPE_MISMATCH: 'type_mismatch'>)"
+            }
+          ]
+        },
+        {
+          "index": 22,
+          "mutation": null,
+          "violations": [
+            {
+              "field": "code",
+              "kind": "type_mismatch",
+              "message": "Violation(field='code', message=\"Field 'code' expected type String, got integer\", kind=<ViolationKind.TYPE_MISMATCH: 'type_mismatch'>)"
+            }
+          ]
+        },
+        {
+          "index": 24,
+          "mutation": null,
+          "violations": [
+            {
+              "field": "code",
+              "kind": "type_mismatch",
+              "message": "Violation(field='code', message=\"Field 'code' expected type String, got integer\", kind=<ViolationKind.TYPE_MISMATCH: 'type_mismatch'>)"
+            }
+          ]
+        },
+        {
+          "index": 26,
+          "mutation": null,
+          "violations": [
+            {
+              "field": "code",
+              "kind": "type_mismatch",
+              "message": "Violation(field='code', message=\"Field 'code' expected type String, got integer\", kind=<ViolationKind.TYPE_MISMATCH: 'type_mismatch'>)"
+            }
+          ]
+        },
+        {
+          "index": 27,
+          "mutation": null,
+          "violations": [
+            {
+              "field": "code",
+              "kind": "type_mismatch",
+              "message": "Violation(field='code', message=\"Field 'code' expected type String, got integer\", kind=<ViolationKind.TYPE_MISMATCH: 'type_mismatch'>)"
+            }
+          ]
+        },
+        {
+          "index": 28,
+          "mutation": null,
+          "violations": [
+            {
+              "field": "code",
+              "kind": "type_mismatch",
+              "message": "Violation(field='code', message=\"Field 'code' expected type String, got integer\", kind=<ViolationKind.TYPE_MISMATCH: 'type_mismatch'>)"
+            }
+          ]
+        },
+        {
+          "index": 29,
+          "mutation": null,
+          "violations": [
+            {
+              "field": "code",
+              "kind": "type_mismatch",
+              "message": "Violation(field='code', message=\"Field 'code' expected type String, got integer\", kind=<ViolationKind.TYPE_MISMATCH: 'type_mismatch'>)"
+            }
+          ]
+        },
+        {
+          "index": 30,
+          "mutation": null,
+          "violations": [
+            {
+              "field": "code",
+              "kind": "type_mismatch",
+              "message": "Violation(field='code', message=\"Field 'code' expected type String, got integer\", kind=<ViolationKind.TYPE_MISMATCH: 'type_mismatch'>)"
+            }
+          ]
+        }
+      ]
+    },
+    "ok": false,
+    "errors": [
+      "pass batch: expected 0 fails, got 31 (first: [{'index': 0, 'mutation': None, 'violations': [{'field': 'code', 'kind': <ViolationKind.TYPE_MISMATCH: 'type_mismatch'>, 'message': 'Violation(field=\\'code\\', message=\"Field \\'code\\' expected type String, got integer\", kind=<ViolationKind.TYPE_MISMATCH: \\'type_mismatch\\'>)'}]}, {'index': 2, 'mutation': None, 'violations': [{'field': 'code', 'kind': <ViolationKind.TYPE_MISMATCH: 'type_mismatch'>, 'message': 'Violation(field=\\'code\\', message=\"Field \\'code\\' expected type String, got integer\", kind=<ViolationKind.TYPE_MISMATCH: \\'type_mismatch\\'>)'}]}])"
+    ],
+    "product_questions": [
+      "Q1: Can we infer a usable contract from a live public event feed in one shot?",
+      "Q2: Do magnitude / tsunami / status enums catch bad sensors without rejecting null optional fields?",
+      "Q3: Does mixed batch (~10% fail) produce a pilot report a gov data team would care about?"
+    ]
+  }
+]

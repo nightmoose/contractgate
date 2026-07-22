@@ -90,6 +90,14 @@ pub struct Contract {
     /// When absent, each inbound payload is validated as a single record.
     #[serde(default)]
     pub envelope: Option<EnvelopeConfig>,
+    /// RFC-087: treat a JSON `null` as if the key were omitted. Default `false`
+    /// keeps the strict behavior (a present `null` is type-checked and fails a
+    /// typed optional field). When `true`, `"field": null` is handled exactly
+    /// like an absent key — optional fields skip validation, required fields
+    /// report `missing_required_field`. Real-world producers often emit `null`
+    /// for sparse optional columns; this is the opt-in escape hatch.
+    #[serde(default)]
+    pub null_as_absent: bool,
 }
 
 // ---------------------------------------------------------------------------

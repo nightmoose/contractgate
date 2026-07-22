@@ -1,0 +1,42 @@
+id: github_events
+title: "GitHub public events stream"
+status: ready
+vertical: developer platforms
+product_surfaces:
+  - infer_json
+  - optional_fields
+  - enum_event_types
+  - ingest_http
+product_questions:
+  - "Q1: Optional org_login / varying event types — does required inference stay honest?"
+  - "Q2: Can we enum a subset of event types without rejecting rare types (any vs enum tradeoff)?"
+  - "Q3: Good story for platform/SaaS buyers who already understand GitHub webhooks."
+source:
+  kind: http_json
+  url: "https://api.github.com/events"
+  headers:
+    Accept: application/vnd.github+json
+    User-Agent: contractgate-dogfood
+  notes: "Public events API — unauthenticated rate limits apply. Flatten actor/repo."
+sample:
+  max_records: 30
+  transform: github_flat
+contract:
+  path: contracts/github_events.yaml
+  name: github_public_events
+mutations:
+  - field: type
+    kind: wrong_type
+    value: 12345
+  - field: id
+    kind: drop_required
+  - field: public
+    kind: wrong_type
+    value: "yes"
+  - field: created_at
+    kind: drop_required
+ui_path:
+  wizard: "Contracts → New → sample JSON"
+  verify:
+    - playground
+    - quarantine

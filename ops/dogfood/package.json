@@ -1,0 +1,16 @@
+{
+  "name": "contractgate-dogfood",
+  "private": true,
+  "description": "E2E dogfood: browser (Playwright) + API against production",
+  "scripts": {
+    "test": "playwright test --config browser/playwright.config.ts",
+    "test:public": "playwright test --config browser/playwright.config.ts browser/public.spec.ts browser/api.spec.ts",
+    "test:auth": "playwright test --config browser/playwright.config.ts browser/auth.spec.ts",
+    "test:api": "playwright test --config browser/playwright.config.ts browser/api.spec.ts",
+    "report": "playwright show-report findings/runs/browser-report",
+    "install:browsers": "playwright install chromium"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.61.1"
+  }
+}

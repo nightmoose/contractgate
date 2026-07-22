@@ -1,0 +1,80 @@
+{
+  "scenario": "github_events",
+  "contract_id": "4d64c602-6dc7-4a64-8619-cb9096b03f1d",
+  "contract_name": "github_public_events",
+  "timestamp": "2026-07-20T20:25:43.359270+00:00",
+  "ingest": {
+    "pass": {
+      "total": 30,
+      "passed": 30,
+      "failed": 0,
+      "resolved_version": "1.0.0"
+    },
+    "fail": {
+      "total": 5,
+      "passed": 0,
+      "failed": 5,
+      "resolved_version": "1.0.0"
+    },
+    "mixed": {
+      "total": 30,
+      "passed": 27,
+      "failed": 3,
+      "resolved_version": "1.0.0"
+    }
+  },
+  "report": {
+    "contract_id": "4d64c602-6dc7-4a64-8619-cb9096b03f1d",
+    "contract_name": "github_public_events",
+    "window": {
+      "from": null,
+      "to": null
+    },
+    "generated_at": "2026-07-20T20:25:43.050590750Z",
+    "totals": {
+      "total": 65,
+      "passed": 57,
+      "quarantined": 8,
+      "pass_rate": 0.8769230769230769
+    },
+    "by_version": [
+      {
+        "contract_version": "1.0.0",
+        "total": 65,
+        "passed": 57,
+        "quarantined": 8
+      }
+    ],
+    "top_violations": [
+      {
+        "field": "public",
+        "kind": "type_mismatch",
+        "count": 3
+      },
+      {
+        "field": "type",
+        "kind": "type_mismatch",
+        "count": 2
+      },
+      {
+        "field": "created_at",
+        "kind": "missing_required_field",
+        "count": 2
+      },
+      {
+        "field": "id",
+        "kind": "missing_required_field",
+        "count": 1
+      }
+    ]
+  },
+  "usage": {
+    "plan": "free",
+    "period_start": "2026-07-01T00:00:00Z",
+    "used": 408,
+    "limit": 1000000,
+    "remaining": 999592,
+    "pct": 0.0408,
+    "unlimited": false
+  }
+}

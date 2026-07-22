@@ -1,0 +1,49 @@
+id: nyc_311
+title: "NYC 311 service requests"
+status: ready
+vertical: government / civic tech
+product_surfaces:
+  - infer_json
+  - high_cardinality_enums
+  - ingest_http
+  - quarantine
+product_questions:
+  - "Q1: How does inference behave with messy open-data strings (borough, status, agency)?"
+  - "Q2: Can we constrain borough/status tightly enough for dashboards without over-enum?"
+  - "Q3: Are optional closed_date nulls handled cleanly for open tickets?"
+source:
+  kind: socrata
+  url: "https://data.cityofnewyork.us/resource/erm2-nwe9.json?$limit=100"
+  notes: "NYC 311 — classic open data quality story (status, borough, complaint types)."
+sample:
+  max_records: 100
+  fields:
+    - unique_key
+    - created_date
+    - closed_date
+    - agency
+    - agency_name
+    - complaint_type
+    - descriptor
+    - status
+    - borough
+    - latitude
+    - longitude
+    - incident_zip
+contract:
+  path: contracts/nyc_311.yaml
+  name: nyc_311
+mutations:
+  - field: borough
+    kind: bad_enum
+    value: ATLANTIS
+  - field: unique_key
+    kind: drop_required
+  - field: latitude
+    kind: out_of_range
+    value: 999.0
+ui_path:
+  wizard: "Contracts → New → From CSV (export slim CSV) or sample JSON"
+  verify:
+    - playground
+    - quarantine

@@ -1,0 +1,39 @@
+version: '1.0'
+name: open_meteo_hourly
+description: Open-Meteo hourly forecast rows (NYC). Dogfood scenario open_meteo.
+ontology:
+  entities:
+  - name: time
+    type: string
+    required: true
+    pattern: ^\d{4}-\d{2}-\d{2}T
+  - name: temperature_2m
+    type: number
+    required: true
+    min: -80
+    max: 60
+  - name: precipitation
+    type: number
+    required: true
+    min: 0
+    max: 500
+  - name: wind_speed_10m
+    type: number
+    required: true
+    min: 0
+    max: 200
+  - name: latitude
+    type: number
+    required: true
+    min: 40.710335
+    max: 40.710335
+  - name: longitude
+    type: number
+    required: true
+    min: -73.99308
+    max: -73.99308
+  - name: timezone
+    type: string
+    required: true
+glossary: []
+metrics: []

@@ -93,6 +93,7 @@ pub async fn infer_proto_handler(
         metrics: vec![],
         quality: vec![],
         envelope: None,
+        null_as_absent: false,
     };
 
     let yaml_content = serde_yaml::to_string(&contract)

@@ -1,0 +1,34 @@
+id: example_scenario
+title: "Human title"
+status: draft   # draft | ready | proven | retired
+vertical: general
+product_surfaces:
+  - infer_json
+  - ingest_http
+  - quarantine
+product_questions:
+  - "Q1: …"
+  - "Q2: …"
+source:
+  kind: http_json   # http_json | http_geojson_features | socrata | synthetic
+  url: "https://example.com/data.json"
+  notes: "Why this source is realistic for buyers"
+sample:
+  max_records: 50
+  flatten: default
+contract:
+  path: contracts/example_scenario.yaml
+  name: example_scenario
+mutations:
+  - field: status
+    kind: bad_enum
+    value: NOT_A_REAL_STATUS
+  - field: amount
+    kind: below_min
+    value: -1
+ui_path:
+  wizard: "Contracts → New → From sample / blank YAML"
+  verify:
+    - playground
+    - quarantine
+    - report

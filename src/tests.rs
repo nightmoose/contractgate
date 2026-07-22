@@ -85,6 +85,7 @@ mod fixtures {
             metrics: vec![],
             quality: vec![],
             envelope: None,
+            null_as_absent: false,
         }
     }
 
@@ -110,6 +111,7 @@ mod fixtures {
             metrics,
             quality,
             envelope: None,
+            null_as_absent: false,
         }
     }
 }
@@ -1884,6 +1886,7 @@ mod rfc028_tests {
             metrics: vec![],
             quality: vec![],
             envelope: None,
+            null_as_absent: false,
             egress_leakage_mode: EgressLeakageMode::Off,
         };
 
@@ -1933,6 +1936,7 @@ mod rfc028_tests {
             metrics: vec![],
             quality: vec![],
             envelope: None,
+            null_as_absent: false,
             egress_leakage_mode: EgressLeakageMode::Off,
         };
         let json_val = serde_json::to_value(&c).unwrap();
@@ -2001,6 +2005,7 @@ mod rfc028_tests {
             metrics: vec![],
             quality: vec![],
             envelope: None,
+            null_as_absent: false,
             egress_leakage_mode: EgressLeakageMode::default(),
         };
         assert_eq!(c.egress_leakage_mode, EgressLeakageMode::Off);
@@ -3698,5 +3703,30 @@ metrics: []
         assert!(!storage::contract_stores_payloads(&pool, cid).await.unwrap());
 
         cleanup(&pool, cid, org).await;
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Startup schema guard (dogfood follow-up) — pure message formatting.
+// ---------------------------------------------------------------------------
+
+#[cfg(test)]
+mod schema_guard {
+    #[test]
+    fn no_missing_columns_is_ok() {
+        assert!(super::super::schema_lag_message(&[]).is_none());
+    }
+
+    #[test]
+    fn missing_columns_produce_a_fatal_message() {
+        let missing = vec![
+            "orgs.store_event_payloads".to_string(),
+            "audit_log.raw_event_redacted".to_string(),
+        ];
+        let msg = super::super::schema_lag_message(&missing).expect("should be Some");
+        assert!(msg.contains("schema lag detected"));
+        assert!(msg.contains("orgs.store_event_payloads"));
+        assert!(msg.contains("audit_log.raw_event_redacted"));
+        assert!(msg.contains("Refusing to boot"));
     }
 }

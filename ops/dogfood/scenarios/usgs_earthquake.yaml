@@ -1,0 +1,37 @@
+id: usgs_earthquake
+title: "USGS earthquake events (live feed)"
+status: ready
+vertical: geoscience / public safety
+product_surfaces:
+  - infer_json
+  - ingest_http
+  - quarantine
+  - pilot_report
+product_questions:
+  - "Q1: Can we infer a usable contract from a live public event feed in one shot?"
+  - "Q2: Do magnitude / tsunami / status enums catch bad sensors without rejecting null optional fields?"
+  - "Q3: Does mixed batch (~10% fail) produce a pilot report a gov data team would care about?"
+source:
+  kind: http_geojson_features
+  url: "https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/all_day.geojson"
+  notes: "USGS all_day GeoJSON — real seismic events updated continuously. Flatten properties + coordinates."
+sample:
+  max_records: 50
+contract:
+  path: contracts/usgs_earthquake.yaml
+  name: usgs_earthquake
+mutations:
+  - field: mag
+    kind: wrong_type
+    value: "not-a-number"
+  - field: status
+    kind: bad_enum
+    value: fabricated
+  - field: id
+    kind: drop_required
+ui_path:
+  wizard: "Contracts → New → Paste sample JSON (or blank + YAML paste)"
+  verify:
+    - playground
+    - quarantine
+    - report
