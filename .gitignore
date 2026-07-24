@@ -40,3 +40,6 @@ sdks/python/.ruff_cache/
 
 # Claude
 .claude/
+
+# Supabase CLI local link state (project ref, pooler URL — not secrets, but local-only)
+supabase/.temp/

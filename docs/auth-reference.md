@@ -1,6 +1,6 @@
 # Authentication Reference
 
-**Last updated:** 2026-05-28 (RFC-047 / RFC-048 / RFC-050 / RFC-065 / RFC-066)
+**Last updated:** 2026-07-22 (bot signup cleanup + Turnstile/honeypot/rate-limit)
 
 ContractGate's Rust backend supports two authentication mechanisms for the
 management API: a Supabase Bearer JWT and a DB-backed API key.  The validation
@@ -138,6 +138,40 @@ For local development with `docker compose`, leave `DASHBOARD_ORIGIN` unset
 (the fallback `http://localhost:3000` matches the default dashboard port).
 
 ---
+
+## Signup abuse protection (2026-07-22)
+
+An audit found 50 of 57 `auth.users` rows were automated signup-bot noise:
+zero logins ever, and a random-token `display_name` (e.g.
+`MyOHfgDwwVJmHXxrHs`) instead of a real name. See
+`supabase/migrations/035_bot_signup_cleanup.sql` for the removal (not applied
+automatically — run it via `supabase db push` when ready). Three defenses now
+sit in front of `/auth/signup`:
+
+1. **Cloudflare Turnstile** — the signup form renders a Turnstile widget
+   (`dashboard/app/auth/signup/page.tsx`). The token it produces is verified
+   server-side at `POST /api/auth/verify-turnstile`
+   (`dashboard/app/api/auth/verify-turnstile/route.ts`), which calls
+   Cloudflare's `siteverify` endpoint with `TURNSTILE_SECRET_KEY` before the
+   client is allowed to call `supabase.auth.signUp()`. The secret never
+   reaches the browser.
+
+   | Env var | Where | Notes |
+   |---|---|---|
+   | `NEXT_PUBLIC_TURNSTILE_SITE_KEY` | client + server | Public by design. Dev default `1x00000000000000000000AA` (Cloudflare's always-pass test key). |
+   | `TURNSTILE_SECRET_KEY` | server only | Get both at https://dash.cloudflare.com → Turnstile → Add site. If unset, the verify route fails closed in production and passes through in dev. |
+
+2. **Honeypot field** — a `website` input, hidden via CSS and skipped by
+   `tabIndex={-1}`/`autoComplete="off"`, sits in the signup form. Real users
+   never fill it; scripts that blindly fill every field do. If it's non-empty
+   on submit, the client pretends signup succeeded without calling Supabase —
+   no error is shown, so the bot gets no signal to adapt to.
+
+3. **Rate limiting** — `dashboard/proxy.ts` caps requests to `/api/auth/*` and
+   `/auth/callback` at 10 per 5 minutes per client IP, via an in-memory
+   token bucket. This is per-instance (soft cap, not a hard global limit
+   across all Vercel function instances); for a hard limit, move the bucket
+   to Upstash Redis (Vercel Marketplace).
 
 ## Summary — resolution order
 
