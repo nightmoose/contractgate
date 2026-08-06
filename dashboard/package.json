@@ -3,7 +3,8 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev",
+    "dev": "node scripts/sync-llm-docs.mjs && next dev",
+    "prebuild": "node scripts/sync-llm-docs.mjs",
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
