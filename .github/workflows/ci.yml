@@ -259,14 +259,62 @@ jobs:
       - name: Install PostgreSQL client
         run: sudo apt-get install -y --no-install-recommends postgresql-client
 
+      # Filename contract, checked before applying anything: files must be
+      # NNN_description.sql with a contiguous numeric prefix from 001 and no
+      # duplicates. The apply loop below uses `ls -v`, which silently skips a
+      # missing number — so a gap means a migration is absent from the repo and
+      # would never be applied by this lane.
+      - name: Check migration filename contract
+        run: |
+          shopt -s nullglob
+          files=(supabase/migrations/*.sql)
+          if [[ ${#files[@]} -eq 0 ]]; then
+            echo "::error::No migration files found in supabase/migrations/."
+            exit 1
+          fi
+
+          prefixes=()
+          for f in "${files[@]}"; do
+            base=$(basename "$f")
+            if [[ ! "$base" =~ ^([0-9]{3})_[A-Za-z0-9_.-]+\.sql$ ]]; then
+              echo "::error::Migration filename must match NNN_description.sql: $base"
+              exit 1
+            fi
+            prefixes+=("${BASH_REMATCH[1]}")
+          done
+
+          dupes=$(printf '%s\n' "${prefixes[@]}" | sort | uniq -d)
+          if [[ -n "$dupes" ]]; then
+            echo "::error::Duplicate migration numbers: $(echo "$dupes" | tr '\n' ' ')"
+            exit 1
+          fi
+
+          expected=1
+          for p in $(printf '%s\n' "${prefixes[@]}" | sort); do
+            if (( 10#$p != expected )); then
+              echo "::error::Migration numbering gap — expected $(printf '%03d' "$expected"), found $p."
+              exit 1
+            fi
+            expected=$((expected + 1))
+          done
+
+          echo "Filename contract OK: ${#files[@]} migrations, 001..$(printf '%03d' $((expected - 1))), contiguous."
+
       - name: Apply migrations in order
         run: |
           echo "Applying migrations from supabase/migrations/ in numeric order..."
+          applied=0
           for f in $(ls -v supabase/migrations/*.sql); do
             echo "  → $f"
             psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f "$f"
+            applied=$((applied + 1))
           done
-          echo "All migrations applied."
+          total=$(ls supabase/migrations/*.sql | wc -l | tr -d ' ')
+          if [[ "$applied" != "$total" ]]; then
+            echo "::error::Applied $applied of $total migration files — the loop skipped something."
+            exit 1
+          fi
+          echo "All $applied migrations applied."
 
       - name: Assert migration sentinels (027 schema object + total count)
         run: |
@@ -414,17 +462,14 @@ jobs:
           fi
           echo "Sentinel A9 OK: store_event_payloads present + payload NULLable (migration 034)."
 
-          # Sentinel B — file count: the loop above applies every *.sql file.
-          # Assert we have exactly the expected number so a new migration
-          # automatically forces this sentinel to be updated.
-          EXPECTED_MIGRATION_COUNT=35
-          ACTUAL_COUNT=$(ls supabase/migrations/*.sql | wc -l | tr -d ' ')
-          if [[ "$ACTUAL_COUNT" != "$EXPECTED_MIGRATION_COUNT" ]]; then
-            echo "::error::Migration count mismatch — expected $EXPECTED_MIGRATION_COUNT files, found $ACTUAL_COUNT."
-            echo "Update EXPECTED_MIGRATION_COUNT in ci.yml and add a sentinel assertion for the new migration."
-            exit 1
-          fi
-          echo "Sentinel B OK: all $EXPECTED_MIGRATION_COUNT migrations applied cleanly."
+          # Sentinel B (file count) was removed 2026-08-07. It required a manual
+          # bump per migration and asserted nothing about the database — a file
+          # could be present, counted, and still unapplied in prod. Coverage now:
+          #   • "Check migration filename contract" — numbering is contiguous, so
+          #     `ls -v` can't silently skip a file (the real failure mode).
+          #   • "Apply migrations in order" — applied count == file count.
+          #   • .github/workflows/migration-drift.yml — compares the prod ledger
+          #     to supabase/migrations/, which is what actually catches drift.
 
       - name: Install Rust stable
         uses: dtolnay/rust-toolchain@stable

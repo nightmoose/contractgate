@@ -1,0 +1,48 @@
+name: Migration drift
+
+# Compares the prod Supabase ledger (supabase_migrations.schema_migrations) to
+# the files in supabase/migrations/. This is the check that would have caught
+# 024/025/027 unapplied (2026-07-09) and 033/034 applied-but-untracked
+# (2026-08-07); the old CI file-count sentinel caught neither.
+#
+# Scheduled rather than per-PR: it needs prod credentials, and drift is a
+# deploy-state problem, not a code-review problem.
+#
+# Requires repo secret SUPABASE_DB_URL (a Postgres connection string for the
+# prod project; read-only is sufficient). Without it the job skips with a
+# warning instead of failing, so forks and unconfigured repos stay green.
+
+on:
+  schedule:
+    - cron: "17 12 * * *" # 12:17 UTC daily
+  workflow_dispatch:
+
+jobs:
+  drift:
+    name: Prod ledger vs supabase/migrations/
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install PostgreSQL client
+        run: sudo apt-get install -y --no-install-recommends postgresql-client
+
+      - name: Compare ledger to migration files
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+        run: |
+          if [[ -z "${SUPABASE_DB_URL}" ]]; then
+            # A manual run is deliberate, so an empty secret is an error, not a
+            # skip: otherwise a typo'd secret name (or one scoped to an
+            # environment rather than the repo) looks permanently green.
+            if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+              echo "::error::SUPABASE_DB_URL is empty. The workflow reads secrets.SUPABASE_DB_URL — check the name matches character-for-character, and that it is a *repository* secret (environment secrets are not visible here)."
+              exit 1
+            fi
+            echo "::warning::SUPABASE_DB_URL secret not set — skipping migration drift check."
+            exit 0
+          fi
+          # Invoked via bash so a missing executable bit can't silently skip it.
+          bash scripts/check_migration_drift.sh
