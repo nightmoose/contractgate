@@ -2,6 +2,21 @@ import Link from "next/link";
 
 const DOCS = [
   {
+    // RFC-089: raw markdown served from public/ — must be a plain <a>, not a
+    // Next <Link>, so the browser fetches the file instead of client-routing.
+    external: true,
+    href: "/llm-integration.md",
+    icon: "🤖",
+    title: "Integration playbook for AI agents",
+    badge: "paste this",
+    badgeColor: "text-cyan-400 bg-cyan-900/30 border-cyan-700/40",
+    description:
+      "One URL to paste into Claude, Cursor, or Codex. The agent finds your event shape, infers a contract from real samples, deploys it, wires your producer to /v1/ingest, and verifies with a dry run — no docs reading required.",
+    pills: ["copy-paste", "curl + TS + Python", "dry-run verified", "no signup to read"],
+    cta: "Open the raw playbook →",
+  },
+  {
+    external: false,
     href: "/docs/python-sdk",
     icon: "🐍",
     title: "Python SDK",
@@ -13,6 +28,7 @@ const DOCS = [
     cta: "Read the Python SDK docs →",
   },
   {
+    external: false,
     href: "/docs/kafka-connect",
     icon: "🔗",
     title: "Kafka Connect SMT",
@@ -39,12 +55,10 @@ export default function DocsIndexPage() {
 
       {/* Cards */}
       <div className="space-y-5">
-        {DOCS.map(({ href, icon, title, badge, badgeColor, description, pills, cta }) => (
-          <Link
-            key={href}
-            href={href}
-            className="group block bg-[#111827] border border-[#1f2937] hover:border-green-800/60 rounded-xl p-6 transition-colors"
-          >
+        {DOCS.map(({ external, href, icon, title, badge, badgeColor, description, pills, cta }) => {
+          const cardClass =
+            "group block bg-[#111827] border border-[#1f2937] hover:border-green-800/60 rounded-xl p-6 transition-colors";
+          const body = (
             <div className="flex items-start gap-4">
               <span className="text-3xl mt-0.5">{icon}</span>
               <div className="flex-1 min-w-0">
@@ -74,8 +88,18 @@ export default function DocsIndexPage() {
                 </span>
               </div>
             </div>
-          </Link>
-        ))}
+          );
+
+          return external ? (
+            <a key={href} href={href} className={cardClass}>
+              {body}
+            </a>
+          ) : (
+            <Link key={href} href={href} className={cardClass}>
+              {body}
+            </Link>
+          );
+        })}
       </div>
 
       {/* Footer note */}

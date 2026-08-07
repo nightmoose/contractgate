@@ -23,6 +23,11 @@ dashboard/.env
 .vscode/
 .idea/
 dashboard/tsconfig.tsbuildinfo
+
+# RFC-089: build-time copies of docs/llms.txt + docs/llm-integration.md.
+# Canonical source is docs/ — never edit these.
+dashboard/public/llms.txt
+dashboard/public/llm-integration.md
 # Added by code-review-graph
 .code-review-graph/
 
@@ -40,3 +45,6 @@ sdks/python/.ruff_cache/
 
 # Claude
 .claude/
+
+# Supabase CLI local link state (project ref, pooler URL — not secrets, but local-only)
+supabase/.temp/

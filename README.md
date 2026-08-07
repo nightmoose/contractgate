@@ -19,6 +19,23 @@ ContractGate is a high-performance validation gateway that enforces rich semanti
 
 ---
 
+## Using Claude, Cursor, or Codex? Paste this
+
+```
+https://datacontractgate.com/llm-integration.md
+https://github.com/nightmoose/contractgate
+
+implement this in my repo
+```
+
+Your agent reads the [integration playbook](https://app.datacontractgate.com/llm-integration.md)
+([source](docs/llm-integration.md)), finds your event shape, infers a contract
+from real samples, deploys it, wires your producer to `/v1/ingest`, and verifies
+with a dry run before anything is written. Machine index:
+[`/llms.txt`](https://app.datacontractgate.com/llms.txt).
+
+---
+
 ## Try it in 10 minutes (Self-Hosted Free)
 
 No Supabase account. No API keys. No sign-up.

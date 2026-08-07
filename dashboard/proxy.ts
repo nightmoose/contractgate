@@ -25,7 +25,46 @@ function isPublic(pathname: string) {
   return PUBLIC_ROUTES.some((r) => pathname === r || pathname.startsWith(r + "/"));
 }
 
+// ── Rate limiting for auth endpoints ────────────────────────────────────────
+// In-memory token bucket, keyed by client IP. Resets per function instance,
+// so it's a soft cap rather than a hard global limit — good enough to blunt
+// scripted signup bursts without adding an external store. For a hard limit
+// across all instances, move this to Upstash Redis (Vercel Marketplace).
+const RATE_LIMITED_PREFIXES = ["/api/auth/", "/auth/callback"];
+const RATE_LIMIT_MAX = 10;
+const RATE_LIMIT_WINDOW_MS = 5 * 60 * 1000;
+
+const rateLimitBuckets = new Map<string, { count: number; resetAt: number }>();
+
+function isRateLimited(ip: string): boolean {
+  const now = Date.now();
+  const bucket = rateLimitBuckets.get(ip);
+
+  if (!bucket || now > bucket.resetAt) {
+    rateLimitBuckets.set(ip, { count: 1, resetAt: now + RATE_LIMIT_WINDOW_MS });
+    return false;
+  }
+
+  bucket.count += 1;
+  return bucket.count > RATE_LIMIT_MAX;
+}
+
+function getClientIp(request: NextRequest): string {
+  return request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? "unknown";
+}
+
 export async function proxy(request: NextRequest) {
+  const { pathname: rateLimitPathname } = request.nextUrl;
+  if (RATE_LIMITED_PREFIXES.some((p) => rateLimitPathname.startsWith(p))) {
+    const ip = getClientIp(request);
+    if (isRateLimited(ip)) {
+      return NextResponse.json(
+        { error: "Too many requests. Please try again later." },
+        { status: 429 }
+      );
+    }
+  }
+
   // Stripe webhooks are unauthenticated server-to-server POSTs (verified by
   // signature in the route handler, not by a Supabase session). They must skip
   // the auth gate, or the middleware 307-redirects them to /auth/login and the

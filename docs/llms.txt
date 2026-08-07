@@ -1,0 +1,27 @@
+# ContractGate
+
+> Semantic data-contract enforcement at ingestion. A high-performance Rust
+> gateway that validates every event against a rich YAML contract (ontology,
+> types, patterns, enums, glossary, computed metrics) and rejects, quarantines,
+> or masks bad data before it reaches a warehouse, lakehouse, or ML pipeline.
+> Per-event validation p99 is ~31 µs; 86k+ events/sec/core. Patent pending.
+
+API base URL: https://app.datacontractgate.com
+Source: https://github.com/nightmoose/contractgate
+
+## Start here
+
+- [Integration playbook for coding agents](https://app.datacontractgate.com/llm-integration.md): Paste this into Claude, Cursor, or Codex. End-to-end, executable: get a key, infer a contract from real samples, write and deploy the contract YAML, wire the producer to POST /v1/ingest, verify with a dry run.
+
+## Reference
+
+- [POST /v1/ingest/{contract_id}](https://github.com/nightmoose/contractgate/blob/main/docs/v1-ingest-reference.md): Universal HTTP ingest — JSON arrays or NDJSON, idempotency keys, atomic batches, version pinning, dry runs.
+- [Contract deploy](https://github.com/nightmoose/contractgate/blob/main/docs/deploy-contract-reference.md): POST /contracts/deploy and the `contractgate deploy-contract` CLI — atomic promotion to stable, prior-version deprecation.
+- [CSV and URL inference](https://github.com/nightmoose/contractgate/blob/main/docs/csv-inference-reference.md): Generate a draft contract from a CSV file or a public data URL.
+- [Quarantine and replay](https://github.com/nightmoose/contractgate/blob/main/docs/quarantine-replay-reference.md): Review rejected events and replay them against a corrected contract version.
+- [PII masking](https://github.com/nightmoose/contractgate/blob/main/docs/pii-masking-reference.md): Declarative `transform:` rules — mask or hash string fields after validation, before storage.
+- [OpenAPI spec](https://app.datacontractgate.com/openapi.json): Machine-readable route inventory for the whole gateway.
+
+## Optional
+
+- [Self-hosted quickstart](https://github.com/nightmoose/contractgate#try-it-in-10-minutes-self-hosted-free): `make demo` runs the real gateway locally — no account, no API key. Same contract format and same endpoints as cloud.

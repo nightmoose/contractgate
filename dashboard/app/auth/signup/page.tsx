@@ -2,12 +2,18 @@
 
 import { useState } from "react";
 import Link from "next/link";
+import { Turnstile } from "@marsidev/react-turnstile";
 import { createClient } from "@/lib/supabase/client";
+
+const TURNSTILE_SITE_KEY =
+  process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY ?? "1x00000000000000000000AA";
 
 export default function SignupPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [displayName, setDisplayName] = useState("");
+  const [website, setWebsite] = useState(""); // honeypot — real users never fill this
+  const [captchaToken, setCaptchaToken] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [githubLoading, setGithubLoading] = useState(false);
@@ -34,12 +40,37 @@ export default function SignupPage() {
     e.preventDefault();
     setError("");
 
+    // Honeypot: bots fill every field including hidden ones. Pretend success
+    // so the bot gets no signal to distinguish this from a real signup.
+    if (website) {
+      setEmailSent(true);
+      return;
+    }
+
     if (password.length < 8) {
       setError("Password must be at least 8 characters.");
       return;
     }
 
+    if (!captchaToken) {
+      setError("Please complete the captcha.");
+      return;
+    }
+
     setLoading(true);
+
+    const verifyRes = await fetch("/api/auth/verify-turnstile", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ token: captchaToken }),
+    });
+
+    if (!verifyRes.ok) {
+      setError("Captcha verification failed. Please try again.");
+      setLoading(false);
+      return;
+    }
+
     const supabase = createClient();
 
     const { error: authError } = await supabase.auth.signUp({
@@ -115,6 +146,18 @@ export default function SignupPage() {
           </div>
 
           <form onSubmit={handleSubmit} className="space-y-4">
+            {/* Honeypot — hidden from real users, bots fill every field */}
+            <input
+              type="text"
+              name="website"
+              value={website}
+              onChange={(e) => setWebsite(e.target.value)}
+              style={{ display: "none" }}
+              tabIndex={-1}
+              autoComplete="off"
+              aria-hidden="true"
+            />
+
             <div>
               <label className="block text-sm text-slate-400 mb-1.5" htmlFor="name">
                 Your name <span className="text-slate-600">(optional)</span>
@@ -161,6 +204,14 @@ export default function SignupPage() {
                 placeholder="At least 8 characters"
               />
             </div>
+
+            <Turnstile
+              siteKey={TURNSTILE_SITE_KEY}
+              onSuccess={(token) => setCaptchaToken(token)}
+              onExpire={() => setCaptchaToken("")}
+              onError={() => setCaptchaToken("")}
+              options={{ theme: "dark" }}
+            />
 
             {error && (
               <div className="bg-red-900/20 border border-red-700/40 rounded-lg px-3 py-2.5 text-sm text-red-400">

@@ -13,6 +13,22 @@ const nextConfig: NextConfig = {
   // Keep images unoptimized to avoid requiring a server image optimizer.
   images: { unoptimized: true },
 
+  // RFC-089: the agent-facing docs are copied into public/ by the prebuild
+  // step. Serve them as plain text so browsers render them inline instead of
+  // downloading, and so an agent fetching the URL gets markdown, not HTML.
+  async headers() {
+    return [
+      {
+        source: "/:path(llms.txt|llm-integration.md)",
+        headers: [
+          { key: "Content-Type", value: "text/plain; charset=utf-8" },
+          { key: "Cache-Control", value: "public, max-age=300" },
+          { key: "Access-Control-Allow-Origin", value: "*" },
+        ],
+      },
+    ];
+  },
+
   // Standalone output bundles server + node_modules for minimal Docker images.
   // Only active when NEXT_PUBLIC_DEMO_MODE is set (build arg from Dockerfile);
   // Vercel deploys ignore this because it detects the Vercel environment.
