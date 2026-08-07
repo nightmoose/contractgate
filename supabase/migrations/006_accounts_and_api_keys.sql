@@ -27,10 +27,17 @@ END $$;
 
 DO $$
 BEGIN
+    -- Local/CI stub only. Real Supabase already owns auth.users, so this
+    -- CREATE never fires there. Columns mirror the subset of the real table
+    -- that migrations and queries reference — keep them in sync: a migration
+    -- that touches a column missing here fails the CI migrations lane with
+    -- "column ... does not exist" (hit by 035 on 2026-08-06).
     CREATE TABLE IF NOT EXISTS auth.users (
         id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
         email text,
-        raw_user_meta_data jsonb
+        raw_user_meta_data jsonb,
+        created_at timestamptz NOT NULL DEFAULT now(),
+        last_sign_in_at timestamptz
     );
 EXCEPTION WHEN duplicate_table THEN null;
 END $$;

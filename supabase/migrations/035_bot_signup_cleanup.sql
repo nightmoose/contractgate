@@ -90,10 +90,28 @@ INSERT INTO _bot_accounts (user_id, org_id) VALUES
 DO $$
 DECLARE
     listed_count integer;
+    present_users integer;
     matching_users integer;
     clean_orgs integer;
 BEGIN
     SELECT count(*) INTO listed_count FROM _bot_accounts;
+
+    SELECT count(*) INTO present_users
+    FROM auth.users u
+    JOIN _bot_accounts b ON b.user_id = u.id;
+
+    -- Not the audited database: a fresh CI/local Postgres has an empty
+    -- auth.users stub, so none of the listed rows exist. Skip cleanly instead
+    -- of aborting — this is a one-time prod data cleanup, and the CI
+    -- migrations lane applies every file to an empty DB. The hard abort below
+    -- is reserved for the case where the rows ARE present but no longer match
+    -- what was audited.
+    IF present_users = 0 THEN
+        RAISE NOTICE
+            'Migration 035: none of the % audited bot accounts are present — skipping (no rows deleted).',
+            listed_count;
+        RETURN;
+    END IF;
 
     SELECT count(*) INTO matching_users
     FROM auth.users u
