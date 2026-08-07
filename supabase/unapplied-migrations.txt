@@ -1,0 +1,12 @@
+# Migrations that are intentionally NOT applied to prod yet.
+#
+# scripts/check_migration_drift.sh reports these as informational instead of
+# failing. Delete a line once the migration is applied — that re-arms the check.
+#
+# One migration filename per line; # starts a comment.
+
+# One-time prod data cleanup (50 bot signups from the 2026-07-22 audit).
+# Held 2026-08-07: the signup gating goes in first, then the cleanup is
+# re-audited against all currently-suspicious accounts (147 never-signed-in as
+# of 2026-08-07, vs the 57 total the original audit saw).
+035_bot_signup_cleanup
