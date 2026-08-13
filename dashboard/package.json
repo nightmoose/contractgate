@@ -12,7 +12,6 @@
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.52.0",
-    "@marsidev/react-turnstile": "^1.5.3",
     "@radix-ui/react-tooltip": "^1.2.12",
     "@supabase/ssr": "^0.12.1",
     "@supabase/supabase-js": "^2.110.3",
