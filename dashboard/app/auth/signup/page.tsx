@@ -5,8 +5,24 @@ import Link from "next/link";
 import { Turnstile } from "@marsidev/react-turnstile";
 import { createClient } from "@/lib/supabase/client";
 
+// Cloudflare's "always passes" test key — development only.
+//
+// It must never be the production fallback: the test widget mints a dummy token
+// that real siteverify rejects, so /api/auth/verify-turnstile returns
+// captcha_failed and EVERY signup is blocked with no server-side error to show
+// for it. That is exactly what happened 2026-08-07 → 08-13, when
+// NEXT_PUBLIC_TURNSTILE_SITE_KEY was unset on the production build: zero
+// signups for six days, indistinguishable from "the bot wave stopped".
+//
+// NEXT_PUBLIC_* is inlined at build time, so setting the variable in Vercel
+// only takes effect on the NEXT deployment — adding it does not fix a live build.
+const TURNSTILE_TEST_SITE_KEY = "1x00000000000000000000AA";
+
 const TURNSTILE_SITE_KEY =
-  process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY ?? "1x00000000000000000000AA";
+  process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY ??
+  (process.env.NODE_ENV === "production" ? "" : TURNSTILE_TEST_SITE_KEY);
+
+const CAPTCHA_MISCONFIGURED = TURNSTILE_SITE_KEY === "";
 
 export default function SignupPage() {
   const [email, setEmail] = useState("");
@@ -49,6 +65,15 @@ export default function SignupPage() {
 
     if (password.length < 8) {
       setError("Password must be at least 8 characters.");
+      return;
+    }
+
+    if (CAPTCHA_MISCONFIGURED) {
+      // Fail loudly rather than showing "complete the captcha" next to a widget
+      // that was never rendered — that reads as user error and hides an outage.
+      setError(
+        "Signup is temporarily unavailable (captcha not configured). Please contact support.",
+      );
       return;
     }
 
@@ -205,13 +230,20 @@ export default function SignupPage() {
               />
             </div>
 
-            <Turnstile
-              siteKey={TURNSTILE_SITE_KEY}
-              onSuccess={(token) => setCaptchaToken(token)}
-              onExpire={() => setCaptchaToken("")}
-              onError={() => setCaptchaToken("")}
-              options={{ theme: "dark" }}
-            />
+            {CAPTCHA_MISCONFIGURED ? (
+              <div className="rounded border border-red-800/60 bg-red-950/40 px-3 py-2 text-sm text-red-300">
+                Signup is temporarily unavailable — captcha is not configured for
+                this deployment. Please contact support.
+              </div>
+            ) : (
+              <Turnstile
+                siteKey={TURNSTILE_SITE_KEY}
+                onSuccess={(token) => setCaptchaToken(token)}
+                onExpire={() => setCaptchaToken("")}
+                onError={() => setCaptchaToken("")}
+                options={{ theme: "dark" }}
+              />
+            )}
 
             {error && (
               <div className="bg-red-900/20 border border-red-700/40 rounded-lg px-3 py-2.5 text-sm text-red-400">
