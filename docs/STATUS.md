@@ -96,7 +96,7 @@ signed off (may be planning docs or UI-only); **Draft** = under review;
 | 083 | [Event Metering + Usage API](rfcs/083-event-metering-and-usage.md) | Shipped (Phases 1–3) | `nightly-maintenance-2026-07-15-rfc083-phase2` |
 | 084 | [Slack Lead-Intake Bot](rfcs/084-slack-lead-bot.md) | Shipped | `nightly-maintenance-2026-07-15-rfc084-slack-bot` |
 | 085 | [Org Admin / Team Management](rfcs/085-org-admin-team-management.md) | Shipped | `nightly-maintenance-2026-07-16-rfc085-team-admin` |
-| 089 | [LLM-Pasteable Onboarding (`/llms.txt` + agent playbook)](rfcs/089-llm-agent-onboarding.md) | Draft | — |
+| 089 | [LLM-Pasteable Onboarding (`/llms.txt` + agent playbook)](rfcs/089-llm-agent-onboarding.md) | Shipped | `nightly-maintenance-2026-07-22-bot-signup-cleanup` |
 
 ---
 
@@ -113,6 +113,8 @@ signed off (may be planning docs or UI-only); **Draft** = under review;
 | **Superseded** | Replaced by a later RFC listed in the notes column; kept for design context. |
 
 ---
+
+*2026-08-13 — RFC-089 shipped: `docs/llm-integration.md` (agent-executable integration playbook) and `docs/llms.txt`, copied into `dashboard/public/` by a prebuild step and served raw at `app.datacontractgate.com/llm-integration.md` + `/llms.txt`; `datacontractgate.com` 307s to both, and the marketing site carries a copy-the-prompt block. Drift gate `tests/llm_docs_test.rs` asserts every endpoint the playbook cites exists in the router and that its example contract compiles. Same branch also replaced the CI migration file-count sentinel with a filename-contract check (contiguous NNN_ prefixes, no duplicates) plus `.github/workflows/migration-drift.yml`, which compares the prod ledger to `supabase/migrations/` daily — the check that would have caught 033/034 being applied-but-untracked. Migration 035 is held (listed in `supabase/unapplied-migrations.txt`) pending a re-audit against current signups.*
 
 *Last updated: 2026-07-16 — RFC-078/079/080 implemented on `feature-RFCs_deferred`: RFC-079 unifies contract inference on the Rust engine (Generate-from-Sample now routes through `POST /contracts/infer`, nested objects infer correctly, JS inferrer removed); RFC-080 adds Visual Builder nested-object support; RFC-078 adds the cross-surface walkthrough spine + API/CSV/Kafka/Kinesis walkthroughs with cg-validated runnable examples. RFC-077 RAG profile moved to Accepted — contract, examples, and reference doc are shipped and engine-validated, but GA promotion is deferred until a RAG prospect is active.*
 

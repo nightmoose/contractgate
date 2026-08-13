@@ -19,6 +19,31 @@ if [[ -z "$DB_URL" ]]; then
     exit 2
 fi
 
+# psql treats a value that isn't a postgres:// URI as a *database name* and
+# connects over the local Unix socket, which fails with a confusing
+# "/var/run/postgresql/.s.PGSQL.5432: No such file or directory". Catch the
+# common mistake (Supabase API URL or a key pasted instead of the DB URI) here.
+# Never echo the value itself — it contains the password.
+if [[ "$DB_URL" != postgres://* && "$DB_URL" != postgresql://* ]]; then
+    echo "::error::SUPABASE_DB_URL is not a Postgres connection string (must start with postgres:// or postgresql://)." >&2
+    echo "Supabase dashboard → Connect → Session pooler. Shape:" >&2
+    echo "  postgresql://postgres.<project-ref>:<password>@aws-N-<region>.pooler.supabase.com:5432/postgres" >&2
+    echo "The https://<ref>.supabase.co API URL and the service-role key are NOT usable here." >&2
+    exit 2
+fi
+
+# Supabase's direct endpoint resolves to IPv6 only. GitHub-hosted runners have
+# no IPv6 route, so this always fails with "Network is unreachable" — use a
+# pooler host instead. Allowed locally, where IPv6 usually works.
+if [[ "$DB_URL" == *"@db."*".supabase.co"* && -n "${CI:-}" ]]; then
+    echo "::error::SUPABASE_DB_URL points at the direct endpoint (db.<ref>.supabase.co), which is IPv6-only and unreachable from GitHub runners." >&2
+    echo "Supabase dashboard → Connect → Session pooler. The host ends in .pooler.supabase.com and the user is postgres.<project-ref>." >&2
+    exit 2
+fi
+
+# Fail fast instead of hanging for the default two minutes on an unroutable host.
+export PGCONNECT_TIMEOUT="${PGCONNECT_TIMEOUT:-15}"
+
 repo_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 mig_dir="$repo_root/supabase/migrations"
 unapplied_list="$repo_root/supabase/unapplied-migrations.txt"
