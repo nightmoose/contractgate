@@ -60,6 +60,26 @@ updates:
         update-types:
           - "minor"
           - "patch"
+    ignore:
+      # Kafka Connect API — pinned deliberately, do not let Dependabot raise it.
+      #
+      # connect-api / connect-transforms are `provided` scope: they are not in
+      # the shipped jar, and the user's Connect worker supplies the classes at
+      # runtime. The pom version is therefore a *compile floor*, not a runtime
+      # version, and Dependabot's newest-is-best heuristic is backwards here:
+      #
+      #   • A jar built against 3.6.0 already runs on a Kafka 4.x worker — the
+      #     Connect API is backward compatible. Bumping buys 4.x users nothing.
+      #   • Building against 4.x binds symbols missing on 3.x/2.8 workers, so it
+      #     would break every user not yet on 4 (NoSuchMethodError at runtime).
+      #   • No security exposure to close: `provided` deps ship nothing.
+      #   • Kafka 4 Connect needs Java 17; this module targets Java 11 and its
+      #     tests pin wiremock-jre8 for that reason.
+      #
+      # Raise this only as a deliberate support-policy change (compile floor +
+      # java.version + the "Kafka Connect 2.8+" claim in README and the
+      # dashboard docs card). Declined 2026-08-13 (PR #167, 3.6.0 → 4.3.1).
+      - dependency-name: "org.apache.kafka:*"
 
   # ── Docker base images ────────────────────────────────────────────────────
   - package-ecosystem: "docker"
