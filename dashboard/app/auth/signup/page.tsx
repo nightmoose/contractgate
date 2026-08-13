@@ -2,34 +2,20 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { Turnstile } from "@marsidev/react-turnstile";
 import { createClient } from "@/lib/supabase/client";
 
-// Cloudflare's "always passes" test key — development only.
-//
-// It must never be the production fallback: the test widget mints a dummy token
-// that real siteverify rejects, so /api/auth/verify-turnstile returns
-// captcha_failed and EVERY signup is blocked with no server-side error to show
-// for it. That is exactly what happened 2026-08-07 → 08-13, when
-// NEXT_PUBLIC_TURNSTILE_SITE_KEY was unset on the production build: zero
-// signups for six days, indistinguishable from "the bot wave stopped".
-//
-// NEXT_PUBLIC_* is inlined at build time, so setting the variable in Vercel
-// only takes effect on the NEXT deployment — adding it does not fix a live build.
-const TURNSTILE_TEST_SITE_KEY = "1x00000000000000000000AA";
-
-const TURNSTILE_SITE_KEY =
-  process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY ??
-  (process.env.NODE_ENV === "production" ? "" : TURNSTILE_TEST_SITE_KEY);
-
-const CAPTCHA_MISCONFIGURED = TURNSTILE_SITE_KEY === "";
+// Removed 2026-08-13: a Cloudflare Turnstile captcha added in ac74758 (Jul 24)
+// fell back to Cloudflare's "always passes" test site key when
+// NEXT_PUBLIC_TURNSTILE_SITE_KEY was unset. Production had no such key and no
+// Turnstile widget existed, so the dummy token failed real verification and
+// every signup was blocked from 2026-08-07 to 08-13. Bot defence here is the
+// honeypot below plus email confirmation.
 
 export default function SignupPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [displayName, setDisplayName] = useState("");
   const [website, setWebsite] = useState(""); // honeypot — real users never fill this
-  const [captchaToken, setCaptchaToken] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [githubLoading, setGithubLoading] = useState(false);
@@ -68,33 +54,7 @@ export default function SignupPage() {
       return;
     }
 
-    if (CAPTCHA_MISCONFIGURED) {
-      // Fail loudly rather than showing "complete the captcha" next to a widget
-      // that was never rendered — that reads as user error and hides an outage.
-      setError(
-        "Signup is temporarily unavailable (captcha not configured). Please contact support.",
-      );
-      return;
-    }
-
-    if (!captchaToken) {
-      setError("Please complete the captcha.");
-      return;
-    }
-
     setLoading(true);
-
-    const verifyRes = await fetch("/api/auth/verify-turnstile", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ token: captchaToken }),
-    });
-
-    if (!verifyRes.ok) {
-      setError("Captcha verification failed. Please try again.");
-      setLoading(false);
-      return;
-    }
 
     const supabase = createClient();
 
@@ -229,21 +189,6 @@ export default function SignupPage() {
                 placeholder="At least 8 characters"
               />
             </div>
-
-            {CAPTCHA_MISCONFIGURED ? (
-              <div className="rounded border border-red-800/60 bg-red-950/40 px-3 py-2 text-sm text-red-300">
-                Signup is temporarily unavailable — captcha is not configured for
-                this deployment. Please contact support.
-              </div>
-            ) : (
-              <Turnstile
-                siteKey={TURNSTILE_SITE_KEY}
-                onSuccess={(token) => setCaptchaToken(token)}
-                onExpire={() => setCaptchaToken("")}
-                onError={() => setCaptchaToken("")}
-                options={{ theme: "dark" }}
-              />
-            )}
 
             {error && (
               <div className="bg-red-900/20 border border-red-700/40 rounded-lg px-3 py-2.5 text-sm text-red-400">
