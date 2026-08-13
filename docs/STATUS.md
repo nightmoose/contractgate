@@ -96,7 +96,7 @@ signed off (may be planning docs or UI-only); **Draft** = under review;
 | 083 | [Event Metering + Usage API](rfcs/083-event-metering-and-usage.md) | Shipped (Phases 1–3) | `nightly-maintenance-2026-07-15-rfc083-phase2` |
 | 084 | [Slack Lead-Intake Bot](rfcs/084-slack-lead-bot.md) | Shipped | `nightly-maintenance-2026-07-15-rfc084-slack-bot` |
 | 085 | [Org Admin / Team Management](rfcs/085-org-admin-team-management.md) | Shipped | `nightly-maintenance-2026-07-16-rfc085-team-admin` |
-| 089 | [LLM-Pasteable Onboarding (`/llms.txt` + agent playbook)](rfcs/089-llm-agent-onboarding.md) | Draft | — |
+| 089 | [LLM-Pasteable Onboarding (`/llms.txt` + agent playbook)](rfcs/089-llm-agent-onboarding.md) | Shipped | `nightly-maintenance-2026-07-22-bot-signup-cleanup` |
 
 ---
 
