@@ -148,30 +148,46 @@ zero logins ever, and a random-token `display_name` (e.g.
 automatically — run it via `supabase db push` when ready). Three defenses now
 sit in front of `/auth/signup`:
 
-1. **Cloudflare Turnstile** — the signup form renders a Turnstile widget
-   (`dashboard/app/auth/signup/page.tsx`). The token it produces is verified
-   server-side at `POST /api/auth/verify-turnstile`
-   (`dashboard/app/api/auth/verify-turnstile/route.ts`), which calls
-   Cloudflare's `siteverify` endpoint with `TURNSTILE_SECRET_KEY` before the
-   client is allowed to call `supabase.auth.signUp()`. The secret never
-   reaches the browser.
+> **Revised 2026-08-13.** Two of the three original defenses were removed after
+> the captcha caused a six-day signup outage (2026-08-07 → 08-13). See
+> "Removed defenses" below before re-adding anything here.
 
-   | Env var | Where | Notes |
-   |---|---|---|
-   | `NEXT_PUBLIC_TURNSTILE_SITE_KEY` | client + server | Public by design. Dev default `1x00000000000000000000AA` (Cloudflare's always-pass test key). |
-   | `TURNSTILE_SECRET_KEY` | server only | Get both at https://dash.cloudflare.com → Turnstile → Add site. If unset, the verify route fails closed in production and passes through in dev. |
+1. **Honeypot field** — an `hp_field` input, hidden via CSS and skipped by
+   `tabIndex={-1}`/`autoComplete="off"`/`aria-hidden`, sits in the signup form.
+   Real users never fill it; scripts that blindly fill every field do. If it's
+   non-empty on submit, the client pretends signup succeeded without calling
+   Supabase — no error is shown, so the bot gets no signal to adapt to.
 
-2. **Honeypot field** — a `website` input, hidden via CSS and skipped by
-   `tabIndex={-1}`/`autoComplete="off"`, sits in the signup form. Real users
-   never fill it; scripts that blindly fill every field do. If it's non-empty
-   on submit, the client pretends signup succeeded without calling Supabase —
-   no error is shown, so the bot gets no signal to adapt to.
+   The field name is deliberately meaningless. It was originally `website`,
+   which is exactly what password managers and browser autofill populate — a
+   genuine user whose manager filled it would see "Check your email" and never
+   receive one, with nothing logged anywhere. **Do not rename it to anything
+   semantic** (`website`, `url`, `company`, `phone`).
 
-3. **Rate limiting** — `dashboard/proxy.ts` caps requests to `/api/auth/*` and
-   `/auth/callback` at 10 per 5 minutes per client IP, via an in-memory
-   token bucket. This is per-instance (soft cap, not a hard global limit
-   across all Vercel function instances); for a hard limit, move the bucket
-   to Upstash Redis (Vercel Marketplace).
+2. **Email confirmation** — an account is unusable until the link in the
+   confirmation email is clicked, so an unconfirmed row grants no access.
+
+### Removed defenses
+
+- **Cloudflare Turnstile (removed 2026-08-13).** The signup form rendered a
+  Turnstile widget whose site key came from `NEXT_PUBLIC_TURNSTILE_SITE_KEY`,
+  falling back to Cloudflare's always-pass *test* key when unset. No key was
+  ever added to Vercel and no widget existed in the Cloudflare account, so the
+  production bundle shipped the dummy key, its token failed real `siteverify`,
+  and **every signup was blocked from 2026-08-07 to 08-13**. `NEXT_PUBLIC_*` is
+  inlined at build time, so this was invisible in dev and in CI. If a captcha is
+  ever re-added: create the widget first, and never give a public key a dev
+  fallback that silently changes production behavior.
+  `dashboard/scripts/check-required-env.mjs` now fails a production build on a
+  missing or localhost-valued required public var.
+
+- **IP rate limiting (removed 2026-08-13).** `dashboard/proxy.ts` capped
+  `/api/auth/*` and `/auth/callback` at 10 per 5 minutes per IP via an
+  in-memory bucket. Per-instance memory means it was never a real ceiling for a
+  distributed bot, while `/auth/callback` is the email-confirmation hop and
+  carrier/office NAT puts many users on one IP — real availability risk for
+  negligible protection. Supabase applies its own server-side rate limits to
+  auth endpoints; tune them there (Auth → Rate Limits) if bots return.
 
 ## Summary — resolution order
 

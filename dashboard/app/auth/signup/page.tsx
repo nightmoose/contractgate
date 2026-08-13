@@ -15,7 +15,10 @@ export default function SignupPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [displayName, setDisplayName] = useState("");
-  const [website, setWebsite] = useState(""); // honeypot — real users never fill this
+  // Honeypot. Deliberately NOT named website/url/company: password managers and
+  // browser autofill recognise those and would fill this hidden input for a real
+  // user, who would then get a fake "check your email" and never receive one.
+  const [hpField, setHpField] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [githubLoading, setGithubLoading] = useState(false);
@@ -44,7 +47,7 @@ export default function SignupPage() {
 
     // Honeypot: bots fill every field including hidden ones. Pretend success
     // so the bot gets no signal to distinguish this from a real signup.
-    if (website) {
+    if (hpField) {
       setEmailSent(true);
       return;
     }
@@ -131,12 +134,14 @@ export default function SignupPage() {
           </div>
 
           <form onSubmit={handleSubmit} className="space-y-4">
-            {/* Honeypot — hidden from real users, bots fill every field */}
+            {/* Honeypot — hidden from real users, bots fill every field.
+                The name must stay meaningless: autofill targets website/url/
+                company and would silently trip this for a genuine user. */}
             <input
               type="text"
-              name="website"
-              value={website}
-              onChange={(e) => setWebsite(e.target.value)}
+              name="hp_field"
+              value={hpField}
+              onChange={(e) => setHpField(e.target.value)}
               style={{ display: "none" }}
               tabIndex={-1}
               autoComplete="off"
