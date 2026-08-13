@@ -4,7 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "node scripts/sync-llm-docs.mjs && next dev",
-    "prebuild": "node scripts/sync-llm-docs.mjs",
+    "prebuild": "node scripts/check-required-env.mjs && node scripts/sync-llm-docs.mjs",
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
