@@ -19,6 +19,12 @@ const PUBLIC_ROUTES = [
   "/audit",
   "/playground",
   "/account",
+  // RFC-089 agent-facing docs. These MUST be reachable anonymously — the whole
+  // point is that Claude/Cursor/Codex fetch them without credentials. Also
+  // listed here as defense in depth: the matcher below already excludes them,
+  // but a future matcher edit shouldn't silently re-gate them.
+  "/llms.txt",
+  "/llm-integration.md",
 ];
 
 function isPublic(pathname: string) {
@@ -105,6 +111,12 @@ export async function proxy(request: NextRequest) {
 
 export const config = {
   matcher: [
-    "/((?!_next/static|_next/image|favicon.ico|logo.png|logo.svg|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)",
+    // The extension list must cover every static file served from public/.
+    // txt/md/xml added 2026-08-14: without them the middleware redirected
+    // /llms.txt, /llm-integration.md, /robots.txt and /sitemap.xml to
+    // /auth/login for anonymous requests — i.e. for every coding agent and
+    // every crawler, which is precisely the audience those files exist for.
+    // A logged-in browser sailed through, which is why it went unnoticed.
+    "/((?!_next/static|_next/image|favicon.ico|logo.png|logo.svg|.*\\.(?:svg|png|jpg|jpeg|gif|webp|txt|md|xml)$).*)",
   ],
 };

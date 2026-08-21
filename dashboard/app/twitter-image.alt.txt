@@ -1,0 +1,1 @@
+ContractGate — stop bad data before it hits your warehouse. Semantic contracts enforced at ingestion.
