@@ -54,3 +54,6 @@ supabase/.temp/
 # drafts/ (e.g. to the website repo or a public gist) if you want them in git.
 docs/marketing/drafts/
 !docs/marketing/drafts/README.md
+
+# ClankerSpanker hunter outbox (drafts, never sent)
+.bot-outbox/
