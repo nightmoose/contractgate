@@ -1,0 +1,16 @@
+# Pin the toolchain so local and CI compile with the same rustc and the same
+# clippy lint set.
+#
+# Why: on 2026-08-14 CI failed `cargo clippy --all-targets -- -D warnings` on a
+# PR containing zero Rust changes. CI used `dtolnay/rust-toolchain@stable`,
+# which had moved to 1.98.0 and added `clippy::useless_format`; the local
+# toolchain was older, so `cargo clippy` passed on the developer's machine and
+# failed in CI on identical code. A deny-by-default lint set plus a floating
+# compiler means any Rust release can break an unrelated PR.
+#
+# Bumping this is a deliberate, reviewable change: update the channel, run
+# `cargo clippy --all-targets -- -D warnings` locally, fix what the new release
+# flags, and commit the two together.
+[toolchain]
+channel = "1.98.0"
+components = ["clippy", "rustfmt"]

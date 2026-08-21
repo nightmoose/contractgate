@@ -316,7 +316,9 @@ fn render_contractgate_yaml(
     use crate::contract::FieldType;
 
     let mut lines = vec![
-        format!("version: \"1.0\""),
+        // Not format!(): no interpolation here, and clippy::useless_format is
+        // deny-by-default in CI (fires from Rust 1.98).
+        "version: \"1.0\"".to_string(),
         format!("name: \"{name}\""),
         format!("description: \"{description}\""),
         String::new(),
