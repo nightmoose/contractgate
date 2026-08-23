@@ -16,6 +16,8 @@ presets carry the same core rule — pick the one your team uses.
 | Claude Code, Codex, others | `AGENT.md` | Paste into your project's agent instructions file |
 
 Every preset points the agent at the canonical playbook:
-<https://app.datacontractgate.com/llm-integration.md>. Nothing here duplicates
-that content — the presets are short by design so they can be dropped into
-a repo without becoming a maintenance burden.
+<https://app.datacontractgate.com/llm-integration.md>. If the host has the
+ContractGate MCP server connected, the presets tell the agent to use those
+tools instead of curl. Nothing here duplicates the playbook — the presets
+are short by design so they can be dropped into a repo without becoming a
+maintenance burden.

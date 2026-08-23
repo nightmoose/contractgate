@@ -2,6 +2,7 @@
  * RFC-089 — copy the agent-facing docs into public/ so they are served raw at
  *   https://app.datacontractgate.com/llms.txt
  *   https://app.datacontractgate.com/llm-integration.md
+ *   https://app.datacontractgate.com/mcp-reference.md
  *   https://app.datacontractgate.com/llms-full.txt
  *
  * Canonical source is docs/ at the repo root. The copies in public/ are
@@ -23,12 +24,13 @@ const here = dirname(fileURLToPath(import.meta.url));
 const docsDir = join(here, "..", "..", "docs");
 const publicDir = join(here, "..", "public");
 
-const FILES = ["llms.txt", "llm-integration.md"];
+const FILES = ["llms.txt", "llm-integration.md", "mcp-reference.md"];
 
 // Order matches the "Reference" section of llms.txt. Playbook first so agents
 // hit the executable flow before the deep reference material.
 const FULL_BUNDLE = [
   "llm-integration.md",
+  "mcp-reference.md",
   "v1-ingest-reference.md",
   "deploy-contract-reference.md",
   "csv-inference-reference.md",

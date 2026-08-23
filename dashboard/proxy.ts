@@ -25,6 +25,7 @@ const PUBLIC_ROUTES = [
   // but a future matcher edit shouldn't silently re-gate them.
   "/llms.txt",
   "/llm-integration.md",
+  "/mcp-reference.md",
 ];
 
 function isPublic(pathname: string) {

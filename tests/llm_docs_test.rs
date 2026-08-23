@@ -66,17 +66,14 @@ fn cited_endpoints(doc: &str) -> Vec<(String, String)> {
     out
 }
 
-#[test]
-fn playbook_only_cites_routes_that_exist() {
-    let doc = fs::read_to_string(repo_path("docs/llm-integration.md"))
-        .expect("read docs/llm-integration.md");
+fn assert_doc_only_cites_existing_routes(rel: &str, min_cited: usize) {
+    let doc = fs::read_to_string(repo_path(rel)).unwrap_or_else(|_| panic!("read {rel}"));
     let declared = declared_paths();
     let cited = cited_endpoints(&doc);
 
     assert!(
-        cited.len() >= 5,
-        "extracted only {} endpoints from the playbook — the extractor is broken, \
-         not the doc",
+        cited.len() >= min_cited,
+        "extracted only {} endpoints from {rel} — the extractor is broken, not the doc",
         cited.len()
     );
 
@@ -88,9 +85,19 @@ fn playbook_only_cites_routes_that_exist() {
 
     assert!(
         missing.is_empty(),
-        "docs/llm-integration.md cites routes that do not exist in src/main.rs: {missing:?}\n\
+        "{rel} cites routes that do not exist in src/main.rs: {missing:?}\n\
          Fix the doc (or restore the route) — agents execute this file verbatim."
     );
+}
+
+#[test]
+fn playbook_only_cites_routes_that_exist() {
+    assert_doc_only_cites_existing_routes("docs/llm-integration.md", 5);
+}
+
+#[test]
+fn mcp_reference_only_cites_routes_that_exist() {
+    assert_doc_only_cites_existing_routes("docs/mcp-reference.md", 3);
 }
 
 #[test]

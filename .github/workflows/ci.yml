@@ -3,6 +3,7 @@
 # Jobs:
 #   rust-check         — cargo fmt/check/clippy/test (no DB needed)
 #   dashboard          — Next.js type-check + lint + build
+#   mcp                — MCP server typecheck + unit tests + tsc (RFC-090)
 #   docker             — Dockerfile builds (buildx + GHA layer cache, no push)
 #   migrations-check   — apply migrations to Postgres 16, sqlx prepare --check
 #   compose-smoke      — default compose stack end-to-end smoke
@@ -184,6 +185,39 @@ jobs:
         env:
           # Point at localhost during CI; no real backend needed for static build
           NEXT_PUBLIC_API_URL: "http://localhost:3001"
+
+  # ── MCP server (RFC-090) ──────────────────────────────────
+  mcp:
+    name: MCP — typecheck / test
+    needs: changes
+    if: ${{ needs.changes.outputs.heavy == 'true' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    defaults:
+      run:
+        working-directory: mcp
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+          cache-dependency-path: mcp/package-lock.json
+
+      - name: npm install
+        run: npm install
+
+      - name: TypeScript type-check
+        run: npm run typecheck
+
+      - name: Unit tests
+        run: npm test
+
+      - name: Build
+        run: npm run build
 
   # ── Docker build smoke-test ───────────────────────────────
   docker:

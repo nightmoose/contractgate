@@ -34,6 +34,24 @@ from real samples, deploys it, wires your producer to `/v1/ingest`, and verifies
 with a dry run before anything is written. Machine index:
 [`/llms.txt`](https://app.datacontractgate.com/llms.txt).
 
+MCP (Cursor, Claude Desktop, Windsurf, Copilot, Codex):
+
+```json
+{
+  "mcpServers": {
+    "contractgate": {
+      "command": "npx",
+      "args": ["-y", "@contractgate/mcp-server"],
+      "env": {
+        "CONTRACTGATE_API_KEY": "${CONTRACTGATE_API_KEY}"
+      }
+    }
+  }
+}
+```
+
+Tools and auth: [`docs/mcp-reference.md`](docs/mcp-reference.md).
+
 ---
 
 ## Try it in 10 minutes (Self-Hosted Free)

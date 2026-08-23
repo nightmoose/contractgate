@@ -6,6 +6,8 @@ target/
 .env.local
 
 # Node / Next.js
+mcp/node_modules/
+mcp/dist/
 dashboard/node_modules/
 dashboard/.next/
 dashboard/.next-verify*/
@@ -30,6 +32,7 @@ dashboard/tsconfig.tsbuildinfo
 dashboard/public/llms.txt
 dashboard/public/llm-integration.md
 dashboard/public/llms-full.txt
+dashboard/public/mcp-reference.md
 # Added by code-review-graph
 .code-review-graph/
 

@@ -38,6 +38,11 @@ gateway — verified with a dry run before anything writes.
 
 Every request below sends the key as the `X-Api-Key` header.
 
+If the ContractGate MCP server is connected, prefer its tools
+(`infer_contract`, `validate_events`, `deploy_contract`, `get_quarantine`,
+`list_contracts`) over constructing `curl` calls. Setup:
+<https://app.datacontractgate.com/mcp-reference.md>.
+
 ---
 
 ## §1 — Find the event shape in the user's repo
