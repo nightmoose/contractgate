@@ -22,7 +22,7 @@ ContractGate is a high-performance validation gateway that enforces rich semanti
 ## Using Claude, Cursor, or Codex? Paste this
 
 ```
-https://datacontractgate.com/llm-integration.md
+https://app.datacontractgate.com/llm-integration.md
 https://github.com/nightmoose/contractgate
 
 implement this in my repo

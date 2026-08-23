@@ -248,6 +248,7 @@ mod tests {
             field: field.to_string(),
             message: format!("{field} failed {rule}"),
             kind: ViolationKind::TypeMismatch,
+            ..Default::default()
         }
     }
 

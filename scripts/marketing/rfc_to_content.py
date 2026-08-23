@@ -63,7 +63,7 @@ Voice + style rules (non-negotiable):
   would cringe reading it in someone else's post, cut it.
 - Every long-form artifact (blog, reddit) includes at least one code block or
   YAML snippet a reader could copy.
-- Every long-form artifact links to https://datacontractgate.com/llm-integration.md
+- Every long-form artifact links to https://app.datacontractgate.com/llm-integration.md
   in the closing paragraph, not the opener.
 - Never claim shipped-in-prod behavior the RFC does not describe. If the RFC is
   Draft, frame the post as design/plans, not release.
@@ -89,7 +89,7 @@ Write a dev.to-ready blog post based on the RFC below. Requirements:
 - Structure: (1) problem in the wild (1-2 paras), (2) why existing tools don't
   solve it, (3) what we shipped and how it works (with 1+ code or YAML block),
   (4) the interesting engineering trade-off, (5) close with a "try it" line
-  linking to https://datacontractgate.com/llm-integration.md.
+  linking to https://app.datacontractgate.com/llm-integration.md.
 - Use "we" throughout.
 - Output the blog post ONLY. No preamble, no explanation, no trailing "Hope
   this helps!" — just the frontmatter + body ready to paste into dev.to.
@@ -148,7 +148,7 @@ generically. Mention ContractGate only in the second half, and only once by
 name — the rest of the time refer to it as "the gate we built" or similar.
 Include at least one code or YAML block. Close with: "Repo:
 https://github.com/nightmoose/contractgate — playbook for wiring it into an
-existing stack: https://datacontractgate.com/llm-integration.md. Happy to
+existing stack: https://app.datacontractgate.com/llm-integration.md. Happy to
 answer questions." No signup CTA. No "check us out".>
 
 Output the three sections above ONLY. No preamble.
@@ -302,7 +302,7 @@ Review checklist before publishing:
   □ HN title starts with "Show HN:" and is ≤80 chars.
   □ Every X tweet is ≤280 chars including the [k/N] prefix.
   □ Reddit body's first two paragraphs do not name ContractGate.
-  □ Closing link points to https://datacontractgate.com/llm-integration.md.
+  □ Closing link points to https://app.datacontractgate.com/llm-integration.md.
   □ Nothing claims prod behavior that isn't shipped (check RFC status).
 """
 

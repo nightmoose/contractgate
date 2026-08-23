@@ -1028,6 +1028,9 @@ fn envelope_per_record_results(
         field: v.field.clone(),
         message: v.message.clone(),
         kind: v.kind.clone(),
+        received: v.received.clone(),
+        expected: v.expected.clone(),
+        suggestion: v.suggestion.clone(),
     };
 
     match records {
@@ -1080,6 +1083,7 @@ fn envelope_per_record_results(
                     field: envelope_cfg.records_path.clone(),
                     message: "Envelope produced no extractable records".into(),
                     kind: crate::validation::ViolationKind::MissingRequiredField,
+                    ..Default::default()
                 }]
             } else {
                 batch.violations.iter().map(to_violation).collect()
@@ -1327,6 +1331,7 @@ mod envelope_persist_tests {
                 field: "id".into(),
                 message: "bad".into(),
                 kind: ViolationKind::TypeMismatch,
+                ..Default::default()
             }],
             validation_us: 42,
         };
@@ -1351,6 +1356,7 @@ mod envelope_persist_tests {
                 field: "success".into(),
                 message: "must be boolean".into(),
                 kind: ViolationKind::TypeMismatch,
+                ..Default::default()
             }],
             validation_us: 1,
         };
@@ -1373,6 +1379,7 @@ mod envelope_persist_tests {
                 field: "<root>".into(),
                 message: "must be object".into(),
                 kind: ViolationKind::TypeMismatch,
+                ..Default::default()
             }],
             validation_us: 1,
         };

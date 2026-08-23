@@ -35,6 +35,17 @@ export const metadata: Metadata = {
     title: TITLE,
     description: DESCRIPTION,
   },
+  // Machine-discoverable markdown surfaces for AI coding agents. Agents that
+  // scrape a page for `<link rel="alternate" type="text/markdown">` find the
+  // LLM index and full documentation bundle without any heuristics.
+  alternates: {
+    types: {
+      "text/markdown": [
+        { url: "/llms.txt", title: "LLM Index" },
+        { url: "/llms-full.txt", title: "Full LLM Documentation" },
+      ],
+    },
+  },
 };
 
 export default function RootLayout({

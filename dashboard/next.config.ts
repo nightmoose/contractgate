@@ -19,7 +19,7 @@ const nextConfig: NextConfig = {
   async headers() {
     return [
       {
-        source: "/:path(llms.txt|llm-integration.md)",
+        source: "/:path(llms.txt|llms-full.txt|llm-integration.md)",
         headers: [
           { key: "Content-Type", value: "text/plain; charset=utf-8" },
           { key: "Cache-Control", value: "public, max-age=300" },
