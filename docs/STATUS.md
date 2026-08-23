@@ -97,6 +97,7 @@ signed off (may be planning docs or UI-only); **Draft** = under review;
 | 084 | [Slack Lead-Intake Bot](rfcs/084-slack-lead-bot.md) | Shipped | `nightly-maintenance-2026-07-15-rfc084-slack-bot` |
 | 085 | [Org Admin / Team Management](rfcs/085-org-admin-team-management.md) | Shipped | `nightly-maintenance-2026-07-16-rfc085-team-admin` |
 | 089 | [LLM-Pasteable Onboarding (`/llms.txt` + agent playbook)](rfcs/089-llm-agent-onboarding.md) | Shipped | `nightly-maintenance-2026-07-22-bot-signup-cleanup` |
+| 090 | [Official MCP Server (stdio)](rfcs/090-mcp-server.md) | Accepted | `nightly-maintenance-2026-08-23-rfc090` |
 
 ---
 
@@ -113,6 +114,8 @@ signed off (may be planning docs or UI-only); **Draft** = under review;
 | **Superseded** | Replaced by a later RFC listed in the notes column; kept for design context. |
 
 ---
+
+*2026-08-23 — RFC-090: official stdio MCP server at `mcp/` (`npx -y @contractgate/mcp-server`). Tools wrap existing gateway routes (infer, dry-run ingest / playground, deploy, quarantine, list). No engine changes. Reference: `docs/mcp-reference.md`, served raw at `/mcp-reference.md`.
 
 *2026-08-13 — RFC-089 shipped: `docs/llm-integration.md` (agent-executable integration playbook) and `docs/llms.txt`, copied into `dashboard/public/` by a prebuild step and served raw at `app.datacontractgate.com/llm-integration.md` + `/llms.txt`; `datacontractgate.com` 307s to both, and the marketing site carries a copy-the-prompt block. Drift gate `tests/llm_docs_test.rs` asserts every endpoint the playbook cites exists in the router and that its example contract compiles. Same branch also replaced the CI migration file-count sentinel with a filename-contract check (contiguous NNN_ prefixes, no duplicates) plus `.github/workflows/migration-drift.yml`, which compares the prod ledger to `supabase/migrations/` daily — the check that would have caught 033/034 being applied-but-untracked. Migration 035 is held (listed in `supabase/unapplied-migrations.txt`) pending a re-audit against current signups.*
 

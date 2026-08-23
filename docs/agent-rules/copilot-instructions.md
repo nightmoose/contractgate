@@ -18,4 +18,6 @@ one of these:
   contracts/<name>.yaml --json`. Never edit a deployed version in place — bump
   `version:` in the YAML and redeploy.
 
+If the ContractGate MCP server is connected, prefer its tools over curl.
+MCP: <https://app.datacontractgate.com/mcp-reference.md>.
 Full playbook: <https://app.datacontractgate.com/llm-integration.md>.

@@ -43,6 +43,7 @@ export const metadata: Metadata = {
       "text/markdown": [
         { url: "/llms.txt", title: "LLM Index" },
         { url: "/llms-full.txt", title: "Full LLM Documentation" },
+        { url: "/mcp-reference.md", title: "MCP Server" },
       ],
     },
   },

@@ -32,5 +32,6 @@ loosening the contract.
 
 Use the CLI: `contractgate deploy-contract contracts/<name>.yaml --json`.
 Never edit a deployed version in place — bump `version:` in the YAML and
-redeploy. See <https://app.datacontractgate.com/llm-integration.md> for the
-full playbook.
+redeploy. If the ContractGate MCP server is connected, prefer its tools
+over curl. See <https://app.datacontractgate.com/llm-integration.md> and
+<https://app.datacontractgate.com/mcp-reference.md>.

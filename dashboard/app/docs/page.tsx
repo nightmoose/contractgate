@@ -16,6 +16,18 @@ const DOCS = [
     cta: "Open the raw playbook →",
   },
   {
+    external: true,
+    href: "/mcp-reference.md",
+    icon: "🔌",
+    title: "MCP server",
+    badge: "RFC-090",
+    badgeColor: "text-cyan-400 bg-cyan-900/30 border-cyan-700/40",
+    description:
+      "Official Model Context Protocol server. Add npx -y @contractgate/mcp-server to Cursor, Claude Desktop, Windsurf, or Copilot and the agent gets typed tools for infer, dry-run, deploy, and quarantine — no curl.",
+    pills: ["stdio", "npx", "API-key auth", "dry-run default"],
+    cta: "Open the MCP reference →",
+  },
+  {
     external: false,
     href: "/docs/python-sdk",
     icon: "🐍",

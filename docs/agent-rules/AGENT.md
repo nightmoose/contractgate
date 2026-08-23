@@ -23,4 +23,8 @@ a producer must satisfy a YAML contract in the `contracts/` directory.
    Never edit a deployed version in place — bump `version:` in the YAML and
    redeploy.
 
+If the ContractGate MCP server is connected, prefer `infer_contract`,
+`validate_events`, `deploy_contract`, and `get_quarantine` over constructing
+shell pipelines. Setup: <https://app.datacontractgate.com/mcp-reference.md>.
+
 Full playbook: <https://app.datacontractgate.com/llm-integration.md>.
