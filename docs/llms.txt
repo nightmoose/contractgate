@@ -12,6 +12,7 @@ Source: https://github.com/nightmoose/contractgate
 ## Start here
 
 - [Integration playbook for coding agents](https://app.datacontractgate.com/llm-integration.md): Paste this into Claude, Cursor, or Codex. End-to-end, executable: get a key, infer a contract from real samples, write and deploy the contract YAML, wire the producer to POST /v1/ingest, verify with a dry run.
+- [Full documentation bundle](https://app.datacontractgate.com/llms-full.txt): One-shot ingestion for large-context agents — the playbook and every reference doc below, concatenated. Skip the per-link round-trips.
 
 ## Reference
 

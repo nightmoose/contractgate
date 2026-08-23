@@ -97,6 +97,14 @@ response shape:
 | `POST /contracts/infer/proto` | Protobuf schema |
 | `POST /contracts/infer/openapi` | OpenAPI spec |
 
+CLI alternative — runs entirely locally, no key needed, pipes into stdout or a
+file:
+
+```bash
+curl -sS "https://api.example.com/events?limit=50" \
+  | contractgate infer --from-stdin --name user_events --out contracts/user_events.yaml
+```
+
 Inference is a **starting point, not the answer.** Continue to §3.
 
 ---
@@ -180,29 +188,21 @@ Optional top-level keys you may set when the user asks for them, not by default:
 
 ## §4 — Deploy the contract as a stable version
 
-```
-POST /contracts/deploy
-X-Api-Key: cg_live_…
-Content-Type: application/json
-```
-
-Build the JSON body from the file — never hand-escape YAML into a shell literal:
+Preferred: use the `contractgate` CLI. It reads the YAML file directly, so
+there is nothing to escape and no `jq` dependency. Install once:
 
 ```bash
-jq -n \
-  --arg name "user_events" \
-  --rawfile yaml "contracts/user_events.yaml" \
-  '{name: $name, yaml_content: $yaml, source: "app-backend", deployed_by: "claude-code"}' \
-| curl -sS -X POST "https://app.datacontractgate.com/contracts/deploy" \
-    -H "X-Api-Key: $CONTRACTGATE_API_KEY" \
-    -H "Content-Type: application/json" \
-    --data-binary @-
+cargo install --git https://github.com/nightmoose/contractgate contractgate
 ```
 
-(No `jq`? Any equivalent works — the only requirement is that `yaml_content` is
-the file's contents as a JSON string.)
+Then deploy:
 
-Request: `{ name, yaml_content, source?, deployed_by? }`. Response:
+```bash
+contractgate deploy-contract contracts/user_events.yaml \
+  --source app-backend --deployed-by "$USER" --json
+```
+
+Response (identical to the HTTP endpoint):
 
 ```json
 {
@@ -229,12 +229,28 @@ version (`deprecated_count`).
 Put it in the user's config or environment (e.g. `CONTRACTGATE_CONTRACT_ID`) —
 it is not a secret.
 
-CLI alternative, if the user already has the binary
-(`cargo install --git https://github.com/nightmoose/contractgate contractgate`):
+HTTP fallback if the CLI is not available (Windows without a Rust toolchain,
+sandboxed CI, etc.):
+
+```
+POST /contracts/deploy
+X-Api-Key: cg_live_…
+Content-Type: application/json
+```
+
+Body: `{ name, yaml_content, source?, deployed_by? }`. `yaml_content` is the
+file contents as a JSON string; a language runtime is the reliable way to
+escape it. Any shell with `jq` works too:
 
 ```bash
-contractgate deploy-contract contracts/user_events.yaml \
-  --source app-backend --deployed-by "$USER" --json
+jq -n \
+  --arg name "user_events" \
+  --rawfile yaml "contracts/user_events.yaml" \
+  '{name: $name, yaml_content: $yaml, source: "app-backend", deployed_by: "claude-code"}' \
+| curl -sS -X POST "https://app.datacontractgate.com/contracts/deploy" \
+    -H "X-Api-Key: $CONTRACTGATE_API_KEY" \
+    -H "Content-Type: application/json" \
+    --data-binary @-
 ```
 
 ---

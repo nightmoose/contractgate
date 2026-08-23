@@ -108,9 +108,36 @@ Idempotency-Key: <opaque_string>        # optional
 | `version_pin_source` | string  | `"query_param"` or `"default_stable"`.                              |
 | `results[].index`    | integer | Zero-based position in the submitted batch.                          |
 | `results[].passed`   | boolean | Whether this event passed.                                           |
-| `results[].violations` | array | Validation violations (empty on pass).                             |
+| `results[].violations` | array | Validation violations (empty on pass). See the violation shape below. |
 | `results[].quarantine_id` | UUID \| null | ID of the quarantine row for rejected events. Use with the replay API. |
 | `results[].transformed_event` | object | Post-transform payload that was persisted (RFC-004).      |
+
+### Violation shape
+
+Each entry in `results[].violations` is a JSON object with these fields.
+The three actionable fields (`received`, `expected`, `suggestion`) are omitted
+when the check doesn't have a natural value for them, so consumers must
+tolerate their absence.
+
+```json
+{
+  "field": "timestamp",
+  "message": "Field 'timestamp' expected type Integer, got string",
+  "kind": "type_mismatch",
+  "received": "2026-08-23T15:00:00Z",
+  "expected": "integer",
+  "suggestion": "Change the producer to emit 'timestamp' as integer, or update the contract field to `type: string` if the producer is correct."
+}
+```
+
+| Field         | Type            | Description                                                                                |
+|---------------|-----------------|--------------------------------------------------------------------------------------------|
+| `field`       | string          | Dot-separated path to the offending field (e.g. `user.address.zip`).                       |
+| `message`     | string          | Human-readable explanation.                                                                |
+| `kind`        | string enum     | Machine-readable category. One of `missing_required_field`, `type_mismatch`, `pattern_mismatch`, `enum_violation`, `range_violation`, `length_violation`, `metric_range_violation`, `undeclared_field`, `leakage_violation`, `completeness_violation`, `freshness_violation`, `uniqueness_violation`. |
+| `received`    | any (optional)  | The offending value as it appeared in the event.                                           |
+| `expected`    | string (optional) | Contract-YAML-friendly description of the required value (e.g. `"integer"`, `">= 0"`, `"one of [click, view]"`). |
+| `suggestion`  | string (optional) | One-line remediation an agent or human can act on directly.                              |
 
 ### HTTP status codes
 

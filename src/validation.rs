@@ -77,7 +77,12 @@ pub struct ValidationResult {
 }
 
 /// A single rule violation found during validation.
-#[derive(Debug, Clone, serde::Serialize)]
+///
+/// The three trailing fields (`received`, `expected`, `suggestion`) are
+/// optional enrichment for agent self-healing (see RFC-090). They are omitted
+/// from the JSON when unset so consumers written against the pre-enrichment
+/// shape are unaffected.
+#[derive(Debug, Clone, Default, serde::Serialize)]
 pub struct Violation {
     /// Dot-separated path to the offending field (e.g. "user.address.zip")
     pub field: String,
@@ -85,12 +90,23 @@ pub struct Violation {
     pub message: String,
     /// Machine-readable violation kind (for programmatic filtering)
     pub kind: ViolationKind,
+    /// The offending value as it appeared in the event, when available.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub received: Option<Value>,
+    /// Human-readable description of what the contract expected
+    /// (e.g. `"integer"`, `"one of [click, view, purchase, login]"`, `">= 0"`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub expected: Option<String>,
+    /// Actionable one-liner an agent or human can follow to fix the mismatch.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub suggestion: Option<String>,
 }
 
-#[derive(Debug, Clone, serde::Serialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, serde::Serialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum ViolationKind {
     MissingRequiredField,
+    #[default]
     TypeMismatch,
     PatternMismatch,
     EnumViolation,
@@ -124,7 +140,10 @@ pub enum ViolationKind {
 // ---------------------------------------------------------------------------
 
 /// A single per-record violation entry in a `BatchValidationResult`.
-#[derive(Debug, Clone, serde::Serialize)]
+///
+/// The three trailing fields mirror `Violation` — see its docs for the
+/// self-healing contract.
+#[derive(Debug, Clone, Default, serde::Serialize)]
 pub struct BatchRecordViolation {
     /// Zero-based index of the offending record in the unwrapped array.
     pub record_index: usize,
@@ -134,6 +153,12 @@ pub struct BatchRecordViolation {
     pub message: String,
     /// Machine-readable violation kind.
     pub kind: ViolationKind,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub received: Option<Value>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub expected: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub suggestion: Option<String>,
 }
 
 /// The outcome of validating a batch envelope (`{ data: [...], ... }`).
@@ -297,6 +322,12 @@ pub fn validate(compiled: &CompiledContract, event: &Value) -> ValidationResult 
                     field: "<root>".into(),
                     message: "Event must be a JSON object".into(),
                     kind: ViolationKind::TypeMismatch,
+                    received: Some(event.clone()),
+                    expected: Some("object".into()),
+                    suggestion: Some(
+                        "Wrap the payload in an object, e.g. { \"data\": ... }, or send NDJSON with one object per line."
+                            .into(),
+                    ),
                 }],
                 validation_us: 0,
             };
@@ -356,6 +387,11 @@ pub fn validate(compiled: &CompiledContract, event: &Value) -> ValidationResult 
                             field_name
                         ),
                         kind: ViolationKind::UndeclaredField,
+                        received: obj.get(field_name).cloned(),
+                        expected: None,
+                        suggestion: Some(format!(
+                            "Add '{field_name}' to ontology.entities in the contract YAML, or stop sending it from the producer."
+                        )),
                     });
                 }
             }
@@ -407,6 +443,7 @@ pub fn validate_envelope_batch(
                     field: "<root>".into(),
                     message: "Envelope payload must be a JSON object".into(),
                     kind: ViolationKind::TypeMismatch,
+                    ..Default::default()
                 }],
                 validation_us: t0.elapsed().as_micros() as u64,
             };
@@ -424,6 +461,7 @@ pub fn validate_envelope_batch(
                 field: "success".into(),
                 message: "Wrapper field 'success' is missing".into(),
                 kind: ViolationKind::MissingRequiredField,
+                ..Default::default()
             }),
             Some(v) if !v.is_boolean() => wrapper_violations.push(BatchRecordViolation {
                 record_index: 0,
@@ -433,6 +471,9 @@ pub fn validate_envelope_batch(
                     json_type_name(v)
                 ),
                 kind: ViolationKind::TypeMismatch,
+                received: Some(v.clone()),
+                expected: Some("boolean".into()),
+                suggestion: None,
             }),
             _ => {}
         }
@@ -449,6 +490,9 @@ pub fn validate_envelope_batch(
                         json_type_name(p)
                     ),
                     kind: ViolationKind::TypeMismatch,
+                    received: Some(p.clone()),
+                    expected: Some("object".into()),
+                    suggestion: None,
                 }),
                 Some(pg) => {
                     for int_field in &["page", "limit", "total"] {
@@ -461,6 +505,7 @@ pub fn validate_envelope_batch(
                                     int_field
                                 ),
                                 kind: ViolationKind::MissingRequiredField,
+                                ..Default::default()
                             }),
                             Some(v) if !v.is_number() => {
                                 wrapper_violations.push(BatchRecordViolation {
@@ -472,6 +517,9 @@ pub fn validate_envelope_batch(
                                         json_type_name(v)
                                     ),
                                     kind: ViolationKind::TypeMismatch,
+                                    received: Some(v.clone()),
+                                    expected: Some("number".into()),
+                                    suggestion: None,
                                 })
                             }
                             _ => {}
@@ -487,6 +535,9 @@ pub fn validate_envelope_batch(
                                     json_type_name(has_more)
                                 ),
                                 kind: ViolationKind::TypeMismatch,
+                                received: Some(has_more.clone()),
+                                expected: Some("boolean".into()),
+                                suggestion: None,
                             });
                         }
                     }
@@ -504,6 +555,7 @@ pub fn validate_envelope_batch(
                 field: cfg.records_path.clone(),
                 message: format!("Envelope key '{}' is missing", cfg.records_path),
                 kind: ViolationKind::MissingRequiredField,
+                ..Default::default()
             });
             return BatchValidationResult {
                 passed: 0,
@@ -524,6 +576,9 @@ pub fn validate_envelope_batch(
                         json_type_name(v)
                     ),
                     kind: ViolationKind::TypeMismatch,
+                    received: Some(v.clone()),
+                    expected: Some("array".into()),
+                    suggestion: None,
                 });
                 return BatchValidationResult {
                     passed: 0,
@@ -564,6 +619,9 @@ pub fn validate_envelope_batch(
                     field: v.field,
                     message: v.message,
                     kind: v.kind,
+                    received: v.received,
+                    expected: v.expected,
+                    suggestion: v.suggestion,
                 });
             }
         }
@@ -612,9 +670,15 @@ fn validate_fields(
             None => {
                 if field.required {
                     violations.push(Violation {
-                        field: path,
+                        field: path.clone(),
                         message: format!("Required field '{}' is missing", field.name),
                         kind: ViolationKind::MissingRequiredField,
+                        received: None,
+                        expected: Some(field_type_label(&field.field_type)),
+                        suggestion: Some(format!(
+                            "Include '{}' in the event payload, or set `required: false` in contracts/*.yaml if this field can legitimately be absent.",
+                            path
+                        )),
                     });
                 }
                 // Optional and absent — nothing to validate
@@ -648,15 +712,20 @@ fn validate_value(
     };
 
     if !type_ok {
+        let expected = field_type_label(&field.field_type);
+        let got = json_type_name(value);
         violations.push(Violation {
             field: path.to_string(),
             message: format!(
                 "Field '{}' expected type {:?}, got {}",
-                path,
-                field.field_type,
-                json_type_name(value)
+                path, field.field_type, got
             ),
             kind: ViolationKind::TypeMismatch,
+            received: Some(value.clone()),
+            expected: Some(expected.clone()),
+            suggestion: Some(format!(
+                "Change the producer to emit '{path}' as {expected}, or update the contract field to `type: {got}` if the producer is correct."
+            )),
         });
         return; // Further checks on the wrong type make no sense
     }
@@ -675,6 +744,9 @@ fn validate_value(
                         min_len
                     ),
                     kind: ViolationKind::LengthViolation,
+                    received: Some(value.clone()),
+                    expected: Some(format!("string with length >= {min_len}")),
+                    suggestion: None,
                 });
             }
         }
@@ -689,6 +761,9 @@ fn validate_value(
                         max_len
                     ),
                     kind: ViolationKind::LengthViolation,
+                    received: Some(value.clone()),
+                    expected: Some(format!("string with length <= {max_len}")),
+                    suggestion: None,
                 });
             }
         }
@@ -703,6 +778,11 @@ fn validate_value(
                         path, s
                     ),
                     kind: ViolationKind::PatternMismatch,
+                    received: Some(value.clone()),
+                    expected: Some(format!("match regex /{}/", re.as_str())),
+                    suggestion: Some(format!(
+                        "Emit '{path}' so it matches the contract regex, or relax the `pattern:` in the YAML if the producer output is intentional."
+                    )),
                 });
             }
         }
@@ -718,6 +798,12 @@ fn validate_value(
                     path, s
                 ),
                 kind: ViolationKind::PatternMismatch,
+                received: Some(value.clone()),
+                expected: Some("YYYY-MM-DD calendar date string".into()),
+                suggestion: Some(
+                    "Convert the producer value to a YYYY-MM-DD string (real calendar date). ISO timestamps go in `type: string` fields, not `type: date`."
+                        .into(),
+                ),
             });
         }
     }
@@ -730,6 +816,9 @@ fn validate_value(
                     field: path.to_string(),
                     message: format!("Field '{}' value {} is below minimum {}", path, n, min),
                     kind: ViolationKind::RangeViolation,
+                    received: Some(value.clone()),
+                    expected: Some(format!(">= {min}")),
+                    suggestion: None,
                 });
             }
         }
@@ -739,6 +828,9 @@ fn validate_value(
                     field: path.to_string(),
                     message: format!("Field '{}' value {} exceeds maximum {}", path, n, max),
                     kind: ViolationKind::RangeViolation,
+                    received: Some(value.clone()),
+                    expected: Some(format!("<= {max}")),
+                    suggestion: None,
                 });
             }
         }
@@ -748,15 +840,19 @@ fn validate_value(
     if let Some(allowed) = &field.allowed_values {
         if !allowed.contains(value) {
             let allowed_str: Vec<String> = allowed.iter().map(|v| v.to_string()).collect();
+            let joined = allowed_str.join(", ");
             violations.push(Violation {
                 field: path.to_string(),
                 message: format!(
                     "Field '{}' value {} not in allowed set: [{}]",
-                    path,
-                    value,
-                    allowed_str.join(", ")
+                    path, value, joined
                 ),
                 kind: ViolationKind::EnumViolation,
+                received: Some(value.clone()),
+                expected: Some(format!("one of [{joined}]")),
+                suggestion: Some(format!(
+                    "Emit '{path}' as one of the allowed values, or add the new value to the `enum:` list in contracts/*.yaml if it is a legitimate addition."
+                )),
             });
         }
     }
@@ -815,6 +911,9 @@ fn validate_metric(metric: &MetricDefinition, event: &Value, violations: &mut Ve
                     metric.name, field_path
                 ),
                 kind: ViolationKind::MissingRequiredField,
+                received: value.cloned(),
+                expected: Some("number".into()),
+                suggestion: None,
             });
             return;
         }
@@ -829,6 +928,9 @@ fn validate_metric(metric: &MetricDefinition, event: &Value, violations: &mut Ve
                     metric.name, n, min, field_path
                 ),
                 kind: ViolationKind::MetricRangeViolation,
+                received: value.cloned(),
+                expected: Some(format!(">= {min}")),
+                suggestion: None,
             });
         }
     }
@@ -841,6 +943,9 @@ fn validate_metric(metric: &MetricDefinition, event: &Value, violations: &mut Ve
                     metric.name, n, max, field_path
                 ),
                 kind: ViolationKind::MetricRangeViolation,
+                received: value.cloned(),
+                expected: Some(format!("<= {max}")),
+                suggestion: None,
             });
         }
     }
@@ -886,6 +991,22 @@ fn json_type_name(value: &Value) -> &'static str {
     }
 }
 
+/// Contract-YAML-friendly name for a `FieldType`, used in the `expected` field
+/// of a `Violation` so agents don't have to translate `FieldType::Integer` →
+/// `"integer"` themselves.
+fn field_type_label(ft: &FieldType) -> String {
+    match ft {
+        FieldType::String => "string".into(),
+        FieldType::Integer => "integer".into(),
+        FieldType::Float => "number".into(),
+        FieldType::Boolean => "boolean".into(),
+        FieldType::Object => "object".into(),
+        FieldType::Array => "array".into(),
+        FieldType::Any => "any".into(),
+        FieldType::Date => "date (YYYY-MM-DD)".into(),
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Quality rule helpers (per-event)
 // ---------------------------------------------------------------------------
@@ -910,6 +1031,9 @@ fn check_completeness(rule: &QualityRule, event: &Value, violations: &mut Vec<Vi
                     rule.field
                 ),
                 kind: ViolationKind::CompletenessViolation,
+                received: get_nested_value(event, &rule.field).cloned(),
+                expected: Some("non-null value".into()),
+                suggestion: None,
             });
         }
         Some(Value::String(s)) if s.is_empty() => {
@@ -920,6 +1044,9 @@ fn check_completeness(rule: &QualityRule, event: &Value, violations: &mut Vec<Vi
                     rule.field
                 ),
                 kind: ViolationKind::CompletenessViolation,
+                received: Some(Value::String(s.clone())),
+                expected: Some("non-empty string".into()),
+                suggestion: None,
             });
         }
         _ => {} // present and non-empty — passes
@@ -961,6 +1088,9 @@ fn check_freshness(rule: &QualityRule, event: &Value, violations: &mut Vec<Viola
                 rule.field
             ),
             kind: ViolationKind::FreshnessViolation,
+            received: Some(val.clone()),
+            expected: Some("integer Unix epoch (seconds or milliseconds)".into()),
+            suggestion: None,
         });
         return;
     };
@@ -979,6 +1109,9 @@ fn check_freshness(rule: &QualityRule, event: &Value, violations: &mut Vec<Viola
                 rule.field, age_secs, max_age
             ),
             kind: ViolationKind::FreshnessViolation,
+            received: Some(val.clone()),
+            expected: Some(format!("timestamp within last {max_age}s")),
+            suggestion: None,
         });
     }
 }
@@ -1027,6 +1160,12 @@ pub fn check_uniqueness_batch(rules: &[QualityRule], events: &[Value]) -> Vec<(u
                             key, rule.field
                         ),
                         kind: ViolationKind::UniquenessViolation,
+                        received: Some(val.clone()),
+                        expected: Some(format!(
+                            "unique value for '{}' within the batch",
+                            rule.field
+                        )),
+                        suggestion: None,
                     },
                 ));
             }

@@ -2092,6 +2092,7 @@ mod rfc029_tests {
                 field: "user_id".into(),
                 message: "Required field 'user_id' is missing".into(),
                 kind: ViolationKind::MissingRequiredField,
+                ..Default::default()
             }],
             validation_us: 8,
             action: "blocked",

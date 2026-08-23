@@ -322,6 +322,11 @@ fn apply_egress_pii_pipeline(
                      (egress_leakage_mode=fail); field stripped from response"
                 ),
                 kind: ViolationKind::LeakageViolation,
+                received: None,
+                expected: None,
+                suggestion: Some(format!(
+                    "Either add '{field}' to ontology.entities in the contract YAML, or stop the upstream service from returning it."
+                )),
             })
             .collect()
     } else {
@@ -876,6 +881,7 @@ mod tests {
                     field: "user_id".into(),
                     message: "Required field 'user_id' is missing".into(),
                     kind: ViolationKind::MissingRequiredField,
+                    ..Default::default()
                 }],
                 validation_us: 8,
             }
