@@ -1161,7 +1161,10 @@ pub fn check_uniqueness_batch(rules: &[QualityRule], events: &[Value]) -> Vec<(u
                         ),
                         kind: ViolationKind::UniquenessViolation,
                         received: Some(val.clone()),
-                        expected: Some(format!("unique value for '{}' within the batch", rule.field)),
+                        expected: Some(format!(
+                            "unique value for '{}' within the batch",
+                            rule.field
+                        )),
                         suggestion: None,
                     },
                 ));
