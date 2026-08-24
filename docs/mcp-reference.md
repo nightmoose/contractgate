@@ -9,9 +9,7 @@ validation itself. Auth is the same API key the CLI and playbook already use.
 ## Install
 
 Add this to the host's MCP config (`~/.cursor/mcp.json`, Claude Desktop
-`claude_desktop_config.json`, etc.).
-
-Once `@contractgate/mcp-server` is on npm:
+`claude_desktop_config.json`, etc.):
 
 ```json
 {
@@ -27,21 +25,9 @@ Once `@contractgate/mcp-server` is on npm:
 }
 ```
 
-Until then, from a clone (`cd mcp && npm install && npm run build`):
-
-```json
-{
-  "mcpServers": {
-    "contractgate": {
-      "command": "node",
-      "args": ["<repo>/mcp/dist/index.js"],
-      "env": {
-        "CONTRACTGATE_API_KEY": "${CONTRACTGATE_API_KEY}"
-      }
-    }
-  }
-}
-```
+The package is published at
+<https://www.npmjs.com/package/@contractgate/mcp-server>. `npx -y` fetches the
+latest release on first use, so no separate install step is needed.
 
 Restart the host after editing the config.
 
