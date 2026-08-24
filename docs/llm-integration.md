@@ -15,6 +15,15 @@ documentation.
 deployed as a `stable` version, and their event producer calling the validation
 gateway — verified with a dry run before anything writes.
 
+> **MCP first.** If your host has the ContractGate MCP server connected
+> (`@contractgate/mcp-server` in Cursor, Claude Desktop, Windsurf, Copilot,
+> Codex, …), skip the `curl` recipes below and use the typed tools:
+> `infer_contract`, `validate_events`, `deploy_contract`, `get_quarantine`,
+> `list_contracts`. They wrap the same endpoints, with argument validation
+> and no shell-escaping. Setup: <https://app.datacontractgate.com/mcp-reference.md>.
+> The rest of this playbook stays authoritative for the flow, contract shape,
+> and semantics — only the transport changes.
+
 ---
 
 ## §0 — Preconditions
@@ -36,12 +45,8 @@ gateway — verified with a dry run before anything writes.
   invent a key, and do not fall back to the self-hosted path silently.
 - Add `.env` / `.env.local` to `.gitignore` if the user's project stores it there.
 
-Every request below sends the key as the `X-Api-Key` header.
-
-If the ContractGate MCP server is connected, prefer its tools
-(`infer_contract`, `validate_events`, `deploy_contract`, `get_quarantine`,
-`list_contracts`) over constructing `curl` calls. Setup:
-<https://app.datacontractgate.com/mcp-reference.md>.
+Every request below sends the key as the `X-Api-Key` header. (MCP tools read
+the same key from the host process environment.)
 
 ---
 
