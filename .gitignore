@@ -38,6 +38,12 @@ dashboard/public/mcp-reference.md
 
 # Python SDK build artifacts — built fresh by release.yml, never committed
 sdks/python/dist/
+
+# RFC-092 Ralph demo local env / LanceDB
+demo/ralph/.venv/
+demo/ralph/downstream/lancedb_data/
+demo/ralph/**/__pycache__/
+
 sdks/python/*.egg-info/
 sdks/python/.eggs/
 sdks/python/__pycache__/

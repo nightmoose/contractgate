@@ -1,0 +1,17 @@
+demo/ralph — ContractGate Ralph-native demo (RFC-092)
+=====================================================
+
+Portions of this directory are adapted from:
+
+  https://github.com/xdgrulez/driftless
+  Copyright contributors to driftless
+  Licensed under the Apache License, Version 2.0
+
+See NOTICE.driftless / the upstream LICENSE for the full Apache-2.0 text.
+
+ContractGate contracts, gate_bridge, compose, and wiring are Copyright
+ContractGate contributors and licensed under the repository root LICENSE (MIT)
+unless noted otherwise.
+
+Kafi Streams is a separate dependency (https://github.com/xdgrulez/kafi),
+installed from PyPI when using requirements-downstream.txt.

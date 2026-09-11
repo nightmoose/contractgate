@@ -1,0 +1,40 @@
+# Ralph-demo: shoe order after-image (Debezium CDC)
+# Validated by gate_bridge on create/update; deletes pass through.
+version: "1.0"
+name: "ralph_orders"
+description: "Shoe order CDC after-image for driftless / Kafi demo"
+
+ontology:
+  entities:
+    - name: id
+      type: integer
+      required: true
+      min: 1
+    - name: product_id
+      type: string
+      required: true
+      pattern: "^[0-9a-fA-F-]{36}$"
+    - name: customer_id
+      type: string
+      required: true
+      pattern: "^[0-9a-fA-F-]{36}$"
+    - name: status_id
+      type: integer
+      required: true
+      min: 0
+      max: 6
+    - name: status
+      type: string
+      required: true
+      enum:
+        - "LOOKED_AT (in shopping cart)"
+        - "ORDERED (payment pending)"
+        - "ORDER_COMPLETE (payment complete)"
+        - "PACKED (packed in warehouse)"
+        - "IN_TRANSIT (on the way)"
+        - "DELIVERED (delivered to front door)"
+        - "FAILED_DELIVERY (address not found)"
+    - name: ts
+      type: integer
+      required: true
+      min: 1

@@ -1,0 +1,7 @@
+# Stage B — Kafi Streams + Driftless MCP (heavier)
+-r requirements.txt
+kafi==1.1.1
+lancedb==0.38.0
+fastembed==0.8.0
+fastmcp==4.0.3
+mcp==2.2.0

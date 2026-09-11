@@ -1,0 +1,26 @@
+# Ralph-demo: shoe product after-image (Debezium CDC)
+version: "1.0"
+name: "ralph_products"
+description: "Shoe product CDC after-image for driftless / Kafi demo"
+
+ontology:
+  entities:
+    - name: id
+      type: string
+      required: true
+      pattern: "^[0-9a-fA-F-]{36}$"
+    - name: brand
+      type: string
+      required: true
+    - name: name
+      type: string
+      required: true
+    - name: sale_price
+      type: number
+      required: true
+      min: 0
+    - name: rating
+      type: number
+      required: false
+      min: 0
+      max: 5

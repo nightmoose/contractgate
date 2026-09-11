@@ -1,0 +1,61 @@
+# RFC-092 — Ralph-native demo broker (Redpanda)
+#
+#   docker compose -f demo/ralph/docker-compose.yml up -d
+#
+# Kafka API: 127.0.0.1:9092
+# Console:   http://localhost:8088
+
+services:
+  redpanda:
+    image: redpandadata/redpanda:v24.2.4
+    container_name: cg-ralph-redpanda
+    command:
+      - redpanda
+      - start
+      - --kafka-addr
+      - internal://0.0.0.0:29092,external://0.0.0.0:9092
+      - --advertise-kafka-addr
+      - internal://redpanda:29092,external://127.0.0.1:9092
+      - --pandaproxy-addr
+      - internal://0.0.0.0:8082,external://0.0.0.0:18082
+      - --advertise-pandaproxy-addr
+      - internal://redpanda:8082,external://localhost:18082
+      - --schema-registry-addr
+      - internal://0.0.0.0:8081,external://0.0.0.0:18081
+      - --rpc-addr
+      - redpanda:33145
+      - --advertise-rpc-addr
+      - redpanda:33145
+      - --mode
+      - dev-container
+      - --smp
+      - "1"
+      - --default-log-level=info
+    ports:
+      - "9092:9092"
+      - "18081:18081"
+      - "18082:18082"
+      - "9644:9644"
+    volumes:
+      - ralph-redpanda-data:/var/lib/redpanda/data
+    healthcheck:
+      test: ["CMD-SHELL", "rpk cluster health | grep -q 'Healthy:.*true'"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+      start_period: 10s
+
+  redpanda-console:
+    image: redpandadata/console:v2.7.2
+    container_name: cg-ralph-console
+    depends_on:
+      redpanda:
+        condition: service_healthy
+    environment:
+      KAFKA_BROKERS: "redpanda:29092"
+    ports:
+      - "8088:8080"
+    restart: unless-stopped
+
+volumes:
+  ralph-redpanda-data:
