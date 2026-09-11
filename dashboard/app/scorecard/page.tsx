@@ -22,6 +22,7 @@ import {
 } from "@/lib/api";
 import type { FullScorecard, ScorecardSummaryRow, FieldHealthRow, DriftSignal } from "@/lib/api";
 import clsx from "clsx";
+import { HelpTarget } from "@/components/help/HelpTarget";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -202,9 +203,11 @@ function DriftPanel({ signals }: { signals: DriftSignal[] }) {
   return (
     <div className="bg-[#111827] border border-[#1f2937] rounded-xl overflow-hidden">
       <div className="px-5 py-4 border-b border-[#1f2937] flex items-center justify-between">
-        <h2 className="text-sm font-semibold text-slate-300 uppercase tracking-wider">
-          Active Drift Signals
-        </h2>
+        <HelpTarget id="scorecard.drift">
+          <h2 className="text-sm font-semibold text-slate-300 uppercase tracking-wider">
+            Active Drift Signals
+          </h2>
+        </HelpTarget>
         <span className="text-xs bg-amber-900/40 text-amber-300 border border-amber-700/40 rounded-full px-2.5 py-0.5 font-medium">
           {signals.length} alert{signals.length !== 1 ? "s" : ""}
         </span>
@@ -276,7 +279,9 @@ function ScorecardContent() {
       {/* Header */}
       <div className="flex items-start justify-between mb-6 flex-wrap gap-4">
         <div>
-          <h1 className="text-2xl font-bold">Provider Scorecard</h1>
+          <HelpTarget id="page.scorecard">
+            <h1 className="text-2xl font-bold">Provider Scorecard</h1>
+          </HelpTarget>
           <p className="text-sm text-slate-500 mt-1">
             Objective data-quality evidence — turn "your data is bad" into a verifiable report.
           </p>
@@ -295,9 +300,11 @@ function ScorecardContent() {
 
       {/* Source picker */}
       <div className="bg-[#111827] border border-[#1f2937] rounded-xl p-5 mb-6">
-        <label className="text-xs font-medium text-slate-400 uppercase tracking-wider mb-2 block">
-          Provider Source
-        </label>
+        <HelpTarget id="scorecard.source">
+          <label className="text-xs font-medium text-slate-400 uppercase tracking-wider mb-2 block">
+            Provider Source
+          </label>
+        </HelpTarget>
         <p className="text-xs text-slate-600 mb-3">
           Enter the source name as configured in your contracts (the <code className="font-mono">source</code> field
           set at deploy time — e.g. a PMS vendor name or feed identifier).

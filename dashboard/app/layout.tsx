@@ -5,6 +5,7 @@ import Sidebar from "@/components/Sidebar";
 import ClientOrgProvider from "@/components/ClientOrgProvider";
 import { DEMO_MODE } from "@/lib/demo";
 import DemoBanner from "@/components/DemoBanner";
+import HelpProvider from "@/components/help/HelpProvider";
 
 const SITE_URL =
   // Absolute URL is required for og:image — a relative path renders as a blank
@@ -57,6 +58,7 @@ export default function RootLayout({
   return (
     <html lang="en" className="dark">
       <body className="min-h-screen bg-[#0a0d12] text-slate-200 flex">
+        <HelpProvider>
         {/* Demo mode: fixed 36px banner at top; main shifts down with pt-9. */}
         {DEMO_MODE && <DemoBanner />}
         <Sidebar />
@@ -75,6 +77,7 @@ export default function RootLayout({
         {!DEMO_MODE && (
           <Script src="/_vercel/insights/script.js" strategy="afterInteractive" defer />
         )}
+        </HelpProvider>
       </body>
     </html>
   );

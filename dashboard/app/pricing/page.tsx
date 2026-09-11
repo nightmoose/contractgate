@@ -3,6 +3,7 @@
 import { useState } from "react";
 import clsx from "clsx";
 import { useOrg } from "@/lib/org";
+import { HelpTarget } from "@/components/help/HelpTarget";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -152,9 +153,11 @@ export default function PricingPage() {
           <span className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse" />
           Patent Pending · Rust-native · &lt;15 ms p99
         </div>
-        <h1 className="text-4xl font-bold tracking-tight">
-          Simple, transparent pricing
-        </h1>
+        <HelpTarget id="page.pricing">
+          <h1 className="text-4xl font-bold tracking-tight">
+            Simple, transparent pricing
+          </h1>
+        </HelpTarget>
         <p className="mt-3 text-slate-400 text-lg max-w-xl mx-auto">
           Start free. Scale without surprises. Enterprise teams get dedicated deployments and custom SLAs.
         </p>

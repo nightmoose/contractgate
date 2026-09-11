@@ -73,6 +73,8 @@ import {
   newestVersionString,
 } from "./_lib";
 import clsx from "clsx";
+import { HelpTarget } from "@/components/help/HelpTarget";
+import { FirstRunLoop } from "@/components/help/FirstRun";
 
 // ---------------------------------------------------------------------------
 // Edit Contract Modal
@@ -980,9 +982,12 @@ function ContractList({
   if (isLoading) return <p className="text-slate-500 text-sm">Loading…</p>;
   if (!contracts || contracts.length === 0) {
     return (
-      <div className="flex flex-col items-center justify-center h-64 text-slate-600">
+      <div className="flex flex-col items-center justify-center py-12 text-slate-600">
         <p className="text-4xl mb-4">📋</p>
-        <p className="text-sm">No contracts yet — create your first one above.</p>
+        <FirstRunLoop
+          title="No contracts yet — create your first one above."
+          hint="A contract is the schema ContractGate enforces. Until one is stable, ingest has nowhere to route."
+        />
       </div>
     );
   }
@@ -1901,7 +1906,9 @@ function ContractsContent() {
 
       <div className="flex items-center justify-between mb-6">
         <div>
-          <h1 className="text-2xl font-bold">Contracts</h1>
+          <HelpTarget id="page.contracts">
+            <h1 className="text-2xl font-bold">Contracts</h1>
+          </HelpTarget>
           <p className="text-sm text-slate-500 mt-1">
             Create and manage versioned semantic contracts
           </p>
@@ -1909,26 +1916,32 @@ function ContractsContent() {
         {(tab === "list" || tab === "consumed") && (
           <div className="flex gap-2 flex-wrap">
             {/* RFC-032: import from publication ref (consumer flow) */}
-            <button
-              onClick={() => { setShowImportRef(true); setShowImport(false); setShowWizard(false); }}
-              className="px-4 py-2 bg-teal-800 hover:bg-teal-700 text-white text-sm font-medium rounded-lg transition-colors"
-            >
-              ↓ Import from Ref
-            </button>
+            <HelpTarget id="contracts.import-ref">
+              <button
+                onClick={() => { setShowImportRef(true); setShowImport(false); setShowWizard(false); }}
+                className="px-4 py-2 bg-teal-800 hover:bg-teal-700 text-white text-sm font-medium rounded-lg transition-colors"
+              >
+                ↓ Import from Ref
+              </button>
+            </HelpTarget>
             {tab === "list" && (
               <>
-                <button
-                  onClick={() => { setShowImport(true); setShowWizard(false); setShowImportRef(false); }}
-                  className="px-4 py-2 bg-blue-700 hover:bg-blue-600 text-white text-sm font-medium rounded-lg transition-colors"
-                >
-                  ⬆ Import ODCS
-                </button>
-                <button
-                  onClick={() => { setShowWizard(true); setShowImport(false); setShowImportRef(false); }}
-                  className="px-4 py-2 bg-green-600 hover:bg-green-500 text-white text-sm font-medium rounded-lg transition-colors"
-                >
-                  + New Contract
-                </button>
+                <HelpTarget id="contracts.import-odcs">
+                  <button
+                    onClick={() => { setShowImport(true); setShowWizard(false); setShowImportRef(false); }}
+                    className="px-4 py-2 bg-blue-700 hover:bg-blue-600 text-white text-sm font-medium rounded-lg transition-colors"
+                  >
+                    ⬆ Import ODCS
+                  </button>
+                </HelpTarget>
+                <HelpTarget id="contracts.new">
+                  <button
+                    onClick={() => { setShowWizard(true); setShowImport(false); setShowImportRef(false); }}
+                    className="px-4 py-2 bg-green-600 hover:bg-green-500 text-white text-sm font-medium rounded-lg transition-colors"
+                  >
+                    + New Contract
+                  </button>
+                </HelpTarget>
               </>
             )}
           </div>
@@ -1940,23 +1953,31 @@ function ContractsContent() {
           // Growth-only tabs show a lock badge when on free plan.
           const growthOnly = ["build", "generate", "csv", "quarantine"].includes(t);
           const locked = growthOnly && org && !planAtLeast(org.plan, "growth");
+          const helpId =
+            t === "list" ? "contracts.list" :
+            t === "consumed" ? "contracts.consumed" :
+            t === "build" ? "contracts.visual-builder" :
+            t === "generate" ? "contracts.generate" :
+            t === "csv" ? "contracts.csv" :
+            "contracts.quarantine";
           return (
-            <button
-              key={t}
-              onClick={() => { setTab(t); setShowWizard(false); setShowImport(false); setShowImportRef(false); }}
-              className={clsx(
-                "px-4 py-2 text-sm font-medium rounded-lg transition-colors flex items-center gap-1.5",
-                tab === t ? "bg-[#1f2937] text-slate-100" : "text-slate-500 hover:text-slate-300"
-              )}
-            >
-              {t === "list" && "My Contracts"}
-              {t === "consumed" && "📥 Consumed"}
-              {t === "build" && "🧱 Visual Builder"}
-              {t === "generate" && "✦ Generate from Sample"}
-              {t === "csv" && "📊 From CSV"}
-              {t === "quarantine" && "☣️ Quarantine"}
-              {locked && <span className="text-[10px] text-amber-500" title="Growth plan required">🔒</span>}
-            </button>
+            <HelpTarget key={t} id={helpId}>
+              <button
+                onClick={() => { setTab(t); setShowWizard(false); setShowImport(false); setShowImportRef(false); }}
+                className={clsx(
+                  "px-4 py-2 text-sm font-medium rounded-lg transition-colors flex items-center gap-1.5",
+                  tab === t ? "bg-[#1f2937] text-slate-100" : "text-slate-500 hover:text-slate-300"
+                )}
+              >
+                {t === "list" && "My Contracts"}
+                {t === "consumed" && "📥 Consumed"}
+                {t === "build" && "🧱 Visual Builder"}
+                {t === "generate" && "✦ Generate from Sample"}
+                {t === "csv" && "📊 From CSV"}
+                {t === "quarantine" && "☣️ Quarantine"}
+                {locked && <span className="text-[10px] text-amber-500" title="Growth plan required">🔒</span>}
+              </button>
+            </HelpTarget>
           );
         })}
       </div>

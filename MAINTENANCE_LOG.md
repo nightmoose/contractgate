@@ -2,6 +2,24 @@
 
 ---
 
+## Run: 2026-09-11 — RFC-091 What’s this? inspect mode
+
+Dashboard-only. Operators had no in-app way to ask what a control is; RFC-020
+tooltips never left the Contracts YAML/Versions/Quarantine tabs.
+
+Shipped a help catalog (`dashboard/lib/help/catalog.ts`), `HelpProvider` +
+`HelpTarget` + sidebar **What’s this?** toggle (`?` to enter, Esc to exit).
+Registered sidebar nav, page titles, dashboard stats, contract tabs/actions,
+RFC-020 jargon (now catalog-backed), and the densest Catalog / Scorecard /
+Workbench / Playground / Audit / Account controls. Unregistered clicks toast
+“No description for this yet.” Empty Contracts / Dashboard / Audit teach the
+create → stable → ingest loop. Hero-banner dismiss persists in localStorage.
+
+No gateway / engine / migration change. Playwright: `e2e/rfc091-help-mode.spec.ts`.
+Reference: `docs/help-mode-reference.md`.
+
+---
+
 ## Run: 2026-07-17 — new-user funnel walk (browser) + UsageWidget month fix
 
 Walked the onboarding funnel live (Chrome + prod API) to find silent breaks.

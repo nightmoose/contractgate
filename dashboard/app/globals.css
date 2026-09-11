@@ -47,6 +47,14 @@ body {
   font-family: system-ui, -apple-system, sans-serif;
 }
 
+/* RFC-091: inspect-mode outlines on registered help targets */
+html[data-help-mode] [data-help] {
+  outline: 1px dashed rgba(74, 222, 128, 0.55);
+  outline-offset: 3px;
+  border-radius: 4px;
+  cursor: help;
+}
+
 /* Scrollbar styling */
 ::-webkit-scrollbar { width: 6px; height: 6px; }
 ::-webkit-scrollbar-track { background: #111827; }

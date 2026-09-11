@@ -14,6 +14,7 @@
 import { useState, useCallback, useRef, useEffect } from "react";
 import clsx from "clsx";
 import * as jsYaml from "js-yaml";
+import { HelpTarget } from "@/components/help/HelpTarget";
 import { useOrg, planAtLeast } from "@/lib/org";
 import { deployContract } from "@/lib/api";
 
@@ -861,7 +862,9 @@ export default function WorkbenchClient() {
       {/* Header */}
       <div className="border-b border-[#1f2937] px-6 py-4 flex items-center justify-between">
         <div>
-          <h1 className="text-lg font-bold text-slate-100">API Workbench</h1>
+          <HelpTarget id="page.workbench">
+            <h1 className="text-lg font-bold text-slate-100">API Workbench</h1>
+          </HelpTarget>
           <p className="text-xs text-slate-500 mt-0.5">Explore endpoints · infer contracts · enforce at the gate</p>
         </div>
         <div className="flex items-center gap-3">
@@ -884,7 +887,9 @@ export default function WorkbenchClient() {
       {/* Seed panel */}
       {!hasSession && (
         <div className="max-w-2xl mx-auto px-6 py-14">
-          <h2 className="text-xl font-semibold text-slate-200 mb-2">Start from your API</h2>
+          <HelpTarget id="workbench.seed">
+            <h2 className="text-xl font-semibold text-slate-200 mb-2">Start from your API</h2>
+          </HelpTarget>
           <p className="text-sm text-slate-500 mb-8">Paste a URL, spec, curl command, or add endpoints manually.</p>
 
           {/* Mode tabs */}
@@ -1372,13 +1377,15 @@ export default function WorkbenchClient() {
 
                     {/* Deploy */}
                     <div className="flex items-center gap-3 pt-2 border-t border-[#1f2937]">
-                      <button
-                        onClick={() => handleDeploy(currentYaml)}
-                        disabled={deployState === "loading"}
-                        className="px-4 py-2 bg-green-600 hover:bg-green-500 disabled:opacity-40 text-white text-sm font-semibold rounded-lg transition-colors"
-                      >
-                        {deployState === "loading" ? "Deploying…" : "Deploy to ContractGate"}
-                      </button>
+                      <HelpTarget id="workbench.deploy">
+                        <button
+                          onClick={() => handleDeploy(currentYaml)}
+                          disabled={deployState === "loading"}
+                          className="px-4 py-2 bg-green-600 hover:bg-green-500 disabled:opacity-40 text-white text-sm font-semibold rounded-lg transition-colors"
+                        >
+                          {deployState === "loading" ? "Deploying…" : "Deploy to ContractGate"}
+                        </button>
+                      </HelpTarget>
                       {deployState === "ok" && <span className="text-xs text-green-400">✓ {deployMsg}</span>}
                       {deployState === "err" && <span className="text-xs text-red-400">✗ {deployMsg}</span>}
                     </div>

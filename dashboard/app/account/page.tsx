@@ -6,6 +6,7 @@ import { useOrg } from "@/lib/org";
 import { useRouter } from "next/navigation";
 import type { User } from "@supabase/supabase-js";
 import AuthGate from "@/components/AuthGate";
+import { HelpTarget } from "@/components/help/HelpTarget";
 import { DEMO_MODE } from "@/lib/demo";
 import DemoFeatureUnavailable from "@/components/DemoFeatureUnavailable";
 import UsageWidget from "@/components/UsageWidget";
@@ -389,7 +390,9 @@ function AccountContent() {
       {/* Header */}
       <div className="flex items-start justify-between mb-8">
         <div>
-          <h1 className="text-2xl font-bold text-slate-100">Account</h1>
+          <HelpTarget id="page.account">
+            <h1 className="text-2xl font-bold text-slate-100">Account</h1>
+          </HelpTarget>
           <p className="text-slate-500 text-sm mt-1">{user?.email}</p>
           {org && (
             <p className="text-xs text-slate-600 mt-1 flex items-center gap-1.5">
@@ -413,7 +416,9 @@ function AccountContent() {
         <div className="bg-[#111827] border border-[#1f2937] rounded-2xl p-6 mb-8">
           <div className="flex items-center justify-between mb-3">
             <div>
-              <div className="text-sm font-semibold text-slate-200">Billing</div>
+              <HelpTarget id="account.billing">
+                <div className="text-sm font-semibold text-slate-200">Billing</div>
+              </HelpTarget>
               <div className="text-xs text-slate-500">
                 Plan: <span className="font-medium capitalize text-slate-300">{org.plan}</span>
                 {org.plan_status && <span className="ml-1 text-slate-400">({org.plan_status})</span>}
@@ -491,7 +496,9 @@ function AccountContent() {
       <section>
         <div className="flex items-center justify-between mb-4">
           <div>
-            <h2 className="text-lg font-semibold text-slate-100">API Keys</h2>
+            <HelpTarget id="account.api-keys">
+              <h2 className="text-lg font-semibold text-slate-100">API Keys</h2>
+            </HelpTarget>
             <p className="text-xs text-slate-500 mt-0.5">
               Use these in your Kafka connector config as{" "}
               <code className="text-slate-400">contractgate.api.key</code>.
@@ -620,7 +627,9 @@ function AccountContent() {
         <section className="mt-10">
           <div className="flex items-center justify-between mb-4">
             <div>
-              <h2 className="text-lg font-semibold text-slate-100">Team Members</h2>
+              <HelpTarget id="account.team">
+                <h2 className="text-lg font-semibold text-slate-100">Team Members</h2>
+              </HelpTarget>
               <p className="text-xs text-slate-500 mt-0.5">
                 <span className="font-mono text-slate-400">{org.slug}</span>
                 {" · "}

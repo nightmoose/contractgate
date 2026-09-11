@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback } from "react";
 import clsx from "clsx";
+import { HelpTarget } from "@/components/help/HelpTarget";
 
 // ---------------------------------------------------------------------------
 // Backend base URL (same env var the rest of the dashboard uses)
@@ -671,7 +672,9 @@ export default function StreamDemoPage() {
       {/* Page header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold">Stream Demo</h1>
+          <HelpTarget id="page.stream-demo">
+            <h1 className="text-2xl font-bold">Stream Demo</h1>
+          </HelpTarget>
           <p className="text-sm text-slate-500 mt-1">
             Real validation engine · no Kafka · no database writes
           </p>

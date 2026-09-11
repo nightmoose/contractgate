@@ -8,6 +8,7 @@ import type { PlaygroundResponse, ContractSummary, Violation } from "@/lib/api";
 import clsx from "clsx";
 import AuthGate from "@/components/AuthGate";
 import { useOrg } from "@/lib/org";
+import { HelpTarget } from "@/components/help/HelpTarget";
 
 const DEFAULT_YAML = `version: "1.0"
 name: "user_events"
@@ -645,7 +646,9 @@ function PlaygroundContent() {
   return (
     <div>
       <div className="mb-8">
-        <h1 className="text-2xl font-bold">Playground</h1>
+        <HelpTarget id="page.playground">
+          <h1 className="text-2xl font-bold">Playground</h1>
+        </HelpTarget>
         <p className="text-sm text-slate-500 mt-1">
           Test a contract YAML against a sample JSON event — no ingestion, no storage
         </p>
@@ -763,13 +766,15 @@ function PlaygroundContent() {
             </div>
           </label>
 
-          <button
-            onClick={handleValidate}
-            disabled={loading}
-            className="w-full py-3 bg-green-600 hover:bg-green-500 disabled:opacity-50 text-white font-semibold rounded-lg transition-colors"
-          >
-            {loading ? "Validating…" : "▶  Validate Event"}
-          </button>
+          <HelpTarget id="playground.validate">
+            <button
+              onClick={handleValidate}
+              disabled={loading}
+              className="w-full py-3 bg-green-600 hover:bg-green-500 disabled:opacity-50 text-white font-semibold rounded-lg transition-colors"
+            >
+              {loading ? "Validating…" : "▶  Validate Event"}
+            </button>
+          </HelpTarget>
         </div>
 
         {/* Right: result + rules panel */}
