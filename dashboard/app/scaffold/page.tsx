@@ -11,6 +11,7 @@
 import { useState, useRef, useCallback } from "react";
 import clsx from "clsx";
 import AuthGate from "@/components/AuthGate";
+import { HelpTarget } from "@/components/help/HelpTarget";
 import PlanGate from "@/components/PlanGate";
 import {
   scaffoldFromSamples,
@@ -241,7 +242,9 @@ export default function ScaffoldPage() {
       <div className="p-6 max-w-6xl mx-auto space-y-6">
         {/* Header */}
         <div>
-          <h1 className="text-2xl font-bold text-white">Contract Scaffolder</h1>
+          <HelpTarget id="page.scaffold">
+            <h1 className="text-2xl font-bold text-white">Contract Scaffolder</h1>
+          </HelpTarget>
           <p className="mt-1 text-sm text-slate-400">
             Generate a draft contract from JSON samples, NDJSON, an Avro schema, or a Protobuf
             definition. PII candidates are flagged with TODO annotations — never auto-applied.

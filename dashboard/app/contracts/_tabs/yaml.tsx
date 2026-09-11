@@ -6,7 +6,7 @@
  */
 
 import clsx from "clsx";
-import { TooltipWrap } from "../_lib";
+import { HelpTarget } from "@/components/help/HelpTarget";
 import type { VersionSummary, VersionResponse, EgressLeakageMode } from "@/lib/api";
 
 interface YamlTabProps {
@@ -68,13 +68,13 @@ export function YamlTab({
                 )}
               >
                 <span>v{v.version}</span>
-                <TooltipWrap
-                  content={
+                <HelpTarget
+                  id={
                     v.state === "stable"
-                      ? "A frozen, immutable version eligible to receive inbound traffic."
+                      ? "term.stable"
                       : v.state === "draft"
-                      ? "A work-in-progress version. YAML is freely editable."
-                      : "A retired version. No new unpinned traffic routes to it."
+                      ? "term.draft"
+                      : "term.deprecated"
                   }
                 >
                   <span
@@ -87,7 +87,7 @@ export function YamlTab({
                   >
                     {v.state}
                   </span>
-                </TooltipWrap>
+                </HelpTarget>
               </button>
             ))}
           </div>
@@ -122,33 +122,22 @@ export function YamlTab({
             <div className="flex gap-3 mb-2 flex-wrap">
               {["ontology", "glossary", "metrics"].map((section) =>
                 currentVersion.yaml_content.includes(`${section}:`) ? (
-                  <TooltipWrap
-                    key={section}
-                    content={
-                      section === "ontology"
-                        ? "The named entities and field rules your contract enforces — every inbound event is validated against these definitions."
-                        : section === "glossary"
-                        ? "Human-readable descriptions of fields, including any compliance constraints attached to each one."
-                        : "Named aggregate formulas (e.g. sum, count) computed over events that pass this contract."
-                    }
-                  >
+                  <HelpTarget key={section} id={`term.${section}`}>
                     <span className="text-[10px] uppercase tracking-wider text-slate-600 border border-[#1f2937] rounded px-2 py-0.5 cursor-default hover:text-slate-400 transition-colors">
                       {section}
                     </span>
-                  </TooltipWrap>
+                  </HelpTarget>
                 ) : null
               )}
               {currentVersion.compliance_mode && (
-                <TooltipWrap content="When enabled, any inbound field not declared in the contract ontology is rejected. Nothing undeclared can enter the audit log.">
+                <HelpTarget id="term.compliance-mode">
                   <span className="text-[10px] uppercase tracking-wider text-amber-600 border border-amber-800/40 rounded px-2 py-0.5 cursor-default">
                     compliance mode
                   </span>
-                </TooltipWrap>
+                </HelpTarget>
               )}
-              <TooltipWrap
-                content="Controls how undeclared fields in outbound payloads are handled. off = pass through; strip = remove silently; fail = treat as a validation error."
-              >
-                {isDraft && onChangeLeakageMode ? (
+              {isDraft && onChangeLeakageMode ? (
+                <HelpTarget id="term.leakage">
                   <select
                     value={egressLeakageMode ?? "off"}
                     onChange={(e) => onChangeLeakageMode(e.target.value as EgressLeakageMode)}
@@ -164,12 +153,14 @@ export function YamlTab({
                     <option value="strip">leakage: strip</option>
                     <option value="fail">leakage: fail</option>
                   </select>
-                ) : egressLeakageMode && egressLeakageMode !== "off" ? (
+                </HelpTarget>
+              ) : egressLeakageMode && egressLeakageMode !== "off" ? (
+                <HelpTarget id="term.leakage">
                   <span className="text-[10px] uppercase tracking-wider text-violet-400 border border-violet-800/40 rounded px-2 py-0.5 cursor-default">
                     leakage: {egressLeakageMode}
                   </span>
-                ) : null}
-              </TooltipWrap>
+                </HelpTarget>
+              ) : null}
             </div>
           )}
 

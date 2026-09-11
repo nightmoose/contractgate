@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import useSWR from "swr";
 import { getGlobalStats, getAuditLog, listContracts, listPublicCatalog, listOpenDataContracts } from "@/lib/api";
 import type { IngestionStats, AuditEntry, ContractSummary, CatalogEntry, OpenDataContract } from "@/lib/api";
@@ -8,6 +8,8 @@ import clsx from "clsx";
 import { useRouter } from "next/navigation";
 import AuthGate from "@/components/AuthGate";
 import { useOrg } from "@/lib/org";
+import { HelpTarget } from "@/components/help/HelpTarget";
+import { FirstRunLoop } from "@/components/help/FirstRun";
 
 // ---------------------------------------------------------------------------
 // Hero banner — dismissible pitch for first-time / non-technical visitors
@@ -16,6 +18,10 @@ import { useOrg } from "@/lib/org";
 function HeroBanner() {
   const [dismissed, setDismissed] = useState(false);
   const [expanded, setExpanded] = useState(false);
+
+  useEffect(() => {
+    if (localStorage.getItem("cg.hero.dismissed") === "1") setDismissed(true);
+  }, []);
 
   if (dismissed) return null;
 
@@ -85,7 +91,10 @@ function HeroBanner() {
           )}
         </div>
         <button
-          onClick={() => setDismissed(true)}
+          onClick={() => {
+            setDismissed(true);
+            try { localStorage.setItem("cg.hero.dismissed", "1"); } catch { /* ignore */ }
+          }}
           className="text-slate-600 hover:text-slate-400 text-sm transition-colors flex-shrink-0"
           aria-label="Dismiss"
         >
@@ -166,15 +175,20 @@ function StatCard({
   value,
   sub,
   color = "text-white",
+  helpId,
 }: {
   label: string;
   value: string | number;
   sub?: string;
   color?: string;
+  helpId?: string;
 }) {
+  const labelEl = (
+    <p className="text-xs text-slate-500 uppercase tracking-wider mb-1">{label}</p>
+  );
   return (
     <div className="bg-[#111827] border border-[#1f2937] rounded-xl p-5">
-      <p className="text-xs text-slate-500 uppercase tracking-wider mb-1">{label}</p>
+      {helpId ? <HelpTarget id={helpId}>{labelEl}</HelpTarget> : labelEl}
       <p className={clsx("text-3xl font-bold", color)}>{value}</p>
       {sub && <p className="text-xs text-slate-500 mt-1">{sub}</p>}
     </div>
@@ -216,16 +230,18 @@ function AuditTable({ entries }: { entries: AuditEntry[] }) {
                 {e.contract_id.slice(0, 8)}…
               </td>
               <td className="py-2.5">
-                <span
-                  className={clsx(
-                    "text-xs px-2 py-0.5 rounded-full font-medium",
-                    e.passed
-                      ? "bg-green-900/40 text-green-400"
-                      : "bg-red-900/40 text-red-400"
-                  )}
-                >
-                  {e.passed ? "PASS" : "FAIL"}
-                </span>
+                <HelpTarget id={e.passed ? "term.pass" : "term.fail"}>
+                  <span
+                    className={clsx(
+                      "text-xs px-2 py-0.5 rounded-full font-medium",
+                      e.passed
+                        ? "bg-green-900/40 text-green-400"
+                        : "bg-red-900/40 text-red-400"
+                    )}
+                  >
+                    {e.passed ? "PASS" : "FAIL"}
+                  </span>
+                </HelpTarget>
               </td>
               <td className="py-2.5 text-slate-400">{e.violation_count}</td>
               <td className="py-2.5 text-slate-400 font-mono text-xs">
@@ -288,9 +304,11 @@ function PublicCatalogWidget({
     <div className="bg-[#111827] border border-[#1f2937] rounded-xl p-5">
       <div className="flex items-center justify-between mb-4">
         <div>
-          <h2 className="text-sm font-semibold text-slate-400 uppercase tracking-wider">
-            Public Contracts
-          </h2>
+          <HelpTarget id="dashboard.public-contracts">
+            <h2 className="text-sm font-semibold text-slate-400 uppercase tracking-wider">
+              Public Contracts
+            </h2>
+          </HelpTarget>
           <p className="text-xs text-slate-600 mt-0.5">
             Open data + community published — fork or import
           </p>
@@ -392,7 +410,9 @@ function DashboardContent() {
       {/* Header */}
       <div className="flex items-center justify-between mb-6">
         <div>
-          <h1 className="text-2xl font-bold">Live Monitor</h1>
+          <HelpTarget id="page.dashboard">
+            <h1 className="text-2xl font-bold">Live Monitor</h1>
+          </HelpTarget>
           <p className="text-sm text-slate-500 mt-1">
             Real-time ingestion health — refreshes every 5s
           </p>
@@ -412,10 +432,12 @@ function DashboardContent() {
       {/* Stats row */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
         <StatCard
+          helpId="dashboard.total-events"
           label="Total Events"
           value={stats?.total_events.toLocaleString() ?? "—"}
         />
         <StatCard
+          helpId="dashboard.pass-rate"
           label="Pass Rate"
           value={`${passRate}%`}
           color={
@@ -427,11 +449,13 @@ function DashboardContent() {
           }
         />
         <StatCard
+          helpId="dashboard.violations"
           label="Violations"
           value={stats?.failed_events.toLocaleString() ?? "—"}
           color="text-red-400"
         />
         <StatCard
+          helpId="dashboard.avg-latency"
           label="Avg Latency"
           value={avgLatency}
           sub={
@@ -491,7 +515,11 @@ function DashboardContent() {
               ))}
             </ul>
           ) : (
-            <p className="text-sm text-slate-600">No contracts yet</p>
+            <FirstRunLoop
+              title="No contracts yet"
+              hint="This panel fills once you have a contract. The loop is create → promote stable → ingest."
+              cta={{ href: "/contracts", label: "Create a contract →" }}
+            />
           )}
         </div>
 
@@ -511,14 +539,11 @@ function DashboardContent() {
           {audit && audit.length > 0 ? (
             <AuditTable entries={audit.slice(0, 8)} />
           ) : (
-            <div className="flex items-center justify-center h-32 text-slate-600 text-sm">
-              No events yet — send data to{" "}
-              <code className="ml-1 text-green-600">
-                POST /ingest/{"{"}
-                &lt;contract_id&gt;
-                {"}"}
-              </code>
-            </div>
+            <FirstRunLoop
+              title="No events yet"
+              hint="Audit fills automatically once events hit /v1/ingest/{contract_id}."
+              cta={{ href: "/contracts", label: "Start with a contract →" }}
+            />
           )}
         </div>
       </div>

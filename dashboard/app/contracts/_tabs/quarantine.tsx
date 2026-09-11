@@ -30,6 +30,7 @@ import {
   ReplaySummaryModal,
   TooltipWrap,
 } from "../_lib";
+import { HelpTarget } from "@/components/help/HelpTarget";
 
 // ---------------------------------------------------------------------------
 // Extended QuarantinedEvent with status (RFC-020 D10)
@@ -340,11 +341,11 @@ export function QuarantineTab({ contracts }: { contracts?: ContractSummary[] }) 
 
           {pickerVersions.length > 0 && (
             <div className="flex items-center gap-2">
-              <TooltipWrap content="Re-validate the selected events against this contract version. Passes land in the audit log; failures create new quarantine rows.">
+              <HelpTarget id="term.replay">
                 <span className="text-xs text-slate-500 whitespace-nowrap cursor-default underline decoration-dotted">
                   Replay against:
                 </span>
-              </TooltipWrap>
+              </HelpTarget>
               <select
                 value={replayVersion}
                 onChange={(e) => setReplayVersion(e.target.value)}
@@ -725,9 +726,9 @@ function PayloadPreviewDrawer({
         <div className="flex items-start justify-between px-6 py-5 border-b border-[#1f2937]">
           <div>
             <h3 className="text-sm font-semibold text-slate-200 uppercase tracking-wider">
-              <TooltipWrap content="Events that failed contract validation are held here for inspection and optional replay. Nothing is silently dropped.">
+              <HelpTarget id="term.quarantine">
                 <span className="cursor-default underline decoration-dotted">Quarantined</span>
-              </TooltipWrap>{" "}
+              </HelpTarget>{" "}
               Payload
             </h3>
             <p className="text-xs text-slate-500 font-mono mt-1 truncate">{event.id}</p>
@@ -838,9 +839,9 @@ function ReplayHistoryDrawer({
         <div className="flex items-center justify-between p-5 border-b border-[#1f2937]">
           <div>
             <h3 className="font-semibold text-slate-100">
-              <TooltipWrap content="Re-validate a quarantined event against a current contract version. If it passes, it is written to the audit log and forwarded downstream.">
+              <HelpTarget id="term.replay">
                 <span className="cursor-default underline decoration-dotted">Replay</span>
-              </TooltipWrap>{" "}
+              </HelpTarget>{" "}
               History
             </h3>
             <p className="text-xs text-slate-600 font-mono mt-0.5">{eventId}</p>

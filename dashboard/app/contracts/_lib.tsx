@@ -6,9 +6,9 @@
  */
 
 import { useEffect } from "react";
-import * as Tooltip from "@radix-ui/react-tooltip";
 import clsx from "clsx";
 import type { VersionSummary } from "@/lib/api";
+export { TooltipWrap } from "@/components/help/TooltipWrap";
 
 // ---------------------------------------------------------------------------
 // Version-picker helpers
@@ -36,35 +36,6 @@ export function pickDefaultVersion(vs: VersionSummary[]): string | null {
 export function newestVersionString(vs: VersionSummary[]): string | null {
   if (vs.length === 0) return null;
   return [...vs].sort((a, b) => b.created_at.localeCompare(a.created_at))[0].version;
-}
-
-// ---------------------------------------------------------------------------
-// Tooltip primitive (RFC-020 §Design E)
-// ---------------------------------------------------------------------------
-
-export function TooltipWrap({
-  children,
-  content,
-}: {
-  children: React.ReactNode;
-  content: string;
-}) {
-  return (
-    <Tooltip.Provider delayDuration={300}>
-      <Tooltip.Root>
-        <Tooltip.Trigger asChild>{children}</Tooltip.Trigger>
-        <Tooltip.Portal>
-          <Tooltip.Content
-            className="max-w-xs text-xs bg-[#1f2937] text-slate-200 rounded-lg px-3 py-2 shadow-xl border border-[#374151] z-[200] leading-relaxed"
-            sideOffset={4}
-          >
-            {content}
-            <Tooltip.Arrow className="fill-[#1f2937]" />
-          </Tooltip.Content>
-        </Tooltip.Portal>
-      </Tooltip.Root>
-    </Tooltip.Provider>
-  );
 }
 
 // ---------------------------------------------------------------------------

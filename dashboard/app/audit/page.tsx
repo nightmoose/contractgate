@@ -8,6 +8,8 @@ import type { AuditEntry, ContractSummary, IngestionStats } from "@/lib/api";
 import clsx from "clsx";
 import AuthGate from "@/components/AuthGate";
 import { useOrg } from "@/lib/org";
+import { HelpTarget } from "@/components/help/HelpTarget";
+import { FirstRunLoop } from "@/components/help/FirstRun";
 
 // ---------------------------------------------------------------------------
 // Raw-event drawer (RFC-004 surfacing)
@@ -164,9 +166,11 @@ function RawEventDrawer({
         {/* Stored payload — scrolls independently */}
         <div className="flex-1 overflow-y-auto px-6 py-4">
           <div className="flex items-center justify-between mb-2">
-            <p className="text-xs text-slate-500 uppercase tracking-wider">
-              Stored payload
-            </p>
+            <HelpTarget id="audit.stored-payload">
+              <p className="text-xs text-slate-500 uppercase tracking-wider">
+                Stored payload
+              </p>
+            </HelpTarget>
             <button
               onClick={handleCopy}
               className="text-xs px-2.5 py-1 bg-[#1f2937] hover:bg-[#374151] border border-[#374151] rounded text-slate-300 transition-colors"
@@ -389,7 +393,9 @@ function AuditContent() {
     <div>
       <div className="flex items-center justify-between mb-6">
         <div>
-          <h1 className="text-2xl font-bold">Audit Log</h1>
+          <HelpTarget id="page.audit">
+            <h1 className="text-2xl font-bold">Audit Log</h1>
+          </HelpTarget>
           <p className="text-sm text-slate-500 mt-1">
             Every validation attempt — pass and fail — recorded at ingestion time
           </p>
@@ -562,9 +568,15 @@ function AuditContent() {
                     </p>
                   ) : (
                     <div className="max-w-lg mx-auto text-center space-y-4 py-4">
-                      <p className="text-slate-500 text-sm">
-                        No events recorded yet. The audit log fills automatically once events start flowing through your ingest endpoint.
-                      </p>
+                      <FirstRunLoop
+                        title="No events recorded yet"
+                        hint="The audit log fills automatically once events start flowing through your ingest endpoint."
+                        cta={
+                          !contracts || contracts.length === 0
+                            ? { href: "/contracts", label: "Create a contract →" }
+                            : undefined
+                        }
+                      />
                       {contracts && contracts.length > 0 ? (
                         <div className="text-left bg-[#0a0d12] border border-[#1f2937] rounded-lg p-4">
                           <p className="text-xs text-slate-500 uppercase tracking-wider mb-2">Send a test event</p>

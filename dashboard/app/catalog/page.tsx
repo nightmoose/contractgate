@@ -38,6 +38,7 @@ import type {
 import useSWR, { mutate } from "swr";
 import { useOrg, planAtLeast } from "@/lib/org";
 import clsx from "clsx";
+import { HelpTarget } from "@/components/help/HelpTarget";
 
 // ---------------------------------------------------------------------------
 // Open Data section — curated contracts, fork flow
@@ -685,7 +686,9 @@ function CatalogContent() {
     <div>
       {/* Header */}
       <div className="mb-6">
-        <h1 className="text-2xl font-bold">Contract Catalog</h1>
+        <HelpTarget id="page.catalog">
+          <h1 className="text-2xl font-bold">Contract Catalog</h1>
+        </HelpTarget>
         <p className="text-sm text-slate-500 mt-1">
           Browse open data sources, import community contracts, and validate outbound data.
         </p>
@@ -720,7 +723,9 @@ function CatalogContent() {
           <div className="bg-[#111827] border border-[#1f2937] rounded-xl p-6">
             <div className="mb-5">
               <div className="flex items-center gap-2 mb-1">
-                <h2 className="text-base font-semibold text-slate-100">Open Data Contracts</h2>
+                <HelpTarget id="catalog.opendata">
+                  <h2 className="text-base font-semibold text-slate-100">Open Data Contracts</h2>
+                </HelpTarget>
                 <span className="text-[10px] bg-teal-900/30 text-teal-400 border border-teal-800/40 px-2 py-0.5 rounded-full font-medium">
                   curated
                 </span>
@@ -737,7 +742,9 @@ function CatalogContent() {
           <div className="bg-[#111827] border border-[#1f2937] rounded-xl p-6">
             <div className="mb-5">
               <div className="flex items-center gap-2 mb-1">
-                <h2 className="text-base font-semibold text-slate-100">Community Published</h2>
+                <HelpTarget id="catalog.published">
+                  <h2 className="text-base font-semibold text-slate-100">Community Published</h2>
+                </HelpTarget>
                 <span className="text-[10px] bg-indigo-900/30 text-indigo-400 border border-indigo-800/40 px-2 py-0.5 rounded-full font-medium">
                   published
                 </span>
@@ -756,7 +763,9 @@ function CatalogContent() {
         <PlanGate minTier="growth" feature="Egress Validator" previewKey="catalog">
           <div className="bg-[#111827] border border-[#1f2937] rounded-xl p-6">
             <div className="mb-5">
-              <h2 className="text-base font-semibold text-slate-100">Egress Validator</h2>
+              <HelpTarget id="catalog.egress">
+                <h2 className="text-base font-semibold text-slate-100">Egress Validator</h2>
+              </HelpTarget>
               <p className="text-sm text-slate-500 mt-1">
                 Validate an outbound payload against one of your contracts before it leaves your API.
                 The same engine that runs on ingest — identical rules, identical latency budget.

@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { HelpTarget } from "@/components/help/HelpTarget";
 
 const DOCS = [
   {
@@ -58,7 +59,9 @@ export default function DocsIndexPage() {
     <div className="max-w-3xl py-10">
       {/* Header */}
       <div className="mb-12">
-        <h1 className="text-3xl font-bold text-slate-100 mb-3">Docs</h1>
+        <HelpTarget id="page.docs">
+          <h1 className="text-3xl font-bold text-slate-100 mb-3">Docs</h1>
+        </HelpTarget>
         <p className="text-slate-400 text-lg leading-relaxed">
           Everything you need to integrate ContractGate into your stack.
           Pick an integration below to get started.

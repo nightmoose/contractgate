@@ -3,46 +3,52 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import clsx from "clsx";
+import { HelpTarget } from "@/components/help/HelpTarget";
+import { HelpToggle } from "@/components/help/HelpToggle";
+import { useHelp } from "@/components/help/HelpProvider";
 
 const PUBLIC_NAV = [
-  { href: "/stream-demo",        label: "Stream Demo",  icon: "⚡" },
-  { href: "/docs/kafka-connect", label: "Kafka Connect", icon: "🔗" },
-  { href: "/docs/python-sdk",    label: "Python SDK",    icon: "🐍" },
-  { href: "/pricing",            label: "Pricing",       icon: "💳" },
+  { href: "/stream-demo",        label: "Stream Demo",  icon: "⚡", helpId: "nav.stream-demo" },
+  { href: "/docs/kafka-connect", label: "Kafka Connect", icon: "🔗", helpId: "nav.kafka-connect" },
+  { href: "/docs/python-sdk",    label: "Python SDK",    icon: "🐍", helpId: "nav.python-sdk" },
+  { href: "/pricing",            label: "Pricing",       icon: "💳", helpId: "nav.pricing" },
 ];
 
 const ACCOUNT_NAV = [
-  { href: "/",           label: "Dashboard",  icon: "⬡" },
-  { href: "/contracts",  label: "Contracts",  icon: "📋" },
-  { href: "/catalog",    label: "Catalog",    icon: "📥" },
-  { href: "/scorecard",  label: "Scorecard",  icon: "📊" },
-  { href: "/audit",      label: "Audit Log",  icon: "🔍" },
-  { href: "/scaffold",   label: "Scaffold",   icon: "🏗️" },
-  { href: "/workbench",  label: "Workbench",  icon: "🔬" },
-  { href: "/playground", label: "Playground", icon: "🧪" },
-  { href: "/account",    label: "Account",    icon: "🔑" },
+  { href: "/",           label: "Dashboard",  icon: "⬡", helpId: "nav.dashboard" },
+  { href: "/contracts",  label: "Contracts",  icon: "📋", helpId: "nav.contracts" },
+  { href: "/catalog",    label: "Catalog",    icon: "📥", helpId: "nav.catalog" },
+  { href: "/scorecard",  label: "Scorecard",  icon: "📊", helpId: "nav.scorecard" },
+  { href: "/audit",      label: "Audit Log",  icon: "🔍", helpId: "nav.audit" },
+  { href: "/scaffold",   label: "Scaffold",   icon: "🏗️", helpId: "nav.scaffold" },
+  { href: "/workbench",  label: "Workbench",  icon: "🔬", helpId: "nav.workbench" },
+  { href: "/playground", label: "Playground", icon: "🧪", helpId: "nav.playground" },
+  { href: "/account",    label: "Account",    icon: "🔑", helpId: "nav.account" },
 ];
 
-function NavLink({ href, label, icon }: { href: string; label: string; icon: string }) {
+function NavLink({ href, label, icon, helpId }: { href: string; label: string; icon: string; helpId: string }) {
   const pathname = usePathname();
   const active = pathname === href;
   return (
-    <Link
-      href={href}
-      className={clsx(
-        "flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors",
-        active
-          ? "bg-green-900/30 text-green-400 border border-green-800/50"
-          : "text-slate-400 hover:text-slate-200 hover:bg-[#1f2937]"
-      )}
-    >
-      <span className="text-base">{icon}</span>
-      {label}
-    </Link>
+    <HelpTarget id={helpId}>
+      <Link
+        href={href}
+        className={clsx(
+          "flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors",
+          active
+            ? "bg-green-900/30 text-green-400 border border-green-800/50"
+            : "text-slate-400 hover:text-slate-200 hover:bg-[#1f2937]"
+        )}
+      >
+        <span className="text-base">{icon}</span>
+        {label}
+      </Link>
+    </HelpTarget>
   );
 }
 
 export default function Sidebar() {
+  const { mode, toggle } = useHelp();
   return (
     <aside className="hidden md:flex fixed left-0 top-0 h-full w-64 bg-[#111827] border-r border-[#1f2937] flex-col z-50">
       {/* Logo */}
@@ -87,7 +93,8 @@ export default function Sidebar() {
       </nav>
 
       {/* Footer */}
-      <div className="p-4 border-t border-[#1f2937]">
+      <div className="p-4 border-t border-[#1f2937] space-y-3">
+        <HelpToggle mode={mode} onToggle={toggle} />
         <p className="text-xs text-slate-600">v0.1.0</p>
       </div>
     </aside>

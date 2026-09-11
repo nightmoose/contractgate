@@ -11,6 +11,7 @@ import clsx from "clsx";
 import { getVersion, exportOdcs, approveImport, getConformanceReport, diffContracts } from "@/lib/api";
 import type { ContractResponse, VersionSummary, VersionResponse, NameHistoryEntry, ConformanceReport, DiffResponse } from "@/lib/api";
 import { ConfirmActionModal, TooltipWrap } from "../_lib";
+import { HelpTarget } from "@/components/help/HelpTarget";
 
 // ---------------------------------------------------------------------------
 // VersionsTab
@@ -212,12 +213,8 @@ export function VersionsTab({
       <div className="flex items-center gap-3 bg-[#0a0d12] border border-[#1f2937] rounded-xl px-4 py-3">
         <span className="text-xs text-slate-500 uppercase tracking-wider shrink-0">Routing</span>
         {latestStable ? (
-          <TooltipWrap
-            content={
-              contract?.multi_stable_resolution === "fallback"
-                ? "Unpinned traffic first tries the latest stable version. On failure it retries other stable versions in order; the first that passes wins."
-                : "Unpinned traffic validates against only this latest stable version. On failure the event is quarantined — no retry."
-            }
+          <HelpTarget
+            id={contract?.multi_stable_resolution === "fallback" ? "term.fallback" : "term.strict"}
           >
             <span className="text-xs font-mono text-green-400 cursor-default">
               → v{latestStable}
@@ -230,7 +227,7 @@ export function VersionsTab({
                 {contract?.multi_stable_resolution ?? "strict"}
               </span>
             </span>
-          </TooltipWrap>
+          </HelpTarget>
         ) : (
           <span className="text-xs text-amber-400">
             No stable version — unpinned traffic will receive 409 NoStableVersion
@@ -296,13 +293,13 @@ export function VersionsTab({
                   <span className="font-mono text-sm text-slate-200 shrink-0">
                     v{v.version}
                   </span>
-                  <TooltipWrap
-                    content={
+                  <HelpTarget
+                    id={
                       v.state === "stable"
-                        ? "A frozen, immutable version eligible to receive inbound traffic. YAML cannot be edited after promotion."
+                        ? "term.stable"
                         : v.state === "draft"
-                        ? "A work-in-progress version. YAML is freely editable. Promotes to Stable when ready."
-                        : "A retired version. No new unpinned traffic routes to it. Clients that explicitly pin this version get their batch quarantined."
+                        ? "term.draft"
+                        : "term.deprecated"
                     }
                   >
                     <span
@@ -315,7 +312,7 @@ export function VersionsTab({
                     >
                       {v.state}
                     </span>
-                  </TooltipWrap>
+                  </HelpTarget>
                   {isLatestStable && (
                     <TooltipWrap
                       content="Unpinned traffic resolves to this version by default (latest stable by promotion timestamp)."
@@ -522,23 +519,23 @@ function ConformanceChip({
 function StateLadder() {
   return (
     <div className="flex items-center gap-2 text-xs py-2">
-      <TooltipWrap content="A work-in-progress version. YAML is freely editable. Promotes to Stable when ready.">
+      <HelpTarget id="term.draft">
         <span className="px-2.5 py-1 rounded-lg bg-amber-900/30 text-amber-400 border border-amber-800/30 cursor-default">
           Draft
         </span>
-      </TooltipWrap>
+      </HelpTarget>
       <span className="text-slate-600 select-none">──promote──▶</span>
-      <TooltipWrap content="A frozen, immutable version eligible to receive inbound traffic. YAML cannot be edited after promotion.">
+      <HelpTarget id="term.stable">
         <span className="px-2.5 py-1 rounded-lg bg-green-900/30 text-green-400 border border-green-800/30 cursor-default">
           Stable
         </span>
-      </TooltipWrap>
+      </HelpTarget>
       <span className="text-slate-600 select-none">──deprecate──▶</span>
-      <TooltipWrap content="A retired version. No new unpinned traffic routes to it. Clients that explicitly pin this version get their batch quarantined.">
+      <HelpTarget id="term.deprecated">
         <span className="px-2.5 py-1 rounded-lg bg-slate-800 text-slate-500 border border-slate-700/30 cursor-default">
           Deprecated
         </span>
-      </TooltipWrap>
+      </HelpTarget>
     </div>
   );
 }
