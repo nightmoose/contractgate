@@ -99,6 +99,7 @@ signed off (may be planning docs or UI-only); **Draft** = under review;
 | 089 | [LLM-Pasteable Onboarding (`/llms.txt` + agent playbook)](rfcs/089-llm-agent-onboarding.md) | Shipped | `nightly-maintenance-2026-07-22-bot-signup-cleanup` |
 | 090 | [Official MCP Server (stdio)](rfcs/090-mcp-server.md) | Accepted | `nightly-maintenance-2026-08-23-rfc090` |
 | 091 | [Help Catalog + “What’s this?” Inspect Mode](rfcs/091-whats-this-help-mode.md) | Accepted | `nightly-maintenance-2026-09-11-rfc091-whats-this-help-mode` |
+| 092 | [Ralph-native demo stack (Kafi / Driftless / ContractGate)](rfcs/092-ralph-native-demo.md) | Accepted — partner-ready | `nightly-maintenance-2026-09-11-rfc092-ralph-demo` |
 
 ---
 

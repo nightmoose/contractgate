@@ -49,6 +49,7 @@ public class ContractGateValidatorConfig extends AbstractConfig {
     public static final String CONTRACT_VERSION_CONFIG = "contractgate.contract.version";
     private static final String CONTRACT_VERSION_DOC =
         "Specific contract version to pin (e.g. '1.2.0'). " +
+        "Sent as the ?version= query parameter on POST /v1/ingest/{id}. " +
         "When blank the server resolves to the latest stable version automatically " +
         "(recommended — lets you promote new versions without redeploying connectors).";
     private static final String CONTRACT_VERSION_DEFAULT = "";

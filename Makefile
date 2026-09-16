@@ -1,4 +1,4 @@
-.PHONY: demo demo-down demo-reset demo-logs stack-up stack-up-demo stack-down
+.PHONY: demo demo-down demo-reset demo-logs stack-up stack-up-demo stack-down demo-ralph demo-ralph-down demo-ralph-smoke demo-ralph-e2e demo-ralph-run demo-ralph-run-mcp connect-package
 
 # ── Demo mode (RFC-023) ───────────────────────────────────────────────────────
 # Zero-auth local experience. No Supabase project, no API keys, no sign-up.
@@ -20,6 +20,37 @@ demo-reset: demo-down demo
 demo-logs:
 	docker compose --profile demo logs -f
 
+# ── Ralph-native demo (RFC-092) ───────────────────────────────────────────────
+# ContractGate gate in front of Driftless/Kafi (design-partner stack).
+#   make demo-ralph        — start Redpanda + print next steps
+#   make demo-ralph-smoke  — Stage A automated smoke (quarantine check)
+#   make demo-ralph-down   — stop + wipe volumes
+
+demo-ralph:
+	docker compose -f demo/ralph/docker-compose.yml up -d
+	@echo ""
+	@echo "Redpanda up. Next (in demo/ralph, with venv):"
+	@echo "  python bridge/gate_bridge.py          # terminal A"
+	@echo "  python produce/producers.py           # terminal B"
+	@echo "  python produce/inject_bad.py          # terminal C"
+	@echo "Console: http://localhost:8088"
+	@echo "See demo/ralph/README.md"
+
+demo-ralph-smoke:
+	bash demo/ralph/scripts/smoke.sh
+
+demo-ralph-e2e:
+	bash demo/ralph/scripts/e2e.sh
+
+demo-ralph-run:
+	bash demo/ralph/scripts/run_demo.sh
+
+demo-ralph-run-mcp:
+	bash demo/ralph/scripts/run_demo.sh --with-mcp
+
+demo-ralph-down:
+	docker compose -f demo/ralph/docker-compose.yml down -v
+
 # ── Legacy aliases ────────────────────────────────────────────────────────────
 
 stack-up:
@@ -30,3 +61,12 @@ stack-up-demo:
 
 stack-down:
 	docker compose down
+
+# ── Kafka Connect SMT (Confluent Marketplace zip) ─────────────────────────────
+# Produces
+#   confluent-connector/target/datacontractgate-kafka-connect-contractgate-0.2.0.zip
+# Attach that file (and an optional gpg --detach-sign --armor .asc) to the
+# Marketplace submission email.
+
+connect-package:
+	mvn -f confluent-connector/pom.xml clean verify

@@ -1,0 +1,12 @@
+ContractGate Semantic Validator for Kafka Connect
+Copyright 2025-2026 DataContractGate
+
+This product is licensed under the Apache License, Version 2.0.
+See the LICENSE file in this directory.
+
+The ContractGate validation gateway (Rust) is a separate product,
+distributed under the MIT License. This Kafka Connect SMT talks to
+that gateway over HTTP; it does not include the gateway.
+
+Apache Kafka Connect API is copyright The Apache Software Foundation,
+licensed under the Apache License, Version 2.0.

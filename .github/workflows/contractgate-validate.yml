@@ -1,0 +1,25 @@
+# Dogfood the composite action against this repo's contracts/.
+name: contractgate-validate
+
+on:
+  pull_request:
+    paths:
+      - "contracts/**"
+      - "actions/validate/**"
+      - "contractgate_hooks/**"
+  push:
+    branches:
+      - main
+    paths:
+      - "contracts/**"
+      - "actions/validate/**"
+      - "contractgate_hooks/**"
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./actions/validate
+        with:
+          path: contracts

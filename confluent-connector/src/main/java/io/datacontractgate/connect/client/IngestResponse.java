@@ -7,7 +7,7 @@ import java.util.Collections;
 import java.util.List;
 
 /**
- * Top-level response from {@code POST /ingest/{contractId}}.
+ * Top-level response from {@code POST /v1/ingest/{contractId}}.
  *
  * <p>Mirrors the {@code BatchIngestResponse} struct in the Rust backend.
  * Unknown fields are silently ignored so older connector versions remain

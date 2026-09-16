@@ -1,0 +1,40 @@
+# Ralph-demo: shoe customer after-image (Debezium CDC)
+version: "1.0"
+name: "ralph_customers"
+description: "Shoe customer CDC after-image for driftless / Kafi demo"
+
+ontology:
+  entities:
+    - name: id
+      type: string
+      required: true
+      pattern: "^[0-9a-fA-F-]{36}$"
+    - name: first_name
+      type: string
+      required: true
+    - name: last_name
+      type: string
+      required: true
+    - name: email
+      type: string
+      required: true
+      pattern: "^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$"
+    - name: phone
+      type: string
+      required: false
+    - name: street_address
+      type: string
+      required: true
+    - name: state
+      type: string
+      required: true
+    - name: zip_code
+      type: string
+      required: true
+      pattern: "^[0-9]{4,10}$"
+    - name: country
+      type: string
+      required: false
+    - name: country_code
+      type: string
+      required: false

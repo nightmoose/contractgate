@@ -33,7 +33,7 @@ That's it. Every record is now validated against your contract in real-time.
 | `contractgate.api.url` | *(required)* | Base URL of your ContractGate API server (no trailing slash) |
 | `contractgate.contract.id` | *(required)* | UUID of the contract to validate against |
 | `contractgate.api.key` | `""` | `x-api-key` header value. Leave blank for dev/no-auth mode |
-| `contractgate.contract.version` | `""` | Pin to a specific version, e.g. `"1.2.0"`. Blank = latest stable. Sent as the `X-Contract-Version` request header (highest server precedence). |
+| `contractgate.contract.version` | `""` | Pin to a specific version, e.g. `"1.2.0"`. Blank = latest stable. Sent as `?version=` on `POST /v1/ingest/{id}`. |
 | `contractgate.dry.run` | `false` | Validate without writing to the audit log (reduces DB pressure at high throughput) |
 | `contractgate.on.failure` | `DLQ` | `DLQ` — throw DataException for DLQ routing. `TAG_AND_PASS` — add violation headers and pass through |
 | `contractgate.connect.timeout.ms` | `5000` | TCP connection timeout in ms |
@@ -183,23 +183,32 @@ The SMT throws a `DataException`. Kafka Connect's built-in error handling routes
 The SMT adds violation headers and forwards the record downstream unchanged. Consumers can inspect `contractgate.passed` and decide what to do.
 
 ### API Unavailable (fail-open)
-If ContractGate is unreachable, the SMT logs a warning and passes the record through. This prevents a transient API outage from halting your connector. Tighten this by configuring Kafka Connect's task-level retry policies.
+If ContractGate is unreachable (network error, HTTP 5xx, 401/404/429), the SMT logs a warning and passes the record through. This prevents a transient API outage from halting your connector.
+
+HTTP **422** is **not** an outage — it is a rejected event. The SMT parses the body and applies DLQ or TAG_AND_PASS. Same for HTTP 207 (mixed batch).
 
 ---
 
 ## Installation
 
-### Confluent Hub CLI
+### From a GitHub Release (until Marketplace lists this package)
+
 ```bash
-confluent-hub install datacontractgate/kafka-connect-contractgate:0.1.0
+# Build from this repo:
+mvn -f confluent-connector/pom.xml -q verify
+unzip confluent-connector/target/datacontractgate-kafka-connect-contractgate-0.2.0.zip \
+  -d /usr/share/confluent-hub-components/
 ```
 
-### Manual
-Extract the ZIP to your Connect plugin path:
+Restart Connect workers after installing.
+
+### Confluent Marketplace (once listed)
+
 ```bash
-unzip kafka-connect-contractgate-0.1.0.zip -d /usr/share/confluent-hub-components/
+confluent connect plugin install datacontractgate/kafka-connect-contractgate:0.2.0
 ```
-Then restart your Connect workers.
+
+The older `confluent-hub install` client is deprecated on Confluent Platform 7.6+.
 
 ---
 

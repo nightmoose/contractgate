@@ -1,0 +1,10 @@
+# Stage A — gate + producers (always)
+-e ../../sdks/python
+confluent-kafka>=2.3,<3
+
+# Stage B — Driftless / Kafi downstream (optional; see requirements-downstream.txt)
+# kafi==1.1.1
+# lancedb==0.38.0
+# fastembed==0.8.0
+# fastmcp==4.0.3
+# mcp==2.2.0

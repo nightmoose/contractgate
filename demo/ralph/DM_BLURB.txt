@@ -1,0 +1,18 @@
+Hey Ralph — following up from LO.
+
+I put together a runnable demo that gates your Driftless/Kafi path with ContractGate:
+
+  producers → *.raw → ContractGate → clean topics → Kafi joins → LanceDB/MCP
+                         ↘ *.quarantine
+
+Same shoe CDC shapes and the same clean topic names Driftless already reads. Bad events never reach joins / agent memory.
+
+It’s on branch `nightly-maintenance-2026-09-11-rfc092-ralph-demo` under `demo/ralph/`.
+
+One-shot from the ContractGate repo root (Docker running):
+
+  make demo-ralph-run-mcp
+
+Expect a final DEMO PASS (joins + quarantine samples + an MCP query). PARTNER.md has the short runbook.
+
+No rush — whenever you have a slot, I’d love your take on whether that raw→clean split feels right for how you’d actually wire it.

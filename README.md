@@ -142,6 +142,25 @@ cargo install --git https://github.com/nightmoose/contractgate contractgate
 contractgate validate --contract examples/nested-order.yaml events.json
 ```
 
+**GitHub Action** (compile every YAML under `contracts/` on PRs):
+
+```yaml
+- uses: nightmoose/contractgate/actions/validate@main
+  with:
+    path: contracts
+```
+
+**pre-commit** (same compile, no network):
+
+```yaml
+# .pre-commit-config.yaml
+repos:
+  - repo: https://github.com/nightmoose/contractgate
+    rev: main   # pin to a git sha
+    hooks:
+      - id: contractgate-validate
+```
+
 ---
 
 ## Architecture

@@ -7,9 +7,11 @@ import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.net.URI;
+import java.net.URLEncoder;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 
 /**
@@ -22,6 +24,11 @@ import java.time.Duration;
  * <p>Every call sends exactly one record wrapped in a JSON array so the server
  * always returns exactly one {@link IngestResponse.IngestEventResult}. The
  * SMT retrieves it via {@link IngestResponse#singleResult()}.</p>
+ *
+ * <p>Validation outcomes use HTTP 200 (all passed), 207 (mixed), or 422
+ * (all failed). Those are <em>not</em> transport failures — the body is a
+ * normal {@link IngestResponse}. Only non-validation statuses, empty bodies,
+ * and I/O errors become {@link ContractGateApiException}.</p>
  */
 public class ContractGateClient {
 
@@ -80,16 +87,19 @@ public class ContractGateClient {
      * Validates {@code recordJson} against the configured contract.
      *
      * <p>The record is wrapped in a JSON array and posted to
-     * {@code POST /ingest/{contractId}[?dry_run=true]}. When a version pin is
-     * configured it is sent as the {@code X-Contract-Version} request header —
-     * the server's version resolution order is: header &gt; {@code @version}
-     * path suffix &gt; latest stable. The {@code ?version=} query parameter is
-     * NOT recognised by the server and must not be used.</p>
+     * {@code POST /v1/ingest/{contractId}}. {@code ?dry_run=true} and
+     * {@code ?version=} are appended when configured. RFC-021's v1 surface
+     * is the public connector path; a version pin uses the query parameter
+     * the v1 handler actually reads.</p>
+     *
+     * <p>HTTP 200 / 207 / 422 with a parseable {@code results} array are
+     * validation outcomes. Anything else (401, 404, 409, 429, 5xx, empty
+     * body, I/O) is a transport/API failure.</p>
      *
      * @param recordJson JSON string representing a single Kafka record value
      * @param requestTimeoutMs per-call override (same value used at construction time)
      * @return parsed {@link IngestResponse}; never {@code null}
-     * @throws ContractGateApiException on non-2xx HTTP status or I/O failure
+     * @throws ContractGateApiException on non-validation HTTP status or I/O failure
      */
     public IngestResponse validate(String recordJson, int requestTimeoutMs)
             throws ContractGateApiException {
@@ -105,12 +115,6 @@ public class ContractGateClient {
 
         if (!apiKey.isEmpty()) {
             requestBuilder.header("x-api-key", apiKey);
-        }
-
-        // Version pin → X-Contract-Version header (highest server precedence).
-        // The server does not recognise a ?version= query parameter.
-        if (!contractVersion.isEmpty()) {
-            requestBuilder.header("X-Contract-Version", contractVersion);
         }
 
         HttpRequest request = requestBuilder
@@ -129,46 +133,73 @@ public class ContractGateClient {
                 "Interrupted while calling ContractGate at " + url, e);
         }
 
-        int status = response.statusCode();
-        if (status < 200 || status >= 300) {
+        return parseValidationResponse(response.statusCode(), response.body(), url);
+    }
+
+    /**
+     * HTTP 200 (all passed), 207 (mixed batch), and 422 (all failed) carry a
+     * {@link IngestResponse} body. The SMT must treat those as validation
+     * results — a 422 is a rejected event, not an outage.
+     */
+    static boolean isValidationStatus(int status) {
+        return status == 200 || status == 207 || status == 422;
+    }
+
+    IngestResponse parseValidationResponse(int status, String rawBody, String url)
+            throws ContractGateApiException {
+        if (!isValidationStatus(status)) {
             throw new ContractGateApiException(
                 "ContractGate returned HTTP " + status + " for contract " + contractId +
-                ". Body: " + truncate(response.body(), 500));
+                ". Body: " + truncate(rawBody, 500));
         }
 
+        IngestResponse parsed;
         try {
-            return mapper.readValue(response.body(), IngestResponse.class);
+            parsed = mapper.readValue(rawBody, IngestResponse.class);
         } catch (JsonProcessingException e) {
             throw new ContractGateApiException(
-                "Failed to parse ContractGate response: " + e.getMessage() +
-                ". Raw body: " + truncate(response.body(), 300), e);
+                "Failed to parse ContractGate response (HTTP " + status + "): " +
+                e.getMessage() + ". Raw body: " + truncate(rawBody, 300), e);
         }
+
+        if (parsed.results == null || parsed.results.isEmpty()) {
+            throw new ContractGateApiException(
+                "ContractGate HTTP " + status + " from " + url +
+                " had no per-event results. Body: " + truncate(rawBody, 300));
+        }
+        return parsed;
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────
 
     /**
-     * Builds the ingest URL with any applicable query parameters.
+     * Builds the v1 ingest URL with any applicable query parameters.
      *
-     * <p>Version pinning is handled via the {@code X-Contract-Version} request
-     * header, not a query parameter — the server only recognises the header and
-     * the {@code @version} path-suffix forms. This method therefore only
-     * appends {@code ?dry_run=true} when configured.</p>
+     * <p>RFC-021: {@code POST /v1/ingest/{contract_id}}. Version pins use
+     * {@code ?version=}; dry-run uses {@code ?dry_run=true}.</p>
      *
      * <p>Example outputs:
      * <ul>
-     *   <li>{@code https://api.contractgate.io/ingest/abc-123}</li>
-     *   <li>{@code https://api.contractgate.io/ingest/abc-123?dry_run=true}</li>
+     *   <li>{@code https://contractgate-api.fly.dev/v1/ingest/abc-123}</li>
+     *   <li>{@code https://contractgate-api.fly.dev/v1/ingest/abc-123?dry_run=true}</li>
+     *   <li>{@code https://contractgate-api.fly.dev/v1/ingest/abc-123?version=1.2.0}</li>
      * </ul>
      * </p>
      */
-    private String buildUrl() {
+    String buildUrl() {
         StringBuilder sb = new StringBuilder(baseUrl)
-            .append("/ingest/")
+            .append("/v1/ingest/")
             .append(contractId);
 
+        boolean first = true;
         if (dryRun) {
             sb.append("?dry_run=true");
+            first = false;
+        }
+        if (!contractVersion.isEmpty()) {
+            sb.append(first ? '?' : '&')
+                .append("version=")
+                .append(URLEncoder.encode(contractVersion, StandardCharsets.UTF_8));
         }
         return sb.toString();
     }
