@@ -1,6 +1,11 @@
 # Rust
 target/
 
+# Kafka Connect SMT build artifacts (built by mvn package; do not commit zips)
+confluent-connector/target/
+confluent-connector/*.zip
+confluent-connector/*.zip.asc
+
 # Environment
 .env
 .env.local
@@ -48,6 +53,9 @@ sdks/python/*.egg-info/
 sdks/python/.eggs/
 sdks/python/__pycache__/
 sdks/python/**/__pycache__/
+contractgate_hooks/__pycache__/
+contractgate_hooks/**/__pycache__/
+dashboard/test-results/
 sdks/python/**/*.pyc
 sdks/python/.pytest_cache/
 sdks/python/pytest-cache-files-*/

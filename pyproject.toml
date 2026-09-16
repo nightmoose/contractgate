@@ -1,0 +1,28 @@
+# Root package is the pre-commit hook installer.
+# For the Python SDK: `pip install contractgate` (see sdks/python/).
+
+[build-system]
+requires = ["hatchling>=1.18"]
+build-backend = "hatchling.build"
+
+[project]
+name = "contractgate-hooks"
+version = "0.2.0"
+description = "Pre-commit hook: parse and compile ContractGate YAML contracts."
+readme = "README.md"
+requires-python = ">=3.9"
+license = { text = "MIT" }
+authors = [{ name = "ContractGate" }]
+dependencies = [
+  "contractgate>=0.1.0",
+]
+
+[project.scripts]
+contractgate-validate = "contractgate_hooks.validate:main"
+
+[project.urls]
+Homepage = "https://datacontractgate.com"
+Source = "https://github.com/nightmoose/contractgate"
+
+[tool.hatch.build.targets.wheel]
+packages = ["contractgate_hooks"]

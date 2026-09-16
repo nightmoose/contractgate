@@ -45,7 +45,7 @@ const DOCS = [
     href: "/docs/kafka-connect",
     icon: "🔗",
     title: "Kafka Connect SMT",
-    badge: "v0.1.0",
+    badge: "v0.2.0",
     badgeColor: "text-green-400 bg-green-900/30 border-green-700/40",
     description:
       "A Kafka Connect Single Message Transform that validates every record against a ContractGate semantic contract in real-time — before it reaches your data warehouse or AI systems. Invalid records go to a dead-letter topic; valid records continue unchanged.",

@@ -1,4 +1,4 @@
-.PHONY: demo demo-down demo-reset demo-logs stack-up stack-up-demo stack-down demo-ralph demo-ralph-down demo-ralph-smoke demo-ralph-e2e demo-ralph-run demo-ralph-run-mcp
+.PHONY: demo demo-down demo-reset demo-logs stack-up stack-up-demo stack-down demo-ralph demo-ralph-down demo-ralph-smoke demo-ralph-e2e demo-ralph-run demo-ralph-run-mcp connect-package
 
 # ── Demo mode (RFC-023) ───────────────────────────────────────────────────────
 # Zero-auth local experience. No Supabase project, no API keys, no sign-up.
@@ -61,3 +61,12 @@ stack-up-demo:
 
 stack-down:
 	docker compose down
+
+# ── Kafka Connect SMT (Confluent Marketplace zip) ─────────────────────────────
+# Produces
+#   confluent-connector/target/datacontractgate-kafka-connect-contractgate-0.2.0.zip
+# Attach that file (and an optional gpg --detach-sign --armor .asc) to the
+# Marketplace submission email.
+
+connect-package:
+	mvn -f confluent-connector/pom.xml clean verify

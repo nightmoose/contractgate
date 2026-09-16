@@ -7,7 +7,7 @@
 
   <groupId>io.datacontractgate</groupId>
   <artifactId>kafka-connect-contractgate</artifactId>
-  <version>0.1.0</version>
+  <version>0.2.0</version>
   <packaging>jar</packaging>
 
   <name>ContractGate Semantic Validator for Kafka Connect</name>
@@ -162,15 +162,19 @@
         </configuration>
       </plugin>
 
-      <!-- ── Confluent Hub packaging ───────────────────────────────────── -->
+      <!-- ── Confluent Marketplace packaging ────────────────────────────── -->
       <!--
-        Produces a ZIP in target/ structured exactly as Confluent Hub expects:
-          kafka-connect-contractgate-0.1.0/
-            doc/README.md
-            etc/contractgate-validator.properties
-            lib/kafka-connect-contractgate-0.1.0.jar
+        Archive name MUST be ${owner}-${name}-${version}.zip
+        (Confluent rejects packages that omit the owner prefix).
+          datacontractgate-kafka-connect-contractgate-0.2.0/
             manifest.json
-        Run: mvn clean package -DskipTests
+            doc/README.md
+            doc/LICENSE
+            doc/NOTICE
+            etc/contractgate-validator.properties
+            lib/kafka-connect-contractgate-0.2.0.jar
+            assets/contractgate_logo.png
+        Run: mvn -f confluent-connector/pom.xml clean verify
       -->
       <plugin>
         <groupId>org.apache.maven.plugins</groupId>
@@ -180,7 +184,7 @@
           <descriptors>
             <descriptor>src/assembly/confluent-hub.xml</descriptor>
           </descriptors>
-          <finalName>kafka-connect-contractgate-${project.version}</finalName>
+          <finalName>datacontractgate-kafka-connect-contractgate-${project.version}</finalName>
           <appendAssemblyId>false</appendAssemblyId>
         </configuration>
         <executions>

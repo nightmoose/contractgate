@@ -140,7 +140,7 @@ export default function KafkaConnectDocsPage() {
             <span className="text-xs bg-[#1f2937] text-slate-400 border border-[#374151] px-2 py-1 rounded">Java 11+</span>
             <span className="text-xs bg-[#1f2937] text-slate-400 border border-[#374151] px-2 py-1 rounded">Kafka Connect 2.8+</span>
             <span className="text-xs bg-[#1f2937] text-slate-400 border border-[#374151] px-2 py-1 rounded">Apache 2.0</span>
-            <span className="text-xs bg-green-900/30 text-green-400 border border-green-700/40 px-2 py-1 rounded">v0.1.0</span>
+            <span className="text-xs bg-green-900/30 text-green-400 border border-green-700/40 px-2 py-1 rounded">v0.2.0</span>
           </div>
         </div>
 
@@ -158,12 +158,13 @@ export default function KafkaConnectDocsPage() {
         </Step>
 
         <Step n={2} title="Install the connector">
-          <p className="text-slate-400 text-sm mb-2">Via Confluent Hub CLI:</p>
-          <Code language="bash">{`confluent-hub install datacontractgate/kafka-connect-contractgate:latest`}</Code>
-          <p className="text-slate-400 text-sm mb-2">Or manually — extract the ZIP into your Connect plugin path:</p>
-          <Code language="bash">{`unzip kafka-connect-contractgate-0.1.0.zip \\
+          <p className="text-slate-400 text-sm mb-2">Build the Marketplace zip from the repo and extract it into your Connect plugin path:</p>
+          <Code language="bash">{`mvn -f confluent-connector/pom.xml verify
+unzip confluent-connector/target/datacontractgate-kafka-connect-contractgate-0.2.0.zip \\
   -d /usr/share/confluent-hub-components/
 # Restart Connect workers after installing`}</Code>
+          <p className="text-slate-400 text-sm mb-2 mt-3">Once listed on Confluent Marketplace:</p>
+          <Code language="bash">{`confluent connect plugin install datacontractgate/kafka-connect-contractgate:0.2.0`}</Code>
         </Step>
 
         <Step n={3} title="Add the SMT to your connector config">
@@ -186,14 +187,18 @@ errors.deadletterqueue.context.headers.enable=true`}</Code>
 
         {/* ── Installation ───────────────────────────────────────────── */}
         <H2 id="installation">Installation</H2>
-        <H3>Confluent Hub CLI</H3>
-        <Code language="bash">{`confluent-hub install datacontractgate/kafka-connect-contractgate:latest`}</Code>
+        <H3>Confluent Marketplace</H3>
+        <p className="text-slate-400 text-sm mb-2">
+          After the listing is live, install with the Confluent CLI (the older{" "}
+          <code className="text-slate-300">confluent-hub</code> client is deprecated on Confluent Platform 7.6+):
+        </p>
+        <Code language="bash">{`confluent connect plugin install datacontractgate/kafka-connect-contractgate:0.2.0`}</Code>
 
         <H3>Manual (Self-Managed Kafka)</H3>
         <p className="text-slate-400 text-sm mb-2">
-          Download the ZIP from the{" "}
-          <a href="https://www.confluent.io/hub/datacontractgate/kafka-connect-contractgate" className="text-green-400 hover:underline" target="_blank" rel="noreferrer">
-            Confluent Hub listing
+          Build the zip from{" "}
+          <a href="https://github.com/nightmoose/contractgate/tree/main/confluent-connector" className="text-green-400 hover:underline" target="_blank" rel="noreferrer">
+            github.com/nightmoose/contractgate
           </a>{" "}
           and extract it into your plugin path:
         </p>
@@ -201,7 +206,7 @@ errors.deadletterqueue.context.headers.enable=true`}</Code>
 # Confluent Platform: /usr/share/confluent-hub-components/
 # Self-managed:       /opt/kafka/plugins/
 
-unzip kafka-connect-contractgate-0.1.0.zip -d /usr/share/confluent-hub-components/
+unzip datacontractgate-kafka-connect-contractgate-0.2.0.zip -d /usr/share/confluent-hub-components/
 
 # Add to connect-distributed.properties if not already:
 plugin.path=/usr/share/confluent-hub-components`}</Code>
@@ -245,8 +250,8 @@ plugin.path=/usr/share/confluent-hub-components`}</Code>
               <ConfigRow name="contractgate.contract.version" default='"" (latest)'>
                 Pin to a specific contract version, e.g. <code className="text-slate-300">1.2.0</code>.
                 Leave blank to always use the latest stable version — recommended for most pipelines.
-                When set, the version is sent as the <code className="text-slate-300">X-Contract-Version</code> request header,
-                which takes highest precedence in the server&apos;s resolution order.
+                When set, the version is sent as the <code className="text-slate-300">?version=</code> query parameter
+                on <code className="text-slate-300">POST /v1/ingest/{"{id}"}</code>.
               </ConfigRow>
               <ConfigRow name="contractgate.on.failure" default="DLQ">
                 What to do when a record fails.{" "}
@@ -433,7 +438,7 @@ errors.retry.delay.max.ms=5000`}</Code>
           },
           {
             q: "What happens if the ContractGate API is unreachable?",
-            a: "The SMT fails open — it logs a warning and passes the record through unchanged. This prevents a transient API outage from halting your pipeline. You can tighten this with Kafka Connect's task-level retry and restart policies.",
+            a: "Network errors, HTTP 5xx, and auth/not-found statuses fail open — the SMT logs a warning and passes the record through so a transient outage does not halt the pipeline. HTTP 422 is not an outage: it means the event failed the contract, and the SMT applies DLQ or TAG_AND_PASS as configured.",
           },
           {
             q: "Does it add latency to my pipeline?",
@@ -445,7 +450,7 @@ errors.retry.delay.max.ms=5000`}</Code>
           },
           {
             q: "How do I pin a contract version?",
-            a: "Set contractgate.contract.version=1.2.0. The connector sends this as the X-Contract-Version request header, which the server treats with highest precedence. Leave it blank (the default) to always resolve to the latest stable version — this lets you promote new contract versions without redeploying connectors.",
+            a: "Set contractgate.contract.version=1.2.0. The connector sends this as the ?version= query parameter on POST /v1/ingest/{id}. Leave it blank (the default) to always resolve to the latest stable version — this lets you promote new contract versions without redeploying connectors.",
           },
           {
             q: "Can I chain this with other SMTs?",

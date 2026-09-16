@@ -66,6 +66,27 @@ vr = compiled.validate({
 assert vr.passed, vr.violations
 ```
 
+## GitHub Action / pre-commit
+
+Same compile, no API key:
+
+```yaml
+# GitHub Actions
+- uses: nightmoose/contractgate/actions/validate@main
+```
+
+```yaml
+# .pre-commit-config.yaml
+repos:
+  - repo: https://github.com/nightmoose/contractgate
+    rev: main   # pin to a git sha
+    hooks:
+      - id: contractgate-validate
+```
+
+The hook only looks at `contracts/**/*.yaml`. Override `files:` in your
+config if contracts live elsewhere.
+
 ## Caveats
 
 - **Local validator does not run RFC-004 PII transforms** (`mask`,

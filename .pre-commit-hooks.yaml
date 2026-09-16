@@ -1,0 +1,15 @@
+# Consumed by https://pre-commit.com when a user adds this repo:
+#
+#   repos:
+#     - repo: https://github.com/nightmoose/contractgate
+#       rev: <git sha or tag>
+#       hooks:
+#         - id: contractgate-validate
+#
+- id: contractgate-validate
+  name: contractgate-validate
+  description: Parse and compile ContractGate YAML contracts (local, no network).
+  entry: contractgate-validate
+  language: python
+  types: [yaml]
+  files: '(^|/)contracts/.*\.ya?ml$'

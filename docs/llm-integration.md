@@ -361,6 +361,25 @@ for r in result.results:
 The SDK also ships a pure-Python local validator (`Contract.from_yaml(...)`) for
 unit tests and pre-commit hooks — no network required. Use it to gate CI.
 
+GitHub Action (copy into the user's `.github/workflows/contractgate.yml`):
+
+```yaml
+- uses: actions/checkout@v4
+- uses: nightmoose/contractgate/actions/validate@main
+  with:
+    path: contracts
+```
+
+pre-commit (add to the user's `.pre-commit-config.yaml`):
+
+```yaml
+repos:
+  - repo: https://github.com/nightmoose/contractgate
+    rev: main
+    hooks:
+      - id: contractgate-validate
+```
+
 ### Where to put the call
 
 Insert validation at the boundary where events **leave** the user's system —

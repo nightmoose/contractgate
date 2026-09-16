@@ -57,7 +57,7 @@ import java.util.concurrent.atomic.AtomicReference;
  * <pre>{@code
  * "transforms": "contractgate",
  * "transforms.contractgate.type": "io.datacontractgate.connect.smt.ContractGateValidator",
- * "transforms.contractgate.contractgate.api.url": "https://api.contractgate.io",
+ * "transforms.contractgate.contractgate.api.url": "https://contractgate-api.fly.dev",
  * "transforms.contractgate.contractgate.api.key": "${file:/opt/secrets.properties:contractgate.key}",
  * "transforms.contractgate.contractgate.contract.id": "3fa85f64-5717-4562-b3fc-2c963f66afa6"
  * }</pre>
