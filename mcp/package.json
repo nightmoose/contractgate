@@ -1,18 +1,22 @@
 {
   "name": "@contractgate/mcp-server",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Official Model Context Protocol server for ContractGate — infer, dry-run, deploy, and inspect quarantine.",
   "license": "MIT",
   "type": "module",
   "bin": {
-    "contractgate-mcp": "./dist/index.js"
+    "contractgate-mcp": "dist/index.js"
   },
   "files": [
     "dist",
     "README.md"
   ],
+  "publishConfig": {
+    "access": "public"
+  },
   "scripts": {
-    "build": "tsc",
+    "build": "tsc && node -e \"require('fs').chmodSync('dist/index.js', 0o755)\"",
+    "prepublishOnly": "npm run build",
     "start": "tsx src/index.ts",
     "test": "tsx --test test/*.test.ts",
     "typecheck": "tsc --noEmit"
