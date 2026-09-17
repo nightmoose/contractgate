@@ -52,6 +52,15 @@ MCP (Cursor, Claude Desktop, Windsurf, Copilot, Codex):
 
 Tools and auth: [`docs/mcp-reference.md`](docs/mcp-reference.md).
 
+Claude Code / Cursor plugin:
+
+```
+/plugin marketplace add nightmoose/contractgate
+/plugin install contractgate@contractgate
+```
+
+Redpanda Connect (HTTP processor, no custom plugin): [`docs/examples/redpanda-connect/`](docs/examples/redpanda-connect/).
+
 ---
 
 ## Try it in 10 minutes (Self-Hosted Free)

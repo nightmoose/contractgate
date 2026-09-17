@@ -1,0 +1,26 @@
+# Smithery discovery. The official registry listing is mcp/server.json.
+startCommand:
+  type: stdio
+  configSchema:
+    type: object
+    required:
+      - contractgateApiKey
+    properties:
+      contractgateApiKey:
+        type: string
+        description: ContractGate API key (cg_live_...)
+      contractgateBaseUrl:
+        type: string
+        description: Gateway base URL
+        default: https://app.datacontractgate.com
+  commandFunction: |-
+    (config) => ({
+      command: "npx",
+      args: ["-y", "@contractgate/mcp-server"],
+      env: {
+        CONTRACTGATE_API_KEY: config.contractgateApiKey,
+        ...(config.contractgateBaseUrl
+          ? { CONTRACTGATE_BASE_URL: config.contractgateBaseUrl }
+          : {})
+      }
+    })

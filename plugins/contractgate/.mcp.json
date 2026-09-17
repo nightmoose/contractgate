@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "contractgate": {
+      "command": "npx",
+      "args": ["-y", "@contractgate/mcp-server"],
+      "env": {
+        "CONTRACTGATE_API_KEY": "${CONTRACTGATE_API_KEY}"
+      }
+    }
+  }
+}
