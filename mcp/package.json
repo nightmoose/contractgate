@@ -1,6 +1,7 @@
 {
   "name": "@contractgate/mcp-server",
-  "version": "0.1.1",
+  "version": "0.1.2",
+  "mcpName": "io.github.nightmoose/contractgate",
   "description": "Official Model Context Protocol server for ContractGate — infer, dry-run, deploy, and inspect quarantine.",
   "license": "MIT",
   "type": "module",
