@@ -1,0 +1,38 @@
+# Local smoke test — no Kafka required.
+# Generates one good event and one bad event against a live contract.
+#
+#   export CONTRACTGATE_API_KEY=cg_live_...
+#   export CONTRACTGATE_CONTRACT_ID=...
+#   rpk connect run docs/examples/redpanda-connect/generate.yaml
+
+input:
+  generate:
+    interval: 0s
+    count: 2
+    mapping: |
+      let n = count("events")
+      root = if $n == 1 {
+        {"user_id": "alice_01", "event_type": "click", "timestamp": 1712000000}
+      } else {
+        {"user_id": "bob", "event_type": "not_an_enum", "timestamp": 1712000001}
+      }
+
+pipeline:
+  processors:
+    - branch:
+        request_map: "root = this"
+        processors:
+          - http:
+              url: '${CONTRACTGATE_URL:https://contractgate-api.fly.dev}/v1/ingest/${CONTRACTGATE_CONTRACT_ID}'
+              verb: POST
+              headers:
+                Content-Type: application/json
+                x-api-key: "${CONTRACTGATE_API_KEY}"
+              successful_on: [422]
+        result_map: |
+          root.contractgate.failed = this.failed
+          root.contractgate.violations = this.results.index(0).violations.or([])
+
+output:
+  stdout:
+    codec: lines

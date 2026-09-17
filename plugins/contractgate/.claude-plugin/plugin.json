@@ -1,0 +1,8 @@
+{
+  "name": "contractgate",
+  "version": "0.1.0",
+  "description": "Wire ContractGate into a repo: infer a contract from real events, dry-run, deploy, inspect quarantine.",
+  "author": {
+    "name": "DataContractGate"
+  }
+}

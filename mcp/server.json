@@ -1,0 +1,40 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.nightmoose/contractgate",
+  "title": "ContractGate",
+  "description": "Infer, dry-run, deploy, and inspect ContractGate semantic data contracts.",
+  "version": "0.1.1",
+  "websiteUrl": "https://app.datacontractgate.com/mcp-reference.md",
+  "repository": {
+    "url": "https://github.com/nightmoose/contractgate",
+    "source": "github",
+    "id": "1199850892",
+    "subfolder": "mcp"
+  },
+  "packages": [
+    {
+      "registryType": "npm",
+      "registryBaseUrl": "https://registry.npmjs.org",
+      "identifier": "@contractgate/mcp-server",
+      "version": "0.1.1",
+      "runtimeHint": "npx",
+      "transport": {
+        "type": "stdio"
+      },
+      "environmentVariables": [
+        {
+          "name": "CONTRACTGATE_API_KEY",
+          "description": "ContractGate API key (cg_live_...). Create one at https://app.datacontractgate.com/account",
+          "isRequired": true,
+          "isSecret": true
+        },
+        {
+          "name": "CONTRACTGATE_BASE_URL",
+          "description": "Gateway base URL. Defaults to https://app.datacontractgate.com",
+          "isRequired": false,
+          "isSecret": false
+        }
+      ]
+    }
+  ]
+}

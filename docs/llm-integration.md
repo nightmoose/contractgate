@@ -15,6 +15,16 @@ documentation.
 deployed as a `stable` version, and their event producer calling the validation
 gateway — verified with a dry run before anything writes.
 
+> **Claude plugin.** If the host supports Claude Code / Cursor plugins:
+>
+> ```
+> /plugin marketplace add nightmoose/contractgate
+> /plugin install contractgate@contractgate
+> ```
+>
+> That installs this playbook as a skill and the MCP server. Then use the
+> MCP tools below instead of curl.
+>
 > **MCP first.** If your host has the ContractGate MCP server connected
 > (`@contractgate/mcp-server` in Cursor, Claude Desktop, Windsurf, Copilot,
 > Codex, …), skip the `curl` recipes below and use the typed tools:

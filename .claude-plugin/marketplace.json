@@ -1,0 +1,14 @@
+{
+  "name": "contractgate",
+  "owner": {
+    "name": "nightmoose",
+    "url": "https://github.com/nightmoose/contractgate"
+  },
+  "plugins": [
+    {
+      "name": "contractgate",
+      "source": "./plugins/contractgate",
+      "description": "Semantic data-contract enforcement at ingest. Skill + MCP: infer, dry-run, deploy, quarantine."
+    }
+  ]
+}

@@ -1,0 +1,65 @@
+# ContractGate gate in a Redpanda Connect pipeline.
+#
+# Every JSON message is POSTed to POST /v1/ingest/{id}. HTTP 200 / 207 / 422
+# are validation outcomes (422 = the event failed the contract, not an outage).
+# Passing records go to `topic_clean`; failing records go to `topic_quarantine`.
+#
+# Run:
+#   export CONTRACTGATE_API_KEY=cg_live_...
+#   export CONTRACTGATE_CONTRACT_ID=11111111-1111-1111-1111-111111111111
+#   rpk connect run docs/examples/redpanda-connect/contractgate.yaml
+#
+# Secrets: https://docs.redpanda.com/redpanda-connect/configuration/secrets/
+
+http:
+  enabled: false
+
+input:
+  kafka:
+    addresses:
+      - ${REDPANDA_BROKERS:localhost:9092}
+    topics:
+      - ${TOPIC_RAW:events.raw}
+    consumer_group: contractgate
+
+pipeline:
+  processors:
+    - label: contractgate
+      branch:
+        request_map: "root = this"
+        processors:
+          - http:
+              url: '${CONTRACTGATE_URL:https://contractgate-api.fly.dev}/v1/ingest/${CONTRACTGATE_CONTRACT_ID}'
+              verb: POST
+              headers:
+                Content-Type: application/json
+                x-api-key: "${CONTRACTGATE_API_KEY}"
+              timeout: 5s
+              retries: 2
+              backoff_on:
+                - 429
+                - 503
+              # 422 is "all events failed the contract" — parse the body, do not retry.
+              successful_on:
+                - 422
+        result_map: |
+          root.contractgate.passed = this.passed
+          root.contractgate.failed = this.failed
+          root.contractgate.total = this.total
+          root.contractgate.resolved_version = this.resolved_version
+          root.contractgate.violations = this.results.index(0).violations.or([])
+
+output:
+  switch:
+    cases:
+      - check: this.contractgate.failed == 0
+        output:
+          kafka:
+            addresses:
+              - ${REDPANDA_BROKERS:localhost:9092}
+            topic: ${TOPIC_CLEAN:events.clean}
+      - output:
+          kafka:
+            addresses:
+              - ${REDPANDA_BROKERS:localhost:9092}
+            topic: ${TOPIC_QUARANTINE:events.quarantine}
