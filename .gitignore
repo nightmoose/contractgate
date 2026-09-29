@@ -79,3 +79,4 @@ docs/marketing/drafts/
 
 # npm auth tokens
 .npmrc
+*.mcpb
