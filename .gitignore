@@ -76,3 +76,6 @@ docs/marketing/drafts/
 
 # ClankerSpanker hunter outbox (drafts, never sent)
 .bot-outbox/
+
+# npm auth tokens
+.npmrc
