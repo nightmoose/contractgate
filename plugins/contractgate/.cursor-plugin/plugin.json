@@ -1,0 +1,27 @@
+{
+  "name": "contractgate",
+  "displayName": "ContractGate",
+  "version": "0.2.0",
+  "description": "Reject schema-valid but wrong events before they hit your topic. Infer a semantic data contract from real events, dry-run it, deploy it, and inspect quarantine.",
+  "author": {
+    "name": "DataContractGate"
+  },
+  "homepage": "https://app.datacontractgate.com/llm-integration.md",
+  "repository": "https://github.com/nightmoose/contractgate",
+  "license": "MIT",
+  "keywords": ["data-contracts", "kafka", "schema", "validation", "quarantine", "mcp"],
+  "logo": "assets/logo.png",
+  "skills": "skills/",
+  "mcpServers": "mcp.json",
+  "variables": {
+    "type": "object",
+    "properties": {
+      "CONTRACTGATE_API_KEY": {
+        "type": "string",
+        "title": "ContractGate API key",
+        "description": "cg_live_... key from https://app.datacontractgate.com/account. Never commit the value."
+      }
+    },
+    "required": ["CONTRACTGATE_API_KEY"]
+  }
+}

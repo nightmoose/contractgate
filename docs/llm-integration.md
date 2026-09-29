@@ -22,8 +22,9 @@ gateway — verified with a dry run before anything writes.
 > /plugin install contractgate@contractgate
 > ```
 >
-> That installs this playbook as a skill and the MCP server. Then use the
-> MCP tools below instead of curl.
+> That installs this playbook as a skill and the MCP server. Claude Code
+> prompts for your API key on install and keeps it in secure storage. Then use
+> the MCP tools below instead of curl.
 >
 > **MCP first.** If your host has the ContractGate MCP server connected
 > (`@contractgate/mcp-server` in Cursor, Claude Desktop, Windsurf, Copilot,

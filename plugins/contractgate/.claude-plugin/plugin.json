@@ -1,7 +1,7 @@
 {
   "name": "contractgate",
-  "version": "0.1.0",
-  "description": "Wire ContractGate into a repo: infer a contract from real events, dry-run, deploy, inspect quarantine.",
+  "version": "0.2.0",
+  "description": "Reject schema-valid but wrong events before they hit your topic. Infer a semantic data contract from real events, dry-run it, deploy it, and inspect quarantine.",
   "author": {
     "name": "DataContractGate",
     "url": "https://github.com/nightmoose"
@@ -9,5 +9,21 @@
   "homepage": "https://app.datacontractgate.com/llm-integration.md",
   "repository": "https://github.com/nightmoose/contractgate",
   "license": "MIT",
-  "keywords": ["data-contracts", "kafka", "schema", "validation", "quarantine", "mcp"]
+  "keywords": [
+    "data-contracts",
+    "kafka",
+    "schema",
+    "validation",
+    "quarantine",
+    "mcp"
+  ],
+  "userConfig": {
+    "api_key": {
+      "type": "string",
+      "title": "ContractGate API key",
+      "description": "cg_live_... key from https://app.datacontractgate.com/account",
+      "sensitive": true,
+      "required": true
+    }
+  }
 }

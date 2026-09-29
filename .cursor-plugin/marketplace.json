@@ -1,9 +1,10 @@
 {
   "name": "contractgate",
-  "description": "ContractGate plugins: semantic data-contract enforcement at ingest.",
   "owner": {
-    "name": "nightmoose",
-    "url": "https://github.com/nightmoose/contractgate"
+    "name": "nightmoose"
+  },
+  "metadata": {
+    "description": "ContractGate plugins for Cursor"
   },
   "plugins": [
     {

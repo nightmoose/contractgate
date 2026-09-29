@@ -4,7 +4,7 @@
       "command": "npx",
       "args": ["-y", "@contractgate/mcp-server@0.1.2"],
       "env": {
-        "CONTRACTGATE_API_KEY": "${user_config.api_key}"
+        "CONTRACTGATE_API_KEY": "${CONTRACTGATE_API_KEY}"
       }
     }
   }
