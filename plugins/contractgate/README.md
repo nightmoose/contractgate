@@ -20,6 +20,12 @@ The MCP server calls the ContractGate API at `https://app.datacontractgate.com` 
 
 Full playbook: https://app.datacontractgate.com/llm-integration.md. Tool reference: https://app.datacontractgate.com/mcp-reference.md.
 
+## Privacy, terms, and support
+
+- Privacy policy: https://app.datacontractgate.com/privacy
+- Terms of service: https://app.datacontractgate.com/terms
+- Support: https://github.com/nightmoose/contractgate/issues
+
 ## License
 
 MIT

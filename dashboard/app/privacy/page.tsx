@@ -7,7 +7,7 @@ export default function PrivacyPage() {
     <div className="min-h-screen bg-[#0a0d12] flex flex-col items-center justify-center px-4 py-24">
       <div className="max-w-2xl w-full">
         <h1 className="text-2xl font-bold text-slate-100 mb-2">Privacy Policy</h1>
-        <p className="text-slate-500 text-sm mb-10">Last updated: May 2026</p>
+        <p className="text-slate-500 text-sm mb-10">Last updated: September 2026</p>
 
         <div className="space-y-6 text-sm text-slate-400 leading-relaxed">
           <p>
@@ -27,7 +27,38 @@ export default function PrivacyPage() {
           </section>
 
           <section>
-            <h2 className="text-slate-200 font-semibold mb-2">2. How We Use Your Information</h2>
+            <h2 className="text-slate-200 font-semibold mb-2">2. Event Data You Send</h2>
+            <p>
+              You send us events and contracts through the dashboard, the API, or our
+              integrations (including the ContractGate MCP server and plugins for
+              Claude Code and Cursor, which call the API with your API key). Events may
+              contain personal data, depending on what your systems produce.
+            </p>
+            <ul className="list-disc pl-5 mt-2 space-y-1">
+              <li>
+                <strong>Contract inference and dry-run validation:</strong> events are
+                processed and returned. We do not store them.
+              </li>
+              <li>
+                <strong>Live validation:</strong> we store an audit record for every
+                event and a quarantine record for every rejected event. By default these
+                records hold metadata only (contract, version, result, violations,
+                source IP, timing), not the event body.
+              </li>
+              <li>
+                <strong>Event bodies</strong> are stored only if your organization turns
+                on event payload storage (paid plans), which enables quarantine replay.
+                You can turn it off, which purges stored bodies, or purge them per
+                contract at any time.
+              </li>
+              <li>
+                <strong>Contracts</strong> you deploy are stored until you delete them.
+              </li>
+            </ul>
+          </section>
+
+          <section>
+            <h2 className="text-slate-200 font-semibold mb-2">3. How We Use Your Information</h2>
             <p>
               We use the information we collect to provide and improve the Service,
               send transactional communications, respond to support requests, and
@@ -37,7 +68,7 @@ export default function PrivacyPage() {
           </section>
 
           <section>
-            <h2 className="text-slate-200 font-semibold mb-2">3. Data Retention</h2>
+            <h2 className="text-slate-200 font-semibold mb-2">4. Data Retention</h2>
             <p>
               We retain your account data for as long as your account is active or as
               needed to provide the Service. Audit log retention periods are governed
@@ -47,7 +78,7 @@ export default function PrivacyPage() {
           </section>
 
           <section>
-            <h2 className="text-slate-200 font-semibold mb-2">4. Security</h2>
+            <h2 className="text-slate-200 font-semibold mb-2">5. Security</h2>
             <p>
               We implement industry-standard security measures to protect your data,
               including encryption in transit (TLS) and at rest. No method of
@@ -57,7 +88,7 @@ export default function PrivacyPage() {
           </section>
 
           <section>
-            <h2 className="text-slate-200 font-semibold mb-2">5. Your Rights</h2>
+            <h2 className="text-slate-200 font-semibold mb-2">6. Your Rights</h2>
             <p>
               Depending on your jurisdiction, you may have rights to access, correct,
               or delete your personal data, or to object to certain processing. To
@@ -66,7 +97,7 @@ export default function PrivacyPage() {
           </section>
 
           <section>
-            <h2 className="text-slate-200 font-semibold mb-2">6. Contact</h2>
+            <h2 className="text-slate-200 font-semibold mb-2">7. Contact</h2>
             <p>
               Privacy questions or requests? Email us at{" "}
               <a

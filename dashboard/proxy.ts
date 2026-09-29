@@ -15,6 +15,10 @@ const PUBLIC_ROUTES = [
   // the ?code= for a session, so the user is still anonymous here.
   "/auth/reset",
   "/pricing",
+  // Legal pages: linked from signup and from directory listings, so they must
+  // be readable before an account exists.
+  "/privacy",
+  "/terms",
   "/docs",
   "/stream-demo",
   // AuthGate pages — show feature preview to unauthenticated users

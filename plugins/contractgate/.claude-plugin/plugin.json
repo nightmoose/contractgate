@@ -1,6 +1,6 @@
 {
   "name": "contractgate",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Reject schema-valid but wrong events before they hit your topic. Infer a semantic data contract from real events, dry-run it, deploy it, and inspect quarantine.",
   "author": {
     "name": "DataContractGate",
