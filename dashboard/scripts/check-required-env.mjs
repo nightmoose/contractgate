@@ -21,6 +21,7 @@ const REQUIRED_PUBLIC = [
   ["NEXT_PUBLIC_SUPABASE_ANON_KEY", "auth and every database read from the browser"],
   ["NEXT_PUBLIC_API_URL", "gateway calls — falls back to http://localhost:3001"],
   ["NEXT_PUBLIC_APP_URL", "Stripe success/cancel/portal URLs — becomes 'undefined/...'"],
+  ["NEXT_PUBLIC_TURNSTILE_SITE_KEY", "signup/login/password reset once Supabase CAPTCHA is on"],
 ];
 
 // Missing → one feature is dead, but the app still serves. Warn, don't block.
@@ -61,6 +62,12 @@ if (process.env.NEXT_PUBLIC_APP_URL && !/^https?:\/\/.+/.test(process.env.NEXT_P
   // Stripe rejects a session whose success_url is not an absolute URL, so this
   // fails checkout outright rather than degrading.
   errors.push("NEXT_PUBLIC_APP_URL must be an absolute http(s) URL — Stripe rejects anything else.");
+}
+
+// Cloudflare's published test site keys (1x/2x/3x0000…) always pass or always
+// fail in the widget, and their tokens never verify against a real secret.
+if (/^[123]x0{8,}/.test(process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY ?? "") && isProd) {
+  errors.push("NEXT_PUBLIC_TURNSTILE_SITE_KEY is a Cloudflare test key — Supabase will reject every token.");
 }
 
 for (const [name, impact] of RECOMMENDED_SERVER) {

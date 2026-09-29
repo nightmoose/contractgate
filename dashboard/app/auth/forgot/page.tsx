@@ -1,14 +1,17 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
+import { AuthCaptcha, captchaEnabled, type AuthCaptchaHandle } from "@/components/AuthCaptcha";
 
 export default function ForgotPasswordPage() {
   const [email, setEmail] = useState("");
   const [error, setError] = useState("");
   const [sent, setSent] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [captchaToken, setCaptchaToken] = useState<string>();
+  const captcha = useRef<AuthCaptchaHandle>(null);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -17,7 +20,9 @@ export default function ForgotPasswordPage() {
     const supabase = createClient();
     const { error: authError } = await supabase.auth.resetPasswordForEmail(email, {
       redirectTo: `${location.origin}/auth/reset`,
+      captchaToken,
     });
+    captcha.current?.reset();
     setLoading(false);
     if (authError) {
       setError(authError.message);
@@ -73,6 +78,8 @@ export default function ForgotPasswordPage() {
                   />
                 </div>
 
+                <AuthCaptcha ref={captcha} onToken={setCaptchaToken} />
+
                 {error && (
                   <div className="bg-red-900/20 border border-red-700/40 rounded-lg px-3 py-2.5 text-sm text-red-400">
                     {error}
@@ -81,7 +88,7 @@ export default function ForgotPasswordPage() {
 
                 <button
                   type="submit"
-                  disabled={loading}
+                  disabled={loading || (captchaEnabled && !captchaToken)}
                   className="w-full bg-green-600 hover:bg-green-500 disabled:opacity-50 text-white rounded-lg px-4 py-2.5 text-sm font-medium transition-colors mt-2"
                 >
                   {loading ? "Sending…" : "Send reset link"}

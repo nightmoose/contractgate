@@ -1,9 +1,10 @@
 "use client";
 
-import { useState, Suspense } from "react";
+import { useRef, useState, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
+import { AuthCaptcha, captchaEnabled, type AuthCaptchaHandle } from "@/components/AuthCaptcha";
 
 function LoginForm() {
   const router = useRouter();
@@ -15,6 +16,8 @@ function LoginForm() {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [githubLoading, setGithubLoading] = useState(false);
+  const [captchaToken, setCaptchaToken] = useState<string>();
+  const captcha = useRef<AuthCaptchaHandle>(null);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -22,7 +25,12 @@ function LoginForm() {
     setLoading(true);
 
     const supabase = createClient();
-    const { error: authError } = await supabase.auth.signInWithPassword({ email, password });
+    const { error: authError } = await supabase.auth.signInWithPassword({
+      email,
+      password,
+      options: { captchaToken },
+    });
+    captcha.current?.reset();
 
     if (authError) {
       setError(authError.message);
@@ -126,6 +134,8 @@ function LoginForm() {
               />
             </div>
 
+            <AuthCaptcha ref={captcha} onToken={setCaptchaToken} />
+
             {error && (
               <div className="bg-red-900/20 border border-red-700/40 rounded-lg px-3 py-2.5 text-sm text-red-400">
                 {error}
@@ -134,7 +144,7 @@ function LoginForm() {
 
             <button
               type="submit"
-              disabled={loading || githubLoading}
+              disabled={loading || githubLoading || (captchaEnabled && !captchaToken)}
               className="w-full bg-green-600 hover:bg-green-500 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg px-4 py-2.5 text-sm font-medium transition-colors mt-2"
             >
               {loading ? "Signing in…" : "Sign in"}

@@ -10,6 +10,10 @@ const PUBLIC_ROUTES = [
   "/auth/login",
   "/auth/signup",
   "/auth/callback",
+  "/auth/forgot",
+  // Reached from the recovery email before the browser client has exchanged
+  // the ?code= for a session, so the user is still anonymous here.
+  "/auth/reset",
   "/pricing",
   "/docs",
   "/stream-demo",
@@ -100,8 +104,15 @@ export async function proxy(request: NextRequest) {
     return NextResponse.redirect(url);
   }
 
-  // Redirect authenticated users away from auth pages
-  if (user && pathname.startsWith("/auth/") && pathname !== "/auth/callback") {
+  // Redirect authenticated users away from auth pages. /auth/reset is exempt:
+  // a password-recovery session is a real session, and bouncing it to / would
+  // make the new password impossible to set.
+  if (
+    user &&
+    pathname.startsWith("/auth/") &&
+    pathname !== "/auth/callback" &&
+    pathname !== "/auth/reset"
+  ) {
     const url = request.nextUrl.clone();
     url.pathname = "/";
     return NextResponse.redirect(url);
