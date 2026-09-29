@@ -12,8 +12,8 @@ Follow the playbook at https://app.datacontractgate.com/llm-integration.md end t
 
 **Rules**
 
-- Read `CONTRACTGATE_API_KEY` from the environment. Never write the raw key into source, `.env` that is tracked, a commit, or chat.
-- If the key is unset, stop and ask. Do not invent a key.
+- The API key is set in the plugin's configuration and passed to the MCP server. Never write the raw key into source, a tracked `.env`, a commit, or chat.
+- If the MCP server reports the key is missing, stop and ask the user to configure it. Do not invent a key.
 - Infer from 5–20 **real** sample events in the repo. Do not fabricate samples.
 - Dry-run (`validate_events` with `dry_run=true`, default) before deploy. Deploy only after a dry run passes.
 - Write the YAML to `contracts/<name>.yaml` and review it before `deploy_contract`.
