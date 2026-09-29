@@ -1,15 +1,14 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
+import { AuthCaptcha, captchaEnabled, type AuthCaptchaHandle } from "@/components/AuthCaptcha";
 
-// Removed 2026-08-13: a Cloudflare Turnstile captcha added in ac74758 (Jul 24)
-// fell back to Cloudflare's "always passes" test site key when
-// NEXT_PUBLIC_TURNSTILE_SITE_KEY was unset. Production had no such key and no
-// Turnstile widget existed, so the dummy token failed real verification and
-// every signup was blocked from 2026-08-07 to 08-13. Bot defence here is the
-// honeypot below plus email confirmation.
+// Bot defence: Turnstile verified by Supabase Auth itself (bots calling the
+// Auth API directly can't skip it), plus the honeypot below. The Aug 2026
+// outage came from a test-key fallback and an app-side check; AuthCaptcha has
+// neither. See docs/auth-reference.md for the rollout order.
 
 export default function SignupPage() {
   const [email, setEmail] = useState("");
@@ -23,6 +22,8 @@ export default function SignupPage() {
   const [loading, setLoading] = useState(false);
   const [githubLoading, setGithubLoading] = useState(false);
   const [emailSent, setEmailSent] = useState(false);
+  const [captchaToken, setCaptchaToken] = useState<string>();
+  const captcha = useRef<AuthCaptchaHandle>(null);
 
   async function handleGitHubSignUp() {
     setError("");
@@ -67,8 +68,10 @@ export default function SignupPage() {
       options: {
         data: { display_name: displayName || email.split("@")[0] },
         emailRedirectTo: `${location.origin}/auth/callback?next=/`,
+        captchaToken,
       },
     });
+    captcha.current?.reset();
 
     if (authError) {
       setError(authError.message);
@@ -195,6 +198,8 @@ export default function SignupPage() {
               />
             </div>
 
+            <AuthCaptcha ref={captcha} onToken={setCaptchaToken} />
+
             {error && (
               <div className="bg-red-900/20 border border-red-700/40 rounded-lg px-3 py-2.5 text-sm text-red-400">
                 {error}
@@ -203,7 +208,7 @@ export default function SignupPage() {
 
             <button
               type="submit"
-              disabled={loading || githubLoading}
+              disabled={loading || githubLoading || (captchaEnabled && !captchaToken)}
               className="w-full bg-green-600 hover:bg-green-500 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg px-4 py-2.5 text-sm font-medium transition-colors mt-2"
             >
               {loading ? "Creating account…" : "Create account"}

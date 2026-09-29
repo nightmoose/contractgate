@@ -1,6 +1,6 @@
 # Authentication Reference
 
-**Last updated:** 2026-07-22 (bot signup cleanup + Turnstile/honeypot/rate-limit)
+**Last updated:** 2026-09-29 (Supabase-enforced Turnstile on signup/login/reset; forgot/reset pages reachable)
 
 ContractGate's Rust backend supports two authentication mechanisms for the
 management API: a Supabase Bearer JWT and a DB-backed API key.  The validation
@@ -167,9 +167,53 @@ sit in front of `/auth/signup`:
 2. **Email confirmation** — an account is unusable until the link in the
    confirmation email is clicked, so an unconfirmed row grants no access.
 
+3. **Cloudflare Turnstile, verified by Supabase Auth (2026-09-29).** Bots were
+   calling Supabase's signup API directly (≈380 signups Jul–Sep, zero logins,
+   many `vtext.com`/ISP addresses — confirmation-email bombing), which skips
+   any form-level check. So the check now lives in Supabase: **Auth → Bot and
+   Abuse Protection → CAPTCHA (Turnstile)**. Once on, Supabase rejects
+   `signUp`, `signInWithPassword` and `resetPasswordForEmail` without a valid
+   token. `components/AuthCaptcha.tsx` renders the widget on signup, login and
+   forgot-password and passes `captchaToken`. GitHub OAuth is not affected.
+
+   | Setting | Where | Value |
+   |---|---|---|
+   | `NEXT_PUBLIC_TURNSTILE_SITE_KEY` | Vercel (Production + Preview) | Turnstile **site** key |
+   | Turnstile secret key | Supabase → Auth → Bot and Abuse Protection | Turnstile **secret** key |
+   | Turnstile hostnames | Cloudflare → Turnstile → widget | `app.datacontractgate.com`, preview domains, `localhost` |
+
+   **Rollout order — do not reverse it:**
+   1. Create the Turnstile widget in Cloudflare.
+   2. Set `NEXT_PUBLIC_TURNSTILE_SITE_KEY` in Vercel and redeploy. With
+      Supabase CAPTCHA still off, the token is sent and ignored; confirm the
+      widget renders and login still works.
+   3. Enable CAPTCHA in Supabase with the secret key. Test signup, login and
+      password reset in a private window.
+
+   **Rollback:** switch CAPTCHA off in Supabase. Takes effect immediately; no
+   redeploy.
+
+   **Guards against the August outage:** no fallback key in code (unset key →
+   no widget, forms work exactly as before); `scripts/check-required-env.mjs`
+   fails a production build if the key is missing or is a Cloudflare test key
+   (`1x0000…`/`2x0000…`/`3x0000…`). The old app-side
+   `/api/auth/verify-turnstile` route was removed — bots bypassed it.
+   `TURNSTILE_SECRET_KEY` is no longer read by the dashboard; the secret belongs
+   in Supabase only.
+
+   Local dev against the production Supabase project needs `localhost` in the
+   widget's hostname list and the real site key in `.env.local`.
+
+**Password reset routing (fixed 2026-09-29).** `/auth/forgot` and
+`/auth/reset` were missing from `PUBLIC_ROUTES` in `proxy.ts`, so logged-out
+users were bounced to login, and the "redirect signed-in users away from
+/auth/*" rule bounced the recovery session away from `/auth/reset`. Both are now
+public and `/auth/reset` is exempt from that redirect.
+
 ### Removed defenses
 
-- **Cloudflare Turnstile (removed 2026-08-13).** The signup form rendered a
+- **Cloudflare Turnstile, first attempt (removed 2026-08-13; re-added
+  correctly 2026-09-29, see above).** The signup form rendered a
   Turnstile widget whose site key came from `NEXT_PUBLIC_TURNSTILE_SITE_KEY`,
   falling back to Cloudflare's always-pass *test* key when unset. No key was
   ever added to Vercel and no widget existed in the Cloudflare account, so the
