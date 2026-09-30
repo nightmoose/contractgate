@@ -1,0 +1,9 @@
+{
+  "name": "valid event with optional amount field passes",
+  "contract_yaml": "version: \"1.0\"\nname: \"user_events\"\nontology:\n  entities:\n    - name: user_id\n      type: string\n      required: true\n      pattern: \"^[a-zA-Z0-9_-]+$\"\n      min_length: 3\n      max_length: 50\n    - name: event_type\n      type: string\n      required: true\n      enum: [\"click\", \"view\", \"purchase\", \"login\"]\n    - name: timestamp\n      type: integer\n      required: true\n      min: 0\n    - name: amount\n      type: number\n      required: false\n      min: 0\n",
+  "event": { "user_id": "alice_01", "event_type": "purchase", "timestamp": 1712000000, "amount": 99.99 },
+  "expected": {
+    "passed": true,
+    "violations": []
+  }
+}

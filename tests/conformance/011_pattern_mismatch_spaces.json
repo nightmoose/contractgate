@@ -1,0 +1,11 @@
+{
+  "name": "pattern mismatch — user_id contains spaces",
+  "contract_yaml": "version: \"1.0\"\nname: \"user_events\"\nontology:\n  entities:\n    - name: user_id\n      type: string\n      required: true\n      pattern: \"^[a-zA-Z0-9_-]+$\"\n",
+  "event": { "user_id": "alice 01" },
+  "expected": {
+    "passed": false,
+    "violations": [
+      { "field": "user_id", "kind": "pattern_mismatch" }
+    ]
+  }
+}

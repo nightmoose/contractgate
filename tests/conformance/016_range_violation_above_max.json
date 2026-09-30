@@ -1,0 +1,11 @@
+{
+  "name": "range violation — amount exceeds maximum",
+  "contract_yaml": "version: \"1.0\"\nname: \"user_events\"\nontology:\n  entities:\n    - name: amount\n      type: number\n      required: true\n      max: 1000000\n",
+  "event": { "amount": 2000000 },
+  "expected": {
+    "passed": false,
+    "violations": [
+      { "field": "amount", "kind": "range_violation" }
+    ]
+  }
+}

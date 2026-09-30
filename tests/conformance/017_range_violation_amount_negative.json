@@ -1,0 +1,11 @@
+{
+  "name": "range violation — amount is negative (below min 0)",
+  "contract_yaml": "version: \"1.0\"\nname: \"user_events\"\nontology:\n  entities:\n    - name: amount\n      type: number\n      required: true\n      min: 0\n",
+  "event": { "amount": -0.01 },
+  "expected": {
+    "passed": false,
+    "violations": [
+      { "field": "amount", "kind": "range_violation" }
+    ]
+  }
+}

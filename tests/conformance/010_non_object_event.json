@@ -1,0 +1,11 @@
+{
+  "name": "non-object event (array) returns type_mismatch on <root>",
+  "contract_yaml": "version: \"1.0\"\nname: \"user_events\"\nontology:\n  entities:\n    - name: user_id\n      type: string\n      required: true\n",
+  "event": ["not", "an", "object"],
+  "expected": {
+    "passed": false,
+    "violations": [
+      { "field": "<root>", "kind": "type_mismatch" }
+    ]
+  }
+}

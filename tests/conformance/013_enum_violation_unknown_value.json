@@ -1,0 +1,11 @@
+{
+  "name": "enum violation — event_type not in allowed set",
+  "contract_yaml": "version: \"1.0\"\nname: \"user_events\"\nontology:\n  entities:\n    - name: event_type\n      type: string\n      required: true\n      enum: [\"click\", \"view\", \"purchase\", \"login\"]\n",
+  "event": { "event_type": "delete" },
+  "expected": {
+    "passed": false,
+    "violations": [
+      { "field": "event_type", "kind": "enum_violation" }
+    ]
+  }
+}

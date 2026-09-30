@@ -1,0 +1,11 @@
+{
+  "name": "type mismatch — boolean rejected as integer",
+  "contract_yaml": "version: \"1.0\"\nname: \"user_events\"\nontology:\n  entities:\n    - name: timestamp\n      type: integer\n      required: true\n",
+  "event": { "timestamp": true },
+  "expected": {
+    "passed": false,
+    "violations": [
+      { "field": "timestamp", "kind": "type_mismatch" }
+    ]
+  }
+}

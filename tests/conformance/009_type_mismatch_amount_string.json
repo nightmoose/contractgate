@@ -1,0 +1,11 @@
+{
+  "name": "type mismatch — amount is a string not number",
+  "contract_yaml": "version: \"1.0\"\nname: \"user_events\"\nontology:\n  entities:\n    - name: amount\n      type: number\n      required: true\n",
+  "event": { "amount": "ten dollars" },
+  "expected": {
+    "passed": false,
+    "violations": [
+      { "field": "amount", "kind": "type_mismatch" }
+    ]
+  }
+}
