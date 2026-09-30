@@ -20,7 +20,7 @@ import type {
 } from './types.js';
 
 const DEFAULT_TIMEOUT_MS = 30_000;
-const SDK_VERSION = '0.1.0';
+const SDK_VERSION = '0.2.0';
 const USER_AGENT = `contractgate-typescript/${SDK_VERSION}`;
 
 // ---------------------------------------------------------------------------
