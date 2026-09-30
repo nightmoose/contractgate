@@ -690,7 +690,7 @@ function CatalogContent() {
           <h1 className="text-2xl font-bold">Contract Catalog</h1>
         </HelpTarget>
         <p className="text-sm text-slate-500 mt-1">
-          Browse open data sources, import community contracts, and validate outbound data.
+          Browse open data sources and import community contracts. To validate outbound payloads, open a contract and use the Outbound tab.
         </p>
       </div>
 

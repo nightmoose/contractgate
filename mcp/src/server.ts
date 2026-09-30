@@ -3,6 +3,7 @@ import * as z from "zod/v4";
 import { ConfigError, Gateway, GatewayError } from "./gateway.js";
 import {
   deployContract,
+  egressValidate,
   getQuarantine,
   inferContract,
   listContracts,
@@ -156,6 +157,39 @@ export function createServer(opts: ServerOpts = {}): McpServer {
     async () => {
       try {
         return jsonResult(await listContracts(gateway(opts)));
+      } catch (err) {
+        return errorResult(err);
+      }
+    },
+  );
+
+  server.registerTool(
+    "egress_validate",
+    {
+      title: "Validate an outbound payload",
+      description:
+        "POST /egress/{contract_id}. Validates an outbound payload against a deployed contract. dry_run defaults true — no audit row or quarantine. Returns the full response body (200/207/422) so you can read violations and repair the payload. Forward response.payload only — never the original body after a block or fail.",
+      inputSchema: z.object({
+        contract_id: z.string().uuid().describe("Deployed contract UUID"),
+        events: z.array(sample).min(1).describe("Outbound payload objects to validate"),
+        disposition: z
+          .enum(["block", "fail", "tag"])
+          .optional()
+          .describe("Default block. block = drop failing records from payload; fail = reject entire batch; tag = pass through with flags."),
+        dry_run: z
+          .boolean()
+          .optional()
+          .describe("Default true. Set false only after a successful dry run — live calls write audit and quarantine rows."),
+        version: z
+          .string()
+          .optional()
+          .describe("Pin a specific contract version. Default: latest stable."),
+      }),
+      annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: true },
+    },
+    async (args) => {
+      try {
+        return jsonResult(await egressValidate(gateway(opts), args));
       } catch (err) {
         return errorResult(err);
       }

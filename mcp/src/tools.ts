@@ -82,3 +82,19 @@ export function getQuarantine(gw: Gateway, args: QuarantineArgs) {
 export function listContracts(gw: Gateway) {
   return gw.listContracts();
 }
+
+export type EgressArgs = {
+  contract_id: string;
+  events: Record<string, unknown>[];
+  disposition?: "block" | "fail" | "tag";
+  dry_run?: boolean;
+  version?: string;
+};
+
+export function egressValidate(gw: Gateway, args: EgressArgs) {
+  return gw.egress(args.contract_id, args.events, {
+    dryRun: args.dry_run !== false,
+    disposition: args.disposition,
+    version: args.version,
+  });
+}

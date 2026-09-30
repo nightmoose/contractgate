@@ -110,6 +110,23 @@ Save the returned `contract_id`. It is not a secret.
 
 `GET /contracts`. Identities the key can see.
 
+### `egress_validate`
+
+`POST /egress/{contract_id}`. Validates an outbound payload against a deployed contract.
+
+| Argument | Type | Required |
+|---|---|---|
+| `contract_id` | uuid | yes |
+| `events` | object[] | yes, ≥1 |
+| `disposition` | `block` \| `fail` \| `tag` | no, default `block` |
+| `dry_run` | boolean | no, default `true` |
+| `version` | string | no, default latest stable |
+
+- Default `dry_run=true` — no audit row, no quarantine, no metered usage. Set `dry_run=false` only after a dry run has passed.
+- `200` / `207` / `422` all return the body. Read `outcomes[].violations` to repair failing records.
+- **Forward `response.payload` only.** Never forward the original request body after a `block` or `fail`.
+- `block` (default) drops failing records from `payload`; passing records still ship. `fail` rejects the entire batch atomically. `tag` passes all records through with per-record violation flags.
+
 ## Prompt
 
 `integrate-contractgate` — loads the agent playbook URL

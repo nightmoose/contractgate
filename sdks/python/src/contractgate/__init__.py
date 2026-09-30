@@ -14,6 +14,7 @@ Public surface:
         ViolationKind
     BatchIngestResponse,           -- HTTP response shapes
         IngestEventResult,
+        EgressOutcome, EgressResponse,
         AuditEntry, ContractResponse,
         VersionResponse, VersionSummary,
         IngestionStats
@@ -58,6 +59,8 @@ from contractgate.models import (
     AuditEntry,
     BatchIngestResponse,
     ContractResponse,
+    EgressOutcome,
+    EgressResponse,
     IngestEventResult,
     IngestionStats,
     ValidationResult,
@@ -88,6 +91,8 @@ __all__ = [
     "ViolationKind",
     "BatchIngestResponse",
     "IngestEventResult",
+    "EgressOutcome",
+    "EgressResponse",
     "AuditEntry",
     "ContractResponse",
     "VersionResponse",

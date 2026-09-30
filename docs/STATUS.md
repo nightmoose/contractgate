@@ -100,6 +100,7 @@ signed off (may be planning docs or UI-only); **Draft** = under review;
 | 090 | [Official MCP Server (stdio)](rfcs/090-mcp-server.md) | Accepted | `nightly-maintenance-2026-08-23-rfc090` |
 | 091 | [Help Catalog + “What’s this?” Inspect Mode](rfcs/091-whats-this-help-mode.md) | Accepted | `nightly-maintenance-2026-09-11-rfc091-whats-this-help-mode` |
 | 092 | [Ralph-native demo stack (Kafi / Driftless / ContractGate)](rfcs/092-ralph-native-demo.md) | Accepted — partner-ready | `nightly-maintenance-2026-09-11-rfc092-ralph-demo` |
+| 093 | [Egress as a first-class door](rfcs/093-egress-first-class.md) | Accepted | `nightly-maintenance-2026-09-29-rfc093-egress-first-class` |
 
 ---
 

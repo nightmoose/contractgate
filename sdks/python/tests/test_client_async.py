@@ -91,3 +91,102 @@ async def test_async_context_manager_closes_underlying_client():
         await cg.ingest(contract_id="abc", events=[{}])
     # After exit the underlying httpx.AsyncClient is closed.
     assert cg._http.is_closed
+
+
+# ---------------------------------------------------------------------------
+# Egress
+# ---------------------------------------------------------------------------
+
+
+def _ok_egress_body(passed: int = 1, failed: int = 0) -> Dict[str, Any]:
+    outcomes = []
+    for i in range(passed):
+        outcomes.append({
+            "index": i,
+            "passed": True,
+            "violations": [],
+            "validation_us": 10,
+            "action": "included",
+        })
+    for i in range(failed):
+        outcomes.append({
+            "index": passed + i,
+            "passed": False,
+            "violations": [{"field": "amount", "message": "must be >= 0", "kind": "range_violation"}],
+            "validation_us": 8,
+            "action": "blocked",
+        })
+    return {
+        "total": passed + failed,
+        "passed": passed,
+        "failed": failed,
+        "dry_run": True,
+        "disposition": "block",
+        "resolved_version": "1.0",
+        "payload": [{"user_id": "alice"}] * passed,
+        "outcomes": outcomes,
+    }
+
+
+async def test_async_egress_posts_to_correct_path():
+    captured: Dict[str, Any] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured["url"] = str(request.url)
+        captured["body"] = json.loads(request.content.decode())
+        return httpx.Response(200, json=_ok_egress_body(passed=1))
+
+    async with AsyncClient(
+        base_url="https://gw.example.com",
+        api_key="cg_live_test",
+        transport=httpx.MockTransport(handler),
+    ) as cg:
+        r = await cg.egress(
+            contract_id="22222222-2222-2222-2222-222222222222",
+            events=[{"user_id": "alice"}],
+        )
+
+    assert "/egress/22222222-2222-2222-2222-222222222222" in captured["url"]
+    assert captured["body"] == [{"user_id": "alice"}]
+    assert r.passed == 1
+    assert r.outcomes[0].action == "included"
+
+
+async def test_async_egress_dry_run_becomes_query_param():
+    captured: Dict[str, Any] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured["url"] = str(request.url)
+        return httpx.Response(200, json=_ok_egress_body(passed=1))
+
+    async with AsyncClient(base_url="https://gw", api_key="k", transport=httpx.MockTransport(handler)) as cg:
+        await cg.egress(contract_id="abc", events=[{}], dry_run=True)
+
+    assert "dry_run=true" in captured["url"]
+
+
+async def test_async_egress_disposition_becomes_query_param():
+    captured: Dict[str, Any] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured["url"] = str(request.url)
+        return httpx.Response(200, json=_ok_egress_body(passed=1))
+
+    async with AsyncClient(base_url="https://gw", api_key="k", transport=httpx.MockTransport(handler)) as cg:
+        await cg.egress(contract_id="abc", events=[{}], disposition="fail")
+
+    assert "disposition=fail" in captured["url"]
+
+
+async def test_async_egress_207_does_not_raise():
+    """207 with partial failures must surface in outcomes, not raise."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(207, json=_ok_egress_body(passed=1, failed=1))
+
+    async with AsyncClient(base_url="https://gw", api_key="k", transport=httpx.MockTransport(handler)) as cg:
+        r = await cg.egress(contract_id="abc", events=[{}, {}])
+
+    assert r.passed == 1
+    assert r.failed == 1
+    assert any(o.action == "blocked" for o in r.outcomes)

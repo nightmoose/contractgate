@@ -18,6 +18,7 @@ Source: https://github.com/nightmoose/contractgate
 ## Reference
 
 - [POST /v1/ingest/{contract_id}](https://github.com/nightmoose/contractgate/blob/main/docs/v1-ingest-reference.md): Universal HTTP ingest — JSON arrays or NDJSON, idempotency keys, atomic batches, version pinning, dry runs.
+- [POST /egress/{contract_id}](https://github.com/nightmoose/contractgate/blob/main/docs/egress-validation-reference.md): Outbound payload validation — same engine as ingest, returns only the conforming payload so the caller can forward it safely.
 - [Contract deploy](https://github.com/nightmoose/contractgate/blob/main/docs/deploy-contract-reference.md): POST /contracts/deploy and the `contractgate deploy-contract` CLI — atomic promotion to stable, prior-version deprecation.
 - [CSV and URL inference](https://github.com/nightmoose/contractgate/blob/main/docs/csv-inference-reference.md): Generate a draft contract from a CSV file or a public data URL.
 - [Quarantine and replay](https://github.com/nightmoose/contractgate/blob/main/docs/quarantine-replay-reference.md): Review rejected events and replay them against a corrected contract version.

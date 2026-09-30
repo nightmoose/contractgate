@@ -115,6 +115,35 @@ def build_ingest_request(
     )
 
 
+def build_egress_request(
+    cfg: TransportConfig,
+    contract_id: str,
+    events: Any,
+    *,
+    version: Optional[str] = None,
+    disposition: Optional[str] = None,
+    dry_run: bool = False,
+    timeout: Optional[float] = None,
+) -> RequestSpec:
+    """Build a POST to ``/egress/{contract_id}``."""
+    extra_headers: Dict[str, str] = {}
+    if version is not None:
+        extra_headers["X-Contract-Version"] = version
+    params: Dict[str, Any] = {}
+    if dry_run:
+        params["dry_run"] = "true"
+    if disposition is not None:
+        params["disposition"] = disposition
+    return RequestSpec(
+        method="POST",
+        url=cfg.url(f"/egress/{contract_id}"),
+        headers=cfg.headers(extra_headers),
+        params=params or None,
+        json_body=events,
+        timeout=timeout if timeout is not None else cfg.timeout,
+    )
+
+
 def build_audit_request(
     cfg: TransportConfig,
     *,

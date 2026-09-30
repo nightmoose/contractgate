@@ -468,6 +468,72 @@ At <https://app.datacontractgate.com> → **Contracts → your contract**:
 
 ---
 
+## §10 — Wire the outbound door (egress)
+
+The same contract can gate what **leaves** your system. `POST /egress/{contract_id}` runs the identical `validate()` engine on any outbound payload — a reverse-ETL row, a notebook export, a state object headed to a decision model.
+
+**Do this only when the outbound payload differs from the ingest payload.** If the outbound object is the same shape as ingest, reuse the same `contract_id` — no second contract needed.
+
+When the outbound shape is different (a condensed state, a different object type):
+
+1. **Collect 5–20 known-good outbound samples** — the last payloads you are willing to stand behind. Do not infer from the fouled output the trash process emitted; infer from the last clean output.
+
+2. **Infer a second contract** from those samples, the same way as §2. Write it to `contracts/<name>_egress.yaml`.
+
+3. **Deploy it** the same way as §4. Save the `contract_id`.
+
+4. **Dry-run first:**
+
+   ```bash
+   curl -sS -X POST \
+     "https://app.datacontractgate.com/egress/$EGRESS_CONTRACT_ID?dry_run=true" \
+     -H "X-Api-Key: $CONTRACTGATE_API_KEY" \
+     -H "Content-Type: application/json" \
+     -d '[{ "user_id": "alice", "event_type": "purchase", "timestamp": 1714000000, "amount": 10 }]'
+   ```
+
+   Response fields to read:
+   | Field | Meaning |
+   |---|---|
+   | `payload` | The conforming records. Forward these and nothing else. |
+   | `outcomes[].action` | `included` / `blocked` / `rejected` / `tagged` |
+   | `passed` / `failed` | Batch summary |
+   | `violations` | Per-record rule violations |
+
+   Default disposition is `block` — failing records are dropped from `payload`, passing records still ship.
+
+5. **Verify:** send one known-bad object (wrong enum, negative amount) and one known-good object in the same batch. Expect `207`, `passed: 1`, `failed: 1`. If both pass, the contract is too loose — go back and tighten it.
+
+6. **Wire the producer:** immediately before the downstream POST, call `POST /egress/{contract_id}` (live, `dry_run` omitted). **Forward `response.payload` only.** Never forward the original request body after a `block` or `fail` response.
+
+Python (first-party SDK):
+
+```python
+result = cg.egress(
+    contract_id=os.environ["EGRESS_CONTRACT_ID"],
+    events=outbound_batch,
+)
+for r in result.outcomes:
+    if r.action == "blocked":
+        quarantine_locally(outbound_batch[r.index], r.violations)
+forward_downstream(result.payload)
+```
+
+MCP (if host has the ContractGate MCP server):
+
+```
+egress_validate(contract_id="<uuid>", events=[...], dry_run=true)
+```
+
+Dry-run first. Set `dry_run=false` only after the dry run behaves correctly.
+
+**Do not:**
+- Infer the egress contract from the fouled output of the process you are gating.
+- Forward the original request body after a `block` or `fail` — forward `response.payload`.
+- Add an `egress:` key to the contract YAML. Disposition is call-time; the YAML format is unchanged.
+
+---
+
 ## Reference docs
 
 | Doc | Covers |

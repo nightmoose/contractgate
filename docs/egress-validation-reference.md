@@ -53,6 +53,14 @@ does not block the rest.
 
 ---
 
+## Usage rules
+
+**Infer from known-good samples only.** When creating an egress contract, collect the last payloads you are willing to stand behind — not the output the broken process emitted this morning. If you infer from the fouled stream, the contract records the break rather than catching it.
+
+**Forward `payload` only.** After calling `POST /egress/{contract_id}`, send `response.payload` downstream and nothing else. Never forward the original request body after a `block` or `fail` response — the records the gateway excluded are the ones that violated the contract.
+
+---
+
 ## Response body
 
 ```json

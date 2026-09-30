@@ -3,7 +3,7 @@
   "name": "io.github.nightmoose/contractgate",
   "title": "ContractGate",
   "description": "Infer, dry-run, deploy, and inspect ContractGate semantic data contracts.",
-  "version": "0.1.2",
+  "version": "0.2.0",
   "websiteUrl": "https://app.datacontractgate.com/mcp-reference.md",
   "repository": {
     "url": "https://github.com/nightmoose/contractgate",
@@ -16,7 +16,7 @@
       "registryType": "npm",
       "registryBaseUrl": "https://registry.npmjs.org",
       "identifier": "@contractgate/mcp-server",
-      "version": "0.1.2",
+      "version": "0.2.0",
       "runtimeHint": "npx",
       "transport": {
         "type": "stdio"

@@ -1402,6 +1402,7 @@ fn build_router(state: Arc<AppState>) -> Router {
             get(ingest::ingest_stats_handler),
         )
         // Egress validation (RFC-029) — same @version suffix convention.
+        // User-facing path: "/egress/{contract_id}" (Axum parameter is raw_id).
         .route("/egress/{raw_id}", post(egress::egress_handler))
         // Provider scorecard (RFC-031) — keyed by provider source name.
         .route("/scorecard/{source}", get(scorecard::scorecard_handler))

@@ -105,8 +105,8 @@ export const HELP_CATALOG: Record<string, HelpEntry> = {
   },
   "page.catalog": {
     title: "Contract Catalog",
-    what: "Discovery surface for open-data and community-published contracts, plus egress checks.",
-    does: "Fork or import a contract into your org, or validate an outbound payload before it leaves your API.",
+    what: "Discovery surface for open-data and community-published contracts.",
+    does: "Fork or import a contract into your org. To validate outbound payloads, open the contract and use the Outbound tab.",
   },
   "page.scorecard": {
     title: "Provider Scorecard",
@@ -356,9 +356,9 @@ export const HELP_CATALOG: Record<string, HelpEntry> = {
     does: "Browse the public list or paste a ref (and token, if link-gated) to import.",
   },
   "catalog.egress": {
-    title: "Egress Validator",
-    what: "The same engine as ingest, pointed at an outbound payload.",
-    does: "Checks that what you are about to send still matches the contract — including leakage rules. Growth plan.",
+    title: "Egress Validator (Catalog)",
+    what: "Quick outbound check from the catalog. The primary Outbound tab lives on each contract page.",
+    does: "Validates an outbound payload against one of your contracts. For contract-specific testing, open the contract and use the Outbound tab. Growth plan.",
   },
   "catalog.subscribe": {
     title: "Subscribe import",
