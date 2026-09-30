@@ -68,6 +68,7 @@ import { QuarantineTab } from "./_tabs/quarantine";
 import { KafkaTab } from "./_tabs/kafka";
 import { KinesisTab } from "./_tabs/kinesis";
 import { CollaborateTab } from "./_tabs/collaborate";
+import { OutboundTab } from "./_tabs/outbound";
 import {
   pickDefaultVersion,
   newestVersionString,
@@ -115,7 +116,7 @@ function EditContractModal({
   const [publishModalOpen, setPublishModalOpen] = useState(false);
 
   // Modal-level tab state
-  type ModalTab = "yaml" | "versions" | "kafka" | "kinesis" | "collaborate";
+  type ModalTab = "yaml" | "versions" | "kafka" | "kinesis" | "collaborate" | "outbound";
   const [modalTab, setModalTab] = useState<ModalTab>("yaml");
 
   // RFC-030: egress leakage mode
@@ -440,6 +441,18 @@ function EditContractModal({
             >
               👥 Collaborate {!isGrowth && <span className="text-[10px] text-amber-500">🔒</span>}
             </button>
+            {/* RFC-093: Outbound check tab */}
+            <button
+              onClick={() => setModalTab("outbound")}
+              className={clsx(
+                "px-4 py-2 text-sm font-medium rounded-t-lg transition-colors border-b-2 -mb-px",
+                modalTab === "outbound"
+                  ? "text-slate-100 border-teal-500"
+                  : "text-slate-500 hover:text-slate-300 border-transparent"
+              )}
+            >
+              ↗ Outbound
+            </button>
           </div>
         )}
 
@@ -484,6 +497,11 @@ function EditContractModal({
                 setYamlDraft(yaml);
                 setModalTab("yaml");
               }}
+            />
+          ) : modalTab === "outbound" ? (
+            <OutboundTab
+              contractId={contractId}
+              hasStableVersion={Boolean(contract?.latest_stable_version)}
             />
           ) : (
             <VersionsTab

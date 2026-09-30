@@ -66,6 +66,21 @@ export class Gateway {
     });
   }
 
+  egress(
+    contractId: string,
+    events: unknown,
+    opts: { dryRun: boolean; disposition?: string; version?: string },
+  ) {
+    const q = new URLSearchParams();
+    if (opts.dryRun) q.set("dry_run", "true");
+    if (opts.disposition) q.set("disposition", opts.disposition);
+    // 207 mixed / 422 all-failed are data results, not transport errors.
+    return this.request("POST", `/egress/${encodeURIComponent(contractId)}${q.toString() ? `?${q.toString()}` : ""}`, {
+      body: events,
+      ok: [200, 207, 422],
+    });
+  }
+
   playground(yamlContent: string, event: unknown) {
     return this.request("POST", "/playground/validate", {
       body: { yaml_content: yamlContent, event },

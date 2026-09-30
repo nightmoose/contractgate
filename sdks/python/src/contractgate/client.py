@@ -17,6 +17,7 @@ from contractgate.models import (
     AuditEntry,
     BatchIngestResponse,
     ContractResponse,
+    EgressResponse,
     IngestionStats,
     VersionResponse,
     VersionSummary,
@@ -103,6 +104,33 @@ class Client:
         )
         _, body = self._dispatch(spec)
         return BatchIngestResponse.from_dict(body)
+
+    def egress(
+        self,
+        *,
+        contract_id: str,
+        events: Any,
+        version: Optional[str] = None,
+        disposition: Optional[str] = None,
+        dry_run: bool = False,
+        timeout: Optional[float] = None,
+    ) -> EgressResponse:
+        """Validate an outbound payload via ``POST /egress/{contract_id}``.
+
+        Forward only the returned ``response.payload`` downstream — never the
+        original request body after a ``block`` or ``fail`` disposition.
+        """
+        spec = _t.build_egress_request(
+            self._cfg,
+            contract_id,
+            events,
+            version=version,
+            disposition=disposition,
+            dry_run=dry_run,
+            timeout=timeout,
+        )
+        _, body = self._dispatch(spec)
+        return EgressResponse.from_dict(body)
 
     # ------------------------------------------------------------------
     # Audit / stats

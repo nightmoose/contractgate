@@ -126,6 +126,63 @@ class BatchIngestResponse:
 
 
 # ---------------------------------------------------------------------------
+# Egress response
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class EgressOutcome:
+    """Per-record outcome inside an ``EgressResponse``."""
+
+    index: int
+    passed: bool
+    violations: List[Violation]
+    validation_us: int
+    action: str  # "included" | "blocked" | "rejected" | "tagged"
+
+    @classmethod
+    def from_dict(cls, raw: Dict[str, Any]) -> "EgressOutcome":
+        return cls(
+            index=int(raw["index"]),
+            passed=bool(raw["passed"]),
+            violations=[Violation.from_dict(v) for v in raw.get("violations", [])],
+            validation_us=int(raw.get("validation_us", 0)),
+            action=raw.get("action", ""),
+        )
+
+
+@dataclass(frozen=True)
+class EgressResponse:
+    """Response from ``POST /egress/{contract_id}``.
+
+    Forward only ``payload`` downstream — never the original request body
+    after a ``block`` or ``fail`` disposition.
+    """
+
+    total: int
+    passed: int
+    failed: int
+    dry_run: bool
+    disposition: str
+    resolved_version: str
+    payload: List[Any]
+    outcomes: List[EgressOutcome]
+
+    @classmethod
+    def from_dict(cls, raw: Dict[str, Any]) -> "EgressResponse":
+        return cls(
+            total=int(raw["total"]),
+            passed=int(raw["passed"]),
+            failed=int(raw["failed"]),
+            dry_run=bool(raw.get("dry_run", False)),
+            disposition=raw.get("disposition", "block"),
+            resolved_version=raw["resolved_version"],
+            payload=raw.get("payload", []),
+            outcomes=[EgressOutcome.from_dict(o) for o in raw.get("outcomes", [])],
+        )
+
+
+# ---------------------------------------------------------------------------
 # Contract / version response shapes
 # ---------------------------------------------------------------------------
 

@@ -6,6 +6,8 @@ Stop bad data **before** it reaches your warehouse, lakehouse, or ML pipeline.
 
 ContractGate is a high-performance validation gateway that enforces rich semantic data contracts in real time. Built in Rust for sub-millisecond per-event validation (86k+ events/sec/core), it goes far beyond JSON Schema or basic type checks — ontology, glossary, patterns, enums, computed metrics, and automatic inference.
 
+The same contract can gate what **leaves** your system. `POST /egress/{contract_id}` runs the identical engine on any outbound payload — a reverse-ETL row, a notebook export, a state object headed to a decision model. Failing records are blocked, declared PII is masked, and the caller forwards only the returned `payload`. See [`docs/egress-validation-reference.md`](docs/egress-validation-reference.md).
+
 <!-- LATENCY NOTE (measured 2026-05-24): Per-event validation p99 latency is 31 µs server-side,
      measured with warm compiled-contract cache. This exceeds the <15 ms p99 end-to-end budget
      (network + DB) by 500x. Performance is driven by Rust + Axum core with zero-copy contract
