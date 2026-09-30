@@ -94,7 +94,7 @@ const FEATURES: Feature[] = [
   { label: "CSV → YAML inference",             selfHosted: false,               free: false,             growth: true,         enterprise: true },
   { label: "Brownfield scaffolder (+ PII)",    selfHosted: false,               free: false,             growth: true,         enterprise: true },
   { label: "Provider Scorecard",               selfHosted: false,               free: false,             growth: true,         enterprise: true },
-  { label: "Egress Validator",                 selfHosted: false,               free: false,             growth: true,         enterprise: true },
+  { label: "Egress API (outbound validation)",  selfHosted: true,                free: false,             growth: true,         enterprise: true },
   { label: "AI Collaborate (contract proposals)", selfHosted: false,            free: false,             growth: true,         enterprise: true },
   { label: "Kafka / Kinesis integration",      selfHosted: true,                free: false,             growth: true,         enterprise: true },
   { label: "Open data catalog (browse + fork)", selfHosted: false,              free: true,              growth: true,         enterprise: true },
@@ -326,7 +326,7 @@ export default function PricingPage() {
         {[
           {
             q: "What counts as an event?",
-            a: "Any JSON object submitted to a POST /ingest/{contract_id} endpoint. Batch calls count each item in the batch individually.",
+            a: "Any JSON object submitted to POST /ingest/{contract_id} (inbound) or POST /egress/{contract_id} (outbound). Batch calls count each item individually.",
           },
           {
             q: "Can I switch plans mid-month?",
