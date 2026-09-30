@@ -4,11 +4,10 @@
 name: mcp-publish
 
 on:
+  # Manual only — the release workflow (release.yml) handles the normal
+  # tag-driven publish sequence: npm first, then MCP registry.
+  # Use this dispatch for emergency re-publishes without a new tag.
   workflow_dispatch:
-  push:
-    branches: [main]
-    paths:
-      - mcp/server.json
 
 permissions:
   id-token: write

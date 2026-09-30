@@ -178,7 +178,66 @@ jobs:
             --title "ContractGate ${TAG}" \
             --generate-notes
 
-  # ── 4. Publish Python SDK ──────────────────────────────────────────────────
+  # ── 4. Publish MCP npm package ────────────────────────────────────────────
+  # Publishes @contractgate/mcp-server to npm. Must complete before the MCP
+  # registry publish (step 5) because the registry validates the npm package
+  # exists at the declared version before accepting server.json.
+  publish-npm-mcp:
+    name: Publish MCP npm package
+    if: startsWith(github.ref, 'refs/tags/')
+    needs: version-check
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          registry-url: 'https://registry.npmjs.org'
+      - name: Assert mcp/package.json version matches tag
+        run: |
+          MCP_VERSION=$(node -p "require('./mcp/package.json').version")
+          TAG_VERSION="${{ needs.version-check.outputs.version }}"
+          echo "mcp/package.json : ${MCP_VERSION}"
+          echo "Tag version      : ${TAG_VERSION}"
+          if [[ "${MCP_VERSION}" != "${TAG_VERSION}" ]]; then
+            echo "::error::mcp/package.json version ${MCP_VERSION} != tag ${TAG_VERSION}. Bump it before tagging."
+            exit 1
+          fi
+      - name: Install dependencies
+        working-directory: mcp
+        run: npm ci
+      - name: Publish to npm
+        working-directory: mcp
+        run: npm publish --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+  # ── 5. Publish to MCP Registry ────────────────────────────────────────────
+  # Runs after npm publish so the registry can verify @contractgate/mcp-server
+  # exists at the declared version. Uses GitHub OIDC (no stored secret needed).
+  publish-mcp-registry:
+    name: Publish to MCP Registry
+    if: startsWith(github.ref, 'refs/tags/')
+    needs: publish-npm-mcp
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install mcp-publisher
+        run: |
+          curl -fsSL \
+            "https://github.com/modelcontextprotocol/registry/releases/latest/download/mcp-publisher_linux_amd64.tar.gz" \
+            | tar xz mcp-publisher
+      - name: Login (GitHub OIDC) and publish
+        run: |
+          ./mcp-publisher login github-oidc
+          ./mcp-publisher publish mcp/server.json
+
+  # ── 6. Publish Python SDK ──────────────────────────────────────────────────
   # Publishes contractgate Python SDK (sdks/python/).
   # Always publishes to TestPyPI for smoke-test visibility.
   # Publishes to PyPI only on tag pushes (via OIDC Trusted Publisher).
