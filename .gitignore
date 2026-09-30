@@ -77,6 +77,9 @@ docs/marketing/drafts/
 # ClankerSpanker hunter outbox (drafts, never sent)
 .bot-outbox/
 
+# Claude Code screenshot attachments (local scratch folder, never project files)
+.clankerspanker-attachments/
+
 # npm auth tokens
 .npmrc
 *.mcpb
