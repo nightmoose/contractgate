@@ -133,6 +133,6 @@ export const config = {
     // /auth/login for anonymous requests — i.e. for every coding agent and
     // every crawler, which is precisely the audience those files exist for.
     // A logged-in browser sailed through, which is why it went unnoticed.
-    "/((?!_next/static|_next/image|favicon.ico|logo.png|logo.svg|.*\\.(?:svg|png|jpg|jpeg|gif|webp|txt|md|xml)$).*)",
+    "/((?!_next/static|_next/image|_vercel|favicon.ico|logo.png|logo.svg|.*\\.(?:svg|png|jpg|jpeg|gif|webp|txt|md|xml)$).*)",
   ],
 };
