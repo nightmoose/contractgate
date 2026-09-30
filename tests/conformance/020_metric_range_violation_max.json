@@ -1,0 +1,11 @@
+{
+  "name": "metric range violation — latency exceeds max 500",
+  "contract_yaml": "version: \"1.0\"\nname: \"metrics_test\"\nontology:\n  entities:\n    - name: latency\n      type: float\n      required: true\nmetrics:\n  - name: latency_ms\n    field: latency\n    max: 500\n",
+  "event": { "latency": 999.0 },
+  "expected": {
+    "passed": false,
+    "violations": [
+      { "field": "latency", "kind": "metric_range_violation" }
+    ]
+  }
+}

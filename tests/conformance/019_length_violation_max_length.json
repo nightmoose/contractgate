@@ -1,0 +1,11 @@
+{
+  "name": "length violation — user_id above max_length 50",
+  "contract_yaml": "version: \"1.0\"\nname: \"user_events\"\nontology:\n  entities:\n    - name: user_id\n      type: string\n      required: true\n      max_length: 50\n",
+  "event": { "user_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" },
+  "expected": {
+    "passed": false,
+    "violations": [
+      { "field": "user_id", "kind": "length_violation" }
+    ]
+  }
+}

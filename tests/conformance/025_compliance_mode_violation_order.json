@@ -1,0 +1,12 @@
+{
+  "name": "compliance mode — missing_required_field appears before undeclared_field",
+  "contract_yaml": "version: \"1.0\"\nname: \"compliance_test\"\ncompliance_mode: true\nontology:\n  entities:\n    - name: user_id\n      type: string\n      required: true\n    - name: event_type\n      type: string\n      required: true\n",
+  "event": { "user_id": "alice", "stray": 1 },
+  "expected": {
+    "passed": false,
+    "violations": [
+      { "field": "event_type", "kind": "missing_required_field" },
+      { "field": "stray", "kind": "undeclared_field" }
+    ]
+  }
+}

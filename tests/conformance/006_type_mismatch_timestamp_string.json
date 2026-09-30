@@ -1,0 +1,11 @@
+{
+  "name": "type mismatch — timestamp is a string not integer",
+  "contract_yaml": "version: \"1.0\"\nname: \"user_events\"\nontology:\n  entities:\n    - name: user_id\n      type: string\n      required: true\n    - name: timestamp\n      type: integer\n      required: true\n",
+  "event": { "user_id": "alice_01", "timestamp": "not-a-number" },
+  "expected": {
+    "passed": false,
+    "violations": [
+      { "field": "timestamp", "kind": "type_mismatch" }
+    ]
+  }
+}

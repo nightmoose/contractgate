@@ -1,0 +1,11 @@
+{
+  "name": "metric field absent — reports missing_required_field",
+  "contract_yaml": "version: \"1.0\"\nname: \"metrics_test\"\nontology:\n  entities:\n    - name: latency\n      type: float\n      required: false\nmetrics:\n  - name: latency_ms\n    field: latency\n    max: 500\n",
+  "event": {},
+  "expected": {
+    "passed": false,
+    "violations": [
+      { "field": "latency", "kind": "missing_required_field" }
+    ]
+  }
+}

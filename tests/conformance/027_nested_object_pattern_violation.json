@@ -1,0 +1,11 @@
+{
+  "name": "nested object — pattern mismatch at dotted path",
+  "contract_yaml": "version: \"1.0\"\nname: \"nested_test\"\nontology:\n  entities:\n    - name: user\n      type: object\n      properties:\n        - name: address\n          type: object\n          properties:\n            - name: zip\n              type: string\n              required: true\n              pattern: \"^[0-9]{5}$\"\n",
+  "event": { "user": { "address": { "zip": "abc" } } },
+  "expected": {
+    "passed": false,
+    "violations": [
+      { "field": "user.address.zip", "kind": "pattern_mismatch" }
+    ]
+  }
+}

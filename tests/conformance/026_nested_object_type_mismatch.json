@@ -1,0 +1,11 @@
+{
+  "name": "nested object — type mismatch at dotted path",
+  "contract_yaml": "version: \"1.0\"\nname: \"nested_test\"\nontology:\n  entities:\n    - name: user\n      type: object\n      properties:\n        - name: age\n          type: integer\n          required: true\n",
+  "event": { "user": { "age": "thirty" } },
+  "expected": {
+    "passed": false,
+    "violations": [
+      { "field": "user.age", "kind": "type_mismatch" }
+    ]
+  }
+}

@@ -1,0 +1,11 @@
+{
+  "name": "optional field present with wrong type is still a violation",
+  "contract_yaml": "version: \"1.0\"\nname: \"user_events\"\nontology:\n  entities:\n    - name: user_id\n      type: string\n      required: true\n    - name: amount\n      type: number\n      required: false\n",
+  "event": { "user_id": "alice_01", "amount": "five" },
+  "expected": {
+    "passed": false,
+    "violations": [
+      { "field": "amount", "kind": "type_mismatch" }
+    ]
+  }
+}

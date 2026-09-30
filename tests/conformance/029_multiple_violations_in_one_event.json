@@ -1,0 +1,12 @@
+{
+  "name": "multiple violations in one event — missing + type mismatch",
+  "contract_yaml": "version: \"1.0\"\nname: \"user_events\"\nontology:\n  entities:\n    - name: user_id\n      type: string\n      required: true\n    - name: event_type\n      type: string\n      required: true\n    - name: timestamp\n      type: integer\n      required: true\n",
+  "event": { "event_type": "click", "timestamp": "not-a-number" },
+  "expected": {
+    "passed": false,
+    "violations": [
+      { "field": "user_id", "kind": "missing_required_field" },
+      { "field": "timestamp", "kind": "type_mismatch" }
+    ]
+  }
+}

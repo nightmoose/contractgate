@@ -1,0 +1,11 @@
+{
+  "name": "range violation — timestamp below minimum 0",
+  "contract_yaml": "version: \"1.0\"\nname: \"user_events\"\nontology:\n  entities:\n    - name: timestamp\n      type: integer\n      required: true\n      min: 0\n",
+  "event": { "timestamp": -1 },
+  "expected": {
+    "passed": false,
+    "violations": [
+      { "field": "timestamp", "kind": "range_violation" }
+    ]
+  }
+}

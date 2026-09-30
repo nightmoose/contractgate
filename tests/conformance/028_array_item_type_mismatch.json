@@ -1,0 +1,11 @@
+{
+  "name": "array item — type mismatch at indexed path",
+  "contract_yaml": "version: \"1.0\"\nname: \"array_test\"\nontology:\n  entities:\n    - name: tags\n      type: array\n      required: true\n      items:\n        name: tag\n        type: string\n",
+  "event": { "tags": ["ok", 42, "good"] },
+  "expected": {
+    "passed": false,
+    "violations": [
+      { "field": "tags[1]", "kind": "type_mismatch" }
+    ]
+  }
+}

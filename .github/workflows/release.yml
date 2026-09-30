@@ -237,7 +237,41 @@ jobs:
           ./mcp-publisher login github-oidc
           ./mcp-publisher publish mcp/server.json
 
-  # ── 6. Publish Python SDK ──────────────────────────────────────────────────
+  # ── 6. Publish TypeScript SDK ─────────────────────────────────────────────
+  # Publishes @nightmoose/contractgate-sdk to npm on tag pushes.
+  publish-npm-sdk-ts:
+    name: Publish TypeScript SDK
+    if: startsWith(github.ref, 'refs/tags/')
+    needs: version-check
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          registry-url: 'https://registry.npmjs.org'
+      - name: Assert sdks/typescript/package.json version matches tag
+        run: |
+          SDK_VERSION=$(node -p "require('./sdks/typescript/package.json').version")
+          TAG_VERSION="${{ needs.version-check.outputs.version }}"
+          echo "sdks/typescript/package.json : ${SDK_VERSION}"
+          echo "Tag version                  : ${TAG_VERSION}"
+          if [[ "${SDK_VERSION}" != "${TAG_VERSION}" ]]; then
+            echo "::error::TypeScript SDK version ${SDK_VERSION} != tag ${TAG_VERSION}. Bump it before tagging."
+            exit 1
+          fi
+      - name: Install dependencies
+        working-directory: sdks/typescript
+        run: npm ci
+      - name: Publish to npm
+        working-directory: sdks/typescript
+        run: npm publish --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+  # ── 7. Publish Python SDK ──────────────────────────────────────────────────
   # Publishes contractgate Python SDK (sdks/python/).
   # Always publishes to TestPyPI for smoke-test visibility.
   # Publishes to PyPI only on tag pushes (via OIDC Trusted Publisher).

@@ -1,0 +1,9 @@
+{
+  "name": "compliance mode — declared fields only passes",
+  "contract_yaml": "version: \"1.0\"\nname: \"compliance_test\"\ncompliance_mode: true\nontology:\n  entities:\n    - name: user_id\n      type: string\n      required: true\n    - name: event_type\n      type: string\n      required: true\n",
+  "event": { "user_id": "alice", "event_type": "click" },
+  "expected": {
+    "passed": true,
+    "violations": []
+  }
+}

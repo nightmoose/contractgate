@@ -1,0 +1,13 @@
+{
+  "name": "multiple required fields missing",
+  "contract_yaml": "version: \"1.0\"\nname: \"user_events\"\nontology:\n  entities:\n    - name: user_id\n      type: string\n      required: true\n    - name: event_type\n      type: string\n      required: true\n    - name: timestamp\n      type: integer\n      required: true\n",
+  "event": {},
+  "expected": {
+    "passed": false,
+    "violations": [
+      { "field": "user_id", "kind": "missing_required_field" },
+      { "field": "event_type", "kind": "missing_required_field" },
+      { "field": "timestamp", "kind": "missing_required_field" }
+    ]
+  }
+}

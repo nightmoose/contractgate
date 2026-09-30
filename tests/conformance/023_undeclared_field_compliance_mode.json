@@ -1,0 +1,11 @@
+{
+  "name": "undeclared field rejected in compliance mode",
+  "contract_yaml": "version: \"1.0\"\nname: \"compliance_test\"\ncompliance_mode: true\nontology:\n  entities:\n    - name: user_id\n      type: string\n      required: true\n    - name: event_type\n      type: string\n      required: true\n",
+  "event": { "user_id": "x", "event_type": "click", "stray_field": 1 },
+  "expected": {
+    "passed": false,
+    "violations": [
+      { "field": "stray_field", "kind": "undeclared_field" }
+    ]
+  }
+}

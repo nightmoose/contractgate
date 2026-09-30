@@ -1,0 +1,11 @@
+{
+  "name": "enum violation — event_type is empty string",
+  "contract_yaml": "version: \"1.0\"\nname: \"user_events\"\nontology:\n  entities:\n    - name: event_type\n      type: string\n      required: true\n      enum: [\"click\", \"view\", \"purchase\", \"login\"]\n",
+  "event": { "event_type": "" },
+  "expected": {
+    "passed": false,
+    "violations": [
+      { "field": "event_type", "kind": "enum_violation" }
+    ]
+  }
+}
