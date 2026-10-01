@@ -265,6 +265,8 @@ jobs:
       - name: Install dependencies
         working-directory: sdks/typescript
         run: npm install
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
       - name: Publish to npm
         working-directory: sdks/typescript
         run: npm publish --access public
