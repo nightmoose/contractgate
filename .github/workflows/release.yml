@@ -182,6 +182,11 @@ jobs:
   # Publishes @contractgate/mcp-server to npm. Must complete before the MCP
   # registry publish (step 5) because the registry validates the npm package
   # exists at the declared version before accepting server.json.
+  #
+  # Authentication: npm Trusted Publisher (OIDC) — no stored token required.
+  # One-time setup on npmjs.com: Packages → @contractgate/mcp-server →
+  #   Settings → Trusted Publishers → Add: GitHub, owner=nightmoose,
+  #   repo=contractgate, workflow=release.yml
   publish-npm-mcp:
     name: Publish MCP npm package
     if: startsWith(github.ref, 'refs/tags/')
@@ -189,12 +194,14 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
+      id-token: write   # required for npm OIDC Trusted Publisher
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
-          node-version: '22'
+          node-version: '24'
           registry-url: 'https://registry.npmjs.org'
+          package-manager-cache: false
       - name: Assert mcp/package.json version matches tag
         run: |
           MCP_VERSION=$(node -p "require('./mcp/package.json').version")
@@ -211,8 +218,6 @@ jobs:
       - name: Publish to npm
         working-directory: mcp
         run: npm publish --access public
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
   # ── 5. Publish to MCP Registry ────────────────────────────────────────────
   # Runs after npm publish so the registry can verify @contractgate/mcp-server
@@ -239,6 +244,11 @@ jobs:
 
   # ── 6. Publish TypeScript SDK ─────────────────────────────────────────────
   # Publishes @nightmoose/contractgate-sdk to npm on tag pushes.
+  #
+  # Authentication: npm Trusted Publisher (OIDC) — no stored token required.
+  # One-time setup on npmjs.com: Packages → @nightmoose/contractgate-sdk →
+  #   Settings → Trusted Publishers → Add: GitHub, owner=nightmoose,
+  #   repo=contractgate, workflow=release.yml
   publish-npm-sdk-ts:
     name: Publish TypeScript SDK
     if: startsWith(github.ref, 'refs/tags/')
@@ -246,12 +256,14 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
+      id-token: write   # required for npm OIDC Trusted Publisher
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
-          node-version: '22'
+          node-version: '24'
           registry-url: 'https://registry.npmjs.org'
+          package-manager-cache: false
       - name: Assert sdks/typescript/package.json version matches tag
         run: |
           SDK_VERSION=$(node -p "require('./sdks/typescript/package.json').version")
@@ -264,14 +276,10 @@ jobs:
           fi
       - name: Install dependencies
         working-directory: sdks/typescript
-        run: npm install
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: npm ci
       - name: Publish to npm
         working-directory: sdks/typescript
         run: npm publish --access public
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
   # ── 7. Publish Python SDK ──────────────────────────────────────────────────
   # Publishes contractgate Python SDK (sdks/python/).
