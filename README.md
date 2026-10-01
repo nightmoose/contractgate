@@ -9,9 +9,10 @@ ContractGate is a high-performance validation gateway that enforces rich semanti
 The same contract can gate what **leaves** your system. `POST /egress/{contract_id}` runs the identical engine on any outbound payload — a reverse-ETL row, a notebook export, a state object headed to a decision model. Failing records are blocked, declared PII is masked, and the caller forwards only the returned `payload`. See [`docs/egress-validation-reference.md`](docs/egress-validation-reference.md).
 
 <!-- LATENCY NOTE (measured 2026-05-24): Per-event validation p99 latency is 31 µs server-side,
-     measured with warm compiled-contract cache. This exceeds the <15 ms p99 end-to-end budget
-     (network + DB) by 500x. Performance is driven by Rust + Axum core with zero-copy contract
-     matching. See ops/bench/ for reproducible benchmark. -->
+     measured with warm compiled-contract cache. This is ~484x under the <15 ms p99 end-to-end
+     budget (network + DB), leaving ample headroom for transport and storage. Performance is
+     driven by Rust + Axum core with zero-copy contract matching. See ops/bench/ for
+     reproducible benchmark. -->
 
 [![Security](https://img.shields.io/badge/security-hardened-brightgreen)](https://github.com/nightmoose/contractgate/security)
 [![Dependabot](https://img.shields.io/badge/Dependabot-enabled-brightgreen)](https://github.com/nightmoose/contractgate/security/dependabot)
@@ -43,7 +44,7 @@ MCP (Cursor, Claude Desktop, Windsurf, Copilot, Codex):
   "mcpServers": {
     "contractgate": {
       "command": "npx",
-      "args": ["-y", "@contractgate/mcp-server"],
+      "args": ["-y", "@nightmoose/contractgate-mcp-server"],
       "env": {
         "CONTRACTGATE_API_KEY": "${CONTRACTGATE_API_KEY}"
       }
