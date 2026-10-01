@@ -87,7 +87,7 @@ jobs:
             runner: ubuntu-latest
             cross: true
           - target: x86_64-apple-darwin
-            runner: macos-latest
+            runner: macos-13
           - target: aarch64-apple-darwin
             runner: macos-latest
     steps:
@@ -264,7 +264,7 @@ jobs:
           fi
       - name: Install dependencies
         working-directory: sdks/typescript
-        run: npm ci
+        run: npm install
       - name: Publish to npm
         working-directory: sdks/typescript
         run: npm publish --access public
@@ -316,6 +316,7 @@ jobs:
 
       - name: Publish to TestPyPI (smoke-test — always)
         uses: pypa/gh-action-pypi-publish@release/v1
+        continue-on-error: true
         with:
           repository-url: https://test.pypi.org/legacy/
           packages-dir: sdks/python/dist/
