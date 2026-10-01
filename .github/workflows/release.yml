@@ -215,9 +215,9 @@ jobs:
       - name: Install dependencies
         working-directory: mcp
         run: npm ci
-      - name: Publish to npm
+      - name: Publish to npm (OIDC provenance)
         working-directory: mcp
-        run: npm publish --access public
+        run: npm publish --provenance --access public
 
   # ── 5. Publish to MCP Registry ────────────────────────────────────────────
   # Runs after npm publish so the registry can verify @contractgate/mcp-server
@@ -277,9 +277,9 @@ jobs:
       - name: Install dependencies
         working-directory: sdks/typescript
         run: npm ci
-      - name: Publish to npm
+      - name: Publish to npm (OIDC provenance)
         working-directory: sdks/typescript
-        run: npm publish --access public
+        run: npm publish --provenance --access public
 
   # ── 7. Publish Python SDK ──────────────────────────────────────────────────
   # Publishes contractgate Python SDK (sdks/python/).
