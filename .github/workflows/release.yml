@@ -5,8 +5,15 @@
 # Jobs:
 #   version-check     — asserts Cargo.toml version == tag; exports VERSION
 #   build-cli         — cross-compiles CLI for 4 targets, uploads tarballs
-#   publish-release   — assembles GitHub Release (tag pushes only)
-#   publish-pypi      — publishes Python SDK to TestPyPI (always) + PyPI (tags only)
+#   publish-release   — assembles GitHub Release
+#   publish-npm-*     — MCP server + TypeScript SDK to npm (OIDC Trusted Publisher)
+#   publish-mcp-registry — mcp/server.json to the official MCP Registry
+#   publish-pypi      — publishes Python SDK to TestPyPI (always) + PyPI
+#
+# Every publish step is idempotent: a version already on the registry is
+# skipped, not failed. To retry a partially-failed release, dispatch this
+# workflow with the existing tag — no re-tagging needed. Dispatch builds and
+# publishes the code AT THE TAG (RELEASE_REF), using this file's workflow logic.
 #
 # Non-goals for v0.1:
 #   No Windows targets.
@@ -26,6 +33,8 @@ on:
 
 env:
   CARGO_TERM_COLOR: always
+  # Tag push → refs/tags/vX.Y.Z; dispatch → the tag given as input.
+  RELEASE_REF: ${{ github.event.inputs.tag || github.ref }}
 
 # ─────────────────────────────────────────────────────────────────────────────
 jobs:
@@ -42,6 +51,8 @@ jobs:
       version: ${{ steps.check.outputs.version }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.RELEASE_REF }}
 
       - name: Resolve tag
         id: tag
@@ -87,16 +98,24 @@ jobs:
             runner: ubuntu-latest
             cross: true
           - target: x86_64-apple-darwin
-            runner: macos-13
+            runner: macos-latest   # macos-13 (Intel) is retired; cross-compiles from arm64
           - target: aarch64-apple-darwin
             runner: macos-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.RELEASE_REF }}
 
       - name: Install Rust stable + target
         uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.target }}
+
+      # rust-toolchain.toml pins the channel, so the target installed above
+      # lands on `stable`, not the pinned toolchain. Add it to the pinned one.
+      - name: Add target to pinned toolchain
+        if: matrix.cross != true
+        run: rustup target add ${{ matrix.target }}
 
       - name: Install cross (Linux ARM64 only)
         if: matrix.cross == true
@@ -147,13 +166,15 @@ jobs:
   # with auto-generated release notes. Runs on tag pushes only.
   publish-release:
     name: Publish GitHub Release
-    if: startsWith(github.ref, 'refs/tags/')
+    if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch'
     needs: [version-check, build-cli]
     runs-on: ubuntu-latest
     permissions:
       contents: write
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.RELEASE_REF }}
 
       - name: Download all tarballs
         uses: actions/download-artifact@v4
@@ -173,28 +194,44 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          TAG="${{ github.ref_name }}"
-          gh release create "${TAG}" dist/*.tar.gz dist/SHA256SUMS \
-            --title "ContractGate ${TAG}" \
-            --generate-notes
+          TAG="v${{ needs.version-check.outputs.version }}"
+          if gh release view "${TAG}" >/dev/null 2>&1; then
+            echo "Release ${TAG} exists — replacing assets."
+            gh release upload "${TAG}" dist/*.tar.gz dist/SHA256SUMS --clobber
+          else
+            gh release create "${TAG}" dist/*.tar.gz dist/SHA256SUMS \
+              --verify-tag \
+              --title "ContractGate ${TAG}" \
+              --generate-notes
+          fi
 
   # ── 4. Publish MCP npm package ────────────────────────────────────────────
-  # Publishes @contractgate/mcp-server to npm. Must complete before the MCP
-  # registry publish (step 5) because the registry validates the npm package
-  # exists at the declared version before accepting server.json.
+  # Publishes @nightmoose/contractgate-mcp-server to npm. Must complete before
+  # the MCP registry publish (step 5) because the registry validates the npm
+  # package exists at the declared version before accepting server.json.
+  # (@contractgate/mcp-server is the deprecated pre-0.2.0 name.)
+  #
+  # Authentication: npm Trusted Publisher (OIDC) — no stored token required.
+  # One-time setup on npmjs.com: @nightmoose/contractgate-mcp-server →
+  #   Settings → Trusted Publishers → Add: GitHub, owner=nightmoose,
+  #   repo=contractgate, workflow=release.yml
   publish-npm-mcp:
     name: Publish MCP npm package
-    if: startsWith(github.ref, 'refs/tags/')
+    if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch'
     needs: version-check
     runs-on: ubuntu-latest
     permissions:
       contents: read
+      id-token: write   # required for npm OIDC Trusted Publisher
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
         with:
-          node-version: '22'
+          ref: ${{ env.RELEASE_REF }}
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24'
           registry-url: 'https://registry.npmjs.org'
+          package-manager-cache: false
       - name: Assert mcp/package.json version matches tag
         run: |
           MCP_VERSION=$(node -p "require('./mcp/package.json').version")
@@ -205,21 +242,30 @@ jobs:
             echo "::error::mcp/package.json version ${MCP_VERSION} != tag ${TAG_VERSION}. Bump it before tagging."
             exit 1
           fi
+      - name: Skip if version already on npm
+        id: exists
+        working-directory: mcp
+        run: |
+          SPEC="$(node -p "const p=require('./package.json'); p.name+'@'+p.version")"
+          if npm view "${SPEC}" version >/dev/null 2>&1; then
+            echo "::notice::${SPEC} already published — skipping."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          fi
       - name: Install dependencies
+        if: steps.exists.outputs.skip != 'true'
         working-directory: mcp
         run: npm ci
-      - name: Publish to npm
+      - name: Publish to npm (OIDC provenance)
+        if: steps.exists.outputs.skip != 'true'
         working-directory: mcp
-        run: npm publish --access public
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: npm publish --provenance --access public
 
   # ── 5. Publish to MCP Registry ────────────────────────────────────────────
-  # Runs after npm publish so the registry can verify @contractgate/mcp-server
+  # Runs after npm publish so the registry can verify the npm package
   # exists at the declared version. Uses GitHub OIDC (no stored secret needed).
   publish-mcp-registry:
     name: Publish to MCP Registry
-    if: startsWith(github.ref, 'refs/tags/')
+    if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch'
     needs: publish-npm-mcp
     runs-on: ubuntu-latest
     permissions:
@@ -227,6 +273,8 @@ jobs:
       contents: read
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.RELEASE_REF }}
       - name: Install mcp-publisher
         run: |
           curl -fsSL \
@@ -234,24 +282,43 @@ jobs:
             | tar xz mcp-publisher
       - name: Login (GitHub OIDC) and publish
         run: |
+          NAME=$(jq -r .name mcp/server.json)
+          VERSION=$(jq -r .version mcp/server.json)
+          if curl -fsS "https://registry.modelcontextprotocol.io/v0/servers?search=${NAME}" \
+              | jq -e --arg n "$NAME" --arg v "$VERSION" \
+                  '.servers[] | select(.server.name==$n and .server.version==$v)' >/dev/null; then
+            echo "::notice::${NAME}@${VERSION} already in the MCP Registry — skipping."
+            exit 0
+          fi
           ./mcp-publisher login github-oidc
           ./mcp-publisher publish mcp/server.json
 
   # ── 6. Publish TypeScript SDK ─────────────────────────────────────────────
   # Publishes @nightmoose/contractgate-sdk to npm on tag pushes.
+  #
+  # Authentication: npm Trusted Publisher (OIDC) — no stored token required.
+  # npm only allows a Trusted Publisher on a package that already exists, so
+  # the very first version must be published by hand (`npm publish` locally).
+  # Then on npmjs.com: @nightmoose/contractgate-sdk →
+  #   Settings → Trusted Publishers → Add: GitHub, owner=nightmoose,
+  #   repo=contractgate, workflow=release.yml
   publish-npm-sdk-ts:
     name: Publish TypeScript SDK
-    if: startsWith(github.ref, 'refs/tags/')
+    if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch'
     needs: version-check
     runs-on: ubuntu-latest
     permissions:
       contents: read
+      id-token: write   # required for npm OIDC Trusted Publisher
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
         with:
-          node-version: '22'
+          ref: ${{ env.RELEASE_REF }}
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24'
           registry-url: 'https://registry.npmjs.org'
+          package-manager-cache: false
       - name: Assert sdks/typescript/package.json version matches tag
         run: |
           SDK_VERSION=$(node -p "require('./sdks/typescript/package.json').version")
@@ -262,33 +329,48 @@ jobs:
             echo "::error::TypeScript SDK version ${SDK_VERSION} != tag ${TAG_VERSION}. Bump it before tagging."
             exit 1
           fi
+      - name: Skip if version already on npm
+        id: exists
+        working-directory: sdks/typescript
+        run: |
+          SPEC="$(node -p "const p=require('./package.json'); p.name+'@'+p.version")"
+          if npm view "${SPEC}" version >/dev/null 2>&1; then
+            echo "::notice::${SPEC} already published — skipping."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          fi
       - name: Install dependencies
+        if: steps.exists.outputs.skip != 'true'
         working-directory: sdks/typescript
-        run: npm install
-      - name: Publish to npm
+        run: npm ci
+      - name: Publish to npm (OIDC provenance)
+        if: steps.exists.outputs.skip != 'true'
         working-directory: sdks/typescript
-        run: npm publish --access public
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: npm publish --provenance --access public
 
   # ── 7. Publish Python SDK ──────────────────────────────────────────────────
   # Publishes contractgate Python SDK (sdks/python/).
   # Always publishes to TestPyPI for smoke-test visibility.
-  # Publishes to PyPI only on tag pushes (via OIDC Trusted Publisher).
+  # Publishes to PyPI on tag pushes / dispatch (via OIDC Trusted Publisher).
   #
   # One-time setup required:
-  #   - PyPI:     Add Trusted Publisher: repo=contractgate/contractgate,
-  #               workflow=release.yml, environment=pypi
+  #   - PyPI:     project `contractgate` → Publishing → Add GitHub publisher:
+  #               owner=nightmoose, repo=contractgate, workflow=release.yml,
+  #               environment=pypi. Every claim must match exactly, or PyPI
+  #               returns `invalid-publisher`. (The `pypi` GitHub environment
+  #               has no protection rules, so it does not gate the job.)
   #   - TestPyPI: Store TEST_PYPI_API_TOKEN in repository secrets
   #               (OIDC support on TestPyPI incomplete as of 2026-04)
   publish-pypi:
     name: Publish Python SDK
     needs: version-check
     runs-on: ubuntu-latest
+    environment: pypi   # part of the Trusted Publisher claim — keep in sync with PyPI
     permissions:
       id-token: write   # required for PyPI OIDC Trusted Publisher
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.RELEASE_REF }}
 
       - name: Assert pyproject.toml version matches tag
         run: |
@@ -323,7 +405,7 @@ jobs:
           skip-existing: true
 
       - name: Publish to PyPI (tags only — OIDC Trusted Publisher)
-        if: startsWith(github.ref, 'refs/tags/')
+        if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch'
         uses: pypa/gh-action-pypi-publish@release/v1
         continue-on-error: true
         with:
