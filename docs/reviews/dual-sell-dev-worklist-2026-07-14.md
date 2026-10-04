@@ -203,7 +203,7 @@ Please challenge or improve this plan on:
 
 1. **Ordering** — Should metering (#5–7) jump ahead of RFC-075 if public signup is off and all pilots are self-hosted?  
 2. **Quota design** — Count only `passed` events, all ingest attempts, or billable validated events? Idempotent retries?  
-3. **Hero path** — HTTP-only vs Kafka-first for ICP (proptech / Findigs-style vs streaming platform)?  
+3. **Hero path** — HTTP-only vs Kafka-first for ICP (proptech integrations vs streaming platform)?  
 4. **Legacy `/ingest`** — Deprecate vs backport: which is safer given existing SDK/docs traffic?  
 5. **Scope creep** — Any P0 item that is actually P2 for a private design-partner-only GTM?  
 6. **Missing diligence artifacts** — IP assignment, patent docket status, SOC2 timeline — anything engineering should stub in-repo now?
@@ -515,7 +515,7 @@ Please challenge or improve this plan on:
 
 1. **Ordering** — Should metering (#5–7) jump ahead of RFC-075 if public signup is off and all pilots are self-hosted?  
 2. **Quota design** — Count only `passed` events, all ingest attempts, or billable validated events? Idempotent retries?  
-3. **Hero path** — HTTP-only vs Kafka-first for ICP (proptech / Findigs-style vs streaming platform)?  
+3. **Hero path** — HTTP-only vs Kafka-first for ICP (proptech integrations vs streaming platform)?  
 4. **Legacy `/ingest`** — Deprecate vs backport: which is safer given existing SDK/docs traffic?  
 5. **Scope creep** — Any P0 item that is actually P2 for a private design-partner-only GTM?  
 6. **Missing diligence artifacts** — IP assignment, patent docket status, SOC2 timeline — anything engineering should stub in-repo now?
