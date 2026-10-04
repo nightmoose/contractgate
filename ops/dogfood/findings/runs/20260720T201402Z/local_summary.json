@@ -1,4 +1,4 @@
-F[
+[
   {
     "scenario": "github_events",
     "contract": "/Users/alexsuarez/contractgate/ops/dogfood/contracts/github_events.yaml",
