@@ -23,10 +23,10 @@ a provider should be able to **publish** a contract and a consumer
 should be able to **import** it directly, so the consumer's side is
 configured from the authoritative definition instead of guesswork.
 
-Findigs case: a PMS vendor that publishes its egress contract lets
-Findigs import it and stand up a matching ingest contract in one step —
+Proptech case: a PMS vendor that publishes its egress contract lets
+the consuming platform import it and stand up a matching ingest contract in one step —
 no back-and-forth, no drift between "what the PMS says it sends" and
-"what Findigs configured."
+"what the consumer configured."
 
 ## Proposed Solution
 

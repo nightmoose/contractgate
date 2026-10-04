@@ -9,8 +9,8 @@
 ## Problem
 
 When a consumer ingests from many small upstream providers, data-quality
-disputes are unstructured and adversarial. The Findigs case again:
-Findigs pulls from many small PMS vendors. When a PMS feed degrades,
+disputes are unstructured and adversarial. The proptech case again:
+a proptech platform pulls from many small PMS vendors. When a PMS feed degrades,
 the conversation today is an email — *"your data is bad"* — with no
 shared evidence, and the small PMS vendor (who hates these emails)
 has nothing concrete to act on.
@@ -104,7 +104,7 @@ warning a slow quarantine-volume creep never gives you.
 
 ### What this unlocks
 
-- **Vendor conversations become data, not arguments.** Findigs sends a
+- **Vendor conversations become data, not arguments.** The consumer sends a
   scorecard, not a complaint. The PMS vendor gets a contract + a rule +
   a rate they can act on.
 - **Drift caught early.** A provider changing shape shows up as a drift
