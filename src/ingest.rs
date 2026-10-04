@@ -1101,7 +1101,7 @@ fn envelope_per_record_results(
 }
 
 /// Fire-and-forget audit + quarantine (+ forward) for an envelope batch.
-/// Mirrors the per-record path so MRI/Findigs envelope traffic produces the
+/// Mirrors the per-record path so MRI/proptech envelope traffic produces the
 /// same pilot-report and quarantine/replay artifacts.
 #[allow(clippy::too_many_arguments)]
 fn persist_envelope_batch(
@@ -1202,7 +1202,7 @@ fn persist_envelope_batch(
 
     if !audit_rows.is_empty() {
         // RFC-083: meter in the same spawn after audit succeeds so crash
-        // under-counts both together (envelope is billable MRI/Findigs traffic).
+        // under-counts both together (envelope is billable MRI/proptech traffic).
         let n = audit_rows.len();
         let pool = state.db.clone();
         let meter_org = org_id;
