@@ -63,7 +63,7 @@ handle the backlog deliberately).
 
 Partner APIs often wrap records: `{ success, data: [...], pagination }`.
 Contracts can declare an `envelope` stanza (`records_path`, optional wrapper
-checks). Used for MRI/Findigs-style integrations. Envelope traffic is billable
+checks). Used for MRI/proptech-style integrations. Envelope traffic is billable
 and goes through audit/quarantine like normal HTTP ingest.
 
 ## Plans & metering (be accurate)

@@ -147,7 +147,7 @@ Promote scenarios to `status: proven` only after local + cloud (or local + UI ch
 | `nyc_311` | NYC Open Data | Service requests | CSV / JSON high-cardinality enums |
 | `open_meteo` | Open-Meteo forecast | Hourly time series | Nested → flat rows, numeric ranges |
 | `github_events` | GitHub public events | Activity stream | Enum-heavy types, optional fields |
-| `mri_tenancy` | Synthetic MRI MIX-style | Proptech vertical | Hand-authored semantic contract (Findigs story) |
+| `mri_tenancy` | Synthetic MRI MIX-style | Proptech vertical | Hand-authored semantic contract (proptech story) |
 
 Add scenarios when a GTM conversation needs a new vertical — copy `scenarios/_TEMPLATE.yaml`.
 
