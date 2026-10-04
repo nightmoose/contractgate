@@ -23,10 +23,10 @@ Bad data still escapes through three gaps:
 - Partially-degraded upstream providers whose data passed a loose
   ingest contract but is not fit to re-serve.
 
-Concrete case (Findigs): Findigs pulls rental data from many small PMS
+Concrete case (a proptech prospect): a proptech platform pulls rental data from many small PMS
 (property management system) APIs. Those PMS vendors are small and hate
-fielding data-quality complaints. Findigs validates the PMS data on
-ingest — but when Findigs serves *its own* customers (lenders,
+fielding data-quality complaints. The platform validates the PMS data on
+ingest — but when it serves *its own* customers (lenders,
 landlords), there is no last-step gate proving the outbound payload is
 clean. The same validation engine, pointed outward, closes the loop.
 

@@ -69,7 +69,7 @@ Mechanical refactors, zero behavior change, each one PR-sized.
 - 15+ RFC files still say **Draft** for work that shipped (049–055 closed in the launch-readiness pass; 034/035/046 shipped per maintenance log). Batch status update.
 
 ### 8. Root clutter
-`REVIEW-*.md`, `BROWSER_TEST_REPORT-*.md`, `Grok_Suggestions.txt` (→ `docs/`), `mri_*.yaml` (→ `contracts/`), `ContractGate_Benefits_Findigs_v3.pdf` (typo'd name, → `docs/` or delete).
+`REVIEW-*.md`, `BROWSER_TEST_REPORT-*.md`, `Grok_Suggestions.txt` (→ `docs/`), `mri_*.yaml` (→ `contracts/`), and a client-specific benefits PDF (since removed).
 
 ---
 
