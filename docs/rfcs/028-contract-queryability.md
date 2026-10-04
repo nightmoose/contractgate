@@ -15,7 +15,7 @@ Contracts currently live as YAML files in git. This is correct for authoring and
 - Per-contract quarantine rates, violation breakdowns, and field-level error frequencies cannot be queried without parsing YAML out-of-band.
 - External stakeholders (property managers, auditors) cannot be given read-only visibility into active contract definitions without DB access.
 
-This gap surfaced during a Findigs evaluation conversation: the claim that contracts are "queryable" was aspirational, not accurate. The audit log is queryable; the contracts are not.
+This gap surfaced during an evaluation conversation with a proptech prospect: the claim that contracts are "queryable" was aspirational, not accurate. The audit log is queryable; the contracts are not.
 
 ---
 

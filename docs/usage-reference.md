@@ -11,7 +11,7 @@ the **Usage this month** card on the account Billing page.
 monthly cap, `POST /ingest/*` and `POST /v1/ingest/*` return **429**
 `plan_limit_exceeded` (see below). Enterprise is unlimited. Self-hosted (no org)
 is unmetered. Metering **fails open** on DB errors (logs + allows). `?dry_run=true`
-skips the cap check. Envelope contracts (MRI/Findigs) count toward the limit.
+skips the cap check. Envelope contracts (MRI/proptech) count toward the limit.
 **Kafka / Kinesis ingress is metered via reconcile, not in real time.** Stream
 consumers stamp the owning `org_id` on their `audit_log` rows; the periodic
 up-only usage reconcile (audit_log is the source of truth) rolls those into

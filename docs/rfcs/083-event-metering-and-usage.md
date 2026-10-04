@@ -75,7 +75,7 @@ Response:
 - **Increment:** on the HTTP path (including envelope), UPSERT runs in the
   *same* `tokio::spawn` as the audit write (only after audit succeeds) so
   crash/restart under-counts both together rather than diverging.
-- **Envelope (MRI/Findigs) is billable and audited:** per-record
+- **Envelope (MRI/proptech) is billable and audited:** per-record
   audit/quarantine/forward after `validate_envelope_batch` (P0 fix), then
   meter from audit row count.
 - **Kafka / Kinesis unmetered in v1 (product decision):** streaming ingress does

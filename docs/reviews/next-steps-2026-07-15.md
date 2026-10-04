@@ -23,7 +23,7 @@ noise — justified on first principles (one indexed read).
 ### 1. Envelope contracts skip audit **and** quarantine (only meter)
 The envelope short-circuit (`src/ingest.rs` ~lines 340–372; `validate_envelope_batch`
 is pure) returns after validation + `record_batch_usage` — it writes **no
-`audit_log` and no `quarantine_events`**. Impact on the **MRI/Findigs proptech ICP**
+`audit_log` and no `quarantine_events`**. Impact on the **MRI/proptech ICP**
 (which uses envelope contracts):
 - **Pilot report (RFC-082) is empty** for them — the #1 "value delivered" artifact.
 - **Quarantine tab / replay (RFC-081) is empty** — blocked events aren't stored,
