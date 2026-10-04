@@ -48,7 +48,7 @@ signed off (may be planning docs or UI-only); **Draft** = under review;
 | 035 | [CSV Contract Inference](rfcs/035-csv-contract-inference.md) | Shipped | `nightly-maintenance-2026-05-15` |
 | 036 | [Source-First New Contract Flow](rfcs/036-source-first-contract-creation.md) | Draft | — |
 | 037 | [API Endpoint as Contract Source (URL Inference)](rfcs/037-api-source-contract-creation.md) | Shipped | `nightly-maintenance-2026-05-15` |
-| 038 | [MRI API Contracts for Findigs Integration](rfcs/038-mri-api-contracts.md) | Draft | — |
+| 038 | MRI API Contracts / envelope stanza (document removed) | Draft | — |
 | 039 | [Supabase-JWT Dashboard Auth](rfcs/039-supabase-jwt-auth.md) | Accepted | `nightly-maintenance-2026-05-16` |
 | 040 | [Fix RLS on contract_versions + quarantine_events](rfcs/040-rls-contract-versions-quarantine.md) | Accepted | `dev/p02-rls-contract-versions` |
 | 041 | [API Key Hash Algorithm Docs](rfcs/041-api-key-hash-algorithm-docs.md) | Accepted | `dev/p02-rls-contract-versions` |
