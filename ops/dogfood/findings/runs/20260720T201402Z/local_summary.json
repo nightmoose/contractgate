@@ -1,4 +1,4 @@
-[
+F[
   {
     "scenario": "github_events",
     "contract": "/Users/alexsuarez/contractgate/ops/dogfood/contracts/github_events.yaml",
@@ -696,7 +696,7 @@
     "ok": true,
     "errors": [],
     "product_questions": [
-      "Q1: Does the Findigs/MRI narrative hold with envelope + semantic fields?",
+      "Q1: Does the MRI narrative hold with envelope + semantic fields?",
       "Q2: Currency/status enums + rent min catch the bad rows partners actually send?",
       "Q3: Glossary + metrics make the contract readable in a sales call?"
     ]
