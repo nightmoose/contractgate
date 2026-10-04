@@ -143,7 +143,7 @@ Every new policy is helper-routed; none introduce an inline
 - **RFC-032 `org` visibility becomes real.** An `org`-visibility
   publication is implemented as a `viewer` collaborator grant — the
   two RFCs meet here.
-- **A provider can co-own its contract.** The PMS vendor and Findigs
+- **A provider can co-own its contract.** The PMS vendor and the proptech consumer
   jointly maintain the contract that governs the data between them,
   each from their own org.
 

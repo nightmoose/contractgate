@@ -10,11 +10,11 @@
 
 ## Context
 
-Findigs is evaluating ContractGate against the incumbent schema-registry tools.
-Their primary decision criterion is the **rule-authoring iteration loop**: how
-fast can an engineer write or infer a contract, throw representative JSON at it,
-read the violations, fix the rule, and repeat — entirely locally, with no
-running server, no Kafka, no network.
+Prospective customers evaluating ContractGate against the incumbent
+schema-registry tools often weigh one criterion most heavily: the
+**rule-authoring iteration loop** — how fast can an engineer write or infer a
+contract, throw representative JSON at it, read the violations, fix the rule,
+and repeat — entirely locally, with no running server, no Kafka, no network.
 
 This is the one place where the incumbents are weak (their loop is
 edit → deploy to registry → produce to a topic → consume failures), and it is
@@ -162,20 +162,6 @@ assertions and the dashboard.
   unparseable top-level JSON). Distinct from `1` so CI can tell "my data is bad"
   from "I broke the harness".
 
-## Why this beats the incumbents (the Findigs pitch)
-
-| Step | Incumbent (registry + topic) | ContractGate `cg test` |
-|---|---|---|
-| Author rule | edit schema | edit YAML (or `cg infer`) |
-| Get sample data in | produce to a topic | point at a local file / stdin |
-| See failures | consume a DLQ / dead-letter topic | printed inline, per record |
-| Iterate | redeploy schema, re-produce | re-run one command |
-| Infra required | broker + registry running | none |
-| Loop latency | seconds–minutes | low-ms, dominated by file read |
-
-The engine speed (31µs/record) was never the bottleneck for them — the *loop*
-was. This command turns our existing speed into a felt advantage in their POC.
-
 ## Testing
 
 - Unit: `read_records` shape detection (NDJSON / array / single / stdin /
@@ -211,4 +197,4 @@ behavior.
 2. Should `--data` directory globbing be supported (run a folder of fixtures)?
    Defer to v2; single file/stdin covers the eval loop.
 3. Should we emit a JUnit-XML report variant for CI dashboards? Defer; `--format
-   json` is enough for the Findigs eval.
+   json` is enough for evaluations.
