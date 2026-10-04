@@ -49,7 +49,7 @@ deploy() {
 PROPERTY_YAML=$(cat <<'YAML'
 version: "1.0"
 name: "mri_property_listing"
-description: "Contract for MRI MIX API property unit listing responses (Findigs integration)."
+description: "Contract for MRI MIX API property unit listing responses (proptech integration)."
 
 envelope:
   records_path: data
@@ -102,7 +102,7 @@ YAML
 TENANCY_YAML=$(cat <<'YAML'
 version: "1.0"
 name: "mri_tenancy_event"
-description: "Contract for MRI MIX API tenancy records (Findigs integration)."
+description: "Contract for MRI MIX API tenancy records (proptech integration)."
 
 envelope:
   records_path: data

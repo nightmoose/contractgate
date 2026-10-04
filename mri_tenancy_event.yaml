@@ -1,6 +1,6 @@
 version: "1.0"
 name: "mri_tenancy_event"
-description: "Contract for MRI MIX API tenancy records (Findigs integration). Validates the raw MRI envelope from GET /api/v1/tenancies/{tenancyId}."
+description: "Contract for MRI MIX API tenancy records (proptech integration). Validates the raw MRI envelope from GET /api/v1/tenancies/{tenancyId}."
 
 envelope:
   records_path: data

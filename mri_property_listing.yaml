@@ -1,6 +1,6 @@
 version: "1.0"
 name: "mri_property_listing"
-description: "Contract for MRI MIX API property unit listing responses (Findigs integration). Validates the raw MRI envelope from GET /api/v1/properties/{propertyId}/units."
+description: "Contract for MRI MIX API property unit listing responses (proptech integration). Validates the raw MRI envelope from GET /api/v1/properties/{propertyId}/units."
 
 envelope:
   records_path: data
