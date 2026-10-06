@@ -1,0 +1,20 @@
+{
+  "name": "contractgate-zapier",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Validate one record against a ContractGate contract inside a Zap.",
+  "main": "index.js",
+  "scripts": {
+    "test": "node --test test/*.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "zapier-platform-core": "19.1.0"
+  },
+  "devDependencies": {
+    "nock": "13.5.6",
+    "zapier-platform-cli": "19.1.0"
+  }
+}

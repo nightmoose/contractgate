@@ -32,6 +32,7 @@ const FULL_BUNDLE = [
   "llm-integration.md",
   "mcp-reference.md",
   "v1-ingest-reference.md",
+  "zapier.md",
   "deploy-contract-reference.md",
   "csv-inference-reference.md",
   "quarantine-replay-reference.md",

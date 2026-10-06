@@ -101,6 +101,11 @@ fn mcp_reference_only_cites_routes_that_exist() {
 }
 
 #[test]
+fn zapier_doc_only_cites_routes_that_exist() {
+    assert_doc_only_cites_existing_routes("docs/zapier.md", 3);
+}
+
+#[test]
 fn playbook_example_contract_compiles() {
     let doc = fs::read_to_string(repo_path("docs/llm-integration.md"))
         .expect("read docs/llm-integration.md");

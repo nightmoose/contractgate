@@ -398,6 +398,10 @@ immediately before the Kafka produce, warehouse insert, or outbound POST you
 found in §1. Do not scatter it across call sites; wrap the existing send in one
 function like the above and call that.
 
+### Zapier
+
+If the events are not produced in this repo — a CRM, a form, a sheet, anything a Zap pulls — do not write a client. The producer is the ContractGate action **Validate Record**, which posts one object to `POST /v1/ingest/{contract_id}`. A failure is quarantined and the Zap stops. The next step writes `payload` only. Setup, including the commands that put the action in the Zap editor: [`docs/zapier.md`](zapier.md).
+
 ---
 
 ## §6 — Verify with a dry run (do this before removing `dry_run`)
