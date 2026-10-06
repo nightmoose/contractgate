@@ -64,6 +64,8 @@ Claude Code / Cursor plugin:
 
 Redpanda Connect (HTTP processor, no custom plugin): [`docs/examples/redpanda-connect/`](docs/examples/redpanda-connect/).
 
+Zapier — validate the record a Zap just pulled, before the next step writes it. A failure is quarantined and the Zap stops. A pass continues with the payload ContractGate returned. Setup and the `zapier-platform push` commands: [`docs/zapier.md`](docs/zapier.md). Source: [`zapier/`](zapier/).
+
 ---
 
 ## Try it in 10 minutes (Self-Hosted Free)
@@ -101,7 +103,7 @@ make demo-logs    # follow all service logs
 - **Quarantine + Replay** — automatically hold and replay violating events *(Cloud)*
 - **Versioned Contracts** — draft → stable → deprecated with compliance mode *(Cloud)*
 - **High Performance** — Rust + Axum core, 86k+ events/sec/core
-- **Polyglot** — Rust engine, Python SDK, CLI, Kafka Connect, Next.js dashboard
+- **Polyglot** — Rust engine, Python SDK, CLI, Kafka Connect, Zapier, Next.js dashboard
 
 ---
 
