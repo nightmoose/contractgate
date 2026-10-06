@@ -447,6 +447,17 @@ function GrowthUpgradeButton({ annual, onToggleAnnual }: { annual: boolean; onTo
       >
         {annual ? 'or switch to monthly billing' : 'or annual billing (save 17%)'}
       </button>
+      <p className="text-[10px] text-slate-400 mt-2 leading-snug">
+        Free for 30 days, then{" "}
+        {annual ? "$2,988 billed annually ($249/mo)" : "$299 billed monthly"}. Your
+        subscription renews automatically until you cancel. Cancel anytime online from
+        Account &rarr; Billing; cancel before the trial ends and you won&rsquo;t be charged.
+        See our{" "}
+        <a href="/terms" className="underline hover:text-slate-300">
+          Terms
+        </a>
+        .
+      </p>
       <p className="text-[10px] text-slate-500 mt-1">You will be redirected to Stripe Checkout.</p>
     </div>
   );

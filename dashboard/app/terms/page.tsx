@@ -7,7 +7,7 @@ export default function TermsPage() {
     <div className="min-h-screen bg-[#0a0d12] flex flex-col items-center justify-center px-4 py-24">
       <div className="max-w-2xl w-full">
         <h1 className="text-2xl font-bold text-slate-100 mb-2">Terms of Service</h1>
-        <p className="text-slate-500 text-sm mb-10">Last updated: May 2026</p>
+        <p className="text-slate-500 text-sm mb-10">Last updated: October 2026</p>
 
         <div className="space-y-6 text-sm text-slate-400 leading-relaxed">
           <p>
@@ -47,7 +47,57 @@ export default function TermsPage() {
           </section>
 
           <section>
-            <h2 className="text-slate-200 font-semibold mb-2">4. Limitation of Liability</h2>
+            <h2 className="text-slate-200 font-semibold mb-2">4. Subscriptions, Automatic Renewal &amp; Cancellation</h2>
+            <div className="space-y-3">
+              <p>
+                <span className="text-slate-200 font-medium">Automatic renewal.</span> Paid
+                plans (such as Growth) are subscriptions that renew automatically at the end
+                of each billing period, monthly or annually depending on the plan you choose,
+                and continue until you cancel. By starting a paid plan or free trial, you
+                authorize us, through our payment processor Stripe, to charge your payment
+                method the then-current price for each renewal period, plus any applicable
+                taxes.
+              </p>
+              <p>
+                <span className="text-slate-200 font-medium">Current prices.</span> Growth is
+                $299 per month when billed monthly, or $249 per month billed annually as a
+                single charge of $2,988 per year. The price, billing interval, and renewal
+                terms for your plan are shown on the pricing page and on the Stripe
+                checkout page before you confirm.
+              </p>
+              <p>
+                <span className="text-slate-200 font-medium">Free trials.</span> If your plan
+                includes a free trial, you will not be charged during the trial. Unless you
+                cancel before the trial ends, your subscription converts to a paid
+                subscription and your payment method is charged the plan price on the day
+                the trial ends, and on each renewal date after that.
+              </p>
+              <p>
+                <span className="text-slate-200 font-medium">How to cancel.</span> You can
+                cancel online at any time from the{" "}
+                <Link href="/account" className="text-green-400 hover:text-green-300">
+                  Account
+                </Link>{" "}
+                page under Billing, which opens the Stripe billing portal, or by emailing{" "}
+                <a
+                  href="mailto:datacontractgate@nightmoose.com"
+                  className="text-green-400 hover:text-green-300"
+                >
+                  datacontractgate@nightmoose.com
+                </a>
+                . Cancellation stops all future renewals. Your paid features remain
+                available until the end of the billing period you have already paid for.
+              </p>
+              <p>
+                <span className="text-slate-200 font-medium">Price and term changes.</span> We
+                will notify you by email before any change to the price or renewal terms of
+                your subscription takes effect, and you may cancel before the change applies.
+              </p>
+            </div>
+          </section>
+
+          <section>
+            <h2 className="text-slate-200 font-semibold mb-2">5. Limitation of Liability</h2>
             <p>
               To the maximum extent permitted by law, ContractGate shall not be liable
               for any indirect, incidental, special, consequential, or punitive damages
@@ -56,7 +106,7 @@ export default function TermsPage() {
           </section>
 
           <section>
-            <h2 className="text-slate-200 font-semibold mb-2">5. Changes</h2>
+            <h2 className="text-slate-200 font-semibold mb-2">6. Changes</h2>
             <p>
               We reserve the right to modify these Terms at any time. We will provide
               notice of significant changes by updating the date at the top of this
@@ -66,7 +116,7 @@ export default function TermsPage() {
           </section>
 
           <section>
-            <h2 className="text-slate-200 font-semibold mb-2">6. Contact</h2>
+            <h2 className="text-slate-200 font-semibold mb-2">7. Contact</h2>
             <p>
               Questions about these Terms? Email us at{" "}
               <a
