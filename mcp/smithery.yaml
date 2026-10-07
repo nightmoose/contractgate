@@ -16,7 +16,7 @@ startCommand:
   commandFunction: |-
     (config) => ({
       command: "npx",
-      args: ["-y", "@contractgate/mcp-server"],
+      args: ["-y", "@nightmoose/contractgate-mcp-server"],
       env: {
         CONTRACTGATE_API_KEY: config.contractgateApiKey,
         ...(config.contractgateBaseUrl

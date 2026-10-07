@@ -27,7 +27,7 @@ gateway — verified with a dry run before anything writes.
 > the MCP tools below instead of curl.
 >
 > **MCP first.** If your host has the ContractGate MCP server connected
-> (`@contractgate/mcp-server` in Cursor, Claude Desktop, Windsurf, Copilot,
+> (`@nightmoose/contractgate-mcp-server` in Cursor, Claude Desktop, Windsurf, Copilot,
 > Codex, …), skip the `curl` recipes below and use the typed tools:
 > `infer_contract`, `validate_events`, `deploy_contract`, `get_quarantine`,
 > `list_contracts`. They wrap the same endpoints, with argument validation
