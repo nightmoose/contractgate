@@ -4,7 +4,7 @@ Compile every ContractGate YAML under `contracts/` in CI. Local, no network,
 no CLI release tarball. Uses `pip install contractgate`.
 
 ```yaml
-- uses: actions/checkout@v4
+- uses: actions/checkout@v5
 - uses: nightmoose/contractgate/actions/validate@main
   with:
     path: contracts

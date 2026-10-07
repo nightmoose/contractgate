@@ -1,10 +1,10 @@
 # RFC-018: TypeScript SDK
 
-| Status        | Draft — awaiting sign-off                                              |
+| Status        | Shipped — v0.2.0 (`@nightmoose/contractgate-sdk`)                      |
 |---------------|------------------------------------------------------------------------|
 | Author        | ContractGate team                                                      |
 | Created       | 2026-04-27                                                             |
-| Target branch | `nightly-maintenance-YYYY-MM-DD` (set when work starts)                |
+| Target branch | `nightly-maintenance-2026-09-30-rfc018-typescript-sdk`                 |
 | Chunk         | Punchlist v2 #5                                                        |
 | Supersedes    | RFC-011 partially (TS only; Go + Java deferred)                        |
 | Depends on    | RFC-005 (Python SDK shape reference), RFC-014 (CLI freezes wire shape) |

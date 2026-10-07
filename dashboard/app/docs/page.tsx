@@ -33,7 +33,7 @@ const DOCS = [
     href: "/docs/python-sdk",
     icon: "🐍",
     title: "Python SDK",
-    badge: "v0.1.0",
+    badge: "v0.2.0",
     badgeColor: "text-green-400 bg-green-900/30 border-green-700/40",
     description:
       "First-party Python client for the ContractGate gateway. Validates events against semantic contracts via a simple sync or async HTTP client, and ships a pure-Python local validator for unit tests and pre-commit hooks — no network required.",

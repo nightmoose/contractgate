@@ -1,4 +1,5 @@
 import type { NextConfig } from "next";
+import pkg from "./package.json";
 
 const nextConfig: NextConfig = {
   // NOTE: output: "export" was removed to enable API route handlers (e.g.
@@ -12,6 +13,9 @@ const nextConfig: NextConfig = {
 
   // Keep images unoptimized to avoid requiring a server image optimizer.
   images: { unoptimized: true },
+
+  // Sidebar shows this; package.json is the single source of the dashboard version.
+  env: { NEXT_PUBLIC_APP_VERSION: pkg.version },
 
   // RFC-089: the agent-facing docs are copied into public/ by the prebuild
   // step. Serve them as plain text so browsers render them inline instead of

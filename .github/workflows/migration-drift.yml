@@ -20,11 +20,11 @@ on:
 jobs:
   drift:
     name: Prod ledger vs supabase/migrations/
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Install PostgreSQL client
         run: sudo apt-get install -y --no-install-recommends postgresql-client

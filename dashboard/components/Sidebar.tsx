@@ -95,7 +95,7 @@ export default function Sidebar() {
       {/* Footer */}
       <div className="p-4 border-t border-[#1f2937] space-y-3">
         <HelpToggle mode={mode} onToggle={toggle} />
-        <p className="text-xs text-slate-600">v0.1.0</p>
+        <p className="text-xs text-slate-600">v{process.env.NEXT_PUBLIC_APP_VERSION}</p>
       </div>
     </aside>
   );
