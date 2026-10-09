@@ -5,7 +5,7 @@ ContractGate rejects events that are schema-valid but wrong, such as a misspelle
 ## What's included
 
 - **Skill** (`skills/contractgate`): the procedure the agent follows to wire contracts into a repo.
-- **MCP server** (`@contractgate/mcp-server@0.1.2`, run with `npx`): five tools, `infer_contract`, `validate_events`, `deploy_contract`, `get_quarantine`, and `list_contracts`.
+- **MCP server** (`@nightmoose/contractgate-mcp-server@0.2.0`, run with `npx`): six tools — `infer_contract`, `validate_events`, `deploy_contract`, `get_quarantine`, `list_contracts`, and `egress_validate`.
 
 ## Setup
 

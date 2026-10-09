@@ -16,7 +16,7 @@ Add this to the host's MCP config (`~/.cursor/mcp.json`, Claude Desktop
   "mcpServers": {
     "contractgate": {
       "command": "npx",
-      "args": ["-y", "@contractgate/mcp-server"],
+      "args": ["-y", "@nightmoose/contractgate-mcp-server"],
       "env": {
         "CONTRACTGATE_API_KEY": "${CONTRACTGATE_API_KEY}"
       }
@@ -26,8 +26,8 @@ Add this to the host's MCP config (`~/.cursor/mcp.json`, Claude Desktop
 ```
 
 The package is published at
-<https://www.npmjs.com/package/@contractgate/mcp-server>. `npx -y` fetches the
-latest release on first use, so no separate install step is needed.
+<https://www.npmjs.com/package/@nightmoose/contractgate-mcp-server>. `npx -y`
+fetches the latest release on first use, so no separate install step is needed.
 
 Restart the host after editing the config.
 

@@ -1,4 +1,4 @@
-# @contractgate/mcp-server
+# @nightmoose/contractgate-mcp-server
 
 Official [Model Context Protocol](https://modelcontextprotocol.io) server for
 ContractGate. Thin stdio wrapper over the existing HTTP API.
@@ -11,7 +11,7 @@ the host config snippet. Official registry metadata: [`server.json`](server.json
   "mcpServers": {
     "contractgate": {
       "command": "npx",
-      "args": ["-y", "@contractgate/mcp-server"],
+      "args": ["-y", "@nightmoose/contractgate-mcp-server"],
       "env": {
         "CONTRACTGATE_API_KEY": "${CONTRACTGATE_API_KEY}"
       }
