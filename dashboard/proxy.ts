@@ -51,7 +51,25 @@ function isPublic(pathname: string) {
 // 429. Real availability risk in exchange for protection Supabase already
 // applies server-side on its auth endpoints. Tune limits there if bots return.
 
+// The Rust gateway. Every published client (MCP server, SDK examples, the agent
+// playbook, the Zapier connector) defaults to app.datacontractgate.com, which is
+// this Next.js app — so API calls arriving here are proxied, not redirected. A
+// 307 to /auth/login turns a POST into a GET (Zapier saw HTTP 405), and GET
+// /contracts returned this app's HTML page with a 200.
+const API_ORIGIN = process.env.CONTRACTGATE_API_ORIGIN || "https://contractgate-api.fly.dev";
+
+// A browser loading a dashboard page never sends an API key header; an API
+// client always does. /v1/* has no dashboard page, so it is always the API.
+function isApiRequest(request: NextRequest) {
+  return request.headers.has("x-api-key") || request.nextUrl.pathname.startsWith("/v1/");
+}
+
 export async function proxy(request: NextRequest) {
+  if (isApiRequest(request)) {
+    const target = new URL(request.nextUrl.pathname + request.nextUrl.search, API_ORIGIN);
+    return NextResponse.rewrite(target);
+  }
+
   // Stripe webhooks are unauthenticated server-to-server POSTs (verified by
   // signature in the route handler, not by a Supabase session). They must skip
   // the auth gate, or the middleware 307-redirects them to /auth/login and the

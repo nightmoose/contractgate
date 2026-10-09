@@ -58,7 +58,8 @@ module.exports = {
       { key: "quarantined_at", label: "Quarantined At" },
       { key: "violation_count", label: "Violation Count", type: "integer" },
       { key: "violations_summary", label: "Violations" },
-      { key: "record", label: "Record", dict: true },
+      // Empty unless the org stores event bodies (paid plans, RFC-086).
+      { key: "record", label: "Record (if stored)", dict: true },
     ],
   },
 };

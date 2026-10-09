@@ -9,9 +9,9 @@ The integration source is [`zapier/`](../zapier/). It is not in the public Zapie
 ## 1. Contract and key
 
 1. Sign in at <https://app.datacontractgate.com> and create a key under **Account → API keys**. It starts with `cg_live_`.
-2. Deploy a stable contract for the record Zapier pulls. The integration playbook does this from samples: <https://app.datacontractgate.com/llm-integration.md>.
+2. Deploy a stable contract for the record Zapier pulls. The integration playbook does this from samples: <https://app.datacontractgate.com/llm-integration.md>. A contract with only a draft version cannot validate traffic: the dropdown marks it `draft only: deploy a version first`, and the action says the same if it runs.
 
-The action calls `POST /v1/ingest/{contract_id}` with that key. The contract dropdown calls `GET /contracts`.
+The action calls `POST /v1/ingest/{contract_id}` with that key. The contract dropdown and the connection test call `GET /contracts`. `app.datacontractgate.com` forwards any request that carries an `X-Api-Key` header, and anything under `/v1/`, to the gateway.
 
 ## 2. Put the action in the Zap editor
 
@@ -32,7 +32,7 @@ Log in with a [deploy key](https://developer.zapier.com/partner-settings/deploy-
 
 The version is private. In the Zap editor, search for ContractGate. After one real Zap works, submit that version for the public listing from the Zapier developer UI.
 
-Self-hosted gateway: set **Gateway URL** on the connection. Cloud users leave `https://app.datacontractgate.com`.
+Self-hosted gateway: set **Gateway URL** on the connection. Cloud users leave it blank (`https://app.datacontractgate.com`). The connection test fails if that URL does not answer like the ContractGate API, instead of connecting with zero contracts.
 
 ## 3. Build the Zap
 
@@ -44,20 +44,23 @@ output = [{ record: JSON.stringify(inputData) }];
 ```
 
 3. **ContractGate → Validate Record**
-   - Contract: pick the one you deployed.
+   - Contract: pick the one you deployed. A mapped or typed contract name also works; it is looked up on the key.
    - Record: map `record` from the Code step.
    - Leave **Stop the Zap when the record fails** on.
    - Leave **Dry run** off once you have seen one pass and one fail. Dry run writes nothing.
    - Idempotency Key: map a stable source id (lead id, order id) so a Zap retry does not quarantine the same record twice inside 24 hours.
+   - **Test step** in the editor validates the record for real as a dry run: it shows pass or the violations, and writes no quarantine row and no usage.
 4. Next step: the write (sheet, warehouse, the next app). Map fields from **Payload**, not from the original trigger.
 
 Turn **Stop the Zap when the record fails** off only when a Path or Filter should handle the reject. Filter on **Passed** is true. Payload is null when the record failed, so a later step cannot write the bad object by mapping Payload.
 
-**New Quarantined Record** polls `GET /quarantine` (newest 100) if something else needs to hear about rejects — a Slack message, a ticket — including rejects that did not come from this Zap.
+**New Quarantined Record** polls `GET /quarantine` (newest 100) if something else needs to hear about rejects — a Slack message, a ticket — including rejects that did not come from this Zap. Its **Record** field is empty unless event bodies are stored.
 
 ## What a reject does
 
-ContractGate stores the record and the violations. The Zap task is halted, not failed, so a string of bad records will not turn the Zap off. Zapier will not replay a halted task. Fix the source record or the contract, then replay from ContractGate. That is `POST /quarantine/replay`, or the Quarantine tab.
+ContractGate writes a quarantine row with the violations. The halt message leads with its id (`Quarantined as <id>.`) because Zapier's run view truncates long messages. The Zap task is halted, not failed, so a string of bad records will not turn the Zap off. Zapier will not retry a halted task.
+
+The record body is stored, and so replayable, only on a paid plan with event payload storage on ([reference](event-payload-storage-reference.md)). Otherwise the row still shows what failed and why; fix the source record or the contract and let the next run through. With a stored body, replay from the Quarantine tab or `POST /quarantine/replay`.
 
 A dry-run reject halts (when the stop switch is on) and quarantines nothing.
 

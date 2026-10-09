@@ -1,13 +1,13 @@
-const { baseUrl } = require("../lib/base_url");
+const { listContracts } = require("../lib/contracts");
 
 const perform = async (z, bundle) => {
-  const response = await z.request({
-    url: `${baseUrl(bundle.authData)}/contracts`,
-  });
-  const rows = Array.isArray(response.data) ? response.data : [];
+  const rows = await listContracts(z, bundle);
   return rows.map((row) => ({
     id: row.id,
-    name: row.latest_stable_version ? `${row.name} (${row.latest_stable_version})` : row.name,
+    // Ingest needs a stable version; say so before the Zap runs, not after.
+    name: row.latest_stable_version
+      ? `${row.name} (${row.latest_stable_version})`
+      : `${row.name} (draft only: deploy a version first)`,
   }));
 };
 

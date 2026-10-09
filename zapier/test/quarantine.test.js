@@ -42,6 +42,7 @@ test("contract dropdown lists id and name", async () => {
     .get("/contracts")
     .reply(200, [
       { id: "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa", name: "salesforce_lead", latest_stable_version: "1.0.0" },
+      { id: "dddddddd-dddd-dddd-dddd-dddddddddddd", name: "my_events", latest_stable_version: null },
     ]);
 
   const rows = await appTester(App.triggers.contract.operation.perform, {
@@ -50,5 +51,31 @@ test("contract dropdown lists id and name", async () => {
   });
   assert.deepEqual(rows, [
     { id: "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa", name: "salesforce_lead (1.0.0)" },
+    { id: "dddddddd-dddd-dddd-dddd-dddddddddddd", name: "my_events (draft only: deploy a version first)" },
   ]);
+});
+
+test("connection test fails when the Gateway URL serves a web page", async () => {
+  nock(BASE).get("/contracts").reply(200, "<!DOCTYPE html><html>dashboard</html>", {
+    "Content-Type": "text/html",
+  });
+
+  await assert.rejects(
+    () => appTester(App.authentication.test, { authData: { api_key: "cg_live_test" } }),
+    /did not answer like the ContractGate API/,
+  );
+});
+
+test("connection test counts contracts", async () => {
+  nock(BASE).get("/contracts").reply(200, [{ id: "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa", name: "a" }]);
+  const result = await appTester(App.authentication.test, { authData: { api_key: "cg_live_test" } });
+  assert.deepEqual(result, { contract_count: 1 });
+});
+
+test("connection test with a bad key asks to reconnect", async () => {
+  nock(BASE).get("/contracts").reply(401, { error: "unauthorized" });
+  await assert.rejects(
+    () => appTester(App.authentication.test, { authData: { api_key: "cg_live_bad" } }),
+    (err) => err.name === "ExpiredAuthError",
+  );
 });

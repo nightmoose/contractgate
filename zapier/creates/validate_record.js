@@ -1,4 +1,5 @@
 const { baseUrl } = require("../lib/base_url");
+const { resolveContractId } = require("../lib/contracts");
 const { asBool, parseRecord, summarize } = require("../lib/record");
 
 const SAMPLE = {
@@ -32,18 +33,20 @@ function asJson(response) {
 }
 
 const perform = async (z, bundle) => {
-  if (bundle.meta && bundle.meta.isLoadingSample) {
-    return SAMPLE;
-  }
+  // "Test step" in the Zap editor. It used to return SAMPLE without calling the
+  // gateway, which read as a passing test. Now it validates for real, as a dry
+  // run (no quarantine row, no usage), and returns a failure instead of
+  // halting so the editor shows the violations.
+  const editorTest = Boolean(bundle.meta && bundle.meta.isLoadingSample);
 
   const record = parseRecord(bundle.inputData.record);
-  const contractId = bundle.inputData.contract_id;
-  if (!contractId) {
+  if (!bundle.inputData.contract_id) {
     throw new z.errors.Error("Pick a contract.", "MissingContract", 400);
   }
+  const contractId = await resolveContractId(z, bundle, bundle.inputData.contract_id);
 
-  const dryRun = asBool(bundle.inputData.dry_run, false);
-  const haltOnFailure = asBool(bundle.inputData.halt_on_failure, true);
+  const dryRun = editorTest || asBool(bundle.inputData.dry_run, false);
+  const haltOnFailure = !editorTest && asBool(bundle.inputData.halt_on_failure, true);
   const version = bundle.inputData.version ? String(bundle.inputData.version).trim() : "";
 
   const params = new URLSearchParams();
@@ -84,6 +87,13 @@ const perform = async (z, bundle) => {
   }
 
   const body = asJson(response);
+  if (response.status === 409) {
+    throw new z.errors.Error(
+      "This contract has no stable version yet. In ContractGate, open the contract and deploy a version to stable, or put a draft version number in Contract Version.",
+      "NoStableVersion",
+      409,
+    );
+  }
   if (response.status !== 200 && response.status !== 207 && response.status !== 422) {
     throw new z.errors.Error(errorMessage(body, response.status), "ContractGateError", response.status);
   }
@@ -108,12 +118,18 @@ const perform = async (z, bundle) => {
   };
 
   if (!passed && haltOnFailure) {
+    // Quarantine id first: Zapier's run view truncates long halt messages.
     const where = shaped.quarantine_id
-      ? `Quarantine ${shaped.quarantine_id}. Replay it from ContractGate after the record or the contract is fixed. Zapier will not replay this task.`
+      ? `Quarantined as ${shaped.quarantine_id}.`
       : "Dry run: nothing was quarantined.";
+    // Replay needs a stored body, which only paid plans with storage on keep
+    // (RFC-086), so do not promise it here.
+    const replay = shaped.quarantine_id
+      ? " See it under Quarantine in ContractGate. Zapier will not retry this task."
+      : "";
     // HaltedError stops the Zap without counting as an error that turns the Zap off.
     throw new z.errors.HaltedError(
-      `Contract rejected the record. ${violationsSummary || "See the contract."} ${where}`,
+      `Contract rejected the record. ${where} ${violationsSummary || "See the contract."}${replay}`,
     );
   }
 
@@ -137,7 +153,8 @@ module.exports = {
         label: "Contract",
         required: true,
         dynamic: "contract.id.name",
-        helpText: "The contract this record has to satisfy. Listed from the API key.",
+        helpText:
+          "The contract this record has to satisfy, listed from the API key. A contract needs a stable version: deploy one in ContractGate first.",
       },
       {
         key: "record",
@@ -145,7 +162,7 @@ module.exports = {
         type: "text",
         required: true,
         helpText:
-          "One JSON object: the record Zapier just pulled. If the trigger split it into fields, add a Code by Zapier step that returns `JSON.stringify(inputData)` and map that string here.",
+          "One JSON object, as text. Most triggers split a record into fields, so put a **Code by Zapier** step first that returns `{ record: JSON.stringify(inputData) }`, and map its Record output here. Typing JSON around mapped fields also works, but quote text values yourself.",
       },
       {
         key: "version",
@@ -180,6 +197,7 @@ module.exports = {
           "Optional. Map a stable id from the source (lead id, order id) so a Zap retry does not quarantine the same record twice inside 24 hours.",
       },
     ],
+    // Shown in the editor before a test runs and to Zapier's sample consumers.
     sample: SAMPLE,
     outputFields: [
       { key: "passed", label: "Passed", type: "boolean" },
