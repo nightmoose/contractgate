@@ -1,6 +1,7 @@
 # RFC-093 — Egress as a first-class door
 
-**Status:** Draft
+**Status:** Shipped
+**Branch:** nightly-maintenance-2026-09-29-rfc093-egress-first-class
 **Date:** 2026-09-30
 **Depends on:** RFC-029 (egress validation), RFC-030 (egress PII and leakage), RFC-065 (contract scope on egress), RFC-006/035/079 (inference), RFC-089 (agent playbook), RFC-090 (MCP server)
 

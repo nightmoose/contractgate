@@ -375,7 +375,7 @@ unit tests and pre-commit hooks — no network required. Use it to gate CI.
 GitHub Action (copy into the user's `.github/workflows/contractgate.yml`):
 
 ```yaml
-- uses: actions/checkout@v4
+- uses: actions/checkout@v5
 - uses: nightmoose/contractgate/actions/validate@main
   with:
     path: contracts

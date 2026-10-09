@@ -1,44 +1,54 @@
 # Project Status — ContractGate
 
-**As of:** 2026-08-23  
+**As of:** 2026-10-07  
 **GitHub:** https://github.com/nightmoose/contractgate (**public**)  
 **Local:** `~/contractgate`  
 **RFC index:** [`docs/STATUS.md`](docs/STATUS.md)
 
 ## What this is
 
-Semantic contract enforcement at ingestion (patent pending). Rust gateway +
-Next.js dashboard + Python SDK + Kafka Connect SMT. Hosted API on Fly.io;
-dashboard on Vercel.
+Semantic contract enforcement at ingestion and egress (patent pending). Rust
+gateway + Next.js dashboard + Python and TypeScript SDKs + MCP server + Kafka
+Connect SMT. Hosted API on Fly.io (`contractgate-api`); dashboard on Vercel
+(`app.datacontractgate.com`); marketing site is the separate
+`datacontractgate_website` repo.
 
 ## Current state
 
-Last three weeks:
+- **v0.2.0 released 2026-10-01** on every channel: GitHub Release (CLI for 4
+  targets), PyPI `contractgate`, npm `@nightmoose/contractgate-sdk` and
+  `@nightmoose/contractgate-mcp-server`, MCP Registry
+  `io.github.nightmoose/contractgate`. The old `@contractgate/mcp-server` npm
+  package is deprecated and points at the new name.
+- **Release pipeline** (`.github/workflows/release.yml`) is idempotent: retry a
+  partial release with `gh workflow run release.yml -f tag=vX.Y.Z`; anything
+  already published is skipped.
+- **Signup and Stripe checkout** confirmed working end to end (2026-10-07).
+- **Users:** none yet. Production has 11 auth users (all internal/test).
+- **CI** runs on `ubuntu-24.04` (pinned ahead of the 2026-10-19
+  `ubuntu-latest` → Ubuntu 26 move) with Node 24 action majors.
 
-- **2026-08-07→13 signup outage:** Cloudflare Turnstile blocked **all** signups.
-  Fix: remove Turnstile (`f1ed3b1` / PR #180).
-- Dashboard: agent docs served anonymously; OG cards + analytics
-- CI: clippy `useless_format`; pin toolchain **1.98.0**; `h2` 0.4.16 for
-  RUSTSEC-2026-0258
-- Marketing automation branch merged earlier in August
+## Known data hygiene issues (prod)
 
-Local `main` matches `origin/main` at the merge of
-`nightly-maintenance-2026-08-13-signup-outage-fix`. Checkout was on that
-maintenance branch during the audit (fully pushed).
+- `public.early_access` (~500 rows) is almost entirely bot spam: one-word
+  names, ~10-char random messages, 91% default `stack=kafka`, up to 91/day.
+  The marketing-site form posts straight to Supabase REST with no bot check.
+  Fix before any launch traffic.
+- `public.orgs` has ~356 orgs with no members — orgs auto-provisioned by
+  `handle_new_user` for accounts that were later deleted (memberships cascade,
+  orgs do not). Last one 2026-09-08. Safe to prune after a review.
 
-Stale local branches with **gone** upstreams are historical nightly branches —
-do not revive them.
+## Releasing
 
-`dev/p1-abuse-prevention` is **244 commits behind main** — treat as abandoned
-unless you rebase on purpose.
-
-## Open / next
-
-- Confirm production signup still works without Turnstile (bot abuse vs. growth)
-- JWT CryptoProvider incident write-up is in git history (2026-07-14)
-- iOS status app is a **separate repo**: `contractgate-status-ios`
+Bump the version in `Cargo.toml`, `sdks/python/pyproject.toml`,
+`mcp/package.json` + `mcp/server.json`, `sdks/typescript/package.json`, and
+`dashboard/package.json` (the sidebar reads it), then tag `vX.Y.Z`. One-time
+registry setup (npm Trusted Publisher, PyPI publisher) is documented at the
+top of each publish job in `release.yml`.
 
 ## Notes for humans and AIs
 
-Do not commit `dashboard/node_modules`, `target/`, or real API keys.
+Do not commit `dashboard/node_modules`, `target/`, real API keys, or business
+documents (grant pitches, pricing strategy) — the repo is public.
 `docs/STATUS.md` is the RFC ledger, not day-to-day ops — this file is ops.
+iOS status app is a **separate repo**: `contractgate-status-ios`.

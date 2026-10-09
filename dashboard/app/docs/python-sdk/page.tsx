@@ -667,7 +667,7 @@ export default function PythonSDKDocsPage() {
               MIT License
             </span>
             <span className="text-xs bg-green-900/30 text-green-400 border border-green-700/40 px-2 py-1 rounded">
-              v0.1.0
+              v0.2.0
             </span>
             <span className="text-xs bg-amber-900/30 text-amber-400 border border-amber-700/40 px-2 py-1 rounded">
               Accepted

@@ -1,3 +1,4 @@
+import { createRequire } from "node:module";
 import { McpServer } from "@modelcontextprotocol/server";
 import * as z from "zod/v4";
 import { ConfigError, Gateway, GatewayError } from "./gateway.js";
@@ -9,6 +10,9 @@ import {
   listContracts,
   validateEvents,
 } from "./tools.js";
+
+// dist/server.js → ../package.json; package.json always ships in the tarball.
+const PKG_VERSION: string = createRequire(import.meta.url)("../package.json").version;
 
 const sample = z.record(z.string(), z.unknown());
 
@@ -36,7 +40,7 @@ function gateway(opts: ServerOpts): Gateway {
 export function createServer(opts: ServerOpts = {}): McpServer {
   const server = new McpServer({
     name: "contractgate",
-    version: "0.1.0",
+    version: PKG_VERSION,
   });
 
   server.registerTool(

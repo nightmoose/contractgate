@@ -44,13 +44,13 @@ jobs:
   # Exports `version` (stripped of leading `v`) for downstream jobs.
   version-check:
     name: Version check
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       contents: read
     outputs:
       version: ${{ steps.check.outputs.version }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           ref: ${{ env.RELEASE_REF }}
 
@@ -93,16 +93,16 @@ jobs:
       matrix:
         include:
           - target: x86_64-unknown-linux-gnu
-            runner: ubuntu-latest
+            runner: ubuntu-24.04
           - target: aarch64-unknown-linux-gnu
-            runner: ubuntu-latest
+            runner: ubuntu-24.04
             cross: true
           - target: x86_64-apple-darwin
             runner: macos-latest   # macos-13 (Intel) is retired; cross-compiles from arm64
           - target: aarch64-apple-darwin
             runner: macos-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           ref: ${{ env.RELEASE_REF }}
 
@@ -124,7 +124,7 @@ jobs:
         run: cargo install cross --version 0.2.5 --locked
 
       - name: Cache cargo
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: |
             ~/.cargo/registry
@@ -155,7 +155,7 @@ jobs:
           echo "TARBALL=${TARBALL}" >> "$GITHUB_ENV"
 
       - name: Upload tarball artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: tarball-${{ matrix.target }}
           path: contractgate-${{ needs.version-check.outputs.version }}-${{ matrix.target }}.tar.gz
@@ -168,16 +168,16 @@ jobs:
     name: Publish GitHub Release
     if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch'
     needs: [version-check, build-cli]
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           ref: ${{ env.RELEASE_REF }}
 
       - name: Download all tarballs
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v7
         with:
           pattern: tarball-*
           merge-multiple: true
@@ -219,12 +219,12 @@ jobs:
     name: Publish MCP npm package
     if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch'
     needs: version-check
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       contents: read
       id-token: write   # required for npm OIDC Trusted Publisher
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           ref: ${{ env.RELEASE_REF }}
       - uses: actions/setup-node@v7
@@ -267,12 +267,12 @@ jobs:
     name: Publish to MCP Registry
     if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch'
     needs: publish-npm-mcp
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       id-token: write
       contents: read
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           ref: ${{ env.RELEASE_REF }}
       - name: Install mcp-publisher
@@ -306,12 +306,12 @@ jobs:
     name: Publish TypeScript SDK
     if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch'
     needs: version-check
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       contents: read
       id-token: write   # required for npm OIDC Trusted Publisher
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           ref: ${{ env.RELEASE_REF }}
       - uses: actions/setup-node@v7
@@ -363,12 +363,12 @@ jobs:
   publish-pypi:
     name: Publish Python SDK
     needs: version-check
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     environment: pypi   # part of the Trusted Publisher claim — keep in sync with PyPI
     permissions:
       id-token: write   # required for PyPI OIDC Trusted Publisher
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           ref: ${{ env.RELEASE_REF }}
 
@@ -384,7 +384,7 @@ jobs:
             exit 1
           fi
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: '3.12'
 

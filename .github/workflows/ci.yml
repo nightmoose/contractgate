@@ -39,14 +39,14 @@ jobs:
   # If a change touches any non-doc file, heavy=true and everything runs as before.
   changes:
     name: Change detection
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       contents: read
     outputs:
       heavy: ${{ steps.filter.outputs.heavy }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: dorny/paths-filter@v3
+      - uses: actions/checkout@v5
+      - uses: dorny/paths-filter@v4
         id: filter
         with:
           # "match everything, then subtract docs": heavy is true if any changed
@@ -65,11 +65,11 @@ jobs:
     name: Rust — check / clippy / test
     needs: changes
     if: ${{ needs.changes.outputs.heavy == 'true' }}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Install Rust stable
         uses: dtolnay/rust-toolchain@stable
@@ -77,7 +77,7 @@ jobs:
           components: clippy, rustfmt
 
       - name: Cache cargo registry + build artefacts
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: |
             ~/.cargo/registry
@@ -110,11 +110,11 @@ jobs:
     name: Coverage — ratchet gate
     needs: changes
     if: ${{ needs.changes.outputs.heavy == 'true' }}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Install Rust stable
         uses: dtolnay/rust-toolchain@stable
@@ -122,7 +122,7 @@ jobs:
           components: llvm-tools-preview
 
       - name: Cache cargo registry + build artefacts
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: |
             ~/.cargo/registry
@@ -145,7 +145,7 @@ jobs:
 
       - name: Upload coverage summary artifact
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: coverage-summary
           path: coverage-baseline.txt
@@ -156,17 +156,17 @@ jobs:
     name: Dashboard — type-check / lint
     needs: changes
     if: ${{ needs.changes.outputs.heavy == 'true' }}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       contents: read
     defaults:
       run:
         working-directory: dashboard
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Setup Node 22
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
           node-version: "22"
           cache: "npm"
@@ -192,17 +192,17 @@ jobs:
     name: MCP — typecheck / test
     needs: changes
     if: ${{ needs.changes.outputs.heavy == 'true' }}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       contents: read
     defaults:
       run:
         working-directory: mcp
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Setup Node 22
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
           node-version: "22"
           cache: "npm"
@@ -225,17 +225,17 @@ jobs:
     name: Zapier — test
     needs: changes
     if: ${{ needs.changes.outputs.heavy == 'true' }}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       contents: read
     defaults:
       run:
         working-directory: zapier
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Setup Node 22
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
           node-version: "22"
           cache: "npm"
@@ -252,17 +252,17 @@ jobs:
     name: Docker — build smoke-test
     needs: changes
     if: ${{ needs.changes.outputs.heavy == 'true' }}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@v4
 
       - name: Build Docker image (with GHA layer cache)
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           push: false
@@ -293,7 +293,7 @@ jobs:
     name: Migrations — apply + sqlx metadata check
     needs: changes
     if: ${{ needs.changes.outputs.heavy == 'true' }}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       contents: read
     # Override the global SQLX_OFFLINE=true so sqlx can connect to the
@@ -316,7 +316,7 @@ jobs:
           --health-timeout 5s
           --health-retries 5
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Install PostgreSQL client
         run: sudo apt-get install -y --no-install-recommends postgresql-client
@@ -537,7 +537,7 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
 
       - name: Cache cargo + sqlx-cli
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: |
             ~/.cargo/registry
@@ -611,18 +611,18 @@ jobs:
     name: Security — audit / deny / container scan
     needs: changes
     if: ${{ needs.changes.outputs.heavy == 'true' }}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       security-events: write
       contents: read
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Install Rust stable
         uses: dtolnay/rust-toolchain@stable
 
       - name: Cache cargo registry + build artefacts
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: |
             ~/.cargo/registry
@@ -667,14 +667,14 @@ jobs:
     name: Compose — stack smoke test
     needs: changes
     if: ${{ needs.changes.outputs.heavy == 'true' }}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@v4
 
       - name: Install jq
         run: sudo apt-get install -y --no-install-recommends jq
@@ -694,14 +694,14 @@ jobs:
     name: Compose — demo profile smoke test
     needs: changes
     if: ${{ needs.changes.outputs.heavy == 'true' }}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@v4
 
       - name: Install jq
         run: sudo apt-get install -y --no-install-recommends jq
@@ -725,14 +725,14 @@ jobs:
     name: Compose — auth-on isolation lane
     needs: changes
     if: ${{ needs.changes.outputs.heavy == 'true' }}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@v4
 
       - name: Run auth-on isolation smoke test
         run: bash tests/compose_isolation_smoke.sh
@@ -758,11 +758,11 @@ jobs:
       - compose-smoke
       - compose-demo-smoke
       - compose-isolation-smoke
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Set up flyctl
         uses: superfly/flyctl-actions/setup-flyctl@master

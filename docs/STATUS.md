@@ -28,7 +28,7 @@ signed off (may be planning docs or UI-only); **Draft** = under review;
 | 015 | [Breaking-Change Demo Arc](rfcs/015-breaking-change-demo.md) | Draft | — |
 | 016 | [Observability v1 (Metrics Only)](rfcs/016-observability-v1.md) | Shipped | `nightly-maintenance-2026-05-03-rfc-016` |
 | 017 | [Onboarding Stack (Compose + Demo Seeder)](rfcs/017-onboarding-stack.md) | Accepted | `nightly-maintenance-2026-04-28` |
-| 018 | [TypeScript SDK](rfcs/018-typescript-sdk.md) | Draft | — |
+| 018 | [TypeScript SDK](rfcs/018-typescript-sdk.md) | Shipped (v0.2.0) | `nightly-maintenance-2026-09-30-rfc018-typescript-sdk` |
 | 019 | [CI + Release Pipeline](rfcs/019-ci-release-pipeline.md) | Accepted | `nightly-maintenance-2026-04-27` |
 | 020 | [Dashboard Polish](rfcs/020-dashboard-polish.md) | Accepted | `nightly-maintenance-2026-04-28` |
 | 021 | [REST/HTTP Bulk Ingest](rfcs/021-bulk-ingest-http.md) | Accepted | `nightly-maintenance-2026-05-01` |
@@ -97,10 +97,10 @@ signed off (may be planning docs or UI-only); **Draft** = under review;
 | 084 | [Slack Lead-Intake Bot](rfcs/084-slack-lead-bot.md) | Shipped | `nightly-maintenance-2026-07-15-rfc084-slack-bot` |
 | 085 | [Org Admin / Team Management](rfcs/085-org-admin-team-management.md) | Shipped | `nightly-maintenance-2026-07-16-rfc085-team-admin` |
 | 089 | [LLM-Pasteable Onboarding (`/llms.txt` + agent playbook)](rfcs/089-llm-agent-onboarding.md) | Shipped | `nightly-maintenance-2026-07-22-bot-signup-cleanup` |
-| 090 | [Official MCP Server (stdio)](rfcs/090-mcp-server.md) | Accepted | `nightly-maintenance-2026-08-23-rfc090` |
+| 090 | [Official MCP Server (stdio)](rfcs/090-mcp-server.md) | Shipped (v0.2.0) | `nightly-maintenance-2026-08-23-rfc090` |
 | 091 | [Help Catalog + “What’s this?” Inspect Mode](rfcs/091-whats-this-help-mode.md) | Accepted | `nightly-maintenance-2026-09-11-rfc091-whats-this-help-mode` |
 | 092 | [Ralph-native demo stack (Kafi / Driftless / ContractGate)](rfcs/092-ralph-native-demo.md) | Accepted — partner-ready | `nightly-maintenance-2026-09-11-rfc092-ralph-demo` |
-| 093 | [Egress as a first-class door](rfcs/093-egress-first-class.md) | Accepted | `nightly-maintenance-2026-09-29-rfc093-egress-first-class` |
+| 093 | [Egress as a first-class door](rfcs/093-egress-first-class.md) | Shipped | `nightly-maintenance-2026-09-29-rfc093-egress-first-class` |
 
 ---
 
@@ -117,6 +117,8 @@ signed off (may be planning docs or UI-only); **Draft** = under review;
 | **Superseded** | Replaced by a later RFC listed in the notes column; kept for design context. |
 
 ---
+
+*2026-10-07 — v0.2.0 released (2026-10-01) to every channel: GitHub Release (CLI for 4 targets), PyPI `contractgate`, npm `@nightmoose/contractgate-sdk` (RFC-018) and `@nightmoose/contractgate-mcp-server` (RFC-090; the old `@contractgate/mcp-server` is deprecated), and the MCP Registry as `io.github.nightmoose/contractgate`. RFC-093 (egress as a first-class door) is on main. Release pipeline is idempotent and retryable — see the header of `.github/workflows/release.yml`.*
 
 *2026-08-23 — RFC-090: official stdio MCP server at `mcp/` (`npx -y @contractgate/mcp-server`). Tools wrap existing gateway routes (infer, dry-run ingest / playground, deploy, quarantine, list). No engine changes. Reference: `docs/mcp-reference.md`, served raw at `/mcp-reference.md`.
 
