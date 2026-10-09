@@ -224,7 +224,7 @@ fn build_openapi() -> String {
         "version": "1.0.0",
         "description": "POST events to ContractGate for real-time semantic contract validation."
       },
-      "servers": [{ "url": "https://contractgate.io", "description": "Production" }],
+      "servers": [{ "url": "https://app.datacontractgate.com", "description": "ContractGate Cloud" }],
       "paths": {
         "/v1/ingest/{contract_id}": {
           "post": {
@@ -1042,5 +1042,13 @@ mod tests {
         assert!(parsed.is_ok(), "openapi spec must be valid JSON");
         let v = parsed.unwrap();
         assert_eq!(v["openapi"], "3.1.0");
+    }
+
+    // contractgate.io is an unrelated company's product; clients and codegen
+    // read this URL, so it must be ours.
+    #[test]
+    fn openapi_server_is_contractgate_cloud() {
+        let v: Value = serde_json::from_str(&build_openapi()).unwrap();
+        assert_eq!(v["servers"][0]["url"], "https://app.datacontractgate.com");
     }
 }

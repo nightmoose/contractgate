@@ -9,7 +9,7 @@
  *   node node_example.js
  */
 
-const BASE_URL    = process.env.CONTRACTGATE_BASE_URL    ?? "https://contractgate.io";
+const BASE_URL    = process.env.CONTRACTGATE_BASE_URL    ?? "https://app.datacontractgate.com";
 const API_KEY     = process.env.CONTRACTGATE_API_KEY;
 const CONTRACT_ID = process.env.CONTRACTGATE_CONTRACT_ID;
 

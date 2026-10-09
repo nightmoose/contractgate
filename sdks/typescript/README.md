@@ -1,6 +1,6 @@
 # @nightmoose/contractgate-sdk
 
-Official TypeScript SDK for [ContractGate](https://contractgate.io) — HTTP client + local validator.
+Official TypeScript SDK for [ContractGate](https://datacontractgate.com) — HTTP client + local validator.
 
 **Node 20+, ESM only.**
 
