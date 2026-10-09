@@ -163,13 +163,108 @@ test("idempotency key is forwarded", async () => {
   assert.equal(scope.isDone(), true);
 });
 
-test("loading a sample does not call the gateway", async () => {
-  const scope = nock(BASE).post(/.*/).reply(500);
+function failBody(dryRun, quarantineId) {
+  return {
+    total: 1,
+    passed: 0,
+    failed: 1,
+    dry_run: dryRun,
+    resolved_version: "1.0.0",
+    results: [
+      {
+        index: 0,
+        passed: false,
+        violations: [
+          { field: "user_id", message: "does not match pattern" },
+          { field: "event_type", message: "not in enum" },
+          { field: "timestamp", message: "below minimum 0" },
+          { field: "amount", message: "below minimum 0" },
+        ],
+        contract_version: "1.0.0",
+        quarantine_id: quarantineId,
+      },
+    ],
+  };
+}
+
+test("the editor's Test step calls the gateway as a dry run and shows the failure", async () => {
+  const record = { user_id: "x", event_type: "refund", timestamp: -5, amount: -10 };
+  const scope = nock(BASE)
+    .post(`/v1/ingest/${CONTRACT}?dry_run=true`, record)
+    .reply(422, failBody(true, null));
+
   const result = await appTester(App.creates.validate_record.operation.perform, {
     authData: { api_key: "cg_live_test" },
-    inputData: {},
+    inputData: { contract_id: CONTRACT, record: JSON.stringify(record) },
     meta: { isLoadingSample: true },
   });
-  assert.equal(result.passed, true);
-  assert.equal(scope.isDone(), false);
+  assert.equal(scope.isDone(), true);
+  assert.equal(result.passed, false);
+  assert.equal(result.dry_run, true);
+  assert.equal(result.payload, null);
+  assert.match(result.violations_summary, /event_type: not in enum/);
+});
+
+test("the halt message leads with the quarantine id", async () => {
+  const record = { user_id: "x", event_type: "refund", timestamp: -5, amount: -10 };
+  nock(BASE).post(`/v1/ingest/${CONTRACT}`).reply(422, failBody(false, "cccccccc-cccc-cccc-cccc-cccccccccccc"));
+
+  await assert.rejects(
+    () =>
+      appTester(
+        App.creates.validate_record.operation.perform,
+        bundle({ contract_id: CONTRACT, record: JSON.stringify(record) }),
+      ),
+    (err) => {
+      assert.equal(err.name, "HaltedError");
+      assert.match(err.message, /^Contract rejected the record\. Quarantined as cccccccc-cccc-cccc-cccc-cccccccccccc\./);
+      return true;
+    },
+  );
+});
+
+test("a contract name is resolved to its id", async () => {
+  const record = { user_id: "user_pass_03" };
+  nock(BASE)
+    .get("/contracts")
+    .reply(200, [
+      { id: "dddddddd-dddd-dddd-dddd-dddddddddddd", name: "other" },
+      { id: CONTRACT, name: "my_events", latest_stable_version: "1.0.0" },
+    ]);
+  const scope = nock(BASE).post(`/v1/ingest/${CONTRACT}`, record).reply(200, passBody(record));
+
+  const result = await appTester(
+    App.creates.validate_record.operation.perform,
+    bundle({ contract_id: "my_events", record: JSON.stringify(record) }),
+  );
+  assert.equal(scope.isDone(), true);
+  assert.equal(result.contract_id, CONTRACT);
+});
+
+test("an unknown contract name lists the contracts on the key", async () => {
+  nock(BASE).get("/contracts").reply(200, [{ id: CONTRACT, name: "my_events" }]);
+
+  await assert.rejects(
+    () =>
+      appTester(
+        App.creates.validate_record.operation.perform,
+        bundle({ contract_id: "nope", record: "{}" }),
+      ),
+    /No contract named .*nope.*my_events/,
+  );
+});
+
+test("a contract with no stable version says to deploy one", async () => {
+  nock(BASE)
+    .post(`/v1/ingest/${CONTRACT}`)
+    .reply(409, { error: `Contract ${CONTRACT} has no stable version yet`, status: 409 });
+
+  await assert.rejects(
+    () =>
+      appTester(
+        App.creates.validate_record.operation.perform,
+        bundle({ contract_id: CONTRACT, record: "{}" }),
+      ),
+    /deploy a version to stable/,
+  );
 });

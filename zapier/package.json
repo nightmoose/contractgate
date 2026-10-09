@@ -1,6 +1,6 @@
 {
   "name": "contractgate-zapier",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "private": true,
   "description": "Validate one record against a ContractGate contract inside a Zap.",
   "main": "index.js",

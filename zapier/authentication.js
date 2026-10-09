@@ -1,10 +1,7 @@
-const { baseUrl } = require("./lib/base_url");
+const { listContracts } = require("./lib/contracts");
 
 const test = async (z, bundle) => {
-  const response = await z.request({
-    url: `${baseUrl(bundle.authData)}/contracts`,
-  });
-  const rows = Array.isArray(response.data) ? response.data : [];
+  const rows = await listContracts(z, bundle);
   return { contract_count: rows.length };
 };
 
@@ -28,7 +25,7 @@ module.exports = {
       required: false,
       default: "https://app.datacontractgate.com",
       helpText:
-        "Leave the default for ContractGate Cloud. Set this only if you self-host the gateway. Must be an `https://` or `http://` URL. See [the setup doc](https://github.com/nightmoose/contractgate/blob/main/docs/zapier.md).",
+        "Leave blank for ContractGate Cloud. Set this only if you self-host the gateway. Must be an `https://` or `http://` URL. See [the setup doc](https://github.com/nightmoose/contractgate/blob/main/docs/zapier.md).",
     },
   ],
 };

@@ -11,14 +11,17 @@ function parseRecord(value) {
   }
   if (text === "[object Object]") {
     throw new Error(
-      "Zapier passed the record as [object Object]. Put a Code by Zapier step in front of this one that returns JSON.stringify(inputData), and map that string here.",
+      "Zapier passed the record as [object Object]. Put a Code by Zapier step in front of this one that returns { record: JSON.stringify(inputData) }, and map its Record output here.",
     );
   }
   let parsed;
   try {
     parsed = JSON.parse(text);
   } catch {
-    throw new Error("Record is not valid JSON. Send one object, not a list or plain text.");
+    const start = text.length > 40 ? `${text.slice(0, 40)}…` : text;
+    throw new Error(
+      `Record is not valid JSON (it starts "${start}"). Put a Code by Zapier step in front of this one that returns { record: JSON.stringify(inputData) }, and map its Record output here.`,
+    );
   }
   if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
     throw new Error("Record must be one JSON object. Validate one pulled record per Zap step.");
