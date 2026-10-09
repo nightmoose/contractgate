@@ -12,7 +12,7 @@ Run against the public demo:
 import os
 import contractgate  # existing SDK — do not duplicate validation logic
 
-BASE_URL    = os.getenv("CONTRACTGATE_BASE_URL", "https://contractgate.io")
+BASE_URL    = os.getenv("CONTRACTGATE_BASE_URL", "https://app.datacontractgate.com")
 API_KEY     = os.environ["CONTRACTGATE_API_KEY"]
 CONTRACT_ID = os.environ["CONTRACTGATE_CONTRACT_ID"]
 

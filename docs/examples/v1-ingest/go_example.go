@@ -19,7 +19,7 @@ import (
 )
 
 func main() {
-	baseURL    := getenv("CONTRACTGATE_BASE_URL", "https://contractgate.io")
+	baseURL    := getenv("CONTRACTGATE_BASE_URL", "https://app.datacontractgate.com")
 	apiKey     := mustenv("CONTRACTGATE_API_KEY")
 	contractID := mustenv("CONTRACTGATE_CONTRACT_ID")
 
