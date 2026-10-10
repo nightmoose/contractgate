@@ -1,6 +1,6 @@
 # POST /v1/ingest/{contract_id} — Endpoint Reference
 
-The bulk HTTP ingest endpoint is ContractGate's universal connector: anything
+The bulk HTTP ingest endpoint is DataContractGate's universal connector: anything
 that can make an HTTP POST can validate events against a contract.
 
 ---

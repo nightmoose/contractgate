@@ -208,7 +208,7 @@ export function KafkaTab({ contractId }: KafkaTabProps) {
             Kafka Ingress
           </h2>
           <p className="text-sm text-slate-400 mt-0.5">
-            Produce events directly to a Confluent Cloud topic. ContractGate
+            Produce events directly to a Confluent Cloud topic. DataContractGate
             validates each message and routes it to your clean or quarantine
             topic automatically.
           </p>

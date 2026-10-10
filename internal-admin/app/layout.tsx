@@ -2,7 +2,7 @@ import "./globals.css";
 import type { ReactNode } from "react";
 
 export const metadata = {
-  title: "ContractGate — Internal Admin",
+  title: "DataContractGate — Internal Admin",
   robots: "noindex, nofollow",
 };
 

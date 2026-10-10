@@ -2,7 +2,7 @@
 """Produce Debezium-style shoe CDC into *.raw topics (RFC-092).
 
 Adapted from xdgrulez/driftless producer.py (Apache-2.0) — writes to
-orders.raw / customers.raw / products.raw so ContractGate can gate
+orders.raw / customers.raw / products.raw so DataContractGate can gate
 before clean topics.
 """
 

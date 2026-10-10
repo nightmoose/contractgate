@@ -1,4 +1,4 @@
-//! ContractGate core library.
+//! DataContractGate core library.
 //!
 //! Exposes the pure, dependency-light pieces of the validation engine so they
 //! can be re-used by auxiliary binaries (demos, benchmarks, one-off tools)

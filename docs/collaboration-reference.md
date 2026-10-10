@@ -25,7 +25,7 @@ or `contracts.pii_salt` — these remain owner-org-scoped by Postgres RLS.
 
 ## Authentication
 
-All collaboration endpoints require `x-api-key` (the standard ContractGate header).
+All collaboration endpoints require `x-api-key` (the standard DataContractGate header).
 The org bound to the API key is the caller's org for all role checks.
 
 ---
@@ -265,7 +265,7 @@ proposals once upgraded to `editor`) without a separate invite from the owner.
 
 ## Error responses
 
-All errors follow the standard ContractGate error envelope:
+All errors follow the standard DataContractGate error envelope:
 
 ```json
 { "error": "…message…" }

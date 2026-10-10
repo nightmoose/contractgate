@@ -1,8 +1,8 @@
-//! ODCS v3.1.0 conformance scoring for ContractGate contract versions.
+//! ODCS v3.1.0 conformance scoring for DataContractGate contract versions.
 //!
 //! Produces a `ConformanceReport` with four independent score dimensions so
 //! operators can see at a glance how well a contract version aligns with the
-//! ODCS v3.1.0 specification and ContractGate extension conventions.
+//! ODCS v3.1.0 specification and DataContractGate extension conventions.
 //!
 //! ## Dimensions
 //!

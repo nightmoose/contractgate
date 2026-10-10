@@ -2,7 +2,7 @@
 
 **Last updated:** 2026-09-29 (Supabase-enforced Turnstile on signup/login/reset; forgot/reset pages reachable)
 
-ContractGate's Rust backend supports two authentication mechanisms for the
+DataContractGate's Rust backend supports two authentication mechanisms for the
 management API: a Supabase Bearer JWT and a DB-backed API key.  The validation
 hot path (`/ingest`, `/v1/ingest`, `/egress`) follows the same rules but its
 scope is additionally bounded by the key's `allowed_contract_ids` list, which
@@ -100,7 +100,7 @@ calls `setApiOrgId` or sends `x-org-id`.
 
 ## CORS policy — `DASHBOARD_ORIGIN` (RFC-050)
 
-ContractGate uses two CORS layers with different scopes:
+DataContractGate uses two CORS layers with different scopes:
 
 **Authenticated surface** (`/contracts/*`, `/ingest/*`, `/egress/*`, `/v1/*`,
 `/audit`, `/stats`, `/playground/*`, `/contracts/infer/*`): only origins listed

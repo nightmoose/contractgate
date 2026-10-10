@@ -1,4 +1,4 @@
-# ContractGate rustfmt configuration.
+# DataContractGate rustfmt configuration.
 #
 # Locks the rustfmt baseline so contributors with non-default editor
 # settings don't churn diffs. Every option here matches rustfmt's

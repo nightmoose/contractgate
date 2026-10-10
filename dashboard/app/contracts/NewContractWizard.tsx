@@ -95,7 +95,7 @@ function PickStep({ onPick }: { onPick: (step: WizardStep) => void }) {
         <SourceTile
           icon="🔌"
           title="Connect an API"
-          description="Paste an endpoint URL. ContractGate fetches a sample and infers the schema."
+          description="Paste an endpoint URL. DataContractGate fetches a sample and infers the schema."
           onClick={() => onPick("api")}
         />
         <SourceTile

@@ -1,4 +1,4 @@
-//! Application-level error types for ContractGate.
+//! Application-level error types for DataContractGate.
 //!
 //! Uses `thiserror` to define structured errors that map cleanly to HTTP responses.
 
@@ -101,7 +101,7 @@ pub enum AppError {
     /// validation constraints may be missing.  Clear the flag via
     /// `POST /contracts/{id}/versions/{version}/approve-import`.  409.
     #[error(
-        "Version {version} was imported from ODCS without ContractGate extensions and requires \
+        "Version {version} was imported from ODCS without DataContractGate extensions and requires \
          review before promotion. Use \
          POST /contracts/{contract_id}/versions/{version}/approve-import to clear this flag."
     )]

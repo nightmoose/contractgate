@@ -1,6 +1,6 @@
 # Egress Validation Reference
 
-ContractGate validates data on **ingest**.  The egress validation endpoint
+DataContractGate validates data on **ingest**.  The egress validation endpoint
 runs the identical `validate()` engine against **outbound** payloads so you
 can guarantee that what leaves your API also conforms to a named contract.
 

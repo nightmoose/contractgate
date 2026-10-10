@@ -1,6 +1,6 @@
 import Link from "next/link";
 
-export const metadata = { title: "Terms of Service — ContractGate" };
+export const metadata = { title: "Terms of Service — DataContractGate" };
 
 export default function TermsPage() {
   return (
@@ -11,8 +11,9 @@ export default function TermsPage() {
 
         <div className="space-y-6 text-sm text-slate-400 leading-relaxed">
           <p>
-            By accessing or using ContractGate (&ldquo;the Service&rdquo;), you agree to be
-            bound by these Terms of Service. Please read them carefully.
+            DataContractGate (&ldquo;the Service&rdquo;) is operated by NightMoose, Inc.
+            (&ldquo;NightMoose&rdquo;, &ldquo;we&rdquo;, &ldquo;us&rdquo;). By accessing or using the
+            Service, you agree to be bound by these Terms of Service. Please read them carefully.
           </p>
 
           <section>
@@ -28,8 +29,8 @@ export default function TermsPage() {
             <h2 className="text-slate-200 font-semibold mb-2">2. Intellectual Property</h2>
             <p>
               The Service and its original content, features, and functionality are
-              owned by ContractGate and are protected by applicable intellectual
-              property laws. The open-source components of ContractGate are licensed
+              owned by NightMoose, Inc. and are protected by applicable intellectual
+              property laws. The open-source components of DataContractGate are licensed
               under their respective open-source licenses.
             </p>
           </section>
@@ -99,7 +100,7 @@ export default function TermsPage() {
           <section>
             <h2 className="text-slate-200 font-semibold mb-2">5. Limitation of Liability</h2>
             <p>
-              To the maximum extent permitted by law, ContractGate shall not be liable
+              To the maximum extent permitted by law, NightMoose shall not be liable
               for any indirect, incidental, special, consequential, or punitive damages
               arising out of or relating to your use of the Service.
             </p>
@@ -132,7 +133,7 @@ export default function TermsPage() {
 
         <div className="mt-12 pt-6 border-t border-[#1f2937]">
           <Link href="/" className="text-sm text-slate-500 hover:text-slate-400 transition-colors">
-            ← Back to ContractGate
+            ← Back to DataContractGate
           </Link>
         </div>
       </div>

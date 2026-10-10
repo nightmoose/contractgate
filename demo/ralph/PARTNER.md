@@ -1,18 +1,18 @@
 # Note for Ralph (design partner)
 
-Hey Ralph — here’s a runnable demo that puts **ContractGate in front of Driftless / Kafi Streams**, using your shoe CDC datagen and clean-topic join path.
+Hey Ralph — here’s a runnable demo that puts **DataContractGate in front of Driftless / Kafi Streams**, using your shoe CDC datagen and clean-topic join path.
 
 ## Fastest path
 
 ```bash
-# clone ContractGate, then:
+# clone DataContractGate, then:
 make demo-ralph-run-mcp
 ```
 
 That script will:
 
 1. Start Redpanda
-2. Run ContractGate on `*.raw` → clean / quarantine
+2. Run DataContractGate on `*.raw` → clean / quarantine
 3. Run Kafi Streams joins on **clean topics only**
 4. Inject bad CDC (bad status, bad email/zip, negative price)
 5. Print quarantine samples
@@ -35,7 +35,7 @@ python downstream/client.py --query "delivered"
 | Piece | Role |
 |-------|------|
 | Your datagen / CDC envelopes | `produce/` |
-| **ContractGate** | `bridge/gate_bridge.py` |
+| **DataContractGate** | `bridge/gate_bridge.py` |
 | **Kafi Streams** | `downstream/join_print.py` + `downstream/kafka/` |
 | **Driftless** LanceDB + MCP | `downstream/app.py` + `client.py` |
 

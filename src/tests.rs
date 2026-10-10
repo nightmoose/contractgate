@@ -1,4 +1,4 @@
-//! Integration-style tests for ContractGate that do NOT require a live database.
+//! Integration-style tests for DataContractGate that do NOT require a live database.
 //!
 //! These tests exercise the validation engine + playground handler end-to-end
 //! by constructing requests and calling handlers directly — fast, no I/O.
@@ -391,7 +391,7 @@ mod playground {
 
     #[test]
     fn extra_fields_allowed_no_violation() {
-        // ContractGate does not reject unknown fields (additive schema evolution)
+        // DataContractGate does not reject unknown fields (additive schema evolution)
         let cc = CompiledContract::compile(user_events_contract()).unwrap();
         let event = json!({
             "user_id": "dan_01",

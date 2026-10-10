@@ -1,6 +1,6 @@
 # PII Masking & Egress Leakage Guard Reference
 
-ContractGate enforces a two-sided PII guarantee:
+DataContractGate enforces a two-sided PII guarantee:
 
 - **Ingest (RFC-004):** raw PII never lands in durable storage.
 - **Egress (RFC-030):** raw PII and undeclared internal fields never leave the API.

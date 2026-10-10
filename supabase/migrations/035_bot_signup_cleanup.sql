@@ -1,4 +1,4 @@
--- ContractGate — Migration 035: Bot signup cleanup
+-- DataContractGate — Migration 035: Bot signup cleanup
 -- Run after 034_gated_payload_storage.sql
 --
 -- Removes 50 accounts identified by a manual audit (2026-07-22) as automated

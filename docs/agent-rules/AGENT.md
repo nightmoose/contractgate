@@ -1,4 +1,4 @@
-# ContractGate rules (generic agent instructions)
+# DataContractGate rules (generic agent instructions)
 
 Portable version for Claude Code, Codex, Aider, Antigravity, or any agent
 whose instruction format is plain markdown. Paste into your project's agent
@@ -6,7 +6,7 @@ instructions file (e.g. `CLAUDE.md`, `AGENTS.md`, `.aider.conf.yml`).
 
 ---
 
-This repository ships event data behind ContractGate. Every event that leaves
+This repository ships event data behind DataContractGate. Every event that leaves
 a producer must satisfy a YAML contract in the `contracts/` directory.
 
 **When editing an event publisher, ingestion path, or schema that feeds one:**
@@ -23,7 +23,7 @@ a producer must satisfy a YAML contract in the `contracts/` directory.
    Never edit a deployed version in place — bump `version:` in the YAML and
    redeploy.
 
-If the ContractGate MCP server is connected, prefer `infer_contract`,
+If the DataContractGate MCP server is connected, prefer `infer_contract`,
 `validate_events`, `deploy_contract`, and `get_quarantine` over constructing
 shell pipelines. Setup: <https://app.datacontractgate.com/mcp-reference.md>.
 

@@ -1,4 +1,4 @@
-# ContractGate
+# DataContractGate
 
 > Semantic data-contract enforcement at ingestion. A high-performance Rust
 > gateway that validates every event against a rich YAML contract (ontology,

@@ -29,7 +29,7 @@ import java.util.concurrent.atomic.AtomicReference;
 
 /**
  * Kafka Connect Single Message Transform (SMT) that validates every record
- * against a ContractGate semantic contract in real-time.
+ * against a DataContractGate semantic contract in real-time.
  *
  * <h2>Failure actions</h2>
  * <ul>
@@ -193,7 +193,7 @@ public class ContractGateValidator<R extends ConnectRecord<R>> implements Transf
         } catch (ContractGateApiException e) {
             // API unreachable / bad response — fail open with a warning so a
             // transient outage does not halt the connector.
-            log.warn("ContractGate API unavailable for topic={} offset={}: {}. Passing record through.",
+            log.warn("DataContractGate API unavailable for topic={} offset={}: {}. Passing record through.",
                 record.topic(), recordOffset(record), e.getMessage());
             return record;
         }
@@ -294,7 +294,7 @@ public class ContractGateValidator<R extends ConnectRecord<R>> implements Transf
 
     /**
      * Converts a Kafka record value to a JSON string suitable for the
-     * ContractGate ingest API.
+     * DataContractGate ingest API.
      *
      * <p>Handles the three common value representations used in Kafka Connect:
      * <ol>
@@ -359,7 +359,7 @@ public class ContractGateValidator<R extends ConnectRecord<R>> implements Transf
      */
     private String buildDlqMessage(R record, IngestEventResult result) {
         return String.format(
-            "ContractGate validation failed — topic=%s partition=%s offset=%s " +
+            "DataContractGate validation failed — topic=%s partition=%s offset=%s " +
             "contract=%s version=%s %s",
             record.topic(),
             record.kafkaPartition() == null ? "-" : record.kafkaPartition(),

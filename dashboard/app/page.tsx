@@ -33,7 +33,7 @@ function HeroBanner() {
             <span className="text-xs bg-green-900/50 text-green-400 border border-green-700/50 px-2 py-0.5 rounded-full font-medium">
               Patent Pending
             </span>
-            <span className="text-xs text-slate-600">ContractGate v0.1</span>
+            <span className="text-xs text-slate-600">DataContractGate v0.1</span>
           </div>
           <p className="text-slate-200 font-semibold text-base leading-snug">
             Enforce ontology + glossary + metric rules in{" "}
@@ -71,7 +71,7 @@ function HeroBanner() {
                 {
                   step: "2",
                   title: "Stream Events In",
-                  desc: "POST events to /ingest/{contract_id}. ContractGate validates in microseconds, inline in your pipeline.",
+                  desc: "POST events to /ingest/{contract_id}. DataContractGate validates in microseconds, inline in your pipeline.",
                 },
                 {
                   step: "3",

@@ -1,6 +1,6 @@
-# ContractGate + Redpanda Connect
+# DataContractGate + Redpanda Connect
 
-Validate every JSON message with ContractGate before it lands on a clean topic.
+Validate every JSON message with DataContractGate before it lands on a clean topic.
 Uses the built-in HTTP processor — no custom Go plugin.
 
 ## Pipeline
@@ -33,7 +33,7 @@ Hosted API: `https://contractgate-api.fly.dev`. Self-hosted: set `CONTRACTGATE_U
 
 ## Community blurb (Redpanda Slack / forum)
 
-> ContractGate is a semantic contract gateway in front of your topics.
+> DataContractGate is a semantic contract gateway in front of your topics.
 > Drop this Redpanda Connect YAML in: every JSON record is POSTed to
 > `/v1/ingest/{id}`; pass goes to `events.clean`, fail goes to
 > `events.quarantine`. No Connect cluster, no Schema Registry.

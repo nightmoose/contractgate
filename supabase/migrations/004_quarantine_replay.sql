@@ -1,4 +1,4 @@
--- ContractGate — Migration 004: Manual Replay Quarantine (RFC-003)
+-- DataContractGate — Migration 004: Manual Replay Quarantine (RFC-003)
 -- Run after 003_contract_versioning.sql
 --
 -- Additive only.  Adds link columns so a replay attempt can be traced back

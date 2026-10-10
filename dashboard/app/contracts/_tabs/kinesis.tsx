@@ -279,7 +279,7 @@ export function KinesisTab({ contractId }: KinesisTabProps) {
             Kinesis Ingress
           </h2>
           <p className="text-sm text-slate-400 mt-0.5">
-            Produce events to a managed AWS Kinesis stream. ContractGate
+            Produce events to a managed AWS Kinesis stream. DataContractGate
             validates each record and routes it to your clean or quarantine
             stream automatically.
           </p>

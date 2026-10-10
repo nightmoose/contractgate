@@ -31,7 +31,7 @@ export async function POST(req: Request) {
     const resend = new Resend(process.env.RESEND_API_KEY);
 
     await resend.emails.send({
-      from: 'ContractGate Early Access <datacontractgate@nightmoose.com>',
+      from: 'DataContractGate Early Access <datacontractgate@nightmoose.com>',
       to: 'datacontractgate_signup@nightmoose.com',
       replyTo: email,
       subject: `Early Access Request from ${name}`,

@@ -1,4 +1,4 @@
-# ContractGate Release Workflow
+# DataContractGate Release Workflow
 #
 # Triggered by: tag push matching v*.*.* OR manual workflow_dispatch.
 #
@@ -201,7 +201,7 @@ jobs:
           else
             gh release create "${TAG}" dist/*.tar.gz dist/SHA256SUMS \
               --verify-tag \
-              --title "ContractGate ${TAG}" \
+              --title "DataContractGate ${TAG}" \
               --generate-notes
           fi
 

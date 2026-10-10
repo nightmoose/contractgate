@@ -2,7 +2,7 @@
 """Driftless MCP + Kafi Streams — consumes CLEAN topics only (RFC-092).
 
 Adapted from xdgrulez/driftless (Apache-2.0). Producers write to *.raw;
-ContractGate bridge validates and forwards to orders/customers/products.
+DataContractGate bridge validates and forwards to orders/customers/products.
 This process must never subscribe to *.raw.
 """
 
@@ -43,7 +43,7 @@ print(
 )
 stop_fun = streams(sink_fun, emulated=False)
 
-mcpServer = MCPServer("Driftless Agentic Memory in One Pod (gated by ContractGate)")
+mcpServer = MCPServer("Driftless Agentic Memory in One Pod (gated by DataContractGate)")
 
 
 class CustomerContextResult(TypedDict):

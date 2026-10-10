@@ -1,7 +1,7 @@
 # IP Assignment & Ownership Checklist
 
 **Owner:** Alex (founder). Purpose: give an acquirer a clean, unambiguous chain of
-title to the ContractGate IP. These are **non-code** items; engineering can't
+title to the DataContractGate IP. These are **non-code** items; engineering can't
 close them, but diligence will ask for every one. Fill in and attach the
 supporting documents to the data room.
 
@@ -9,7 +9,7 @@ Status legend: ✅ done · ⬜ open · ❔ confirm
 
 ## Chain of title
 
-- ⬜ **Founder IP assignment** — a signed agreement assigning all ContractGate IP
+- ⬜ **Founder IP assignment** — a signed agreement assigning all DataContractGate IP
   (code, designs, docs, the patent application) from Alex Suarez personally to
   the owning entity (nightmoose / the legal entity being sold). Attach.
 - ⬜ **Contractor / contributor assignments** — for anyone (paid or unpaid) who
@@ -30,7 +30,7 @@ Status legend: ✅ done · ⬜ open · ❔ confirm
 
 ## Trademarks & brand
 
-- ❔ **"ContractGate" / "nightmoose"** — any registered or common-law marks;
+- ❔ **"DataContractGate" / "nightmoose"** — any registered or common-law marks;
   domains (`datacontractgate.com`, `nightmoose.com`) and who holds them.
 
 ## Open-source & licensing

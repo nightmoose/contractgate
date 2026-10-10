@@ -8,7 +8,7 @@
 #
 - id: contractgate-validate
   name: contractgate-validate
-  description: Parse and compile ContractGate YAML contracts (local, no network).
+  description: Parse and compile DataContractGate YAML contracts (local, no network).
   entry: contractgate-validate
   language: python
   types: [yaml]

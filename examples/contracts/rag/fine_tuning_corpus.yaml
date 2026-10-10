@@ -1,7 +1,7 @@
 # Fine-tuning corpus contract (RFC-077)
 #
 # Gates prompt/completion pairs before they enter a fine-tuning dataset.
-# Same governance boundary as rag_corpus_ingest: ContractGate enforces the
+# Same governance boundary as rag_corpus_ingest: DataContractGate enforces the
 # structured envelope; it does NOT score content quality.
 #
 # Record shape:

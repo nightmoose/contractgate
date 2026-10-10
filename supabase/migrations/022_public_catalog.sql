@@ -2,7 +2,7 @@
 -- Migration 022: Public Catalog (RFC-034)
 --
 -- Adds:
---   public_contracts  — curated gov/open-data sources with ContractGate
+--   public_contracts  — curated gov/open-data sources with DataContractGate
 --                       YAML attached.  Admin-managed; no RLS (public read).
 --   contracts.parent_public_contract_id — fork lineage back to a public source.
 --   contracts.fork_filter  — JSONB {fields, predicates} applied at export time.
@@ -23,7 +23,7 @@ CREATE TABLE IF NOT EXISTS public_contracts (
     source_url      text        NOT NULL,
     source_format   text        NOT NULL DEFAULT 'json_rows'
                                 CHECK (source_format IN ('json', 'json_rows', 'csv')),
-    -- Canonical ContractGate YAML for this source.
+    -- Canonical DataContractGate YAML for this source.
     contract_yaml   text        NOT NULL,
     version         text        NOT NULL DEFAULT '1.0',
     created_at      timestamptz NOT NULL DEFAULT now(),

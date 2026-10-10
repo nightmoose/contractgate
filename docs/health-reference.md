@@ -1,6 +1,6 @@
 # Health & Readiness Probes — Reference
 
-ContractGate exposes two probe endpoints on the same port as the API.
+DataContractGate exposes two probe endpoints on the same port as the API.
 Both are public (no auth required).
 
 ---

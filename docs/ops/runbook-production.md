@@ -1,4 +1,4 @@
-# ContractGate — Production Runbook
+# DataContractGate — Production Runbook
 
 **Audience:** operators of the hosted gateway (`contractgate-api` on Fly).  
 **Last updated:** 2026-07-15  

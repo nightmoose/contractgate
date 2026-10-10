@@ -23,7 +23,7 @@ export default async function UsersPage() {
   return (
     <>
       <header className="bar">
-        <strong>ContractGate — Internal Admin</strong>
+        <strong>DataContractGate — Internal Admin</strong>
         <span style={{ fontSize: 12, color: "#94a3b8" }}>
           {operator}
           {" · "}

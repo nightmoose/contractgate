@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# ContractGate — Postgres initdb wrapper (Compose only).
+# DataContractGate — Postgres initdb wrapper (Compose only).
 #
 # Runs once when the `postgres` service first boots an empty data dir.
 # Applies every file in /migrations/*.sql (numeric order via `ls -v`)
@@ -37,10 +37,10 @@ run_dir() {
     done < <(ls -v "$dir"/*.sql)
 }
 
-echo "ContractGate initdb-wrapper: applying migrations"
+echo "DataContractGate initdb-wrapper: applying migrations"
 run_dir /migrations "migration"
 
-echo "ContractGate initdb-wrapper: applying compose-only seed data"
+echo "DataContractGate initdb-wrapper: applying compose-only seed data"
 run_dir /seed "seed"
 
-echo "ContractGate initdb-wrapper: complete"
+echo "DataContractGate initdb-wrapper: complete"

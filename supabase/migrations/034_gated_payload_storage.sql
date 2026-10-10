@@ -1,4 +1,4 @@
--- ContractGate — Migration 034: Gated event-payload storage (RFC-086)
+-- DataContractGate — Migration 034: Gated event-payload storage (RFC-086)
 -- Run after 033_slack_leads.sql
 --
 -- Store customer event bodies only when the owning org is on a paid plan AND

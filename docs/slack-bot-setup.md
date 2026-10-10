@@ -1,6 +1,6 @@
 # Slack Bot Setup Guide
 
-This doc walks through creating the ContractGate Slack app from scratch,
+This doc walks through creating the DataContractGate Slack app from scratch,
 configuring the correct scopes, wiring it to the deployed Vercel URL, and
 adding the bot to your workspace.
 
@@ -19,7 +19,7 @@ adding the bot to your workspace.
 
 1. Go to **https://api.slack.com/apps** and click **Create New App**.
 2. Choose **From scratch**.
-3. Name it **ContractGate** (or whatever you prefer).
+3. Name it **DataContractGate** (or whatever you prefer).
 4. Select your target workspace and click **Create App**.
 
 ---
@@ -115,7 +115,7 @@ The bot responds to DMs automatically once installed. To have it respond to
 @-mentions in a channel:
 
 1. Open the channel in Slack.
-2. Type `/invite @ContractGate` (or the name you gave the app).
+2. Type `/invite @DataContractGate` (or the name you gave the app).
 3. The bot will now receive `app_mention` events from that channel.
 
 ---
@@ -123,9 +123,9 @@ The bot responds to DMs automatically once installed. To have it respond to
 ## Step 7 — Test It
 
 **DM test:**
-1. Find ContractGate in your workspace's Apps section and send it a message:
+1. Find DataContractGate in your workspace's Apps section and send it a message:
    ```
-   Tell me about ContractGate
+   Tell me about DataContractGate
    ```
    It should reply with a brief overview.
 
@@ -138,7 +138,7 @@ The bot responds to DMs automatically once installed. To have it respond to
 **@-mention test:**
 In any channel where the bot is invited, type:
 ```
-@ContractGate how does quarantine replay work?
+@DataContractGate how does quarantine replay work?
 ```
 
 **Announce endpoint test:**
@@ -146,7 +146,7 @@ In any channel where the bot is invited, type:
 curl -X POST https://<your-vercel-domain>/api/slack/announce \
   -H "Authorization: Bearer <SLACK_ANNOUNCE_SECRET>" \
   -H "Content-Type: application/json" \
-  -d '{"channel": "#general", "message": "Hello from ContractGate!"}'
+  -d '{"channel": "#general", "message": "Hello from DataContractGate!"}'
 ```
 
 ---
@@ -169,7 +169,7 @@ jobs:
           curl -X POST ${{ vars.VERCEL_URL }}/api/slack/announce \
             -H "Authorization: Bearer ${{ secrets.SLACK_ANNOUNCE_SECRET }}" \
             -H "Content-Type: application/json" \
-            -d '{"channel": "#data-engineering", "message": "Weekly ContractGate update: ..."}'
+            -d '{"channel": "#data-engineering", "message": "Weekly DataContractGate update: ..."}'
 ```
 
 ---
@@ -182,7 +182,7 @@ jobs:
 
 **Bot doesn't respond to @-mentions:**
 - Confirm `app_mention` is in the subscribed bot events
-- Confirm the bot is invited to the channel (`/invite @ContractGate`)
+- Confirm the bot is invited to the channel (`/invite @DataContractGate`)
 - Confirm `SLACK_SIGNING_SECRET` matches the one in Slack → Basic Information
 
 **Intake leads not saving:**

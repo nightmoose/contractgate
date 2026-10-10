@@ -1,6 +1,6 @@
-# Contributing to ContractGate
+# Contributing to DataContractGate
 
-Thanks for your interest in ContractGate. This guide covers how we plan, build,
+Thanks for your interest in DataContractGate. This guide covers how we plan, build,
 and ship changes. The project is licensed MIT with a patent NOTICE — see
 [`LICENSE`](LICENSE) and [`NOTICE`](NOTICE) before contributing.
 

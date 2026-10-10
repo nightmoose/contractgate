@@ -1,6 +1,6 @@
 # Dogfood harness
 
-Runnable end-to-end testing for ContractGate: **real public data**, **API**, and **full website** via Playwright (headless Chromium).
+Runnable end-to-end testing for DataContractGate: **real public data**, **API**, and **full website** via Playwright (headless Chromium).
 
 There is no interactive “browser MCP” in the agent — website coverage is **Playwright driven from this folder**, which the agent can run and iterate on the same way as the Python harness.
 

@@ -10,10 +10,10 @@
   <version>0.2.0</version>
   <packaging>jar</packaging>
 
-  <name>ContractGate Semantic Validator for Kafka Connect</name>
+  <name>DataContractGate Semantic Validator for Kafka Connect</name>
   <description>
     A Kafka Connect Single Message Transform (SMT) that validates every record
-    against a ContractGate semantic contract in real-time. Invalid records are
+    against a DataContractGate semantic contract in real-time. Invalid records are
     routed to a dead-letter topic; passing records continue downstream unchanged.
   </description>
   <url>https://datacontractgate.com/docs/kafka-connect</url>

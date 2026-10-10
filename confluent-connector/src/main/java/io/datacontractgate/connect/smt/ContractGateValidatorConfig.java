@@ -28,19 +28,19 @@ public class ContractGateValidatorConfig extends AbstractConfig {
 
     public static final String API_URL_CONFIG = "contractgate.api.url";
     private static final String API_URL_DOC =
-        "Base URL of the ContractGate API server, e.g. https://contractgate-api.fly.dev. " +
+        "Base URL of the DataContractGate API server, e.g. https://contractgate-api.fly.dev. " +
         "No trailing slash.";
 
     public static final String CONTRACT_ID_CONFIG = "contractgate.contract.id";
     private static final String CONTRACT_ID_DOC =
-        "UUID of the ContractGate contract to validate records against. " +
-        "Obtain from the ContractGate dashboard or GET /contracts.";
+        "UUID of the DataContractGate contract to validate records against. " +
+        "Obtain from the DataContractGate dashboard or GET /contracts.";
 
     // ── Authentication ────────────────────────────────────────────────────────
 
     public static final String API_KEY_CONFIG = "contractgate.api.key";
     private static final String API_KEY_DOC =
-        "x-api-key header value for the ContractGate API. " +
+        "x-api-key header value for the DataContractGate API. " +
         "Leave blank only when the server runs without authentication (dev mode).";
     private static final String API_KEY_DEFAULT = "";
 
@@ -58,7 +58,7 @@ public class ContractGateValidatorConfig extends AbstractConfig {
 
     public static final String DRY_RUN_CONFIG = "contractgate.dry.run";
     private static final String DRY_RUN_DOC =
-        "When true, validation results are NOT written to the ContractGate audit log " +
+        "When true, validation results are NOT written to the DataContractGate audit log " +
         "or quarantine store. Useful for high-throughput pipelines where you want " +
         "enforcement without DB write pressure. Default: false (full audit trail).";
     private static final boolean DRY_RUN_DEFAULT = false;
@@ -81,7 +81,7 @@ public class ContractGateValidatorConfig extends AbstractConfig {
 
     public static final String CONNECT_TIMEOUT_MS_CONFIG = "contractgate.connect.timeout.ms";
     private static final String CONNECT_TIMEOUT_MS_DOC =
-        "TCP connection timeout to the ContractGate API in milliseconds. Default: 5000.";
+        "TCP connection timeout to the DataContractGate API in milliseconds. Default: 5000.";
     private static final int CONNECT_TIMEOUT_MS_DEFAULT = 5_000;
 
     public static final String REQUEST_TIMEOUT_MS_CONFIG = "contractgate.request.timeout.ms";
@@ -94,7 +94,7 @@ public class ContractGateValidatorConfig extends AbstractConfig {
 
     public static final String ADD_RESULT_HEADERS_CONFIG = "contractgate.add.result.headers";
     private static final String ADD_RESULT_HEADERS_DOC =
-        "When true, adds ContractGate result metadata as record headers on every record " +
+        "When true, adds DataContractGate result metadata as record headers on every record " +
         "(pass or fail). Headers: contractgate.passed, contractgate.contract.version, " +
         "contractgate.violations.count, and contractgate.violation.N.field/kind/message " +
         "for the first few violations. Default: true.";
@@ -118,7 +118,7 @@ public class ContractGateValidatorConfig extends AbstractConfig {
 
     public static final String RELOAD_POLL_MS_CONFIG = "contractgate.reload.poll.ms";
     private static final String RELOAD_POLL_MS_DOC =
-        "How often the background reloader polls the ContractGate gateway for a " +
+        "How often the background reloader polls the DataContractGate gateway for a " +
         "contract version change, in milliseconds. Minimum 5000. Default: 30000.";
     private static final int RELOAD_POLL_MS_DEFAULT = 30_000;
     private static final int RELOAD_POLL_MS_MIN     = 5_000;

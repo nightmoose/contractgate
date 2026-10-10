@@ -11,7 +11,7 @@
 
 Kinesis Ingress provisions a dedicated set of AWS Kinesis streams and a scoped
 IAM user for each contract. Events published to the raw stream are consumed by
-ContractGate, validated against the contract, and routed to either the clean or
+DataContractGate, validated against the contract, and routed to either the clean or
 quarantine stream. The IAM access key is stored encrypted at rest (AES-256-GCM)
 and is returned in plaintext only on first enable or after a credential rotation.
 

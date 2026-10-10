@@ -1,5 +1,5 @@
 /**
- * ContractGate v1 ingest — Node.js example (native fetch, no dependencies).
+ * DataContractGate v1 ingest — Node.js example (native fetch, no dependencies).
  *
  * Requires Node 18+ (built-in fetch).
  *

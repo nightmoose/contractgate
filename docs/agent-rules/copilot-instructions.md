@@ -1,6 +1,6 @@
-# ContractGate rules (GitHub Copilot)
+# DataContractGate rules (GitHub Copilot)
 
-This repository ships event data behind ContractGate. Every event that leaves
+This repository ships event data behind DataContractGate. Every event that leaves
 a producer must satisfy a YAML contract in the `contracts/` directory.
 
 When you edit an event publisher, an ingestion path, or a schema that feeds
@@ -18,6 +18,6 @@ one of these:
   contracts/<name>.yaml --json`. Never edit a deployed version in place — bump
   `version:` in the YAML and redeploy.
 
-If the ContractGate MCP server is connected, prefer its tools over curl.
+If the DataContractGate MCP server is connected, prefer its tools over curl.
 MCP: <https://app.datacontractgate.com/mcp-reference.md>.
 Full playbook: <https://app.datacontractgate.com/llm-integration.md>.

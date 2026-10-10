@@ -2,7 +2,7 @@
 
 **RFC-076 | Added 2026-06-01**
 
-Run every record in a local data file through the ContractGate validation engine
+Run every record in a local data file through the DataContractGate validation engine
 against a contract YAML. No server, no Kafka, no network required.
 
 ---

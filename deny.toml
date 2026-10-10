@@ -5,7 +5,7 @@ db-path = "~/.cargo/advisory-db"
 db-urls = ["https://github.com/rustsec/advisory-db"]
 ignore = [
     # RUSTSEC-2023-0071 — RSA "Marvin Attack" timing sidechannel. No fixed
-    # `rsa` release exists. NOT exploitable in ContractGate:
+    # `rsa` release exists. NOT exploitable in DataContractGate:
     #   * `rsa` is pulled ONLY transitively by jsonwebtoken's `rust_crypto`
     #     backend (cargo tree -i rsa → jsonwebtoken → contractgate).
     #   * We only *verify* Supabase RS256/ES256 JWTs with the public JWKS key

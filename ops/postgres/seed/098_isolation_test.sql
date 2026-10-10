@@ -1,4 +1,4 @@
--- ContractGate — Compose-only isolation-test seed (RFC-073).
+-- DataContractGate — Compose-only isolation-test seed (RFC-073).
 --
 -- Seeds the fixtures that tests/rfc_001_isolation.rs::cross_org_ingest_is_rejected
 -- needs: two orgs, one contract owned by org A (with a live stable version),

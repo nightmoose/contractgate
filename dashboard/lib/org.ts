@@ -3,7 +3,7 @@
 /**
  * useOrg — resolves the current Supabase user's primary org.
  *
- * ContractGate uses org-scoped tenancy (RFC-001): every user is
+ * DataContractGate uses org-scoped tenancy (RFC-001): every user is
  * auto-provisioned an org on first sign-up, and all resources (contracts,
  * api_keys, audit_log) carry an org_id FK.
  *
