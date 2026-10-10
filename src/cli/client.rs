@@ -7,7 +7,7 @@ pub const EXIT_CLIENT_ERROR: i32 = 10;
 pub const EXIT_AUTH_ERROR: i32 = 11;
 pub const EXIT_NOT_FOUND: i32 = 12;
 
-/// Thin blocking HTTP wrapper around the ContractGate gateway.
+/// Thin blocking HTTP wrapper around the DataContractGate gateway.
 pub struct GatewayClient {
     base_url: String,
     api_key: String,

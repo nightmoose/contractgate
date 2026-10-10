@@ -1,4 +1,4 @@
--- ContractGate — Migration 005: PII Transforms (RFC-004)
+-- DataContractGate — Migration 005: PII Transforms (RFC-004)
 -- Run after 004_quarantine_replay.sql
 --
 -- Additive only.  Adds the two columns RFC-004 needs:

@@ -7,7 +7,7 @@
 # Review this list before every release tag.
 ignore = [
     # rsa crate — Marvin Attack (timing side-channel in RSA decryption).
-    # ContractGate does not use RSA directly; this is a transitive dep.
+    # DataContractGate does not use RSA directly; this is a transitive dep.
     # Suppressed: 2026-05-02. Revisit: when upstream rsa crate ships a fix.
     "RUSTSEC-2023-0071",
 

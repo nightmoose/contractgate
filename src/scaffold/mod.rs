@@ -1,6 +1,6 @@
 //! Brownfield contract scaffolder — RFC-024.
 //!
-//! Derives a draft ContractGate YAML contract from:
+//! Derives a draft DataContractGate YAML contract from:
 //!   - A live Kafka topic (JSON, Avro, Protobuf) — requires `scaffold` feature.
 //!   - A local file (`.json` / `.ndjson` / `.avsc` / `.proto`).
 //!

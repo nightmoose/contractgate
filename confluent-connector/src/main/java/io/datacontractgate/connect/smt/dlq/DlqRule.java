@@ -12,7 +12,7 @@ import java.util.Objects;
  *
  * <h2>Match fields</h2>
  * <ul>
- *   <li>{@code severity} — {@code "error"} or {@code "warn"}.  ContractGate
+ *   <li>{@code severity} — {@code "error"} or {@code "warn"}.  DataContractGate
  *       maps {@code kind} values to severity: missing/type/pattern/enum/range
  *       /length/metric violations are {@code "error"}; advisory violations
  *       (undeclared_field) are {@code "warn"}.</li>

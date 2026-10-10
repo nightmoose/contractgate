@@ -1,4 +1,4 @@
--- ContractGate — Migration 003: Contract Versioning (RFC-002)
+-- DataContractGate — Migration 003: Contract Versioning (RFC-002)
 -- Run after 002_quarantine_and_p99.sql
 --
 -- This migration promotes `contracts.version` from a nominal text field into

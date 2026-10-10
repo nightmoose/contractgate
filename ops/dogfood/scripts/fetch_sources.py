@@ -158,7 +158,7 @@ def coerce_value(key: str, v: Any) -> Any:
 
 def normalize_row(row: dict[str, Any], *, drop_nulls: bool = True) -> dict[str, Any]:
     """
-    Producer-side hygiene for ContractGate.
+    Producer-side hygiene for DataContractGate.
 
     Product note: gateway treats JSON null as a present value and type-checks it.
     Optional fields with null fail type_mismatch. Real producers should OMIT

@@ -1,9 +1,9 @@
-# ContractGate rules (Windsurf)
+# DataContractGate rules (Windsurf)
 
 Trigger: any change under `contracts/`, or to files whose name contains
 `producer`, `publisher`, or `ingest`.
 
-This repository ships event data behind ContractGate. Every event that leaves
+This repository ships event data behind DataContractGate. Every event that leaves
 a producer must satisfy a YAML contract in `contracts/`.
 
 ## Before editing an event publisher or ingestion path
@@ -24,6 +24,6 @@ loosening the contract.
 
 Use `contractgate deploy-contract contracts/<name>.yaml --json`. Never edit a
 deployed version in place — bump `version:` in the YAML and redeploy. If the
-ContractGate MCP server is connected, prefer its tools over curl. Full
+DataContractGate MCP server is connected, prefer its tools over curl. Full
 playbook: <https://app.datacontractgate.com/llm-integration.md>. MCP:
 <https://app.datacontractgate.com/mcp-reference.md>.

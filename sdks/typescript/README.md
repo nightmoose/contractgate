@@ -1,6 +1,6 @@
 # @nightmoose/contractgate-sdk
 
-Official TypeScript SDK for [ContractGate](https://datacontractgate.com) — HTTP client + local validator.
+Official TypeScript SDK for [DataContractGate](https://datacontractgate.com) — HTTP client + local validator.
 
 **Node 20+, ESM only.**
 
@@ -90,4 +90,4 @@ Per-event validation failures in a 207 Multi-Status response do **not** raise. T
 
 ## Version policy
 
-SDK version is kept in lockstep with the ContractGate gateway minor version. `0.1.x` of the SDK works with gateway `0.1.x`.
+SDK version is kept in lockstep with the DataContractGate gateway minor version. `0.1.x` of the SDK works with gateway `0.1.x`.

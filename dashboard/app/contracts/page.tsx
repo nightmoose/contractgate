@@ -1004,7 +1004,7 @@ function ContractList({
         <p className="text-4xl mb-4">📋</p>
         <FirstRunLoop
           title="No contracts yet — create your first one above."
-          hint="A contract is the schema ContractGate enforces. Until one is stable, ingest has nowhere to route."
+          hint="A contract is the schema DataContractGate enforces. Until one is stable, ingest has nowhere to route."
         />
       </div>
     );
@@ -1152,7 +1152,7 @@ function GeneratorTab({ onSaved }: { onSaved: () => void }) {
         and produce a ready-to-edit YAML contract.
       </p>
       <p className="text-xs text-slate-500 bg-[#111827] border border-[#1f2937] rounded-lg p-3">
-        Sample data is sent to ContractGate to generate the contract. To keep
+        Sample data is sent to DataContractGate to generate the contract. To keep
         data fully local, use <span className="text-slate-300">Start Blank</span>{" "}
         (YAML editor) or run <code className="text-slate-300">cg test</code> locally.
       </p>

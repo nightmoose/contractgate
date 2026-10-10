@@ -1,6 +1,6 @@
-# ContractGate — Speed Demo
+# DataContractGate — Speed Demo
 
-A self-contained, Kafka-backed demo that showcases ContractGate's validation
+A self-contained, Kafka-backed demo that showcases DataContractGate's validation
 throughput at volume, side-by-side with a zero-validation baseline.
 
 ## What it does
@@ -13,31 +13,31 @@ The demo spins up three concurrent pipelines sharing a single Kafka cluster
                                         │
     [event generator]                   │
          │                              │
-         ▼          ┌──[ContractGate]───┤
+         ▼          ┌──[DataContractGate]───┤
    demo.events.in ──┤                   └─► demo.events.quarantine
                     │
                     └──[straight-copy baseline]──► demo.events.copy
 ```
 
-Both the ContractGate validator and the straight-copy baseline consume the
+Both the DataContractGate validator and the straight-copy baseline consume the
 **exact same** stream off `demo.events.in`, in their own consumer groups.
 Any throughput delta between them is the real cost of semantic validation —
 not network, not serialization, not broker overhead.
 
 The embedded web dashboard (`http://localhost:8088`) shows live:
 
-- **ContractGate throughput** — events/sec the validator is processing
+- **DataContractGate throughput** — events/sec the validator is processing
 - **Overhead vs baseline** — `100 − (validator_rate / copy_rate) × 100`. 0%
-  means ContractGate is keeping perfect pace with a zero-work passthrough.
+  means DataContractGate is keeping perfect pace with a zero-work passthrough.
   Colour-coded green (≤5%), amber (≤20%), red beyond. This is the headline
   pitch number.
 - **Validation cost (p99)** — `validator_p99 − copy_p99` in µs. What
-  ContractGate actually *adds* on top of what Kafka + your laptop pay for a
+  DataContractGate actually *adds* on top of what Kafka + your laptop pay for a
   straight copy of the same bytes.
 - Producer rate (events/sec being pushed onto Kafka) and total sent
 - Per-lane throughput, latency percentiles (p50 / p95 / p99 / max), and total
   events forwarded downstream
-- Pass/fail split on the ContractGate lane
+- Pass/fail split on the DataContractGate lane
 - Rolling throughput chart covering the last ~24s
 
 ## Prerequisites
@@ -80,15 +80,15 @@ landing on `demo.events.valid` and fail events on `demo.events.quarantine`.
 
 ## What to look at
 
-**Throughput chart.** The two main series (blue = ContractGate, amber =
+**Throughput chart.** The two main series (blue = DataContractGate, amber =
 baseline) should track each other closely. That visual parity is the pitch:
-ContractGate's overhead is effectively constant per event, so at volume
+DataContractGate's overhead is effectively constant per event, so at volume
 there's nothing left to catch up on.
 
 **Latency percentiles.** Both lanes measure end-to-end latency from the
 producer's wall clock until the consumer is done handling the record. The
 baseline tells you how much of that is Kafka + your laptop; the difference
-is ContractGate.
+is DataContractGate.
 
 **Pass/fail bar.** Scroll the fail ratio up to 50% and watch the bar split.
 Failed events are published to `demo.events.quarantine` with the full

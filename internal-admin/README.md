@@ -1,4 +1,4 @@
-# ContractGate — Internal Admin (RFC-088)
+# DataContractGate — Internal Admin (RFC-088)
 
 A **standalone, god-mode** ops console. Read-only view of every org with plan +
 live Stripe subscription status and member emails, with deep links to the Stripe

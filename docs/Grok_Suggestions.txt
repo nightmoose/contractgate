@@ -1,7 +1,7 @@
 Phase 1: Next 4–6 Weeks (Ship These Before First Big Confluent Meeting)
 
 Confluent Hub SMT approval + “Built for Confluent” docs (you’re already submitted — huge)
-Full Kafka Connect Source + Sink connectors (beyond just SMT) — lets teams use ContractGate as a native first-class citizen
+Full Kafka Connect Source + Sink connectors (beyond just SMT) — lets teams use DataContractGate as a native first-class citizen
 Enterprise SSO/SAML + audit log export (SOC2 prep) — table-stakes for any platform team
 Prometheus + OpenTelemetry metrics out-of-the-box
 

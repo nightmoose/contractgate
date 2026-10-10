@@ -1,6 +1,6 @@
 # What’s this? — in-app help mode
 
-Inspect mode for the ContractGate dashboard. Toggle it, click a highlighted
+Inspect mode for the DataContractGate dashboard. Toggle it, click a highlighted
 control, get a short description of what it is and what it does.
 
 This is a dashboard-only feature. It does not change ingest, contracts, or the

@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""ContractGate bridge for the Ralph demo (RFC-092).
+"""DataContractGate bridge for the Ralph demo (RFC-092).
 
 Consumes Debezium-style envelopes from *.raw topics, validates the
-``after`` payload with ContractGate (local Python SDK by default), and
+``after`` payload with DataContractGate (local Python SDK by default), and
 produces to clean topics (orders/customers/products) or *.quarantine.
 
 Deletes (op=d, no after) pass through to clean unchanged.
@@ -222,7 +222,7 @@ def run(bootstrap: str, group: str) -> None:
 
 
 def main() -> None:
-    p = argparse.ArgumentParser(description="RFC-092 ContractGate Ralph bridge")
+    p = argparse.ArgumentParser(description="RFC-092 DataContractGate Ralph bridge")
     p.add_argument(
         "--bootstrap",
         default=os.environ.get("KAFKA_BOOTSTRAP", "127.0.0.1:9092"),

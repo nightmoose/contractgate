@@ -1,6 +1,6 @@
-# CLAUDE.md - ContractGate Maintenance
+# CLAUDE.md - DataContractGate Maintenance
 
-**Project:** ContractGate - High-performance semantic contract enforcement gateway (Patent Pending)
+**Project:** DataContractGate - High-performance semantic contract enforcement gateway (Patent Pending)
 
 **Current Phase:** Fully built. Now iterating on missing functions + eliminating tech debt. Performance and correctness are non-negotiable.
 

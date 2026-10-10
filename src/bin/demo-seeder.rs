@@ -1,4 +1,4 @@
-//! ContractGate demo seeder (RFC-017).
+//! DataContractGate demo seeder (RFC-017).
 //!
 //! Publishes the three starter contracts to a running gateway, then posts
 //! realistic synthetic events for a configured duration so audit_log fills,

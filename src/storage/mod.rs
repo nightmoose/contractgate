@@ -1,4 +1,4 @@
-//! Supabase (PostgreSQL) storage layer for ContractGate.
+//! Supabase (PostgreSQL) storage layer for DataContractGate.
 //!
 //! All database access goes through this module.  Uses `sqlx` with **runtime**
 //! (non-macro) query execution so the crate builds without requiring a live

@@ -39,7 +39,7 @@ modes to catch by hand:
   figures if you let it).
 - HN title exceeds 80 chars.
 - An X tweet exceeds 280 chars including its `[k/N]` prefix.
-- Reddit body names ContractGate in the first two paragraphs.
+- Reddit body names DataContractGate in the first two paragraphs.
 - Post claims shipped-in-prod behavior for a Draft-status RFC.
 
 ## Related

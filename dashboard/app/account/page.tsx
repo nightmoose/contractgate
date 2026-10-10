@@ -1033,7 +1033,7 @@ function EventPayloadStorageSection() {
         <div className="min-w-0">
           <div className="text-sm font-semibold text-slate-200">Event Payload Storage</div>
           <p className="text-xs text-slate-500 mt-1 max-w-md">
-            When on, ContractGate retains the (post-transform) body of each event
+            When on, DataContractGate retains the (post-transform) body of each event
             in the audit log and quarantine store. Required for quarantine replay.
             When off, only metadata is kept — what failed and why, never the source
             data.
@@ -1088,7 +1088,7 @@ export default function AccountPage() {
     return (
       <DemoFeatureUnavailable
         feature="API Keys & Account"
-        reason="API key management, GitHub sync, and team invites require a real org. Available in ContractGate Cloud."
+        reason="API key management, GitHub sync, and team invites require a real org. Available in DataContractGate Cloud."
       />
     );
   }

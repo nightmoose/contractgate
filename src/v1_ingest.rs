@@ -1,7 +1,7 @@
 //! RFC-021: `POST /v1/ingest/{contract_id}` — public bulk HTTP ingest endpoint.
 //!
 //! This is the universal connector surface: anything that can make an HTTP
-//! request can validate events against a ContractGate contract.
+//! request can validate events against a DataContractGate contract.
 //!
 //! ## What this module adds vs. `ingest.rs`
 //!
@@ -220,11 +220,11 @@ fn build_openapi() -> String {
     serde_json::to_string_pretty(&json!({
       "openapi": "3.1.0",
       "info": {
-        "title": "ContractGate Ingest API",
+        "title": "DataContractGate Ingest API",
         "version": "1.0.0",
-        "description": "POST events to ContractGate for real-time semantic contract validation."
+        "description": "POST events to DataContractGate for real-time semantic contract validation."
       },
-      "servers": [{ "url": "https://app.datacontractgate.com", "description": "ContractGate Cloud" }],
+      "servers": [{ "url": "https://app.datacontractgate.com", "description": "DataContractGate Cloud" }],
       "paths": {
         "/v1/ingest/{contract_id}": {
           "post": {

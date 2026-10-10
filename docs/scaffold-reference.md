@@ -1,6 +1,6 @@
 # cg scaffold — Reference
 
-Generate a draft ContractGate contract from a live Kafka topic or a local
+Generate a draft DataContractGate contract from a live Kafka topic or a local
 schema file, then validate events against it in shadow mode before promoting.
 
 ---

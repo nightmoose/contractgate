@@ -1,5 +1,5 @@
-name: "ContractGate Validate"
-description: "Parse and compile ContractGate YAML contracts. Local, no network, no CLI tarball."
+name: "DataContractGate Validate"
+description: "Parse and compile DataContractGate YAML contracts. Local, no network, no CLI tarball."
 author: "DataContractGate"
 branding:
   icon: shield

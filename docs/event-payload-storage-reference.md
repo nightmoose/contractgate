@@ -8,7 +8,7 @@
 
 ## What this controls
 
-ContractGate records an audit row for **every** ingested event and a quarantine
+DataContractGate records an audit row for **every** ingested event and a quarantine
 row for every **failed** event. By default those rows now store only *metadata*
 — contract, version, pass/fail, violations, counts, source IP, timing — and
 **not** the event body. Storing the body (`audit_log.raw_event`,

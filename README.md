@@ -1,10 +1,10 @@
-# ContractGate
+# DataContractGate
 
 **Semantic Contract Enforcement at Ingestion** — *Patent Pending*
 
 Stop bad data **before** it reaches your warehouse, lakehouse, or ML pipeline.
 
-ContractGate is a high-performance validation gateway that enforces rich semantic data contracts in real time. Built in Rust for sub-millisecond per-event validation (86k+ events/sec/core), it goes far beyond JSON Schema or basic type checks — ontology, glossary, patterns, enums, computed metrics, and automatic inference.
+DataContractGate is a high-performance validation gateway that enforces rich semantic data contracts in real time. Built in Rust for sub-millisecond per-event validation (86k+ events/sec/core), it goes far beyond JSON Schema or basic type checks — ontology, glossary, patterns, enums, computed metrics, and automatic inference.
 
 The same contract can gate what **leaves** your system. `POST /egress/{contract_id}` runs the identical engine on any outbound payload — a reverse-ETL row, a notebook export, a state object headed to a decision model. Failing records are blocked, declared PII is masked, and the caller forwards only the returned `payload`. See [`docs/egress-validation-reference.md`](docs/egress-validation-reference.md).
 
@@ -64,7 +64,7 @@ Claude Code / Cursor plugin:
 
 Redpanda Connect (HTTP processor, no custom plugin): [`docs/examples/redpanda-connect/`](docs/examples/redpanda-connect/).
 
-Zapier — validate the record a Zap just pulled, before the next step writes it. A failure is quarantined and the Zap stops. A pass continues with the payload ContractGate returned. Setup and the `zapier-platform push` commands: [`docs/zapier.md`](docs/zapier.md). Source: [`zapier/`](zapier/).
+Zapier — validate the record a Zap just pulled, before the next step writes it. A failure is quarantined and the Zap stops. A pass continues with the payload DataContractGate returned. Setup and the `zapier-platform push` commands: [`docs/zapier.md`](docs/zapier.md). Source: [`zapier/`](zapier/).
 
 ---
 
@@ -193,7 +193,7 @@ Full RFCs and design docs live in [`docs/rfcs/`](docs/rfcs/). For a quick shippe
 
 ## Comparison
 
-| Feature | **ContractGate** | Great Expectations | Soda | Monte Carlo | dbt |
+| Feature | **DataContractGate** | Great Expectations | Soda | Monte Carlo | dbt |
 |---|---|---|---|---|---|
 | Validation timing | **At ingestion** | Post-hoc / batch | Mix (mostly batch) | Observability | During dbt runs |
 | Performance | **Sub-ms per-event, 86k+ ev/s** (Rust, see note) | Python-based | Varies | Not a validator | Not real-time |

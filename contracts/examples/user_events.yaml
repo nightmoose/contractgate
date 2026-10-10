@@ -1,5 +1,5 @@
 # Example Contract: User Behavior Events
-# ContractGate (Patent Pending)
+# DataContractGate (Patent Pending)
 #
 # This contract enforces schema and semantic rules on raw user
 # event data before it reaches your warehouse or AI pipeline.

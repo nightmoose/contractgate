@@ -1,4 +1,4 @@
-//! ODCS v3.1.0 import / export for ContractGate.
+//! ODCS v3.1.0 import / export for DataContractGate.
 //!
 //! # Round-trip guarantee
 //!

@@ -1,7 +1,7 @@
 # Email Sending Setup — nightmoose.com (shared auth sender)
 
 **Goal:** make Supabase auth email (signup confirmation, password reset, etc.)
-actually deliver. All apps (ContractGate, Crafty528hz, future) send auth mail
+actually deliver. All apps (DataContractGate, Crafty528hz, future) send auth mail
 from **`noreply@nightmoose.com`** — Nightmoose is the consulting co that built
 them, so a shared sender is fine for now.
 
@@ -55,7 +55,7 @@ Propagation: up to ~24h, usually minutes. Resend re-checks for 72h.
 
 ## Supabase SMTP settings (each project)
 
-For **every** Supabase project that sends auth mail (ContractGate =
+For **every** Supabase project that sends auth mail (DataContractGate =
 `nmhoehpveqkkpfegkzpn`, plus Crafty etc.):
 
 Dashboard → **Authentication → Emails → SMTP Settings** → Enable custom SMTP:
@@ -67,7 +67,7 @@ Dashboard → **Authentication → Emails → SMTP Settings** → Enable custom 
 | Username | `resend` |
 | Password | your **Resend API key** (`re_...`) — server secret, never client-side |
 | Sender email | `noreply@nightmoose.com` |
-| Sender name | e.g. `ContractGate` (per project) |
+| Sender name | e.g. `DataContractGate` (per project) |
 
 > The sender domain **must** match the Resend-verified domain (`nightmoose.com`)
 > or alignment fails again. Since Resend is verified on the root, use the root —

@@ -13,7 +13,7 @@ const SITE_URL =
   // localhost: this value gets baked into shared links.
   process.env.NEXT_PUBLIC_APP_URL ?? "https://app.datacontractgate.com";
 
-const TITLE = "ContractGate — Semantic Contract Enforcement";
+const TITLE = "DataContractGate — Semantic Contract Enforcement";
 const DESCRIPTION =
   "Stop bad data before it hits your warehouse. Semantic data contracts enforced at ingestion — enums, patterns, ranges, and required fields validated per event, with quarantine and replay.";
 
@@ -27,7 +27,7 @@ export const metadata: Metadata = {
     title: TITLE,
     description: DESCRIPTION,
     url: SITE_URL,
-    siteName: "ContractGate",
+    siteName: "DataContractGate",
     type: "website",
     locale: "en_US",
   },

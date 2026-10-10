@@ -1,4 +1,4 @@
--- ContractGate — Migration 002: Quarantine Events + P99 Latency Support
+-- DataContractGate — Migration 002: Quarantine Events + P99 Latency Support
 -- Run after 001_initial_schema.sql
 
 -- ---------------------------------------------------------------------------

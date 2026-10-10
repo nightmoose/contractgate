@@ -88,7 +88,7 @@ Chronological range constraints are a future RFC.
 
 ## ODCS mapping
 
-| ContractGate type | ODCS `logicalType` |
+| DataContractGate type | ODCS `logicalType` |
 |---|---|
 | `date` | `date` |
 

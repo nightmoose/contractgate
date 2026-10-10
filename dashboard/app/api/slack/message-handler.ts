@@ -1,5 +1,5 @@
 /**
- * ContractGate Slack Bot — message handler
+ * DataContractGate Slack Bot — message handler
  *
  * Handles incoming Slack messages (app_mentions and DMs) by:
  *   1. Loading/creating per-thread conversation state from Supabase
@@ -91,7 +91,7 @@ const INTAKE_QUESTIONS = [
   "What's your name and what company are you with?",
   "What's your email so we can follow up with you?",
   "What does your current data stack look like? Rough is totally fine — Kafka, Kinesis, flat files, etc.",
-  "What's the main pain point you're hoping ContractGate helps you solve?",
+  "What's the main pain point you're hoping DataContractGate helps you solve?",
   "Would you prefer a self-serve pilot or a guided walkthrough with our team?",
 ] as const;
 
@@ -129,7 +129,7 @@ function loadBotKnowledge(): string {
   } catch (e) {
     console.error("[SlackBot] failed to load bot-knowledge.md:", e);
     return (
-      "ContractGate enforces semantic data contracts at ingest with quarantine, " +
+      "DataContractGate enforces semantic data contracts at ingest with quarantine, " +
       "replay, and pilot reports. The validation gateway is Rust (Axum)."
     );
   }
@@ -139,17 +139,17 @@ const BOT_KNOWLEDGE = loadBotKnowledge();
 
 // ── System prompt ─────────────────────────────────────────────────────────────
 
-const SYSTEM_PROMPT = `You are the ContractGate product assistant — not a general-purpose chatbot.
+const SYSTEM_PROMPT = `You are the DataContractGate product assistant — not a general-purpose chatbot.
 
-Your ONLY job is to help people understand ContractGate (data contracts at ingest,
+Your ONLY job is to help people understand DataContractGate (data contracts at ingest,
 quarantine, replay, pilot reports, plans, integrations). You are NOT Grok, ChatGPT,
 or a free coding/writing tutor.
 
 Hard rules:
 - Ground product answers in PRODUCT KNOWLEDGE below. Prefer those facts over guessing.
-- If the user asks for something unrelated to ContractGate / data contracts / data quality
+- If the user asks for something unrelated to DataContractGate / data contracts / data quality
   pipelines (e.g. general coding, homework, recipes, other products, roleplay), refuse in
-  1–2 short sentences and invite them to ask about ContractGate or say "I'm interested"
+  1–2 short sentences and invite them to ask about DataContractGate or say "I'm interested"
   for a pilot/advisory intake. Do NOT answer the off-topic request.
 - Do not write long code, essays, or multi-step tutorials for unrelated tools.
 - Never claim to be a general AI assistant or that you can help with anything.
@@ -223,16 +223,16 @@ function allowedTeamIds(): Set<string> | null {
 
 const RATE_LIMIT_REPLY =
   "You've hit the free Q&A limit for now (we cap this so the bot stays useful for " +
-  "people evaluating ContractGate, not as a general chatbot).\n\n" +
+  "people evaluating DataContractGate, not as a general chatbot).\n\n" +
   "• Say *I'm interested* to leave your details for a pilot/advisory seat\n" +
-  "• Or try again later with a ContractGate-specific question";
+  "• Or try again later with a DataContractGate-specific question";
 
 const THREAD_LIMIT_REPLY =
   "This thread has reached the Q&A limit. Start a fresh DM or say *I'm interested* " +
   "if you'd like a pilot/advisory follow-up.";
 
 const WORKSPACE_BLOCKED_REPLY =
-  "This Slack workspace isn't enabled for the ContractGate bot. " +
+  "This Slack workspace isn't enabled for the DataContractGate bot. " +
   "DM us via the workspace where you installed the app, or visit the website.";
 
 /** Count LLM assistant turns only (excludes intake / rate-limit notices). */
@@ -432,7 +432,7 @@ async function handleIntakeStep(
 
   return (
     "Thanks — I've got everything I need! 🎉\n\n" +
-    "Someone from the ContractGate team will follow up with you shortly. " +
+    "Someone from the DataContractGate team will follow up with you shortly. " +
     "In the meantime, feel free to keep asking questions here — I'm happy to help."
   );
 }

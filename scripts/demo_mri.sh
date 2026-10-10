@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# demo_mri.sh — Deploy and smoke-test MRI contracts against ContractGate.
+# demo_mri.sh — Deploy and smoke-test MRI contracts against DataContractGate.
 #
 # Usage:
 #   KEY=cg_live_... HOST=https://contractgate-api.fly.dev bash scripts/demo_mri.sh

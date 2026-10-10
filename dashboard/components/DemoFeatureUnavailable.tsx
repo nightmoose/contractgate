@@ -59,7 +59,7 @@ export default function DemoFeatureUnavailable({ feature, reason }: Props) {
           rel="noopener noreferrer"
           className="px-5 py-2 bg-green-600 hover:bg-green-500 text-white rounded-lg text-sm font-medium transition-colors"
         >
-          Upgrade to ContractGate Cloud →
+          Upgrade to DataContractGate Cloud →
         </Link>
         <span className="text-xs text-slate-600">
           Multi-tenancy · SSO · GitHub sync · API key management

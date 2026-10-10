@@ -1,4 +1,4 @@
-# ODCS v3.1.0 Field Mapping — ContractGate Native → ODCS
+# ODCS v3.1.0 Field Mapping — DataContractGate Native → ODCS
 
 **Status:** Week 1 deliverable  
 **Date:** 2026-05-01  
@@ -11,7 +11,7 @@
 
 | Column | Meaning |
 |--------|---------|
-| **CG Path** | Dot-path in ContractGate native YAML or Rust type |
+| **CG Path** | Dot-path in DataContractGate native YAML or Rust type |
 | **CG Type** | Rust/YAML type |
 | **CG Card.** | required / optional |
 | **ODCS Path** | Dot-path in an ODCS v3.1.0 document |
@@ -109,7 +109,7 @@ These fields exist only in the Supabase storage layer today, not in the YAML con
 
 ---
 
-## Section 7 — ODCS Mandatory Fields ContractGate Does NOT Currently Produce
+## Section 7 — ODCS Mandatory Fields DataContractGate Does NOT Currently Produce
 
 These fields are **required** by ODCS v3.1.0 but are absent from CG native YAML.
 

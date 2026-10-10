@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # compose_smoke.sh — RFC-017 CI smoke test (default profile, no demo seeder).
 #
-# Spins up the ContractGate stack, waits for the gateway to be healthy,
+# Spins up the DataContractGate stack, waits for the gateway to be healthy,
 # posts a contract + validates an event, then tears down.
 #
 # Requires: docker compose v2, curl, jq

@@ -1,5 +1,5 @@
 /**
- * API client for the ContractGate Rust backend.
+ * API client for the DataContractGate Rust backend.
  * All functions throw on non-2xx responses.
  *
  * Shape is authoritative from `src/contract.rs` and `src/main.rs` under

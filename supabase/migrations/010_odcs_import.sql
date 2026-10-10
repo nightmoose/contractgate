@@ -4,7 +4,7 @@
 -- came from and whether it needs human review before promotion to stable.
 --
 -- import_source values:
---   'native'        — created natively in ContractGate (default)
+--   'native'        — created natively in DataContractGate (default)
 --   'odcs'          — imported from ODCS with x-contractgate-* extensions
 --                     (lossless round-trip)
 --   'odcs_stripped' — imported from ODCS without extensions
