@@ -224,7 +224,7 @@ fn build_openapi() -> String {
         "version": "1.0.0",
         "description": "POST events to DataContractGate for real-time semantic contract validation."
       },
-      "servers": [{ "url": "https://app.datacontractgate.com", "description": "DataContractGate Cloud" }],
+      "servers": [{ "url": "https://api.datacontractgate.com", "description": "DataContractGate Cloud" }],
       "paths": {
         "/v1/ingest/{contract_id}": {
           "post": {
@@ -1049,6 +1049,6 @@ mod tests {
     #[test]
     fn openapi_server_is_contractgate_cloud() {
         let v: Value = serde_json::from_str(&build_openapi()).unwrap();
-        assert_eq!(v["servers"][0]["url"], "https://app.datacontractgate.com");
+        assert_eq!(v["servers"][0]["url"], "https://api.datacontractgate.com");
     }
 }

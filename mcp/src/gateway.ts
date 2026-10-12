@@ -1,6 +1,6 @@
 /** Thin HTTP client for the DataContractGate gateway. No validation logic. */
 
-export const DEFAULT_BASE_URL = "https://app.datacontractgate.com";
+export const DEFAULT_BASE_URL = "https://api.datacontractgate.com";
 const USER_AGENT = "contractgate-mcp/0.1.0";
 
 export class GatewayError extends Error {

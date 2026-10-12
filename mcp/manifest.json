@@ -48,7 +48,7 @@
       "type": "string",
       "title": "Gateway base URL",
       "description": "Leave as default unless you self-host.",
-      "default": "https://app.datacontractgate.com",
+      "default": "https://api.datacontractgate.com",
       "required": false
     }
   },

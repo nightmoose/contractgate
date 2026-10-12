@@ -12,7 +12,7 @@ for the **AI output** use case.
 
 - **Product:** AISchemaGate — <https://aischemagate.com>
 - **Docs:** <https://aischemagate.dev>
-- **API base URL:** `https://app.datacontractgate.com`
+- **API base URL:** `https://api.datacontractgate.com`
 - **SDK design:** [RFC-094](rfcs/094-sdk-llm-output-guard.md)
 
 ---
@@ -42,7 +42,7 @@ samples is in [RFC-093](rfcs/093-egress-first-class.md) — fewer samples
 under-constrain the schema and let hallucinations through.
 
 ```bash
-curl -X POST https://app.datacontractgate.com/contracts/infer \
+curl -X POST https://api.datacontractgate.com/contracts/infer \
      -H "X-Api-Key: $CONTRACTGATE_API_KEY" \
      -H "Content-Type: application/json" \
      -d @samples.json
