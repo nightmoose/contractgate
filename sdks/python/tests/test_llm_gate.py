@@ -250,19 +250,19 @@ def test_extract_json_streaming_rejected():
 
 def test_llmgate_requires_llm():
     with pytest.raises(ValueError, match="requires an `llm` client"):
-        LLMGate(api_key="k", contract_id="c", llm=None)
+        LLMGate(api_key="k", contract_id="11111111-1111-4111-8111-111111111111", llm=None)
 
 
 def test_llmgate_max_retries_above_cap_warns_and_clamps():
     with pytest.warns(UserWarning, match="exceeds hard cap"):
         gate = LLMGate(
-            api_key="k", contract_id="c", llm=MagicMock(), max_retries=99
+            api_key="k", contract_id="11111111-1111-4111-8111-111111111111", llm=MagicMock(), max_retries=99
         )
     assert gate._max_retries == MAX_RETRIES_CAP
 
 
 def test_llmgate_negative_max_retries_clamps_to_zero():
-    gate = LLMGate(api_key="k", contract_id="c", llm=MagicMock(), max_retries=-5)
+    gate = LLMGate(api_key="k", contract_id="11111111-1111-4111-8111-111111111111", llm=MagicMock(), max_retries=-5)
     assert gate._max_retries == 0
 
 
@@ -285,7 +285,7 @@ def _client_with_egress(response_body: Dict[str, Any]) -> Client:
 def test_validate_only_happy_path():
     payload = {"user_id": "alice", "amount": 10}
     client = _client_with_egress(_ok_egress_body(payload))
-    gate = LLMGate(api_key="k", contract_id="c", llm=MagicMock(), client=client)
+    gate = LLMGate(api_key="k", contract_id="11111111-1111-4111-8111-111111111111", llm=MagicMock(), client=client)
     result = gate.validate_only(payload)
     assert result.ok is True
     assert result.payload == payload
@@ -296,7 +296,7 @@ def test_validate_only_happy_path():
 def test_validate_only_failure_returns_sanitized_result():
     payload = {"user_id": "alice", "amount": -3}
     client = _client_with_egress(_fail_egress_body(payload))
-    gate = LLMGate(api_key="k", contract_id="c", llm=MagicMock(), client=client)
+    gate = LLMGate(api_key="k", contract_id="11111111-1111-4111-8111-111111111111", llm=MagicMock(), client=client)
     result = gate.validate_only(payload)
     assert result.ok is False
     assert result.payload == {}  # sanitized form — nothing passed through
@@ -318,10 +318,10 @@ def test_validate_only_asserts_request_shape():
         api_key="k",
         transport=httpx.MockTransport(handler),
     )
-    gate = LLMGate(api_key="k", contract_id="cid-xyz", llm=MagicMock(), client=client)
+    gate = LLMGate(api_key="k", contract_id="22222222-2222-4222-8222-222222222222", llm=MagicMock(), client=client)
     gate.validate_only(_openai_json_mode({"user_id": "a"}))
 
-    assert "/egress/cid-xyz" in captured["url"]
+    assert "/egress/22222222-2222-4222-8222-222222222222" in captured["url"]
     assert captured["body"] == [{"user_id": "a"}]
 
 
@@ -336,7 +336,7 @@ def test_completion_happy_path_no_repair():
     llm = MagicMock()
     llm.chat.completions.create = MagicMock(return_value=_openai_json_mode(payload))
 
-    gate = LLMGate(api_key="k", contract_id="c", llm=llm, client=client)
+    gate = LLMGate(api_key="k", contract_id="11111111-1111-4111-8111-111111111111", llm=llm, client=client)
     result = gate.completion(model="gpt-4o-mini", messages=[{"role": "user", "content": "x"}])
 
     assert result.ok is True
@@ -351,7 +351,7 @@ def test_completion_passes_model_and_messages_to_provider():
     llm = MagicMock()
     llm.chat.completions.create = MagicMock(return_value=_openai_json_mode(payload))
 
-    gate = LLMGate(api_key="k", contract_id="c", llm=llm, client=client)
+    gate = LLMGate(api_key="k", contract_id="11111111-1111-4111-8111-111111111111", llm=llm, client=client)
     gate.completion(
         model="gpt-4o",
         messages=[{"role": "user", "content": "hi"}],
@@ -391,7 +391,7 @@ def test_completion_auto_repair_passes_on_second_try():
         side_effect=[_openai_json_mode(bad_payload), _openai_json_mode(good_payload)]
     )
 
-    gate = LLMGate(api_key="k", contract_id="c", llm=llm, client=client, max_retries=2)
+    gate = LLMGate(api_key="k", contract_id="11111111-1111-4111-8111-111111111111", llm=llm, client=client, max_retries=2)
     result = gate.completion(
         model="gpt-4o-mini",
         messages=[{"role": "user", "content": "extract"}],
@@ -422,7 +422,7 @@ def test_completion_auto_repair_exhausts_budget():
         side_effect=[_openai_json_mode(bad_payload)] * 3
     )
 
-    gate = LLMGate(api_key="k", contract_id="c", llm=llm, client=client, max_retries=2)
+    gate = LLMGate(api_key="k", contract_id="11111111-1111-4111-8111-111111111111", llm=llm, client=client, max_retries=2)
     result = gate.completion(
         model="gpt-4o-mini",
         messages=[{"role": "user", "content": "extract"}],
@@ -441,7 +441,7 @@ def test_completion_auto_repair_false_skips_retries():
     llm = MagicMock()
     llm.chat.completions.create = MagicMock(return_value=_openai_json_mode(bad_payload))
 
-    gate = LLMGate(api_key="k", contract_id="c", llm=llm, client=client, max_retries=2)
+    gate = LLMGate(api_key="k", contract_id="11111111-1111-4111-8111-111111111111", llm=llm, client=client, max_retries=2)
     result = gate.completion(
         model="gpt-4o-mini",
         messages=[{"role": "user", "content": "extract"}],
@@ -454,7 +454,7 @@ def test_completion_auto_repair_false_skips_retries():
 
 
 def test_completion_stream_kwarg_is_rejected():
-    gate = LLMGate(api_key="k", contract_id="c", llm=MagicMock(), client=_client_with_egress(_ok_egress_body({})))
+    gate = LLMGate(api_key="k", contract_id="11111111-1111-4111-8111-111111111111", llm=MagicMock(), client=_client_with_egress(_ok_egress_body({})))
     with pytest.raises(LLMResponseError, match="streaming responses are not supported"):
         gate.completion(model="x", messages=[], stream=True)
 
@@ -470,7 +470,7 @@ def test_message_calls_anthropic_messages_create():
     llm = MagicMock()
     llm.messages.create = MagicMock(return_value=_anthropic_tool_use(payload))
 
-    gate = LLMGate(api_key="k", contract_id="c", llm=llm, client=client)
+    gate = LLMGate(api_key="k", contract_id="11111111-1111-4111-8111-111111111111", llm=llm, client=client)
     result = gate.message(
         model="claude-sonnet-4-5",
         messages=[{"role": "user", "content": "extract invoice"}],
@@ -503,14 +503,14 @@ def test_mask_prompt_returns_transformed_event():
         api_key="k",
         transport=httpx.MockTransport(handler),
     )
-    gate = LLMGate(api_key="k", contract_id="output-c", llm=MagicMock(), client=client)
+    gate = LLMGate(api_key="k", contract_id="33333333-3333-4333-8333-333333333333", llm=MagicMock(), client=client)
     result = gate.mask_prompt(
         {"email": "alice@example.com", "user_id": "alice"},
-        prompt_contract_id="prompt-c",
+        prompt_contract_id="44444444-4444-4444-8444-444444444444",
     )
 
     assert result == transformed
-    assert "/ingest/prompt-c" in captured["url"]
+    assert "/ingest/44444444-4444-4444-8444-444444444444" in captured["url"]
     assert "dry_run=true" in captured["url"]
 
 
@@ -532,7 +532,7 @@ async def test_async_llmgate_validate_only_happy_path():
         transport=httpx.MockTransport(handler),
     )
     gate = AsyncLLMGate(
-        api_key="k", contract_id="c", llm=MagicMock(), client=async_client
+        api_key="k", contract_id="11111111-1111-4111-8111-111111111111", llm=MagicMock(), client=async_client
     )
     result = await gate.validate_only(payload)
     await async_client.aclose()
@@ -543,7 +543,7 @@ async def test_async_llmgate_validate_only_happy_path():
 @pytest.mark.asyncio
 async def test_async_llmgate_requires_llm():
     with pytest.raises(ValueError, match="requires an `llm` client"):
-        AsyncLLMGate(api_key="k", contract_id="c", llm=None)
+        AsyncLLMGate(api_key="k", contract_id="11111111-1111-4111-8111-111111111111", llm=None)
 
 
 # ---------------------------------------------------------------------------
@@ -561,3 +561,103 @@ def test_result_is_dataclass_with_expected_fields():
     )
     assert r.repair_hints == []
     assert r.ok is True
+
+
+# ---------------------------------------------------------------------------
+# Contract name → id lookup
+# ---------------------------------------------------------------------------
+
+
+def _contract_row(cid: str, name: str) -> Dict[str, Any]:
+    return {
+        "id": cid,
+        "name": name,
+        "description": None,
+        "multi_stable_resolution": "strict",
+        "created_at": "2026-10-12T00:00:00Z",
+        "updated_at": "2026-10-12T00:00:00Z",
+        "version_count": 1,
+        "latest_stable_version": "1.0.0",
+    }
+
+
+def _name_lookup_client(calls: List[str]) -> Client:
+    rows = [
+        _contract_row("33333333-3333-4333-8333-333333333333", "other_contract"),
+        _contract_row("11111111-1111-4111-8111-111111111111", "extract_invoice_v1"),
+    ]
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls.append(f"{request.method} {request.url.path}")
+        if request.method == "GET" and request.url.path == "/contracts":
+            return httpx.Response(200, json=rows)
+        return httpx.Response(200, json=_ok_egress_body({"user_id": "a"}))
+
+    return Client(base_url="https://gw", api_key="k", transport=httpx.MockTransport(handler))
+
+
+def test_contract_name_is_resolved_once_and_cached():
+    calls: List[str] = []
+    gate = LLMGate(
+        api_key="k", contract_id="extract_invoice_v1", llm=MagicMock(),
+        client=_name_lookup_client(calls),
+    )
+    gate.validate_only({"user_id": "a"})
+    gate.validate_only({"user_id": "a"})
+    assert calls == [
+        "GET /contracts",
+        "POST /egress/11111111-1111-4111-8111-111111111111",
+        "POST /egress/11111111-1111-4111-8111-111111111111",
+    ]
+
+
+def test_contract_name_lookup_is_case_insensitive_fallback():
+    calls: List[str] = []
+    gate = LLMGate(
+        api_key="k", contract_id="Extract_Invoice_V1", llm=MagicMock(),
+        client=_name_lookup_client(calls),
+    )
+    gate.validate_only({"user_id": "a"})
+    assert calls[-1] == "POST /egress/11111111-1111-4111-8111-111111111111"
+
+
+def test_unknown_contract_name_lists_names_on_the_key():
+    from contractgate import ContractGateError
+
+    gate = LLMGate(
+        api_key="k", contract_id="nope", llm=MagicMock(),
+        client=_name_lookup_client([]),
+    )
+    with pytest.raises(ContractGateError, match="No contract named 'nope'.*extract_invoice_v1"):
+        gate.validate_only({"user_id": "a"})
+
+
+def test_uuid_contract_id_skips_lookup():
+    calls: List[str] = []
+    gate = LLMGate(
+        api_key="k", contract_id="11111111-1111-4111-8111-111111111111", llm=MagicMock(),
+        client=_name_lookup_client(calls),
+    )
+    gate.validate_only({"user_id": "a"})
+    assert calls == ["POST /egress/11111111-1111-4111-8111-111111111111"]
+
+
+@pytest.mark.asyncio
+async def test_async_gate_resolves_contract_name():
+    rows = [_contract_row("11111111-1111-4111-8111-111111111111", "extract_invoice_v1")]
+    calls: List[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls.append(f"{request.method} {request.url.path}")
+        if request.url.path == "/contracts":
+            return httpx.Response(200, json=rows)
+        return httpx.Response(200, json=_ok_egress_body({"user_id": "a"}))
+
+    async_client = AsyncClient(base_url="https://gw", api_key="k", transport=httpx.MockTransport(handler))
+    gate = AsyncLLMGate(
+        api_key="k", contract_id="extract_invoice_v1", llm=MagicMock(), client=async_client
+    )
+    result = await gate.validate_only({"user_id": "a"})
+    await async_client.aclose()
+    assert result.ok is True
+    assert calls == ["GET /contracts", "POST /egress/11111111-1111-4111-8111-111111111111"]

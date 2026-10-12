@@ -1,7 +1,7 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { Client } from '../src/index.js';
+import { Client, ContractGateError } from '../src/index.js';
 import {
   LLMGate,
   LLMResponseError,
@@ -264,7 +264,7 @@ describe('extractJson', () => {
 describe('LLMGate construction', () => {
   it('requires an llm client', () => {
     assert.throws(
-      () => new LLMGate({ apiKey: 'k', contractId: 'c', llm: null }),
+      () => new LLMGate({ apiKey: 'k', contractId: '11111111-1111-4111-8111-111111111111', llm: null }),
       (err: Error) => err instanceof TypeError && /requires an `llm` client/.test(err.message),
     );
   });
@@ -276,7 +276,7 @@ describe('LLMGate construction', () => {
     try {
       const gate = new LLMGate({
         apiKey: 'k',
-        contractId: 'c',
+        contractId: '11111111-1111-4111-8111-111111111111',
         llm: {},
         maxRetries: 99,
         client: clientWith(okEgressBody({})),
@@ -300,7 +300,7 @@ describe('LLMGate.validateOnly', () => {
     const payload = { user_id: 'alice', amount: 10 };
     const gate = new LLMGate({
       apiKey: 'k',
-      contractId: 'c',
+      contractId: '11111111-1111-4111-8111-111111111111',
       llm: {},
       client: clientWith(okEgressBody(payload)),
     });
@@ -314,7 +314,7 @@ describe('LLMGate.validateOnly', () => {
   it('failure returns sanitized result', async () => {
     const gate = new LLMGate({
       apiKey: 'k',
-      contractId: 'c',
+      contractId: '11111111-1111-4111-8111-111111111111',
       llm: {},
       client: clientWith(failEgressBody()),
     });
@@ -335,12 +335,12 @@ describe('LLMGate.validateOnly', () => {
     const client = new Client({ baseUrl: 'https://gw', apiKey: 'k', fetch: fetchFn });
     const gate = new LLMGate({
       apiKey: 'k',
-      contractId: 'cid-xyz',
+      contractId: '22222222-2222-4222-8222-222222222222',
       llm: {},
       client,
     });
     await gate.validateOnly(openaiJsonMode({ user_id: 'a' }));
-    assert.ok(captured.url.includes('/egress/cid-xyz'));
+    assert.ok(captured.url.includes('/egress/22222222-2222-4222-8222-222222222222'));
     assert.deepEqual(captured.body, [{ user_id: 'a' }]);
   });
 });
@@ -365,7 +365,7 @@ describe('LLMGate.completion', () => {
     };
     const gate = new LLMGate({
       apiKey: 'k',
-      contractId: 'c',
+      contractId: '11111111-1111-4111-8111-111111111111',
       llm,
       client: clientWith(okEgressBody(payload)),
     });
@@ -393,7 +393,7 @@ describe('LLMGate.completion', () => {
     };
     const gate = new LLMGate({
       apiKey: 'k',
-      contractId: 'c',
+      contractId: '11111111-1111-4111-8111-111111111111',
       llm,
       client: clientWith(okEgressBody({ a: 1 })),
     });
@@ -425,7 +425,7 @@ describe('LLMGate.completion', () => {
     };
     const gate = new LLMGate({
       apiKey: 'k',
-      contractId: 'c',
+      contractId: '11111111-1111-4111-8111-111111111111',
       llm,
       client,
       maxRetries: 2,
@@ -464,7 +464,7 @@ describe('LLMGate.completion', () => {
     };
     const gate = new LLMGate({
       apiKey: 'k',
-      contractId: 'c',
+      contractId: '11111111-1111-4111-8111-111111111111',
       llm,
       client,
       maxRetries: 2,
@@ -495,7 +495,7 @@ describe('LLMGate.completion', () => {
     };
     const gate = new LLMGate({
       apiKey: 'k',
-      contractId: 'c',
+      contractId: '11111111-1111-4111-8111-111111111111',
       llm,
       client: clientWith(failEgressBody()),
       maxRetries: 2,
@@ -513,7 +513,7 @@ describe('LLMGate.completion', () => {
   it('stream:true is rejected', async () => {
     const gate = new LLMGate({
       apiKey: 'k',
-      contractId: 'c',
+      contractId: '11111111-1111-4111-8111-111111111111',
       llm: {},
       client: clientWith(okEgressBody({})),
     });
@@ -526,7 +526,7 @@ describe('LLMGate.completion', () => {
   it('throws when llm lacks chat.completions.create', async () => {
     const gate = new LLMGate({
       apiKey: 'k',
-      contractId: 'c',
+      contractId: '11111111-1111-4111-8111-111111111111',
       llm: { messages: { create: async () => ({}) } },
       client: clientWith(okEgressBody({})),
     });
@@ -555,7 +555,7 @@ describe('LLMGate.message', () => {
     };
     const gate = new LLMGate({
       apiKey: 'k',
-      contractId: 'c',
+      contractId: '11111111-1111-4111-8111-111111111111',
       llm,
       client: clientWith(okEgressBody(payload)),
     });
@@ -573,7 +573,7 @@ describe('LLMGate.message', () => {
   it('throws when llm lacks messages.create', async () => {
     const gate = new LLMGate({
       apiKey: 'k',
-      contractId: 'c',
+      contractId: '11111111-1111-4111-8111-111111111111',
       llm: { chat: { completions: { create: async () => ({}) } } },
       client: clientWith(okEgressBody({})),
     });
@@ -597,13 +597,13 @@ describe('LLMGate.maskPrompt', () => {
       return new Response(JSON.stringify(ingestWithTransform(transformed)), { status: 200 });
     };
     const client = new Client({ baseUrl: 'https://gw', apiKey: 'k', fetch: fetchFn });
-    const gate = new LLMGate({ apiKey: 'k', contractId: 'output-c', llm: {}, client });
+    const gate = new LLMGate({ apiKey: 'k', contractId: '33333333-3333-4333-8333-333333333333', llm: {}, client });
     const result = await gate.maskPrompt(
       { email: 'alice@example.com', user_id: 'alice' },
-      { promptContractId: 'prompt-c' },
+      { promptContractId: '44444444-4444-4444-8444-444444444444' },
     );
     assert.deepEqual(result, transformed);
-    assert.ok(captured.url.includes('/ingest/prompt-c'));
+    assert.ok(captured.url.includes('/ingest/44444444-4444-4444-8444-444444444444'));
     assert.ok(captured.url.includes('dry_run=true'));
   });
 });
@@ -624,5 +624,52 @@ describe('LLMGateResult', () => {
     };
     assert.equal(r.ok, true);
     assert.deepEqual(r.repairHints, []);
+  });
+});
+
+describe('contract name lookup', () => {
+  const rows = [
+    { id: '33333333-3333-4333-8333-333333333333', name: 'other_contract', description: null, multi_stable_resolution: 'strict', created_at: '', updated_at: '', version_count: 1, latest_stable_version: '1.0.0' },
+    { id: '11111111-1111-4111-8111-111111111111', name: 'extract_invoice_v1', description: null, multi_stable_resolution: 'strict', created_at: '', updated_at: '', version_count: 1, latest_stable_version: '1.0.0' },
+  ];
+  function lookupClient(calls: string[]): Client {
+    const fetchFn: typeof globalThis.fetch = async (url, opts) => {
+      const u = new URL(String(url));
+      const method = opts?.method ?? 'GET';
+      calls.push(`${method} ${u.pathname}`);
+      const body = u.pathname === '/contracts' ? rows : okEgressBody({ user_id: 'a' });
+      return new Response(JSON.stringify(body), { status: 200 });
+    };
+    return new Client({ baseUrl: 'https://gw', apiKey: 'k', fetch: fetchFn });
+  }
+
+  it('resolves a name once and caches it', async () => {
+    const calls: string[] = [];
+    const gate = new LLMGate({ apiKey: 'k', contractId: 'extract_invoice_v1', llm: {}, client: lookupClient(calls) });
+    await gate.validateOnly({ user_id: 'a' });
+    await gate.validateOnly({ user_id: 'a' });
+    assert.deepEqual(calls, ['GET /contracts', 'POST /egress/11111111-1111-4111-8111-111111111111', 'POST /egress/11111111-1111-4111-8111-111111111111']);
+  });
+
+  it('falls back to a case-insensitive match', async () => {
+    const calls: string[] = [];
+    const gate = new LLMGate({ apiKey: 'k', contractId: 'Extract_Invoice_V1', llm: {}, client: lookupClient(calls) });
+    await gate.validateOnly({ user_id: 'a' });
+    assert.equal(calls.at(-1), 'POST /egress/11111111-1111-4111-8111-111111111111');
+  });
+
+  it('an unknown name lists the names on the key', async () => {
+    const gate = new LLMGate({ apiKey: 'k', contractId: 'nope', llm: {}, client: lookupClient([]) });
+    await assert.rejects(
+      () => gate.validateOnly({ user_id: 'a' }),
+      (err: unknown) => err instanceof ContractGateError && /No contract named 'nope'.*extract_invoice_v1/.test(err.message),
+    );
+  });
+
+  it('a UUID skips the lookup', async () => {
+    const calls: string[] = [];
+    const gate = new LLMGate({ apiKey: 'k', contractId: '11111111-1111-4111-8111-111111111111', llm: {}, client: lookupClient(calls) });
+    await gate.validateOnly({ user_id: 'a' });
+    assert.deepEqual(calls, ['POST /egress/11111111-1111-4111-8111-111111111111']);
   });
 });

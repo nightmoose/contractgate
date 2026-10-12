@@ -6,6 +6,11 @@ from the common provider response shapes, calls egress against your
 deployed contract, and optionally runs a bounded re-prompt loop until the
 output passes or the retry budget exhausts.
 
+`contract_id` (and `prompt_contract_id`) take either the contract's UUID or
+its YAML `name`. A name is looked up once on the API key's contract list
+(`GET /contracts`) and cached for the life of the gate; an unknown name
+raises an error listing the names on the key.
+
 **Design**: see [RFC-094](rfcs/094-sdk-llm-output-guard.md).
 **Egress semantics** (dispositions, PII transforms, audit writes): see
 [egress-validation-reference.md](egress-validation-reference.md).
@@ -50,7 +55,7 @@ from openai import OpenAI
 
 gate = LLMGate(
     api_key="cg_live_...",            # required — same key as the dashboard
-    contract_id="extract_invoice_v1", # required — the deployed contract id
+    contract_id="extract_invoice_v1", # required — contract name or UUID
     llm=OpenAI(),                     # required — caller-bound client
     base_url="https://app.datacontractgate.com",  # default
     version=None,                     # pin to a specific contract version
@@ -73,7 +78,7 @@ import OpenAI from 'openai';
 
 const gate = new LLMGate({
   apiKey: 'cg_live_...',           // required
-  contractId: 'extract_invoice_v1',// required
+  contractId: 'extract_invoice_v1',// required — contract name or UUID
   llm: new OpenAI(),               // required
   baseUrl: 'https://app.datacontractgate.com',  // default
   version: undefined,

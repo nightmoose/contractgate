@@ -27,7 +27,34 @@ from typing import Any, Awaitable, Callable, Dict, List, Optional
 from contractgate.async_client import AsyncClient
 from contractgate.client import Client
 from contractgate.exceptions import ContractGateError
-from contractgate.models import EgressResponse, Violation
+from contractgate.models import ContractResponse, EgressResponse, Violation
+
+_UUID_RE = re.compile(
+    r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$", re.IGNORECASE
+)
+
+
+def _is_uuid(value: str) -> bool:
+    return bool(_UUID_RE.match(value))
+
+
+def _match_contract(rows: List[ContractResponse], name: str) -> str:
+    """Return the id of the contract named ``name``.
+
+    The gateway's egress and ingest routes take a contract UUID, but the
+    contract's YAML ``name`` is what people know, so a name is accepted and
+    looked up once on the key's contract list.
+    """
+    match = next((r for r in rows if r.name == name), None) or next(
+        (r for r in rows if r.name.lower() == name.lower()), None
+    )
+    if match is None:
+        names = ", ".join(sorted(r.name for r in rows)) or "none"
+        raise ContractGateError(
+            f"No contract named {name!r} on this API key. Pass the contract's "
+            f"UUID or one of these names: {names}."
+        )
+    return match.id
 
 MAX_RETRIES_CAP = 5
 _DEFAULT_MAX_RETRIES = 2
@@ -290,6 +317,7 @@ class LLMGate:
             )
         self._llm = llm
         self._contract_id = contract_id
+        self._resolved: Dict[str, str] = {}
         self._version = version
         self._disposition = disposition
         self._max_retries = _clamp_retries(max_retries)
@@ -358,6 +386,15 @@ class LLMGate:
 
         return self._run_loop(messages, call, auto_repair=auto_repair)
 
+    def _resolve(self, contract_id: str) -> str:
+        if _is_uuid(contract_id):
+            return contract_id
+        if contract_id not in self._resolved:
+            self._resolved[contract_id] = _match_contract(
+                self._client.list_contracts(), contract_id
+            )
+        return self._resolved[contract_id]
+
     def validate_only(
         self,
         response: Any,
@@ -367,7 +404,7 @@ class LLMGate:
         """Validate a response the caller already produced."""
         payload = extract_json(response)
         egress = self._client.egress(
-            contract_id=self._contract_id,
+            contract_id=self._resolve(self._contract_id),
             events=[payload],
             version=self._version,
             disposition=self._disposition,
@@ -387,7 +424,7 @@ class LLMGate:
         formats their prompt string from the returned dict.
         """
         resp = self._client.ingest(
-            contract_id=prompt_contract_id,
+            contract_id=self._resolve(prompt_contract_id),
             events=[payload],
             dry_run=True,
         )
@@ -431,7 +468,7 @@ class LLMGate:
                 current = _append_user_message(current, hint)
                 continue
             egress = self._client.egress(
-                contract_id=self._contract_id,
+                contract_id=self._resolve(self._contract_id),
                 events=[payload],
                 version=self._version,
                 disposition=self._disposition,
@@ -474,6 +511,7 @@ class AsyncLLMGate:
             )
         self._llm = llm
         self._contract_id = contract_id
+        self._resolved: Dict[str, str] = {}
         self._version = version
         self._disposition = disposition
         self._max_retries = _clamp_retries(max_retries)
@@ -533,6 +571,15 @@ class AsyncLLMGate:
 
         return await self._run_loop(messages, call, auto_repair=auto_repair)
 
+    async def _resolve(self, contract_id: str) -> str:
+        if _is_uuid(contract_id):
+            return contract_id
+        if contract_id not in self._resolved:
+            self._resolved[contract_id] = _match_contract(
+                await self._client.list_contracts(), contract_id
+            )
+        return self._resolved[contract_id]
+
     async def validate_only(
         self,
         response: Any,
@@ -541,7 +588,7 @@ class AsyncLLMGate:
     ) -> LLMGateResult:
         payload = extract_json(response)
         egress = await self._client.egress(
-            contract_id=self._contract_id,
+            contract_id=await self._resolve(self._contract_id),
             events=[payload],
             version=self._version,
             disposition=self._disposition,
@@ -556,7 +603,7 @@ class AsyncLLMGate:
         prompt_contract_id: str,
     ) -> Dict[str, Any]:
         resp = await self._client.ingest(
-            contract_id=prompt_contract_id,
+            contract_id=await self._resolve(prompt_contract_id),
             events=[payload],
             dry_run=True,
         )
@@ -591,7 +638,7 @@ class AsyncLLMGate:
                 current = _append_user_message(current, hint)
                 continue
             egress = await self._client.egress(
-                contract_id=self._contract_id,
+                contract_id=await self._resolve(self._contract_id),
                 events=[payload],
                 version=self._version,
                 disposition=self._disposition,

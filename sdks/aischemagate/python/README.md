@@ -12,7 +12,7 @@ pip install aischemagate
 
 ## Why this package exists
 
-The underlying engine, SDK, and API are **ContractGate** — one validator,
+The underlying engine, SDK, and API are **DataContractGate** — one validator,
 one gateway. `aischemagate` is the LLM / AI-agent-shaped front door: it
 re-exports `contractgate` under a name that reads correctly from the
 LLM-output-validation angle. Use whichever import name matches your

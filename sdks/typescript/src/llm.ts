@@ -14,7 +14,27 @@
 
 import { Client, type ClientOptions } from './client.js';
 import { ContractGateError } from './errors.js';
-import type { EgressResponse, Violation } from './types.js';
+import type { ContractResponse, EgressResponse, Violation } from './types.js';
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * Return the id of the contract named `name`. The gateway's egress and ingest
+ * routes take a contract UUID, but the contract's YAML `name` is what people
+ * know, so a name is accepted and looked up once on the key's contract list.
+ */
+function matchContract(rows: ContractResponse[], name: string): string {
+  const match =
+    rows.find((r) => r.name === name) ??
+    rows.find((r) => r.name.toLowerCase() === name.toLowerCase());
+  if (match === undefined) {
+    const names = rows.map((r) => r.name).sort().join(', ') || 'none';
+    throw new ContractGateError(
+      `No contract named '${name}' on this API key. Pass the contract's UUID or one of these names: ${names}.`,
+    );
+  }
+  return match.id;
+}
 
 export const MAX_RETRIES_CAP = 5;
 const DEFAULT_MAX_RETRIES = 2;
@@ -295,6 +315,7 @@ export class LLMGate {
   readonly #maxRetries: number;
   readonly #repairPrompt: (violations: Violation[]) => string;
   readonly #client: Client;
+  readonly #resolved = new Map<string, string>();
 
   constructor(opts: LLMGateOptions) {
     if (opts.llm === null || opts.llm === undefined) {
@@ -370,6 +391,16 @@ export class LLMGate {
     return this.#runLoop(messages, call, autoRepair);
   }
 
+  async #resolve(contractId: string): Promise<string> {
+    if (UUID_RE.test(contractId)) return contractId;
+    let id = this.#resolved.get(contractId);
+    if (id === undefined) {
+      id = matchContract(await this.#client.listContracts(), contractId);
+      this.#resolved.set(contractId, id);
+    }
+    return id;
+  }
+
   /**
    * Validate a response the caller already produced (no provider call).
    */
@@ -379,7 +410,7 @@ export class LLMGate {
   ): Promise<LLMGateResult> {
     const payload = extractJson(response);
     const egress = await this.#client.egress({
-      contractId: this.#contractId,
+      contractId: await this.#resolve(this.#contractId),
       events: [payload],
       version: this.#version,
       disposition: this.#disposition,
@@ -397,7 +428,7 @@ export class LLMGate {
     opts: { promptContractId: string },
   ): Promise<Record<string, unknown>> {
     const resp = await this.#client.ingest({
-      contractId: opts.promptContractId,
+      contractId: await this.#resolve(opts.promptContractId),
       events: [payload],
       dryRun: true,
     });
@@ -436,7 +467,7 @@ export class LLMGate {
       }
 
       const egress = await this.#client.egress({
-        contractId: this.#contractId,
+        contractId: await this.#resolve(this.#contractId),
         events: [payload],
         version: this.#version,
         disposition: this.#disposition,

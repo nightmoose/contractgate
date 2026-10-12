@@ -9,7 +9,7 @@ description = "AISchemaGate — thin alias over `contractgate` for LLM output va
 readme = "README.md"
 requires-python = ">=3.9"
 license = { text = "MIT" }
-authors = [{ name = "ContractGate" }]
+authors = [{ name = "NightMoose, Inc." }]
 keywords = ["llm", "openai", "anthropic", "json-schema", "validation", "ai", "agent", "guardrails"]
 classifiers = [
   "Development Status :: 3 - Alpha",
