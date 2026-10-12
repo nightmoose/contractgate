@@ -8,7 +8,7 @@
  *
  * Free tier: Try It mode — 1 endpoint, inference visible, Save/Deploy/Export
  * disabled with upsell tooltip.
- * Growth+: full suite, deploy, export, drift detection.
+ * Pro+: full suite, deploy, export, drift detection.
  */
 
 import { useState, useCallback, useRef, useEffect } from "react";
@@ -1088,7 +1088,7 @@ export default function WorkbenchClient() {
 
                 {isFree && callCount.current >= 1 && (
                   <div className="text-xs text-amber-400 bg-amber-900/20 border border-amber-700/30 px-3 py-2 rounded-lg">
-                    Try It limit reached — <a href="/pricing" className="underline">upgrade to Growth</a> to explore more endpoints.
+                    Try It limit reached — <a href="/pricing" className="underline">upgrade to Pro</a> to explore more endpoints.
                   </div>
                 )}
 
@@ -1335,8 +1335,8 @@ export default function WorkbenchClient() {
                         </>
                       ) : (
                         <>
-                          <DisabledTooltipBtn label="+ Add to suite" tooltip="Save and suite — Growth plan required · Upgrade to Growth" className="bg-[#1f2937] text-slate-400 border border-[#374151]" />
-                          <DisabledTooltipBtn label="Export / Deploy →" tooltip="Export and deploy — Growth plan required · Upgrade to Growth" className="bg-green-900/40 text-green-600" />
+                          <DisabledTooltipBtn label="+ Add to suite" tooltip="Save and suite — Pro plan required · Upgrade to Pro" className="bg-[#1f2937] text-slate-400 border border-[#374151]" />
+                          <DisabledTooltipBtn label="Export / Deploy →" tooltip="Export and deploy — Pro plan required · Upgrade to Pro" className="bg-green-900/40 text-green-600" />
                         </>
                       )}
                     </div>

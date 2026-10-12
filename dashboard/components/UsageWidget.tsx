@@ -84,7 +84,7 @@ export default function UsageWidget() {
           </div>
           {over && (
             <p className="mt-2 text-[11px] text-slate-500">
-              Free/Growth monthly caps return HTTP 429 on ingest when exceeded.
+              Free/Pro monthly caps return HTTP 429 on ingest when exceeded.
               Upgrade for more headroom, or wait until the next UTC month.
             </p>
           )}

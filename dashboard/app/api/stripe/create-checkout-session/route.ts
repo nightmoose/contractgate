@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import Stripe from 'stripe';
 import { createClient } from '@/lib/supabase/server';
+import { proPriceAnnual, proPriceMonthly } from '@/lib/stripe-prices';
 
 export const dynamic = 'force-dynamic';
 
@@ -46,14 +47,13 @@ export async function POST(req: NextRequest) {
 
     const { priceId, annual, plan } = await req.json().catch(() => ({}));
 
-    // AISchemaGate Pro (migration 036): monthly only, price from env. A
-    // client-supplied priceId is ignored here; the webhook maps this price
-    // to plan 'aisg_pro'.
-    const aisgPro = plan === 'aisg_pro';
-    const price = aisgPro
-      ? process.env.STRIPE_PRICE_AISG_PRO_MONTHLY
-      : priceId ||
-        (annual ? process.env.STRIPE_PRICE_GROWTH_ANNUAL : process.env.STRIPE_PRICE_GROWTH_MONTHLY);
+    // One Pro plan and one set of Stripe prices for both products (decided
+    // 2026-10-12). Which product the buyer is on travels as checkout
+    // metadata; the webhook uses it to set 'aisg_pro' vs 'growth'.
+    const aisgPro = plan === 'aisg_pro' || org.plan === 'aisg_free';
+    const product = aisgPro ? 'aischemagate' : 'datacontractgate';
+    const price = priceId ||
+      (annual ? proPriceAnnual() : proPriceMonthly());
 
     if (!price) {
       return NextResponse.json({ error: 'Missing Stripe price configuration' }, { status: 500 });
@@ -76,9 +76,9 @@ export async function POST(req: NextRequest) {
       line_items: [{ price, quantity: 1 }],
       subscription_data: {
         trial_period_days: TRIAL_PERIOD_DAYS,
-        metadata: { orgId: org.id },
+        metadata: { orgId: org.id, product },
       },
-      metadata: { orgId: org.id },
+      metadata: { orgId: org.id, product },
       success_url: successUrl,
       cancel_url: cancelUrl,
     });

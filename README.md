@@ -111,9 +111,9 @@ make demo-logs    # follow all service logs
 
 ## Self-Hosted Free vs Cloud
 
-| Capability | Self-Hosted Free | Cloud (Free / Growth / Enterprise) |
+| Capability | Self-Hosted Free | Cloud (Free / Pro / Enterprise) |
 |---|---|---|
-| Validation engine | ✅ Unlimited (local) | ✅ 1M / 50M / Unlimited events/month |
+| Validation engine | ✅ Unlimited (local) | ✅ 100K / 25M / Unlimited events/month |
 | Starter contracts | ✅ 3 | ✅ 3 / Unlimited / Unlimited |
 | Playground | ✅ | ✅ |
 | Audit log | ✅ Local Postgres | ✅ 7 / 90 / Custom days retention |

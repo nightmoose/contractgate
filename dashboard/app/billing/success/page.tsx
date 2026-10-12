@@ -22,7 +22,7 @@ function BillingSuccessContent() {
   useEffect(() => {
     if (!sessionId) {
       setStatus('success');
-      setMessage('Payment successful. Your Growth plan should activate within a few seconds (via webhook).');
+      setMessage('Payment successful. Your Pro plan should activate within a few seconds (via webhook).');
       return;
     }
 
@@ -31,7 +31,7 @@ function BillingSuccessContent() {
     // The webhook (or a future /api/stripe/verify-session) will update the org.plan.
     setTimeout(() => {
       setStatus('success');
-      setMessage('Thanks! Your 30-day Growth trial has started. Refresh your dashboard to see upgraded features.');
+      setMessage('Thanks! Your 30-day Pro trial has started. Refresh your dashboard to see upgraded features.');
     }, 1500);
   }, [sessionId]);
 

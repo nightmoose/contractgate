@@ -41,7 +41,7 @@ and partner payloads **before** they pollute downstream.
 - **Dashboard:** Next.js on Vercel (contracts UI, quarantine, usage, keys, billing)
 - **DB:** Supabase Postgres (contracts, versions, `audit_log`, `quarantine_events`,
   hashed API keys, orgs, usage counters)
-- **Billing:** Stripe Checkout + webhooks for Growth self-serve
+- **Billing:** Stripe Checkout + webhooks for Pro self-serve
 - **Auth:** API keys (server-to-server) + Supabase JWT (dashboard); org isolation
   enforced on the data plane
 
@@ -70,18 +70,22 @@ and goes through audit/quarantine like normal HTTP ingest.
 
 | Plan | Monthly event limit | Rough price (hosted) |
 |------|---------------------|----------------------|
-| Free | 1,000,000 | $0 |
-| Growth | 50,000,000 | $299/mo (self-serve Stripe) |
+| Free | 100,000 | $0 |
+| Pro | 25,000,000 | $199/mo or $166/mo billed annually (self-serve Stripe) |
 | Enterprise | Unlimited | Custom |
 
+Same plans and prices for DataContractGate and AISchemaGate (one account,
+one ladder). Free keys are rate-limited to 10 requests/sec, Pro to 100/sec.
+Logs are kept 7 days on Free, 90 on Pro.
+
 - `GET /usage` — current month used/limit/remaining
-- Over Free/Growth cap → ingest **429** `plan_limit_exceeded` (HTTP metered paths)
+- Over Free/Pro cap → ingest **429** `plan_limit_exceeded` (HTTP metered paths)
 - `dry_run` is not billable
 - **Kafka/Kinesis not metered in v1** — prefer Enterprise for production streaming;
-  Free/Growth stream usage may under-report on `/usage`
+  Free/Pro stream usage may under-report on `/usage`
 - Self-hosted / no-org is unmetered
 
-UI plan gating also limits features (e.g. Free: limited contracts; Growth+: replay,
+UI plan gating also limits features (e.g. Free: limited contracts; Pro+: replay,
 Kafka/Kinesis tabs, builder, etc.; Enterprise: SSO, custom SLA, dedicated, etc.).
 If unsure of a UI gate detail, say "check Pricing / the dashboard PlanGate" rather
 than inventing.

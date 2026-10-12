@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import Stripe from 'stripe';
 import { createClient as createServiceClient } from '@supabase/supabase-js';
+import { proPriceAnnual, proPriceMonthly } from '@/lib/stripe-prices';
 
 // This route must run per-request; never statically collected at build time.
 export const dynamic = 'force-dynamic';
@@ -204,18 +205,17 @@ async function handleCheckoutCompleted(event: Stripe.Event, session: Stripe.Chec
   });
   const priceId = expanded.line_items?.data?.[0]?.price?.id as string | undefined;
 
-  const growthPrices = [process.env.STRIPE_PRICE_GROWTH_MONTHLY, process.env.STRIPE_PRICE_GROWTH_ANNUAL];
-  const aisgProPrice = process.env.STRIPE_PRICE_AISG_PRO_MONTHLY;
+  // One set of Pro prices serves both products; the product line comes from
+  // checkout metadata (set by create-checkout-session) or the org's current
+  // plan, so an AISchemaGate account becomes 'aisg_pro', others 'growth'.
+  const proPrices = [proPriceMonthly(), proPriceAnnual()];
+  const priceOk = !priceId || proPrices.some((p) => !p) || proPrices.includes(priceId);
 
   let newPlan: 'growth' | 'aisg_pro' | null = null;
-  if (priceId && aisgProPrice && priceId === aisgProPrice) {
-    newPlan = 'aisg_pro';
-  } else if (priceId && growthPrices.includes(priceId)) {
-    newPlan = 'growth';
-  } else if (!priceId || growthPrices.some((p) => !p)) {
-    // Price unreadable, or Growth prices not configured: keep the historical
-    // behaviour of upgrading to Growth rather than dropping a paid checkout.
-    newPlan = 'growth';
+  if (priceOk) {
+    const { data: current } = await supabaseAdmin.from('orgs').select('plan').eq('id', targetOrgId).single();
+    newPlan =
+      session.metadata?.product === 'aischemagate' || isAisgPlan(current?.plan) ? 'aisg_pro' : 'growth';
   }
 
   if (newPlan === null) {

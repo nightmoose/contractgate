@@ -62,7 +62,7 @@ page but are not built, so they are left off it until they are:
   audit and legal work before it can be advertised.
 - **Local Rust validation core** in the SDKs. `LLMGate` calls the hosted
   engine; the SDKs' local validator is pure Python / TypeScript.
-- **Metered overage** ($0.0002 per validation past 250k). v1 is a hard cap.
+- **Metered overage** past the Pro allowance (25M / month). v1 is a hard cap.
 - **Enforce the contract-count limit** ("up to 3 contracts" on both brands'
   free plans is shown but not enforced anywhere).
 

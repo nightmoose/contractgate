@@ -14,7 +14,7 @@
  *   </PlanGate>
  *
  * When previewKey is supplied, free-tier users see the same illustrated
- * preview that logged-out users see in AuthGate, with an "Upgrade to Growth"
+ * preview that logged-out users see in AuthGate, with an "Upgrade to Pro"
  * CTA instead of a "Sign in" button.
  *
  * Renders nothing while org is loading (avoids flash of upsell).
@@ -30,7 +30,7 @@ import { PREVIEWS } from "@/lib/previews";
 
 const TIER_LABEL: Record<PlanTier, string> = {
   free: "Cloud Free",
-  growth: "Growth",
+  growth: "Pro",
   enterprise: "Enterprise",
   aisg_free: "Developer",
   aisg_pro: "Pro",
@@ -161,7 +161,7 @@ export default function PlanGate({ minTier, feature, previewKey, children }: Pla
     return <>{children}</>;
   }
 
-  // AISchemaGate accounts upgrade to Pro, not Growth.
+  // AISchemaGate accounts upgrade to Pro, not Pro.
   const upsellTier: PlanTier =
     isAisgPlan(org.plan) && minTier === "growth" ? "aisg_pro" : minTier;
 
