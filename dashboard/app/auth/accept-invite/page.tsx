@@ -20,6 +20,7 @@ import { useEffect, useState, Suspense } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
+import BrandWordmark from "@/components/BrandWordmark";
 
 type Status =
   | { kind: "loading" }
@@ -109,7 +110,7 @@ function AcceptInviteInner() {
       <div className="w-full max-w-sm">
         <div className="text-center mb-8">
           <Link href="/" className="inline-block">
-            <span className="text-2xl font-bold text-green-400">DataContractGate</span>
+            <BrandWordmark />
           </Link>
         </div>
 

@@ -6,6 +6,22 @@ import clsx from "clsx";
 import { HelpTarget } from "@/components/help/HelpTarget";
 import { HelpToggle } from "@/components/help/HelpToggle";
 import { useHelp } from "@/components/help/HelpProvider";
+import { useBrand } from "@/components/BrandProvider";
+import { AISG_DOCS_URL, BRAND_NAME, BRAND_TAGLINE } from "@/lib/brand";
+
+// AISchemaGate accounts only see what their product uses (LLM output
+// validation). Hidden: DataContractGate docs/demos and the data-pipeline tools
+// (Catalog, Scorecard, Scaffold, Workbench). The pages still exist by URL.
+const AISG_HIDDEN = new Set([
+  "/stream-demo",
+  "/docs/kafka-connect",
+  "/docs/python-sdk",
+  "/catalog",
+  "/scorecard",
+  "/scaffold",
+  "/workbench",
+]);
+const AISG_DOCS = { href: AISG_DOCS_URL, label: "Docs", icon: "📘", helpId: "nav.docs" };
 
 const PUBLIC_NAV = [
   { href: "/stream-demo",        label: "Stream Demo",  icon: "⚡", helpId: "nav.stream-demo" },
@@ -49,12 +65,17 @@ function NavLink({ href, label, icon, helpId }: { href: string; label: string; i
 
 export default function Sidebar() {
   const { mode, toggle } = useHelp();
+  const brand = useBrand();
+  const aisg = brand === "aisg";
+  const publicNav = aisg ? [AISG_DOCS, ...PUBLIC_NAV.filter((i) => !AISG_HIDDEN.has(i.href))] : PUBLIC_NAV;
+  const accountNav = aisg ? ACCOUNT_NAV.filter((i) => !AISG_HIDDEN.has(i.href)) : ACCOUNT_NAV;
   return (
     <aside className="hidden md:flex fixed left-0 top-0 h-full w-64 bg-[#111827] border-r border-[#1f2937] flex-col z-50">
       {/* Logo */}
       <div className="p-6 border-b border-[#1f2937]">
-        <div className="flex items-center gap-2">
-          <span className="text-xl font-bold text-green-400">DataContractGate</span>
+        <div className="flex flex-col">
+          <span className="text-xl font-bold text-green-400">{BRAND_NAME[brand]}</span>
+          {aisg && <span className="text-[11px] text-slate-500">by DataContractGate</span>}
         </div>
         <div className="mt-1 flex items-center gap-1">
           <span className="text-xs bg-green-900/40 text-green-400 border border-green-700/50 px-2 py-0.5 rounded-full font-medium">
@@ -62,7 +83,7 @@ export default function Sidebar() {
           </span>
         </div>
         <p className="mt-2 text-xs text-slate-500">
-          Semantic contract enforcement at ingestion
+          {BRAND_TAGLINE[brand]}
         </p>
       </div>
 
@@ -70,7 +91,7 @@ export default function Sidebar() {
       <nav className="flex-1 p-4 overflow-y-auto">
         {/* Public section */}
         <div className="space-y-1">
-          {PUBLIC_NAV.map((item) => (
+          {publicNav.map((item) => (
             <NavLink key={item.href} {...item} />
           ))}
         </div>
@@ -86,7 +107,7 @@ export default function Sidebar() {
 
         {/* Account section */}
         <div className="space-y-1">
-          {ACCOUNT_NAV.map((item) => (
+          {accountNav.map((item) => (
             <NavLink key={item.href} {...item} />
           ))}
         </div>
