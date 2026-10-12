@@ -46,6 +46,11 @@ Bump the version in `Cargo.toml`, `sdks/python/pyproject.toml`,
 registry setup (npm Trusted Publisher, PyPI publisher) is documented at the
 top of each publish job in `release.yml`.
 
+The `aischemagate` alias packages (`sdks/aischemagate/`, RFC-094) version
+independently (0.1.x) and are not tied to the tag. Bump them only when their
+own contents change; the release publishes whatever version they carry and
+skips it if it already exists.
+
 ## Notes for humans and AIs
 
 Do not commit `dashboard/node_modules`, `target/`, real API keys, or business

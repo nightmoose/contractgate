@@ -9,6 +9,7 @@
 #   publish-npm-*     — MCP server + TypeScript SDK to npm (OIDC Trusted Publisher)
 #   publish-mcp-registry — mcp/server.json to the official MCP Registry
 #   publish-pypi      — publishes Python SDK to TestPyPI (always) + PyPI
+#   publish-*-alias   — `aischemagate` alias packages (PyPI + npm), after the core SDKs
 #
 # Every publish step is idempotent: a version already on the registry is
 # skipped, not failed. To retry a partially-failed release, dispatch this
@@ -411,3 +412,80 @@ jobs:
           packages-dir: sdks/python/dist/
           skip-existing: true
           # No `password` field — authentication via id-token OIDC grant above.
+
+  # ── 8. Publish `aischemagate` alias (PyPI) ────────────────────────────────
+  # RFC-094: thin alias over `contractgate`; versions independently (0.1.x)
+  # and depends on contractgate>=0.3.0, so it runs after publish-pypi.
+  # skip-existing makes re-runs and unchanged alias versions a no-op.
+  #
+  # One-time setup on pypi.org (before the first release that carries it):
+  #   Account → Publishing → Add a pending publisher: project=aischemagate,
+  #   owner=nightmoose, repo=contractgate, workflow=release.yml, environment=pypi.
+  publish-pypi-alias:
+    name: Publish aischemagate (PyPI)
+    if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch'
+    needs: publish-pypi
+    runs-on: ubuntu-24.04
+    environment: pypi   # part of the Trusted Publisher claim — keep in sync with PyPI
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ env.RELEASE_REF }}
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - name: Build sdist + wheel
+        working-directory: sdks/aischemagate/python
+        run: pip install build && python -m build
+      - name: Publish to PyPI (OIDC Trusted Publisher)
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: sdks/aischemagate/python/dist/
+          skip-existing: true
+
+  # ── 9. Publish `@nightmoose/aischemagate` alias (npm) ─────────────────────
+  # Depends on @nightmoose/contractgate-sdk being on npm at the version it
+  # requires, so it runs after publish-npm-sdk-ts.
+  #
+  # npm only allows a Trusted Publisher on a package that already exists, so
+  # the FIRST version must be published by hand after the core SDK is live:
+  #   cd sdks/aischemagate/typescript && npm install && npm publish --access public
+  # then add the Trusted Publisher on npmjs.com (owner=nightmoose,
+  # repo=contractgate, workflow=release.yml). Until then this job fails at
+  # the publish step; re-run it after the manual publish and it skips.
+  publish-npm-alias:
+    name: Publish @nightmoose/aischemagate (npm)
+    if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch'
+    needs: publish-npm-sdk-ts
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ env.RELEASE_REF }}
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+          registry-url: 'https://registry.npmjs.org'
+          package-manager-cache: false
+      - name: Skip if version already on npm
+        id: exists
+        working-directory: sdks/aischemagate/typescript
+        run: |
+          SPEC="$(node -p "const p=require('./package.json'); p.name+'@'+p.version")"
+          if npm view "${SPEC}" version >/dev/null 2>&1; then
+            echo "::notice::${SPEC} already published — skipping."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Install dependencies
+        if: steps.exists.outputs.skip != 'true'
+        working-directory: sdks/aischemagate/typescript
+        run: npm install --no-audit --no-fund
+      - name: Publish to npm (OIDC provenance)
+        if: steps.exists.outputs.skip != 'true'
+        working-directory: sdks/aischemagate/typescript
+        run: npm publish --provenance --access public
