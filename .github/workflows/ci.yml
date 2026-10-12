@@ -393,6 +393,20 @@ jobs:
           fi
           echo "Sentinel A OK: orgs_plan_valid constraint includes 'growth' (migration 026)."
 
+          # Sentinel A1 — migration 036 (AISchemaGate plans): the constraint
+          # must also allow aisg_free and aisg_pro.
+          AISG_OK=$(psql "$DATABASE_URL" -Atc \
+            "SELECT COUNT(*) FROM information_schema.check_constraints
+             WHERE constraint_schema = 'public'
+               AND constraint_name    = 'orgs_plan_valid'
+               AND check_clause LIKE '%aisg_free%'
+               AND check_clause LIKE '%aisg_pro%'")
+          if [[ "$AISG_OK" != "1" ]]; then
+            echo "::error::Migration 036 sentinel failed — orgs_plan_valid does not include aisg_free and aisg_pro."
+            exit 1
+          fi
+          echo "Sentinel A1 OK: orgs_plan_valid includes aisg_free/aisg_pro (migration 036)."
+
           # Sentinel A2 — migration 027 (api_keys server-side issuance, RFC-056):
           # verify the authenticated INSERT policy is gone and the service_role
           # INSERT policy exists.

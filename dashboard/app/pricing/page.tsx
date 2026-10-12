@@ -1,8 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import clsx from "clsx";
-import { useOrg } from "@/lib/org";
+import { useOrg, isAisgPlan, isPaidPlan } from "@/lib/org";
+import AisgPricing from "./AisgPricing";
 import { HelpTarget } from "@/components/help/HelpTarget";
 
 // ---------------------------------------------------------------------------
@@ -144,6 +145,15 @@ function FeatureCell({ value }: { value: string | boolean }) {
 
 export default function PricingPage() {
   const [annual, setAnnual] = useState(false);
+  const { org } = useOrg();
+  // AISchemaGate tiers for AISchemaGate accounts, and for anyone arriving
+  // from aischemagate.com (?product=aischemagate). Read after mount so the
+  // server render and the first client render match.
+  const [aisgParam, setAisgParam] = useState(false);
+  useEffect(() => {
+    setAisgParam(new URLSearchParams(window.location.search).get("product") === "aischemagate");
+  }, []);
+  if ((org && isAisgPlan(org.plan)) || aisgParam) return <AisgPricing />;
 
   return (
     <div className="space-y-12 pb-16">
@@ -385,7 +395,7 @@ function GrowthUpgradeButton({ annual, onToggleAnnual }: { annual: boolean; onTo
   const { org, loading } = useOrg();
   const [loadingUpgrade, setLoadingUpgrade] = useState(false);
 
-  const isPaid = org && (org.plan === 'growth' || org.plan === 'enterprise');
+  const isPaid = org && isPaidPlan(org.plan);
 
   async function startUpgrade(annual: boolean) {
     if (!org) {

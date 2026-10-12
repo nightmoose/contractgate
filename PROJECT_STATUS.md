@@ -51,6 +51,21 @@ independently (0.1.x) and are not tied to the tag. Bump them only when their
 own contents change; the release publishes whatever version they carry and
 skips it if it already exists.
 
+## AISchemaGate near-term TODO
+
+From the 2026-10-12 pricing decision. These were proposed for the pricing
+page but are not built, so they are left off it until they are:
+
+- **Schema drift detection & alerting** (Pro). Observability is metrics-only
+  (RFC-016); no alert delivery exists.
+- **SOC2 / HIPAA compliance logs and BAA** (Enterprise). Needs an actual
+  audit and legal work before it can be advertised.
+- **Local Rust validation core** in the SDKs. `LLMGate` calls the hosted
+  engine; the SDKs' local validator is pure Python / TypeScript.
+- **Metered overage** ($0.0002 per validation past 250k). v1 is a hard cap.
+- **Enforce the contract-count limit** ("up to 3 contracts" on both brands'
+  free plans is shown but not enforced anywhere).
+
 ## Notes for humans and AIs
 
 Do not commit `dashboard/node_modules`, `target/`, real API keys, or business

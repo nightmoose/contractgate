@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { createClient } from "@/lib/supabase/client";
-import { useOrg } from "@/lib/org";
+import { useOrg, planDisplayName, isFreePlan } from "@/lib/org";
 import { useRouter } from "next/navigation";
 import type { User } from "@supabase/supabase-js";
 import AuthGate from "@/components/AuthGate";
@@ -420,11 +420,11 @@ function AccountContent() {
                 <div className="text-sm font-semibold text-slate-200">Billing</div>
               </HelpTarget>
               <div className="text-xs text-slate-500">
-                Plan: <span className="font-medium capitalize text-slate-300">{org.plan}</span>
+                Plan: <span className="font-medium text-slate-300">{planDisplayName(org.plan)}</span>
                 {org.plan_status && <span className="ml-1 text-slate-400">({org.plan_status})</span>}
               </div>
             </div>
-            {org.plan === 'free' ? (
+            {isFreePlan(org.plan) ? (
               <a href="/pricing" className="text-xs px-3 py-1 rounded bg-green-600 hover:bg-green-500 text-white font-medium">Upgrade</a>
             ) : (
               <button

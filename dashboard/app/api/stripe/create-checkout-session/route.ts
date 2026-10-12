@@ -40,15 +40,20 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'No org found for user' }, { status: 400 });
     }
 
-    if (org.plan === 'growth' || org.plan === 'enterprise') {
+    if (org.plan === 'growth' || org.plan === 'enterprise' || org.plan === 'aisg_pro') {
       return NextResponse.json({ error: 'Org is already on a paid plan' }, { status: 400 });
     }
 
-    const { priceId, annual } = await req.json().catch(() => ({}));
+    const { priceId, annual, plan } = await req.json().catch(() => ({}));
 
-    // Default to the env-configured Growth price (supports toggle from UI)
-    const price = priceId ||
-      (annual ? process.env.STRIPE_PRICE_GROWTH_ANNUAL : process.env.STRIPE_PRICE_GROWTH_MONTHLY);
+    // AISchemaGate Pro (migration 036): monthly only, price from env. A
+    // client-supplied priceId is ignored here; the webhook maps this price
+    // to plan 'aisg_pro'.
+    const aisgPro = plan === 'aisg_pro';
+    const price = aisgPro
+      ? process.env.STRIPE_PRICE_AISG_PRO_MONTHLY
+      : priceId ||
+        (annual ? process.env.STRIPE_PRICE_GROWTH_ANNUAL : process.env.STRIPE_PRICE_GROWTH_MONTHLY);
 
     if (!price) {
       return NextResponse.json({ error: 'Missing Stripe price configuration' }, { status: 500 });
@@ -61,7 +66,7 @@ export async function POST(req: NextRequest) {
     const TRIAL_PERIOD_DAYS = 30;
 
     const successUrl = `${process.env.NEXT_PUBLIC_APP_URL}/billing/success?session_id={CHECKOUT_SESSION_ID}`;
-    const cancelUrl = `${process.env.NEXT_PUBLIC_APP_URL}/pricing`;
+    const cancelUrl = `${process.env.NEXT_PUBLIC_APP_URL}/pricing${aisgPro ? '?product=aischemagate' : ''}`;
 
     const session = await stripe.checkout.sessions.create({
       mode: 'subscription',
