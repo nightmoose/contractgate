@@ -13,9 +13,10 @@ primary_region = 'iad'
   PORT = '3001'
   RUST_LOG = 'contractgate=info,tower_http=warn'
   # RFC-050: DASHBOARD_ORIGIN is intentionally NOT set here — it contains the
-  # production origin and must be injected via fly secrets so it is never
-  # committed to source control.
-  # fly secrets set DASHBOARD_ORIGIN=https://app.datacontractgate.com
+  # production origins and must be injected via fly secrets so it is never
+  # committed to source control. Prod carries three origins per RFC-096
+  # (one backend, two front doors):
+  # fly secrets set DASHBOARD_ORIGIN=https://app.datacontractgate.com,https://aischemagate.com,https://aischemagate.dev
 
 [http_service]
   internal_port = 3001

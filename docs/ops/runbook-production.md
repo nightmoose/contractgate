@@ -77,7 +77,7 @@ Set via `fly secrets set` (never commit).
 | Variable | Required | Purpose |
 |---|---|---|
 | `DATABASE_URL` | Yes | Supabase Postgres (service role for gateway) |
-| `DASHBOARD_ORIGIN` | Yes (prod) | CORS allowlist, e.g. `https://app.datacontractgate.com` |
+| `DASHBOARD_ORIGIN` | Yes (prod) | CORS allowlist (comma-separated). Prod carries `https://app.datacontractgate.com,https://aischemagate.com,https://aischemagate.dev` (RFC-096: shared backend serves both DataContractGate and AISchemaGate). |
 | `PORT` | No | Default 3001 (matches `fly.toml`) |
 | `RUST_LOG` | No | e.g. `contractgate=info,tower_http=warn` |
 | `SUPABASE_URL` | If pooler breaks JWKS | Explicit project URL for JWKS fetch |

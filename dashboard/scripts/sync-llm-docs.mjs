@@ -24,13 +24,22 @@ const here = dirname(fileURLToPath(import.meta.url));
 const docsDir = join(here, "..", "..", "docs");
 const publicDir = join(here, "..", "public");
 
-const FILES = ["llms.txt", "llm-integration.md", "mcp-reference.md"];
+const FILES = [
+  "llms.txt",
+  "llm-integration.md",
+  "mcp-reference.md",
+  // RFC-095: AISchemaGate docs, served here until aischemagate.dev is live.
+  "llm-output-validation.md",
+  "llm-sdk-reference.md",
+];
 
 // Order matches the "Reference" section of llms.txt. Playbook first so agents
 // hit the executable flow before the deep reference material.
 const FULL_BUNDLE = [
   "llm-integration.md",
   "mcp-reference.md",
+  "llm-output-validation.md",
+  "llm-sdk-reference.md",
   "v1-ingest-reference.md",
   "zapier.md",
   "deploy-contract-reference.md",

@@ -1,6 +1,6 @@
 {
   "name": "@nightmoose/contractgate-sdk",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Official TypeScript SDK for DataContractGate — HTTP client + local validator",
   "license": "MIT",
   "type": "module",
@@ -8,6 +8,10 @@
     ".": {
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
+    },
+    "./llm": {
+      "types": "./dist/llm.d.ts",
+      "default": "./dist/llm.js"
     }
   },
   "main": "./dist/index.js",

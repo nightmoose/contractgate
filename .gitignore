@@ -38,6 +38,8 @@ dashboard/public/llms.txt
 dashboard/public/llm-integration.md
 dashboard/public/llms-full.txt
 dashboard/public/mcp-reference.md
+dashboard/public/llm-output-validation.md
+dashboard/public/llm-sdk-reference.md
 # Added by code-review-graph
 .code-review-graph/
 
