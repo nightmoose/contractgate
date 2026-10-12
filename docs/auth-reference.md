@@ -128,10 +128,12 @@ expose no tenant data and are safe to embed from any origin.
 | `https://app.datacontractgate.com` | Single origin allowed. |
 | `https://app.example.com,https://staging.example.com` | Multiple origins, comma-separated. |
 
-Set in production via Fly secrets — **do not commit the value to source control**:
+Set in production via Fly secrets — **do not commit the value to source control**.
+Prod carries three origins per RFC-096 (one backend, two front doors):
+DataContractGate's dashboard, and AISchemaGate's marketing + docs sites.
 
 ```bash
-fly secrets set DASHBOARD_ORIGIN=https://app.datacontractgate.com
+fly secrets set DASHBOARD_ORIGIN=https://app.datacontractgate.com,https://aischemagate.com,https://aischemagate.dev
 ```
 
 For local development with `docker compose`, leave `DASHBOARD_ORIGIN` unset
