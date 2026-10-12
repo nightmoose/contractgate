@@ -12,7 +12,7 @@ Source: https://github.com/nightmoose/contractgate
 ## Start here
 
 - [Integration playbook for coding agents](https://app.datacontractgate.com/llm-integration.md): Paste this into Claude, Cursor, or Codex. End-to-end, executable: get a key, infer a contract from real samples, write and deploy the contract YAML, wire the producer to POST /v1/ingest, verify with a dry run.
-- [LLM output validation playbook](https://aischemagate.dev/llm-output-validation.md): Paste this when the job is to validate an LLM's JSON output (OpenAI / Anthropic / vLLM / Ollama / LangChain / CrewAI / MCP). Picks up where the integration playbook leaves off — same backend, different entry point.
+- [LLM output validation playbook](https://app.datacontractgate.com/llm-output-validation.md): Paste this when the job is to validate an LLM's JSON output (OpenAI / Anthropic / vLLM / Ollama / LangChain / CrewAI / MCP). Picks up where the integration playbook leaves off — same backend, different entry point.
 - [MCP server](https://app.datacontractgate.com/mcp-reference.md): Official stdio MCP package (`npx -y @nightmoose/contractgate-mcp-server`) — infer, dry-run, deploy, and list quarantine as typed tools.
 - [Full documentation bundle](https://app.datacontractgate.com/llms-full.txt): One-shot ingestion for large-context agents — the playbook and every reference doc below, concatenated. Skip the per-link round-trips.
 
@@ -21,6 +21,7 @@ Source: https://github.com/nightmoose/contractgate
 - [POST /v1/ingest/{contract_id}](https://github.com/nightmoose/contractgate/blob/main/docs/v1-ingest-reference.md): Universal HTTP ingest — JSON arrays or NDJSON, idempotency keys, atomic batches, version pinning, dry runs.
 - [Zapier](https://github.com/nightmoose/contractgate/blob/main/docs/zapier.md): Validate Record action. The record a Zap just pulled is posted to `/v1/ingest/{contract_id}`. A failure is quarantined and the Zap stops. A pass continues with the returned payload. Source: `zapier/`. Not in the public Zapier directory until that version is submitted.
 - [POST /egress/{contract_id}](https://github.com/nightmoose/contractgate/blob/main/docs/egress-validation-reference.md): Outbound payload validation — same engine as ingest, returns only the conforming payload so the caller can forward it safely.
+- [LLMGate SDK reference](https://app.datacontractgate.com/llm-sdk-reference.md): Python and TypeScript `LLMGate` — constructor options, `completion` / `message` / `validate_only`, auto-repair, `mask_prompt`. Contract name or UUID.
 - [Contract deploy](https://github.com/nightmoose/contractgate/blob/main/docs/deploy-contract-reference.md): POST /contracts/deploy and the `contractgate deploy-contract` CLI — atomic promotion to stable, prior-version deprecation.
 - [CSV and URL inference](https://github.com/nightmoose/contractgate/blob/main/docs/csv-inference-reference.md): Generate a draft contract from a CSV file or a public data URL.
 - [Quarantine and replay](https://github.com/nightmoose/contractgate/blob/main/docs/quarantine-replay-reference.md): Review rejected events and replay them against a corrected contract version.

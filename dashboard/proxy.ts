@@ -34,6 +34,8 @@ const PUBLIC_ROUTES = [
   "/llms.txt",
   "/llm-integration.md",
   "/mcp-reference.md",
+  "/llm-output-validation.md",
+  "/llm-sdk-reference.md",
 ];
 
 function isPublic(pathname: string) {
