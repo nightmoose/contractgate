@@ -105,6 +105,14 @@ fn zapier_doc_only_cites_routes_that_exist() {
     assert_doc_only_cites_existing_routes("docs/zapier.md", 3);
 }
 
+/// RFC-095: output-validation playbook. Same drift-gate contract as the
+/// ingest playbook — any route the doc tells a developer to call must exist
+/// in `src/main.rs`.
+#[test]
+fn output_validation_playbook_only_cites_routes_that_exist() {
+    assert_doc_only_cites_existing_routes("docs/llm-output-validation.md", 3);
+}
+
 #[test]
 fn playbook_example_contract_compiles() {
     let doc = fs::read_to_string(repo_path("docs/llm-integration.md"))
@@ -122,4 +130,26 @@ fn playbook_example_contract_compiles() {
 
     contractgate::validation::CompiledContract::compile(contract)
         .expect("playbook example contract must compile");
+}
+
+/// RFC-095: the example contract in the output-validation playbook must
+/// parse + compile through the real engine, same policy as the ingest
+/// playbook — otherwise the quickstart ships broken.
+#[test]
+fn output_validation_playbook_example_contract_compiles() {
+    let doc = fs::read_to_string(repo_path("docs/llm-output-validation.md"))
+        .expect("read docs/llm-output-validation.md");
+
+    let yaml = doc
+        .split("```yaml")
+        .skip(1)
+        .filter_map(|block| block.split("```").next())
+        .find(|block| block.contains("ontology:"))
+        .expect("output-validation playbook must contain a ```yaml block with an ontology");
+
+    let contract: contractgate::contract::Contract = serde_yaml::from_str(yaml)
+        .expect("output-validation playbook example contract must parse");
+
+    contractgate::validation::CompiledContract::compile(contract)
+        .expect("output-validation playbook example contract must compile");
 }

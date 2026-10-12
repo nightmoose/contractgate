@@ -59,6 +59,10 @@ gateway — verified with a dry run before anything writes.
 Every request below sends the key as the `X-Api-Key` header. (MCP tools read
 the same key from the host process environment.)
 
+> **If your job is to validate an LLM's JSON output** rather than wire up
+> data ingestion, switch to [`llm-output-validation.md`](llm-output-validation.md)
+> now. Same backend, different entry point.
+
 ---
 
 ## §1 — Find the event shape in the user's repo
