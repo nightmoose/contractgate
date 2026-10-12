@@ -57,7 +57,7 @@ gate = LLMGate(
     api_key="cg_live_...",            # required — same key as the dashboard
     contract_id="extract_invoice_v1", # required — contract name or UUID
     llm=OpenAI(),                     # required — caller-bound client
-    base_url="https://app.datacontractgate.com",  # default
+    base_url="https://api.datacontractgate.com",  # default
     version=None,                     # pin to a specific contract version
     disposition=None,                 # None → gateway default (block)
     max_retries=2,                    # default 2; hard cap 5 (warns + clamps)
@@ -80,7 +80,7 @@ const gate = new LLMGate({
   apiKey: 'cg_live_...',           // required
   contractId: 'extract_invoice_v1',// required — contract name or UUID
   llm: new OpenAI(),               // required
-  baseUrl: 'https://app.datacontractgate.com',  // default
+  baseUrl: 'https://api.datacontractgate.com',  // default
   version: undefined,
   disposition: undefined,          // undefined → gateway default (block)
   maxRetries: 2,                   // hard cap 5

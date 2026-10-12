@@ -30,7 +30,7 @@
         },
         {
           "name": "CONTRACTGATE_BASE_URL",
-          "description": "Gateway base URL. Defaults to https://app.datacontractgate.com",
+          "description": "Gateway base URL. Defaults to https://api.datacontractgate.com",
           "isRequired": false,
           "isSecret": false
         }

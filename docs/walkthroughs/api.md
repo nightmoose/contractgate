@@ -41,7 +41,7 @@ cg test --contract examples/contracts/api/user_events.yaml --data events.ndjson
 ```
 
 ```bash
-curl -X POST https://app.datacontractgate.com/v1/ingest/{contract_id} \
+curl -X POST https://api.datacontractgate.com/v1/ingest/{contract_id} \
   -H "X-Api-Key: cg_live_<your_key>" \
   -H "Content-Type: application/x-ndjson" \
   --data-binary @events.ndjson

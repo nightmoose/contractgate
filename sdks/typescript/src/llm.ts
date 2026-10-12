@@ -38,7 +38,7 @@ function matchContract(rows: ContractResponse[], name: string): string {
 
 export const MAX_RETRIES_CAP = 5;
 const DEFAULT_MAX_RETRIES = 2;
-const DEFAULT_BASE_URL = 'https://app.datacontractgate.com';
+const DEFAULT_BASE_URL = 'https://api.datacontractgate.com';
 const FENCE = '```';
 
 /**

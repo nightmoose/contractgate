@@ -36,7 +36,7 @@ Restart the host after editing the config.
 | Variable | Required | Default |
 |---|---|---|
 | `CONTRACTGATE_API_KEY` | yes | — |
-| `CONTRACTGATE_BASE_URL` | no | `https://app.datacontractgate.com` |
+| `CONTRACTGATE_BASE_URL` | no | `https://api.datacontractgate.com` |
 
 Never put the raw key in the config file. Reference the environment variable
 the way your host supports (`${CONTRACTGATE_API_KEY}` in Cursor; Claude Desktop

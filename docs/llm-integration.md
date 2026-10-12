@@ -8,7 +8,7 @@ documentation.
 - **Product:** DataContractGate — semantic data-contract enforcement at ingestion.
   Rejects bad events *before* they reach a warehouse, lakehouse, or ML pipeline.
 - **Repo:** <https://github.com/nightmoose/contractgate>
-- **API base URL:** `https://app.datacontractgate.com`
+- **API base URL:** `https://api.datacontractgate.com`
 - **Machine index:** <https://app.datacontractgate.com/llms.txt>
 
 **What you are going to build:** a contract YAML committed to the user's repo,
@@ -90,7 +90,7 @@ quality is bounded by sample quality. Record, for later steps:
 ## §2 — Infer a draft contract from the samples
 
 ```bash
-curl -sS -X POST "https://app.datacontractgate.com/contracts/infer" \
+curl -sS -X POST "https://api.datacontractgate.com/contracts/infer" \
   -H "X-Api-Key: $CONTRACTGATE_API_KEY" \
   -H "Content-Type: application/json" \
   -d '{
@@ -272,7 +272,7 @@ jq -n \
   --arg name "user_events" \
   --rawfile yaml "contracts/user_events.yaml" \
   '{name: $name, yaml_content: $yaml, source: "app-backend", deployed_by: "claude-code"}' \
-| curl -sS -X POST "https://app.datacontractgate.com/contracts/deploy" \
+| curl -sS -X POST "https://api.datacontractgate.com/contracts/deploy" \
     -H "X-Api-Key: $CONTRACTGATE_API_KEY" \
     -H "Content-Type: application/json" \
     --data-binary @-
@@ -325,7 +325,7 @@ partial · `422 Unprocessable Entity` all failed. Treat `207` and `422` as
 ### TypeScript
 
 ```ts
-const CG_URL = "https://app.datacontractgate.com";
+const CG_URL = "https://api.datacontractgate.com";
 
 export async function validateAndSend(events: unknown[]) {
   const res = await fetch(
@@ -362,7 +362,7 @@ import os
 from contractgate import Client
 
 cg = Client(
-    base_url="https://app.datacontractgate.com",
+    base_url="https://api.datacontractgate.com",
     api_key=os.environ["CONTRACTGATE_API_KEY"],
 )
 
@@ -415,7 +415,7 @@ value, missing required field, negative amount):
 
 ```bash
 curl -sS -X POST \
-  "https://app.datacontractgate.com/v1/ingest/$CONTRACTGATE_CONTRACT_ID?dry_run=true" \
+  "https://api.datacontractgate.com/v1/ingest/$CONTRACTGATE_CONTRACT_ID?dry_run=true" \
   -H "X-Api-Key: $CONTRACTGATE_API_KEY" \
   -H "Content-Type: application/json" \
   -d '[
@@ -494,7 +494,7 @@ When the outbound shape is different (a condensed state, a different object type
 
    ```bash
    curl -sS -X POST \
-     "https://app.datacontractgate.com/egress/$EGRESS_CONTRACT_ID?dry_run=true" \
+     "https://api.datacontractgate.com/egress/$EGRESS_CONTRACT_ID?dry_run=true" \
      -H "X-Api-Key: $CONTRACTGATE_API_KEY" \
      -H "Content-Type: application/json" \
      -d '[{ "user_id": "alice", "event_type": "purchase", "timestamp": 1714000000, "amount": 10 }]'
@@ -551,7 +551,7 @@ Dry-run first. Set `dry_run=false` only after the dry run behaves correctly.
 [`docs/csv-inference-reference.md`](https://github.com/nightmoose/contractgate/blob/main/docs/csv-inference-reference.md) | CSV and URL inference |
 [`docs/quarantine-replay-reference.md`](https://github.com/nightmoose/contractgate/blob/main/docs/quarantine-replay-reference.md) | Reviewing and replaying rejected events |
 [`docs/pii-masking-reference.md`](https://github.com/nightmoose/contractgate/blob/main/docs/pii-masking-reference.md) | `transform:` field masking and hashing |
-[`/openapi.json`](https://app.datacontractgate.com/openapi.json) | Machine-readable route inventory |
+[`/openapi.json`](https://api.datacontractgate.com/openapi.json) | Machine-readable route inventory |
 
 **Self-hosting instead?** `git clone https://github.com/nightmoose/contractgate
 && make demo` runs the real gateway locally at `http://localhost:3000` with no
