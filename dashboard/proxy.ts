@@ -1,6 +1,7 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 import { DEMO_MODE } from "@/lib/demo";
+import { BRAND_COOKIE } from "@/lib/brand";
 
 // Routes that don't require authentication at the middleware level.
 // Pages that use <AuthGate> for client-side gating are listed here so the
@@ -66,7 +67,33 @@ function isApiRequest(request: NextRequest) {
   return request.headers.has("x-api-key") || request.nextUrl.pathname.startsWith("/v1/");
 }
 
+// ?product=aischemagate (every link from aischemagate.com) remembers the
+// visitor's product so sign-up, sign-in and the dashboard stay AISchemaGate-
+// branded across pages. Set on the request too, so this very render's server
+// components (root layout) already see it.
 export async function proxy(request: NextRequest) {
+  const product = request.nextUrl.searchParams.get("product");
+  const brandChange =
+    product === "aischemagate" ? "aisg" : product === "datacontractgate" ? "dcg" : null;
+  if (brandChange === "aisg") request.cookies.set(BRAND_COOKIE, "aisg");
+  if (brandChange === "dcg") request.cookies.delete(BRAND_COOKIE);
+
+  const response = await route(request);
+
+  if (brandChange === "aisg") {
+    response.cookies.set(BRAND_COOKIE, "aisg", {
+      path: "/",
+      maxAge: 60 * 60 * 24 * 30,
+      sameSite: "lax",
+      secure: true,
+    });
+  } else if (brandChange === "dcg") {
+    response.cookies.delete(BRAND_COOKIE);
+  }
+  return response;
+}
+
+async function route(request: NextRequest): Promise<NextResponse> {
   if (isApiRequest(request)) {
     const target = new URL(request.nextUrl.pathname + request.nextUrl.search, API_ORIGIN);
     return NextResponse.rewrite(target);

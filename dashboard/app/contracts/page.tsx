@@ -23,6 +23,7 @@ import useSWR, { mutate } from "swr";
 import AuthGate from "@/components/AuthGate";
 import PlanGate, { FreeLimitBanner } from "@/components/PlanGate";
 import { useOrg, planAtLeast } from "@/lib/org";
+import { useBrand } from "@/components/BrandProvider";
 import { createClient } from "@/lib/supabase/client";
 import {
   listContracts,
@@ -111,6 +112,8 @@ function EditContractModal({
   // RFC-045: plan gating inside modal
   const { org: modalOrg } = useOrg();
   const isGrowth = modalOrg ? planAtLeast(modalOrg.plan, "growth") : false;
+  // AISchemaGate validates LLM output; Kafka/Kinesis ingress doesn't apply.
+  const aisgModal = useBrand() === "aisg";
 
   // Publish modal state (RFC-032)
   const [publishModalOpen, setPublishModalOpen] = useState(false);
@@ -398,6 +401,7 @@ function EditContractModal({
                 </span>
               )}
             </button>
+            {!aisgModal && (<>
             <button
               onClick={() => setModalTab("kafka")}
               disabled={!isGrowth}
@@ -426,6 +430,7 @@ function EditContractModal({
             >
               Kinesis {!isGrowth && <span className="text-[10px] text-amber-500">🔒</span>}
             </button>
+            </>)}
             {/* RFC-033: Collaborate tab */}
             <button
               onClick={() => setModalTab("collaborate")}
@@ -1863,6 +1868,7 @@ type Tab = "list" | "consumed" | "build" | "generate" | "csv" | "quarantine";
 function ContractsContent() {
   const router = useRouter();
   const { org } = useOrg();
+  const aisg = useBrand() === "aisg";
   const { data: contracts, isLoading, error: contractsError } = useSWR<ContractSummary[]>(
     org ? "contracts" : null,
     listContracts
@@ -1967,9 +1973,14 @@ function ContractsContent() {
       </div>
 
       <div className="flex gap-1 mb-6 bg-[#111827] border border-[#1f2937] rounded-xl p-1 w-fit flex-wrap">
-        {(["list", "consumed", "build", "generate", "csv", "quarantine"] as Tab[]).map((t) => {
-          // Growth-only tabs show a lock badge when on free plan.
-          const growthOnly = ["build", "generate", "csv", "quarantine"].includes(t);
+        {(aisg
+          ? (["list", "build", "generate", "quarantine"] as Tab[])
+          : (["list", "consumed", "build", "generate", "csv", "quarantine"] as Tab[])
+        ).map((t) => {
+          // Growth-only tabs show a lock badge when on free plan. AISchemaGate
+          // keeps Generate free: inferring a contract from known-good outputs
+          // is its onboarding step, and /contracts/infer is ungated anyway.
+          const growthOnly = (aisg ? ["build", "quarantine"] : ["build", "generate", "csv", "quarantine"]).includes(t);
           const locked = growthOnly && org && !planAtLeast(org.plan, "growth");
           const helpId =
             t === "list" ? "contracts.list" :
@@ -2086,7 +2097,7 @@ function ContractsContent() {
         </PlanGate>
       )}
       {tab === "generate" && (
-        <PlanGate minTier="growth" feature="Generate from Sample (JSON → YAML)">
+        <PlanGate minTier={aisg ? "aisg_free" : "growth"} feature="Generate from Sample (JSON → YAML)">
           <div className="bg-[#111827] border border-[#1f2937] rounded-xl p-6">
             <GeneratorTab onSaved={() => setTab("list")} />
           </div>

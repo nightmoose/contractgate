@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import clsx from "clsx";
-import { useOrg, isAisgPlan, isPaidPlan } from "@/lib/org";
+import { useOrg, isPaidPlan } from "@/lib/org";
+import { useBrand } from "@/components/BrandProvider";
 import AisgPricing from "./AisgPricing";
 import { HelpTarget } from "@/components/help/HelpTarget";
 
@@ -145,15 +146,11 @@ function FeatureCell({ value }: { value: string | boolean }) {
 
 export default function PricingPage() {
   const [annual, setAnnual] = useState(false);
-  const { org } = useOrg();
-  // AISchemaGate tiers for AISchemaGate accounts, and for anyone arriving
-  // from aischemagate.com (?product=aischemagate). Read after mount so the
-  // server render and the first client render match.
-  const [aisgParam, setAisgParam] = useState(false);
-  useEffect(() => {
-    setAisgParam(new URLSearchParams(window.location.search).get("product") === "aischemagate");
-  }, []);
-  if ((org && isAisgPlan(org.plan)) || aisgParam) return <AisgPricing />;
+  // AISchemaGate tiers for AISchemaGate accounts and visitors from
+  // aischemagate.com. The brand comes from the request cookie, so the server
+  // render already shows the right page (no DataContractGate flash).
+  const brand = useBrand();
+  if (brand === "aisg") return <AisgPricing />;
 
   return (
     <div className="space-y-12 pb-16">

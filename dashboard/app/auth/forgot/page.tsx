@@ -4,6 +4,7 @@ import { useRef, useState } from "react";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 import { AuthCaptcha, captchaEnabled, type AuthCaptchaHandle } from "@/components/AuthCaptcha";
+import BrandWordmark from "@/components/BrandWordmark";
 
 export default function ForgotPasswordPage() {
   const [email, setEmail] = useState("");
@@ -37,7 +38,7 @@ export default function ForgotPasswordPage() {
       <div className="w-full max-w-sm">
         <div className="text-center mb-8">
           <Link href="/" className="inline-block">
-            <span className="text-2xl font-bold text-green-400">DataContractGate</span>
+            <BrandWordmark />
           </Link>
         </div>
 
