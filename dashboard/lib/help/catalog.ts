@@ -33,6 +33,12 @@ export const HELP_CATALOG: Record<string, HelpEntry> = {
     does: "Opens the SDK docs — sync/async HTTP ingest and offline contract checks with no network.",
     href: "/docs/python-sdk",
   },
+  "nav.docs": {
+    title: "Docs",
+    what: "AISchemaGate documentation: the LLM output validation playbook and the LLMGate SDK reference.",
+    does: "Opens aischemagate.dev.",
+    href: "https://aischemagate.dev",
+  },
   "nav.pricing": {
     title: "Pricing",
     what: "The plans for your product, their limits, and what each one includes.",

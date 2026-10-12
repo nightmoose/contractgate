@@ -4,6 +4,7 @@ import { useRef, useState } from "react";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 import { AuthCaptcha, captchaEnabled, type AuthCaptchaHandle } from "@/components/AuthCaptcha";
+import BrandWordmark, { BrandTagline } from "@/components/BrandWordmark";
 
 // Bot defence: Turnstile verified by Supabase Auth itself (bots calling the
 // Auth API directly can't skip it), plus the honeypot below. The Aug 2026
@@ -112,9 +113,9 @@ export default function SignupPage() {
         {/* Logo */}
         <div className="text-center mb-8">
           <Link href="/" className="inline-block">
-            <span className="text-2xl font-bold text-green-400">DataContractGate</span>
+            <BrandWordmark />
           </Link>
-          <p className="mt-1 text-xs text-slate-500">Semantic contract enforcement at ingestion</p>
+          <BrandTagline className="mt-1 text-xs text-slate-500" />
         </div>
 
         <div className="bg-[#111827] border border-[#1f2937] rounded-xl p-8">
