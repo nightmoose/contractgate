@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import Stripe from 'stripe';
 import { createClient as createServiceClient } from '@supabase/supabase-js';
+import { proPriceAnnual, proPriceMonthly } from '@/lib/stripe-prices';
 
 // This route must run per-request; never statically collected at build time.
 export const dynamic = 'force-dynamic';
@@ -207,7 +208,7 @@ async function handleCheckoutCompleted(event: Stripe.Event, session: Stripe.Chec
   // One set of Pro prices serves both products; the product line comes from
   // checkout metadata (set by create-checkout-session) or the org's current
   // plan, so an AISchemaGate account becomes 'aisg_pro', others 'growth'.
-  const proPrices = [process.env.STRIPE_PRICE_GROWTH_MONTHLY, process.env.STRIPE_PRICE_GROWTH_ANNUAL];
+  const proPrices = [proPriceMonthly(), proPriceAnnual()];
   const priceOk = !priceId || proPrices.some((p) => !p) || proPrices.includes(priceId);
 
   let newPlan: 'growth' | 'aisg_pro' | null = null;

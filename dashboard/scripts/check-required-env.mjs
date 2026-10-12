@@ -29,8 +29,8 @@ const RECOMMENDED_SERVER = [
   ["SUPABASE_SERVICE_ROLE_KEY", "API key issuance, org member management"],
   ["STRIPE_SECRET_KEY", "checkout and billing portal"],
   ["STRIPE_WEBHOOK_SECRET", "subscription state sync"],
-  ["STRIPE_PRICE_GROWTH_MONTHLY", "monthly plan checkout"],
-  ["STRIPE_PRICE_GROWTH_ANNUAL", "annual plan checkout"],
+  ["STRIPE_PRICE_PRO_MONTHLY", "monthly Pro checkout", "STRIPE_PRICE_GROWTH_MONTHLY"],
+  ["STRIPE_PRICE_PRO_ANNUAL", "annual Pro checkout", "STRIPE_PRICE_GROWTH_ANNUAL"],
   ["SLACK_BOT_TOKEN", "the Slack lead-intake bot posting any reply at all"],
 ];
 
@@ -70,8 +70,9 @@ if (/^[123]x0{8,}/.test(process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY ?? "") && isP
   errors.push("NEXT_PUBLIC_TURNSTILE_SITE_KEY is a Cloudflare test key — Supabase will reject every token.");
 }
 
-for (const [name, impact] of RECOMMENDED_SERVER) {
-  if (!process.env[name]) {
+// Third element: a legacy name still accepted in place of the first.
+for (const [name, impact, legacy] of RECOMMENDED_SERVER) {
+  if (!process.env[name] && !(legacy && process.env[legacy])) {
     warnings.push(`${name} is not set — ${impact} will fail at runtime.`);
   }
 }

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import Stripe from 'stripe';
 import { createClient } from '@/lib/supabase/server';
+import { proPriceAnnual, proPriceMonthly } from '@/lib/stripe-prices';
 
 export const dynamic = 'force-dynamic';
 
@@ -52,7 +53,7 @@ export async function POST(req: NextRequest) {
     const aisgPro = plan === 'aisg_pro' || org.plan === 'aisg_free';
     const product = aisgPro ? 'aischemagate' : 'datacontractgate';
     const price = priceId ||
-      (annual ? process.env.STRIPE_PRICE_GROWTH_ANNUAL : process.env.STRIPE_PRICE_GROWTH_MONTHLY);
+      (annual ? proPriceAnnual() : proPriceMonthly());
 
     if (!price) {
       return NextResponse.json({ error: 'Missing Stripe price configuration' }, { status: 500 });
