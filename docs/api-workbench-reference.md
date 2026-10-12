@@ -3,13 +3,13 @@
 **RFC:** 046  
 **Plan tier:** Growth+ (Try It mode available on Free)
 
-The API Workbench turns API exploration into contract creation in one workflow. Paste a base URL, OpenAPI spec, curl command, or Postman/Bruno collection, explore endpoints live in your browser, infer a contract schema from real responses, refine field rules, and deploy enforcement — all without ContractGate ever touching your credentials or response payloads.
+The API Workbench turns API exploration into contract creation in one workflow. Paste a base URL, OpenAPI spec, curl command, or Postman/Bruno collection, explore endpoints live in your browser, infer a contract schema from real responses, refine field rules, and deploy enforcement — all without DataContractGate ever touching your credentials or response payloads.
 
 ---
 
 ## Security model
 
-All API calls originate from your browser. ContractGate servers never see:
+All API calls originate from your browser. DataContractGate servers never see:
 
 - API keys, Bearer tokens, or Basic credentials
 - Response payloads (only the derived contract schema is uploaded on deploy)
@@ -27,7 +27,7 @@ For endpoints that cannot be reached from a browser (VPN, mTLS, corporate proxy)
 |---|---|---|---|
 | Try It (1 endpoint, inference visible) | ✓ | ✓ | ✓ |
 | Save to suite | ✗ | ✓ | ✓ |
-| Deploy to ContractGate | ✗ | ✓ | ✓ |
+| Deploy to DataContractGate | ✗ | ✓ | ✓ |
 | Export (YAML, ODCS, Postman, Bruno) | ✗ | ✓ | ✓ |
 | Drift detection | ✗ | ✓ | ✓ |
 
@@ -39,7 +39,7 @@ The Workbench accepts any of the following seed formats:
 
 | Mode | What to provide |
 |---|---|
-| **Base URL** | `https://api.example.com/v2` — ContractGate attempts to auto-discover `openapi.json` or `swagger.json` at common paths |
+| **Base URL** | `https://api.example.com/v2` — DataContractGate attempts to auto-discover `openapi.json` or `swagger.json` at common paths |
 | **OpenAPI URL** | Direct URL to an OpenAPI 3.x or Swagger 2.x spec (JSON or YAML) |
 | **Upload** | Drop a `.json` or `.yaml` spec file onto the page |
 | **curl** | Paste a curl command: `curl -X GET "https://..." -H "Authorization: Bearer TOKEN"` |
@@ -66,7 +66,7 @@ Click **Send** to fire the request from your browser.
 
 ## Schema inference
 
-After a successful response, ContractGate infers a field schema from the JSON body:
+After a successful response, DataContractGate infers a field schema from the JSON body:
 
 | Observation | Output |
 |---|---|
@@ -119,7 +119,7 @@ Set the suite name in the suite panel at the bottom of the page.
 
 ## Export & deploy (Growth+)
 
-### ContractGate YAML
+### DataContractGate YAML
 
 The generated YAML follows the [locked contract format](../CLAUDE.md):
 
@@ -145,7 +145,7 @@ glossary:
     constraints: "pii: true"
 ```
 
-Download as `.yaml` or click **Deploy to ContractGate** to call `POST /contracts/deploy` directly.
+Download as `.yaml` or click **Deploy to DataContractGate** to call `POST /contracts/deploy` directly.
 
 ### ODCS-compatible YAML
 
@@ -219,7 +219,7 @@ contractgate infer \
 | `--from-newman <FILE>` | Path to Newman JSON reporter export |
 | `--name <NAME>` | Contract name (defaults to collection name or `inferred_contract`) |
 | `--description <TEXT>` | Contract description |
-| `--out <FILE>` | Output path for ContractGate YAML (defaults to stdout) |
+| `--out <FILE>` | Output path for DataContractGate YAML (defaults to stdout) |
 | `--odcs` | Also write an ODCS-compatible YAML |
 | `--odcs-version <VERSION>` | ODCS schema version: `2.2.2` (default), `2.1.0`, `2.0.0` |
 | `--json` | Emit machine-readable JSON summary to stderr |

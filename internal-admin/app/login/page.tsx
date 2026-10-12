@@ -13,7 +13,7 @@ export default async function LoginPage({
   return (
     <div className="wrap" style={{ maxWidth: 380, marginTop: 80 }}>
       <div className="card">
-        <h1 style={{ marginTop: 0, fontSize: 18 }}>ContractGate — Internal Admin</h1>
+        <h1 style={{ marginTop: 0, fontSize: 18 }}>DataContractGate — Internal Admin</h1>
         <p style={{ color: "#94a3b8", fontSize: 13 }}>
           Superadmin access only. Sign in with an allowlisted account.
         </p>

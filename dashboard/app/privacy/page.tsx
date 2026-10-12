@@ -1,6 +1,6 @@
 import Link from "next/link";
 
-export const metadata = { title: "Privacy Policy — ContractGate" };
+export const metadata = { title: "Privacy Policy — DataContractGate" };
 
 export default function PrivacyPage() {
   return (
@@ -11,7 +11,8 @@ export default function PrivacyPage() {
 
         <div className="space-y-6 text-sm text-slate-400 leading-relaxed">
           <p>
-            ContractGate (&ldquo;we&rdquo;, &ldquo;us&rdquo;, &ldquo;our&rdquo;) is committed to protecting
+            NightMoose, Inc. (&ldquo;we&rdquo;, &ldquo;us&rdquo;, &ldquo;our&rdquo;), which operates
+            DataContractGate, is committed to protecting
             your personal information. This policy describes what we collect, how we
             use it, and your rights.
           </p>
@@ -30,7 +31,7 @@ export default function PrivacyPage() {
             <h2 className="text-slate-200 font-semibold mb-2">2. Event Data You Send</h2>
             <p>
               You send us events and contracts through the dashboard, the API, or our
-              integrations (including the ContractGate MCP server and plugins for
+              integrations (including the DataContractGate MCP server and plugins for
               Claude Code and Cursor, which call the API with your API key). Events may
               contain personal data, depending on what your systems produce.
             </p>
@@ -113,7 +114,7 @@ export default function PrivacyPage() {
 
         <div className="mt-12 pt-6 border-t border-[#1f2937]">
           <Link href="/" className="text-sm text-slate-500 hover:text-slate-400 transition-colors">
-            ← Back to ContractGate
+            ← Back to DataContractGate
           </Link>
         </div>
       </div>

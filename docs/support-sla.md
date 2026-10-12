@@ -1,4 +1,4 @@
-# Support SLA (hosted ContractGate)
+# Support SLA (hosted DataContractGate)
 
 **Audience:** sales, CS, diligence  
 **Status:** Pre-scale — targets for Growth vs Enterprise  

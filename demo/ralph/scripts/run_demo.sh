@@ -65,7 +65,7 @@ for i in $(seq 1 60); do
 done
 python -c "from produce.producers import ensure_topics; ensure_topics('${KAFKA_BOOTSTRAP}')"
 
-echo "==> 2. ContractGate bridge"
+echo "==> 2. DataContractGate bridge"
 python bridge/gate_bridge.py > /tmp/cg-ralph-demo-bridge.log 2>&1 &
 PIDS+=($!)
 sleep 3

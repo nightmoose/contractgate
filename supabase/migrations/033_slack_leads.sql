@@ -32,7 +32,7 @@ CREATE INDEX IF NOT EXISTS slack_leads_status_idx
     ON public.slack_leads (status);
 
 COMMENT ON TABLE public.slack_leads IS
-    'RFC-084: Leads captured via the ContractGate Slack bot intake flow.';
+    'RFC-084: Leads captured via the DataContractGate Slack bot intake flow.';
 
 -- ── slack_conversations ───────────────────────────────────────────────────────
 -- Stores short conversation history + intake state per Slack thread.

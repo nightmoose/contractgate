@@ -1,4 +1,4 @@
-# ODCS v3.1.0 Extension Strategy — ContractGate
+# ODCS v3.1.0 Extension Strategy — DataContractGate
 
 **Status:** Week 1 deliverable  
 **Date:** 2026-05-01  
@@ -9,7 +9,7 @@
 
 ## 1. Why Extensions Are Needed
 
-ContractGate is more expressive than ODCS in four areas that are core to its value proposition:
+DataContractGate is more expressive than ODCS in four areas that are core to its value proposition:
 
 1. **Validation constraints** — regex patterns, enum allowlists, numeric bounds, string length bounds (enforced per-event at ingest time)
 2. **PII transforms** — mask/hash/drop/redact operations with optional format-preserving style
@@ -23,13 +23,13 @@ ODCS v3.1.0 has no structural home for any of these. The standard does provide t
 
 ODCS also provides `customProperties` at the top level of the document, but its flat key-value structure is unwieldy for complex nested structures like glossary and metrics blocks.
 
-This document defines the naming convention, placement rules, and round-trip contract for all ContractGate extensions.
+This document defines the naming convention, placement rules, and round-trip contract for all DataContractGate extensions.
 
 ---
 
 ## 2. Naming Convention
 
-All ContractGate extension identifiers use the prefix **`x-contractgate-`** followed by a kebab-case name derived from the CG native YAML field path.
+All DataContractGate extension identifiers use the prefix **`x-contractgate-`** followed by a kebab-case name derived from the CG native YAML field path.
 
 ### Rules
 
@@ -76,7 +76,7 @@ All ContractGate extension identifiers use the prefix **`x-contractgate-`** foll
 
 ## 3. Placement Architecture
 
-ContractGate extensions live at two levels:
+DataContractGate extensions live at two levels:
 
 ### Level 1 — Top-level document keys (block data)
 
@@ -92,7 +92,7 @@ status: active
 dataProduct: user_events
 domain: product
 
-# ContractGate block extensions
+# DataContractGate block extensions
 x-contractgate-compliance-mode: false
 x-contractgate-multi-stable-resolution: strict
 x-contractgate-ontology:
@@ -155,7 +155,7 @@ schema:
 
 ## 4. The Canonical Round-Trip Strategy
 
-ContractGate must support two export modes and one import mode.
+DataContractGate must support two export modes and one import mode.
 
 ### Export Mode A — ODCS Native (for interoperability)
 
@@ -232,7 +232,7 @@ This top-level key declares the version of the CG extension schema used in this 
 
 ## 7. Full Annotated Example
 
-The following shows a ContractGate `user_events` contract exported to ODCS v3.1.0 format with all extensions in place.
+The following shows a DataContractGate `user_events` contract exported to ODCS v3.1.0 format with all extensions in place.
 
 ```yaml
 # ── ODCS v3.1.0 mandatory ──────────────────────────────────────────────────
@@ -316,7 +316,7 @@ schema:
           - property: x-contractgate-constraints
             value: "must be non-negative; maximum 1 000 000"
 
-# ── ContractGate block extensions (lossless round-trip) ───────────────────
+# ── DataContractGate block extensions (lossless round-trip) ───────────────────
 x-contractgate-version: "1.0"
 x-contractgate-compliance-mode: false
 x-contractgate-multi-stable-resolution: strict

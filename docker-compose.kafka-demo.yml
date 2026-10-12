@@ -1,4 +1,4 @@
-# Self-contained Kafka transport for the ContractGate speed demo.
+# Self-contained Kafka transport for the DataContractGate speed demo.
 #
 # Uses Redpanda (Kafka wire-protocol compatible, single-binary, no ZooKeeper).
 # Bring it up before running `cargo run --features demo --bin demo`:

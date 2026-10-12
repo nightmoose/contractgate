@@ -132,7 +132,7 @@ export default function KafkaConnectDocsPage() {
           </div>
           <h1 className="text-3xl font-bold text-slate-100 mb-3">Kafka Connect SMT</h1>
           <p className="text-slate-400 text-lg leading-relaxed">
-            Validate every Kafka record against a ContractGate semantic contract in real-time —
+            Validate every Kafka record against a DataContractGate semantic contract in real-time —
             before it reaches your data warehouse or AI systems. Invalid records go to a dead-letter
             topic. Valid records continue unchanged.
           </p>
@@ -150,7 +150,7 @@ export default function KafkaConnectDocsPage() {
 
         <Step n={1} title="Get your credentials">
           <p className="text-slate-400 text-sm mb-3">
-            Sign up for a ContractGate account, create a contract, and copy your{" "}
+            Sign up for a DataContractGate account, create a contract, and copy your{" "}
             <strong className="text-slate-300">API key</strong> and{" "}
             <strong className="text-slate-300">contract UUID</strong> from the{" "}
             <Link href="/account" className="text-green-400 hover:underline">Account page</Link>.
@@ -236,7 +236,7 @@ plugin.path=/usr/share/confluent-hub-components`}</Code>
             </thead>
             <tbody>
               <ConfigRow name="contractgate.api.url" required>
-                Base URL of the ContractGate API. No trailing slash.
+                Base URL of the DataContractGate API. No trailing slash.
                 Use <code className="text-slate-300">https://contractgate-api.fly.dev</code> for the hosted service.
               </ConfigRow>
               <ConfigRow name="contractgate.contract.id" required>
@@ -263,7 +263,7 @@ plugin.path=/usr/share/confluent-hub-components`}</Code>
                 Useful for high-throughput pipelines where you want enforcement without DB write pressure.
               </ConfigRow>
               <ConfigRow name="contractgate.connect.timeout.ms" default="5000">
-                TCP connection timeout to the ContractGate API in milliseconds.
+                TCP connection timeout to the DataContractGate API in milliseconds.
               </ConfigRow>
               <ConfigRow name="contractgate.request.timeout.ms" default="10000">
                 Total HTTP request/response timeout in milliseconds. Keep well below
@@ -290,7 +290,7 @@ plugin.path=/usr/share/confluent-hub-components`}</Code>
         </p>
 
         <H3>Full DLQ connector config</H3>
-        <Code language="properties">{`# ── ContractGate SMT ──────────────────────────────────────
+        <Code language="properties">{`# ── DataContractGate SMT ──────────────────────────────────────
 transforms=contractgate
 transforms.contractgate.type=io.datacontractgate.connect.smt.ContractGateValidator
 transforms.contractgate.contractgate.api.url=https://contractgate-api.fly.dev
@@ -320,7 +320,7 @@ errors.retry.delay.max.ms=5000`}</Code>
           each DLQ record carries a header like:
         </p>
         <Code language="text">{`__connect.errors.exception.message:
-  ContractGate validation failed — topic=orders partition=3 offset=1042
+  DataContractGate validation failed — topic=orders partition=3 offset=1042
   contract=3fa85f64-... version=1.2.0
   2 violation(s): user_id [missing_required_field]: required field missing;
   amount [range_violation]: value -5 below minimum 0`}</Code>
@@ -434,15 +434,15 @@ errors.retry.delay.max.ms=5000`}</Code>
         {[
           {
             q: "Does this work with Avro / Protobuf / Schema Registry records?",
-            a: "Yes. The SMT converts any record value to JSON before sending to ContractGate — Struct (Avro/Protobuf), Map, String, and byte[] are all handled automatically. Your schema registry setup is untouched.",
+            a: "Yes. The SMT converts any record value to JSON before sending to DataContractGate — Struct (Avro/Protobuf), Map, String, and byte[] are all handled automatically. Your schema registry setup is untouched.",
           },
           {
-            q: "What happens if the ContractGate API is unreachable?",
+            q: "What happens if the DataContractGate API is unreachable?",
             a: "Network errors, HTTP 5xx, and auth/not-found statuses fail open — the SMT logs a warning and passes the record through so a transient outage does not halt the pipeline. HTTP 422 is not an outage: it means the event failed the contract, and the SMT applies DLQ or TAG_AND_PASS as configured.",
           },
           {
             q: "Does it add latency to my pipeline?",
-            a: "The validation engine itself runs in under 50µs per record. End-to-end latency depends on network topology between your Kafka brokers and the ContractGate API — for same-datacenter deployments this is typically sub-millisecond. We publish benchmark results as we gather them from production deployments.",
+            a: "The validation engine itself runs in under 50µs per record. End-to-end latency depends on network topology between your Kafka brokers and the DataContractGate API — for same-datacenter deployments this is typically sub-millisecond. We publish benchmark results as we gather them from production deployments.",
           },
           {
             q: "Can I use it with Confluent Cloud managed connectors?",
@@ -454,7 +454,7 @@ errors.retry.delay.max.ms=5000`}</Code>
           },
           {
             q: "Can I chain this with other SMTs?",
-            a: "Yes. List multiple transforms: transforms=contractgate,maskPii,routeByField. The ContractGate SMT works anywhere in the chain; put it first to validate raw records before any transforms mutate them.",
+            a: "Yes. List multiple transforms: transforms=contractgate,maskPii,routeByField. The DataContractGate SMT works anywhere in the chain; put it first to validate raw records before any transforms mutate them.",
           },
         ].map(({ q, a }) => (
           <div key={q} className="mb-6 border-b border-[#1f2937] pb-6 last:border-0">

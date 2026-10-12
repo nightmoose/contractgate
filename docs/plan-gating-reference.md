@@ -8,7 +8,7 @@
 
 ## Overview
 
-ContractGate has three billing tiers with a tiered feature set. Plan gating is
+DataContractGate has three billing tiers with a tiered feature set. Plan gating is
 enforced in the dashboard UI by the `<PlanGate>` component — users below the
 required tier see an upsell card instead of the gated feature. Backend
 enforcement of per-tier event quotas and audit retention is separate (handled

@@ -13,7 +13,7 @@ import java.net.http.HttpResponse;
 import java.time.Duration;
 
 /**
- * Makes HTTP calls to the ContractGate gateway to check the current contract
+ * Makes HTTP calls to the DataContractGate gateway to check the current contract
  * version and fetch the contract body.
  *
  * <h2>Endpoints used</h2>

@@ -41,7 +41,7 @@ test.describe("Demo mode", () => {
 
   test("banner shows upgrade CTA", async ({ page }) => {
     await page.goto("/");
-    const cta = page.getByRole("link", { name: /ContractGate Cloud/i });
+    const cta = page.getByRole("link", { name: /DataContractGate Cloud/i });
     await expect(cta).toBeVisible();
     await expect(cta).toHaveAttribute("href", /contractgate\.io\/cloud/);
     await expect(cta).toHaveAttribute("target", "_blank");
@@ -87,7 +87,7 @@ test.describe("Demo mode", () => {
     await expect(page).not.toHaveURL(/\/auth\/login/);
     // Should show the feature-unavailable gate, not the API key form.
     await expect(page.getByText(/not available in Self-Hosted Free/i)).toBeVisible();
-    await expect(page.getByRole("link", { name: /Upgrade to ContractGate Cloud/i })).toBeVisible();
+    await expect(page.getByRole("link", { name: /Upgrade to DataContractGate Cloud/i })).toBeVisible();
     // Should NOT show the real account content.
     await expect(page.getByText(/API Keys/)).not.toBeVisible();
   });

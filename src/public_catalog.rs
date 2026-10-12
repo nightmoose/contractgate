@@ -1,4 +1,4 @@
-//! Public Catalog — curated gov/open-data sources with ContractGate contracts.
+//! Public Catalog — curated gov/open-data sources with DataContractGate contracts.
 //! (RFC-034)
 //!
 //! ## Routes (wired in main.rs)
@@ -264,7 +264,7 @@ async fn fetch_upstream(url: &str) -> AppResult<Vec<u8>> {
 
     let resp = client
         .get(url)
-        .header("User-Agent", "ContractGate/1.0 (public-catalog-export)")
+        .header("User-Agent", "DataContractGate/1.0 (public-catalog-export)")
         .send()
         .await
         .map_err(|e| AppError::Internal(format!("upstream fetch failed: {e}")))?;

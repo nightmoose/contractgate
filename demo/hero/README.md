@@ -1,6 +1,6 @@
 # Hero demo — stop bad events, then drain the backlog
 
-A ~15-minute, HTTP-only walkthrough of ContractGate's core value: bad events are
+A ~15-minute, HTTP-only walkthrough of DataContractGate's core value: bad events are
 **stopped at ingest**, held in quarantine, and later **replayed** clean once the
 contract is corrected — nothing silently hits the warehouse, nothing is lost.
 
@@ -22,7 +22,7 @@ Run it with [`scripts/hero_demo.sh`](../../scripts/hero_demo.sh).
 
 ## Why two versions up front
 
-ContractGate **blocks deploying a new version while events are quarantined** (a
+DataContractGate **blocks deploying a new version while events are quarantined** (a
 safety feature — you must consciously handle the backlog first). So the real
 workflow is to register the corrected version, then replay against it. The demo
 pre-stages both versions and pins the bad batch to v1.0.0 to reproduce that

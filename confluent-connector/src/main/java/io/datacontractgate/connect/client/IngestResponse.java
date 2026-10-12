@@ -63,7 +63,7 @@ public class IngestResponse {
     public IngestEventResult singleResult() {
         if (results == null || results.isEmpty()) {
             throw new IllegalStateException(
-                "ContractGate returned no results for a single-record ingest call");
+                "DataContractGate returned no results for a single-record ingest call");
         }
         return results.get(0);
     }

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ============================================================
-# ContractGate — Live API smoke test + data seeder
+# DataContractGate — Live API smoke test + data seeder
 # Usage: API_KEY=cg_live_... bash test_live.sh [BASE_URL]
 # Default BASE_URL: https://contractgate-api.fly.dev
 # ============================================================
@@ -195,7 +195,7 @@ echo "   $STATS"
 echo ""
 echo -e "\033[1m══ Results: \033[32m$PASS passed\033[0m\033[1m  \033[31m$FAIL failed\033[0m\033[1m ══\033[0m"
 if [ "$FAIL" -eq 0 ]; then
-  green "All tests passed! ContractGate is live and working."
+  green "All tests passed! DataContractGate is live and working."
 else
   red "$FAIL test(s) failed. Check output above."
   exit 1

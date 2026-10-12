@@ -1,4 +1,4 @@
-# ContractGate MCP Server
+# DataContractGate MCP Server
 
 **RFC-090.** Official Model Context Protocol server for Cursor, Claude Desktop,
 Windsurf, VS Code Copilot, Codex, and any other MCP host.
@@ -131,7 +131,7 @@ Save the returned `contract_id`. It is not a secret.
 
 `integrate-contractgate` — loads the agent playbook URL
 (<https://app.datacontractgate.com/llm-integration.md>) as the instruction to
-follow. Use it when wiring ContractGate into a repo for the first time.
+follow. Use it when wiring DataContractGate into a repo for the first time.
 
 ## What this server will not do
 

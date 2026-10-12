@@ -1,6 +1,6 @@
 # Kafka Walkthrough
 
-Validate a Kafka stream in place: producers write to a raw topic, ContractGate
+Validate a Kafka stream in place: producers write to a raw topic, DataContractGate
 validates each event with the same engine as the HTTP path, and routes valid
 events to a clean topic and invalid ones to a quarantine topic. Full detail in
 the [Kafka ingress reference](../kafka-ingress-reference.md).

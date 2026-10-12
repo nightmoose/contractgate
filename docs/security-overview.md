@@ -1,8 +1,8 @@
-# ContractGate — Security Overview
+# DataContractGate — Security Overview
 
 **Last updated:** 2026-07-14
 **Audience:** prospective customers (security questionnaires), design partners, acquirer diligence.
-**Scope:** hosted ContractGate (Rust validation gateway + Next.js dashboard + Supabase Postgres).
+**Scope:** hosted DataContractGate (Rust validation gateway + Next.js dashboard + Supabase Postgres).
 
 This is a one-page summary. Each section links to the authoritative reference,
 RFC, migration, or test that implements the control. Where a control is a

@@ -1,8 +1,8 @@
-# ContractGate on Zapier
+# DataContractGate on Zapier
 
 Zapier pulls a lead, an order, a row, a form submission out of a system that will never grow a producer. **Validate Record** is the step that checks that object against a contract before the next step writes it.
 
-A failure is quarantined and the Zap stops. A pass continues, and the next step writes the **Payload** ContractGate returned. Declared PII is already masked.
+A failure is quarantined and the Zap stops. A pass continues, and the next step writes the **Payload** DataContractGate returned. Declared PII is already masked.
 
 The integration source is [`zapier/`](../zapier/). It is not in the public Zapier directory until that version is submitted and approved. Pushing it puts the action in your Zap editor the same day.
 
@@ -20,7 +20,7 @@ From the `zapier` directory of a checkout. If your shell prompt already ends in 
 ```bash
 npm install
 npx zapier-platform login --sso
-npx zapier-platform register "ContractGate"
+npx zapier-platform register "DataContractGate"
 npx zapier-platform push
 ```
 
@@ -30,9 +30,9 @@ Log in with a [deploy key](https://developer.zapier.com/partner-settings/deploy-
 
 `register` writes `zapier/.zapierapprc`. Commit it. The next `push` updates this integration instead of creating another one.
 
-The version is private. In the Zap editor, search for ContractGate. After one real Zap works, submit that version for the public listing from the Zapier developer UI.
+The version is private. In the Zap editor, search for DataContractGate. After one real Zap works, submit that version for the public listing from the Zapier developer UI.
 
-Self-hosted gateway: set **Gateway URL** on the connection. Cloud users leave it blank (`https://app.datacontractgate.com`). The connection test fails if that URL does not answer like the ContractGate API, instead of connecting with zero contracts.
+Self-hosted gateway: set **Gateway URL** on the connection. Cloud users leave it blank (`https://app.datacontractgate.com`). The connection test fails if that URL does not answer like the DataContractGate API, instead of connecting with zero contracts.
 
 ## 3. Build the Zap
 
@@ -43,7 +43,7 @@ Self-hosted gateway: set **Gateway URL** on the connection. Cloud users leave it
 output = [{ record: JSON.stringify(inputData) }];
 ```
 
-3. **ContractGate → Validate Record**
+3. **DataContractGate → Validate Record**
    - Contract: pick the one you deployed. A mapped or typed contract name also works; it is looked up on the key.
    - Record: map `record` from the Code step.
    - Leave **Stop the Zap when the record fails** on.
@@ -58,7 +58,7 @@ Turn **Stop the Zap when the record fails** off only when a Path or Filter shoul
 
 ## What a reject does
 
-ContractGate writes a quarantine row with the violations. The halt message leads with its id (`Quarantined as <id>.`) because Zapier's run view truncates long messages. The Zap task is halted, not failed, so a string of bad records will not turn the Zap off. Zapier will not retry a halted task.
+DataContractGate writes a quarantine row with the violations. The halt message leads with its id (`Quarantined as <id>.`) because Zapier's run view truncates long messages. The Zap task is halted, not failed, so a string of bad records will not turn the Zap off. Zapier will not retry a halted task.
 
 The record body is stored, and so replayable, only on a paid plan with event payload storage on ([reference](event-payload-storage-reference.md)). Otherwise the row still shows what failed and why; fix the source record or the contract and let the next run through. With a stored body, replay from the Quarantine tab or `POST /quarantine/replay`.
 

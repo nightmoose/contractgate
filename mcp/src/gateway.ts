@@ -1,4 +1,4 @@
-/** Thin HTTP client for the ContractGate gateway. No validation logic. */
+/** Thin HTTP client for the DataContractGate gateway. No validation logic. */
 
 export const DEFAULT_BASE_URL = "https://app.datacontractgate.com";
 const USER_AGENT = "contractgate-mcp/0.1.0";
@@ -8,7 +8,7 @@ export class GatewayError extends Error {
   readonly body: string;
 
   constructor(status: number, body: string) {
-    super(`ContractGate HTTP ${status}: ${body}`);
+    super(`DataContractGate HTTP ${status}: ${body}`);
     this.name = "GatewayError";
     this.status = status;
     this.body = body;

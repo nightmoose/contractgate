@@ -1,6 +1,6 @@
 import Link from "next/link";
 
-export const metadata = { title: "Page not found — ContractGate" };
+export const metadata = { title: "Page not found — DataContractGate" };
 
 export default function NotFound() {
   return (

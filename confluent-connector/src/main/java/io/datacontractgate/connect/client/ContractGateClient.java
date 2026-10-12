@@ -15,7 +15,7 @@ import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 
 /**
- * Thread-safe HTTP client for the ContractGate ingest API.
+ * Thread-safe HTTP client for the DataContractGate ingest API.
  *
  * <p>Uses the Java 11 built-in {@link java.net.http.HttpClient} — no extra
  * runtime dependencies. A single instance is safe to share across all Kafka
@@ -48,7 +48,7 @@ public class ContractGateClient {
     /**
      * Creates a new client with the given configuration.
      *
-     * @param baseUrl         ContractGate API base URL (no trailing slash)
+     * @param baseUrl         DataContractGate API base URL (no trailing slash)
      * @param contractId      UUID of the contract to validate against
      * @param apiKey          {@code x-api-key} header value; empty string skips the header
      * @param contractVersion specific version pin; empty string → latest stable
@@ -126,11 +126,11 @@ public class ContractGateClient {
             response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
         } catch (IOException e) {
             throw new ContractGateApiException(
-                "I/O error calling ContractGate at " + url + ": " + e.getMessage(), e);
+                "I/O error calling DataContractGate at " + url + ": " + e.getMessage(), e);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             throw new ContractGateApiException(
-                "Interrupted while calling ContractGate at " + url, e);
+                "Interrupted while calling DataContractGate at " + url, e);
         }
 
         return parseValidationResponse(response.statusCode(), response.body(), url);
@@ -149,7 +149,7 @@ public class ContractGateClient {
             throws ContractGateApiException {
         if (!isValidationStatus(status)) {
             throw new ContractGateApiException(
-                "ContractGate returned HTTP " + status + " for contract " + contractId +
+                "DataContractGate returned HTTP " + status + " for contract " + contractId +
                 ". Body: " + truncate(rawBody, 500));
         }
 
@@ -158,13 +158,13 @@ public class ContractGateClient {
             parsed = mapper.readValue(rawBody, IngestResponse.class);
         } catch (JsonProcessingException e) {
             throw new ContractGateApiException(
-                "Failed to parse ContractGate response (HTTP " + status + "): " +
+                "Failed to parse DataContractGate response (HTTP " + status + "): " +
                 e.getMessage() + ". Raw body: " + truncate(rawBody, 300), e);
         }
 
         if (parsed.results == null || parsed.results.isEmpty()) {
             throw new ContractGateApiException(
-                "ContractGate HTTP " + status + " from " + url +
+                "DataContractGate HTTP " + status + " from " + url +
                 " had no per-event results. Body: " + truncate(rawBody, 300));
         }
         return parsed;
@@ -228,7 +228,7 @@ public class ContractGateClient {
     // ── Exception type ────────────────────────────────────────────────────────
 
     /**
-     * Checked exception thrown when the ContractGate API cannot be reached or
+     * Checked exception thrown when the DataContractGate API cannot be reached or
      * returns an unexpected response. The calling SMT maps this to either a
      * {@code DataException} (for DLQ routing) or a log warning (for
      * TAG_AND_PASS with degraded-service semantics).

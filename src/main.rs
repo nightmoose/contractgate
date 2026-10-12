@@ -1,4 +1,4 @@
-//! ContractGate — Real-time semantic contract enforcement gateway.
+//! DataContractGate — Real-time semantic contract enforcement gateway.
 //! Patent Pending.
 //!
 //! Starts an Axum HTTP server with routes for:
@@ -1795,7 +1795,7 @@ async fn main() -> anyhow::Result<()> {
         .unwrap_or(3001);
 
     let addr = SocketAddr::from(([0, 0, 0, 0], port));
-    tracing::info!("ContractGate listening on {}", addr);
+    tracing::info!("DataContractGate listening on {}", addr);
 
     let listener = tokio::net::TcpListener::bind(addr).await?;
     axum::serve(listener, app).await?;

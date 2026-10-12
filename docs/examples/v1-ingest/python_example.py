@@ -1,5 +1,5 @@
 """
-ContractGate v1 ingest — Python example (extends the existing SDK).
+DataContractGate v1 ingest — Python example (extends the existing SDK).
 
 Requires: pip install contractgate   (or the local SDK from sdks/python/)
 

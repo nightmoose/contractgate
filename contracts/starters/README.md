@@ -1,4 +1,4 @@
-# ContractGate Starter Templates
+# DataContractGate Starter Templates
 
 Three copy-and-modify contract templates covering the most common pilot shapes.
 No registry, no UI — just copy a file, rename it, and edit the fields.

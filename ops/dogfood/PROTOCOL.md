@@ -1,4 +1,4 @@
-# ContractGate Dogfood Protocol
+# DataContractGate Dogfood Protocol
 
 **Purpose:** End-to-end product testing with **real contracts** and **real data**, without waiting for beta volunteers. This is a living protocol: every run produces findings, and those findings drive the next scenario iteration.
 

@@ -1,11 +1,11 @@
-# ContractGate — Integration Playbook for Coding Agents
+# DataContractGate — Integration Playbook for Coding Agents
 
 **Read this file top to bottom, then execute it.** It is written for an AI
 coding agent (Claude, Cursor, Codex, Copilot) working inside a user's
 repository. Every step is concrete; no step requires the user to read
 documentation.
 
-- **Product:** ContractGate — semantic data-contract enforcement at ingestion.
+- **Product:** DataContractGate — semantic data-contract enforcement at ingestion.
   Rejects bad events *before* they reach a warehouse, lakehouse, or ML pipeline.
 - **Repo:** <https://github.com/nightmoose/contractgate>
 - **API base URL:** `https://app.datacontractgate.com`
@@ -26,7 +26,7 @@ gateway — verified with a dry run before anything writes.
 > prompts for your API key on install and keeps it in secure storage. Then use
 > the MCP tools below instead of curl.
 >
-> **MCP first.** If your host has the ContractGate MCP server connected
+> **MCP first.** If your host has the DataContractGate MCP server connected
 > (`@nightmoose/contractgate-mcp-server` in Cursor, Claude Desktop, Windsurf, Copilot,
 > Codex, …), skip the `curl` recipes below and use the typed tools:
 > `infer_contract`, `validate_events`, `deploy_contract`, `get_quarantine`,
@@ -400,7 +400,7 @@ function like the above and call that.
 
 ### Zapier
 
-If the events are not produced in this repo — a CRM, a form, a sheet, anything a Zap pulls — do not write a client. The producer is the ContractGate action **Validate Record**, which posts one object to `POST /v1/ingest/{contract_id}`. A failure is quarantined and the Zap stops. The next step writes `payload` only. Setup, including the commands that put the action in the Zap editor: [`docs/zapier.md`](zapier.md).
+If the events are not produced in this repo — a CRM, a form, a sheet, anything a Zap pulls — do not write a client. The producer is the DataContractGate action **Validate Record**, which posts one object to `POST /v1/ingest/{contract_id}`. A failure is quarantined and the Zap stops. The next step writes `payload` only. Setup, including the commands that put the action in the Zap editor: [`docs/zapier.md`](zapier.md).
 
 ---
 
@@ -523,7 +523,7 @@ for r in result.outcomes:
 forward_downstream(result.payload)
 ```
 
-MCP (if host has the ContractGate MCP server):
+MCP (if host has the DataContractGate MCP server):
 
 ```
 egress_validate(contract_id="<uuid>", events=[...], dry_run=true)

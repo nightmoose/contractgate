@@ -25,7 +25,7 @@ from contractgate.models import (
 
 
 class Client:
-    """Synchronous client for the ContractGate gateway.
+    """Synchronous client for the DataContractGate gateway.
 
     Construct with the gateway's ``base_url`` and your API key:
 

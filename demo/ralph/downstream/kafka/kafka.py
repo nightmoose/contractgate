@@ -8,7 +8,7 @@ orders_topic_str = "orders"
 customers_topic_str = "customers"
 products_topic_str = "products"
 
-# Clean topics only — ContractGate bridge writes here from *.raw (RFC-092).
+# Clean topics only — DataContractGate bridge writes here from *.raw (RFC-092).
 _BOOTSTRAP = os.environ.get("KAFKA_BOOTSTRAP", "127.0.0.1:9092")
 
 def streams(sink_fun, emulated=False):

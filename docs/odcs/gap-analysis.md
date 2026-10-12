@@ -1,4 +1,4 @@
-# ODCS v3.1.0 Gap Analysis — ContractGate
+# ODCS v3.1.0 Gap Analysis — DataContractGate
 
 **Status:** Week 1 deliverable  
 **Date:** 2026-05-01  
@@ -11,8 +11,8 @@
 
 Gaps fall into two directions:
 
-- **CG→ODCS gaps:** ContractGate fields that have no ODCS v3.1.0 home. These are features that make ContractGate more expressive than ODCS. Losing them on export would break round-trip fidelity and strip our differentiators.
-- **ODCS→CG gaps:** ODCS mandatory/recommended fields that ContractGate does not currently produce. These are blockers for the "ODCS Conformant" claim.
+- **CG→ODCS gaps:** DataContractGate fields that have no ODCS v3.1.0 home. These are features that make DataContractGate more expressive than ODCS. Losing them on export would break round-trip fidelity and strip our differentiators.
+- **ODCS→CG gaps:** ODCS mandatory/recommended fields that DataContractGate does not currently produce. These are blockers for the "ODCS Conformant" claim.
 
 Each gap has a proposed remedy. Remedies are one of:
 - **Inject at export** — the data exists in CG; just needs to be serialized to ODCS format
@@ -40,7 +40,7 @@ Each gap has a proposed remedy. Remedies are one of:
 ### CG-GAP-002 · Validation constraints: `pattern`, `enum`, `min`, `max`, `min_length`, `max_length`
 
 **CG fields:** Per-entity on `FieldDefinition`  
-**What they do:** Machine-executable constraints that fire at per-event validation time. They are the core of ContractGate's value proposition — the validation engine relies on them directly.  
+**What they do:** Machine-executable constraints that fire at per-event validation time. They are the core of DataContractGate's value proposition — the validation engine relies on them directly.  
 **ODCS status:** No structural equivalent in `schema[].properties[]`. ODCS `quality[]` rules can express some of these (threshold `mustBe`, `mustBeGreaterThan`, etc.) but:
 1. They are intended as dataset-level quality metrics, not per-event schema enforcement.
 2. They use SQL-expression evaluation models, not the CG validator's field-level constraint model.
@@ -132,7 +132,7 @@ x-contractgate-metrics:
 **CG field:** `FieldDefinition.transform` (optional, on string-typed fields)  
 **What it does:** Declares a post-validation PII transformation to apply at ingest: `mask`, `hash`, `drop`, or `redact`. The `pii_salt` in `ContractIdentity` is the keying material for `hash` and `format_preserving` mask.  
 **ODCS status:** No equivalent. ODCS `schema[].properties[].encryptedName` is the closest field — it stores the alternate name of an encrypted column, not the transformation operation. ODCS `transformLogic` / `transformDescription` describe lineage transforms, not runtime PII operations.  
-**Round-trip risk:** CRITICAL. If transforms are dropped on export and re-import, PII fields will no longer be masked/hashed/redacted at ingest. Potential compliance failure (GDPR, CCPA). This is ContractGate's most important differentiator.  
+**Round-trip risk:** CRITICAL. If transforms are dropped on export and re-import, PII fields will no longer be masked/hashed/redacted at ingest. Potential compliance failure (GDPR, CCPA). This is DataContractGate's most important differentiator.  
 **Proposal:** Preserve transform declaration as `customProperties` on the matching property. Additionally populate `classification: restricted` (or `classification: confidential`) on the property to signal sensitivity to ODCS-native tools.
 
 ```yaml
@@ -188,7 +188,7 @@ schema:
 
 ---
 
-## Part B — ODCS Mandatory Fields Missing in ContractGate
+## Part B — ODCS Mandatory Fields Missing in DataContractGate
 
 ### ODCS-GAP-001 · `apiVersion` (MANDATORY)
 

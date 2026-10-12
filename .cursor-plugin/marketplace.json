@@ -4,7 +4,7 @@
     "name": "nightmoose"
   },
   "metadata": {
-    "description": "ContractGate plugins for Cursor"
+    "description": "DataContractGate plugins for Cursor"
   },
   "plugins": [
     {

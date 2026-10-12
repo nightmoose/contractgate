@@ -1,4 +1,4 @@
-//! Core semantic validation engine — the patent-pending heart of ContractGate.
+//! Core semantic validation engine — the patent-pending heart of DataContractGate.
 //!
 //! The validator checks an incoming JSON event against a semantic `Contract` and
 //! returns either `ValidationResult::Pass` or `ValidationResult::Fail` with a

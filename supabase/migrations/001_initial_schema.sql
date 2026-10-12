@@ -1,4 +1,4 @@
--- ContractGate — Initial Schema
+-- DataContractGate — Initial Schema
 -- Migration: 001_initial_schema
 -- Run this against your Supabase project via the SQL editor or psql.
 

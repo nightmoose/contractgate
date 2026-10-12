@@ -1,7 +1,7 @@
 # Kinesis Walkthrough
 
 Validate an AWS Kinesis stream in place: producers write to a raw stream,
-ContractGate validates each record with the same engine as the HTTP path, and
+DataContractGate validates each record with the same engine as the HTTP path, and
 routes valid records to a clean stream and invalid ones to a quarantine stream.
 Full detail in the [Kinesis ingress reference](../kinesis-ingress-reference.md).
 

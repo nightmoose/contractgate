@@ -15,7 +15,7 @@ import java.util.Map;
  * topic is returned.</p>
  *
  * <h2>Severity mapping</h2>
- * <p>ContractGate violation {@code kind} values are mapped to a severity
+ * <p>DataContractGate violation {@code kind} values are mapped to a severity
  * string for the {@code "severity"} match field:</p>
  * <ul>
  *   <li>{@code "error"} — {@code missing_required_field}, {@code type_mismatch},
@@ -93,7 +93,7 @@ public class DlqRouter {
     }
 
     /**
-     * Maps a ContractGate violation kind to a severity string.
+     * Maps a DataContractGate violation kind to a severity string.
      *
      * <ul>
      *   <li>{@code "error"} — hard violations: missing/type/pattern/enum/range/

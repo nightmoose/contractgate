@@ -14,7 +14,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 /**
  * Integration test for {@link DynamicContractReloader} with a mock HTTP gateway.
  *
- * <p>Uses WireMock to simulate the ContractGate API:
+ * <p>Uses WireMock to simulate the DataContractGate API:
  * <ul>
  *   <li>First: {@code GET /v1/contracts/test-id/version} returns v1 hash.</li>
  *   <li>Then: same endpoint returns v2 hash.</li>

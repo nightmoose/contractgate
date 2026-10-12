@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """
-rfc_to_content.py — Turn a shipped ContractGate RFC into publishable drafts.
+rfc_to_content.py — Turn a shipped DataContractGate RFC into publishable drafts.
 
 Reads docs/rfcs/<N>-*.md, looks up its ship status in docs/STATUS.md, and asks
 Claude to produce four drafts (blog post, Show HN post, X thread, Reddit post)
-in ContractGate's voice per docs/marketing/marketing-plan.md §7.
+in DataContractGate's voice per docs/marketing/marketing-plan.md §7.
 
 Never publishes anything. Writes to docs/marketing/drafts/rfc-<N>/ for human
 review before posting.
@@ -39,7 +39,7 @@ ARTIFACTS = ("blog", "hn", "x-thread", "reddit-dataengineering")
 # Kept inline so the script is self-contained; if you change the plan, update
 # this too. The doc is the source of truth; this is the machine copy.
 SYSTEM_PROMPT = """\
-You are ContractGate's marketing writer. ContractGate is the runtime enforcement
+You are DataContractGate's marketing writer. DataContractGate is the runtime enforcement
 gate for streaming data contracts: users write a semantic YAML contract, we
 validate every event at ingress in sub-millisecond (Rust core, 86k+ events/s/core),
 and route bad events to quarantine before consumers see them. Patent pending.
@@ -143,8 +143,8 @@ Title: <plain-English title, ≤300 chars, NO "Show HN"-style framing, NO "I bui
 
 Body:
 <600-900 words, first-person singular ("I ran into"). Practitioner voice. The
-first two paragraphs must NOT mention ContractGate; describe the problem
-generically. Mention ContractGate only in the second half, and only once by
+first two paragraphs must NOT mention DataContractGate; describe the problem
+generically. Mention DataContractGate only in the second half, and only once by
 name — the rest of the time refer to it as "the gate we built" or similar.
 Include at least one code or YAML block. Close with: "Repo:
 https://github.com/nightmoose/contractgate — playbook for wiring it into an
@@ -301,7 +301,7 @@ Review checklist before publishing:
   □ Blog + Reddit include a code/YAML block a reader can copy.
   □ HN title starts with "Show HN:" and is ≤80 chars.
   □ Every X tweet is ≤280 chars including the [k/N] prefix.
-  □ Reddit body's first two paragraphs do not name ContractGate.
+  □ Reddit body's first two paragraphs do not name DataContractGate.
   □ Closing link points to https://app.datacontractgate.com/llm-integration.md.
   □ Nothing claims prod behavior that isn't shipped (check RFC status).
 """
@@ -309,7 +309,7 @@ Review checklist before publishing:
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Turn a ContractGate RFC into publishable drafts."
+        description="Turn a DataContractGate RFC into publishable drafts."
     )
     parser.add_argument("rfc", help="RFC number, e.g. 89 or 089")
     parser.add_argument(

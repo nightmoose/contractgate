@@ -1,4 +1,4 @@
--- ContractGate — Compose-only demo org.
+-- DataContractGate — Compose-only demo org.
 --
 -- Inserts a single fixed-UUID org so that:
 --   * tests/compose_smoke.sh can POST a contract with `x-org-id: <uuid>`
@@ -16,7 +16,7 @@
 INSERT INTO public.orgs (id, name, slug, plan, created_at)
 VALUES (
     'cccccccc-cccc-cccc-cccc-cccccccccccc',
-    'ContractGate Demo Org',
+    'DataContractGate Demo Org',
     'cg-demo',
     'free',
     NOW()

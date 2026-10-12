@@ -59,7 +59,7 @@ export default function ResetPasswordPage() {
       <div className="w-full max-w-sm">
         <div className="text-center mb-8">
           <Link href="/" className="inline-block">
-            <span className="text-2xl font-bold text-green-400">ContractGate</span>
+            <span className="text-2xl font-bold text-green-400">DataContractGate</span>
           </Link>
         </div>
 

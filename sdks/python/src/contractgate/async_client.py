@@ -31,7 +31,7 @@ from contractgate.models import (
 
 
 class AsyncClient:
-    """Asynchronous client for the ContractGate gateway."""
+    """Asynchronous client for the DataContractGate gateway."""
 
     def __init__(
         self,

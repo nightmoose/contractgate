@@ -69,12 +69,12 @@ pub struct InferArgs {
     #[arg(long, short = 'd', value_name = "TEXT")]
     pub description: Option<String>,
 
-    /// Output file for the ContractGate YAML.
+    /// Output file for the DataContractGate YAML.
     /// Defaults to stdout.
     #[arg(long, short = 'o', value_name = "FILE")]
     pub out: Option<PathBuf>,
 
-    /// Also write an ODCS-compatible YAML alongside the ContractGate output.
+    /// Also write an ODCS-compatible YAML alongside the DataContractGate output.
     #[arg(long)]
     pub odcs: bool,
 
@@ -212,10 +212,10 @@ pub fn run(args: &InferArgs) -> Result<i32> {
     let fields = infer_fields_from_objects_pub(&samples);
     let field_count = fields.len();
 
-    // 5. Render ContractGate YAML.
+    // 5. Render DataContractGate YAML.
     let yaml = render_contractgate_yaml(&name, &description, &fields);
 
-    // 6. Write ContractGate YAML.
+    // 6. Write DataContractGate YAML.
     match &args.out {
         Some(path) => {
             fs::write(path, &yaml)
@@ -307,7 +307,7 @@ fn extract_samples(report: &NewmanReport) -> Vec<Value> {
     samples
 }
 
-/// Render a ContractGate YAML contract from inferred field definitions.
+/// Render a DataContractGate YAML contract from inferred field definitions.
 fn render_contractgate_yaml(
     name: &str,
     description: &str,

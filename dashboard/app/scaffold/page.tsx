@@ -4,7 +4,7 @@
  * Scaffold page — RFC-024: Brownfield Contract Scaffolder.
  *
  * Lets users paste JSON samples, NDJSON, an Avro schema (.avsc), or a
- * Protobuf definition (.proto) and get a draft ContractGate YAML back,
+ * Protobuf definition (.proto) and get a draft DataContractGate YAML back,
  * with embedded profiler stats and PII TODO annotations highlighted.
  */
 

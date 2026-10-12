@@ -1,9 +1,9 @@
 {
   "manifest_version": "0.3",
   "name": "contractgate",
-  "display_name": "ContractGate",
+  "display_name": "DataContractGate",
   "version": "0.1.2",
-  "description": "Infer, dry-run, deploy, and inspect ContractGate semantic data contracts.",
+  "description": "Infer, dry-run, deploy, and inspect DataContractGate semantic data contracts.",
   "long_description": "Reject schema-valid but wrong events before they hit your topic. Infer a contract from real events, dry-run it, deploy it, and inspect quarantined events.",
   "author": {
     "name": "DataContractGate",
@@ -39,7 +39,7 @@
   "user_config": {
     "api_key": {
       "type": "string",
-      "title": "ContractGate API key",
+      "title": "DataContractGate API key",
       "description": "cg_live_... key from https://app.datacontractgate.com/account",
       "sensitive": true,
       "required": true

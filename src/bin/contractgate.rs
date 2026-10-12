@@ -14,11 +14,11 @@ use std::{path::PathBuf, process};
 #[derive(Parser)]
 #[command(
     name = "contractgate",
-    about = "ContractGate CLI — push, pull, and validate semantic contracts",
+    about = "DataContractGate CLI — push, pull, and validate semantic contracts",
     version
 )]
 struct Cli {
-    /// API key for the ContractGate gateway.
+    /// API key for the DataContractGate gateway.
     /// Overrides CONTRACTGATE_API_KEY environment variable.
     #[arg(long, env = "CONTRACTGATE_API_KEY", global = true)]
     api_key: Option<String>,
@@ -65,7 +65,7 @@ enum Cmd {
     ///   cg enforce --mode shadow --contract contracts/orders.yaml --topic orders
     ///   cg enforce --mode shadow --contract my.yaml --topic events --report json
     Enforce(enforce::EnforceArgs),
-    /// Infer a ContractGate contract from a JSON response (RFC-046).
+    /// Infer a DataContractGate contract from a JSON response (RFC-046).
     ///
     /// Two input modes — all processing is local, no network calls:
     ///
@@ -170,7 +170,7 @@ fn require_api_key(key: &Option<String>) -> String {
 
 const CONFIG_SCHEMA_JSON: &str = r#"{
   "$schema": "http://json-schema.org/draft-07/schema#",
-  "title": "ContractGate CLI Config",
+  "title": "DataContractGate CLI Config",
   "description": "Schema for .contractgate.yml",
   "type": "object",
   "properties": {
@@ -178,7 +178,7 @@ const CONFIG_SCHEMA_JSON: &str = r#"{
     "gateway": {
       "type": "object",
       "properties": {
-        "url": { "type": "string", "description": "Base URL of the ContractGate gateway" }
+        "url": { "type": "string", "description": "Base URL of the DataContractGate gateway" }
       },
       "required": ["url"]
     },

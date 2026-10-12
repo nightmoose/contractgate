@@ -1,6 +1,6 @@
 # Stripe Billing Reference
 
-Self-serve **Growth** plan billing for the ContractGate dashboard. The Stripe
+Self-serve **Growth** plan billing for the DataContractGate dashboard. The Stripe
 webhook is the source of truth for plan changes; the dashboard never sets a
 paid `plan` directly.
 
@@ -93,7 +93,7 @@ order by last_seen desc;
 ## Environment variables
 
 Set in the dashboard deployment (see `dashboard/.env.example`). Use the
-**ContractGate** Stripe account.
+**DataContractGate** Stripe account.
 
 | Var                            | Purpose |
 |--------------------------------|---------|

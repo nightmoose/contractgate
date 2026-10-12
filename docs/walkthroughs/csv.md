@@ -1,7 +1,7 @@
 # CSV / File Walkthrough
 
 CSV is a two-step surface: **infer** a draft contract from a sample file, then
-**validate** rows against it. ContractGate generates the contract for you — you
+**validate** rows against it. DataContractGate generates the contract for you — you
 review it and tighten it. Full detail in the
 [CSV inference reference](../csv-inference-reference.md).
 

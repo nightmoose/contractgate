@@ -1,4 +1,4 @@
-# ContractGate gate in a Redpanda Connect pipeline.
+# DataContractGate gate in a Redpanda Connect pipeline.
 #
 # Every JSON message is POSTed to POST /v1/ingest/{id}. HTTP 200 / 207 / 422
 # are validation outcomes (422 = the event failed the contract, not an outage).

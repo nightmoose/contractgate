@@ -1,12 +1,12 @@
 # RAG / LLM Ingestion Reference (RFC-077)
 
-ContractGate gates documents **before** they reach your RAG or fine-tuning
+DataContractGate gates documents **before** they reach your RAG or fine-tuning
 pipeline — before chunking, before embedding, before they land in a vector
 store or training set. It enforces the *structured envelope* around each
 record: provenance, freshness, an explicit PII-redaction attestation, and a
 source allowlist.
 
-## What ContractGate does / does not do
+## What DataContractGate does / does not do
 
 This boundary is the whole point — keep it sharp:
 
@@ -29,7 +29,7 @@ This boundary is the whole point — keep it sharp:
   enforces that the attestation is present and true, not that it is correct.
 
 If you need content scoring or PII *detection*, that runs upstream in your
-pipeline; ContractGate enforces the contract on the envelope it produces.
+pipeline; DataContractGate enforces the contract on the envelope it produces.
 
 ## The `_cg` envelope convention
 

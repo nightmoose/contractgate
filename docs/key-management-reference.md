@@ -7,7 +7,7 @@
 
 ## Overview
 
-ContractGate API keys authenticate Kafka connectors, CLI tools, and any
+DataContractGate API keys authenticate Kafka connectors, CLI tools, and any
 server-to-server caller against the validation backend (`src/api_key_auth.rs`).
 
 As of RFC-056, key issuance and revocation are **server-side only**.  The

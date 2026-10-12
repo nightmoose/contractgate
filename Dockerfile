@@ -1,5 +1,5 @@
 # ============================================================
-# ContractGate — Rust backend Dockerfile
+# DataContractGate — Rust backend Dockerfile
 # Multi-stage build: builder → slim runtime image
 # Target: <20 MB final image, optimised release binary
 # ============================================================

@@ -34,7 +34,7 @@ export default function DemoBanner() {
         rel="noopener noreferrer"
         className="flex items-center gap-1.5 text-xs text-green-500 hover:text-green-400 transition-colors font-medium"
       >
-        ContractGate Cloud
+        DataContractGate Cloud
         <svg
           xmlns="http://www.w3.org/2000/svg"
           width="12"

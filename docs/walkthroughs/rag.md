@@ -1,6 +1,6 @@
 # RAG Corpus Walkthrough
 
-Gate documents **before** they reach chunking and embedding: ContractGate
+Gate documents **before** they reach chunking and embedding: DataContractGate
 enforces the provenance envelope (source, freshness, PII attestation); your
 pipeline still does the chunking and embedding. Full detail in the
 [RAG ingestion reference](../rag-ingestion-reference.md).

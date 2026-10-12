@@ -1,4 +1,4 @@
-# ContractGate — Private Beta Outreach Pack
+# DataContractGate — Private Beta Outreach Pack
 
 **Status:** Research complete · messages ready to send  
 **Constraints honored:** private 1:1 only · no public posts · no employer tagging · ODCS/Bitol people excluded  
@@ -33,7 +33,7 @@
 |--------|------|--------------|
 | **Chad Sanderson, Adrian Kreuziger** | Gable.ai is a shift-left data contracts / change-management platform | **Optional / lower priority.** Frame as complementary runtime Kafka gate (quarantine path), not “we’re also data contracts.” Or skip if you only want pure practitioners. |
 | **Stéphane Derosiaux** | Conduktor has Schema Registry Proxy + Gateway (broker-boundary enforcement) | Closest product adjacency. Frame as **peer technical exchange / early beta feedback**, not “replace Conduktor.” His Dec 2025 post is the best hook. |
-| **Confluent folks** (Matthew, Adam, Robert, Gunnar, Kai’s older work) | They ship Schema Registry data contracts / CEL rules | Position ContractGate as **semantic enforcement + quarantine/replay gate that sits in front of / beside SR**, not “SR is wrong.” Many teams still lack a hard choke point producers can’t route around. |
+| **Confluent folks** (Matthew, Adam, Robert, Gunnar, Kai’s older work) | They ship Schema Registry data contracts / CEL rules | Position DataContractGate as **semantic enforcement + quarantine/replay gate that sits in front of / beside SR**, not “SR is wrong.” Many teams still lack a hard choke point producers can’t route around. |
 | **Ananth Packkildurai** | Practitioner / writer; built Schemata | Cleanest non-competitive practitioner outreach. |
 
 ---
@@ -73,7 +73,7 @@
 4. Company path: via Conduktor contact / mutual Kafka community (last resort)
 
 **Relevant recent content**
-- [Kafka Data Contracts: A Schema Is Not a Contract](https://www.conduktor.io/blog/kafka-data-contracts) (Dec 23, 2025) — core thesis matches ContractGate
+- [Kafka Data Contracts: A Schema Is Not a Contract](https://www.conduktor.io/blog/kafka-data-contracts) (Dec 23, 2025) — core thesis matches DataContractGate
 - [Stop Calling Your Kafka Topics Data Products](https://www.conduktor.io/blog/kafka-data-products) (Feb 3, 2026) — “Schema-on-a-wiki is not a contract”
 - [Schema Evolution: 8 Kafka Best Practices](https://www.conduktor.io/glossary/schema-evolution-best-practices) (Jul 2026)
 
@@ -86,7 +86,7 @@
 ```
 Hi Stéphane — your Dec piece “A Schema Is Not a Contract” is the cleanest write-up I’ve seen of the gap: registries check shape at registration, but producers can still ship semantically broken events past the boundary.
 
-I’ve been building ContractGate privately: a lightweight real-time enforcement gate for Kafka. Producers write to a raw topic; we validate against a semantic YAML contract (types, patterns, enums, required fields, glossary rules) and route to clean vs quarantine. Sub-ms per event, Rust core, optional Kafka Connect path.
+I’ve been building DataContractGate privately: a lightweight real-time enforcement gate for Kafka. Producers write to a raw topic; we validate against a semantic YAML contract (types, patterns, enums, required fields, glossary rules) and route to clean vs quarantine. Sub-ms per event, Rust core, optional Kafka Connect path.
 
 Very early private beta — looking for a handful of people who live this problem, not publicity. Would you take a 15-minute screen-share comparing your current enforcement path to the gate, or should I just send a private invite link?
 
@@ -121,7 +121,7 @@ No pressure either way — happy to keep it peer-to-peer technical.
 ```
 Hi Adam — your “Shift Left: Bad Data in Event Streams” series nails the hard constraint: once bad events hit an immutable log, batch-style fix-ups don’t transfer. Prevention has to be the first strategy.
 
-I’m building ContractGate in private: a small real-time gate in front of Kafka topics that enforces semantic data contracts at ingress (not just schema ID / shape) and quarantines violators so consumers never see them. YAML contracts, Rust validation engine, clean vs quarantine routing.
+I’m building DataContractGate in private: a small real-time gate in front of Kafka topics that enforces semantic data contracts at ingress (not just schema ID / shape) and quarantines violators so consumers never see them. YAML contracts, Rust validation engine, clean vs quarantine routing.
 
 Not looking for press — just a few practitioners who care about producer–consumer agreements on streams. Would you take 15 minutes to screen-share how you currently prevent bad events, vs a quick look at the gate? Or I can send a private invite only.
 
@@ -156,7 +156,7 @@ Totally fine if timing is bad — no hard sell.
 ```
 Hi Robert — I’ve been reading your work on SR data contracts (CEL quality rules, migration rules, and the Rust client). The design of contracts as structure + integrity constraints + evolution is the right mental model.
 
-I’ve been building something adjacent in private: ContractGate — a real-time semantic enforcement gate for Kafka that sits as an ingress path (raw → validate → clean/quarantine). Aim is the cases where client-side SR rules aren’t opted into, or teams want a hard boundary producers can’t skip, plus quarantine/replay for bad events.
+I’ve been building something adjacent in private: DataContractGate — a real-time semantic enforcement gate for Kafka that sits as an ingress path (raw → validate → clean/quarantine). Aim is the cases where client-side SR rules aren’t opted into, or teams want a hard boundary producers can’t skip, plus quarantine/replay for bad events.
 
 Very early private beta; looking for a few people who actually implement this layer — not a marketing round. Open to a 15-minute technical screen-share of your current enforcement path vs the gate, or just a private invite if you’d rather poke at it alone.
 
@@ -187,7 +187,7 @@ Either way, happy to keep it engineer-to-engineer.
 ```
 Hi Gunnar — your “Data Contracts in Practice with Debezium and Flink” talk is one of the few that treats contracts as something you actually enforce on CDC streams, not a wiki page.
 
-I’m privately building ContractGate: a lightweight Kafka ingress gate that validates events against semantic contracts and routes bad ones to quarantine before consumers see them. Useful when the producer path is heterogeneous (CDC + apps + connectors) and you need one choke point.
+I’m privately building DataContractGate: a lightweight Kafka ingress gate that validates events against semantic contracts and routes bad ones to quarantine before consumers see them. Useful when the producer path is heterogeneous (CDC + apps + connectors) and you need one choke point.
 
 Early private beta — looking for a few real users who care about streaming contracts, not publicity. Open to a 15-minute screen-share of a typical Debezium→Kafka contract path vs the gate, or I can send a private invite.
 
@@ -219,7 +219,7 @@ No pressure — purely technical peer outreach.
 ```
 Hi Matthew — your InfoWorld piece on why data contracts need Kafka/Flink is the clearest split I’ve seen: specification, implementation, and enforcement as three distinct requirements. Most teams stop at “we have a schema in the registry.”
 
-I’m building ContractGate privately as an enforcement gate: real-time validation of semantic contracts on Kafka ingress, with clean vs quarantine routing so bad events don’t poison consumers. Complements registry-based structure with a hard path-level check producers can’t quietly skip.
+I’m building DataContractGate privately as an enforcement gate: real-time validation of semantic contracts on Kafka ingress, with clean vs quarantine routing so bad events don’t poison consumers. Complements registry-based structure with a hard path-level check producers can’t quietly skip.
 
 Early private beta — looking for a handful of people who care about modeling + enforcement, not a launch. Would a 15-minute screen-share of “current flow vs gate” be useful, or prefer a private invite to poke at yourself?
 
@@ -253,7 +253,7 @@ Low pressure either way.
 ```
 Hi Ananth — your data-contract quality series (especially the Fronting Kafka / WAP patterns) is still one of the best engineering treatments of “validate before publish” on streams. The point that real-time event routing still lacks first-class contract tools stuck with me.
 
-I’ve been privately building ContractGate: a Rust-based gate that validates semantic contracts at Kafka ingress and routes to clean vs quarantine topics. Aimed at the one-phase choke-point case — not another observability dashboard.
+I’ve been privately building DataContractGate: a Rust-based gate that validates semantic contracts at Kafka ingress and routes to clean vs quarantine topics. Aimed at the one-phase choke-point case — not another observability dashboard.
 
 Very early private beta; looking for practitioners, not coverage. Would you take 15 minutes to compare notes on fronting-Kafka validation, or should I send a private invite only?
 
@@ -286,7 +286,7 @@ Happy to keep it purely technical.
 ```
 Hi Kai — your post on policy enforcement and data quality for Kafka with Schema Registry is still the practical map of “structure is not enough — you need field-level rules and a place to put bad messages.”
 
-I’ve been building ContractGate privately: a lightweight real-time enforcement gate (semantic YAML contracts, clean vs quarantine routing) for teams that want a hard ingress boundary on Kafka, not only registry registration checks.
+I’ve been building DataContractGate privately: a lightweight real-time enforcement gate (semantic YAML contracts, clean vs quarantine routing) for teams that want a hard ingress boundary on Kafka, not only registry registration checks.
 
 Early private beta — seeking a few real users and technical feedback, not publicity or a landscape placement. If useful, I’d value 15 minutes comparing a typical SR+rules setup to the gate, or I can send a private invite.
 
@@ -318,7 +318,7 @@ Happy to keep this off any public channels.
 ```
 Hi Adrian — your Engineer’s Guide (with Chad) is still the implementation blueprint I send people: contracts as producer-enforced agreements with SR compatibility + CI gates.
 
-I’m privately building a narrow piece adjacent to that stack: ContractGate — real-time semantic validation at Kafka ingress with quarantine/replay for events that already escaped CI. Not trying to replace shift-left change management; focused on the runtime choke point for streaming paths.
+I’m privately building a narrow piece adjacent to that stack: DataContractGate — real-time semantic validation at Kafka ingress with quarantine/replay for events that already escaped CI. Not trying to replace shift-left change management; focused on the runtime choke point for streaming paths.
 
 Early private beta; looking for a few people who’ve actually implemented contracts in production for feedback. If a 15-minute peer screen-share is interesting (your current runtime path vs the gate), great; if it’s too close to Gable’s world, totally understand — no hard feelings.
 
@@ -351,7 +351,7 @@ Keeping this private either way.
 ```
 Hi Chad — long-time reader of Data Products. Your consumer-defined contract framing and the adoption failure modes are the honest version of this space.
 
-I’ve been privately building a narrow runtime piece: ContractGate — a Kafka ingress gate for semantic contract enforcement with quarantine, for teams that already buy the “contracts as APIs” idea but still get bad events into topics when producers skip client-side checks.
+I’ve been privately building a narrow runtime piece: DataContractGate — a Kafka ingress gate for semantic contract enforcement with quarantine, for teams that already buy the “contracts as APIs” idea but still get bad events into topics when producers skip client-side checks.
 
 Not pitching a broad platform or publicity. If you ever want a 15-minute look as a peer in the contracts space (or to tell me it’s redundant with paths you already see), I’m game. Otherwise no need to reply.
 
@@ -397,7 +397,7 @@ Keeping this 1:1.
 1. **Private invite path** — cloud account or self-hosted `make demo` link with 5-minute script  
 2. **15-min screen-share outline**  
    - Their current flow (2 min)  
-   - ContractGate: contract → produce bad event → quarantine (5 min)  
+   - DataContractGate: contract → produce bad event → quarantine (5 min)  
    - Ask: would this fit / what’s missing (5 min)  
    - Next step or not (3 min)  
 3. **One-pager** (internal only) on Kafka ingress + quarantine topics  

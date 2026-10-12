@@ -1,6 +1,6 @@
-# ContractGate Semantic Validator for Kafka Connect
+# DataContractGate Semantic Validator for Kafka Connect
 
-A Kafka Connect **Single Message Transform (SMT)** that validates every record against a [ContractGate](https://datacontractgate.com) semantic contract in real-time — before it reaches storage or AI systems.
+A Kafka Connect **Single Message Transform (SMT)** that validates every record against a [DataContractGate](https://datacontractgate.com) semantic contract in real-time — before it reaches storage or AI systems.
 
 Invalid records are routed to a **dead-letter topic**. Passing records continue downstream unchanged. Zero schema registry dependency; works with any connector.
 
@@ -30,7 +30,7 @@ That's it. Every record is now validated against your contract in real-time.
 
 | Key | Default | Description |
 |-----|---------|-------------|
-| `contractgate.api.url` | *(required)* | Base URL of your ContractGate API server (no trailing slash) |
+| `contractgate.api.url` | *(required)* | Base URL of your DataContractGate API server (no trailing slash) |
 | `contractgate.contract.id` | *(required)* | UUID of the contract to validate against |
 | `contractgate.api.key` | `""` | `x-api-key` header value. Leave blank for dev/no-auth mode |
 | `contractgate.contract.version` | `""` | Pin to a specific version, e.g. `"1.2.0"`. Blank = latest stable. Sent as `?version=` on `POST /v1/ingest/{id}`. |
@@ -145,7 +145,7 @@ contractgate.dlq.routing.rules=[
 
 ## Server-side version probe (RFC-064)
 
-A new lightweight endpoint was added to the ContractGate gateway to support dynamic contract reload:
+A new lightweight endpoint was added to the DataContractGate gateway to support dynamic contract reload:
 
 ```
 GET /v1/contracts/{contract_id}/version
@@ -183,7 +183,7 @@ The SMT throws a `DataException`. Kafka Connect's built-in error handling routes
 The SMT adds violation headers and forwards the record downstream unchanged. Consumers can inspect `contractgate.passed` and decide what to do.
 
 ### API Unavailable (fail-open)
-If ContractGate is unreachable (network error, HTTP 5xx, 401/404/429), the SMT logs a warning and passes the record through. This prevents a transient API outage from halting your connector.
+If DataContractGate is unreachable (network error, HTTP 5xx, 401/404/429), the SMT logs a warning and passes the record through. This prevents a transient API outage from halting your connector.
 
 HTTP **422** is **not** an outage — it is a rejected event. The SMT parses the body and applies DLQ or TAG_AND_PASS. Same for HTTP 207 (mixed batch).
 
@@ -216,7 +216,7 @@ The older `confluent-hub install` client is deprecated on Confluent Platform 7.6
 
 - Java 11+
 - Kafka Connect 2.8+
-- A running ContractGate API instance ([free tier available](https://datacontractgate.com/pricing))
+- A running DataContractGate API instance ([free tier available](https://datacontractgate.com/pricing))
 
 ---
 

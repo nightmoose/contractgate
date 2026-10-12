@@ -1,11 +1,11 @@
 # Ralph-native demo (RFC-092)
 
-ContractGate in front of **Driftless / Kafi Streams**: CDC producers → `*.raw` → gate → clean topics → joins → LanceDB / MCP.
+DataContractGate in front of **Driftless / Kafi Streams**: CDC producers → `*.raw` → gate → clean topics → joins → LanceDB / MCP.
 
 Adapted from [xdgrulez/driftless](https://github.com/xdgrulez/driftless) (Apache-2.0). See `NOTICE`.
 
 ```
-producers  →  *.raw  →  gate_bridge (ContractGate)  →  orders/customers/products
+producers  →  *.raw  →  gate_bridge (DataContractGate)  →  orders/customers/products
                                               ↘ *.quarantine
                                                       ↓
                                               Kafi join → LanceDB → MCP
@@ -89,4 +89,4 @@ python client.py --query "delivered"
 ## Attribution
 
 Datagen + Driftless MCP/join path: Ralph M. Debusmann / xdgrulez.  
-Contracts + gate wiring: ContractGate.
+Contracts + gate wiring: DataContractGate.

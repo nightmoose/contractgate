@@ -1,7 +1,7 @@
 # Security Policy
 
 ## Supported Versions
-ContractGate is rapidly evolving. We support security updates for the latest stable release only.
+DataContractGate is rapidly evolving. We support security updates for the latest stable release only.
 
 ## Reporting a Vulnerability
 We take security seriously. Please report vulnerabilities privately.
@@ -31,4 +31,4 @@ We aim to acknowledge reports within 48 hours and provide a fix timeline within 
 ## Additional Hardening
 See `docs/SECURITY.md` (forthcoming) for supply-chain, Rust-specific, and runtime security details.
 
-Thank you for helping keep ContractGate secure.
+Thank you for helping keep DataContractGate secure.

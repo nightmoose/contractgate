@@ -1,4 +1,4 @@
-# ContractGate — Architecture Overview
+# DataContractGate — Architecture Overview
 
 **One-pager for security questionnaires and data-room review.**
 Last updated: 2026-07-15.
@@ -12,7 +12,7 @@ Last updated: 2026-07-15.
 flowchart LR
     P[Producer or pipeline] -->|HTTP, Kafka, Kinesis| GW
 
-    subgraph GW[ContractGate gateway - Rust Axum on Fly.io]
+    subgraph GW[DataContractGate gateway - Rust Axum on Fly.io]
       A[Auth: API key or Bearer JWT] --> O[Resolve org + key scope]
       O --> C[Resolve contract + version]
       C --> V[Validate - compile once, validate many, p99 under 15ms]

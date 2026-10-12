@@ -3,7 +3,7 @@
 /**
  * WorkbenchClient — RFC-046: API Workbench.
  *
- * Browser-local execution only. No API calls pass through ContractGate
+ * Browser-local execution only. No API calls pass through DataContractGate
  * servers; credentials never leave the browser.
  *
  * Free tier: Try It mode — 1 endpoint, inference visible, Save/Deploy/Export
@@ -284,14 +284,14 @@ function generateOdcsYaml(name: string, description: string, fields: InferredFie
 
 function generatePostmanCollection(baseUrl: string, entries: SuiteEntry[]): string {
   const postScript = [
-    "// ContractGate Workbench — post-response inference hook",
+    "// DataContractGate Workbench — post-response inference hook",
     "// Pipe this output to: contractgate infer --from-newman response.json --out contracts/out.yaml",
     "const body = pm.response.json();",
     "pm.test('Response is object', () => pm.expect(body).to.be.an('object'));",
   ].join("\n");
 
   const collection = {
-    info: { name: "ContractGate Workbench Export", schema: "https://schema.getpostman.com/json/collection/v2.1.0/collection.json" },
+    info: { name: "DataContractGate Workbench Export", schema: "https://schema.getpostman.com/json/collection/v2.1.0/collection.json" },
     item: entries.map(({ endpoint, contractName }) => ({
       name: `${endpoint.method} ${endpoint.path} [${contractName}]`,
       request: {
@@ -1027,7 +1027,7 @@ export default function WorkbenchClient() {
           )}
 
           <p className="mt-4 text-xs text-slate-600 text-center">
-            All API calls run in your browser. Credentials never reach ContractGate servers.
+            All API calls run in your browser. Credentials never reach DataContractGate servers.
           </p>
         </div>
       )}
@@ -1348,10 +1348,10 @@ export default function WorkbenchClient() {
                   <div className="bg-[#111827] border border-[#1f2937] rounded-xl p-5 space-y-4">
                     <p className="text-xs text-slate-500 font-medium uppercase tracking-wider">Export & Deploy</p>
 
-                    {/* ContractGate YAML */}
+                    {/* DataContractGate YAML */}
                     <div>
                       <div className="flex items-center justify-between mb-1.5">
-                        <span className="text-xs text-slate-400 font-medium">ContractGate YAML</span>
+                        <span className="text-xs text-slate-400 font-medium">DataContractGate YAML</span>
                         <button onClick={() => download(`${contractName}.yaml`, currentYaml)} className="text-[10px] text-green-400 hover:text-green-300">↓ Download</button>
                       </div>
                       <pre className="text-xs font-mono text-slate-300 bg-[#0d1117] rounded-lg p-3 overflow-x-auto max-h-48 whitespace-pre">{currentYaml}</pre>
@@ -1383,7 +1383,7 @@ export default function WorkbenchClient() {
                           disabled={deployState === "loading"}
                           className="px-4 py-2 bg-green-600 hover:bg-green-500 disabled:opacity-40 text-white text-sm font-semibold rounded-lg transition-colors"
                         >
-                          {deployState === "loading" ? "Deploying…" : "Deploy to ContractGate"}
+                          {deployState === "loading" ? "Deploying…" : "Deploy to DataContractGate"}
                         </button>
                       </HelpTarget>
                       {deployState === "ok" && <span className="text-xs text-green-400">✓ {deployMsg}</span>}

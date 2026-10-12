@@ -54,7 +54,7 @@ export default function Sidebar() {
       {/* Logo */}
       <div className="p-6 border-b border-[#1f2937]">
         <div className="flex items-center gap-2">
-          <span className="text-2xl font-bold text-green-400">ContractGate</span>
+          <span className="text-xl font-bold text-green-400">DataContractGate</span>
         </div>
         <div className="mt-1 flex items-center gap-1">
           <span className="text-xs bg-green-900/40 text-green-400 border border-green-700/50 px-2 py-0.5 rounded-full font-medium">

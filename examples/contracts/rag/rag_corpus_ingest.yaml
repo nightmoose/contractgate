@@ -1,6 +1,6 @@
 # RAG corpus ingestion contract (RFC-077)
 #
-# Gates documents BEFORE they reach chunking/embedding. ContractGate enforces
+# Gates documents BEFORE they reach chunking/embedding. DataContractGate enforces
 # the structured envelope (provenance + PII attestation + freshness); your
 # pipeline still does the chunking, embedding, and any content scoring.
 #

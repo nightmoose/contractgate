@@ -1,6 +1,6 @@
 # contractgate (Python SDK)
 
-First-party Python SDK for [ContractGate][gw] — a high-performance
+First-party Python SDK for [DataContractGate][gw] — a high-performance
 semantic contract enforcement gateway (Patent Pending).
 
 [gw]: https://datacontractgate.com

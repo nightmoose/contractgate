@@ -126,7 +126,7 @@ pub async fn infer_url_handler(
 
     let mut request = client
         .get(&req.url)
-        .header("User-Agent", "ContractGate/1.0 (infer-url)");
+        .header("User-Agent", "DataContractGate/1.0 (infer-url)");
 
     if let Some(hdrs) = &req.headers {
         for (k, v) in hdrs {
