@@ -1,4 +1,4 @@
-"""Exception hierarchy for the ContractGate SDK.
+"""Exception hierarchy for the DataContractGate SDK.
 
 All SDK exceptions inherit from ``ContractGateError`` so users can
 catch the entire surface with one ``except``. HTTP-shaped errors carry

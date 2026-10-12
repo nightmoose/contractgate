@@ -1,4 +1,4 @@
-# ContractGate Marketing Plan
+# DataContractGate Marketing Plan
 
 **Status:** Living doc. Owned by @alexsuarez.
 **Last revised:** 2026-08-09.
@@ -8,7 +8,7 @@
 
 ## 1. Positioning
 
-**One sentence:** ContractGate is the runtime enforcement gate for streaming data contracts — you write a semantic YAML contract, we validate every event at ingress in sub-millisecond, and route the bad ones to quarantine before consumers see them.
+**One sentence:** DataContractGate is the runtime enforcement gate for streaming data contracts — you write a semantic YAML contract, we validate every event at ingress in sub-millisecond, and route the bad ones to quarantine before consumers see them.
 
 **Who this is for:** platform, data, and MLOps engineers who own a Kafka / Kinesis / HTTP ingest path and have already been burned by a producer shipping a semantically broken event that was schema-valid.
 
@@ -76,7 +76,7 @@ A GitHub repo (`contractgate/sample-contracts`) with 20-30 real-world contracts 
 
 ### Loop D — Show HN cadence tied to major ships
 
-Every 6-8 weeks, package the last several RFCs into a "ContractGate v0.X shipped" post. HN treats consolidated ships better than drip-feed. Aim for launch narratives, not changelog dumps. Compounds because each successful Show HN produces backlinks and a new signup cohort.
+Every 6-8 weeks, package the last several RFCs into a "DataContractGate v0.X shipped" post. HN treats consolidated ships better than drip-feed. Aim for launch narratives, not changelog dumps. Compounds because each successful Show HN produces backlinks and a new signup cohort.
 
 ### Loop E — Agent-native discoverability *(already 60% built via RFC-089)*
 
@@ -104,7 +104,7 @@ Tracked weekly in a Notion / Airtable dashboard (not built yet — Q3 TODO):
 
 Order = publish order. Each entry: **[RFC]** → post angle → target channel.
 
-1. **RFC-089** → "How I made ContractGate agent-installable: one URL and 'implement this'" → dev.to + HN Show HN
+1. **RFC-089** → "How I made DataContractGate agent-installable: one URL and 'implement this'" → dev.to + HN Show HN
 2. **RFC-086** → "The three-line change that made us stop storing customer payloads by default" → dev.to + X thread
 3. **RFC-083** → "Metering streaming ingress without adding a microsecond to the hot path" → dev.to + r/rust
 4. **RFC-081** → "Reconciling Kafka quarantine + replay is harder than it looks — here's the race we hit" → dev.to + r/dataengineering + r/apachekafka
@@ -112,7 +112,7 @@ Order = publish order. Each entry: **[RFC]** → post angle → target channel.
 6. **RFC-082** → "The pilot report format that closed our first three design partners" → LinkedIn cross-post + X (this one's OK for LinkedIn — it's founder-narrative content)
 7. **RFC-079** → "Killing the JS inference engine: one Rust core for every contract source" → r/rust + dev.to
 8. **RFC-077** → "A data contract for RAG ingestion — what fields you actually need" → r/mlops + dev.to
-9. **Consolidated Show HN**: "ContractGate v0.2 — semantic contract enforcement for Kafka" — bundles RFCs 081-089 → HN + X
+9. **Consolidated Show HN**: "DataContractGate v0.2 — semantic contract enforcement for Kafka" — bundles RFCs 081-089 → HN + X
 10. **Loop B kickoff**: `/contracts/csv` landing page → SEO play, no promotion needed
 
 ---

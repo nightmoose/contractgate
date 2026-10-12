@@ -1,5 +1,5 @@
 ---
-description: Enforce ContractGate contracts on event publishers and ingestion paths.
+description: Enforce DataContractGate contracts on event publishers and ingestion paths.
 globs:
   - "**/contracts/**/*.yaml"
   - "**/*producer*"
@@ -8,9 +8,9 @@ globs:
 alwaysApply: false
 ---
 
-# ContractGate rules
+# DataContractGate rules
 
-This repository ships event data behind ContractGate. Every event that leaves
+This repository ships event data behind DataContractGate. Every event that leaves
 a producer must satisfy a YAML contract in `contracts/`.
 
 ## Before editing an event publisher or ingestion path
@@ -32,6 +32,6 @@ loosening the contract.
 
 Use the CLI: `contractgate deploy-contract contracts/<name>.yaml --json`.
 Never edit a deployed version in place — bump `version:` in the YAML and
-redeploy. If the ContractGate MCP server is connected, prefer its tools
+redeploy. If the DataContractGate MCP server is connected, prefer its tools
 over curl. See <https://app.datacontractgate.com/llm-integration.md> and
 <https://app.datacontractgate.com/mcp-reference.md>.

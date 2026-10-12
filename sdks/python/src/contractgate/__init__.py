@@ -1,6 +1,6 @@
-"""ContractGate Python SDK.
+"""DataContractGate Python SDK.
 
-First-party client and pure-Python validator for the ContractGate
+First-party client and pure-Python validator for the DataContractGate
 semantic contract enforcement gateway.
 
 Public surface:

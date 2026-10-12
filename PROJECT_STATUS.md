@@ -1,4 +1,4 @@
-# Project Status — ContractGate
+# Project Status — DataContractGate
 
 **As of:** 2026-10-07  
 **GitHub:** https://github.com/nightmoose/contractgate (**public**)  

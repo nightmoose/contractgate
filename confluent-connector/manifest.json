@@ -1,7 +1,7 @@
 {
   "name": "kafka-connect-contractgate",
-  "title": "ContractGate Semantic Validator",
-  "description": "A Kafka Connect Single Message Transform (SMT) that enforces ContractGate semantic data contracts on every record before it reaches a sink — warehouse, lakehouse, search cluster, or AI pipeline.\n\nInvalid records are routed to a dead-letter topic (or tagged and passed through). Passing records continue downstream unchanged. Works with any source or sink connector; no Schema Registry dependency.\n\nFeatures: real-time validation against ontology/glossary/enum/range contracts, DLQ or tag-and-pass failure modes, per-field violation headers, dry-run, contract version pinning, optional hot-reload of the contract without bouncing the Connect task, and optional per-violation DLQ routing.\n\nRequires a ContractGate API (hosted at https://contractgate-api.fly.dev or self-hosted). Sign up free at https://app.datacontractgate.com.",
+  "title": "DataContractGate Semantic Validator",
+  "description": "A Kafka Connect Single Message Transform (SMT) that enforces DataContractGate semantic data contracts on every record before it reaches a sink — warehouse, lakehouse, search cluster, or AI pipeline.\n\nInvalid records are routed to a dead-letter topic (or tagged and passed through). Passing records continue downstream unchanged. Works with any source or sink connector; no Schema Registry dependency.\n\nFeatures: real-time validation against ontology/glossary/enum/range contracts, DLQ or tag-and-pass failure modes, per-field violation headers, dry-run, contract version pinning, optional hot-reload of the contract without bouncing the Connect task, and optional per-violation DLQ routing.\n\nRequires a DataContractGate API (hosted at https://contractgate-api.fly.dev or self-hosted). Sign up free at https://app.datacontractgate.com.",
   "version": "0.2.0",
   "documentation_url": "https://app.datacontractgate.com/docs/kafka-connect",
   "license": [
@@ -27,7 +27,7 @@
   "requirements": [
     "Java 11+",
     "Kafka Connect 2.8+",
-    "A ContractGate API endpoint (hosted or self-hosted)"
+    "A DataContractGate API endpoint (hosted or self-hosted)"
   ],
   "owner": {
     "username": "datacontractgate",

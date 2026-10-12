@@ -1,24 +1,24 @@
-# ContractGate — product knowledge for the Slack bot
+# DataContractGate — product knowledge for the Slack bot
 
 Curated facts only. Prefer these over guessing. If something is not here, say so
 honestly rather than inventing RFCs or pricing.
 
 ## One-liner
 
-ContractGate stops bad data events **before** they hit the warehouse: semantic
+DataContractGate stops bad data events **before** they hit the warehouse: semantic
 contracts enforced **at ingest**, with **quarantine + replay** and an exportable
 **pilot report**.
 
 ## How it differs from dbt tests / Great Expectations / warehouse DQ
 
-| | ContractGate | dbt tests / warehouse DQ |
+| | DataContractGate | dbt tests / warehouse DQ |
 |---|---|---|
 | **When** | At ingest (HTTP, stream, partner API) | After load / in the warehouse |
 | **Failure** | Event held in quarantine, not forwarded | Row already landed; fix is reactive |
 | **Artifact** | Pilot report (pass/quarantine rates, top violations) | Test failures in CI or warehouse jobs |
 | **Partner APIs** | Envelope/batch contracts (e.g. MRI-style `{ data: [...] }`) | Often never touch dbt |
 
-Use both: warehouse tests catch model bugs; ContractGate catches bad producers
+Use both: warehouse tests catch model bugs; DataContractGate catches bad producers
 and partner payloads **before** they pollute downstream.
 
 ## Why Rust (not Python) for the validation engine
@@ -105,7 +105,7 @@ than inventing.
 
 - Not a warehouse transformation layer (not dbt, not Spark)
 - Not "only schema JSON Schema syntax" — semantic contracts + runtime enforcement
-- Not a general chatbot — this Slack bot answers ContractGate product questions
+- Not a general chatbot — this Slack bot answers DataContractGate product questions
 
 ## Advisory / getting started
 

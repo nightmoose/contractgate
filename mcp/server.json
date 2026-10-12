@@ -1,8 +1,8 @@
 {
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
   "name": "io.github.nightmoose/contractgate",
-  "title": "ContractGate",
-  "description": "Infer, dry-run, deploy, and inspect ContractGate semantic data contracts.",
+  "title": "DataContractGate",
+  "description": "Infer, dry-run, deploy, and inspect DataContractGate semantic data contracts.",
   "version": "0.2.0",
   "websiteUrl": "https://app.datacontractgate.com/mcp-reference.md",
   "repository": {
@@ -24,7 +24,7 @@
       "environmentVariables": [
         {
           "name": "CONTRACTGATE_API_KEY",
-          "description": "ContractGate API key (cg_live_...). Create one at https://app.datacontractgate.com/account",
+          "description": "DataContractGate API key (cg_live_...). Create one at https://app.datacontractgate.com/account",
           "isRequired": true,
           "isSecret": true
         },

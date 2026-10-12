@@ -16,7 +16,7 @@
     { "type": "panel",      "id": "stat",       "name": "Stat",       "version": "" }
   ],
   "annotations": { "list": [] },
-  "description": "ContractGate Observability v1 — RFC-016",
+  "description": "DataContractGate Observability v1 — RFC-016",
   "editable": true,
   "fiscalYearStartMonth": 0,
   "graphTooltip": 1,
@@ -224,7 +224,7 @@
   "time": { "from": "now-1h", "to": "now" },
   "timepicker": {},
   "timezone": "browser",
-  "title": "ContractGate Observability v1",
+  "title": "DataContractGate Observability v1",
   "uid": "contractgate-obs-v1",
   "version": 1
 }

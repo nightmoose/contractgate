@@ -214,7 +214,7 @@ function ReadmeContent() {
       <H2 id="quickstart-http">Quick Start — HTTP Client (Sync)</H2>
       <p className="text-slate-400 text-sm mb-2">
         Use <code className="text-green-400">Client</code> to send events to the
-        ContractGate gateway and inspect per-event results.
+        DataContractGate gateway and inspect per-event results.
       </p>
       <Code language="python">{`from contractgate import Client
 
@@ -367,7 +367,7 @@ function RFCContent() {
           <tbody>
             {[
               ["Status", "Accepted (2026-04-26)"],
-              ["Author", "ContractGate team"],
+              ["Author", "DataContractGate team"],
               ["Accepted", "2026-04-26 — Alex sign-off on Q1, Q2, Q4, Q6 (recommendations); Q3, Q5 default"],
               ["Target branch", "nightly-maintenance-2026-04-26"],
               ["Depends on", "Versioning + PII transforms — both landed"],
@@ -625,7 +625,7 @@ export default function PythonSDKDocsPage() {
             <p className="text-xs text-green-400 font-medium mb-1">SDK source</p>
             <p className="text-xs text-slate-500 mb-2">
               Lives at <code className="text-slate-400">sdks/python/</code> in
-              the ContractGate repo.
+              the DataContractGate repo.
             </p>
             <Link
               href="/playground"
@@ -652,7 +652,7 @@ export default function PythonSDKDocsPage() {
             Python SDK
           </h1>
           <p className="text-slate-400 text-lg leading-relaxed">
-            First-party Python SDK for ContractGate — sync &amp; async HTTP
+            First-party Python SDK for DataContractGate — sync &amp; async HTTP
             client, plus a pure-Python local validator for unit tests and
             pre-commit hooks.
           </p>

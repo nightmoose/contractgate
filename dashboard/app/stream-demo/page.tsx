@@ -88,7 +88,7 @@ type SeriesKey = "producer" | "validator" | "copy";
 
 const SERIES: { key: SeriesKey; color: string; label: string; fill: string; strokeWidth: number; fn: (h: HistoryPoint) => number }[] = [
   { key: "producer",  color: "#8a97ad", label: "Producer",      fill: "rgba(138,151,173,0.08)", strokeWidth: 1.5, fn: (h) => h.producer_rate  },
-  { key: "validator", color: "#5ea1ff", label: "ContractGate",  fill: "rgba(94,161,255,0.15)",  strokeWidth: 2,   fn: (h) => h.validator_rate },
+  { key: "validator", color: "#5ea1ff", label: "DataContractGate",  fill: "rgba(94,161,255,0.15)",  strokeWidth: 2,   fn: (h) => h.validator_rate },
   { key: "copy",      color: "#ffc857", label: "Straight-copy", fill: "rgba(255,200,87,0.12)",  strokeWidth: 2,   fn: (h) => h.copy_rate      },
 ];
 
@@ -771,7 +771,7 @@ export default function StreamDemoPage() {
       {/* Summary strip */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         <div className="bg-[#111827] border border-[#1f2937] rounded-xl p-4">
-          <p className="text-[10px] text-slate-500 uppercase tracking-wider">ContractGate throughput</p>
+          <p className="text-[10px] text-slate-500 uppercase tracking-wider">DataContractGate throughput</p>
           <p className="text-2xl font-semibold font-mono tabular-nums mt-1">{fmtRate(vRate)}<span className="text-sm text-slate-500 font-sans ml-1">ev/s</span></p>
           <p className="text-[11px] text-slate-500 mt-1 font-mono tabular-nums">{fmtNum(snap?.validator.produced_downstream ?? 0)} forwarded</p>
         </div>
@@ -804,14 +804,14 @@ export default function StreamDemoPage() {
 
       {/* Per-lane detail */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        <LanePanel title="ContractGate validator" sub="generate → validate → forward" color="blue" stats={snap?.validator ?? ZERO_LANE} />
+        <LanePanel title="DataContractGate validator" sub="generate → validate → forward" color="blue" stats={snap?.validator ?? ZERO_LANE} />
         <LanePanel title="Straight-copy baseline" sub="generate → serialize only (no validation)" color="amber" stats={snap?.copy ?? ZERO_LANE} passthrough />
       </div>
 
       {/* Explainer */}
       <div className="bg-[#0a0d12] border border-[#1f2937] rounded-xl p-4 text-xs text-slate-500 leading-relaxed">
         <strong className="text-slate-400">How it works:</strong> Both lanes run in-process inside the Rust server — no Kafka, no database.
-        The <span className="text-[#5ea1ff]">ContractGate lane</span> calls the real semantic validation engine on every event.
+        The <span className="text-[#5ea1ff]">DataContractGate lane</span> calls the real semantic validation engine on every event.
         The <span className="text-[#ffc857]">copy lane</span> does a serde round-trip only (no validation).
         The latency delta between them is the <em>exact cost</em> of semantic validation.
         The full Kafka-backed demo (<code className="text-slate-400">cargo demo</code>) adds real queue depth and network overhead on top.

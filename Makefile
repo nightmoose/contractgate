@@ -21,7 +21,7 @@ demo-logs:
 	docker compose --profile demo logs -f
 
 # ── Ralph-native demo (RFC-092) ───────────────────────────────────────────────
-# ContractGate gate in front of Driftless/Kafi (design-partner stack).
+# DataContractGate gate in front of Driftless/Kafi (design-partner stack).
 #   make demo-ralph        — start Redpanda + print next steps
 #   make demo-ralph-smoke  — Stage A automated smoke (quarantine check)
 #   make demo-ralph-down   — stop + wipe volumes

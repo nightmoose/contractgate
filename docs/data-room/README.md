@@ -1,4 +1,4 @@
-# ContractGate — Data Room Index
+# DataContractGate — Data Room Index
 
 **Purpose:** one place to send a prospective acquirer or an enterprise security
 reviewer. Every link below is a file in this repo. Last updated 2026-07-15.

@@ -5,7 +5,7 @@
  *
  * Request body:
  *   {
- *     contractId:   string   — ContractGate contract UUID (for the commit message)
+ *     contractId:   string   — DataContractGate contract UUID (for the commit message)
  *     contractName: string   — Human-readable name (used as the file name slug)
  *     version:      string   — Semver string, e.g. "1.2.0"
  *     yamlContent:  string   — Full YAML text to write

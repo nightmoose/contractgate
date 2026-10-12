@@ -1,6 +1,6 @@
-# ContractGate plugin
+# DataContractGate plugin
 
-ContractGate rejects events that are schema-valid but wrong, such as a misspelled `event_type` or a negative `amount`, before they reach your Kafka topic. This plugin lets Claude or Cursor infer a semantic data contract from real sample events in your repo, dry-run it, deploy it, and inspect quarantined events.
+DataContractGate rejects events that are schema-valid but wrong, such as a misspelled `event_type` or a negative `amount`, before they reach your Kafka topic. This plugin lets Claude or Cursor infer a semantic data contract from real sample events in your repo, dry-run it, deploy it, and inspect quarantined events.
 
 ## What's included
 
@@ -16,7 +16,7 @@ ContractGate rejects events that are schema-valid but wrong, such as a misspelle
 
 ## What it sends and where
 
-The MCP server calls the ContractGate API at `https://app.datacontractgate.com` (or the base URL you configure) with your API key. It sends only what the tools are given: sample events for inference, events for validation, and contract YAML for deployment. Validation defaults to a dry run, which records nothing. Nothing else leaves your machine, and the plugin has no hooks or background processes.
+The MCP server calls the DataContractGate API at `https://app.datacontractgate.com` (or the base URL you configure) with your API key. It sends only what the tools are given: sample events for inference, events for validation, and contract YAML for deployment. Validation defaults to a dry run, which records nothing. Nothing else leaves your machine, and the plugin has no hooks or background processes.
 
 Full playbook: https://app.datacontractgate.com/llm-integration.md. Tool reference: https://app.datacontractgate.com/mcp-reference.md.
 

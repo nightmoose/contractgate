@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# hero_demo.sh — ContractGate 15-minute hero demo (RFC-081 quarantine→replay).
+# hero_demo.sh — DataContractGate 15-minute hero demo (RFC-081 quarantine→replay).
 #
 # Tells the whole value story over plain HTTP:
 #   1. Deploy a STRICT contract (v1.0.0) and a RELAXED one (v1.1.0).
@@ -9,7 +9,7 @@
 #   4. Inspect the quarantined events + their violations.
 #   5. REPLAY them against v1.1.0 → they pass. Backlog drained, nothing lost.
 #
-# Why two versions up front: ContractGate blocks deploying a new version while
+# Why two versions up front: DataContractGate blocks deploying a new version while
 # events are quarantined (a safety feature). So the real workflow is to register
 # the corrected version, then replay the backlog against it — which is exactly
 # what this shows.

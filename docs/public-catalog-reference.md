@@ -10,7 +10,7 @@
 ## Overview
 
 The Public Catalog is a curated collection of government and open-data sources
-that have pre-built ContractGate contracts. Any user can browse the catalog and
+that have pre-built DataContractGate contracts. Any user can browse the catalog and
 inspect the YAML contract for each source. Authenticated users can fork a
 catalog entry into their own org as an editable contract, or export the live
 upstream data filtered through their fork's rules as a CSV file.

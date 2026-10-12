@@ -1,4 +1,4 @@
-# ContractGate CI — runs on every push and pull request to main.
+# DataContractGate CI — runs on every push and pull request to main.
 #
 # Jobs:
 #   rust-check         — cargo fmt/check/clippy/test (no DB needed)

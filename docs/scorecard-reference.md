@@ -96,7 +96,7 @@ Returns `[]` when no baseline has been seeded or no fields have drifted beyond t
 
 ### `GET /scorecard/{source}/export?format=csv`
 
-Returns a flat CSV the provider can open without a ContractGate account.
+Returns a flat CSV the provider can open without a DataContractGate account.
 
 **Query parameter:** `format` — only `csv` is supported in v1 (default: `csv`).
 

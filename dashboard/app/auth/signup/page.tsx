@@ -105,7 +105,7 @@ export default function SignupPage() {
         {/* Logo */}
         <div className="text-center mb-8">
           <Link href="/" className="inline-block">
-            <span className="text-2xl font-bold text-green-400">ContractGate</span>
+            <span className="text-2xl font-bold text-green-400">DataContractGate</span>
           </Link>
           <p className="mt-1 text-xs text-slate-500">Semantic contract enforcement at ingestion</p>
         </div>

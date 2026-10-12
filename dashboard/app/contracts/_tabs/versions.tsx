@@ -328,7 +328,7 @@ export function VersionsTab({
                       content={
                         v.import_source === "odcs"
                           ? "Imported from a full ODCS v3.1.0 document (lossless round-trip)."
-                          : "Imported from a foreign ODCS document without ContractGate extensions. Best-effort reconstruction — review required before promotion."
+                          : "Imported from a foreign ODCS document without DataContractGate extensions. Best-effort reconstruction — review required before promotion."
                       }
                     >
                       <span className={clsx(
@@ -344,7 +344,7 @@ export function VersionsTab({
                   {/* requires_review warning */}
                   {v.requires_review && (
                     <TooltipWrap
-                      content="This version was imported from a foreign ODCS document without ContractGate extensions. A human must review the reconstructed contract before it can be promoted. Click 'Approve' to clear this flag."
+                      content="This version was imported from a foreign ODCS document without DataContractGate extensions. A human must review the reconstructed contract before it can be promoted. Click 'Approve' to clear this flag."
                     >
                       <span className="text-[10px] px-1.5 py-0.5 rounded bg-orange-900/30 text-orange-300 border border-orange-800/40 cursor-default animate-pulse">
                         review required

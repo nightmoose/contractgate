@@ -1,4 +1,4 @@
-# Prometheus scrape configuration for ContractGate (RFC-017).
+# Prometheus scrape configuration for DataContractGate (RFC-017).
 #
 # NOTE: /metrics is not yet implemented — it ships with RFC-016 (Observability v1).
 # Until RFC-016 lands, Prometheus will scrape this target and receive a 404.

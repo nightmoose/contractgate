@@ -36,7 +36,7 @@ const DOCS = [
     badge: "v0.2.0",
     badgeColor: "text-green-400 bg-green-900/30 border-green-700/40",
     description:
-      "First-party Python client for the ContractGate gateway. Validates events against semantic contracts via a simple sync or async HTTP client, and ships a pure-Python local validator for unit tests and pre-commit hooks — no network required.",
+      "First-party Python client for the DataContractGate gateway. Validates events against semantic contracts via a simple sync or async HTTP client, and ships a pure-Python local validator for unit tests and pre-commit hooks — no network required.",
     pills: ["Python 3.9+", "sync + async", "local validator", "MIT"],
     cta: "Read the Python SDK docs →",
   },
@@ -48,7 +48,7 @@ const DOCS = [
     badge: "v0.2.0",
     badgeColor: "text-green-400 bg-green-900/30 border-green-700/40",
     description:
-      "A Kafka Connect Single Message Transform that validates every record against a ContractGate semantic contract in real-time — before it reaches your data warehouse or AI systems. Invalid records go to a dead-letter topic; valid records continue unchanged.",
+      "A Kafka Connect Single Message Transform that validates every record against a DataContractGate semantic contract in real-time — before it reaches your data warehouse or AI systems. Invalid records go to a dead-letter topic; valid records continue unchanged.",
     pills: ["Java 11+", "Kafka Connect 2.8+", "DLQ support", "Apache 2.0"],
     cta: "Read the Kafka Connect docs →",
   },
@@ -63,7 +63,7 @@ export default function DocsIndexPage() {
           <h1 className="text-3xl font-bold text-slate-100 mb-3">Docs</h1>
         </HelpTarget>
         <p className="text-slate-400 text-lg leading-relaxed">
-          Everything you need to integrate ContractGate into your stack.
+          Everything you need to integrate DataContractGate into your stack.
           Pick an integration below to get started.
         </p>
       </div>

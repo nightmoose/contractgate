@@ -73,7 +73,7 @@ Split across post + reply — two code blocks don't fit in 280. (If you're on X 
 
 ## Day 3 — Sunday Aug 16 · no posting
 
-Write the dev.to post. Title from backlog #1: **"How I made ContractGate agent-installable: one URL and 'implement this'"**
+Write the dev.to post. Title from backlog #1: **"How I made DataContractGate agent-installable: one URL and 'implement this'"**
 
 Outline (800–1200 words, §7 rules):
 
@@ -139,7 +139,7 @@ Submitting the doc itself, not the homepage. It's the artifact under discussion 
 
 **First comment (post immediately after submitting):**
 
-> Author here. ContractGate validates events against semantic data contracts at ingest — enum, pattern, range, and required-field checks, not just JSON Schema shape — and quarantines the ones that fail.
+> Author here. DataContractGate validates events against semantic data contracts at ingest — enum, pattern, range, and required-field checks, not just JSON Schema shape — and quarantines the ones that fail.
 >
 > A user told me the way he adopts tools now is pasting a URL into Claude and saying "implement this." Everything I'd written was for a human reader: the README leads with a Docker demo, the docs are React pages that return a JS shell to a plain fetch.
 >
@@ -162,7 +162,7 @@ Submitting the doc itself, not the homepage. It's the artifact under discussion 
 
 ### r/dataengineering — practitioner voice, first-person singular
 
-§3 is explicit: no "I built X" openers. Problem first. ContractGate is not named until the third paragraph.
+§3 is explicit: no "I built X" openers. Problem first. DataContractGate is not named until the third paragraph.
 
 **Title:** Schema-valid events that are still wrong — what are you actually doing about it?
 

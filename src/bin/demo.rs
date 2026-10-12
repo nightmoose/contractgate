@@ -1,4 +1,4 @@
-//! ContractGate speed-demo binary.
+//! DataContractGate speed-demo binary.
 //!
 //! Runs three pipelines sharing one Kafka cluster (Redpanda via
 //! `docker-compose.yml`):
@@ -6,7 +6,7 @@
 //! ```
 //!     [event generator]                                      ┌─► demo.events.valid
 //!            │                                               │
-//!            ▼                ┌─[ContractGate validator]─────┤
+//!            ▼                ┌─[DataContractGate validator]─────┤
 //!     demo.events.in ─────────┤                              └─► demo.events.quarantine
 //!                             │
 //!                             └─[straight-copy baseline]───────► demo.events.copy
@@ -94,7 +94,7 @@ const GROUP_COPY: &str = "contractgate-copy-baseline";
 // ---------------------------------------------------------------------------
 
 #[derive(Debug, Clone, Parser)]
-#[command(name = "contractgate-demo", about = "ContractGate speed demo")]
+#[command(name = "contractgate-demo", about = "DataContractGate speed demo")]
 pub struct Cli {
     /// Kafka bootstrap servers (comma-separated `host:port` list).
     #[arg(long, env = "KAFKA_BROKERS", default_value = "localhost:9092")]
@@ -334,7 +334,7 @@ async fn main() -> anyhow::Result<()> {
 
     let addr = SocketAddr::from(([0, 0, 0, 0], cli.port));
     tracing::info!(
-        "ContractGate speed demo running — open http://localhost:{}",
+        "DataContractGate speed demo running — open http://localhost:{}",
         cli.port
     );
     let listener = tokio::net::TcpListener::bind(addr).await?;

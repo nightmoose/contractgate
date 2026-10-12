@@ -1,6 +1,6 @@
 //! Integration tests for `contractgate push` and `contractgate pull`.
 //!
-//! These tests require a live ContractGate gateway (with a real database).
+//! These tests require a live DataContractGate gateway (with a real database).
 //! They are marked `#[ignore]` and run via:
 //!
 //!   cargo test --test cli_push_pull -- --ignored

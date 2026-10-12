@@ -46,7 +46,7 @@ export const HELP_CATALOG: Record<string, HelpEntry> = {
   },
   "nav.contracts": {
     title: "Contracts",
-    what: "The semantic schemas ContractGate enforces on inbound (and, on Growth, outbound) events.",
+    what: "The semantic schemas DataContractGate enforces on inbound (and, on Growth, outbound) events.",
     does: "Create, version, promote, and inspect contracts. Failures against a stable version land in Quarantine.",
     when: "Start here if you have no contracts yet.",
   },
@@ -220,7 +220,7 @@ export const HELP_CATALOG: Record<string, HelpEntry> = {
   },
   "contracts.import-odcs": {
     title: "Import ODCS",
-    what: "Open Data Contract Standard YAML, mapped onto ContractGate’s format.",
+    what: "Open Data Contract Standard YAML, mapped onto DataContractGate’s format.",
     does: "Creates a draft you can edit and promote. Useful when a producer already publishes ODCS.",
   },
   "contracts.import-ref": {
@@ -347,7 +347,7 @@ export const HELP_CATALOG: Record<string, HelpEntry> = {
   // ── Catalog ──────────────────────────────────────────────────────────────
   "catalog.opendata": {
     title: "Open Data Contracts",
-    what: "Curated contracts for public data sources, maintained by ContractGate.",
+    what: "Curated contracts for public data sources, maintained by DataContractGate.",
     does: "Fork one into your org to customise it — the original stays intact.",
   },
   "catalog.published": {
@@ -385,7 +385,7 @@ export const HELP_CATALOG: Record<string, HelpEntry> = {
   "workbench.seed": {
     title: "Seed",
     what: "How Workbench discovers endpoints: URL, OpenAPI spec, curl, Postman, Bruno, or manual paths.",
-    does: "All probing happens in your browser. ContractGate never sees the credentials or response bodies.",
+    does: "All probing happens in your browser. DataContractGate never sees the credentials or response bodies.",
   },
   "workbench.infer": {
     title: "Infer",

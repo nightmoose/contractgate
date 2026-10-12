@@ -4,7 +4,7 @@
 **Status:** Shipped  
 **Since:** nightly-2026-07-15
 
-An org-scoped, windowed **"here's what ContractGate caught for you"** report for a
+An org-scoped, windowed **"here's what DataContractGate caught for you"** report for a
 single contract: pass rate, per-version breakdown, and the top violations. JSON
 (default) or a downloadable CSV — the artifact a design partner forwards to their
 boss after a 2-week pilot.

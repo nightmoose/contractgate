@@ -1,4 +1,4 @@
-# ContractGate reference stack (RFC-017, RFC-023).
+# DataContractGate reference stack (RFC-017, RFC-023).
 #
 # Default profile boots: gateway + Postgres + Prometheus + Grafana.
 # Optional profiles:

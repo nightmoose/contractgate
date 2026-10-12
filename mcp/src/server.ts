@@ -48,7 +48,7 @@ export function createServer(opts: ServerOpts = {}): McpServer {
     {
       title: "Infer a contract from sample events",
       description:
-        "Generate draft ContractGate YAML from real JSON sample events via POST /contracts/infer. Does not persist. Review and write the YAML to contracts/<name>.yaml before deploying.",
+        "Generate draft DataContractGate YAML from real JSON sample events via POST /contracts/infer. Does not persist. Review and write the YAML to contracts/<name>.yaml before deploying.",
       inputSchema: z.object({
         name: z.string().min(1).describe("Contract name, snake_case, e.g. user_events"),
         samples: z
@@ -203,9 +203,9 @@ export function createServer(opts: ServerOpts = {}): McpServer {
   server.registerPrompt(
     "integrate-contractgate",
     {
-      title: "Integrate ContractGate",
+      title: "Integrate DataContractGate",
       description:
-        "Wire ContractGate into this repo using the official agent playbook: infer a contract from real samples, deploy it, and dry-run ingest.",
+        "Wire DataContractGate into this repo using the official agent playbook: infer a contract from real samples, deploy it, and dry-run ingest.",
     },
     () => ({
       messages: [
@@ -215,7 +215,7 @@ export function createServer(opts: ServerOpts = {}): McpServer {
             type: "text" as const,
             text: `Read https://app.datacontractgate.com/llm-integration.md and execute it in this repository.
 
-If ContractGate MCP tools are available, prefer them over curl:
+If DataContractGate MCP tools are available, prefer them over curl:
 1. infer_contract from 5–20 real sample events found in this repo.
 2. Write contracts/<name>.yaml, tighten enums/patterns, do not invent fields.
 3. validate_events with yaml_content against a known-good and known-bad event.

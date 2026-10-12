@@ -2,8 +2,8 @@
 
 **Status:** Available (RFC-025)
 
-ContractGate can consume events directly from Confluent Cloud on your behalf.
-You produce to an input topic; ContractGate validates each message against your
+DataContractGate can consume events directly from Confluent Cloud on your behalf.
+You produce to an input topic; DataContractGate validates each message against your
 contract and routes it to either a clean output topic or a quarantine topic —
 no consumer code required on your side.
 
@@ -15,7 +15,7 @@ no consumer code required on your side.
 2. Click the **Kafka** tab.
 3. Toggle **Enable Kafka Ingress**.
 
-On enable, ContractGate:
+On enable, DataContractGate:
 
 - Provisions three Confluent Cloud topics (see [Topic Names](#topic-names)).
 - Creates a scoped Confluent API key with produce-only access to the input topic
@@ -71,7 +71,7 @@ p.flush()
 
 ## Validation & Routing
 
-ContractGate runs the same validation engine used by the HTTP ingest path
+DataContractGate runs the same validation engine used by the HTTP ingest path
 (`POST /ingest/{contract_id}`). Events are validated against the **latest
 stable version** of the contract.
 

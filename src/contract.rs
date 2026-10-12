@@ -1,6 +1,6 @@
 //! Contract types — the schema that defines what a valid data event looks like.
 //!
-//! A ContractGate contract is composed of three sections:
+//! A DataContractGate contract is composed of three sections:
 //!   - `ontology`  — field-level type/constraint definitions
 //!   - `glossary`  — human-readable term definitions (business context)
 //!   - `metrics`   — numeric KPI / measure definitions with range bounds
@@ -350,7 +350,7 @@ pub struct GlossaryEntry {
 ///    ```
 ///
 /// 2. **Formula metric** — records the formula string for documentation /
-///    downstream aggregation systems. ContractGate does not evaluate the
+///    downstream aggregation systems. DataContractGate does not evaluate the
 ///    formula at ingestion time; it is stored for reference:
 ///    ```yaml
 ///    - name: total_revenue
@@ -548,7 +548,7 @@ impl FromStr for MultiStableResolution {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ImportSource {
-    /// Created natively in ContractGate (default).
+    /// Created natively in DataContractGate (default).
     #[default]
     Native,
     /// Imported from an ODCS document with `x-contractgate-*` extensions —

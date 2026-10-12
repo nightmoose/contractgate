@@ -3,7 +3,7 @@ package io.datacontractgate.connect.client;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 
 /**
- * A single rule violation returned by the ContractGate ingest API.
+ * A single rule violation returned by the DataContractGate ingest API.
  * Matches the {@code Violation} struct in the Rust backend.
  */
 @JsonIgnoreProperties(ignoreUnknown = true)

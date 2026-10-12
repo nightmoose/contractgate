@@ -1,4 +1,4 @@
-"""Parse + compile ContractGate YAML. No network.
+"""Parse + compile DataContractGate YAML. No network.
 
 Used by the pre-commit hook and the GitHub Action. Depends on the
 published ``contractgate`` SDK (``Contract.from_yaml`` + ``compile``).
@@ -58,7 +58,7 @@ def compile_file(path: Path) -> None:
 def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         prog="contractgate-validate",
-        description="Parse and compile ContractGate YAML contracts (local, no network).",
+        description="Parse and compile DataContractGate YAML contracts (local, no network).",
     )
     parser.add_argument(
         "paths",

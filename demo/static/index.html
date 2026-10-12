@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>ContractGate — Speed Demo</title>
+<title>DataContractGate — Speed Demo</title>
 <!-- Chart.js for the throughput graph.  Pulled from CDN; browser-local cache
      will pick it up on subsequent loads.  If you need the demo to be usable
      entirely offline, vendor this file into demo/static/chart.umd.min.js
@@ -116,7 +116,7 @@
     font-variant-numeric: tabular-nums;
   }
   /* Overhead card color coding — green when validation cost is tiny,
-     amber as it creeps up, red only if ContractGate starts falling behind. */
+     amber as it creeps up, red only if DataContractGate starts falling behind. */
   .card.overhead-good  { border-color: rgba(61, 220, 132, .45); }
   .card.overhead-good  .v { color: var(--green); }
   .card.overhead-warn  { border-color: rgba(255, 200, 87, .45); }
@@ -141,7 +141,7 @@
 <body>
 <header>
   <h1>
-    ContractGate <span class="tag">SPEED DEMO</span>
+    DataContractGate <span class="tag">SPEED DEMO</span>
   </h1>
   <div>
     <span id="status" class="status-pill stopped">idle</span>
@@ -178,13 +178,13 @@
   </section>
 
   <!-- ======================================================================
-       Summary strip — the headline pitch numbers.  Lead with ContractGate
+       Summary strip — the headline pitch numbers.  Lead with DataContractGate
        throughput and the actual validation cost; relegate producer counters
        to the sub-lines.
   ======================================================================= -->
   <section class="summary">
     <div class="card">
-      <div class="k">ContractGate throughput</div>
+      <div class="k">DataContractGate throughput</div>
       <div class="v"><span id="cg-rate">0</span><span class="u">ev/s</span></div>
       <div class="sub"><span id="cg-forwarded">0</span> forwarded</div>
     </div>
@@ -219,7 +219,7 @@
   <section class="lanes">
     <div class="lane validator">
       <h2>
-        <span class="dot"></span>ContractGate validator
+        <span class="dot"></span>DataContractGate validator
         <span class="sub">consume → validate → forward to valid/quarantine</span>
       </h2>
       <div class="metrics">
@@ -280,7 +280,7 @@
       labels,
       datasets: [
         { label: 'Producer',           data: producerSeries, borderColor: '#8a97ad', backgroundColor: 'rgba(138,151,173,.1)', borderWidth: 1.5, tension: .2, pointRadius: 0, fill: true },
-        { label: 'ContractGate',       data: validatorSeries, borderColor: '#5ea1ff', backgroundColor: 'rgba(94,161,255,.18)', borderWidth: 2,   tension: .2, pointRadius: 0, fill: true },
+        { label: 'DataContractGate',       data: validatorSeries, borderColor: '#5ea1ff', backgroundColor: 'rgba(94,161,255,.18)', borderWidth: 2,   tension: .2, pointRadius: 0, fill: true },
         { label: 'Straight-copy',      data: copySeries,      borderColor: '#ffc857', backgroundColor: 'rgba(255,200,87,.15)',  borderWidth: 2,   tension: .2, pointRadius: 0, fill: true },
       ]
     },
@@ -396,8 +396,8 @@
     $('cg-rate').textContent = fmtRate(s.validator.rate_per_sec);
     $('cg-forwarded').textContent = fmtNum(s.validator.produced_downstream);
 
-    // ratio = ContractGate / Copy, as a percentage.  Overhead = 100 - ratio
-    // (capped at 0), i.e. "how much slower is ContractGate than a passthrough".
+    // ratio = DataContractGate / Copy, as a percentage.  Overhead = 100 - ratio
+    // (capped at 0), i.e. "how much slower is DataContractGate than a passthrough".
     const ratio = s.copy.rate_per_sec > 0
       ? Math.round(100 * s.validator.rate_per_sec / s.copy.rate_per_sec)
       : null;
@@ -417,7 +417,7 @@
       overheadCard.classList.remove('overhead-good','overhead-warn','overhead-bad');
     }
 
-    // Validation cost (p99) — the isolated latency price ContractGate adds on
+    // Validation cost (p99) — the isolated latency price DataContractGate adds on
     // top of what the passthrough pays for Kafka + your laptop.  Only show
     // once both histograms have seen data, otherwise the delta is noise.
     const haveLatency = s.validator.p99_us > 0 && s.copy.p99_us > 0;

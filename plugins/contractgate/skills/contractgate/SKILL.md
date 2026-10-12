@@ -1,14 +1,14 @@
 ---
 name: contractgate
 description: >
-  Wire ContractGate semantic contracts into a repo. Use when adding data
+  Wire DataContractGate semantic contracts into a repo. Use when adding data
   contracts, validating events at ingest, Kafka/Redpanda/HTTP producers,
   quarantine, or MCP tools infer_contract / validate_events / deploy_contract.
 ---
 
 Follow the playbook at https://app.datacontractgate.com/llm-integration.md end to end. Do not invent a parallel procedure.
 
-**MCP first.** If the ContractGate MCP server is connected, use `infer_contract`, `validate_events`, `deploy_contract`, `get_quarantine`, `list_contracts` instead of curl. Setup: https://app.datacontractgate.com/mcp-reference.md
+**MCP first.** If the DataContractGate MCP server is connected, use `infer_contract`, `validate_events`, `deploy_contract`, `get_quarantine`, `list_contracts` instead of curl. Setup: https://app.datacontractgate.com/mcp-reference.md
 
 **Rules**
 

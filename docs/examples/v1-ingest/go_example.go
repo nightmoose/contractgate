@@ -1,4 +1,4 @@
-// ContractGate v1 ingest — Go example (net/http, no third-party deps).
+// DataContractGate v1 ingest — Go example (net/http, no third-party deps).
 //
 // Run against the public demo:
 //

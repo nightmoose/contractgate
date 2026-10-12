@@ -1,6 +1,6 @@
 # Agent rule presets
 
-Drop-in rule files for coding agents that operate on repos using ContractGate.
+Drop-in rule files for coding agents that operate on repos using DataContractGate.
 Each file tells the agent to consult the contracts in `contracts/` and run
 `contractgate test` before committing changes that affect event publishers,
 ingestion paths, or schemas.
@@ -17,7 +17,7 @@ presets carry the same core rule — pick the one your team uses.
 
 Every preset points the agent at the canonical playbook:
 <https://app.datacontractgate.com/llm-integration.md>. If the host has the
-ContractGate MCP server connected, the presets tell the agent to use those
+DataContractGate MCP server connected, the presets tell the agent to use those
 tools instead of curl. Nothing here duplicates the playbook — the presets
 are short by design so they can be dropped into a repo without becoming a
 maintenance burden.

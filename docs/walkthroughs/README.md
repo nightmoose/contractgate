@@ -1,4 +1,4 @@
-# ContractGate Walkthroughs
+# DataContractGate Walkthroughs
 
 Start-to-finish guides for gating data on each supported ingestion surface.
 Every walkthrough follows the same five beats — **the contract**, **the
@@ -19,7 +19,7 @@ All five run the **same validation engine** — only the transport differs. The
 contracts in [`examples/contracts/`](../../examples/contracts/) are the runnable
 sources used in each walkthrough.
 
-New to ContractGate? Start with [api.md](api.md) — it's the most common
+New to DataContractGate? Start with [api.md](api.md) — it's the most common
 evaluation entry point — then [`cg test`](../cg-test-reference.md) for local
 validation with no server.
 

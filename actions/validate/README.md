@@ -1,6 +1,6 @@
-# ContractGate Validate (GitHub Action)
+# DataContractGate Validate (GitHub Action)
 
-Compile every ContractGate YAML under `contracts/` in CI. Local, no network,
+Compile every DataContractGate YAML under `contracts/` in CI. Local, no network,
 no CLI release tarball. Uses `pip install contractgate`.
 
 ```yaml

@@ -59,7 +59,7 @@ for (const f of FILES) {
   console.log(`sync-llm-docs: docs/${f} -> public/${f}`);
 }
 
-const bundleHeader = `# ContractGate — Full LLM Documentation Bundle
+const bundleHeader = `# DataContractGate — Full LLM Documentation Bundle
 
 > One-shot ingestion for large-context agents. Concatenates the integration
 > playbook and every reference doc linked from llms.txt in the order an agent

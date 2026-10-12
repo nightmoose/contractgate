@@ -27,7 +27,7 @@ Covers the **Team Members** section of the Account page
 Unchanged from the existing flow: `admin`/`owner` use the invite form on the
 Account page to send an invite by email with a role of `member` or `admin`
 (only an `owner` can invite as `admin`). Invites are still copy-link/RLS based
-— no email delivery is sent by ContractGate itself.
+— no email delivery is sent by DataContractGate itself.
 
 ## Changing a member's role
 

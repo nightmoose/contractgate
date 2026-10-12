@@ -35,7 +35,7 @@ signed off (may be planning docs or UI-only); **Draft** = under review;
 | 022 | [Axum 0.7 → 0.8 Upgrade](rfcs/022-axum-0.8-upgrade.md) | Shipped | `nightly-maintenance-2026-05-02-axum-upgrade` |
 | 023 | [Demo Mode — Zero-Auth Local Experience](rfcs/023-demo-mode.md) | Shipped | `nightly-maintenance-2026-05-04-demo-mode` |
 | 024 | [Brownfield Contract Scaffolder](rfcs/024-brownfield-scaffolder.md) | Shipped | `nightly-maintenance-2026-05-06` |
-| 025 | [Kafka Ingress for Hosted ContractGate](rfcs/025-kafka-ingress.md) | Shipped | `nightly-maintenance-2026-05-07` |
+| 025 | [Kafka Ingress for Hosted DataContractGate](rfcs/025-kafka-ingress.md) | Shipped | `nightly-maintenance-2026-05-07` |
 | 026 | [AWS Kinesis Ingress](rfcs/026-kinesis-ingress.md) | Shipped | `nightly-maintenance-2026-05-07` |
 | 027 | [Disclosed Reddit Bot](rfcs/027-reddit-bot.md) | Accepted | — |
 | 028 | [Contract Queryability](rfcs/028-contract-queryability.md) | Accepted | `nightly-maintenance-2026-05-14` |
@@ -99,7 +99,7 @@ signed off (may be planning docs or UI-only); **Draft** = under review;
 | 089 | [LLM-Pasteable Onboarding (`/llms.txt` + agent playbook)](rfcs/089-llm-agent-onboarding.md) | Shipped | `nightly-maintenance-2026-07-22-bot-signup-cleanup` |
 | 090 | [Official MCP Server (stdio)](rfcs/090-mcp-server.md) | Shipped (v0.2.0) | `nightly-maintenance-2026-08-23-rfc090` |
 | 091 | [Help Catalog + “What’s this?” Inspect Mode](rfcs/091-whats-this-help-mode.md) | Accepted | `nightly-maintenance-2026-09-11-rfc091-whats-this-help-mode` |
-| 092 | [Ralph-native demo stack (Kafi / Driftless / ContractGate)](rfcs/092-ralph-native-demo.md) | Accepted — partner-ready | `nightly-maintenance-2026-09-11-rfc092-ralph-demo` |
+| 092 | [Ralph-native demo stack (Kafi / Driftless / DataContractGate)](rfcs/092-ralph-native-demo.md) | Accepted — partner-ready | `nightly-maintenance-2026-09-11-rfc092-ralph-demo` |
 | 093 | [Egress as a first-class door](rfcs/093-egress-first-class.md) | Shipped | `nightly-maintenance-2026-09-29-rfc093-egress-first-class` |
 
 ---
