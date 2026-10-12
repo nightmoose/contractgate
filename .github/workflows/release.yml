@@ -420,13 +420,18 @@ jobs:
   #
   # One-time setup on pypi.org (before the first release that carries it):
   #   Account → Publishing → Add a pending publisher: project=aischemagate,
-  #   owner=nightmoose, repo=contractgate, workflow=release.yml, environment=pypi.
+  #   owner=nightmoose, repo=contractgate, workflow=release.yml,
+  #   environment=pypi-aischemagate.
+  # Its own environment on purpose: with the same claims as the contractgate
+  # publisher (environment=pypi), the v0.3.0 run got a token that PyPI
+  # refused for the contractgate upload ("OIDC scoped token is not valid
+  # for project"). Distinct claims keep the two publishers apart.
   publish-pypi-alias:
     name: Publish aischemagate (PyPI)
     if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch'
     needs: publish-pypi
     runs-on: ubuntu-24.04
-    environment: pypi   # part of the Trusted Publisher claim — keep in sync with PyPI
+    environment: pypi-aischemagate   # part of the Trusted Publisher claim — keep in sync with PyPI
     permissions:
       id-token: write
     steps:
