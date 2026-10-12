@@ -1071,7 +1071,7 @@ function EventPayloadStorageSection() {
           ? status.enabled
             ? "On — event bodies are stored. Turning this off purges all stored bodies org-wide."
             : "Off — only metadata is stored. Quarantined events can't be replayed until this is on."
-          : "Event payload storage is a paid-plan feature (Growth or Enterprise)."}
+          : "Event payload storage is a paid-plan feature (Pro or Enterprise)."}
       </p>
 
       {error && (

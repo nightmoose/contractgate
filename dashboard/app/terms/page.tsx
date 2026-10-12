@@ -52,7 +52,7 @@ export default function TermsPage() {
             <div className="space-y-3">
               <p>
                 <span className="text-slate-200 font-medium">Automatic renewal.</span> Paid
-                plans (such as Growth) are subscriptions that renew automatically at the end
+                plans (such as Pro) are subscriptions that renew automatically at the end
                 of each billing period, monthly or annually depending on the plan you choose,
                 and continue until you cancel. By starting a paid plan or free trial, you
                 authorize us, through our payment processor Stripe, to charge your payment
@@ -60,9 +60,10 @@ export default function TermsPage() {
                 taxes.
               </p>
               <p>
-                <span className="text-slate-200 font-medium">Current prices.</span> Growth is
-                $299 per month when billed monthly, or $249 per month billed annually as a
-                single charge of $2,988 per year. The price, billing interval, and renewal
+                <span className="text-slate-200 font-medium">Current prices.</span> Pro, for
+                both DataContractGate and AISchemaGate, is $199 per month when billed
+                monthly, or $166 per month billed annually as a single charge of $1,992 per
+                year. The price, billing interval, and renewal
                 terms for your plan are shown on the pricing page and on the Stripe
                 checkout page before you confirm.
               </p>

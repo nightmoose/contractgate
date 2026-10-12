@@ -48,11 +48,11 @@ const TIERS = [
   },
   {
     key: "growth",
-    name: "Growth",
+    name: "Pro",
     tagline: "Production workloads",
-    price: { monthly: "$299", annual: "$249" },
+    price: { monthly: "$199", annual: "$166" },
     priceSub: { monthly: "per month", annual: "per month, billed annually" },
-    cta: "Upgrade to Growth",
+    cta: "Upgrade to Pro",
     ctaHref: "#upgrade", // handled by onClick when logged in
     highlight: true,
     color: "border-green-700/60",
@@ -73,7 +73,7 @@ const TIERS = [
 ];
 
 const FEATURES: Feature[] = [
-  { label: "Events validated / month",         selfHosted: "Unlimited (local)", free: "1M",              growth: "50M",        enterprise: "Unlimited" },
+  { label: "Events validated / month",         selfHosted: "Unlimited (local)", free: "100K",            growth: "25M",        enterprise: "Unlimited" },
   { label: "Active contracts",                 selfHosted: "3 (starter)",       free: "3",               growth: "Unlimited",  enterprise: "Unlimited" },
   { label: "Contract versions",                selfHosted: true,                free: "3 per contract",  growth: "Unlimited",  enterprise: "Unlimited" },
   { label: "Ingest API",                       selfHosted: true,                free: true,              growth: true,         enterprise: true },
@@ -344,7 +344,7 @@ export default function PricingPage() {
           },
           {
             q: "Is the Free tier time-limited?",
-            a: "No. The Free tier is permanent. You only need to upgrade when you exceed 1M events/month or need Growth features.",
+            a: "No. The Free tier is permanent. You only need to upgrade when you exceed 100K events/month or need Pro features.",
           },
           {
             q: "How does Enterprise deployment work?",
@@ -352,7 +352,7 @@ export default function PricingPage() {
           },
           {
             q: "Do you offer a trial?",
-            a: "Growth comes with a 30-day free trial, no credit card required. Enterprise prospects get a POC environment on request.",
+            a: "Pro comes with a 30-day free trial. You add a card at checkout and aren't charged if you cancel before the trial ends. Enterprise prospects get a POC environment on request.",
           },
           {
             q: "What does 'patent pending' mean for my stack?",
@@ -389,7 +389,7 @@ export default function PricingPage() {
   );
 }
 
-// Client component for the in-app Growth upgrade flow (uses the new /api/stripe/create-checkout-session).
+// Client component for the in-app Pro upgrade flow (uses the new /api/stripe/create-checkout-session).
 // `annual` is driven by the page-level billing toggle so the CTA and the displayed price stay in sync.
 function GrowthUpgradeButton({ annual, onToggleAnnual }: { annual: boolean; onToggleAnnual: (v: boolean) => void }) {
   const { org, loading } = useOrg();
@@ -400,7 +400,7 @@ function GrowthUpgradeButton({ annual, onToggleAnnual }: { annual: boolean; onTo
   async function startUpgrade(annual: boolean) {
     if (!org) {
       // Not logged in or no org — send to the public marketing site to start signup.
-      // (Growth upgrades for authenticated users use the in-app Stripe Checkout flow below.)
+      // (Pro upgrades for authenticated users use the in-app Stripe Checkout flow below.)
       window.location.href = 'https://datacontractgate.com/#pricing';
       return;
     }
@@ -459,7 +459,7 @@ function GrowthUpgradeButton({ annual, onToggleAnnual }: { annual: boolean; onTo
       </button>
       <p className="text-[10px] text-slate-400 mt-2 leading-snug">
         Free for 30 days, then{" "}
-        {annual ? "$2,988 billed annually ($249/mo)" : "$299 billed monthly"}. Your
+        {annual ? "$1,992 billed annually ($166/mo)" : "$199 billed monthly"}. Your
         subscription renews automatically until you cancel. Cancel anytime online from
         Account &rarr; Billing; cancel before the trial ends and you won&rsquo;t be charged.
         See our{" "}

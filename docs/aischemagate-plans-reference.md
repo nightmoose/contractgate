@@ -1,49 +1,42 @@
-# AISchemaGate Plans — Reference
+# Plans — Reference (DataContractGate and AISchemaGate)
 
-**Added:** migration 036, `nightly-maintenance-2026-10-12-aischemagate-plans`
+**Added:** migration 036 (AISchemaGate plan values), unified ladder and
+retention in migration 037, both 2026-10-12.
 
-AISchemaGate shares the DataContractGate tenant, API keys, dashboard and
-billing, but sells its own tiers. They are separate plan values on the same
-`orgs.plan` column, so DataContractGate's Free / Growth / Enterprise are
-unchanged.
+Both products sell **one plan ladder at the same prices**. AISchemaGate
+accounts carry their own plan values (`aisg_*`) only so the app can brand and
+trim its navigation for them; limits, prices and billing are identical.
 
-| Plan value | Name | Price | Validations / month | Paid features |
-|---|---|---|---|---|
-| `aisg_free` | Developer | $0 | 10,000 | no |
-| `aisg_pro` | Pro | $99 / month | 250,000 (hard cap) | yes (payload storage, replay) |
-| `enterprise` | Enterprise | custom (from $499 / month) | unlimited | yes |
+| | Free | Pro | Enterprise |
+|---|---|---|---|
+| Plan values | `free`, `aisg_free` | `growth`, `aisg_pro` | `enterprise` |
+| Price | $0 | $199 / month, or $166 / month billed annually ($1,992 / year) | custom |
+| Validations (events) / month | 100,000 | 25,000,000 (hard cap) | unlimited |
+| Rate limit per API key | 10 / sec (burst 100) | 100 / sec (burst 1,000) | 100 / sec, raised per key on request |
+| Audit / quarantine log retention | 7 days | 90 days | 365 days (adjustable) |
+| Payload storage, replay | no | yes | yes |
 
 One validation is one event: an LLM output checked through `/egress` or
-`/v1/ingest` counts exactly like any other event. Limits are enforced by the
-gateway (`src/plan.rs`, `monthly_event_limit`); at the cap, ingest returns
-the same quota error as DataContractGate plans. There is no overage billing
-in v1.
+`/v1/ingest` counts like any other event, whatever its size (requests are
+capped at 1 MB). Limits live in `src/plan.rs` (`monthly_event_limit`,
+`default_rate_limit`); retention in migration 037 (`log_retention_days`,
+`purge_expired_logs`, hourly via pg_cron). There is no overage billing.
 
-## How an account gets an AISchemaGate plan
+## How an account lands on a plan
 
-- **Sign-up.** `app.datacontractgate.com/auth/signup?product=aischemagate`
-  (the link on aischemagate.com) stores `product: "aischemagate"` in the
-  user's metadata; the `handle_new_user` trigger starts that org on
-  `aisg_free`. GitHub sign-ups cannot carry metadata and start on
-  DataContractGate `free` (1M / month); they can still buy Pro.
-- **Upgrade.** `/pricing` shows the AISchemaGate tiers to `aisg_*` orgs and to
-  any visitor with `?product=aischemagate`. Pro checkout posts
-  `{ plan: "aisg_pro" }` to `/api/stripe/create-checkout-session`, which uses
-  `STRIPE_PRICE_AISG_PRO_MONTHLY` (30-day trial, same as Growth).
-- **Webhook.** A completed checkout on the Pro price sets `aisg_pro`.
-  Subscription updates keep the org on its product line: active / trialing /
-  past_due → `aisg_pro`, canceled / unpaid / deleted → `aisg_free`.
+- **Sign-up.** Links from aischemagate.com carry `?product=aischemagate`.
+  The dashboard stores `product: "aischemagate"` in the user's metadata and
+  the `handle_new_user` trigger starts the org on `aisg_free`. GitHub
+  sign-ups cannot carry metadata and start on `free` (same limits).
+- **Upgrade.** One set of Stripe prices (`STRIPE_PRICE_GROWTH_MONTHLY`,
+  `STRIPE_PRICE_GROWTH_ANNUAL`) serves both products. Checkout stamps
+  `metadata.product`; the webhook sets `aisg_pro` for AISchemaGate accounts
+  and `growth` otherwise. Cancellation returns each to its own free value.
+- **Branding.** `?product=aischemagate` also sets the `cg_product` cookie;
+  signed in, the org's plan decides (see `dashboard/lib/brand.ts`).
 
 ## Feature gating
 
-For dashboard feature gates (`planAtLeast`), `aisg_free` ranks with `free`
-and `aisg_pro` with `growth`. Upsell cards tell AISchemaGate accounts to
-upgrade to Pro, not Growth.
-
-## Configuration
-
-| Where | Name | Value |
-|---|---|---|
-| Stripe | Product "AISchemaGate Pro", recurring price | $99 / month |
-| Vercel (dashboard) | `STRIPE_PRICE_AISG_PRO_MONTHLY` | that price's id (`price_...`) |
-| Supabase | migration `036_aischemagate_plans.sql` | apply before deploying the dashboard |
+For dashboard gates (`planAtLeast`), `aisg_free` ranks with `free` and
+`aisg_pro` with `growth`. AISchemaGate accounts additionally get Generate
+from Sample on the free plan, and don't see the data-pipeline pages.

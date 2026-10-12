@@ -401,7 +401,7 @@ function ImportPanel() {
                   <label
                     key={m}
                     className={clsx("flex items-start gap-3", disabled ? "cursor-not-allowed opacity-50" : "cursor-pointer")}
-                    title={disabled ? "Subscribe mode — Growth plan required" : undefined}
+                    title={disabled ? "Subscribe mode — Pro plan required" : undefined}
                   >
                     <input
                       type="radio"
@@ -414,7 +414,7 @@ function ImportPanel() {
                     />
                     <div>
                       <span className="text-sm font-medium text-slate-200 capitalize">
-                        {m} {disabled && <span className="text-[10px] text-amber-500">🔒 Growth</span>}
+                        {m} {disabled && <span className="text-[10px] text-amber-500">🔒 Pro</span>}
                       </span>
                       <p className="text-xs text-slate-500 leading-relaxed">
                         {m === "snapshot"

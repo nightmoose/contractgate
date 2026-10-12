@@ -401,7 +401,7 @@ function EditContractModal({
             <button
               onClick={() => setModalTab("kafka")}
               disabled={!isGrowth}
-              title={!isGrowth ? "Kafka integration — Growth plan required" : undefined}
+              title={!isGrowth ? "Kafka integration — Pro plan required" : undefined}
               className={clsx(
                 "px-4 py-2 text-sm font-medium rounded-t-lg transition-colors border-b-2 -mb-px flex items-center gap-1",
                 modalTab === "kafka"
@@ -415,7 +415,7 @@ function EditContractModal({
             <button
               onClick={() => setModalTab("kinesis")}
               disabled={!isGrowth}
-              title={!isGrowth ? "Kinesis integration — Growth plan required" : undefined}
+              title={!isGrowth ? "Kinesis integration — Pro plan required" : undefined}
               className={clsx(
                 "px-4 py-2 text-sm font-medium rounded-t-lg transition-colors border-b-2 -mb-px flex items-center gap-1",
                 modalTab === "kinesis"
@@ -430,7 +430,7 @@ function EditContractModal({
             <button
               onClick={() => setModalTab("collaborate")}
               disabled={!isGrowth}
-              title={!isGrowth ? "AI Collaborate — Growth plan required" : undefined}
+              title={!isGrowth ? "AI Collaborate — Pro plan required" : undefined}
               className={clsx(
                 "px-4 py-2 text-sm font-medium rounded-t-lg transition-colors border-b-2 -mb-px flex items-center gap-1",
                 modalTab === "collaborate"
@@ -577,7 +577,7 @@ function EditContractModal({
                       Deprecate
                     </button>
                   )}
-                  {/* RFC-045: GitHub sync — Growth+ only */}
+                  {/* RFC-045: GitHub sync — Pro+ only */}
                   {isGrowth ? (
                     <button
                       onClick={handleGitHubSync}
@@ -592,7 +592,7 @@ function EditContractModal({
                     </button>
                   ) : (
                     <span
-                      title="GitHub sync — Growth plan required"
+                      title="GitHub sync — Pro plan required"
                       className="flex items-center gap-1.5 px-3 py-2 bg-[#24292e]/50 text-slate-600 text-sm font-medium rounded-lg border border-[#374151]/50 cursor-not-allowed select-none"
                     >
                       <svg height="14" viewBox="0 0 16 16" width="14" fill="currentColor" aria-hidden="true">
@@ -601,7 +601,7 @@ function EditContractModal({
                       Sync to GitHub 🔒
                     </span>
                   )}
-                  {/* RFC-032: Publish button — Growth+ only */}
+                  {/* RFC-032: Publish button — Pro+ only */}
                   {isGrowth ? (
                     <button
                       onClick={() => setPublishModalOpen(true)}
@@ -613,7 +613,7 @@ function EditContractModal({
                     </button>
                   ) : (
                     <span
-                      title="Publish to catalog — Growth plan required"
+                      title="Publish to catalog — Pro plan required"
                       className="flex items-center gap-1.5 px-3 py-2 bg-teal-900/10 text-teal-900 text-sm font-medium rounded-lg border border-teal-900/30 cursor-not-allowed select-none"
                     >
                       ↑ Publish 🔒
@@ -1968,7 +1968,7 @@ function ContractsContent() {
 
       <div className="flex gap-1 mb-6 bg-[#111827] border border-[#1f2937] rounded-xl p-1 w-fit flex-wrap">
         {(["list", "consumed", "build", "generate", "csv", "quarantine"] as Tab[]).map((t) => {
-          // Growth-only tabs show a lock badge when on free plan.
+          // Pro-only tabs show a lock badge when on free plan.
           const growthOnly = ["build", "generate", "csv", "quarantine"].includes(t);
           const locked = growthOnly && org && !planAtLeast(org.plan, "growth");
           const helpId =
@@ -1993,7 +1993,7 @@ function ContractsContent() {
                 {t === "generate" && "✦ Generate from Sample"}
                 {t === "csv" && "📊 From CSV"}
                 {t === "quarantine" && "☣️ Quarantine"}
-                {locked && <span className="text-[10px] text-amber-500" title="Growth plan required">🔒</span>}
+                {locked && <span className="text-[10px] text-amber-500" title="Pro plan required">🔒</span>}
               </button>
             </HelpTarget>
           );

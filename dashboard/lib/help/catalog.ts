@@ -35,7 +35,7 @@ export const HELP_CATALOG: Record<string, HelpEntry> = {
   },
   "nav.pricing": {
     title: "Pricing",
-    what: "Plan comparison for Self-Hosted Free, Cloud Free, Growth, and Enterprise.",
+    what: "The plans for your product, their limits, and what each one includes.",
     does: "Shows which dashboard features are gated and where to upgrade.",
     href: "/pricing",
   },
@@ -46,7 +46,7 @@ export const HELP_CATALOG: Record<string, HelpEntry> = {
   },
   "nav.contracts": {
     title: "Contracts",
-    what: "The semantic schemas DataContractGate enforces on inbound (and, on Growth, outbound) events.",
+    what: "The semantic schemas DataContractGate enforces on inbound (and, on Pro, outbound) events.",
     does: "Create, version, promote, and inspect contracts. Failures against a stable version land in Quarantine.",
     when: "Start here if you have no contracts yet.",
   },
@@ -126,7 +126,7 @@ export const HELP_CATALOG: Record<string, HelpEntry> = {
   "page.workbench": {
     title: "API Workbench",
     what: "In-browser contract authoring against a live API.",
-    does: "Discovers endpoints, infers fields from responses, and can deploy the result as a stable contract on Growth.",
+    does: "Discovers endpoints, infers fields from responses, and can deploy the result as a stable contract on Pro.",
   },
   "page.playground": {
     title: "Playground",
@@ -150,8 +150,8 @@ export const HELP_CATALOG: Record<string, HelpEntry> = {
   },
   "page.pricing": {
     title: "Pricing",
-    what: "Feature matrix across Self-Hosted Free, Cloud Free, Growth, and Enterprise.",
-    does: "Shows what each plan includes. Growth unlocks quarantine replay, visual builder, scorecard, and workbench save/deploy.",
+    what: "Feature matrix across Self-Hosted Free, Cloud Free, Pro, and Enterprise.",
+    does: "Shows what each plan includes. Pro unlocks quarantine replay, visual builder, scorecard, and workbench save/deploy.",
   },
 
   // ── Dashboard ────────────────────────────────────────────────────────────
@@ -195,22 +195,22 @@ export const HELP_CATALOG: Record<string, HelpEntry> = {
   "contracts.visual-builder": {
     title: "Visual Builder",
     what: "Form-based contract editor — fields, types, constraints, without writing YAML by hand.",
-    does: "Builds the same YAML the engine validates. Growth plan.",
+    does: "Builds the same YAML the engine validates. Pro plan.",
   },
   "contracts.generate": {
     title: "Generate from Sample",
     what: "Infer a draft contract from one or more JSON sample events.",
-    does: "Sends the samples to the Rust inference engine and returns editable YAML. Growth plan.",
+    does: "Sends the samples to the Rust inference engine and returns editable YAML. Pro plan.",
   },
   "contracts.csv": {
     title: "From CSV",
     what: "Infer a draft contract from a CSV file of sample rows.",
-    does: "Same inference engine as JSON samples, for tabular dumps. Growth plan.",
+    does: "Same inference engine as JSON samples, for tabular dumps. Pro plan.",
   },
   "contracts.quarantine": {
     title: "Quarantine",
     what: "Events that failed validation and were held instead of dropped.",
-    does: "Filter, inspect the payload, and replay against a current version. Growth plan.",
+    does: "Filter, inspect the payload, and replay against a current version. Pro plan.",
     href: "https://github.com/nightmoose/contractgate/blob/main/docs/quarantine-replay-reference.md",
   },
   "contracts.new": {
@@ -226,7 +226,7 @@ export const HELP_CATALOG: Record<string, HelpEntry> = {
   "contracts.import-ref": {
     title: "Import from Ref",
     what: "Pull a contract another org published, by its publication ref.",
-    does: "Snapshot copies it once; subscribe (Growth) follows new published versions.",
+    does: "Snapshot copies it once; subscribe (Pro) follows new published versions.",
   },
 
   // ── RFC-020 jargon ───────────────────────────────────────────────────────
@@ -358,12 +358,12 @@ export const HELP_CATALOG: Record<string, HelpEntry> = {
   "catalog.egress": {
     title: "Egress Validator (Catalog)",
     what: "Quick outbound check from the catalog. The primary Outbound tab lives on each contract page.",
-    does: "Validates an outbound payload against one of your contracts. For contract-specific testing, open the contract and use the Outbound tab. Growth plan.",
+    does: "Validates an outbound payload against one of your contracts. For contract-specific testing, open the contract and use the Outbound tab. Pro plan.",
   },
   "catalog.subscribe": {
     title: "Subscribe import",
     what: "An import that follows the provider’s published versions.",
-    does: "Your copy badges when a newer version is out so you can pull the update. Growth plan.",
+    does: "Your copy badges when a newer version is out so you can pull the update. Pro plan.",
   },
 
   // ── Scorecard / Scaffold / Workbench / Playground / Audit / Account ─────
@@ -395,7 +395,7 @@ export const HELP_CATALOG: Record<string, HelpEntry> = {
   "workbench.deploy": {
     title: "Deploy",
     what: "Promote the inferred YAML to a stable contract via POST /contracts/deploy.",
-    does: "Growth+. Free tier can try one endpoint but cannot save or deploy.",
+    does: "Pro+. Free tier can try one endpoint but cannot save or deploy.",
   },
   "playground.validate": {
     title: "Validate",

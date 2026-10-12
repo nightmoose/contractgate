@@ -6,17 +6,28 @@
 /// Monthly event limit for a plan. `None` means unlimited (Enterprise).
 /// Unknown plan strings fall back to the DataContractGate Free limit.
 ///
-/// `aisg_*` are AISchemaGate's plans (migration 036). Same backend and
-/// tenant, its own tiers: one LLM output validated through egress or ingest
-/// is one event.
+/// One plan ladder for both products (decided 2026-10-12): `free` /
+/// `aisg_free` is Free, `growth` / `aisg_pro` is Pro ($199/mo). The `aisg_*`
+/// values (migration 036) only record which product the account came from;
+/// limits are identical. One LLM output validated is one event.
 pub fn monthly_event_limit(plan: &str) -> Option<i64> {
     match plan {
-        "free" => Some(1_000_000),
-        "growth" => Some(50_000_000),
+        "free" | "aisg_free" => Some(100_000),
+        "growth" | "aisg_pro" => Some(25_000_000),
         "enterprise" => None,
-        "aisg_free" => Some(10_000),
-        "aisg_pro" => Some(250_000),
-        _ => Some(1_000_000),
+        _ => Some(100_000),
+    }
+}
+
+/// Default per-key rate limit `(requests/sec, burst)` when the key has no
+/// override of its own (RFC-021 `api_keys.rate_limit_rps/burst`). Free keys
+/// get a tighter bucket so a runaway loop can't hammer the gateway; 100k a
+/// month averages well under 1 request/sec.
+pub fn default_rate_limit(plan: &str) -> (u32, u32) {
+    if is_paid(plan) {
+        (100, 1_000)
+    } else {
+        (10, 100)
     }
 }
 
@@ -58,12 +69,25 @@ mod tests {
 
     #[test]
     fn limits_per_plan() {
-        assert_eq!(monthly_event_limit("free"), Some(1_000_000));
-        assert_eq!(monthly_event_limit("growth"), Some(50_000_000));
+        // Same ladder for both products.
+        for free in ["free", "aisg_free"] {
+            assert_eq!(monthly_event_limit(free), Some(100_000));
+        }
+        for pro in ["growth", "aisg_pro"] {
+            assert_eq!(monthly_event_limit(pro), Some(25_000_000));
+        }
         assert_eq!(monthly_event_limit("enterprise"), None);
-        assert_eq!(monthly_event_limit("aisg_free"), Some(10_000));
-        assert_eq!(monthly_event_limit("aisg_pro"), Some(250_000));
-        // Unknown → DataContractGate Free.
-        assert_eq!(monthly_event_limit("bogus"), Some(1_000_000));
+        // Unknown → Free.
+        assert_eq!(monthly_event_limit("bogus"), Some(100_000));
+    }
+
+    #[test]
+    fn rate_limit_defaults_per_plan() {
+        assert_eq!(default_rate_limit("free"), (10, 100));
+        assert_eq!(default_rate_limit("aisg_free"), (10, 100));
+        assert_eq!(default_rate_limit("growth"), (100, 1_000));
+        assert_eq!(default_rate_limit("aisg_pro"), (100, 1_000));
+        assert_eq!(default_rate_limit("enterprise"), (100, 1_000));
+        assert_eq!(default_rate_limit("bogus"), (10, 100));
     }
 }

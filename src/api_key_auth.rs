@@ -52,6 +52,9 @@ struct ApiKeyRow {
     /// RFC-021 rate-limit overrides.  NULL columns map to None.
     rate_limit_rps: Option<i32>,
     rate_limit_burst: Option<i32>,
+    /// The owning org's plan; sets the default rate limit when the key has
+    /// no override.
+    org_plan: String,
 }
 
 /// How long a validated key stays in the cache before re-verification.
@@ -74,9 +77,11 @@ pub struct ValidatedKey {
     pub org_id: Uuid,
     /// NULL → unrestricted; Some → key only works for listed contract UUIDs.
     pub allowed_contract_ids: Option<Vec<Uuid>>,
-    /// Per-key rate-limit override (RFC-021). NULL → use default (100 rps).
+    /// Rate limit for this key (RFC-021): the key's own override, else the
+    /// org plan's default (`plan::default_rate_limit`). `None` only for keys
+    /// not loaded from the DB (JWT-derived), which use the global default.
     pub rate_limit_rps: Option<u32>,
-    /// Per-key burst override (RFC-021). NULL → use default (1000).
+    /// Burst for this key, resolved the same way as `rate_limit_rps`.
     pub rate_limit_burst: Option<u32>,
 }
 
@@ -293,12 +298,13 @@ async fn verify_against_db(raw_key: &str, db: &PgPool) -> Result<Option<Validate
     // Query a single candidate row by prefix (indexed, fast).
     let row = sqlx::query_as::<_, ApiKeyRow>(
         r#"
-        SELECT id, user_id, org_id, key_hash, allowed_contract_ids,
-               rate_limit_rps, rate_limit_burst
-        FROM   api_keys
-        WHERE  key_prefix = $1
-          AND  revoked_at IS NULL
-          AND  deleted_at IS NULL
+        SELECT k.id, k.user_id, k.org_id, k.key_hash, k.allowed_contract_ids,
+               k.rate_limit_rps, k.rate_limit_burst, o.plan AS org_plan
+        FROM   api_keys k
+        JOIN   orgs o ON o.id = k.org_id
+        WHERE  k.key_prefix = $1
+          AND  k.revoked_at IS NULL
+          AND  k.deleted_at IS NULL
         LIMIT  1
         "#,
     )
@@ -327,14 +333,17 @@ async fn verify_against_db(raw_key: &str, db: &PgPool) -> Result<Option<Validate
         return Ok(None); // hash mismatch — cacheable miss
     }
 
+    // Cast i32 → u32; the CHECK constraint guarantees > 0. A key without
+    // its own override gets its org plan's default (cached with the key, so a
+    // plan change takes effect within the 60 s TTL).
+    let (plan_rps, plan_burst) = crate::plan::default_rate_limit(&row.org_plan);
     Ok(Some(ValidatedKey {
         api_key_id: row.id,
         user_id: row.user_id,
         org_id: row.org_id,
         allowed_contract_ids: row.allowed_contract_ids,
-        // Cast i32 → u32; the CHECK constraint guarantees > 0.
-        rate_limit_rps: row.rate_limit_rps.map(|v| v as u32),
-        rate_limit_burst: row.rate_limit_burst.map(|v| v as u32),
+        rate_limit_rps: Some(row.rate_limit_rps.map_or(plan_rps, |v| v as u32)),
+        rate_limit_burst: Some(row.rate_limit_burst.map_or(plan_burst, |v| v as u32)),
     }))
 }
 

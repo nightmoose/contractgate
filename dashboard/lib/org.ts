@@ -63,16 +63,16 @@ export function isPaidPlan(plan: PlanTier): boolean {
 export function planDisplayName(plan: PlanTier): string {
   switch (plan) {
     case "free": return "Free";
-    case "growth": return "Growth";
+    case "growth": return "Pro";
     case "enterprise": return "Enterprise";
     case "aisg_free": return "AISchemaGate Developer";
     case "aisg_pro": return "AISchemaGate Pro";
   }
 }
 
-/** Name of the self-serve paid plan a free org upgrades to. */
-export function upgradePlanName(plan: PlanTier): string {
-  return isAisgPlan(plan) ? "Pro" : "Growth";
+/** Name of the self-serve paid plan a free org upgrades to (same for both products). */
+export function upgradePlanName(_plan: PlanTier): string {
+  return "Pro";
 }
 
 export interface OrgInfo {

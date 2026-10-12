@@ -407,6 +407,16 @@ jobs:
           fi
           echo "Sentinel A1 OK: orgs_plan_valid includes aisg_free/aisg_pro (migration 036)."
 
+          # Sentinel A1b — migration 037 (log retention): purge function exists
+          # and runs cleanly on an empty schema.
+          PURGE_OK=$(psql "$DATABASE_URL" -Atc \
+            "SELECT audit_deleted + quarantine_deleted FROM public.purge_expired_logs(100)")
+          if [[ "$PURGE_OK" != "0" ]]; then
+            echo "::error::Migration 037 sentinel failed — purge_expired_logs() missing or errored (got '$PURGE_OK')."
+            exit 1
+          fi
+          echo "Sentinel A1b OK: purge_expired_logs() runs (migration 037)."
+
           # Sentinel A2 — migration 027 (api_keys server-side issuance, RFC-056):
           # verify the authenticated INSERT policy is gone and the service_role
           # INSERT policy exists.

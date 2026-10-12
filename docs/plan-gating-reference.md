@@ -20,12 +20,19 @@ at the API/DB layer; not covered here).
 
 | Key | Display name | Monthly price |
 |---|---|---|
-| `free` | Cloud Free | $0 |
-| `growth` | Growth | $299/mo |
+| `free` | Free | $0 |
+| `growth` | Pro | $199/mo, or $166/mo billed annually |
 | `enterprise` | Enterprise | Custom |
+| `aisg_free` | Free (AISchemaGate) | $0 |
+| `aisg_pro` | Pro (AISchemaGate) | $199/mo, or $166/mo billed annually |
 
-Tier ordering: `free < growth < enterprise`. A Growth user has access to all
-Free features; an Enterprise user has access to all Growth and Free features.
+Both products sell the same ladder; `aisg_*` only records that the account
+came from AISchemaGate (branding, navigation). See
+[aischemagate-plans-reference.md](aischemagate-plans-reference.md).
+
+Tier ordering: `free = aisg_free < growth = aisg_pro < enterprise`. A Pro user
+has access to all Free features; an Enterprise user has access to all Pro and
+Free features. (The code key stays `growth`; the customer-facing name is Pro.)
 
 Self-hosted deployments have no `organizations` row and are not subject to plan
 gating.

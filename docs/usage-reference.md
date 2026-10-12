@@ -60,8 +60,8 @@ resolvable org. Self-hosted deployments (no org) are unmetered.
 
 | Plan | Monthly event limit |
 |------|---------------------|
-| `free` | 1,000,000 |
-| `growth` | 50,000,000 |
+| `free`, `aisg_free` | 100,000 |
+| `growth`, `aisg_pro` | 25,000,000 |
 | `enterprise` | unlimited |
 
 Defined in `src/plan.rs::monthly_event_limit`. The endpoint returns the limit so
