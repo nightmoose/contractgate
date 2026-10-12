@@ -673,3 +673,20 @@ describe('contract name lookup', () => {
     assert.deepEqual(calls, ['POST /egress/11111111-1111-4111-8111-111111111111']);
   });
 });
+
+describe('fence stripping', () => {
+  const raw = (content: string) => ({ choices: [{ message: { content, tool_calls: null } }] });
+
+  for (const text of ['```json\n{"a": 1}\n```', '```\n{"a": 1}\n```', '  ```JSON {"a": 1} ```  ', '{"a": 1}']) {
+    it(`extracts ${JSON.stringify(text)}`, () => {
+      assert.deepEqual(extractJson(raw(text)), { a: 1 });
+    });
+  }
+
+  it('is linear on hostile input', () => {
+    const hostile = '```' + ' '.repeat(200_000) + 'x';
+    const start = performance.now();
+    assert.throws(() => extractJson(raw(hostile)), LLMResponseError);
+    assert.ok(performance.now() - start < 500);
+  });
+});

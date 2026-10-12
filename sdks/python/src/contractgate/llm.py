@@ -58,7 +58,22 @@ def _match_contract(rows: List[ContractResponse], name: str) -> str:
 
 MAX_RETRIES_CAP = 5
 _DEFAULT_MAX_RETRIES = 2
-_FENCE_RE = re.compile(r"^\s*```(?:json)?\s*(.*?)\s*```\s*$", re.DOTALL)
+_FENCE = "```"
+
+
+def _strip_fence(s: str) -> str:
+    """Remove one outer ```` ```json ... ``` ```` fence from ``s`` (already stripped).
+
+    Plain string checks instead of a regex: LLM output is untrusted, and the
+    lazy-match regex this replaces backtracks polynomially on input like a
+    fence followed by many spaces (CodeQL js/polynomial-redos).
+    """
+    if len(s) < 2 * len(_FENCE) or not (s.startswith(_FENCE) and s.endswith(_FENCE)):
+        return s
+    inner = s[len(_FENCE) : -len(_FENCE)]
+    if inner[:4].lower() == "json":
+        inner = inner[4:]
+    return inner.strip()
 
 
 class LLMResponseError(ContractGateError):
@@ -212,10 +227,7 @@ def _try_openai_responses(response: Any) -> Optional[Dict[str, Any]]:
 
 def _json_loads_fence_tolerant(s: str) -> Dict[str, Any]:
     """``json.loads`` that strips an outer ```` ```json ... ``` ```` fence."""
-    stripped = s.strip()
-    m = _FENCE_RE.match(stripped)
-    if m is not None:
-        stripped = m.group(1).strip()
+    stripped = _strip_fence(s.strip())
     try:
         obj = json.loads(stripped)
     except json.JSONDecodeError as e:

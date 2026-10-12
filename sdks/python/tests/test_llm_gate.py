@@ -661,3 +661,37 @@ async def test_async_gate_resolves_contract_name():
     await async_client.aclose()
     assert result.ok is True
     assert calls == ["GET /contracts", "POST /egress/11111111-1111-4111-8111-111111111111"]
+
+
+# ---------------------------------------------------------------------------
+# Fence stripping (string ops, no backtracking regex)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        '```json\n{"a": 1}\n```',
+        '```\n{"a": 1}\n```',
+        '  ```JSON {"a": 1} ```  ',
+        '{"a": 1}',
+    ],
+)
+def test_extract_json_strips_optional_fence(text):
+    assert extract_json(_openai_json_mode_raw(text)) == {"a": 1}
+
+
+def test_fence_stripping_is_linear_on_hostile_input():
+    import time
+
+    hostile = "```" + " " * 200_000 + "x"
+    start = time.perf_counter()
+    with pytest.raises(LLMResponseError):
+        extract_json(_openai_json_mode_raw(hostile))
+    assert time.perf_counter() - start < 0.5
+
+
+def _openai_json_mode_raw(content: str) -> SimpleNamespace:
+    return SimpleNamespace(
+        choices=[SimpleNamespace(message=SimpleNamespace(content=content, tool_calls=None))]
+    )

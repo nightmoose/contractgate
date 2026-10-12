@@ -147,8 +147,8 @@ fn output_validation_playbook_example_contract_compiles() {
         .find(|block| block.contains("ontology:"))
         .expect("output-validation playbook must contain a ```yaml block with an ontology");
 
-    let contract: contractgate::contract::Contract = serde_yaml::from_str(yaml)
-        .expect("output-validation playbook example contract must parse");
+    let contract: contractgate::contract::Contract =
+        serde_yaml::from_str(yaml).expect("output-validation playbook example contract must parse");
 
     contractgate::validation::CompiledContract::compile(contract)
         .expect("output-validation playbook example contract must compile");

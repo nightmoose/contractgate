@@ -39,7 +39,20 @@ function matchContract(rows: ContractResponse[], name: string): string {
 export const MAX_RETRIES_CAP = 5;
 const DEFAULT_MAX_RETRIES = 2;
 const DEFAULT_BASE_URL = 'https://app.datacontractgate.com';
-const FENCE_RE = /^\s*```(?:json)?\s*([\s\S]*?)\s*```\s*$/;
+const FENCE = '```';
+
+/**
+ * Remove one outer ```json ... ``` fence from `s` (already trimmed). Plain
+ * string checks instead of a regex: LLM output is untrusted, and the
+ * lazy-match regex this replaces backtracks polynomially on input like a
+ * fence followed by many spaces (CodeQL js/polynomial-redos).
+ */
+function stripFence(s: string): string {
+  if (s.length < 2 * FENCE.length || !s.startsWith(FENCE) || !s.endsWith(FENCE)) return s;
+  let inner = s.slice(FENCE.length, -FENCE.length);
+  if (inner.slice(0, 4).toLowerCase() === 'json') inner = inner.slice(4);
+  return inner.trim();
+}
 
 // ---------------------------------------------------------------------------
 // Errors + result shape
@@ -180,11 +193,7 @@ function tryOpenaiResponses(response: unknown): Record<string, unknown> | null {
 }
 
 function jsonLoadsFenceTolerant(s: string): Record<string, unknown> {
-  let stripped = s.trim();
-  const match = FENCE_RE.exec(stripped);
-  if (match !== null) {
-    stripped = match[1].trim();
-  }
+  const stripped = stripFence(s.trim());
   let obj: unknown;
   try {
     obj = JSON.parse(stripped);
