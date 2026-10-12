@@ -19,15 +19,60 @@ import { useState, useEffect, useRef } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { DEMO_MODE, DEMO_ORG_UUID, DEMO_ORG_NAME } from "@/lib/demo";
 
-/** RFC-045: billing plan tier exposed to UI for feature gating. */
-export type PlanTier = "free" | "growth" | "enterprise";
+/**
+ * RFC-045: billing plan tier exposed to UI for feature gating.
+ * `aisg_*` are AISchemaGate's plans (migration 036): same tenant and backend,
+ * its own tiers. For feature gating they rank alongside free and growth.
+ */
+export type PlanTier = "free" | "growth" | "enterprise" | "aisg_free" | "aisg_pro";
 
 /** Ordered list used for tier comparisons — index = capability rank. */
 export const PLAN_ORDER: PlanTier[] = ["free", "growth", "enterprise"];
 
+const PLAN_RANK: Record<PlanTier, number> = {
+  free: 0,
+  aisg_free: 0,
+  growth: 1,
+  aisg_pro: 1,
+  enterprise: 2,
+};
+
+const KNOWN_PLANS = Object.keys(PLAN_RANK) as PlanTier[];
+
 /** Returns true when `actual` meets or exceeds `required`. */
 export function planAtLeast(actual: PlanTier, required: PlanTier): boolean {
-  return PLAN_ORDER.indexOf(actual) >= PLAN_ORDER.indexOf(required);
+  return PLAN_RANK[actual] >= PLAN_RANK[required];
+}
+
+/** True for AISchemaGate plans. */
+export function isAisgPlan(plan: PlanTier): boolean {
+  return plan === "aisg_free" || plan === "aisg_pro";
+}
+
+/** True for the two no-cost plans. */
+export function isFreePlan(plan: PlanTier): boolean {
+  return plan === "free" || plan === "aisg_free";
+}
+
+/** True for plans billed through Stripe or managed (enterprise). */
+export function isPaidPlan(plan: PlanTier): boolean {
+  return plan === "growth" || plan === "aisg_pro" || plan === "enterprise";
+}
+
+/** Name shown to the customer. */
+export function planDisplayName(plan: PlanTier): string {
+  switch (plan) {
+    case "free": return "Free";
+    case "growth": return "Growth";
+    case "enterprise": return "Enterprise";
+    case "aisg_free": return "AISchemaGate Developer";
+    case "aisg_pro": return "AISchemaGate Pro";
+  }
+}
+
+/** Name of the self-serve paid plan a free org upgrades to. */
+export function upgradePlanName(plan: PlanTier): string {
+  return isAisgPlan(plan) ? "Pro" : "Growth";
 }
 
 export interface OrgInfo {
@@ -142,8 +187,9 @@ export function useOrg(): UseOrgResult {
         const rawOrgs = data.orgs as OrgJoinCell;
         const orgsRow = Array.isArray(rawOrgs) ? (rawOrgs[0] ?? null) : rawOrgs;
         const rawPlan = orgsRow?.plan ?? "free";
-        const plan: PlanTier =
-          rawPlan === "growth" || rawPlan === "enterprise" ? rawPlan : "free";
+        const plan: PlanTier = (KNOWN_PLANS as string[]).includes(rawPlan)
+          ? (rawPlan as PlanTier)
+          : "free";
         setOrg({
           org_id: data.org_id as string,
           org_name: orgsRow?.name ?? "My Org",

@@ -15,9 +15,7 @@ use uuid::Uuid;
 use crate::error::{AppError, AppResult};
 use crate::{storage, AppState, OrgId};
 
-fn is_paid(plan: &str) -> bool {
-    matches!(plan, "growth" | "enterprise")
-}
+use crate::plan::is_paid;
 
 #[derive(Debug, Serialize)]
 pub struct PayloadStorageStatus {

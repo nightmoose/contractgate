@@ -66,7 +66,14 @@ export default function SignupPage() {
       email,
       password,
       options: {
-        data: { display_name: displayName || email.split("@")[0] },
+        data: {
+          display_name: displayName || email.split("@")[0],
+          // Migration 036: sign-ups linked from aischemagate.com
+          // (?product=aischemagate) start on the AISchemaGate Developer plan.
+          ...(new URLSearchParams(location.search).get("product") === "aischemagate"
+            ? { product: "aischemagate" }
+            : {}),
+        },
         emailRedirectTo: `${location.origin}/auth/callback?next=/`,
         captchaToken,
       },

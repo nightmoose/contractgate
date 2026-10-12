@@ -21,7 +21,7 @@
  */
 
 import Link from "next/link";
-import { useOrg, planAtLeast, type PlanTier } from "@/lib/org";
+import { useOrg, planAtLeast, isAisgPlan, planDisplayName, upgradePlanName, type PlanTier } from "@/lib/org";
 import { PREVIEWS } from "@/lib/previews";
 
 // ---------------------------------------------------------------------------
@@ -32,12 +32,16 @@ const TIER_LABEL: Record<PlanTier, string> = {
   free: "Cloud Free",
   growth: "Growth",
   enterprise: "Enterprise",
+  aisg_free: "Developer",
+  aisg_pro: "Pro",
 };
 
 const TIER_COLOR: Record<PlanTier, string> = {
   free: "text-slate-400",
   growth: "text-green-400",
   enterprise: "text-indigo-400",
+  aisg_free: "text-slate-400",
+  aisg_pro: "text-green-400",
 };
 
 // ---------------------------------------------------------------------------
@@ -157,12 +161,16 @@ export default function PlanGate({ minTier, feature, previewKey, children }: Pla
     return <>{children}</>;
   }
 
+  // AISchemaGate accounts upgrade to Pro, not Growth.
+  const upsellTier: PlanTier =
+    isAisgPlan(org.plan) && minTier === "growth" ? "aisg_pro" : minTier;
+
   // Gated: show illustrated preview if key provided, otherwise compact lock.
   if (previewKey) {
-    return <PreviewUpsell previewKey={previewKey} minTier={minTier} />;
+    return <PreviewUpsell previewKey={previewKey} minTier={upsellTier} />;
   }
 
-  return <SimpleUpsell feature={feature} minTier={minTier} />;
+  return <SimpleUpsell feature={feature} minTier={upsellTier} />;
 }
 
 // ---------------------------------------------------------------------------
@@ -178,7 +186,7 @@ interface FreeLimitBannerProps {
 export function FreeLimitBanner({ current, max, resource }: FreeLimitBannerProps) {
   const { org } = useOrg();
 
-  if (!org || org.plan !== "free" || current < max) return null;
+  if (!org || (org.plan !== "free" && org.plan !== "aisg_free") || current < max) return null;
 
   return (
     <div className="mb-4 flex items-center gap-3 bg-amber-900/20 border border-amber-700/40 rounded-xl px-4 py-3">
@@ -188,9 +196,9 @@ export function FreeLimitBanner({ current, max, resource }: FreeLimitBannerProps
         <span className="font-semibold">
           {current}/{max} {resource}
         </span>{" "}
-        on the Free plan.{" "}
+        on the {planDisplayName(org.plan)} plan.{" "}
         <Link href="/pricing" className="underline hover:text-amber-200 transition-colors">
-          Upgrade to Growth
+          Upgrade to {upgradePlanName(org.plan)}
         </Link>{" "}
         for unlimited {resource}.
       </p>

@@ -2,6 +2,18 @@
 
 ---
 
+## Run: 2026-10-12 — AISchemaGate plans (migration 036)
+
+- New plan values `aisg_free` (10k / month) and `aisg_pro` ($99, 250k / month,
+  hard cap) on `orgs.plan`; DataContractGate plans unchanged.
+- `handle_new_user` starts `product=aischemagate` sign-ups on `aisg_free`.
+- Checkout / webhook map the new `STRIPE_PRICE_AISG_PRO_MONTHLY` price to
+  `aisg_pro` and keep subscription changes on the org's product line.
+- `/pricing` shows AISchemaGate tiers to `aisg_*` orgs and `?product=aischemagate`.
+- Reference: `docs/aischemagate-plans-reference.md`. Apply 036 before deploying.
+
+---
+
 ## Run: 2026-09-11 — RFC-091 What’s this? inspect mode
 
 Dashboard-only. Operators had no in-app way to ask what a control is; RFC-020

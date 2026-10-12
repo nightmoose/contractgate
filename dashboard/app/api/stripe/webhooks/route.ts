@@ -161,6 +161,18 @@ export async function POST(req: NextRequest) {
   return NextResponse.json({ received: true });
 }
 
+// AISchemaGate plans (migration 036) live in the same orgs table. A
+// subscription change keeps an org on its own product line.
+function isAisgPlan(plan: string | null | undefined): boolean {
+  return plan === 'aisg_free' || plan === 'aisg_pro';
+}
+function paidPlanFor(plan: string | null | undefined): 'growth' | 'aisg_pro' {
+  return isAisgPlan(plan) ? 'aisg_pro' : 'growth';
+}
+function freePlanFor(plan: string | null | undefined): 'free' | 'aisg_free' {
+  return isAisgPlan(plan) ? 'aisg_free' : 'free';
+}
+
 // Returns true if the org was upgraded (event should be marked processed),
 // false if it was a no-op (unresolved org / wrong price) so the event stays replayable.
 async function handleCheckoutCompleted(event: Stripe.Event, session: Stripe.Checkout.Session): Promise<boolean> {
@@ -184,17 +196,29 @@ async function handleCheckoutCompleted(event: Stripe.Event, session: Stripe.Chec
     return false;
   }
 
-  // Validate this checkout used one of our Growth prices (extra safety).
-  // line_items isn't included on the webhook payload, so always expand it.
+  // Map the checkout's price to the plan it buys (extra safety: an unknown
+  // price upgrades nothing). line_items isn't on the webhook payload, so
+  // always expand it.
   const expanded = await stripe.checkout.sessions.retrieve(session.id, {
     expand: ['line_items.data.price'],
   });
   const priceId = expanded.line_items?.data?.[0]?.price?.id as string | undefined;
 
-  const expectedMonthly = process.env.STRIPE_PRICE_GROWTH_MONTHLY;
-  const expectedAnnual = process.env.STRIPE_PRICE_GROWTH_ANNUAL;
+  const growthPrices = [process.env.STRIPE_PRICE_GROWTH_MONTHLY, process.env.STRIPE_PRICE_GROWTH_ANNUAL];
+  const aisgProPrice = process.env.STRIPE_PRICE_AISG_PRO_MONTHLY;
 
-  if (priceId && expectedMonthly && expectedAnnual && priceId !== expectedMonthly && priceId !== expectedAnnual) {
+  let newPlan: 'growth' | 'aisg_pro' | null = null;
+  if (priceId && aisgProPrice && priceId === aisgProPrice) {
+    newPlan = 'aisg_pro';
+  } else if (priceId && growthPrices.includes(priceId)) {
+    newPlan = 'growth';
+  } else if (!priceId || growthPrices.some((p) => !p)) {
+    // Price unreadable, or Growth prices not configured: keep the historical
+    // behaviour of upgrading to Growth rather than dropping a paid checkout.
+    newPlan = 'growth';
+  }
+
+  if (newPlan === null) {
     await recordFailure(
       event,
       'unexpected_price',
@@ -222,7 +246,7 @@ async function handleCheckoutCompleted(event: Stripe.Event, session: Stripe.Chec
   const { error } = await supabaseAdmin
     .from('orgs')
     .update({
-      plan: 'growth',
+      plan: newPlan,
       plan_status: planStatus,
       stripe_customer_id: customerId,
       stripe_subscription_id: subscriptionId,
@@ -236,7 +260,7 @@ async function handleCheckoutCompleted(event: Stripe.Event, session: Stripe.Chec
     await recordFailure(event, 'db_write_failed', error.message, targetOrgId);
     return false;
   }
-  console.log(`[Stripe] Upgraded org ${targetOrgId} to growth via price ${priceId} (session ${session.id})`);
+  console.log(`[Stripe] Upgraded org ${targetOrgId} to ${newPlan} via price ${priceId} (session ${session.id})`);
   return true;
 }
 
@@ -255,13 +279,14 @@ async function handleSubscriptionUpdated(subscription: Stripe.Subscription): Pro
 
   const status = subscription.status; // active, trialing, past_due, canceled, etc.
 
-  // Enterprise is managed manually (not self-serve); never auto-downgrade it to growth.
+  // Enterprise is managed manually (not self-serve); never auto-downgrade it.
+  // Otherwise stay on the org's product line (DataContractGate or AISchemaGate).
   let newPlan = org.plan;
   if (org.plan !== 'enterprise') {
     if (status === 'canceled' || status === 'unpaid') {
-      newPlan = 'free';
+      newPlan = freePlanFor(org.plan);
     } else if (['active', 'trialing', 'past_due'].includes(status)) {
-      newPlan = 'growth';
+      newPlan = paidPlanFor(org.plan);
     }
   }
 
@@ -279,7 +304,7 @@ async function handleSubscriptionDeleted(subscription: Stripe.Subscription): Pro
   const supabaseAdmin = getSupabaseAdmin();
   const { data: org } = await supabaseAdmin
     .from('orgs')
-    .select('id')
+    .select('id, plan')
     .eq('stripe_subscription_id', subscription.id)
     .single();
 
@@ -288,14 +313,14 @@ async function handleSubscriptionDeleted(subscription: Stripe.Subscription): Pro
   const { error } = await supabaseAdmin
     .from('orgs')
     .update({
-      plan: 'free',
+      plan: freePlanFor(org.plan),
       plan_status: 'canceled',
       stripe_subscription_id: null,
     })
     .eq('id', org.id);
   if (error) throw new Error(`subscription.deleted org ${org.id}: ${error.message}`);
 
-  console.log(`[Stripe] Subscription deleted → downgraded org ${org.id} to free`);
+  console.log(`[Stripe] Subscription deleted → downgraded org ${org.id} to ${freePlanFor(org.plan)}`);
   return true;
 }
 
