@@ -56,7 +56,7 @@ from openai import OpenAI
 gate = LLMGate(
     api_key="cg_live_...",            # required — same key as the dashboard
     contract_id="extract_invoice_v1", # required — contract name or UUID
-    llm=OpenAI(),                     # required — caller-bound client
+    llm=OpenAI(),                     # needed for completion()/message(); optional for validate_only()
     base_url="https://api.datacontractgate.com",  # default
     version=None,                     # pin to a specific contract version
     disposition=None,                 # None → gateway default (block)
@@ -79,7 +79,7 @@ import OpenAI from 'openai';
 const gate = new LLMGate({
   apiKey: 'cg_live_...',           // required
   contractId: 'extract_invoice_v1',// required — contract name or UUID
-  llm: new OpenAI(),               // required
+  llm: new OpenAI(),               // needed for completion()/message(); optional for validateOnly()
   baseUrl: 'https://api.datacontractgate.com',  // default
   version: undefined,
   disposition: undefined,          // undefined → gateway default (block)
@@ -295,7 +295,7 @@ Subclass of `ContractGateError`. Raised when:
 
 ### `ValueError` / `TypeError`
 
-- `LLMGate(..., llm=None)` → `ValueError` (Python) / `TypeError` (TS).
+- `completion()` / `message()` without an `llm` client → `ValueError` (Python) / `TypeError` (TS). `validate_only()` / `validateOnly()` needs no `llm`.
 - `gate.completion(...)` on an LLM client missing `chat.completions.create`
   → `TypeError`.
 - `gate.message(...)` on an LLM client missing `messages.create` →

@@ -2,6 +2,10 @@
 
 All notable changes to `@nightmoose/aischemagate`.
 
+## 0.3.2 — 2026-10-13
+
+Requires `@nightmoose/contractgate-sdk >= 0.3.2`: `llm` is optional for validate-only use.
+
 ## 0.3.1 — 2026-10-13
 
 Versions now move in lockstep with `@nightmoose/contractgate-sdk`. Requires `@nightmoose/contractgate-sdk >= 0.3.1`,

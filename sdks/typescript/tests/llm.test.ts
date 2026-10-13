@@ -269,11 +269,16 @@ describe('extractJson', () => {
 // ---------------------------------------------------------------------------
 
 describe('LLMGate construction', () => {
-  it('requires an llm client', () => {
-    assert.throws(
-      () => new LLMGate({ apiKey: 'k', contractId: '11111111-1111-4111-8111-111111111111', llm: null }),
-      (err: Error) => err instanceof TypeError && /requires an `llm` client/.test(err.message),
-    );
+  it('llm is optional for validateOnly, required for completion/message', async () => {
+    const gate = new LLMGate({
+      apiKey: 'k',
+      contractId: '11111111-1111-4111-8111-111111111111',
+      client: clientWith(okEgressBody({ user_id: 'a' })),
+    });
+    assert.equal((await gate.validateOnly({ user_id: 'a' })).ok, true);
+    const needsLlm = (err: Error) => err instanceof TypeError && /need an `llm` client/.test(err.message);
+    await assert.rejects(gate.completion({ model: 'm', messages: [] }), needsLlm);
+    await assert.rejects(gate.message({ model: 'm', messages: [] }), needsLlm);
   });
 
   it('maxRetries above cap warns and clamps', () => {

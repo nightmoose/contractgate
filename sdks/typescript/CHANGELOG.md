@@ -2,6 +2,12 @@
 
 All notable changes to `@nightmoose/contractgate-sdk`.
 
+## 0.3.2 — 2026-10-13
+
+- `LLMGate`: `llm` is now optional. `validateOnly()` never calls a provider, so
+  it no longer needs a dummy client; `completion()` and `message()` throw
+  `TypeError` when no `llm` is bound.
+
 ## 0.3.1 — 2026-10-13
 
 Fixes from end-to-end testing against production. No API changes.

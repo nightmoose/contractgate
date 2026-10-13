@@ -306,6 +306,16 @@ def _egress_from_rejection(err: ValidationFailedError) -> EgressResponse:
     raise err
 
 
+def _require_llm(llm: Any) -> None:
+    """``llm`` is only needed to call a provider; ``validate_only`` works without it."""
+    if llm is None:
+        raise ValueError(
+            "completion() and message() need an `llm` client (OpenAI / Anthropic / "
+            "Ollama / vLLM). Example: LLMGate(..., llm=OpenAI()). "
+            "validate_only() works without one."
+        )
+
+
 def _append_user_message(messages: List[Dict[str, Any]], hint: str) -> List[Dict[str, Any]]:
     return list(messages) + [{"role": "user", "content": hint}]
 
@@ -329,7 +339,7 @@ class LLMGate:
         *,
         api_key: str,
         contract_id: str,
-        llm: Any,
+        llm: Any = None,
         base_url: str = "https://api.datacontractgate.com",
         version: Optional[str] = None,
         disposition: Optional[str] = None,
@@ -337,11 +347,6 @@ class LLMGate:
         repair_prompt: Optional[Callable[[List[Violation]], str]] = None,
         client: Optional[Client] = None,
     ) -> None:
-        if llm is None:
-            raise ValueError(
-                "LLMGate requires an `llm` client (OpenAI / Anthropic / "
-                "Ollama / vLLM). Example: LLMGate(..., llm=OpenAI())"
-            )
         self._llm = llm
         self._contract_id = contract_id
         self._resolved: Dict[str, str] = {}
@@ -383,6 +388,7 @@ class LLMGate:
         Works unchanged for vLLM and OpenAI-compatible Ollama endpoints.
         """
         self._reject_stream_kwarg(provider_kwargs)
+        _require_llm(self._llm)
 
         def call(current: List[Dict[str, Any]]) -> Any:
             return self._llm.chat.completions.create(
@@ -402,6 +408,7 @@ class LLMGate:
     ) -> LLMGateResult:
         """Anthropic-protocol wrapper. Calls ``llm.messages.create``."""
         self._reject_stream_kwarg(provider_kwargs)
+        _require_llm(self._llm)
 
         def call(current: List[Dict[str, Any]]) -> Any:
             return self._llm.messages.create(
@@ -524,7 +531,7 @@ class AsyncLLMGate:
         *,
         api_key: str,
         contract_id: str,
-        llm: Any,
+        llm: Any = None,
         base_url: str = "https://api.datacontractgate.com",
         version: Optional[str] = None,
         disposition: Optional[str] = None,
@@ -532,11 +539,6 @@ class AsyncLLMGate:
         repair_prompt: Optional[Callable[[List[Violation]], str]] = None,
         client: Optional[AsyncClient] = None,
     ) -> None:
-        if llm is None:
-            raise ValueError(
-                "AsyncLLMGate requires an `llm` client. Example: "
-                "AsyncLLMGate(..., llm=AsyncOpenAI())"
-            )
         self._llm = llm
         self._contract_id = contract_id
         self._resolved: Dict[str, str] = {}
@@ -570,6 +572,7 @@ class AsyncLLMGate:
         **provider_kwargs: Any,
     ) -> LLMGateResult:
         LLMGate._reject_stream_kwarg(provider_kwargs)
+        _require_llm(self._llm)
 
         async def call(current: List[Dict[str, Any]]) -> Any:
             return await self._llm.chat.completions.create(
@@ -588,6 +591,7 @@ class AsyncLLMGate:
         **provider_kwargs: Any,
     ) -> LLMGateResult:
         LLMGate._reject_stream_kwarg(provider_kwargs)
+        _require_llm(self._llm)
 
         async def call(current: List[Dict[str, Any]]) -> Any:
             return await self._llm.messages.create(
