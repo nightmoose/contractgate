@@ -13,6 +13,7 @@ import httpx
 
 from contractgate import _transport as _t
 from contractgate.exceptions import ConnectionError as _ConnectionError
+from contractgate.exceptions import ValidationFailedError
 from contractgate.models import (
     AuditEntry,
     BatchIngestResponse,
@@ -29,7 +30,7 @@ class Client:
 
     Construct with the gateway's ``base_url`` and your API key:
 
-        cg = Client(base_url="https://gw.example.com", api_key="cg_live_...")
+        cg = Client(base_url="https://api.datacontractgate.com", api_key="cg_live_...")
 
     The client owns an ``httpx.Client`` for connection pooling. Close
     it explicitly with :py:meth:`close` or use as a context manager.
@@ -83,15 +84,16 @@ class Client:
         atomic: bool = False,
         timeout: Optional[float] = None,
     ) -> BatchIngestResponse:
-        """Validate + persist a batch via ``POST /ingest/{contract_id}``.
+        """Validate + persist a batch via ``POST /v1/ingest/{contract_id}``.
 
         ``events`` may be a single dict or a list of dicts. ``version``
-        pins to a specific contract version via the
-        ``X-Contract-Version`` header (RFC-002).
+        pins to a specific contract version.
 
-        Per-event failures in a 207 Multi-Status response do NOT
-        raise — they appear in ``response.results``. Whole-batch
-        rejections (422) raise ``ValidationFailedError``.
+        Failed events never raise: whether some (207) or all (422) fail,
+        or an ``atomic`` batch is rejected, they appear in
+        ``response.results`` with their violations, ``index`` and
+        ``quarantine_id``. Only a 422 without per-event results (an
+        idempotency conflict) raises ``ValidationFailedError``.
         """
         spec = _t.build_ingest_request(
             self._cfg,
@@ -102,7 +104,12 @@ class Client:
             atomic=atomic,
             timeout=timeout,
         )
-        _, body = self._dispatch(spec)
+        try:
+            _, body = self._dispatch(spec)
+        except ValidationFailedError as err:
+            body = _t.ingest_body_from_rejection(err)
+            if body is None:
+                raise
         return BatchIngestResponse.from_dict(body)
 
     def egress(

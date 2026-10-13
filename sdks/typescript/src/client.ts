@@ -1,4 +1,4 @@
-import { ConnectionError, raiseForStatus } from './errors.js';
+import { ConnectionError, ValidationFailedError, raiseForStatus } from './errors.js';
 import {
   auditEntryFromJson,
   batchIngestResponseFromJson,
@@ -20,7 +20,7 @@ import type {
 } from './types.js';
 
 const DEFAULT_TIMEOUT_MS = 30_000;
-const SDK_VERSION = '0.3.2';
+const SDK_VERSION = '0.4.0';
 const USER_AGENT = `contractgate-typescript/${SDK_VERSION}`;
 
 // ---------------------------------------------------------------------------
@@ -65,21 +65,36 @@ export class Client {
     atomic?: boolean;
     timeoutMs?: number;
   }): Promise<BatchIngestResponse> {
+    // `/v1/ingest` takes the pin as `?version=` and returns each result's
+    // `index` and `quarantine_id`. The older `<uuid>@<version>` id form is
+    // still accepted; an explicit `version` wins.
+    const [contractId, suffix] = opts.contractId.split('@', 2) as [string, string | undefined];
+    const version = opts.version ?? (suffix || undefined);
+
     const params: Record<string, string> = {};
+    if (version) params['version'] = version;
     if (opts.dryRun) params['dry_run'] = 'true';
     if (opts.atomic) params['atomic'] = 'true';
 
-    const extra: Record<string, string> = {};
-    if (opts.version) extra['X-Contract-Version'] = opts.version;
-
-    const body = await this.request({
-      method: 'POST',
-      path: `/ingest/${opts.contractId}`,
-      params,
-      body: opts.events,
-      extraHeaders: extra,
-      timeoutMs: opts.timeoutMs,
-    });
+    let body: unknown;
+    try {
+      body = await this.request({
+        method: 'POST',
+        path: `/v1/ingest/${contractId}`,
+        params,
+        body: opts.events,
+        timeoutMs: opts.timeoutMs,
+      });
+    } catch (err) {
+      // 422 when every event fails or an atomic batch is rejected: the body
+      // is still a full batch response with per-event results, so return it.
+      // Other 422s (idempotency conflict) carry no results and still throw.
+      if (err instanceof ValidationFailedError && isIngestBody(err.body)) {
+        body = err.body;
+      } else {
+        throw err;
+      }
+    }
     return batchIngestResponseFromJson(body);
   }
 
@@ -261,4 +276,13 @@ export class Client {
     raiseForStatus(response.status, parsed);
     return parsed;
   }
+}
+
+function isIngestBody(v: unknown): boolean {
+  return (
+    v !== null &&
+    typeof v === 'object' &&
+    Array.isArray((v as Record<string, unknown>)['results']) &&
+    'failed' in (v as Record<string, unknown>)
+  );
 }

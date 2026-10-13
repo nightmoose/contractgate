@@ -55,7 +55,7 @@ from contractgate.llm import (
     extract_json,
 )
 
-__version__ = "0.3.2"
+__version__ = "0.4.0"
 __contractgate_version__ = _contractgate_version
 
 __all__ = [

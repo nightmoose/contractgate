@@ -26,11 +26,15 @@ export interface ValidationResult {
 // ---------------------------------------------------------------------------
 
 export interface IngestEventResult {
+  /** Position of this event in the submitted batch. */
+  index: number | null;
   passed: boolean;
   violations: Violation[];
   validation_us: number;
   forwarded: boolean;
   contract_version: string;
+  /** Quarantine row for a stored failure; null for passes, dry runs and atomic rejections. */
+  quarantine_id: string | null;
   transformed_event: unknown;
 }
 
@@ -179,11 +183,13 @@ export function ingestEventResultFromJson(raw: unknown): IngestEventResult {
   const r = toRaw(raw);
   const vList = Array.isArray(r['violations']) ? r['violations'] : [];
   return {
+    index: typeof r['index'] === 'number' ? r['index'] : null,
     passed: toBool(r['passed']),
     violations: vList.map(violationFromJson),
     validation_us: toInt(r['validation_us']),
     forwarded: toBool(r['forwarded']),
     contract_version: String(r['contract_version'] ?? ''),
+    quarantine_id: typeof r['quarantine_id'] === 'string' ? r['quarantine_id'] : null,
     transformed_event: r['transformed_event'] ?? null,
   };
 }

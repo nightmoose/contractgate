@@ -27,6 +27,7 @@ from contractgate.exceptions import ConnectionError as _CGConnError
 
 
 def _ok_ingest_body(passed: int = 1, failed: int = 0) -> Dict[str, Any]:
+    """The real ``/v1/ingest`` shape, including ``index`` and ``quarantine_id``."""
     return {
         "total": passed + failed,
         "passed": passed,
@@ -37,17 +38,20 @@ def _ok_ingest_body(passed: int = 1, failed: int = 0) -> Dict[str, Any]:
         "version_pin_source": "default_stable",
         "results": [
             {
+                "index": i,
                 "passed": True,
                 "violations": [],
                 "validation_us": 42,
                 "forwarded": True,
                 "contract_version": "1.0",
+                "quarantine_id": None,
                 "transformed_event": {"user_id": "x"},
             }
-            for _ in range(passed)
+            for i in range(passed)
         ]
         + [
             {
+                "index": passed + i,
                 "passed": False,
                 "violations": [
                     {"field": "user_id", "message": "bad", "kind": "pattern_mismatch"}
@@ -55,9 +59,10 @@ def _ok_ingest_body(passed: int = 1, failed: int = 0) -> Dict[str, Any]:
                 "validation_us": 12,
                 "forwarded": False,
                 "contract_version": "1.0",
+                "quarantine_id": f"00000000-0000-4000-8000-00000000000{i}",
                 "transformed_event": {"user_id": "BAD!"},
             }
-            for _ in range(failed)
+            for i in range(failed)
         ],
     }
 
@@ -88,7 +93,7 @@ def test_ingest_posts_to_correct_path_with_headers():
             events=[{"user_id": "alice"}],
         )
 
-    assert "/ingest/11111111-1111-1111-1111-111111111111" in captured["url"]
+    assert "/v1/ingest/11111111-1111-1111-1111-111111111111" in captured["url"]
     assert captured["headers"]["x-api-key"] == "cg_live_test"
     assert captured["headers"]["x-org-id"] == "org-uuid"
     assert captured["headers"]["user-agent"].startswith("contractgate-python/")
@@ -97,11 +102,11 @@ def test_ingest_posts_to_correct_path_with_headers():
     assert r.results[0].forwarded is True
 
 
-def test_ingest_version_kwarg_becomes_header():
+def test_ingest_version_kwarg_becomes_query_param():
     captured: Dict[str, Any] = {}
 
     def handler(request: httpx.Request) -> httpx.Response:
-        captured["headers"] = dict(request.headers)
+        captured["url"] = request.url
         return httpx.Response(200, json=_ok_ingest_body(passed=1))
 
     with Client(
@@ -111,7 +116,22 @@ def test_ingest_version_kwarg_becomes_header():
     ) as cg:
         cg.ingest(contract_id="abc", events=[{}], version="2.5")
 
-    assert captured["headers"]["x-contract-version"] == "2.5"
+    assert captured["url"].path == "/v1/ingest/abc"
+    assert captured["url"].params["version"] == "2.5"
+
+
+def test_ingest_at_version_suffix_becomes_query_param():
+    captured: Dict[str, Any] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured["url"] = request.url
+        return httpx.Response(200, json=_ok_ingest_body(passed=1))
+
+    with Client(base_url="https://gw", api_key="k", transport=httpx.MockTransport(handler)) as cg:
+        cg.ingest(contract_id="abc@1.2.0", events=[{}])
+
+    assert captured["url"].path == "/v1/ingest/abc"
+    assert captured["url"].params["version"] == "1.2.0"
 
 
 def test_ingest_dry_run_and_atomic_become_query_params():
@@ -140,6 +160,21 @@ def test_ingest_207_does_not_raise():
     assert r.passed == 1
     assert r.failed == 1
     assert any(not e.passed for e in r.results)
+
+
+def test_ingest_all_failed_422_returns_results():
+    """Every event failing is a 422, but still a result with violations."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(422, json=_ok_ingest_body(passed=0, failed=2))
+
+    with Client(base_url="https://gw", api_key="k", transport=httpx.MockTransport(handler)) as cg:
+        r = cg.ingest(contract_id="abc", events=[{}, {}])
+
+    assert (r.passed, r.failed) == (0, 2)
+    assert [e.index for e in r.results] == [0, 1]
+    assert r.results[0].violations[0].field == "user_id"
+    assert r.results[1].quarantine_id == "00000000-0000-4000-8000-000000000001"
 
 
 # ---------------------------------------------------------------------------

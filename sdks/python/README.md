@@ -18,7 +18,7 @@ Python 3.9+. Runtime deps: `httpx`, `PyYAML`.
 ```python
 from contractgate import Client
 
-cg = Client(base_url="https://gw.example.com", api_key="cg_live_...")
+cg = Client(base_url="https://api.datacontractgate.com", api_key="cg_live_...")
 
 result = cg.ingest(
     contract_id="11111111-1111-1111-1111-111111111111",

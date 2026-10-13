@@ -85,22 +85,26 @@ def build_ingest_request(
     atomic: bool = False,
     timeout: Optional[float] = None,
 ) -> RequestSpec:
-    """Build a POST to ``/ingest/{contract_id}[@version]``.
+    """Build a POST to ``/v1/ingest/{contract_id}``.
 
     ``events`` may be a single dict (the gateway treats a non-array
     body as a one-event batch) or a list. ``version`` becomes the
-    ``X-Contract-Version`` header so the gateway can resolve to a
-    specific pin (header > path-suffix > default-stable, per RFC-002).
+    ``version`` query parameter, the pin form ``/v1/ingest`` accepts.
+    The older ``contract_id="<uuid>@<version>"`` form is still accepted
+    and converted; an explicit ``version`` wins.
+
+    ``/v1/ingest`` (unlike the legacy ``/ingest``) returns each result's
+    ``index`` and ``quarantine_id``.
     """
-    path = f"/ingest/{contract_id}"
+    if "@" in contract_id:
+        contract_id, _, suffix = contract_id.partition("@")
+        if version is None and suffix:
+            version = suffix
+    path = f"/v1/ingest/{contract_id}"
     extra_headers: Dict[str, str] = {}
-    if version is not None:
-        # Header takes precedence over path-suffix per RFC-002. We use
-        # the header form by default — clients that need the @version
-        # path form for environments that strip headers can pass
-        # ``contract_id="<uuid>@<version>"`` and leave ``version=None``.
-        extra_headers["X-Contract-Version"] = version
     params: Dict[str, Any] = {}
+    if version is not None:
+        params["version"] = version
     if dry_run:
         params["dry_run"] = "true"
     if atomic:
@@ -307,3 +311,18 @@ def expect_list(body: Any) -> List[Any]:
     if isinstance(body, list):
         return body
     raise ValueError(f"expected list response, got {type(body).__name__}")
+
+
+def ingest_body_from_rejection(err: Exception) -> Optional[Dict[str, Any]]:
+    """Return the batch body carried by a 422 ingest rejection, if any.
+
+    ``/v1/ingest`` answers 422 when every event fails or an atomic batch is
+    rejected, but the body is still a full batch response with per-event
+    results, so ``ingest`` returns it instead of raising. Other 422s (an
+    idempotency conflict, a deprecated version pin) carry no ``results``
+    and keep raising.
+    """
+    body = getattr(err, "body", None)
+    if isinstance(body, dict) and isinstance(body.get("results"), list) and "failed" in body:
+        return body
+    return None

@@ -2,6 +2,10 @@
 
 All notable changes to `@nightmoose/aischemagate`.
 
+## 0.4.0 — 2026-10-13
+
+Requires `@nightmoose/contractgate-sdk >= 0.4.0`: `ingest` uses `/v1/ingest` and returns failed batches as results. `LLMGate` is unchanged.
+
 ## 0.3.2 — 2026-10-13
 
 Requires `@nightmoose/contractgate-sdk >= 0.3.2`: `llm` is optional for validate-only use.

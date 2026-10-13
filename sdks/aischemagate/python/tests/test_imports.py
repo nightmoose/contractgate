@@ -14,10 +14,10 @@ import pytest
 def test_version_is_pinned():
     import aischemagate
 
-    assert aischemagate.__version__ == "0.3.2"
+    assert aischemagate.__version__ == "0.4.0"
     # The alias also exposes the pinned contractgate version so users can
     # confirm the floor at runtime without a second import.
-    assert aischemagate.__contractgate_version__.startswith("0.3")
+    assert aischemagate.__contractgate_version__.startswith("0.4")
 
 
 def test_llmgate_symbols_available():

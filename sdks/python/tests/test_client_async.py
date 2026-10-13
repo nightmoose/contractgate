@@ -60,7 +60,7 @@ async def test_async_ingest_basic():
         r = await cg.ingest(contract_id="abc", events=[{"user_id": "x"}])
 
     assert r.passed == 1
-    assert "/ingest/abc" in captured["url"]
+    assert "/v1/ingest/abc" in captured["url"]
     assert captured["body"] == [{"user_id": "x"}]
 
 
@@ -82,6 +82,24 @@ async def test_async_error_mapping(status: int, exc: type):
     async with AsyncClient(base_url="https://gw", api_key="k", transport=transport) as cg:
         with pytest.raises(exc):
             await cg.ingest(contract_id="abc", events=[{}])
+
+
+async def test_async_ingest_all_failed_422_returns_results():
+    body = _ok_body()
+    body.update(passed=0, failed=1)
+    body["results"][0].update(
+        index=0,
+        passed=False,
+        quarantine_id="00000000-0000-4000-8000-000000000000",
+        violations=[{"field": "amount", "message": "below min", "kind": "range_violation"}],
+    )
+    transport = httpx.MockTransport(lambda r: httpx.Response(422, json=body))
+    async with AsyncClient(base_url="https://gw", api_key="k", transport=transport) as cg:
+        r = await cg.ingest(contract_id="abc", events=[{}])
+    assert r.failed == 1
+    assert r.results[0].index == 0
+    assert r.results[0].quarantine_id == "00000000-0000-4000-8000-000000000000"
+    assert r.results[0].violations[0].field == "amount"
 
 
 async def test_async_context_manager_closes_underlying_client():
