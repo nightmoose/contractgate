@@ -94,7 +94,8 @@ pub struct V1IngestEventResult {
     /// The contract version that produced the accept/reject decision.
     pub contract_version: String,
     /// UUID of the `quarantine_events` row for a rejected event.
-    /// `null` for passing events.
+    /// `null` for passing events, and for every event on `dry_run=true` or
+    /// an atomic rejection, since neither stores quarantine rows.
     pub quarantine_id: Option<Uuid>,
     /// Post-RFC-004-transform payload that was persisted / forwarded.
     pub transformed_event: Value,
@@ -298,6 +299,71 @@ fn build_openapi() -> String {
             },
             "security": [{ "ApiKeyAuth": [] }]
           }
+        },
+        "/egress/{contract_id}": {
+          "post": {
+            "operationId": "egress",
+            "summary": "Validate outbound records (e.g. LLM output) against a contract",
+            "description": "Used by the AISchemaGate LLMGate SDK. Returns the post-transform payload to forward downstream; failing records are handled per `disposition`.",
+            "parameters": [
+              {
+                "name": "contract_id",
+                "in": "path",
+                "required": true,
+                "description": "Contract UUID, optionally suffixed with @<version>.",
+                "schema": { "type": "string" }
+              },
+              {
+                "name": "disposition",
+                "in": "query",
+                "required": false,
+                "description": "block: drop failing records (default). fail: any failure fails the whole response (422). tag: keep failing records, marked.",
+                "schema": { "type": "string", "enum": ["block", "fail", "tag"], "default": "block" }
+              },
+              {
+                "name": "dry_run",
+                "in": "query",
+                "required": false,
+                "schema": { "type": "boolean", "default": false }
+              },
+              {
+                "name": "X-Contract-Version",
+                "in": "header",
+                "required": false,
+                "description": "Semver pin. Defaults to latest stable.",
+                "schema": { "type": "string" }
+              },
+              {
+                "name": "X-Api-Key",
+                "in": "header",
+                "required": true,
+                "schema": { "type": "string" }
+              }
+            ],
+            "requestBody": {
+              "required": true,
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "oneOf": [
+                      { "type": "array", "items": { "type": "object" } },
+                      { "type": "object" }
+                    ]
+                  }
+                }
+              }
+            },
+            "responses": {
+              "200": { "description": "All records passed" },
+              "207": { "description": "Some records failed (block / tag)" },
+              "400": { "description": "Malformed body or contract id" },
+              "401": { "description": "Missing or invalid X-Api-Key" },
+              "413": { "description": "Body > 1 MB" },
+              "422": { "description": "Every record failed, or any failed with disposition=fail. The body is still a full egress response with per-record violations." },
+              "429": { "description": "Per-key rate limit exceeded" }
+            },
+            "security": [{ "ApiKeyAuth": [] }]
+          }
         }
       },
       "components": {
@@ -355,6 +421,7 @@ pub async fn v1_ingest_handler(
     Query(query): Query<V1IngestQuery>,
     headers: HeaderMap,
     key_ext: Option<Extension<ValidatedKey>>,
+    rl_ext: Option<Extension<crate::rate_limit::RateLimitOutcome>>,
     body: Bytes,
 ) -> AppResult<Response> {
     // --- 1. Parse + validate contract_id -----------------------------------
@@ -373,9 +440,18 @@ pub async fn v1_ingest_handler(
         (None, None, None, None)
     };
 
-    // Use a nil UUID as the rate-limit bucket for legacy/dev-mode (no key).
-    let bucket_id = key_id.unwrap_or(Uuid::nil());
-    let rl_outcome = state.rate_limiter.check(bucket_id, rl_rps, rl_burst);
+    // `require_api_key` already spent this request's token and left the
+    // outcome in the extensions; reuse it. Checking again would charge two
+    // tokens per request (E2E retest 2026-10-13: Remaining stepped by 2 and
+    // Free keys got ~5 req/s instead of 10). Only the dev no-auth path has
+    // no outcome; it uses a nil-UUID bucket.
+    let rl_outcome = match rl_ext {
+        Some(Extension(outcome)) => outcome,
+        None => {
+            let bucket_id = key_id.unwrap_or(Uuid::nil());
+            state.rate_limiter.check(bucket_id, rl_rps, rl_burst)
+        }
+    };
     let rl_headers = rate_limit_headers(&rl_outcome);
 
     if !rl_outcome.allowed {
@@ -638,14 +714,19 @@ pub async fn v1_ingest_handler(
         .map(|(i, _)| i)
         .collect();
 
-    // --- 11. Pre-assign quarantine UUIDs ----------------------------------
-    let mut quarantine_ids: Vec<Option<Uuid>> = vec![None; total];
-    for &idx in &failed_indices {
-        quarantine_ids[idx] = Some(Uuid::new_v4());
-    }
-
     // --- Atomic short-circuit ---------------------------------------------
     let atomic_rejected = query.atomic && failed_count > 0;
+
+    // --- 11. Pre-assign quarantine UUIDs ----------------------------------
+    // Only when a quarantine row will actually be written: dry runs and
+    // atomic rejections store none, and an id that points at nothing can't
+    // be fetched or replayed (E2E retest 2026-10-13).
+    let mut quarantine_ids: Vec<Option<Uuid>> = vec![None; total];
+    if !query.dry_run && !atomic_rejected {
+        for &idx in &failed_indices {
+            quarantine_ids[idx] = Some(Uuid::new_v4());
+        }
+    }
 
     // --- 12. Persist (fire-and-forget) ------------------------------------
     if !query.dry_run && !atomic_rejected {
@@ -1048,5 +1129,13 @@ mod tests {
     fn openapi_server_is_contractgate_cloud() {
         let v: Value = serde_json::from_str(&build_openapi()).unwrap();
         assert_eq!(v["servers"][0]["url"], "https://api.datacontractgate.com");
+    }
+
+    // AISchemaGate's SDK calls /egress; the spec must list it next to ingest.
+    #[test]
+    fn openapi_lists_ingest_and_egress() {
+        let v: Value = serde_json::from_str(&build_openapi()).unwrap();
+        assert!(v["paths"]["/v1/ingest/{contract_id}"]["post"].is_object());
+        assert!(v["paths"]["/egress/{contract_id}"]["post"].is_object());
     }
 }

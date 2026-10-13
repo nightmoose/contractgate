@@ -109,7 +109,7 @@ Idempotency-Key: <opaque_string>        # optional
 | `results[].index`    | integer | Zero-based position in the submitted batch.                          |
 | `results[].passed`   | boolean | Whether this event passed.                                           |
 | `results[].violations` | array | Validation violations (empty on pass). See the violation shape below. |
-| `results[].quarantine_id` | UUID \| null | ID of the quarantine row for rejected events. Use with the replay API. |
+| `results[].quarantine_id` | UUID \| null | ID of the quarantine row for rejected events. Use with the replay API. Always `null` on `dry_run=true` and on an atomic rejection, which store no quarantine rows. |
 | `results[].transformed_event` | object | Post-transform payload that was persisted (RFC-004).      |
 
 ### Violation shape
