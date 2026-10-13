@@ -226,7 +226,12 @@ mod tests {
         let out = state.check(id, Some(10), Some(20));
         assert!(out.allowed);
         assert_eq!(out.limit, 10);
-        assert!(out.remaining <= out.limit, "remaining {} must not exceed limit {}", out.remaining, out.limit);
+        assert!(
+            out.remaining <= out.limit,
+            "remaining {} must not exceed limit {}",
+            out.remaining,
+            out.limit
+        );
     }
 
     #[test]
