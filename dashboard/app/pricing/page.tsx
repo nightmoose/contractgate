@@ -425,7 +425,18 @@ function GrowthUpgradeButton({ annual, onToggleAnnual }: { annual: boolean; onTo
   }
 
   if (loading) {
-    return <div className="block text-center py-2.5 rounded-lg text-sm font-semibold mb-6 bg-[#1f2937] text-slate-400">Loading…</div>;
+    // Same button, disabled until the account loads: no "Loading…" text in
+    // the server-rendered page.
+    return (
+      <div className="mb-6">
+        <button
+          disabled
+          className="w-full py-2.5 rounded-lg text-sm font-semibold bg-green-600 text-white opacity-60"
+        >
+          Start 30-day trial
+        </button>
+      </div>
+    );
   }
 
   if (isPaid) {

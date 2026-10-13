@@ -1,5 +1,6 @@
 "use client";
 
+import { useBrand } from "@/components/BrandProvider";
 import { Suspense, useState, useEffect, useCallback, useMemo } from "react";
 import { useSearchParams } from "next/navigation";
 import useSWR from "swr";
@@ -329,6 +330,8 @@ function StatBar({ stats, loading }: { stats?: IngestionStats; loading: boolean 
 // ---------------------------------------------------------------------------
 
 function AuditContent() {
+  // AISchemaGate validates LLM output on /egress; DataContractGate ingests.
+  const route = useBrand() === "aisg" ? "egress" : "v1/ingest";
   const searchParams = useSearchParams();
   const [contractFilter, setContractFilter] = useState<string>(
     searchParams.get("contract_id") ?? ""
@@ -581,7 +584,7 @@ function AuditContent() {
                       {contracts && contracts.length > 0 ? (
                         <div className="text-left bg-[#0a0d12] border border-[#1f2937] rounded-lg p-4">
                           <p className="text-xs text-slate-500 uppercase tracking-wider mb-2">Send a test event</p>
-                          <pre className="text-xs text-green-300 font-mono whitespace-pre-wrap break-all leading-relaxed">{`curl -X POST ${process.env.NEXT_PUBLIC_API_URL ?? "https://contractgate-api.fly.dev"}/ingest/${contracts[0].id} \\
+                          <pre className="text-xs text-green-300 font-mono whitespace-pre-wrap break-all leading-relaxed">{`curl -X POST ${process.env.NEXT_PUBLIC_API_URL ?? "https://api.datacontractgate.com"}/${route}/${contracts[0].id} \\
   -H "Content-Type: application/json" \\
   -H "x-api-key: <your-api-key>" \\
   -d '{"user_id": "alice", "event_type": "click"}'`}</pre>
@@ -589,7 +592,7 @@ function AuditContent() {
                       ) : (
                         <p className="text-xs text-slate-600">
                           Create a contract first, then send events to{" "}
-                          <code className="text-slate-500">POST /ingest/{"<contract-id>"}</code>
+                          <code className="text-slate-500">POST /{route}/{"<contract-id>"}</code>
                         </p>
                       )}
                       <a

@@ -34,7 +34,7 @@ Idempotency-Key: <opaque_string>        # optional
 | Header            | Required | Description                                                                                  |
 |-------------------|----------|----------------------------------------------------------------------------------------------|
 | `X-Api-Key`       | Yes      | API key in `cg_live_…` format. Must be authorized for the contract's project.               |
-| `Content-Type`    | Yes      | `application/json` or `application/x-ndjson`.                                               |
+| `Content-Type`    | Yes      | `application/json` or `application/x-ndjson`. Other types (e.g. `text/plain`, `application/xml`) get 415; a missing header is read as JSON. |
 | `Idempotency-Key` | No       | Opaque string (max 255 chars). Guarantees at-most-once processing within the 24-hour window. |
 
 ### Body formats
@@ -148,6 +148,7 @@ tolerate their absence.
 | 400  | Malformed body, empty batch, size limit exceeded.                    |
 | 401  | Missing or invalid API key.                                          |
 | 413  | Body > 10 MB or a single event > 1 MB.                              |
+| 415  | `Content-Type` is not JSON or NDJSON.                                |
 | 422  | All events failed, `atomic` rejection, idempotency conflict, or deprecated version pin. |
 | 429  | Per-key rate limit exceeded. See `X-RateLimit-*` headers.            |
 
@@ -155,11 +156,11 @@ tolerate their absence.
 
 | Header                  | Value                                            |
 |-------------------------|--------------------------------------------------|
-| `X-RateLimit-Limit`     | Requests per second allowed for this key.        |
-| `X-RateLimit-Remaining` | Tokens remaining after this request.             |
+| `X-RateLimit-Limit`     | Burst capacity: requests that can go through back to back (Free 20, Pro 200). The bucket refills at the plan rate (Free 10/s, Pro 100/s). |
+| `X-RateLimit-Remaining` | Requests that can still go through right now; drops by one per request. |
 | `X-RateLimit-Reset`     | Unix timestamp when the bucket has ≥ 1 token.   |
 
-Default limits: **100 req/sec sustained, 1 000 burst**. Contact us for design-partner overrides.
+Plan limits: **Free 10 req/sec sustained, bursts up to 20; Pro 100 req/sec, bursts up to 200.** Contact us for design-partner overrides.
 
 ---
 
