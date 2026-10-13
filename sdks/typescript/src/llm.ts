@@ -117,6 +117,17 @@ export function extractJson(response: unknown): Record<string, unknown> {
   );
 }
 
+/** `llm` is only needed to call a provider; `validateOnly` works without it. */
+function requireLlm<T>(llm: T | null): T {
+  if (llm === null) {
+    throw new TypeError(
+      'completion() and message() need an `llm` client (OpenAI / Anthropic / Ollama / vLLM). ' +
+        'Example: new LLMGate({ ..., llm: new OpenAI() }). validateOnly() works without one.',
+    );
+  }
+  return llm;
+}
+
 function isEgressBody(v: unknown): boolean {
   return isPlainObject(v) && 'outcomes' in v && 'failed' in v;
 }
@@ -274,9 +285,12 @@ function appendUserMessage(messages: unknown[], hint: string): unknown[] {
 export interface LLMGateOptions {
   apiKey: string;
   contractId: string;
-  /** Caller-bound LLM client (OpenAI / Anthropic / Ollama / vLLM). Required. */
+  /**
+   * Caller-bound LLM client (OpenAI / Anthropic / Ollama / vLLM). Needed for
+   * `completion` and `message`; `validateOnly` works without one.
+   */
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  llm: any;
+  llm?: any;
   baseUrl?: string;
   version?: string;
   disposition?: 'block' | 'fail' | 'tag';
@@ -321,7 +335,7 @@ export class LLMGate {
     chat?: { completions?: { create?: (...args: any[]) => Promise<unknown> } };
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     messages?: { create?: (...args: any[]) => Promise<unknown> };
-  };
+  } | null;
   readonly #contractId: string;
   readonly #version?: string;
   readonly #disposition?: 'block' | 'fail' | 'tag';
@@ -331,13 +345,7 @@ export class LLMGate {
   readonly #resolved = new Map<string, string>();
 
   constructor(opts: LLMGateOptions) {
-    if (opts.llm === null || opts.llm === undefined) {
-      throw new TypeError(
-        'LLMGate requires an `llm` client (OpenAI / Anthropic / Ollama / vLLM). ' +
-          'Example: new LLMGate({ ..., llm: new OpenAI() })',
-      );
-    }
-    this.#llm = opts.llm;
+    this.#llm = opts.llm ?? null;
     this.#contractId = opts.contractId;
     this.#version = opts.version;
     this.#disposition = opts.disposition;
@@ -363,14 +371,15 @@ export class LLMGate {
         'streaming responses are not supported in v1 — pass stream=false',
       );
     }
-    const createFn = this.#llm.chat?.completions?.create;
+    const llm = requireLlm(this.#llm);
+    const createFn = llm.chat?.completions?.create;
     if (typeof createFn !== 'function') {
       throw new TypeError(
         'bound `llm` client is missing chat.completions.create — expected an ' +
           'OpenAI-protocol client. For Anthropic, call `.message()` instead.',
       );
     }
-    const chatCompletions = this.#llm.chat!.completions!;
+    const chatCompletions = llm.chat!.completions!;
     const call: ProviderCall = (current) =>
       createFn.call(chatCompletions, { model, messages: current, ...rest });
     return this.#runLoop(messages, call, autoRepair);
@@ -386,14 +395,15 @@ export class LLMGate {
         'streaming responses are not supported in v1 — pass stream=false',
       );
     }
-    const createFn = this.#llm.messages?.create;
+    const llm = requireLlm(this.#llm);
+    const createFn = llm.messages?.create;
     if (typeof createFn !== 'function') {
       throw new TypeError(
         'bound `llm` client is missing messages.create — expected an ' +
           'Anthropic-protocol client. For OpenAI, call `.completion()` instead.',
       );
     }
-    const anthropicMessages = this.#llm.messages!;
+    const anthropicMessages = llm.messages!;
     const call: ProviderCall = (current) =>
       createFn.call(anthropicMessages, {
         model,

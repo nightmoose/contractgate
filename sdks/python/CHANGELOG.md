@@ -2,6 +2,12 @@
 
 All notable changes to the `contractgate` Python SDK.
 
+## 0.3.2 — 2026-10-13
+
+- `LLMGate` / `AsyncLLMGate`: `llm` is now optional. `validate_only()` never
+  calls a provider, so it no longer needs a dummy client; `completion()` and
+  `message()` raise `ValueError` when no `llm` is bound.
+
 ## 0.3.1 — 2026-10-13
 
 Fixes from end-to-end testing against production. No API changes.

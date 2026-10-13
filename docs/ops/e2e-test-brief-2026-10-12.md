@@ -59,7 +59,7 @@ Record each as PASS / FAIL / BLOCKED with evidence.
    `CONTRACTGATE_API_KEY` set, validate without an LLM call:
    ```python
    from aischemagate import LLMGate
-   gate = LLMGate(api_key=KEY, contract_id="extract_invoice_v1", llm=object(),
+   gate = LLMGate(api_key=KEY, contract_id="extract_invoice_v1",
                   base_url="https://api.datacontractgate.com")
    ok  = gate.validate_only({"invoice_id":"INV-000123","vendor":"Acme","amount":10,"currency":"USD","due_date":"2026-11-01"})
    bad = gate.validate_only({"invoice_id":"X","vendor":"Acme","amount":-5,"currency":"BTC","due_date":"2026-11-01"})

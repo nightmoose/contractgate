@@ -22,4 +22,4 @@ export type {
   MessageOptions,
 } from '@nightmoose/contractgate-sdk/llm';
 
-export const AISCHEMAGATE_VERSION = '0.3.1';
+export const AISCHEMAGATE_VERSION = '0.3.2';

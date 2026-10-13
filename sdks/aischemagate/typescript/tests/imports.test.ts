@@ -14,7 +14,7 @@ import {
 
 describe('@nightmoose/aischemagate', () => {
   it('ships its own version', () => {
-    assert.equal(AISCHEMAGATE_VERSION, '0.3.1');
+    assert.equal(AISCHEMAGATE_VERSION, '0.3.2');
   });
 
   it('re-exports LLMGate class', () => {
@@ -54,16 +54,11 @@ describe('@nightmoose/aischemagate', () => {
     assert.equal(result.ok, true);
   });
 
-  it('LLMGate constructor still rejects llm=null', () => {
-    assert.throws(
-      () =>
-        new LLMGate({
-          apiKey: 'k',
-          contractId: 'c',
-          // @ts-expect-error — intentionally invalid
-          llm: null,
-        }),
-      (err: Error) => err instanceof TypeError && /requires an `llm` client/.test(err.message),
+  it('LLMGate needs an llm only for completion()', async () => {
+    const gate = new LLMGate({ apiKey: 'k', contractId: 'c' });
+    await assert.rejects(
+      gate.completion({ model: 'm', messages: [] }),
+      (err: Error) => err instanceof TypeError && /need an `llm` client/.test(err.message),
     );
   });
 });

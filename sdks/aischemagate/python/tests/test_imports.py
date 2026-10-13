@@ -14,7 +14,7 @@ import pytest
 def test_version_is_pinned():
     import aischemagate
 
-    assert aischemagate.__version__ == "0.3.1"
+    assert aischemagate.__version__ == "0.3.2"
     # The alias also exposes the pinned contractgate version so users can
     # confirm the floor at runtime without a second import.
     assert aischemagate.__contractgate_version__.startswith("0.3")
@@ -82,5 +82,6 @@ def test_client_construction_works_through_alias():
 def test_llm_required_message_still_fires():
     from aischemagate import LLMGate
 
-    with pytest.raises(ValueError, match="requires an `llm` client"):
-        LLMGate(api_key="k", contract_id="c", llm=None)
+    gate = LLMGate(api_key="k", contract_id="c")  # llm is optional for validate_only
+    with pytest.raises(ValueError, match="need an `llm` client"):
+        gate.completion(model="m", messages=[])

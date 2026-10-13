@@ -2,6 +2,10 @@
 
 All notable changes to the `aischemagate` Python package.
 
+## 0.3.2 — 2026-10-13
+
+Requires `contractgate >= 0.3.2`: `llm` is optional for validate-only use.
+
 ## 0.3.1 — 2026-10-13
 
 Versions now move in lockstep with `contractgate`. Requires `contractgate >= 0.3.1`,

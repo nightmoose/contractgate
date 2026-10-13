@@ -255,9 +255,18 @@ def test_extract_json_streaming_rejected():
 # ---------------------------------------------------------------------------
 
 
-def test_llmgate_requires_llm():
-    with pytest.raises(ValueError, match="requires an `llm` client"):
-        LLMGate(api_key="k", contract_id="11111111-1111-4111-8111-111111111111", llm=None)
+def test_llm_is_optional_for_validate_only():
+    payload = {"user_id": "alice"}
+    gate = LLMGate(
+        api_key="k",
+        contract_id="11111111-1111-4111-8111-111111111111",
+        client=_client_with_egress(_ok_egress_body(payload)),
+    )
+    assert gate.validate_only(payload).ok is True
+    with pytest.raises(ValueError, match="need an `llm` client"):
+        gate.completion(model="m", messages=[])
+    with pytest.raises(ValueError, match="need an `llm` client"):
+        gate.message(model="m", messages=[])
 
 
 def test_llmgate_max_retries_above_cap_warns_and_clamps():
@@ -560,9 +569,11 @@ async def test_async_llmgate_validate_only_happy_path():
 
 
 @pytest.mark.asyncio
-async def test_async_llmgate_requires_llm():
-    with pytest.raises(ValueError, match="requires an `llm` client"):
-        AsyncLLMGate(api_key="k", contract_id="11111111-1111-4111-8111-111111111111", llm=None)
+async def test_async_llm_is_optional_until_completion():
+    gate = AsyncLLMGate(api_key="k", contract_id="11111111-1111-4111-8111-111111111111")
+    with pytest.raises(ValueError, match="need an `llm` client"):
+        await gate.completion(model="m", messages=[])
+    await gate.aclose()
 
 
 # ---------------------------------------------------------------------------
