@@ -23,11 +23,15 @@ pub fn monthly_event_limit(plan: &str) -> Option<i64> {
 /// override of its own (RFC-021 `api_keys.rate_limit_rps/burst`). Free keys
 /// get a tighter bucket so a runaway loop can't hammer the gateway; 100k a
 /// month averages well under 1 request/sec.
+///
+/// RFC-098: burst is 2× rps (was 10×). The 10× factor let a Free key spike
+/// momentarily at 100 r/s, 10× the documented 10 r/s, and failed the 2026-10-12
+/// E2E rate-limit test. 2× keeps room for a 20-event SDK batch without denials.
 pub fn default_rate_limit(plan: &str) -> (u32, u32) {
     if is_paid(plan) {
-        (100, 1_000)
+        (100, 200)
     } else {
-        (10, 100)
+        (10, 20)
     }
 }
 
@@ -83,11 +87,11 @@ mod tests {
 
     #[test]
     fn rate_limit_defaults_per_plan() {
-        assert_eq!(default_rate_limit("free"), (10, 100));
-        assert_eq!(default_rate_limit("aisg_free"), (10, 100));
-        assert_eq!(default_rate_limit("growth"), (100, 1_000));
-        assert_eq!(default_rate_limit("aisg_pro"), (100, 1_000));
-        assert_eq!(default_rate_limit("enterprise"), (100, 1_000));
-        assert_eq!(default_rate_limit("bogus"), (10, 100));
+        assert_eq!(default_rate_limit("free"), (10, 20));
+        assert_eq!(default_rate_limit("aisg_free"), (10, 20));
+        assert_eq!(default_rate_limit("growth"), (100, 200));
+        assert_eq!(default_rate_limit("aisg_pro"), (100, 200));
+        assert_eq!(default_rate_limit("enterprise"), (100, 200));
+        assert_eq!(default_rate_limit("bogus"), (10, 20));
     }
 }

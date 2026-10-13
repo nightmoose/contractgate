@@ -7,7 +7,7 @@
 //!
 //! ### Defaults (applied when `api_keys.rate_limit_*` columns are NULL)
 //! - Sustained rate: **100 req/sec**
-//! - Burst capacity: **1 000 tokens**
+//! - Burst capacity: **200 tokens** (RFC-098: 2× rps, was 10×)
 //!
 //! ### Algorithm
 //! Classic "leaky bucket as meter" (token bucket):
@@ -26,7 +26,7 @@ use uuid::Uuid;
 // ---------------------------------------------------------------------------
 
 pub const DEFAULT_RATE_LIMIT_RPS: u32 = 100;
-pub const DEFAULT_RATE_LIMIT_BURST: u32 = 1_000;
+pub const DEFAULT_RATE_LIMIT_BURST: u32 = 200;
 
 // ---------------------------------------------------------------------------
 // Types
@@ -157,10 +157,15 @@ impl RateLimitState {
             .map(|d| d.as_secs() + reset_ms / 1_000 + if reset_ms % 1_000 > 0 { 1 } else { 0 })
             .unwrap_or(0);
 
+        // RFC-098: report the per-second allowance as remaining, not the raw
+        // bucket. A full bucket for Free is 20 tokens but limit is 10 r/s —
+        // Remaining: 20 with Limit: 10 is a header lie under IETF-draft
+        // semantics. The limiter still enforces on the real bucket.
+        let limit_header = rps_override.unwrap_or(DEFAULT_RATE_LIMIT_RPS);
         RateLimitOutcome {
             allowed,
-            limit: rps_override.unwrap_or(DEFAULT_RATE_LIMIT_RPS),
-            remaining,
+            limit: limit_header,
+            remaining: remaining.min(limit_header),
             reset_unix,
             retry_after_ms: reset_ms,
         }
@@ -204,8 +209,24 @@ mod tests {
         let id = Uuid::new_v4();
         let out = state.check(id, Some(200), Some(2_000));
         assert_eq!(out.limit, 200);
-        // Burst = 2000, first request leaves 1999.
-        assert_eq!(out.remaining, 1_999);
+        // Burst=2000 means the bucket has 1999 tokens after one request, but
+        // RFC-098 clamps the Remaining header to the per-second limit (200).
+        assert_eq!(out.remaining, 200);
+    }
+
+    /// RFC-098: X-RateLimit-Remaining must never exceed X-RateLimit-Limit.
+    /// Internally the bucket still tracks the full burst (so enforcement is
+    /// unchanged), but the header reflects the per-second allowance.
+    #[test]
+    fn remaining_header_clamped_to_limit() {
+        let state = RateLimitState::default();
+        let id = Uuid::new_v4();
+        // Free-plan shape: rps=10, burst=20. Fresh bucket has 20 tokens;
+        // after one request, bucket has 19 — but header must report ≤ 10.
+        let out = state.check(id, Some(10), Some(20));
+        assert!(out.allowed);
+        assert_eq!(out.limit, 10);
+        assert!(out.remaining <= out.limit, "remaining {} must not exceed limit {}", out.remaining, out.limit);
     }
 
     #[test]
