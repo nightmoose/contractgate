@@ -1119,6 +1119,8 @@ function GeneratorTab({ onSaved }: { onSaved: () => void }) {
   const [generating, setGenerating] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
+  const brand = useBrand();
+  const brandName = brand === "aisg" ? "AISchemaGate" : "DataContractGate";
 
   // RFC-079: inference runs on the Rust engine via POST /contracts/infer — the
   // same engine as CSV/URL inference — so nested objects produce
@@ -1157,7 +1159,7 @@ function GeneratorTab({ onSaved }: { onSaved: () => void }) {
         and produce a ready-to-edit YAML contract.
       </p>
       <p className="text-xs text-slate-500 bg-[#111827] border border-[#1f2937] rounded-lg p-3">
-        Sample data is sent to DataContractGate to generate the contract. To keep
+        Sample data is sent to {brandName} to generate the contract. To keep
         data fully local, use <span className="text-slate-300">Start Blank</span>{" "}
         (YAML editor) or run <code className="text-slate-300">cg test</code> locally.
       </p>
@@ -1980,7 +1982,9 @@ function ContractsContent() {
           // Pro-only tabs show a lock badge when on free plan. AISchemaGate
           // keeps Generate free: inferring a contract from known-good outputs
           // is its onboarding step, and /contracts/infer is ungated anyway.
-          const growthOnly = (aisg ? ["build", "quarantine"] : ["build", "generate", "csv", "quarantine"]).includes(t);
+          // Quarantine is open to Free on both brands per RFC-099 (content-
+          // gated per-event by payload_redacted) — do not badge it as locked.
+          const growthOnly = (aisg ? ["build"] : ["build", "generate", "csv"]).includes(t);
           const locked = growthOnly && org && !planAtLeast(org.plan, "growth");
           const helpId =
             t === "list" ? "contracts.list" :
