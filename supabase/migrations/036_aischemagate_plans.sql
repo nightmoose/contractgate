@@ -1,9 +1,11 @@
 -- Migration 036: AISchemaGate plans (aisg_free, aisg_pro)
 --
--- AISchemaGate shares the DataContractGate tenant, API keys and billing, but
--- sells its own tiers (decided 2026-10-12):
---   aisg_free  — $0,      10,000 validations / month
---   aisg_pro   — $99/mo,  250,000 validations / month (hard cap in v1)
+-- AISchemaGate shares the DataContractGate tenant, API keys and billing. Both
+-- products are on the unified pricing ladder (decided 2026-10-12, superseding
+-- the earlier $99/250k AISG proposal — see migration 037 context):
+--   aisg_free  — $0,         100,000 validations / month
+--   aisg_pro   — $199/mo,   25,000,000 validations / month ($166/mo billed
+--                                                           annually = $1,992/yr)
 -- Monthly limits live in src/plan.rs; this migration only widens the allowed
 -- plan values and lets sign-up start an org on aisg_free.
 --
