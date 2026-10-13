@@ -193,8 +193,10 @@ class ContractResponse:
     name: str
     description: Optional[str]
     multi_stable_resolution: str
-    created_at: str
-    updated_at: str
+    # ``GET /contracts`` returns summary rows without timestamps; only the
+    # single-contract endpoints include them.
+    created_at: Optional[str]
+    updated_at: Optional[str]
     version_count: int
     latest_stable_version: Optional[str]
 
@@ -205,8 +207,8 @@ class ContractResponse:
             name=raw["name"],
             description=raw.get("description"),
             multi_stable_resolution=raw.get("multi_stable_resolution", "strict"),
-            created_at=raw["created_at"],
-            updated_at=raw["updated_at"],
+            created_at=raw.get("created_at"),
+            updated_at=raw.get("updated_at"),
             version_count=int(raw.get("version_count", 0)),
             latest_stable_version=raw.get("latest_stable_version"),
         )

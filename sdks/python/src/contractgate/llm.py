@@ -26,7 +26,7 @@ from typing import Any, Awaitable, Callable, Dict, List, Optional
 
 from contractgate.async_client import AsyncClient
 from contractgate.client import Client
-from contractgate.exceptions import ContractGateError
+from contractgate.exceptions import ContractGateError, ValidationFailedError
 from contractgate.models import ContractResponse, EgressResponse, Violation
 
 _UUID_RE = re.compile(
@@ -291,6 +291,21 @@ def _result_from_egress(
     )
 
 
+def _egress_from_rejection(err: ValidationFailedError) -> EgressResponse:
+    """Turn a 422 egress rejection back into an ``EgressResponse``.
+
+    The gateway answers 422 when every event in the batch fails, which is
+    always the case for a gate's single-event batch. The body is still a full
+    egress response with per-field violations, so a failed validation is a
+    result (``ok=False``), not an exception. Any other 422 (e.g. a deprecated
+    version pin) has no ``outcomes`` and is re-raised.
+    """
+    body = err.body
+    if isinstance(body, dict) and "outcomes" in body and "failed" in body:
+        return EgressResponse.from_dict(body)
+    raise err
+
+
 def _append_user_message(messages: List[Dict[str, Any]], hint: str) -> List[Dict[str, Any]]:
     return list(messages) + [{"role": "user", "content": hint}]
 
@@ -407,6 +422,18 @@ class LLMGate:
             )
         return self._resolved[contract_id]
 
+    def _egress(self, payload: Dict[str, Any], *, dry_run: bool = False) -> EgressResponse:
+        try:
+            return self._client.egress(
+                contract_id=self._resolve(self._contract_id),
+                events=[payload],
+                version=self._version,
+                disposition=self._disposition,
+                dry_run=dry_run,
+            )
+        except ValidationFailedError as err:
+            return _egress_from_rejection(err)
+
     def validate_only(
         self,
         response: Any,
@@ -415,13 +442,7 @@ class LLMGate:
     ) -> LLMGateResult:
         """Validate a response the caller already produced."""
         payload = extract_json(response)
-        egress = self._client.egress(
-            contract_id=self._resolve(self._contract_id),
-            events=[payload],
-            version=self._version,
-            disposition=self._disposition,
-            dry_run=dry_run,
-        )
+        egress = self._egress(payload, dry_run=dry_run)
         return _result_from_egress(egress, raw_response=response, attempts=1)
 
     def mask_prompt(
@@ -479,12 +500,7 @@ class LLMGate:
                 hints.append(hint)
                 current = _append_user_message(current, hint)
                 continue
-            egress = self._client.egress(
-                contract_id=self._resolve(self._contract_id),
-                events=[payload],
-                version=self._version,
-                disposition=self._disposition,
-            )
+            egress = self._egress(payload)
             last = _result_from_egress(egress, raw_response=resp, attempts=attempt, hints=hints)
             if egress.failed == 0 or not auto_repair or attempt >= total_attempts:
                 return last
@@ -592,6 +608,18 @@ class AsyncLLMGate:
             )
         return self._resolved[contract_id]
 
+    async def _egress(self, payload: Dict[str, Any], *, dry_run: bool = False) -> EgressResponse:
+        try:
+            return await self._client.egress(
+                contract_id=await self._resolve(self._contract_id),
+                events=[payload],
+                version=self._version,
+                disposition=self._disposition,
+                dry_run=dry_run,
+            )
+        except ValidationFailedError as err:
+            return _egress_from_rejection(err)
+
     async def validate_only(
         self,
         response: Any,
@@ -599,13 +627,7 @@ class AsyncLLMGate:
         dry_run: bool = False,
     ) -> LLMGateResult:
         payload = extract_json(response)
-        egress = await self._client.egress(
-            contract_id=await self._resolve(self._contract_id),
-            events=[payload],
-            version=self._version,
-            disposition=self._disposition,
-            dry_run=dry_run,
-        )
+        egress = await self._egress(payload, dry_run=dry_run)
         return _result_from_egress(egress, raw_response=response, attempts=1)
 
     async def mask_prompt(
@@ -649,12 +671,7 @@ class AsyncLLMGate:
                 hints.append(hint)
                 current = _append_user_message(current, hint)
                 continue
-            egress = await self._client.egress(
-                contract_id=await self._resolve(self._contract_id),
-                events=[payload],
-                version=self._version,
-                disposition=self._disposition,
-            )
+            egress = await self._egress(payload)
             last = _result_from_egress(egress, raw_response=resp, attempts=attempt, hints=hints)
             if egress.failed == 0 or not auto_repair or attempt >= total_attempts:
                 return last

@@ -137,6 +137,13 @@ def _fail_egress_body(payload: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
+def _egress_status(body: Dict[str, Any]) -> int:
+    """Status the gateway really sends: 422 when every event failed."""
+    if body.get("failed", 0) > 0 and body.get("passed", 0) == 0:
+        return 422
+    return 207 if body.get("failed", 0) > 0 else 200
+
+
 def _ingest_body_with_transform(transformed: Dict[str, Any]) -> Dict[str, Any]:
     return {
         "total": 1,
@@ -273,7 +280,7 @@ def test_llmgate_negative_max_retries_clamps_to_zero():
 
 def _client_with_egress(response_body: Dict[str, Any]) -> Client:
     def handler(request: httpx.Request) -> httpx.Response:
-        return httpx.Response(200, json=response_body)
+        return httpx.Response(_egress_status(response_body), json=response_body)
 
     return Client(
         base_url="https://gw",
@@ -303,6 +310,18 @@ def test_validate_only_failure_returns_sanitized_result():
     assert len(result.violations) == 1
     assert result.violations[0].field == "amount"
     assert result.violations[0].kind == ViolationKind.RANGE_VIOLATION
+
+
+def test_non_egress_422_is_still_raised():
+    from contractgate import ValidationFailedError
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(422, json={"error": "version 1.0 is deprecated"})
+
+    client = Client(base_url="https://gw", api_key="k", transport=httpx.MockTransport(handler))
+    gate = LLMGate(api_key="k", contract_id="11111111-1111-4111-8111-111111111111", llm=MagicMock(), client=client)
+    with pytest.raises(ValidationFailedError):
+        gate.validate_only({"user_id": "a"})
 
 
 def test_validate_only_asserts_request_shape():
@@ -375,7 +394,7 @@ class _ToggleTransport(httpx.MockTransport):
     def _handler(self, request: httpx.Request) -> httpx.Response:
         self.hits += 1
         body = next(self._bodies)
-        return httpx.Response(200, json=body)
+        return httpx.Response(_egress_status(body), json=body)
 
 
 def test_completion_auto_repair_passes_on_second_try():
@@ -570,14 +589,14 @@ def test_result_is_dataclass_with_expected_fields():
 
 def _contract_row(cid: str, name: str) -> Dict[str, Any]:
     return {
+        # The real ``GET /contracts`` summary row (src/contract.rs
+        # ContractSummary): no description or timestamps.
         "id": cid,
         "name": name,
-        "description": None,
         "multi_stable_resolution": "strict",
-        "created_at": "2026-10-12T00:00:00Z",
-        "updated_at": "2026-10-12T00:00:00Z",
-        "version_count": 1,
         "latest_stable_version": "1.0.0",
+        "version_count": 1,
+        "store_event_payloads": False,
     }
 
 

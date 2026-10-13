@@ -13,8 +13,8 @@
  */
 
 import { Client, type ClientOptions } from './client.js';
-import { ContractGateError } from './errors.js';
-import type { ContractResponse, EgressResponse, Violation } from './types.js';
+import { ContractGateError, ValidationFailedError } from './errors.js';
+import { egressResponseFromJson, type ContractResponse, type EgressResponse, type Violation } from './types.js';
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -115,6 +115,10 @@ export function extractJson(response: unknown): Record<string, unknown> {
     `unrecognized response shape (type=${typeLabel}); ` +
       'pass an object, a JSON string, or a response from OpenAI / Anthropic',
   );
+}
+
+function isEgressBody(v: unknown): boolean {
+  return isPlainObject(v) && 'outcomes' in v && 'failed' in v;
 }
 
 function isPlainObject(v: unknown): v is Record<string, unknown> {
@@ -411,6 +415,30 @@ export class LLMGate {
   }
 
   /**
+   * The gateway answers 422 when every event in the batch fails, which is
+   * always the case for a gate's single-event batch. The body is still a full
+   * egress response with per-field violations, so a failed validation is a
+   * result (`ok: false`), not an exception. Any other 422 (e.g. a deprecated
+   * version pin) has no `outcomes` and is rethrown.
+   */
+  async #egress(payload: Record<string, unknown>, dryRun?: boolean): Promise<EgressResponse> {
+    try {
+      return await this.#client.egress({
+        contractId: await this.#resolve(this.#contractId),
+        events: [payload],
+        version: this.#version,
+        disposition: this.#disposition,
+        dryRun,
+      });
+    } catch (err) {
+      if (err instanceof ValidationFailedError && isEgressBody(err.body)) {
+        return egressResponseFromJson(err.body);
+      }
+      throw err;
+    }
+  }
+
+  /**
    * Validate a response the caller already produced (no provider call).
    */
   async validateOnly(
@@ -418,13 +446,7 @@ export class LLMGate {
     opts: { dryRun?: boolean } = {},
   ): Promise<LLMGateResult> {
     const payload = extractJson(response);
-    const egress = await this.#client.egress({
-      contractId: await this.#resolve(this.#contractId),
-      events: [payload],
-      version: this.#version,
-      disposition: this.#disposition,
-      dryRun: opts.dryRun,
-    });
+    const egress = await this.#egress(payload, opts.dryRun);
     return resultFromEgress(egress, response, 1, []);
   }
 
@@ -475,12 +497,7 @@ export class LLMGate {
         continue;
       }
 
-      const egress = await this.#client.egress({
-        contractId: await this.#resolve(this.#contractId),
-        events: [payload],
-        version: this.#version,
-        disposition: this.#disposition,
-      });
+      const egress = await this.#egress(payload);
       last = resultFromEgress(egress, resp, attempt, hints);
 
       if (egress.failed === 0 || !autoRepair || attempt >= totalAttempts) {
