@@ -16,6 +16,7 @@ pub mod error;
 pub mod infer;
 pub mod infer_avro;
 pub mod infer_proto;
+pub mod rate_limit;
 pub mod scaffold;
 pub mod transform;
 pub mod validation;

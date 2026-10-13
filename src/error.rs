@@ -10,6 +10,8 @@ use axum::{
 use serde_json::json;
 use thiserror::Error;
 
+use crate::rate_limit::RateLimitOutcome;
+
 #[derive(Debug, Error)]
 pub enum AppError {
     #[error("Contract not found: {0}")]
@@ -29,8 +31,10 @@ pub enum AppError {
     Unauthorized,
 
     /// P1-1: per-key token-bucket exhausted.  429.
+    /// RFC-103: carries the `RateLimitOutcome` so `IntoResponse` can attach
+    /// `X-RateLimit-*` + `Retry-After` headers on the 429.
     #[error("Rate limit exceeded — too many requests")]
-    RateLimitExceeded,
+    RateLimitExceeded(RateLimitOutcome),
 
     /// RFC-083 Phase 2: org monthly event plan cap reached.  429.
     #[error("Plan event limit exceeded for plan '{plan}' ({used}/{limit} in {period})")]
@@ -152,7 +156,16 @@ impl IntoResponse for AppError {
             AppError::BadRequest(_) => (StatusCode::BAD_REQUEST, self.to_string()),
             AppError::PayloadTooLarge(_) => (StatusCode::PAYLOAD_TOO_LARGE, self.to_string()),
             AppError::Unauthorized => (StatusCode::UNAUTHORIZED, self.to_string()),
-            AppError::RateLimitExceeded => (StatusCode::TOO_MANY_REQUESTS, self.to_string()),
+            // RFC-103: emit the IETF-draft rate-limit headers + RFC 6585
+            // Retry-After so clients can back off intelligently.
+            AppError::RateLimitExceeded(outcome) => {
+                let body = Json(json!({
+                    "error": self.to_string(),
+                    "status": 429,
+                    "retry_after_ms": outcome.retry_after_ms,
+                }));
+                return (StatusCode::TOO_MANY_REQUESTS, outcome.headers(), body).into_response();
+            }
             // Plan-limit body is richer; handled specially below.
             AppError::PlanLimitExceeded { .. } => {
                 let body = match &self {
@@ -253,5 +266,41 @@ impl<T> DbOpContext<T> for Result<T, sqlx::Error> {
             tracing::error!("Database error during {}: {:?}", op, e);
             AppError::Database(e)
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use axum::body::to_bytes;
+
+    /// RFC-103: every `AppError::RateLimitExceeded` 429 must carry the full
+    /// IETF-draft `X-RateLimit-*` trio **and** an RFC 6585 `Retry-After` in
+    /// seconds, so clients can back off intelligently. Regression guard
+    /// against the pre-RFC-103 bug where the middleware path discarded the
+    /// `RateLimitOutcome` and emitted a header-less 429.
+    #[tokio::test]
+    async fn rate_limit_exceeded_response_has_all_four_headers() {
+        let outcome = RateLimitOutcome {
+            allowed: false,
+            limit: 10,
+            remaining: 0,
+            reset_unix: 1_700_000_000,
+            retry_after_ms: 1_250,
+        };
+        let resp = AppError::RateLimitExceeded(outcome).into_response();
+
+        assert_eq!(resp.status(), StatusCode::TOO_MANY_REQUESTS);
+        let headers = resp.headers();
+        assert_eq!(headers.get("X-RateLimit-Limit").unwrap(), "10");
+        assert_eq!(headers.get("X-RateLimit-Remaining").unwrap(), "0");
+        assert_eq!(headers.get("X-RateLimit-Reset").unwrap(), "1700000000");
+        // 1250 ms → ceil to 2 seconds, per RFC 6585.
+        assert_eq!(headers.get("Retry-After").unwrap(), "2");
+
+        let body = to_bytes(resp.into_body(), 1024).await.unwrap();
+        let parsed: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(parsed["status"], 429);
+        assert_eq!(parsed["retry_after_ms"], 1_250);
     }
 }

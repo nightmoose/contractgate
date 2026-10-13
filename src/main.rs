@@ -76,7 +76,7 @@ mod publication;
 mod quarantine;
 #[cfg(test)]
 mod rag_contract_tests;
-mod rate_limit;
+use contractgate::rate_limit;
 mod replay;
 mod report;
 mod scaffold_handler;
@@ -1139,7 +1139,7 @@ async fn require_api_key(
                         Some(2_000),
                     );
                     if !outcome.allowed {
-                        return Err(error::AppError::RateLimitExceeded);
+                        return Err(error::AppError::RateLimitExceeded(outcome));
                     }
                     request.extensions_mut().insert(validated);
                     return Ok(next.run(request).await);
@@ -1181,7 +1181,7 @@ async fn require_api_key(
                     validated.rate_limit_burst,
                 );
                 if !outcome.allowed {
-                    return Err(error::AppError::RateLimitExceeded);
+                    return Err(error::AppError::RateLimitExceeded(outcome));
                 }
                 // Inject the validated key into request extensions so
                 // downstream handlers can scope queries to the correct org.
