@@ -91,7 +91,11 @@ pub struct Violation {
     /// Machine-readable violation kind (for programmatic filtering)
     pub kind: ViolationKind,
     /// The offending value as it appeared in the event, when available.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        serialize_with = "serialize_received"
+    )]
     pub received: Option<Value>,
     /// Human-readable description of what the contract expected
     /// (e.g. `"integer"`, `"one of [click, view, purchase, login]"`, `">= 0"`).
@@ -139,6 +143,50 @@ pub enum ViolationKind {
 // Batch result types (RFC-038 envelope path)
 // ---------------------------------------------------------------------------
 
+/// Largest `received` value echoed in full, in serialized bytes.
+const RECEIVED_ECHO_MAX: usize = 1024;
+/// Characters of an oversized string kept in its preview.
+const RECEIVED_PREVIEW_CHARS: usize = 256;
+
+/// Serialize `received`, shortening values over `RECEIVED_ECHO_MAX` bytes.
+///
+/// An oversized field used to be echoed in full by every violation on it,
+/// so one 200 KB string produced a ~600 KB response (E2E retest
+/// 2026-10-13). Long strings keep their first `RECEIVED_PREVIEW_CHARS`
+/// characters plus a marker; long arrays/objects become a size summary.
+/// The full event is still in the result's `transformed_event`.
+fn serialize_received<S: serde::Serializer>(
+    received: &Option<Value>,
+    serializer: S,
+) -> Result<S::Ok, S::Error> {
+    use serde::Serialize;
+    match received {
+        Some(value) => received_preview(value).serialize(serializer),
+        None => serializer.serialize_none(),
+    }
+}
+
+fn received_preview(value: &Value) -> Value {
+    let size = serde_json::to_vec(value).map(|b| b.len()).unwrap_or(0);
+    if size <= RECEIVED_ECHO_MAX {
+        return value.clone();
+    }
+    match value {
+        Value::String(s) => {
+            let head: String = s.chars().take(RECEIVED_PREVIEW_CHARS).collect();
+            let rest = s.chars().count() - head.chars().count();
+            Value::String(format!("{head}… (+{rest} more characters)"))
+        }
+        Value::Array(items) => {
+            Value::String(format!("<array of {} items, {size} bytes>", items.len()))
+        }
+        Value::Object(map) => {
+            Value::String(format!("<object with {} keys, {size} bytes>", map.len()))
+        }
+        other => other.clone(),
+    }
+}
+
 /// A single per-record violation entry in a `BatchValidationResult`.
 ///
 /// The three trailing fields mirror `Violation` — see its docs for the
@@ -153,7 +201,11 @@ pub struct BatchRecordViolation {
     pub message: String,
     /// Machine-readable violation kind.
     pub kind: ViolationKind,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        serialize_with = "serialize_received"
+    )]
     pub received: Option<Value>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub expected: Option<String>,
@@ -723,9 +775,7 @@ fn validate_value(
             kind: ViolationKind::TypeMismatch,
             received: Some(value.clone()),
             expected: Some(expected.clone()),
-            suggestion: Some(format!(
-                "Change the producer to emit '{path}' as {expected}, or update the contract field to `type: {got}` if the producer is correct."
-            )),
+            suggestion: Some(type_mismatch_suggestion(path, &expected, value)),
         });
         return; // Further checks on the wrong type make no sense
     }
@@ -979,6 +1029,27 @@ fn numeric_value(value: &Value) -> Option<f64> {
 }
 
 /// Human-readable JSON type name for error messages.
+/// Fix-it text for a type mismatch. Only names contract settings that exist:
+/// a null is accepted by an optional field under `null_as_absent` (RFC-087),
+/// and a JSON float maps to `type: number` (there is no `type: null`, and
+/// `float` is only an alias).
+fn type_mismatch_suggestion(path: &str, expected: &str, value: &Value) -> String {
+    let contract_fix = match value {
+        Value::Null => {
+            "mark the field `required: false` and set `null_as_absent: true` on the contract"
+                .to_string()
+        }
+        Value::Number(n) if n.is_f64() => "update the contract field to `type: number`".to_string(),
+        other => format!(
+            "update the contract field to `type: {}`",
+            json_type_name(other)
+        ),
+    };
+    format!(
+        "Change the producer to emit '{path}' as {expected}, or {contract_fix} if the producer is correct."
+    )
+}
+
 fn json_type_name(value: &Value) -> &'static str {
     match value {
         Value::Null => "null",
@@ -1181,6 +1252,38 @@ pub fn check_uniqueness_batch(rules: &[QualityRule], events: &[Value]) -> Vec<(u
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn received_over_1kb_is_shortened_small_values_untouched() {
+        let small = json!("abc");
+        assert_eq!(super::received_preview(&small), small);
+
+        let long = json!("x".repeat(200_000));
+        let preview = super::received_preview(&long);
+        let text = preview.as_str().unwrap();
+        assert!(text.len() < 400, "preview is {} bytes", text.len());
+        assert!(text.ends_with("… (+199744 more characters)"));
+
+        let big_array = json!(vec![1; 2_000]);
+        assert!(super::received_preview(&big_array)
+            .as_str()
+            .unwrap()
+            .starts_with("<array of 2000 items"));
+    }
+
+    #[test]
+    fn type_mismatch_suggestion_names_real_contract_settings() {
+        let s = super::type_mismatch_suggestion("ts", "integer", &json!(1.5));
+        assert!(s.contains("`type: number`"), "{s}");
+        let s = super::type_mismatch_suggestion("user_id", "string", &Value::Null);
+        assert!(
+            s.contains("`required: false`") && s.contains("`null_as_absent: true`"),
+            "{s}"
+        );
+        assert!(!s.contains("type: null"), "{s}");
+        let s = super::type_mismatch_suggestion("n", "string", &json!(3));
+        assert!(s.contains("`type: integer`"), "{s}");
+    }
+
     use super::*;
     use crate::contract::{
         EgressLeakageMode, EnvelopeConfig, FieldDefinition, FieldType, Ontology,

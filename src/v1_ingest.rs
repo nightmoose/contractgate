@@ -129,6 +129,7 @@ pub struct V1IngestResponse {
 /// A line > `MAX_EVENT_BYTES` → 413.
 /// A line that isn't valid JSON → 400 with line index.
 fn parse_body(content_type: &str, bytes: &[u8]) -> AppResult<Vec<Value>> {
+    check_content_type(content_type)?;
     if content_type.contains("application/x-ndjson") {
         parse_ndjson(bytes)
     } else {
@@ -139,6 +140,29 @@ fn parse_body(content_type: &str, bytes: &[u8]) -> AppResult<Vec<Value>> {
             Value::Array(arr) => arr,
             single => vec![single],
         })
+    }
+}
+
+/// Reject bodies declared as something other than JSON or NDJSON (e.g.
+/// `text/plain`, `application/xml`), the way the legacy `/ingest` route
+/// does. A missing Content-Type is read as JSON so a bare `curl -d` works.
+fn check_content_type(content_type: &str) -> AppResult<()> {
+    let media = content_type
+        .split(';')
+        .next()
+        .unwrap_or("")
+        .trim()
+        .to_ascii_lowercase();
+    let ok = media.is_empty()
+        || media == "application/json"
+        || media.ends_with("+json")
+        || media == "application/x-ndjson";
+    if ok {
+        Ok(())
+    } else {
+        Err(AppError::UnsupportedMediaType(format!(
+            "expected Content-Type application/json or application/x-ndjson, got {media}"
+        )))
     }
 }
 
@@ -458,8 +482,8 @@ pub async fn v1_ingest_handler(
         let body = json!({
             "error": "rate_limit_exceeded",
             "detail": format!(
-                "Rate limit of {} req/sec exceeded. Retry after {}ms.",
-                rl_outcome.limit, rl_outcome.retry_after_ms
+                "Rate limit of {} req/sec (bursts up to {}) exceeded. Retry after {}ms.",
+                rl_outcome.rate, rl_outcome.limit, rl_outcome.retry_after_ms
             ),
             "retry_after_ms": rl_outcome.retry_after_ms,
         });
@@ -532,7 +556,7 @@ pub async fn v1_ingest_handler(
     let content_type = headers
         .get("content-type")
         .and_then(|v| v.to_str().ok())
-        .unwrap_or("application/json");
+        .unwrap_or("");
 
     let events = parse_body(content_type, &body)?;
 
@@ -1047,6 +1071,31 @@ mod tests {
     use super::*;
 
     #[test]
+    fn content_type_json_ndjson_or_missing_accepted_others_415() {
+        let body = br#"{"a":1}"#;
+        for ct in [
+            "",
+            "application/json",
+            "application/json; charset=utf-8",
+            "application/vnd.api+json",
+        ] {
+            assert!(parse_body(ct, body).is_ok(), "{ct:?} should be accepted");
+        }
+        assert!(parse_body("application/x-ndjson", b"{\"a\":1}\n").is_ok());
+        for ct in [
+            "text/plain",
+            "application/xml",
+            "text/xml",
+            "application/x-www-form-urlencoded",
+        ] {
+            assert!(
+                matches!(parse_body(ct, body), Err(AppError::UnsupportedMediaType(_))),
+                "{ct:?} should be 415"
+            );
+        }
+    }
+
+    #[test]
     fn json_array_parsed() {
         let body = br#"[{"a":1},{"b":2}]"#;
         let events = parse_body("application/json", body).unwrap();
@@ -1103,6 +1152,7 @@ mod tests {
         use crate::rate_limit::{RateLimitOutcome, DEFAULT_RATE_LIMIT_RPS};
         let outcome = RateLimitOutcome {
             allowed: true,
+            rate: DEFAULT_RATE_LIMIT_RPS,
             limit: DEFAULT_RATE_LIMIT_RPS,
             remaining: 999,
             reset_unix: 1_714_000_000,

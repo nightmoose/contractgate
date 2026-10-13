@@ -1112,6 +1112,11 @@ async fn require_api_key(
         .and_then(|v| v.strip_prefix("Bearer "))
         .map(str::to_owned)
     {
+        // An API key (cg_live_… / cg_test_…) in the Bearer slot is a common
+        // mistake; it can never verify as a JWT, so say where it belongs.
+        if bearer.starts_with("cg_") {
+            return Err(error::AppError::ApiKeyInBearer);
+        }
         // RFC-052: load the live JWKS snapshot (lock-free ArcSwap read).
         let jwks_guard = state.supabase_jwks.load();
         if let Some(jwks) = jwks_guard.as_ref() {

@@ -588,7 +588,7 @@ fn parse_egress_path(raw: &str) -> AppResult<(Uuid, Option<String>)> {
         None => (raw, None),
     };
     let uuid = Uuid::parse_str(uuid_part)
-        .map_err(|_| AppError::BadRequest(format!("invalid contract_id in path: {uuid_part}")))?;
+        .map_err(|_| AppError::BadRequest(format!("invalid contract_id: {uuid_part}")))?;
     Ok((uuid, path_version))
 }
 

@@ -107,9 +107,12 @@ impl Default for RateLimitState {
 #[derive(Debug, Clone)]
 pub struct RateLimitOutcome {
     pub allowed: bool,
-    /// Effective rps limit for this key.
+    /// Sustained refill rate for this key, requests per second.
+    pub rate: u32,
+    /// Bucket capacity: the most requests that can go through back to back.
+    /// Reported as `X-RateLimit-Limit`.
     pub limit: u32,
-    /// Tokens remaining after this request (floored).
+    /// Requests that can still go through right now (bucket tokens, floored).
     pub remaining: u32,
     /// Unix timestamp (seconds) when the bucket will have ≥1 token.
     /// Equals `now + reset_ms/1000`.  Always set; 0 when allowed.
@@ -172,15 +175,18 @@ impl RateLimitState {
             .map(|d| d.as_secs() + reset_ms / 1_000 + if reset_ms % 1_000 > 0 { 1 } else { 0 })
             .unwrap_or(0);
 
-        // RFC-098: report the per-second allowance as remaining, not the raw
-        // bucket. A full bucket for Free is 20 tokens but limit is 10 r/s —
-        // Remaining: 20 with Limit: 10 is a header lie under IETF-draft
-        // semantics. The limiter still enforces on the real bucket.
-        let limit_header = rps_override.unwrap_or(DEFAULT_RATE_LIMIT_RPS);
+        // X-RateLimit-Limit is the bucket capacity and Remaining the tokens
+        // left, so a fresh burst counts down 19, 18, …, 0 and Limit matches
+        // how many requests really get through. (RFC-098 reported the
+        // per-second rate as Limit and clamped Remaining to it, so a Free
+        // burst showed "Limit: 10, Remaining: 10" for the first ten of the
+        // twenty requests it allowed — 0.4.0 retest, 2026-10-13.) The
+        // sustained rate is in `rate` for error messages.
         RateLimitOutcome {
             allowed,
-            limit: limit_header,
-            remaining: remaining.min(limit_header),
+            rate: rate as u32,
+            limit: burst as u32,
+            remaining,
             reset_unix,
             retry_after_ms: reset_ms,
         }
@@ -215,7 +221,8 @@ mod tests {
         let id = Uuid::new_v4();
         let out = state.check(id, None, None);
         assert!(out.allowed);
-        assert_eq!(out.limit, DEFAULT_RATE_LIMIT_RPS);
+        assert_eq!(out.rate, DEFAULT_RATE_LIMIT_RPS);
+        assert_eq!(out.limit, DEFAULT_RATE_LIMIT_BURST);
     }
 
     #[test]
@@ -223,30 +230,29 @@ mod tests {
         let state = RateLimitState::default();
         let id = Uuid::new_v4();
         let out = state.check(id, Some(200), Some(2_000));
-        assert_eq!(out.limit, 200);
-        // Burst=2000 means the bucket has 1999 tokens after one request, but
-        // RFC-098 clamps the Remaining header to the per-second limit (200).
-        assert_eq!(out.remaining, 200);
+        assert_eq!(out.rate, 200);
+        assert_eq!(out.limit, 2_000);
+        assert_eq!(out.remaining, 1_999);
     }
 
-    /// RFC-098: X-RateLimit-Remaining must never exceed X-RateLimit-Limit.
-    /// Internally the bucket still tracks the full burst (so enforcement is
-    /// unchanged), but the header reflects the per-second allowance.
+    /// Free-plan shape (10 r/s, burst 20): Limit is the 20 requests a burst
+    /// really allows, and Remaining counts down by one per request.
     #[test]
-    fn remaining_header_clamped_to_limit() {
+    fn burst_headers_count_down_from_capacity() {
         let state = RateLimitState::default();
         let id = Uuid::new_v4();
-        // Free-plan shape: rps=10, burst=20. Fresh bucket has 20 tokens;
-        // after one request, bucket has 19 — but header must report ≤ 10.
-        let out = state.check(id, Some(10), Some(20));
-        assert!(out.allowed);
-        assert_eq!(out.limit, 10);
-        assert!(
-            out.remaining <= out.limit,
-            "remaining {} must not exceed limit {}",
-            out.remaining,
-            out.limit
-        );
+        let remaining: Vec<u32> = (0..20)
+            .map(|_| {
+                let out = state.check(id, Some(10), Some(20));
+                assert!(out.allowed);
+                assert_eq!((out.rate, out.limit), (10, 20));
+                out.remaining
+            })
+            .collect();
+        assert_eq!(remaining, (0..20).rev().collect::<Vec<u32>>());
+        let denied = state.check(id, Some(10), Some(20));
+        assert!(!denied.allowed);
+        assert_eq!(denied.remaining, 0);
     }
 
     #[test]
