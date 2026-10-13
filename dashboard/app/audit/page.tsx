@@ -571,6 +571,7 @@ function AuditContent() {
                       <FirstRunLoop
                         title="No events recorded yet"
                         hint="The audit log fills automatically once events start flowing through your ingest endpoint."
+                        aisgHint="The audit log fills automatically once you validate LLM output with the LLMGate SDK or /egress."
                         cta={
                           !contracts || contracts.length === 0
                             ? { href: "/contracts", label: "Create a contract →" }

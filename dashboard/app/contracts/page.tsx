@@ -1010,6 +1010,7 @@ function ContractList({
         <FirstRunLoop
           title="No contracts yet — create your first one above."
           hint="A contract is the schema DataContractGate enforces. Until one is stable, ingest has nowhere to route."
+          aisgHint="A contract is the schema AISchemaGate checks LLM output against. Until one is stable, validation has no version to use."
         />
       </div>
     );
