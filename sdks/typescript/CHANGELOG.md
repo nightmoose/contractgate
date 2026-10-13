@@ -2,6 +2,17 @@
 
 All notable changes to `@nightmoose/contractgate-sdk`.
 
+## 0.3.1 — 2026-10-13
+
+Fixes from end-to-end testing against production. No API changes.
+
+- Fix: a rejected LLM output now resolves to `{ ok: false, violations: [...] }`
+  instead of throwing `ValidationFailedError`. The gateway answers 422 when every
+  event fails, which is always true for a gate's single-event batch, so
+  `validateOnly` and the `autoRepair` loop never saw the violations. A 422
+  without an egress body (e.g. a deprecated version pin) still throws.
+- Default `baseUrl` is `https://api.datacontractgate.com` (was the dashboard host).
+
 ## 0.3.0 — 2026-10-11
 
 RFC-094. Adds the `./llm` subpath export for LLM output validation. No

@@ -1,7 +1,7 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { Client, ContractGateError } from '../src/index.js';
+import { Client, ContractGateError, ValidationFailedError } from '../src/index.js';
 import {
   LLMGate,
   LLMResponseError,
@@ -126,7 +126,14 @@ function ingestWithTransform(
 // fetch mocks
 // ---------------------------------------------------------------------------
 
-function fetchReturning(body: unknown, status = 200): typeof globalThis.fetch {
+/** Status the gateway really sends: 422 when every event failed. */
+function egressStatus(body: unknown): number {
+  const b = body as { passed?: number; failed?: number } | null;
+  if (b && (b.failed ?? 0) > 0) return (b.passed ?? 0) === 0 ? 422 : 207;
+  return 200;
+}
+
+function fetchReturning(body: unknown, status = egressStatus(body)): typeof globalThis.fetch {
   return async () =>
     new Response(JSON.stringify(body), {
       status,
@@ -147,7 +154,7 @@ function fetchCycle(bodies: unknown[]): {
     const b = bodies[state.i];
     state.i += 1;
     return new Response(JSON.stringify(b), {
-      status: 200,
+      status: egressStatus(b),
       headers: { 'Content-Type': 'application/json' },
     });
   };
@@ -324,6 +331,16 @@ describe('LLMGate.validateOnly', () => {
     assert.equal(result.violations.length, 1);
     assert.equal(result.violations[0].field, 'amount');
     assert.equal(result.violations[0].kind, 'range_violation');
+  });
+
+  it('a 422 without an egress body is still thrown', async () => {
+    const gate = new LLMGate({
+      apiKey: 'k',
+      contractId: '11111111-1111-4111-8111-111111111111',
+      llm: {},
+      client: new Client({ baseUrl: 'https://gw', apiKey: 'k', fetch: fetchReturning({ error: 'version 1.0 is deprecated' }, 422) }),
+    });
+    await assert.rejects(gate.validateOnly({ amount: 1 }), ValidationFailedError);
   });
 
   it('asserts request shape', async () => {
@@ -629,8 +646,8 @@ describe('LLMGateResult', () => {
 
 describe('contract name lookup', () => {
   const rows = [
-    { id: '33333333-3333-4333-8333-333333333333', name: 'other_contract', description: null, multi_stable_resolution: 'strict', created_at: '', updated_at: '', version_count: 1, latest_stable_version: '1.0.0' },
-    { id: '11111111-1111-4111-8111-111111111111', name: 'extract_invoice_v1', description: null, multi_stable_resolution: 'strict', created_at: '', updated_at: '', version_count: 1, latest_stable_version: '1.0.0' },
+    { id: '33333333-3333-4333-8333-333333333333', name: 'other_contract', multi_stable_resolution: 'strict', latest_stable_version: '1.0.0', version_count: 1, store_event_payloads: false },
+    { id: '11111111-1111-4111-8111-111111111111', name: 'extract_invoice_v1', multi_stable_resolution: 'strict', latest_stable_version: '1.0.0', version_count: 1, store_event_payloads: false },
   ];
   function lookupClient(calls: string[]): Client {
     const fetchFn: typeof globalThis.fetch = async (url, opts) => {

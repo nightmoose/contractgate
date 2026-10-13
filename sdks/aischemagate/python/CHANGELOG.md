@@ -2,6 +2,12 @@
 
 All notable changes to the `aischemagate` Python package.
 
+## 0.3.1 — 2026-10-13
+
+Versions now move in lockstep with `contractgate`. Requires `contractgate >= 0.3.1`,
+which fixes contract-name lookup (Python) and returns failed validations as
+`ok=False` results instead of raising.
+
 ## 0.1.0 — 2026-10-11
 
 Initial release. Pure alias over `contractgate >= 0.3.0`.

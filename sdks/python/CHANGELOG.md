@@ -2,6 +2,20 @@
 
 All notable changes to the `contractgate` Python SDK.
 
+## 0.3.1 — 2026-10-13
+
+Fixes from end-to-end testing against production. No API changes.
+
+- Fix: `LLMGate(contract_id="<name>")` crashed with `KeyError: 'created_at'`.
+  `GET /contracts` returns summary rows without timestamps;
+  `ContractResponse.created_at` / `updated_at` are now optional.
+- Fix: a rejected LLM output now returns `LLMGateResult(ok=False, violations=[...])`
+  instead of raising `ValidationFailedError`. The gateway answers 422 when every
+  event fails, which is always true for a gate's single-event batch, so
+  `validate_only` and the `auto_repair` loop never saw the violations. A 422
+  without an egress body (e.g. a deprecated version pin) is still raised.
+- Default `base_url` is `https://api.datacontractgate.com` (was the dashboard host).
+
 ## 0.3.0 — 2026-10-11
 
 RFC-094. Adds the `contractgate.llm` submodule for LLM output
