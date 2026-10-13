@@ -486,10 +486,21 @@ jobs:
             echo "::notice::${SPEC} already published — skipping."
             echo "skip=true" >> "$GITHUB_OUTPUT"
           fi
+      # Resolve @nightmoose/contractgate-sdk from the registry, never a
+      # lockfile: a dev lockfile linked it to ../../typescript (unbuilt in CI),
+      # so tsc found no types and 0.3.1 failed. Wait for the base SDK
+      # version just published by publish-npm-sdk-ts to be visible first.
       - name: Install dependencies
         if: steps.exists.outputs.skip != 'true'
         working-directory: sdks/aischemagate/typescript
-        run: npm install --no-audit --no-fund
+        run: |
+          WANT="$(node -p "require('./package.json').dependencies['@nightmoose/contractgate-sdk']")"
+          for i in $(seq 1 20); do
+            npm view "@nightmoose/contractgate-sdk@${WANT}" version >/dev/null 2>&1 && break
+            echo "waiting for @nightmoose/contractgate-sdk@${WANT} on npm ($i)"; sleep 15
+          done
+          rm -f package-lock.json
+          npm install --no-package-lock --no-audit --no-fund
       - name: Publish to npm (OIDC provenance)
         if: steps.exists.outputs.skip != 'true'
         working-directory: sdks/aischemagate/typescript
