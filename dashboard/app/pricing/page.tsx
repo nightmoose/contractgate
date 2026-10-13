@@ -52,7 +52,10 @@ const TIERS = [
     name: "Pro",
     tagline: "Production workloads",
     price: { monthly: "$199", annual: "$166" },
-    priceSub: { monthly: "per month", annual: "per month, billed annually" },
+    priceSub: {
+      monthly: "per month, or $166/mo billed annually ($1,992/yr)",
+      annual: "per month, billed annually ($1,992/yr)",
+    },
     cta: "Upgrade to Pro",
     ctaHref: "#upgrade", // handled by onClick when logged in
     highlight: true,

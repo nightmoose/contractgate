@@ -29,7 +29,7 @@ const TIERS = [
     name: "Pro",
     tag: "Agents in production",
     price: "$199",
-    priceSub: "per month, or $166/mo billed annually",
+    priceSub: "per month, or $166/mo billed annually ($1,992/yr)",
     features: [
       "25,000,000 validations / month",
       "Unlimited schema contracts",
