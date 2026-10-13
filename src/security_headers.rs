@@ -31,14 +31,8 @@ const HEADERS: &[(HeaderName, &str)] = &[
         axum::http::header::STRICT_TRANSPORT_SECURITY,
         "max-age=31536000; includeSubDomains",
     ),
-    (
-        axum::http::header::X_CONTENT_TYPE_OPTIONS,
-        "nosniff",
-    ),
-    (
-        axum::http::header::X_FRAME_OPTIONS,
-        "DENY",
-    ),
+    (axum::http::header::X_CONTENT_TYPE_OPTIONS, "nosniff"),
+    (axum::http::header::X_FRAME_OPTIONS, "DENY"),
     (
         axum::http::header::CONTENT_SECURITY_POLICY,
         "default-src 'none'; frame-ancestors 'none'",
@@ -88,7 +82,10 @@ mod tests {
     }
 
     const EXPECTED: &[(&str, &str)] = &[
-        ("strict-transport-security", "max-age=31536000; includeSubDomains"),
+        (
+            "strict-transport-security",
+            "max-age=31536000; includeSubDomains",
+        ),
         ("x-content-type-options", "nosniff"),
         ("x-frame-options", "DENY"),
         (
