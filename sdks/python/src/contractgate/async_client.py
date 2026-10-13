@@ -19,6 +19,7 @@ import httpx
 
 from contractgate import _transport as _t
 from contractgate.exceptions import ConnectionError as _ConnectionError
+from contractgate.exceptions import ValidationFailedError
 from contractgate.models import (
     AuditEntry,
     BatchIngestResponse,
@@ -86,7 +87,12 @@ class AsyncClient:
             atomic=atomic,
             timeout=timeout,
         )
-        _, body = await self._dispatch(spec)
+        try:
+            _, body = await self._dispatch(spec)
+        except ValidationFailedError as err:
+            body = _t.ingest_body_from_rejection(err)
+            if body is None:
+                raise
         return BatchIngestResponse.from_dict(body)
 
     async def egress(

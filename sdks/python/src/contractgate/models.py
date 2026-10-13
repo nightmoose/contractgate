@@ -87,6 +87,10 @@ class IngestEventResult:
     forwarded: bool
     contract_version: str
     transformed_event: Any
+    # Position in the submitted batch, and the quarantine row for a stored
+    # failure (``None`` for passes, dry runs and atomic rejections).
+    index: Optional[int] = None
+    quarantine_id: Optional[str] = None
 
     @classmethod
     def from_dict(cls, raw: Dict[str, Any]) -> "IngestEventResult":
@@ -97,6 +101,8 @@ class IngestEventResult:
             forwarded=bool(raw.get("forwarded", False)),
             contract_version=raw["contract_version"],
             transformed_event=raw.get("transformed_event"),
+            index=raw.get("index"),
+            quarantine_id=raw.get("quarantine_id"),
         )
 
 

@@ -2,6 +2,18 @@
 
 All notable changes to the `contractgate` Python SDK.
 
+## 0.4.0 — 2026-10-13
+
+- `ingest` now posts to `/v1/ingest/{contract_id}` (was the legacy
+  `/ingest`), so each result carries `index` and `quarantine_id`.
+- **Behavior change:** a batch where every event fails, or a rejected
+  `atomic` batch, returns a `BatchIngestResponse` with per-event results and violations instead of
+  raising `ValidationFailedError` on the gateway's 422. Only a 422 without
+  per-event results (an idempotency conflict) still raises.
+- `version` is sent as the `version` query parameter; the
+  `"<uuid>@<version>"` contract-id form is still accepted.
+- `IngestEventResult` gains `index` and `quarantine_id` (optional, default `None`).
+
 ## 0.3.2 — 2026-10-13
 
 - `LLMGate` / `AsyncLLMGate`: `llm` is now optional. `validate_only()` never

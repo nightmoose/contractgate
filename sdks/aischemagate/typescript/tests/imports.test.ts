@@ -14,7 +14,7 @@ import {
 
 describe('@nightmoose/aischemagate', () => {
   it('ships its own version', () => {
-    assert.equal(AISCHEMAGATE_VERSION, '0.3.2');
+    assert.equal(AISCHEMAGATE_VERSION, '0.4.0');
   });
 
   it('re-exports LLMGate class', () => {

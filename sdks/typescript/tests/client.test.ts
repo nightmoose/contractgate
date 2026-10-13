@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { Client, AuthError, BadRequestError, NotFoundError, ServerError } from '../src/index.js';
+import { Client, AuthError, BadRequestError, NotFoundError, ServerError, ValidationFailedError } from '../src/index.js';
 
 function mockFetch(status: number, body: unknown): typeof globalThis.fetch {
   return async (_url, _opts) => {
@@ -60,21 +60,47 @@ describe('Client', () => {
     assert.equal(capturedHeaders['x-api-key'], 'cg_test_key');
   });
 
-  it('ingest — sends X-Contract-Version header when version provided', async () => {
-    let capturedHeaders: Record<string, string> = {};
+  it('ingest — posts to /v1/ingest with version as a query param', async () => {
+    const urls: URL[] = [];
     const c = new Client({
       baseUrl: 'http://localhost:8080',
       apiKey: 'cg_key',
-      fetch: async (_url, opts) => {
-        capturedHeaders = opts?.headers as Record<string, string> ?? {};
+      fetch: async (url) => {
+        urls.push(new URL(String(url)));
         return new Response(JSON.stringify({
           total: 0, passed: 0, failed: 0, dry_run: false, atomic: false,
-          resolved_version: '1', version_pin_source: 'header', results: [],
+          resolved_version: '2.0.0', version_pin_source: 'query_param', results: [],
         }), { status: 200 });
       },
     });
     await c.ingest({ contractId: CONTRACT_ID, events: [], version: '2.0.0' });
-    assert.equal(capturedHeaders['X-Contract-Version'], '2.0.0');
+    await c.ingest({ contractId: `${CONTRACT_ID}@1.2.0`, events: [] });
+    assert.equal(urls[0].pathname, `/v1/ingest/${CONTRACT_ID}`);
+    assert.equal(urls[0].searchParams.get('version'), '2.0.0');
+    assert.equal(urls[1].pathname, `/v1/ingest/${CONTRACT_ID}`);
+    assert.equal(urls[1].searchParams.get('version'), '1.2.0');
+  });
+
+  it('ingest — all-failed 422 resolves with per-event results', async () => {
+    const c = client(422, {
+      total: 1, passed: 0, failed: 1, dry_run: false, atomic: false,
+      resolved_version: '1.0.0', version_pin_source: 'default_stable',
+      results: [{
+        index: 0, passed: false, validation_us: 9, forwarded: false,
+        contract_version: '1.0.0', quarantine_id: 'q-1', transformed_event: {},
+        violations: [{ field: 'amount', message: 'below min', kind: 'range_violation' }],
+      }],
+    });
+    const r = await c.ingest({ contractId: CONTRACT_ID, events: [{}] });
+    assert.equal(r.failed, 1);
+    assert.equal(r.results[0].index, 0);
+    assert.equal(r.results[0].quarantine_id, 'q-1');
+    assert.equal(r.results[0].violations[0].field, 'amount');
+  });
+
+  it('ingest — a 422 without results still throws', async () => {
+    const c = client(422, { error: 'idempotency key reused with a different body', status: 422 });
+    await assert.rejects(() => c.ingest({ contractId: CONTRACT_ID, events: [] }), ValidationFailedError);
   });
 
   // ── Error mapping ────────────────────────────────────────────────────────

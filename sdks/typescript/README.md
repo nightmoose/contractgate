@@ -16,7 +16,7 @@ npm install @nightmoose/contractgate-sdk
 import { Client, Contract } from "@nightmoose/contractgate-sdk";
 
 // HTTP client
-const c = new Client({ baseUrl: "https://gw.example.com", apiKey: process.env.CG_KEY });
+const c = new Client({ baseUrl: "https://api.datacontractgate.com", apiKey: process.env.CG_KEY });
 
 const result = await c.ingest({ contractId: "...", events: [{ user_id: "alice_01", event_type: "click", timestamp: 1700000000 }] });
 for (const r of result.results) {
@@ -82,7 +82,7 @@ ContractGateError
     ├── AuthError            — 401
     ├── NotFoundError        — 404
     ├── ConflictError        — 409
-    ├── ValidationFailedError — 422 (whole-batch rejection)
+    ├── ValidationFailedError — 422 without per-event results (e.g. idempotency conflict); an all-failed batch resolves normally
     └── ServerError          — 5xx
 ```
 
