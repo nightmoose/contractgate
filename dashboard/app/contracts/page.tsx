@@ -2111,20 +2111,24 @@ function ContractsContent() {
         </PlanGate>
       )}
       {tab === "quarantine" && (
-        <PlanGate minTier="growth" feature="Quarantine & Replay">
-          <div className="bg-[#111827] border border-[#1f2937] rounded-xl p-6">
-            <div className="mb-5">
-              <h2 className="text-base font-semibold text-slate-100">
-                Quarantine
-              </h2>
-              <p className="text-sm text-slate-500 mt-1">
-                Events that failed validation and were held for review.
-                Select one or more to replay against any contract version.
-              </p>
-            </div>
-            <QuarantineTab contracts={contracts} />
+        // RFC-099: Quarantine listing is open to all plans. Per-event body
+        // visibility and replay are already content-gated by
+        // `payload_redacted` (RFC-086), so Free users see their failures
+        // but cannot replay them. Backend (src/replay.rs:212) short-circuits
+        // redacted events to a safe no-op.
+        <div className="bg-[#111827] border border-[#1f2937] rounded-xl p-6">
+          <div className="mb-5">
+            <h2 className="text-base font-semibold text-slate-100">
+              Quarantine
+            </h2>
+            <p className="text-sm text-slate-500 mt-1">
+              Events that failed validation are held here. Replay requires the
+              event body — Free plans don&apos;t store bodies, so historic
+              events appear redacted and are not replayable.
+            </p>
           </div>
-        </PlanGate>
+          <QuarantineTab contracts={contracts} />
+        </div>
       )}
 
       {/* RFC-036: Source-first new contract wizard */}
