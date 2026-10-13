@@ -26,6 +26,17 @@ export default function SignupPage() {
   const [captchaToken, setCaptchaToken] = useState<string>();
   const captcha = useRef<AuthCaptchaHandle>(null);
 
+  // Keep the AISchemaGate signal on both the OAuth redirect and the email
+  // confirmation link. Supabase embeds this URL in the confirmation email as
+  // `redirect_to`; without the suffix, a user confirming on a second device
+  // lands with no `cg_product=aisg` cookie and sees a DataContractGate flash
+  // before `useOrg()` resolves. /auth/callback also reads it to set the cookie.
+  function productSuffix() {
+    return new URLSearchParams(location.search).get("product") === "aischemagate"
+      ? "&product=aischemagate"
+      : "";
+  }
+
   async function handleGitHubSignUp() {
     setError("");
     setGithubLoading(true);
@@ -33,7 +44,7 @@ export default function SignupPage() {
     const { error: authError } = await supabase.auth.signInWithOAuth({
       provider: "github",
       options: {
-        redirectTo: `${location.origin}/auth/callback?next=/`,
+        redirectTo: `${location.origin}/auth/callback?next=/${productSuffix()}`,
       },
     });
     if (authError) {
@@ -75,7 +86,7 @@ export default function SignupPage() {
             ? { product: "aischemagate" }
             : {}),
         },
-        emailRedirectTo: `${location.origin}/auth/callback?next=/`,
+        emailRedirectTo: `${location.origin}/auth/callback?next=/${productSuffix()}`,
         captchaToken,
       },
     });
