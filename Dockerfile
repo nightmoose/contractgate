@@ -29,14 +29,27 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     pkg-config \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy dependency manifests first to cache the crate fetch layer
+# Copy dependency manifests first so the dependency layer below is cached
+# until Cargo.toml / Cargo.lock change.
 COPY Cargo.toml Cargo.lock ./
 
-# Build a dummy main to pre-fetch and compile all dependencies
-RUN mkdir -p src && echo "fn main() {}" > src/main.rs
-RUN cargo build --release 2>&1 || true
-# Remove the dummy artifact so the real build picks up src/
-RUN rm -f target/release/contractgate* target/release/deps/contractgate*
+# Compile every dependency once, against stub sources. Every target declared
+# in Cargo.toml needs a stub or cargo refuses the manifest, and the build
+# must use the same bins + features as the real build below or its deps
+# don't match. (Until 2026-10-13 this stubbed only main.rs, failed in 2s
+# behind `|| true`, and every image recompiled all ~360 crates.)
+ARG CARGO_BUILD_ARGS="--release --bin contractgate-server --bin demo-seeder --features kafka-ingress,scaffold,kinesis-ingress"
+RUN mkdir -p src/bin \
+    && touch src/lib.rs \
+    && for f in src/main.rs src/bin/contractgate.rs src/bin/demo.rs src/bin/demo-seeder.rs; do \
+         echo "fn main() {}" > "$f"; \
+       done \
+    && cargo build $CARGO_BUILD_ARGS \
+    && rm -rf src \
+    && rm -rf target/release/.fingerprint/contractgate-* target/release/.fingerprint/demo-seeder-* \
+              target/release/deps/contractgate* target/release/deps/libcontractgate* \
+              target/release/deps/demo_seeder* \
+              target/release/contractgate-server target/release/demo-seeder
 
 # Now copy real source and build.
 # demo/ must be present alongside src/ because stream_demo.rs embeds the
@@ -46,10 +59,9 @@ RUN rm -f target/release/contractgate* target/release/deps/contractgate*
 COPY demo ./demo
 COPY contracts ./contracts
 COPY src ./src
-#RUN cargo build --release
-# Build the web server and demo-seeder binaries (explicit names)
-RUN cargo build --release --bin contractgate-server --features kafka-ingress,scaffold,kinesis-ingress
-RUN cargo build --release --bin demo-seeder
+# Build the web server and demo-seeder binaries in one invocation with the
+# same args as the dependency layer, so only this crate compiles here.
+RUN cargo build $CARGO_BUILD_ARGS
 
 # ── Stage 2: runtime ────────────────────────────────────────
 FROM debian:bookworm-slim AS runtime

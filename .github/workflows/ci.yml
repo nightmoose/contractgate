@@ -5,7 +5,7 @@
 #   dashboard          — Next.js type-check + lint + build
 #   mcp                — MCP server typecheck + unit tests + tsc (RFC-090)
 #   zapier             — Zapier integration unit tests
-#   docker             — Dockerfile builds (buildx + GHA layer cache, no push)
+#   docker             — builds the image once (GHA layer cache); on main pushes it for deploy-fly
 #   migrations-check   — apply migrations to Postgres 16, sqlx prepare --check
 #   compose-smoke      — default compose stack end-to-end smoke
 #   compose-demo-smoke — demo-profile compose stack + seeder assertion
@@ -20,10 +20,13 @@ on:
   pull_request:
     branches: [main]
 
-# Cancel stale runs when a new commit lands on the same branch/PR.
+# Cancel stale PR runs when a new commit lands. On main, never cancel a run
+# that is already going: each merge must reach the deploy (back-to-back
+# merges on 2026-10-13 cancelled each other's deploys). GitHub keeps only the
+# newest pending run per group, so a burst of merges still deploys once more.
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
   CARGO_TERM_COLOR: always
@@ -248,6 +251,10 @@ jobs:
         run: npm test
 
   # ── Docker build smoke-test ───────────────────────────────
+  # Builds the gateway image once. On a push to main it also pushes it to
+  # Fly's registry as registry.fly.io/contractgate-api:<sha>, and deploy-fly
+  # ships exactly that image (no second build). This is the only job that
+  # writes the GHA layer cache; the compose smokes only read it.
   docker:
     name: Docker — build smoke-test
     needs: changes
@@ -261,13 +268,23 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4
 
+      - name: Set up flyctl
+        if: github.event_name == 'push'
+        uses: superfly/flyctl-actions/setup-flyctl@master
+
+      - name: Log in to the Fly registry
+        if: github.event_name == 'push'
+        run: flyctl auth docker
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+
       - name: Build Docker image (with GHA layer cache)
         uses: docker/build-push-action@v7
         with:
           context: .
-          push: false
-          load: true
-          tags: contractgate-api:ci
+          push: ${{ github.event_name == 'push' }}
+          tags: registry.fly.io/contractgate-api:${{ github.sha }}
+          build-args: GIT_SHA=${{ github.sha }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
@@ -717,10 +734,19 @@ jobs:
       - name: Install jq
         run: sudo apt-get install -y --no-install-recommends jq
 
+      - name: Build gateway image (from GHA layer cache)
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          load: true
+          tags: ghcr.io/contractgate/gateway:ci
+          cache-from: type=gha
+
       - name: Run compose smoke test
         run: bash tests/compose_smoke.sh
         env:
           TAG: ci
+          SKIP_BUILD: "1"
 
   # ── Compose demo profile smoke test (RFC-017) ─────────────
   # Builds the gateway image (including demo-seeder binary), spins up the
@@ -744,10 +770,19 @@ jobs:
       - name: Install jq
         run: sudo apt-get install -y --no-install-recommends jq
 
+      - name: Build gateway image (from GHA layer cache)
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          load: true
+          tags: ghcr.io/contractgate/gateway:ci
+          cache-from: type=gha
+
       - name: Run compose demo smoke test
         run: bash tests/compose_demo_smoke.sh
         env:
           TAG: ci
+          SKIP_BUILD: "1"
           SEEDER_RATE: "50"
           SEEDER_DURATION: "30s"
           MIN_AUDIT_ROWS: "500"
@@ -772,10 +807,19 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4
 
+      - name: Build gateway image (from GHA layer cache)
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          load: true
+          tags: ghcr.io/contractgate/gateway:ci
+          cache-from: type=gha
+
       - name: Run auth-on isolation smoke test
         run: bash tests/compose_isolation_smoke.sh
         env:
           TAG: ci
+          SKIP_BUILD: "1"
 
   # ── Deploy to Fly.io (main only) ──────────────────────────
   # Runs only on push to main (not on PRs).
@@ -806,10 +850,8 @@ jobs:
         uses: superfly/flyctl-actions/setup-flyctl@master
 
       - name: Deploy to Fly.io
-        # Build locally on the Actions runner (Docker is available on
-        # ubuntu-latest).  --remote-only would have Fly's builder clone the
-        # repo directly from GitHub, which fails for private repos because no
-        # GitHub credentials are passed to the remote builder.
-        run: flyctl deploy --local-only --build-arg GIT_SHA=${{ github.sha }}
+        # Ships the image the docker job built and pushed for this commit;
+        # no rebuild here (that took ~8 min per deploy).
+        run: flyctl deploy --image registry.fly.io/contractgate-api:${{ github.sha }}
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
