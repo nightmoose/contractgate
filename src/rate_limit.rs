@@ -104,6 +104,7 @@ impl Default for RateLimitState {
 // ---------------------------------------------------------------------------
 
 /// Outcome of a rate-limit check.
+#[derive(Debug, Clone)]
 pub struct RateLimitOutcome {
     pub allowed: bool,
     /// Effective rps limit for this key.
@@ -115,6 +116,20 @@ pub struct RateLimitOutcome {
     pub reset_unix: u64,
     /// Milliseconds until at least one token is available (0 when allowed).
     pub retry_after_ms: u64,
+}
+
+impl RateLimitOutcome {
+    /// RFC-103: canonical header set for every 429 (and informational on 2xx).
+    /// `Retry-After` is in **seconds** (RFC 6585), ceiling of `retry_after_ms`.
+    pub fn headers(&self) -> [(&'static str, String); 4] {
+        let retry_after_s = self.retry_after_ms.div_ceil(1_000);
+        [
+            ("X-RateLimit-Limit", self.limit.to_string()),
+            ("X-RateLimit-Remaining", self.remaining.to_string()),
+            ("X-RateLimit-Reset", self.reset_unix.to_string()),
+            ("Retry-After", retry_after_s.to_string()),
+        ]
+    }
 }
 
 impl RateLimitState {
@@ -242,6 +257,26 @@ mod tests {
         assert!(out.allowed);
         assert!(out.reset_unix > 0);
         assert_eq!(out.retry_after_ms, 0); // allowed → no wait
+    }
+
+    /// RFC-103: a denied outcome must produce all four rate-limit headers,
+    /// including a non-zero `Retry-After` in seconds (ceil of retry_after_ms).
+    #[test]
+    fn denied_outcome_emits_four_headers_including_retry_after() {
+        let state = RateLimitState::default();
+        let id = Uuid::new_v4();
+        // Burst=1, rps=1 → second call denied with ~1000ms retry.
+        let _ = state.check(id, Some(1), Some(1));
+        let denied = state.check(id, Some(1), Some(1));
+        assert!(!denied.allowed);
+        let headers = denied.headers();
+        assert_eq!(headers.len(), 4);
+        assert_eq!(headers[0].0, "X-RateLimit-Limit");
+        assert_eq!(headers[1].0, "X-RateLimit-Remaining");
+        assert_eq!(headers[2].0, "X-RateLimit-Reset");
+        assert_eq!(headers[3].0, "Retry-After");
+        let retry_after: u64 = headers[3].1.parse().unwrap();
+        assert!(retry_after >= 1, "Retry-After must be ≥ 1s when denied");
     }
 
     /// RFC-043 fix-1: two distinct UUIDs must have independent buckets.

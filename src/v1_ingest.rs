@@ -387,13 +387,11 @@ pub async fn v1_ingest_handler(
             ),
             "retry_after_ms": rl_outcome.retry_after_ms,
         });
+        // RFC-103: include Retry-After (seconds, RFC 6585) alongside the
+        // IETF-draft X-RateLimit-* headers so clients can back off.
         return Ok((
             StatusCode::TOO_MANY_REQUESTS,
-            [
-                ("X-RateLimit-Limit", rl_headers[0].1.clone()),
-                ("X-RateLimit-Remaining", rl_headers[1].1.clone()),
-                ("X-RateLimit-Reset", rl_headers[2].1.clone()),
-            ],
+            rl_outcome.headers(),
             Json(body),
         )
             .into_response());
