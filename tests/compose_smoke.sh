@@ -25,7 +25,12 @@ cleanup() {
 trap cleanup EXIT
 
 echo "=== compose_smoke: building gateway image (tag=$TAG) ==="
-docker build -t "ghcr.io/contractgate/gateway:$TAG" "$ROOT"
+# CI builds the image from the shared layer cache first and sets SKIP_BUILD=1.
+if [[ "${SKIP_BUILD:-}" == "1" ]]; then
+    docker image inspect "ghcr.io/contractgate/gateway:$TAG" >/dev/null
+else
+    docker build -t "ghcr.io/contractgate/gateway:$TAG" "$ROOT"
+fi
 
 echo "=== compose_smoke: starting stack ==="
 TAG="$TAG" docker compose -f "$ROOT/docker-compose.yml" up -d postgres gateway prometheus grafana
