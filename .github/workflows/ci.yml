@@ -417,6 +417,20 @@ jobs:
           fi
           echo "Sentinel A1b OK: purge_expired_logs() runs (migration 037)."
 
+          # Sentinel A1c — migration 039: an authenticated read of contracts
+          # must not hit "infinite recursion detected in policy" (the
+          # contracts <-> contract_collaborators policy cycle from 021).
+          RLS_OK=$(psql "$DATABASE_URL" -Atc \
+            "BEGIN; GRANT EXECUTE ON FUNCTION public.get_my_org_ids() TO authenticated;
+             GRANT USAGE ON SCHEMA public TO authenticated;
+             GRANT SELECT ON public.contracts, public.contract_collaborators TO authenticated;
+             SET LOCAL ROLE authenticated; SELECT count(*) FROM public.contracts; ROLLBACK;" 2>&1 | grep -c "infinite recursion" || true)
+          if [[ "$RLS_OK" != "0" ]]; then
+            echo "::error::Migration 039 sentinel failed — RLS recursion on contracts for authenticated."
+            exit 1
+          fi
+          echo "Sentinel A1c OK: authenticated can read contracts without RLS recursion (migration 039)."
+
           # Sentinel A2 — migration 027 (api_keys server-side issuance, RFC-056):
           # verify the authenticated INSERT policy is gone and the service_role
           # INSERT policy exists.
