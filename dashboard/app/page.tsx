@@ -24,7 +24,9 @@ function HeroBanner() {
 
   // RFC-104: AISchemaGate pitch differs from DataContractGate — different
   // tagline, different value-prop pills, different versioned brand label.
-  const brandLabel = aisg ? "AISchemaGate v0.1" : "DataContractGate v0.1";
+  // Same version the sidebar shows (next.config.ts, from package.json).
+  const version = `v${process.env.NEXT_PUBLIC_APP_VERSION}`;
+  const brandLabel = `${aisg ? "AISchemaGate" : "DataContractGate"} ${version}`;
   const pills = aisg
     ? [
         "Catch malformed LLM output before it ships",
