@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { useOrg, planDisplayName, isFreePlan } from "@/lib/org";
+import { useBrand } from "@/components/BrandProvider";
 import { useRouter } from "next/navigation";
 import type { User } from "@supabase/supabase-js";
 import AuthGate from "@/components/AuthGate";
@@ -69,6 +70,8 @@ function AccountContent() {
   const router = useRouter();
   const supabase = createClient();
   const { org } = useOrg();
+  const brand = useBrand();
+  const aisg = brand === "aisg";
 
   const [user, setUser] = useState<User | null>(null);
   const [keys, setKeys] = useState<ApiKey[]>([]);
@@ -500,8 +503,19 @@ function AccountContent() {
               <h2 className="text-lg font-semibold text-slate-100">API Keys</h2>
             </HelpTarget>
             <p className="text-xs text-slate-500 mt-0.5">
-              Use these in your Kafka connector config as{" "}
-              <code className="text-slate-400">contractgate.api.key</code>.
+              {aisg ? (
+                <>
+                  Pass as <code className="text-slate-400">api_key=</code> to
+                  the <code className="text-slate-400">LLMGate</code> SDK, or as
+                  the <code className="text-slate-400">x-api-key</code> header
+                  on <code className="text-slate-400">/egress/&#123;contract_id&#125;</code>.
+                </>
+              ) : (
+                <>
+                  Use these in your Kafka connector config as{" "}
+                  <code className="text-slate-400">contractgate.api.key</code>.
+                </>
+              )}
             </p>
           </div>
           {!showNewKeyForm && (
@@ -553,7 +567,11 @@ function AccountContent() {
         {/* Active keys */}
         {activeKeys.length === 0 && !showNewKeyForm ? (
           <div className="bg-[#111827] border border-[#1f2937] rounded-xl p-8 text-center">
-            <p className="text-slate-500 text-sm mb-4">No API keys yet. Create one to start using the Kafka connector.</p>
+            <p className="text-slate-500 text-sm mb-4">
+              {aisg
+                ? "No API keys yet. Create one to start validating LLM output with the LLMGate SDK."
+                : "No API keys yet. Create one to start using the Kafka connector."}
+            </p>
             <button
               onClick={() => setShowNewKeyForm(true)}
               className="text-sm bg-green-600 hover:bg-green-500 text-white rounded-lg px-4 py-2 transition-colors"
@@ -967,26 +985,30 @@ function AccountContent() {
         </form>
       </section>
 
-      {/* Quick-reference box */}
-      <section className="mt-10 p-5 bg-[#111827] border border-[#1f2937] rounded-xl">
-        <h3 className="text-sm font-semibold text-slate-300 mb-3">Using your key in Kafka Connect</h3>
-        <p className="text-xs text-slate-500 mb-3">
-          Add these lines to your connector properties, replacing the placeholders:
-        </p>
-        <pre className="text-xs text-slate-400 font-mono bg-[#0a0d12] rounded-lg p-3 overflow-x-auto leading-relaxed">
+      {/* Quick-reference box — Kafka Connect doesn't apply to AISchemaGate
+          (which validates LLM output, not streaming data), so the section is
+          hidden for the AISG brand. */}
+      {!aisg && (
+        <section className="mt-10 p-5 bg-[#111827] border border-[#1f2937] rounded-xl">
+          <h3 className="text-sm font-semibold text-slate-300 mb-3">Using your key in Kafka Connect</h3>
+          <p className="text-xs text-slate-500 mb-3">
+            Add these lines to your connector properties, replacing the placeholders:
+          </p>
+          <pre className="text-xs text-slate-400 font-mono bg-[#0a0d12] rounded-lg p-3 overflow-x-auto leading-relaxed">
 {`transforms=contractgate
 transforms.contractgate.type=io.datacontractgate.connect.smt.ContractGateValidator
 transforms.contractgate.contractgate.api.url=https://contractgate-api.fly.dev
 transforms.contractgate.contractgate.api.key=<your key>
 transforms.contractgate.contractgate.contract.id=<your contract UUID>`}
-        </pre>
-        <p className="text-xs text-slate-600 mt-2">
-          See the{" "}
-          <a href="/docs/kafka-connect" className="text-green-500 hover:text-green-400">
-            full Kafka Connect docs →
-          </a>
-        </p>
-      </section>
+          </pre>
+          <p className="text-xs text-slate-600 mt-2">
+            See the{" "}
+            <a href="/docs/kafka-connect" className="text-green-500 hover:text-green-400">
+              full Kafka Connect docs →
+            </a>
+          </p>
+        </section>
+      )}
     </div>
   );
 }
@@ -997,6 +1019,8 @@ function EventPayloadStorageSection() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const brand = useBrand();
+  const brandName = brand === "aisg" ? "AISchemaGate" : "DataContractGate";
 
   useEffect(() => {
     getPayloadStorage()
@@ -1033,7 +1057,7 @@ function EventPayloadStorageSection() {
         <div className="min-w-0">
           <div className="text-sm font-semibold text-slate-200">Event Payload Storage</div>
           <p className="text-xs text-slate-500 mt-1 max-w-md">
-            When on, DataContractGate retains the (post-transform) body of each event
+            When on, {brandName} retains the (post-transform) body of each event
             in the audit log and quarantine store. Required for quarantine replay.
             When off, only metadata is kept — what failed and why, never the source
             data.

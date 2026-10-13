@@ -8,6 +8,7 @@ import clsx from "clsx";
 import { useRouter } from "next/navigation";
 import AuthGate from "@/components/AuthGate";
 import { useOrg } from "@/lib/org";
+import { useBrand } from "@/components/BrandProvider";
 import { HelpTarget } from "@/components/help/HelpTarget";
 import { FirstRunLoop } from "@/components/help/FirstRun";
 
@@ -18,6 +19,23 @@ import { FirstRunLoop } from "@/components/help/FirstRun";
 function HeroBanner() {
   const [dismissed, setDismissed] = useState(false);
   const [expanded, setExpanded] = useState(false);
+  const brand = useBrand();
+  const aisg = brand === "aisg";
+
+  // RFC-104: AISchemaGate pitch differs from DataContractGate — different
+  // tagline, different value-prop pills, different versioned brand label.
+  const brandLabel = aisg ? "AISchemaGate v0.1" : "DataContractGate v0.1";
+  const pills = aisg
+    ? [
+        "Catch malformed LLM output before it ships",
+        "Reduce hallucination & schema drift",
+        "Semantic contracts over raw JSON schema",
+      ]
+    : [
+        "60–90% data cleaning cost reduction",
+        "Reduced LLM hallucination & model drift",
+        "Streaming-compatible",
+      ];
 
   useEffect(() => {
     if (localStorage.getItem("cg.hero.dismissed") === "1") setDismissed(true);
@@ -33,18 +51,25 @@ function HeroBanner() {
             <span className="text-xs bg-green-900/50 text-green-400 border border-green-700/50 px-2 py-0.5 rounded-full font-medium">
               Patent Pending
             </span>
-            <span className="text-xs text-slate-600">DataContractGate v0.1</span>
+            <span className="text-xs text-slate-600">{brandLabel}</span>
           </div>
           <p className="text-slate-200 font-semibold text-base leading-snug">
-            Enforce ontology + glossary + metric rules in{" "}
-            <span className="text-green-400">&lt;50µs</span> — before data ever lands.
+            {aisg ? (
+              <>
+                Validate every LLM response against a{" "}
+                <span className="text-green-400">semantic contract</span> before
+                it reaches your app logic.
+              </>
+            ) : (
+              <>
+                Enforce ontology + glossary + metric rules in{" "}
+                <span className="text-green-400">&lt;50µs</span> — before data
+                ever lands.
+              </>
+            )}
           </p>
           <div className="flex flex-wrap gap-2 mt-3">
-            {[
-              "60–90% data cleaning cost reduction",
-              "Reduced LLM hallucination & model drift",
-              "Streaming-compatible",
-            ].map((b) => (
+            {pills.map((b) => (
               <span
                 key={b}
                 className="text-xs text-slate-400 bg-[#1f2937]/70 border border-[#374151] px-3 py-1 rounded-full"
