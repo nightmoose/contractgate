@@ -72,6 +72,11 @@ COPY --from=builder /app/target/release/demo-seeder /usr/local/bin/demo-seeder
 RUN adduser --disabled-password --gecos "" --uid 1001 appuser
 USER appuser
 
+# Commit this image was built from; /health reports it as "build" so a
+# deploy can be confirmed live. CI passes --build-arg GIT_SHA=<sha>.
+ARG GIT_SHA=unknown
+ENV GIT_SHA=${GIT_SHA}
+
 # Fly.io / Railway will inject PORT automatically
 ENV PORT=3001
 EXPOSE 3001

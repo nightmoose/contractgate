@@ -796,6 +796,6 @@ jobs:
         # ubuntu-latest).  --remote-only would have Fly's builder clone the
         # repo directly from GitHub, which fails for private repos because no
         # GitHub credentials are passed to the remote builder.
-        run: flyctl deploy --local-only
+        run: flyctl deploy --local-only --build-arg GIT_SHA=${{ github.sha }}
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}

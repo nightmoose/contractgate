@@ -857,8 +857,18 @@ async fn health_handler() -> Json<serde_json::Value> {
     Json(serde_json::json!({
         "status": "ok",
         "version": env!("CARGO_PKG_VERSION"),
+        "build": build_id(),
         "service": "contractgate"
     }))
+}
+
+/// Short commit SHA of the running image (`GIT_SHA`, set by the Dockerfile
+/// from CI's `--build-arg`), or `null` for local / untagged builds.
+fn build_id() -> Option<String> {
+    std::env::var("GIT_SHA")
+        .ok()
+        .filter(|s| !s.is_empty() && s != "unknown")
+        .map(|s| s.chars().take(12).collect())
 }
 
 /// `GET /ready` — readiness probe (RFC-053).
@@ -1141,6 +1151,8 @@ async fn require_api_key(
                     if !outcome.allowed {
                         return Err(error::AppError::RateLimitExceeded(outcome));
                     }
+                    // Same reuse as the API-key path below.
+                    request.extensions_mut().insert(outcome);
                     request.extensions_mut().insert(validated);
                     return Ok(next.run(request).await);
                 }
@@ -1183,6 +1195,10 @@ async fn require_api_key(
                 if !outcome.allowed {
                     return Err(error::AppError::RateLimitExceeded(outcome));
                 }
+                // Handlers that report rate-limit headers (v1 ingest) reuse
+                // this outcome; checking again would spend a second token
+                // and halve the key's effective rate.
+                request.extensions_mut().insert(outcome);
                 // Inject the validated key into request extensions so
                 // downstream handlers can scope queries to the correct org.
                 request.extensions_mut().insert(validated);
@@ -1620,6 +1636,9 @@ fn build_router(state: Arc<AppState>) -> Router {
     Router::new()
         .merge(public_router)
         .merge(auth_router)
+        // Every error response gets the {"error", "status"} JSON shape, including
+        // body-limit 413s, extractor 400/415s and unmatched-route 404/405s.
+        .layer(middleware::from_fn(error::json_error_bodies))
         .layer(middleware::from_fn(observability::track_requests))
         .layer(TraceLayer::new_for_http())
         .layer(TimeoutLayer::with_status_code(

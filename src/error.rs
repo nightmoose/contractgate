@@ -304,3 +304,151 @@ mod tests {
         assert_eq!(parsed["retry_after_ms"], 1_250);
     }
 }
+
+// ---------------------------------------------------------------------------
+// Uniform JSON error bodies
+// ---------------------------------------------------------------------------
+
+/// Largest non-JSON error body copied into the JSON `error` message.
+const PLAIN_ERROR_BODY_MAX: usize = 4 * 1024;
+
+/// Middleware: give every error response the `{"error": ..., "status": N}`
+/// shape that `AppError` produces.
+///
+/// Errors raised outside our handlers bypass `AppError`: tower-http's body
+/// limit answers 413 with plain text ("length limit exceeded"), axum's
+/// extractors answer 400/415 with plain text, and unmatched routes answer
+/// 404/405 with an empty body (E2E retest 2026-10-13). Responses that
+/// already carry JSON, and every non-error response, pass through untouched.
+pub async fn json_error_bodies(
+    req: axum::extract::Request,
+    next: axum::middleware::Next,
+) -> Response {
+    let method = req.method().clone();
+    let path = req.uri().path().to_string();
+    let resp = next.run(req).await;
+
+    let status = resp.status();
+    let is_json = resp
+        .headers()
+        .get(axum::http::header::CONTENT_TYPE)
+        .and_then(|v| v.to_str().ok())
+        .is_some_and(|ct| ct.starts_with("application/json"));
+    if !(status.is_client_error() || status.is_server_error()) || is_json {
+        return resp;
+    }
+
+    let (mut parts, body) = resp.into_parts();
+    let text = axum::body::to_bytes(body, PLAIN_ERROR_BODY_MAX)
+        .await
+        .ok()
+        .map(|b| String::from_utf8_lossy(&b).trim().to_string())
+        .filter(|s| !s.is_empty());
+    let message = match (status, text) {
+        (_, Some(text)) => text,
+        (StatusCode::NOT_FOUND, None) => format!("No route for {method} {path}"),
+        (StatusCode::METHOD_NOT_ALLOWED, None) => {
+            format!("Method {method} is not allowed on {path}")
+        }
+        (_, None) => status
+            .canonical_reason()
+            .unwrap_or("Request failed")
+            .to_string(),
+    };
+
+    parts.headers.remove(axum::http::header::CONTENT_LENGTH);
+    parts.headers.insert(
+        axum::http::header::CONTENT_TYPE,
+        axum::http::HeaderValue::from_static("application/json"),
+    );
+    let body = json!({ "error": message, "status": status.as_u16() }).to_string();
+    Response::from_parts(parts, axum::body::Body::from(body))
+}
+
+#[cfg(test)]
+mod json_error_body_tests {
+    use super::*;
+    use axum::{body::Body, http::Request, routing::post, Router};
+    use tower::ServiceExt;
+
+    fn app() -> Router {
+        Router::new()
+            .route("/echo", post(|body: String| async move { body }))
+            .route(
+                "/json-err",
+                post(|| async { AppError::BadRequest("bad".into()) }),
+            )
+            .layer(tower_http::limit::RequestBodyLimitLayer::new(16))
+            .layer(axum::middleware::from_fn(json_error_bodies))
+    }
+
+    async fn call(req: Request<Body>) -> (StatusCode, String, serde_json::Value) {
+        let resp = app().oneshot(req).await.unwrap();
+        let status = resp.status();
+        let ct = resp
+            .headers()
+            .get("content-type")
+            .map(|v| v.to_str().unwrap().to_string())
+            .unwrap_or_default();
+        let bytes = axum::body::to_bytes(resp.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        (
+            status,
+            ct,
+            serde_json::from_slice(&bytes).unwrap_or(serde_json::Value::Null),
+        )
+    }
+
+    #[tokio::test]
+    async fn body_limit_413_becomes_json() {
+        let req = Request::post("/echo")
+            .body(Body::from("x".repeat(64)))
+            .unwrap();
+        let (status, ct, body) = call(req).await;
+        assert_eq!(status, StatusCode::PAYLOAD_TOO_LARGE);
+        assert_eq!(ct, "application/json");
+        assert_eq!(body["status"], 413);
+        assert!(body["error"]
+            .as_str()
+            .unwrap()
+            .contains("length limit exceeded"));
+    }
+
+    #[tokio::test]
+    async fn unknown_route_404_becomes_json() {
+        let req = Request::get("/nope/").body(Body::empty()).unwrap();
+        let (status, ct, body) = call(req).await;
+        assert_eq!(status, StatusCode::NOT_FOUND);
+        assert_eq!(ct, "application/json");
+        assert_eq!(
+            body,
+            json!({"error": "No route for GET /nope/", "status": 404})
+        );
+    }
+
+    #[tokio::test]
+    async fn wrong_method_405_becomes_json() {
+        let req = Request::get("/echo").body(Body::empty()).unwrap();
+        let (status, _, body) = call(req).await;
+        assert_eq!(status, StatusCode::METHOD_NOT_ALLOWED);
+        assert_eq!(body["status"], 405);
+    }
+
+    #[tokio::test]
+    async fn json_errors_and_successes_pass_through() {
+        let (status, _, body) = call(Request::post("/json-err").body(Body::empty()).unwrap()).await;
+        assert_eq!(status, StatusCode::BAD_REQUEST);
+        assert_eq!(body["error"], "Invalid request: bad");
+
+        let resp = app()
+            .oneshot(Request::post("/echo").body(Body::from("hi")).unwrap())
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        let bytes = axum::body::to_bytes(resp.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        assert_eq!(&bytes[..], b"hi");
+    }
+}
