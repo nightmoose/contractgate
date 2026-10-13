@@ -543,6 +543,7 @@ function DashboardContent() {
             <FirstRunLoop
               title="No contracts yet"
               hint="This panel fills once you have a contract. The loop is create → promote stable → ingest."
+              aisgHint="This panel fills once you have a contract. The loop is create → promote stable → validate."
               cta={{ href: "/contracts", label: "Create a contract →" }}
             />
           )}
@@ -567,6 +568,7 @@ function DashboardContent() {
             <FirstRunLoop
               title="No events yet"
               hint="Audit fills automatically once events hit /v1/ingest/{contract_id}."
+              aisgHint="Audit fills automatically once LLM output is validated on /egress/{contract_id}."
               cta={{ href: "/contracts", label: "Start with a contract →" }}
             />
           )}

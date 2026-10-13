@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useBrand } from "@/components/BrandProvider";
 
 const STEPS = [
   {
@@ -17,21 +18,44 @@ const STEPS = [
   },
 ];
 
+// AISchemaGate users validate LLM output on /egress (usually via the LLMGate
+// SDK), not ingest, so the loop is described in those terms.
+const AISG_STEPS = [
+  {
+    n: "1",
+    text: "Create a contract — Generate from Sample, or write the YAML.",
+  },
+  {
+    n: "2",
+    text: "Promote a version to Stable so validation has a version to check against.",
+  },
+  {
+    n: "3",
+    text: "Validate LLM output with the LLMGate SDK (or POST to /egress/{id}). Pass lands in Audit; fail lands in Quarantine.",
+  },
+];
+
 export function FirstRunLoop({
   title,
   hint,
+  aisgHint,
   cta,
 }: {
   title: string;
   hint?: string;
+  /** Shown instead of `hint` for AISchemaGate users. */
+  aisgHint?: string;
   cta?: { href: string; label: string };
 }) {
+  const aisg = useBrand() === "aisg";
+  const steps = aisg ? AISG_STEPS : STEPS;
+  const shownHint = aisg && aisgHint ? aisgHint : hint;
   return (
     <div className="max-w-md mx-auto text-center py-4">
       <p className="text-sm text-slate-300">{title}</p>
-      {hint && <p className="text-xs text-slate-500 mt-2 leading-relaxed">{hint}</p>}
+      {shownHint && <p className="text-xs text-slate-500 mt-2 leading-relaxed">{shownHint}</p>}
       <ol className="mt-4 text-left space-y-2">
-        {STEPS.map((s) => (
+        {steps.map((s) => (
           <li key={s.n} className="flex gap-2 text-xs text-slate-400 leading-relaxed">
             <span className="text-green-500 font-semibold shrink-0">{s.n}.</span>
             <span>{s.text}</span>

@@ -671,22 +671,14 @@ function StatusBadge({ status }: { status: QuarantineStatus }) {
 function EmptyState({ hasFilter }: { hasFilter: boolean }) {
   return (
     <div className="flex flex-col items-center justify-center h-64 text-slate-600 text-center px-4">
-      <p className="text-4xl mb-4">🔒</p>
+      <p className="text-4xl mb-4">📭</p>
       <p className="text-sm text-slate-500">
         No quarantined events{hasFilter ? " matching those filters" : ""}.
       </p>
       {!hasFilter && (
-        <>
-          <p className="text-xs mt-2 text-slate-600 max-w-sm">
-            Events land here when the backend quarantines on a validation, parse, or transform violation.
-          </p>
-          <p className="text-xs mt-3 text-slate-700 font-mono bg-[#111827] border border-[#1f2937] rounded px-3 py-2">
-            make stack-up-demo
-          </p>
-          <p className="text-xs mt-2 text-slate-700">
-            Run the demo seeder to generate sample quarantined events.
-          </p>
-        </>
+        <p className="text-xs mt-2 text-slate-600 max-w-sm">
+          Events that fail validation land here, with the violations that stopped them.
+        </p>
       )}
     </div>
   );
