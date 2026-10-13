@@ -23,12 +23,22 @@ pub enum AppError {
     #[error("Invalid request: {0}")]
     BadRequest(String),
 
+    /// Request body declared a media type the route does not read.  415.
+    #[error("Unsupported media type: {0}")]
+    UnsupportedMediaType(String),
+
     /// RFC-021: request body or per-event size limit exceeded.  413.
     #[error("Payload too large: {0}")]
     PayloadTooLarge(String),
 
     #[error("Unauthorized: missing or invalid API key")]
     Unauthorized,
+
+    /// An API key sent as `Authorization: Bearer cg_...`. Bearer is for
+    /// dashboard session tokens; say where the key goes instead of the
+    /// generic 401.
+    #[error("Unauthorized: send API keys in the x-api-key header, not Authorization: Bearer")]
+    ApiKeyInBearer,
 
     /// P1-1: per-key token-bucket exhausted.  429.
     /// RFC-103: carries the `RateLimitOutcome` so `IntoResponse` can attach
@@ -155,7 +165,12 @@ impl IntoResponse for AppError {
             }
             AppError::BadRequest(_) => (StatusCode::BAD_REQUEST, self.to_string()),
             AppError::PayloadTooLarge(_) => (StatusCode::PAYLOAD_TOO_LARGE, self.to_string()),
-            AppError::Unauthorized => (StatusCode::UNAUTHORIZED, self.to_string()),
+            AppError::UnsupportedMediaType(_) => {
+                (StatusCode::UNSUPPORTED_MEDIA_TYPE, self.to_string())
+            }
+            AppError::Unauthorized | AppError::ApiKeyInBearer => {
+                (StatusCode::UNAUTHORIZED, self.to_string())
+            }
             // RFC-103: emit the IETF-draft rate-limit headers + RFC 6585
             // Retry-After so clients can back off intelligently.
             AppError::RateLimitExceeded(outcome) => {
@@ -283,6 +298,7 @@ mod tests {
     async fn rate_limit_exceeded_response_has_all_four_headers() {
         let outcome = RateLimitOutcome {
             allowed: false,
+            rate: 10,
             limit: 10,
             remaining: 0,
             reset_unix: 1_700_000_000,
