@@ -11,12 +11,15 @@
 //!    (Scoped to a unique label so parallel tests sharing the global recorder
 //!    do not interfere.)
 //!
-//! 3. `metrics_endpoint_open` — spin up the `/metrics` handler via axum-test
-//!    with auth disabled; assert 200 + `text/plain` content-type.
+//! 3. `metrics_endpoint_public_flag` — spin up the `/metrics` handler with
+//!    the RFC-100 `METRICS_PUBLIC` opt-in; assert 200 + `text/plain`.
 //!
 //! 4. `metrics_endpoint_bearer_auth` — spin up the handler with a hard-coded
 //!    auth token injected via Axum state (avoids env-var races in parallel
 //!    tests); assert 401 on missing/wrong token, 200 on correct token.
+//!
+//! 5. `metrics_endpoint_closed_by_default` — RFC-100: with no token and no
+//!    `METRICS_PUBLIC` flag, `/metrics` must 401.
 //!
 //! None of these tests require `DATABASE_URL`.
 //!
@@ -194,10 +197,16 @@ fn histogram_count_for_label(text: &str, metric: &str, contract_id: &str) -> u64
 // ---------------------------------------------------------------------------
 
 /// Auth configuration passed as Axum state to the test handler.
+///
+/// Mirrors the RFC-100 fail-closed-by-default logic in
+/// `src/observability.rs::metrics_handler`:
+/// - `expected_token: Some(x)` → require `Authorization: Bearer x`.
+/// - `expected_token: None, public: true` → open (dev/compose opt-in).
+/// - `expected_token: None, public: false` → 401 (default).
 #[derive(Clone)]
 struct TestAuthState {
-    /// `Some(token)` → bearer auth required; `None` → open.
     expected_token: Option<String>,
+    public: bool,
 }
 
 fn metrics_app(auth: TestAuthState) -> axum::Router {
@@ -213,16 +222,22 @@ async fn metrics_handler_test(
 ) -> axum::response::Response {
     use axum::response::IntoResponse;
 
-    if let Some(expected) = &auth.expected_token {
-        let provided = req
-            .headers()
-            .get(axum::http::header::AUTHORIZATION)
-            .and_then(|v: &axum::http::HeaderValue| v.to_str().ok())
-            .and_then(|v| v.strip_prefix("Bearer "))
-            .unwrap_or("");
-        if provided != expected.as_str() {
+    match &auth.expected_token {
+        Some(expected) => {
+            let provided = req
+                .headers()
+                .get(axum::http::header::AUTHORIZATION)
+                .and_then(|v: &axum::http::HeaderValue| v.to_str().ok())
+                .and_then(|v| v.strip_prefix("Bearer "))
+                .unwrap_or("");
+            if provided != expected.as_str() {
+                return (axum::http::StatusCode::UNAUTHORIZED, "Unauthorized").into_response();
+            }
+        }
+        None if !auth.public => {
             return (axum::http::StatusCode::UNAUTHORIZED, "Unauthorized").into_response();
         }
+        None => {}
     }
 
     // Render the global recorder (installed by install_global_recorder).
@@ -240,15 +255,16 @@ async fn metrics_handler_test(
 }
 
 // ---------------------------------------------------------------------------
-// 3. /metrics endpoint — open (no auth)
+// 3. /metrics endpoint — METRICS_PUBLIC=1 opt-in (RFC-100)
 // ---------------------------------------------------------------------------
 
 #[tokio::test]
-async fn metrics_endpoint_open() {
+async fn metrics_endpoint_public_flag() {
     install_global_recorder();
 
     let server = axum_test::TestServer::new(metrics_app(TestAuthState {
         expected_token: None,
+        public: true,
     }));
     let resp: axum_test::TestResponse = server.get("/metrics").await;
 
@@ -262,6 +278,22 @@ async fn metrics_endpoint_open() {
 }
 
 // ---------------------------------------------------------------------------
+// 5. /metrics endpoint — fail-closed by default (RFC-100)
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn metrics_endpoint_closed_by_default() {
+    install_global_recorder();
+
+    let server = axum_test::TestServer::new(metrics_app(TestAuthState {
+        expected_token: None,
+        public: false,
+    }));
+    let resp: axum_test::TestResponse = server.get("/metrics").await;
+    assert_eq!(resp.status_code(), 401, "no token + no public flag → 401");
+}
+
+// ---------------------------------------------------------------------------
 // 4. /metrics endpoint — bearer-auth gating
 // ---------------------------------------------------------------------------
 
@@ -271,6 +303,7 @@ async fn metrics_endpoint_bearer_auth() {
 
     let server = axum_test::TestServer::new(metrics_app(TestAuthState {
         expected_token: Some("supersecret".into()),
+        public: false,
     }));
 
     // No token → 401.

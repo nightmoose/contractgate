@@ -7,8 +7,10 @@
 //!   / `gauge!` macro invocations.
 //!
 //! - [`metrics_handler`]: Axum handler for `GET /metrics`.  Returns the
-//!   Prometheus text exposition format.  Bearer-auth gated only when the
-//!   `METRICS_AUTH_TOKEN` env var is set; otherwise open (RFC-016 §Q3/Q4).
+//!   Prometheus text exposition format.  RFC-100 fail-closed-by-default:
+//!   with no env vars, `/metrics` returns 401. Set `METRICS_AUTH_TOKEN` for
+//!   Bearer-auth (prod), or `METRICS_PUBLIC=1` to opt-in to open scraping
+//!   (dev / self-host / docker-compose).
 //!
 //! - [`track_requests`]: Axum middleware that increments
 //!   `contractgate_requests_total{route,method,status}` after every response.
@@ -69,29 +71,50 @@ pub fn handle() -> Option<&'static PrometheusHandle> {
     PROMETHEUS_HANDLE.get()
 }
 
+/// Emit one startup log line describing which `/metrics` auth mode is active.
+/// Lets a prod deploy that forgot to set `METRICS_AUTH_TOKEN` be noticed
+/// immediately in the logs instead of silently 401-ing to the scraper.
+pub fn log_metrics_auth_mode() {
+    if std::env::var("METRICS_AUTH_TOKEN").is_ok() {
+        tracing::info!("/metrics: Bearer auth active (METRICS_AUTH_TOKEN set)");
+    } else if std::env::var("METRICS_PUBLIC").ok().as_deref() == Some("1") {
+        tracing::info!("/metrics: open scraping (METRICS_PUBLIC=1 — intended for dev/self-host)");
+    } else {
+        tracing::warn!(
+            "/metrics: fail-closed — all requests return 401. Set METRICS_AUTH_TOKEN=<secret> for prod scraping, or METRICS_PUBLIC=1 for dev."
+        );
+    }
+}
+
 // ---------------------------------------------------------------------------
 // /metrics HTTP handler
 // ---------------------------------------------------------------------------
 
 /// Axum handler: `GET /metrics`.
 ///
-/// Auth rule (RFC-016 §Q3/Q4):
-/// - If `METRICS_AUTH_TOKEN` env var is set, the request must carry
-///   `Authorization: Bearer <token>`.
-/// - Otherwise the endpoint is open (allows Prometheus to scrape without
-///   per-org credentials).
+/// Auth rule (RFC-100, fail-closed-by-default):
+/// - If `METRICS_AUTH_TOKEN` is set → require `Authorization: Bearer <token>`.
+/// - Else if `METRICS_PUBLIC=1` → open (dev/compose opt-in).
+/// - Else → 401 Unauthorized. The pre-RFC-100 default "open when nothing is
+///   set" allowed a prod deploy to miss the token and silently expose
+///   per-route counters (incl. scanner probes) to the internet.
 pub async fn metrics_handler(req: Request<axum::body::Body>) -> Response {
-    // Bearer auth gate — only active when the env var is set.
-    if let Ok(expected) = std::env::var("METRICS_AUTH_TOKEN") {
-        let provided = req
-            .headers()
-            .get(axum::http::header::AUTHORIZATION)
-            .and_then(|v| v.to_str().ok())
-            .and_then(|v| v.strip_prefix("Bearer "))
-            .unwrap_or("");
-
-        if provided != expected {
-            return (StatusCode::UNAUTHORIZED, "Unauthorized").into_response();
+    match std::env::var("METRICS_AUTH_TOKEN") {
+        Ok(expected) => {
+            let provided = req
+                .headers()
+                .get(axum::http::header::AUTHORIZATION)
+                .and_then(|v| v.to_str().ok())
+                .and_then(|v| v.strip_prefix("Bearer "))
+                .unwrap_or("");
+            if provided != expected {
+                return (StatusCode::UNAUTHORIZED, "Unauthorized").into_response();
+            }
+        }
+        Err(_) => {
+            if std::env::var("METRICS_PUBLIC").ok().as_deref() != Some("1") {
+                return (StatusCode::UNAUTHORIZED, "Unauthorized").into_response();
+            }
         }
     }
 

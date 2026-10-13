@@ -42,9 +42,10 @@ services:
       # RFC-066: local/demo stack runs without auth. This is the ONLY way to
       # disable auth now (the env-var master key was removed). Never set in prod.
       CONTRACTGATE_DEV_NO_AUTH: "1"
-      # Leave blank to disable metrics auth (Prometheus scrapes unauthenticated).
-      # Set to a non-empty string to require `Authorization: Bearer <token>`.
-      METRICS_AUTH_TOKEN: ""
+      # RFC-100: /metrics is fail-closed by default. Dev/compose opts in with
+      # METRICS_PUBLIC=1 so the local Prometheus scrapes without a token. Prod
+      # leaves METRICS_PUBLIC unset AND sets METRICS_AUTH_TOKEN=<secret>.
+      METRICS_PUBLIC: "1"
       # RFC-050: CORS origin allowlist for the authenticated API surface.
       # In demo/dev mode the dashboard runs at localhost:3000, which is the
       # fallback when DASHBOARD_ORIGIN is unset, so leaving it unset here is

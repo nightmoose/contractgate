@@ -81,6 +81,7 @@ mod replay;
 mod report;
 mod scaffold_handler;
 mod scorecard;
+mod security_headers;
 mod settings;
 mod storage;
 mod stream_demo;
@@ -1625,6 +1626,9 @@ fn build_router(state: Arc<AppState>) -> Router {
             StatusCode::REQUEST_TIMEOUT,
             std::time::Duration::from_secs(30),
         ))
+        // RFC-100: outermost so headers land on every response — including
+        // 404s, 429s, CORS pre-flights, and /metrics 401s.
+        .layer(middleware::from_fn(security_headers::security_headers))
         .with_state(state)
 }
 
@@ -1685,6 +1689,9 @@ async fn main() -> anyhow::Result<()> {
     // could theoretically emit metrics in future).
     observability::install_recorder();
     tracing::info!("Prometheus metrics recorder installed");
+    // RFC-100: surface which /metrics auth mode is active so a prod deploy
+    // without METRICS_AUTH_TOKEN produces an obvious startup warning.
+    observability::log_metrics_auth_mode();
 
     let database_url = std::env::var("DATABASE_URL").expect("DATABASE_URL must be set");
 
