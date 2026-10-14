@@ -162,6 +162,15 @@ tolerate their absence.
 
 Plan limits: **Free 10 req/sec sustained, bursts up to 20; Pro 100 req/sec, bursts up to 200.** Contact us for design-partner overrides.
 
+The window is **per second, not per minute**: a token bucket refilling
+continuously at the plan rate. An empty Free bucket is full again after 2 s,
+so `X-RateLimit-Reset` is at most `burst / rate` (2 s) ahead and `Retry-After`
+on a 429 is usually `1`. Bursts of ≤20 spaced ≥2 s apart never see a 429.
+Because refill is continuous, a parallel burst that takes `t` seconds to
+arrive admits `20 + floor(10·t)` on Free (e.g. 21 of 30 when the requests
+span 100–200 ms). The same bucket applies to every authenticated route
+(`/v1/ingest`, `/egress`, …), one per API key.
+
 ---
 
 ## Idempotency

@@ -14,6 +14,18 @@
 //!   tokens += elapsed_secs * rate   (capped at burst)
 //!   if tokens >= 1.0 { tokens -= 1.0; allow } else { deny }
 //!
+//! ### Semantics (R-L5, 2026-10-14)
+//! The advertised limit is **per second** (`plan::default_rate_limit`: Free
+//! 10 req/s burst 20, Pro 100 req/s burst 200). There is no 60 s window: an
+//! empty Free bucket is full again 2 s later, so bursts of ≤20 spaced ≥2 s
+//! apart all succeed. `X-RateLimit-Reset` (bucket full) is therefore at most
+//! `burst / rate` = 2 s ahead and `Retry-After` is usually 1 s.
+//!
+//! Refill is continuous, so a burst of N parallel requests that takes `t`
+//! seconds to arrive admits `burst + floor(t * rate)`: e.g. 21 of 30 on Free
+//! when the requests span >100 ms (R-L3). The check-and-consume is atomic
+//! under the per-key mutex; there is no race and no second charge.
+//!
 //! The first request for a new key initialises the bucket at full capacity
 //! so there is no cold-start penalty.
 
@@ -58,9 +70,16 @@ impl Bucket {
     /// one token.  Returns `(allowed, remaining_tokens_floor,
     /// retry_after_millis, full_in_millis)`.
     fn check(&mut self) -> (bool, u32, u64, u64) {
-        let now = Instant::now();
-        let elapsed = now.duration_since(self.last_refill).as_secs_f64();
-        self.last_refill = now;
+        self.check_at(Instant::now())
+    }
+
+    /// `check` with an explicit clock, so tests can pin elapsed time.
+    fn check_at(&mut self, now: Instant) -> (bool, u32, u64, u64) {
+        // saturating: concurrent callers may read `now` slightly out of order.
+        let elapsed = now
+            .saturating_duration_since(self.last_refill)
+            .as_secs_f64();
+        self.last_refill = self.last_refill.max(now);
 
         // Refill
         self.tokens = (self.tokens + elapsed * self.rate).min(self.burst);
@@ -204,6 +223,65 @@ impl RateLimitState {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// R-L3: under concurrency the bucket admits exactly `burst` when no
+    /// time passes for refill (rate tiny), never burst+1.
+    #[test]
+    fn concurrent_burst_is_exact() {
+        use std::sync::{
+            atomic::{AtomicU32, Ordering},
+            Arc,
+        };
+        let state = Arc::new(RateLimitState::default());
+        let id = Uuid::new_v4();
+        let ok = Arc::new(AtomicU32::new(0));
+        let handles: Vec<_> = (0..64)
+            .map(|_| {
+                let (s, ok) = (state.clone(), ok.clone());
+                std::thread::spawn(move || {
+                    for _ in 0..10 {
+                        if s.check(id, Some(1), Some(20)).allowed {
+                            ok.fetch_add(1, Ordering::Relaxed);
+                        }
+                    }
+                })
+            })
+            .collect();
+        for h in handles {
+            h.join().unwrap();
+        }
+        // 640 attempts; refill at 1/s may add at most a couple during the run.
+        let n = ok.load(Ordering::Relaxed);
+        assert!((20..=21).contains(&n), "admitted {n}");
+    }
+
+    /// R-L5: per-second semantics. Free bucket (10/s, 20): three bursts of 15
+    /// spaced 2.5 s apart all pass; 21 back to back do not; Reset ≤ 2 s.
+    #[test]
+    fn free_plan_refills_per_second_not_per_minute() {
+        use std::time::Duration;
+        let t0 = Instant::now();
+        let mut b = Bucket::new(10.0, 20.0);
+        b.last_refill = t0;
+        for burst in 0..3u32 {
+            let t = t0 + Duration::from_millis(2_500 * burst as u64);
+            for _ in 0..15 {
+                assert!(b.check_at(t).0, "burst {burst} should pass");
+            }
+        }
+        let t = t0 + Duration::from_secs(10);
+        for _ in 0..20 {
+            assert!(b.check_at(t).0);
+        }
+        let (allowed, remaining, retry_ms, full_ms) = b.check_at(t);
+        assert!(!allowed);
+        assert_eq!(remaining, 0);
+        assert_eq!(retry_ms, 100);
+        assert_eq!(full_ms, 2_000);
+        // 150 ms of arrival spread admits exactly one extra (R-L3 21/9).
+        assert!(b.check_at(t + Duration::from_millis(150)).0);
+        assert!(!b.check_at(t + Duration::from_millis(150)).0);
+    }
 
     #[test]
     fn allows_up_to_burst_then_denies() {
