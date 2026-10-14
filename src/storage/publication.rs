@@ -376,16 +376,10 @@ pub async fn import_published_contract(
     // collaboration surface without a separate invite.
     if pub_row.visibility == "org" {
         if let Some(importer_org) = org_id {
-            // granted_by = the publication's owning org (or the importer if unknown).
-            let granting_org = pub_row.org_id.unwrap_or(importer_org);
+            // Grant on the published contract id; granted_by is that
+            // contract's owner org (no fallback to the importer).
             // Best-effort — don't fail the import if this insert errors.
-            let _ = ensure_viewer_collaborator(
-                pool,
-                &pub_row.contract_name,
-                importer_org,
-                granting_org,
-            )
-            .await;
+            let _ = ensure_viewer_collaborator(pool, pub_row.contract_id, importer_org).await;
         }
     }
 

@@ -3731,3 +3731,137 @@ mod schema_guard {
         assert!(msg.contains("Refusing to boot"));
     }
 }
+
+// ---------------------------------------------------------------------------
+// Migration 042: collaboration keyed by contract id.  Needs a migrated DB:
+//   DATABASE_URL=... cargo test collab_by_id -- --ignored
+// ---------------------------------------------------------------------------
+#[cfg(test)]
+mod collab_by_id {
+    use crate::storage;
+    use uuid::Uuid;
+
+    async fn org(pool: &sqlx::PgPool) -> Uuid {
+        let id = Uuid::new_v4();
+        sqlx::query("INSERT INTO orgs (id, name, slug) VALUES ($1, 'o', $2)")
+            .bind(id)
+            .bind(format!("t-{id}"))
+            .execute(pool)
+            .await
+            .unwrap();
+        id
+    }
+
+    async fn contract(pool: &sqlx::PgPool, org: Uuid, name: &str) -> Uuid {
+        sqlx::query_scalar("INSERT INTO contracts (name, org_id) VALUES ($1, $2) RETURNING id")
+            .bind(name)
+            .bind(org)
+            .fetch_one(pool)
+            .await
+            .unwrap()
+    }
+
+    #[tokio::test]
+    #[ignore = "requires DATABASE_URL with migrations through 042"]
+    async fn same_name_contracts_do_not_share_grants_or_comments() {
+        let pool = sqlx::PgPool::connect(&std::env::var("DATABASE_URL").unwrap())
+            .await
+            .unwrap();
+        let (a, b, c) = (org(&pool).await, org(&pool).await, org(&pool).await);
+        let name = format!("orders-{}", Uuid::new_v4());
+        let ca = contract(&pool, a, &name).await;
+        let cb = contract(&pool, b, &name).await;
+
+        let g = storage::grant_collaborator(&pool, ca, c, "viewer")
+            .await
+            .unwrap();
+        assert_eq!(g.granted_by, a);
+        assert_eq!(g.contract_name, name);
+
+        // C is a collaborator on A's contract only.
+        let granted = storage::granted_contracts_by_name(&pool, &name, c)
+            .await
+            .unwrap();
+        assert_eq!(granted, vec![(ca, "viewer".to_string())]);
+        assert_eq!(
+            storage::collaborator_read_owner(&pool, ca, c)
+                .await
+                .unwrap(),
+            Some(a)
+        );
+        assert_eq!(
+            storage::collaborator_read_owner(&pool, cb, c)
+                .await
+                .unwrap(),
+            None
+        );
+        assert!(storage::list_collaborators(&pool, cb)
+            .await
+            .unwrap()
+            .is_empty());
+
+        let cm = storage::add_comment(&pool, ca, None, c, "c", "hi")
+            .await
+            .unwrap();
+        assert!(storage::list_comments(&pool, cb).await.unwrap().is_empty());
+        assert_eq!(storage::list_comments(&pool, ca).await.unwrap().len(), 1);
+        // Comment id under the other contract is not found.
+        assert!(storage::resolve_comment(&pool, cb, cm.id).await.is_err());
+        assert!(
+            storage::resolve_comment(&pool, ca, cm.id)
+                .await
+                .unwrap()
+                .resolved
+        );
+        assert_eq!(
+            storage::get_comment_org(&pool, ca, cm.id).await.unwrap(),
+            Some(c)
+        );
+        storage::delete_comment(&pool, ca, cm.id).await.unwrap();
+
+        let p = storage::create_proposal(&pool, ca, c, "x: 1")
+            .await
+            .unwrap();
+        assert!(storage::decide_proposal(&pool, cb, p.id, "approved", a)
+            .await
+            .is_err());
+        storage::decide_proposal(&pool, ca, p.id, "approved", a)
+            .await
+            .unwrap();
+        assert_eq!(
+            storage::apply_proposal(&pool, ca, p.id)
+                .await
+                .unwrap()
+                .status,
+            "applied"
+        );
+        assert!(storage::list_proposals(&pool, cb).await.unwrap().is_empty());
+
+        // Org-visibility import grant: granted_by is the owner, never the importer.
+        storage::ensure_viewer_collaborator(&pool, cb, c)
+            .await
+            .unwrap();
+        let rows = storage::list_collaborators(&pool, cb).await.unwrap();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].granted_by, b);
+        // Owner can't be granted on its own contract via import.
+        storage::ensure_viewer_collaborator(&pool, cb, b)
+            .await
+            .unwrap();
+        assert_eq!(
+            storage::list_collaborators(&pool, cb).await.unwrap().len(),
+            1
+        );
+
+        storage::update_collaborator_role(&pool, ca, c, "editor")
+            .await
+            .unwrap();
+        storage::revoke_collaborator(&pool, ca, c).await.unwrap();
+        assert_eq!(
+            storage::collaborator_read_owner(&pool, ca, c)
+                .await
+                .unwrap(),
+            None
+        );
+    }
+}
