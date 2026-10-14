@@ -228,4 +228,4 @@ Migration `015_kinesis_ingress.sql` adds the `kinesis_ingress` table:
   returns `501 Not Implemented` with the message
   `"kinesis-ingress feature is not enabled at compile time"`.
 - **Plan gating.** Kafka and Kinesis streaming is offered on Enterprise only,
-  available on request. The dashboard tab gate in code is still `growth` (RFC-045). See [plan-gating-reference.md](plan-gating-reference.md).
+  available on request. The dashboard tabs are gated at `enterprise`; the API routes have no plan check. See [plan-gating-reference.md](plan-gating-reference.md).
