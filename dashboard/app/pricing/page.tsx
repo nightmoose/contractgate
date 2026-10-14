@@ -101,7 +101,7 @@ const FEATURES: Feature[] = [
   { label: "Provider Scorecard",               selfHosted: false,               free: false,             growth: true,         enterprise: true },
   { label: "Egress API (outbound validation)",  selfHosted: true,                free: false,             growth: true,         enterprise: true },
   { label: "AI Collaborate (contract proposals)", selfHosted: false,            free: false,             growth: true,         enterprise: true },
-  { label: "Kafka / Kinesis integration",      selfHosted: true,                free: false,             growth: true,         enterprise: true },
+  { label: "Kafka / Kinesis streaming",        selfHosted: false,               free: false,             growth: false,        enterprise: "Available on request" },
   { label: "Open data catalog (browse + fork)", selfHosted: false,              free: true,              growth: true,         enterprise: true },
   { label: "Import by ref — snapshot",         selfHosted: false,               free: true,              growth: true,         enterprise: true },
   { label: "Import by ref — subscribe (live)", selfHosted: false,               free: false,             growth: true,         enterprise: true },

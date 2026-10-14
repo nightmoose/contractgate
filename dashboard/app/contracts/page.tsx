@@ -406,7 +406,7 @@ function EditContractModal({
             <button
               onClick={() => setModalTab("kafka")}
               disabled={!isGrowth}
-              title={!isGrowth ? "Kafka integration — Pro plan required" : undefined}
+              title={!isGrowth ? "Kafka streaming — Enterprise, available on request" : undefined}
               className={clsx(
                 "px-4 py-2 text-sm font-medium rounded-t-lg transition-colors border-b-2 -mb-px flex items-center gap-1",
                 modalTab === "kafka"
@@ -420,7 +420,7 @@ function EditContractModal({
             <button
               onClick={() => setModalTab("kinesis")}
               disabled={!isGrowth}
-              title={!isGrowth ? "Kinesis integration — Pro plan required" : undefined}
+              title={!isGrowth ? "Kinesis streaming — Enterprise, available on request" : undefined}
               className={clsx(
                 "px-4 py-2 text-sm font-medium rounded-t-lg transition-colors border-b-2 -mb-px flex items-center gap-1",
                 modalTab === "kinesis"

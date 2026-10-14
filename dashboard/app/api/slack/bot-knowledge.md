@@ -81,12 +81,12 @@ Logs are kept 7 days on Free, 90 on Pro.
 - `GET /usage` — current month used/limit/remaining
 - Over Free/Pro cap → ingest **429** `plan_limit_exceeded` (HTTP metered paths)
 - `dry_run` is not billable
-- **Kafka/Kinesis not metered in v1** — prefer Enterprise for production streaming;
-  Free/Pro stream usage may under-report on `/usage`
+- **Kafka/Kinesis streaming is Enterprise only, available on request** — it is not
+  part of Free or Pro. Stream traffic is not metered in v1.
 - Self-hosted / no-org is unmetered
 
 UI plan gating also limits features (e.g. Free: limited contracts; Pro+: replay,
-Kafka/Kinesis tabs, builder, etc.; Enterprise: SSO, custom SLA, dedicated, etc.).
+builder, etc.; Enterprise: SSO, custom SLA, dedicated, Kafka/Kinesis streaming on request, etc.).
 If unsure of a UI gate detail, say "check Pricing / the dashboard PlanGate" rather
 than inventing.
 
