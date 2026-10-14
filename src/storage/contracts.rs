@@ -820,6 +820,50 @@ pub async fn delete_version(
     Ok(())
 }
 
+/// [`get_version`] for a version *pin* (`@1.0.0`, `?version=`, header):
+/// exact match first, then the one stored version with the same normalised
+/// numeric form (`1.0.0` ↔ `1.0`), via [`crate::version_pin::match_pin`].
+/// Same org scoping and 404 as `get_version`; an ambiguous normalised match
+/// is a 409 naming the candidates. The returned row carries the stored
+/// version string, which callers should use from then on.
+pub async fn get_version_for_pin(
+    pool: &PgPool,
+    contract_id: Uuid,
+    pin: &str,
+    org_id: Option<Uuid>,
+) -> AppResult<ContractVersion> {
+    match get_version(pool, contract_id, pin, org_id).await {
+        Err(AppError::VersionNotFound { .. }) => {}
+        other => return other,
+    }
+    let stored: Vec<String> = sqlx::query_scalar(
+        r#"
+        SELECT version FROM contract_versions
+        WHERE contract_id = $1
+          AND contract_id IN (
+              SELECT id FROM contracts
+              WHERE id = $1 AND deleted_at IS NULL AND ($2 IS NULL OR org_id = $2)
+          )
+        "#,
+    )
+    .bind(contract_id)
+    .bind(org_id)
+    .fetch_all(pool)
+    .await
+    .db_op("get_version_for_pin")?;
+    match crate::version_pin::match_pin(pin, &stored) {
+        Ok(Some(v)) => get_version(pool, contract_id, v, org_id).await,
+        Ok(None) => Err(AppError::VersionNotFound {
+            contract_id,
+            version: pin.to_string(),
+        }),
+        Err(candidates) => Err(AppError::Conflict(format!(
+            "version pin {pin} is ambiguous on contract {contract_id}: matches {}; pin one exactly",
+            candidates.join(", ")
+        ))),
+    }
+}
+
 /// Fetch a specific contract version.
 ///
 /// `org_id` — when `Some`, scopes through the parent contract row so a

@@ -3984,7 +3984,19 @@ mod streaming_gate {
                 .expect("seed org");
 
             let server = router(state.clone(), Some(org));
-            let cid = Uuid::new_v4();
+            // The org must own the contract: ownership is checked before the
+            // plan, so a missing/foreign contract would be 404, not 403.
+            let (identity, _) = super::super::storage::create_contract(
+                &pool,
+                "streaming_gate",
+                None,
+                "version: \"1.0.0\"\nname: \"streaming_gate\"\nontology:\n  entities:\n    - name: id\n      type: string\n      required: true\nglossary: []\nmetrics: []\n",
+                Default::default(),
+                Some(org),
+            )
+            .await
+            .expect("org creates contract");
+            let cid = identity.id;
             for path in TURN_ON {
                 let resp = server.post(&format!("/contracts/{cid}/{path}")).await;
                 if plan == "enterprise" {
@@ -4011,6 +4023,11 @@ mod streaming_gate {
                 .await;
             assert_ne!(off.status_code(), StatusCode::FORBIDDEN, "{plan} disable");
 
+            sqlx::query("DELETE FROM contracts WHERE id = $1")
+                .bind(cid)
+                .execute(&pool)
+                .await
+                .unwrap();
             sqlx::query("DELETE FROM orgs WHERE id = $1")
                 .bind(org)
                 .execute(&pool)
@@ -4029,17 +4046,21 @@ mod streaming_gate {
         let pool = sqlx::PgPool::connect(&db_url).await.unwrap();
         let state = Arc::new(AppState::new(pool.clone(), false, None, None));
 
-        let (org_a, org_b) = (Uuid::new_v4(), Uuid::new_v4());
-        for org in [org_a, org_b] {
-            sqlx::query(
-                "INSERT INTO orgs (id, name, slug, plan) VALUES ($1, $2, $3, 'enterprise')",
-            )
-            .bind(org)
-            .bind("streaming ownership")
-            .bind(format!("streaming-own-{}", org.simple()))
-            .execute(&pool)
-            .await
-            .expect("seed org");
+        let (org_a, org_b, org_c) = (Uuid::new_v4(), Uuid::new_v4(), Uuid::new_v4());
+        // A owns the contract; B is a foreign Enterprise org, C a foreign Free org.
+        for (org, plan) in [
+            (org_a, "enterprise"),
+            (org_b, "enterprise"),
+            (org_c, "free"),
+        ] {
+            sqlx::query("INSERT INTO orgs (id, name, slug, plan) VALUES ($1, $2, $3, $4)")
+                .bind(org)
+                .bind("streaming ownership")
+                .bind(format!("streaming-own-{}", org.simple()))
+                .bind(plan)
+                .execute(&pool)
+                .await
+                .expect("seed org");
         }
         let yaml = "version: \"1.0.0\"\nname: \"streaming_own\"\nontology:\n  entities:\n    - name: id\n      type: string\n      required: true\nglossary: []\nmetrics: []\n";
         let (identity, _) = super::super::storage::create_contract(
@@ -4073,22 +4094,34 @@ mod streaming_gate {
         .await
         .expect("seed kinesis row");
 
-        let b = router(state.clone(), Some(org_b));
-        for kind in ["kafka", "kinesis"] {
-            let base = format!("/contracts/{cid}/{kind}-ingress");
-            let r = b.get(&base).await;
-            assert_eq!(r.status_code(), StatusCode::NOT_FOUND, "GET {kind}");
-            let r = b.post(&format!("{base}/enable")).await;
-            assert_eq!(r.status_code(), StatusCode::NOT_FOUND, "enable {kind}");
-            let r = b.delete(&format!("{base}/disable")).await;
-            assert_eq!(r.status_code(), StatusCode::NOT_FOUND, "disable {kind}");
+        // Foreign orgs get 404 on all 7 routes whatever their plan: ownership
+        // is checked before the Enterprise gate.
+        for (who, foreign) in [("enterprise", org_b), ("free", org_c)] {
+            let b = router(state.clone(), Some(foreign));
+            for kind in ["kafka", "kinesis"] {
+                let base = format!("/contracts/{cid}/{kind}-ingress");
+                let r = b.get(&base).await;
+                assert_eq!(r.status_code(), StatusCode::NOT_FOUND, "{who} GET {kind}");
+                let r = b.post(&format!("{base}/enable")).await;
+                assert_eq!(
+                    r.status_code(),
+                    StatusCode::NOT_FOUND,
+                    "{who} enable {kind}"
+                );
+                let r = b.delete(&format!("{base}/disable")).await;
+                assert_eq!(
+                    r.status_code(),
+                    StatusCode::NOT_FOUND,
+                    "{who} disable {kind}"
+                );
+            }
+            let r = b
+                .post(&format!(
+                    "/contracts/{cid}/kinesis-ingress/rotate-credentials"
+                ))
+                .await;
+            assert_eq!(r.status_code(), StatusCode::NOT_FOUND, "{who} rotate");
         }
-        let r = b
-            .post(&format!(
-                "/contracts/{cid}/kinesis-ingress/rotate-credentials"
-            ))
-            .await;
-        assert_eq!(r.status_code(), StatusCode::NOT_FOUND, "rotate");
 
         // Owner still sees both configs, unchanged.
         let a = router(state.clone(), Some(org_a));
@@ -4114,7 +4147,7 @@ mod streaming_gate {
             .execute(&pool)
             .await
             .unwrap();
-        for org in [org_a, org_b] {
+        for org in [org_a, org_b, org_c] {
             sqlx::query("DELETE FROM orgs WHERE id = $1")
                 .bind(org)
                 .execute(&pool)
