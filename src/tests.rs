@@ -3910,6 +3910,14 @@ mod streaming_gate {
                 delete(kafka_ingress::disable_kafka_ingress_handler),
             )
             .route(
+                "/contracts/{id}/kinesis-ingress",
+                get(kinesis_ingress::get_kinesis_ingress_handler),
+            )
+            .route(
+                "/contracts/{id}/kinesis-ingress/disable",
+                delete(kinesis_ingress::disable_kinesis_ingress_handler),
+            )
+            .route(
                 "/contracts/{id}/kinesis-ingress/enable",
                 post(kinesis_ingress::enable_kinesis_ingress_handler),
             )
@@ -4003,6 +4011,110 @@ mod streaming_gate {
                 .await;
             assert_ne!(off.status_code(), StatusCode::FORBIDDEN, "{plan} disable");
 
+            sqlx::query("DELETE FROM orgs WHERE id = $1")
+                .bind(org)
+                .execute(&pool)
+                .await
+                .unwrap();
+        }
+    }
+
+    /// Cross-org: org B (Enterprise, so the plan gate passes) gets 404 on every
+    /// Kafka/Kinesis route for a contract org A owns; A's rows are untouched
+    /// and A can still read them. Requires DATABASE_URL.
+    #[tokio::test]
+    #[ignore = "requires DATABASE_URL and a live Supabase/Postgres instance"]
+    async fn streaming_routes_404_for_non_owner() {
+        let db_url = std::env::var("DATABASE_URL").expect("DATABASE_URL must be set");
+        let pool = sqlx::PgPool::connect(&db_url).await.unwrap();
+        let state = Arc::new(AppState::new(pool.clone(), false, None, None));
+
+        let (org_a, org_b) = (Uuid::new_v4(), Uuid::new_v4());
+        for org in [org_a, org_b] {
+            sqlx::query(
+                "INSERT INTO orgs (id, name, slug, plan) VALUES ($1, $2, $3, 'enterprise')",
+            )
+            .bind(org)
+            .bind("streaming ownership")
+            .bind(format!("streaming-own-{}", org.simple()))
+            .execute(&pool)
+            .await
+            .expect("seed org");
+        }
+        let yaml = "version: \"1.0.0\"\nname: \"streaming_own\"\nontology:\n  entities:\n    - name: id\n      type: string\n      required: true\nglossary: []\nmetrics: []\n";
+        let (identity, _) = super::super::storage::create_contract(
+            &pool,
+            "streaming_own",
+            None,
+            yaml,
+            Default::default(),
+            Some(org_a),
+        )
+        .await
+        .expect("org A creates contract");
+        let cid = identity.id;
+        sqlx::query(
+            "INSERT INTO kafka_ingress (contract_id, org_id, enabled, confluent_bootstrap,
+                                        confluent_api_key, confluent_api_secret_enc)
+             VALUES ($1, $2, true, 'b:9092', 'k', 'enc')",
+        )
+        .bind(cid)
+        .bind(org_a)
+        .execute(&pool)
+        .await
+        .expect("seed kafka row");
+        sqlx::query(
+            "INSERT INTO kinesis_ingress (contract_id, org_id, enabled, iam_access_key_id, iam_secret_enc)
+             VALUES ($1, $2, true, 'AKIA', 'enc')",
+        )
+        .bind(cid)
+        .bind(org_a)
+        .execute(&pool)
+        .await
+        .expect("seed kinesis row");
+
+        let b = router(state.clone(), Some(org_b));
+        for kind in ["kafka", "kinesis"] {
+            let base = format!("/contracts/{cid}/{kind}-ingress");
+            let r = b.get(&base).await;
+            assert_eq!(r.status_code(), StatusCode::NOT_FOUND, "GET {kind}");
+            let r = b.post(&format!("{base}/enable")).await;
+            assert_eq!(r.status_code(), StatusCode::NOT_FOUND, "enable {kind}");
+            let r = b.delete(&format!("{base}/disable")).await;
+            assert_eq!(r.status_code(), StatusCode::NOT_FOUND, "disable {kind}");
+        }
+        let r = b
+            .post(&format!(
+                "/contracts/{cid}/kinesis-ingress/rotate-credentials"
+            ))
+            .await;
+        assert_eq!(r.status_code(), StatusCode::NOT_FOUND, "rotate");
+
+        // Owner still sees both configs, unchanged.
+        let a = router(state.clone(), Some(org_a));
+        for kind in ["kafka", "kinesis"] {
+            let r = a.get(&format!("/contracts/{cid}/{kind}-ingress")).await;
+            assert_eq!(
+                r.status_code(),
+                StatusCode::OK,
+                "owner GET {kind}: {}",
+                r.text()
+            );
+        }
+        let key: (String,) =
+            sqlx::query_as("SELECT iam_access_key_id FROM kinesis_ingress WHERE contract_id = $1")
+                .bind(cid)
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        assert_eq!(key.0, "AKIA", "non-owner must not rotate credentials");
+
+        sqlx::query("DELETE FROM contracts WHERE id = $1")
+            .bind(cid)
+            .execute(&pool)
+            .await
+            .unwrap();
+        for org in [org_a, org_b] {
             sqlx::query("DELETE FROM orgs WHERE id = $1")
                 .bind(org)
                 .execute(&pool)
