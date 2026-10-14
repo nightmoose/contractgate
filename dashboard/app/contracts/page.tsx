@@ -113,6 +113,8 @@ function EditContractModal({
   // RFC-045: plan gating inside modal
   const { org: modalOrg } = useOrg();
   const isGrowth = modalOrg ? planAtLeast(modalOrg.plan, "growth") : false;
+  // Kafka/Kinesis streaming is Enterprise-only (available on request).
+  const isEnterprise = modalOrg ? planAtLeast(modalOrg.plan, "enterprise") : false;
   // AISchemaGate validates LLM output; Kafka/Kinesis ingress doesn't apply.
   const aisgModal = useBrand() === "aisg";
 
@@ -405,31 +407,31 @@ function EditContractModal({
             {!aisgModal && (<>
             <button
               onClick={() => setModalTab("kafka")}
-              disabled={!isGrowth}
-              title={!isGrowth ? "Kafka streaming — Enterprise, available on request" : undefined}
+              disabled={!isEnterprise}
+              title={!isEnterprise ? "Kafka streaming — Enterprise, available on request" : undefined}
               className={clsx(
                 "px-4 py-2 text-sm font-medium rounded-t-lg transition-colors border-b-2 -mb-px flex items-center gap-1",
                 modalTab === "kafka"
                   ? "text-slate-100 border-emerald-500"
                   : "text-slate-500 hover:text-slate-300 border-transparent",
-                !isGrowth && "opacity-50 cursor-not-allowed"
+                !isEnterprise && "opacity-50 cursor-not-allowed"
               )}
             >
-              Kafka {!isGrowth && <span className="text-[10px] text-amber-500">🔒</span>}
+              Kafka {!isEnterprise && <span className="text-[10px] text-amber-500">🔒</span>}
             </button>
             <button
               onClick={() => setModalTab("kinesis")}
-              disabled={!isGrowth}
-              title={!isGrowth ? "Kinesis streaming — Enterprise, available on request" : undefined}
+              disabled={!isEnterprise}
+              title={!isEnterprise ? "Kinesis streaming — Enterprise, available on request" : undefined}
               className={clsx(
                 "px-4 py-2 text-sm font-medium rounded-t-lg transition-colors border-b-2 -mb-px flex items-center gap-1",
                 modalTab === "kinesis"
                   ? "text-slate-100 border-emerald-500"
                   : "text-slate-500 hover:text-slate-300 border-transparent",
-                !isGrowth && "opacity-50 cursor-not-allowed"
+                !isEnterprise && "opacity-50 cursor-not-allowed"
               )}
             >
-              Kinesis {!isGrowth && <span className="text-[10px] text-amber-500">🔒</span>}
+              Kinesis {!isEnterprise && <span className="text-[10px] text-amber-500">🔒</span>}
             </button>
             </>)}
             {/* RFC-033: Collaborate tab */}
