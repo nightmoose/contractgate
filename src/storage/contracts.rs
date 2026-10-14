@@ -466,6 +466,8 @@ pub async fn create_version(
     // Ensure the contract exists and belongs to the caller's org (RFC-047).
     let _ = get_contract_identity(pool, contract_id, org_id).await?;
 
+    ensure_no_equivalent_version(pool, contract_id, version).await?;
+
     let id = Uuid::new_v4();
 
     let row = sqlx::query_as::<_, ContractVersionRow>(
@@ -732,6 +734,7 @@ pub async fn deploy_contract_version(
     }
 
     // ── 3. Insert the new version as stable ───────────────────────────────────
+    ensure_no_equivalent_version(&mut *tx, contract_id, &version).await?;
     let version_id = Uuid::new_v4();
     let now = chrono::Utc::now();
 
@@ -817,6 +820,36 @@ pub async fn delete_version(
         .execute(pool)
         .await?;
 
+    Ok(())
+}
+
+/// Reject a new version equivalent to one already on the contract (`1`,
+/// `1.0`, `1.0.0`), 409 naming the existing one. Checks every
+/// `contract_versions` row for the contract, the same set the
+/// `(contract_id, version)` unique constraint covers.
+async fn ensure_no_equivalent_version<'e, E>(
+    executor: E,
+    contract_id: Uuid,
+    version: &str,
+) -> AppResult<()>
+where
+    E: sqlx::Executor<'e, Database = sqlx::Postgres>,
+{
+    if crate::version_pin::normalize_version(version).is_none() {
+        return Ok(());
+    }
+    let stored: Vec<String> =
+        sqlx::query_scalar("SELECT version FROM contract_versions WHERE contract_id = $1")
+            .bind(contract_id)
+            .fetch_all(executor)
+            .await
+            .db_op("ensure_no_equivalent_version")?;
+    if let Some(existing) = crate::version_pin::find_equivalent(version, &stored) {
+        return Err(AppError::Conflict(format!(
+            "Version {version} is equivalent to existing version {existing} on contract \
+             {contract_id}; use a different version number"
+        )));
+    }
     Ok(())
 }
 
@@ -1045,6 +1078,8 @@ pub async fn create_version_from_import(
     let requires_review = import_source == ImportSource::OdcsStripped;
 
     let _ = get_contract_identity(pool, contract_id, org_id).await?;
+
+    ensure_no_equivalent_version(pool, contract_id, version).await?;
 
     let id = Uuid::new_v4();
 

@@ -2122,6 +2122,7 @@ mod rfc029_tests {
             disposition: "block",
             egress_leakage_mode: "off",
             resolved_version: "1.0.0".into(),
+            requested_version: None,
             payload: vec![json!({"user_id":"alice"}), json!({"user_id":"bob"})],
             outcomes: vec![
                 EgressOutcome {
@@ -2164,6 +2165,7 @@ mod rfc029_tests {
             disposition: "tag",
             egress_leakage_mode: "strip",
             resolved_version: "2.0.0".into(),
+            requested_version: None,
             payload: vec![],
             outcomes: vec![],
         };
@@ -4154,5 +4156,99 @@ mod streaming_gate {
                 .await
                 .unwrap();
         }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Equivalent versions (`1`, `1.0`, `1.0.0`) cannot coexist on one contract.
+// ---------------------------------------------------------------------------
+
+#[cfg(test)]
+mod equivalent_versions {
+    use super::super::{error::AppError, storage};
+    use uuid::Uuid;
+
+    fn yaml(version: &str) -> String {
+        format!(
+            "version: \"{version}\"\nname: \"equiv_versions\"\nontology:\n  entities:\n    - name: id\n      type: string\n      required: true\nglossary: []\nmetrics: []\n"
+        )
+    }
+
+    /// Requires DATABASE_URL.
+    #[tokio::test]
+    #[ignore = "requires DATABASE_URL and a live Supabase/Postgres instance"]
+    async fn deploy_and_create_version_reject_equivalents() {
+        let db_url = std::env::var("DATABASE_URL").expect("DATABASE_URL must be set");
+        let pool = sqlx::PgPool::connect(&db_url).await.unwrap();
+        let org = Uuid::new_v4();
+        sqlx::query("INSERT INTO orgs (id, name, slug) VALUES ($1, $2, $3)")
+            .bind(org)
+            .bind("equiv versions")
+            .bind(format!("equiv-{}", org.simple()))
+            .execute(&pool)
+            .await
+            .expect("seed org");
+
+        let (v, _) = storage::deploy_contract_version(
+            &pool,
+            "equiv_versions",
+            &yaml("1.0"),
+            None,
+            None,
+            Some(org),
+        )
+        .await
+        .expect("deploy 1.0");
+        let cid = v.contract_id;
+
+        // Deploy of an equivalent version → 409 naming the existing one.
+        let err = storage::deploy_contract_version(
+            &pool,
+            "equiv_versions",
+            &yaml("1.0.0"),
+            None,
+            None,
+            Some(org),
+        )
+        .await
+        .expect_err("1.0.0 must be rejected");
+        match &err {
+            AppError::Conflict(m) => assert!(m.contains("existing version 1.0 "), "{m}"),
+            other => panic!("expected Conflict, got {other:?}"),
+        }
+
+        // Draft creation of an equivalent version → 409.
+        for dup in ["1", "1.0.0", "01.0"] {
+            let err = storage::create_version(&pool, cid, dup, &yaml(dup), Some(org))
+                .await
+                .expect_err("equivalent draft must be rejected");
+            assert!(
+                matches!(&err, AppError::Conflict(m) if m.contains("existing version 1.0 ")),
+                "{dup}: {err:?}"
+            );
+        }
+        // Exact duplicate still uses the existing VersionConflict.
+        let err = storage::create_version(&pool, cid, "1.0", &yaml("1.0"), Some(org))
+            .await
+            .expect_err("exact duplicate");
+        assert!(matches!(err, AppError::VersionConflict { .. }), "{err:?}");
+        // A genuinely new version is fine.
+        storage::create_version(&pool, cid, "1.1", &yaml("1.1"), Some(org))
+            .await
+            .expect("1.1 is new");
+
+        // Pin @1 resolves to the stored 1.0.
+        let row = storage::get_version_for_pin(&pool, cid, "1", Some(org))
+            .await
+            .expect("pin 1");
+        assert_eq!(row.version, "1.0");
+
+        // Stable versions can't be deleted (contract_versions_delete_guard), so
+        // a hard delete of the contract or org would fail; soft-delete instead.
+        sqlx::query("UPDATE contracts SET deleted_at = NOW() WHERE id = $1")
+            .bind(cid)
+            .execute(&pool)
+            .await
+            .unwrap();
     }
 }
