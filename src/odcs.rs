@@ -427,6 +427,9 @@ fn import_mode_a(doc: &Mapping, version: String) -> Result<ImportResult, String>
     // the resulting Contract is semantically identical.
     let yaml_content = serde_yaml::to_string(&ontology)
         .map_err(|e| format!("failed to serialize x-contractgate-ontology: {e}"))?;
+    // The ODCS document's top-level `version` is the version row (export
+    // writes it from the row); make the embedded contract agree with it.
+    let yaml_content = crate::version_pin::set_yaml_version(&yaml_content, &version);
 
     // Validate the recovered YAML is a parseable Contract.
     let _: Contract = serde_yaml::from_str(&yaml_content)
@@ -479,7 +482,8 @@ fn import_mode_b(doc: &Mapping, version: String) -> Result<ImportResult, String>
         };
 
     let contract = Contract {
-        version: "1.0".to_string(),
+        // Same version as the row (the ODCS document's `version`).
+        version: version.clone(),
         name,
         description,
         compliance_mode: false,
