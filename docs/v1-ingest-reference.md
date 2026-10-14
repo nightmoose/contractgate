@@ -158,7 +158,7 @@ tolerate their absence.
 |-------------------------|--------------------------------------------------|
 | `X-RateLimit-Limit`     | Burst capacity: requests that can go through back to back (Free 20, Pro 200). The bucket refills at the plan rate (Free 10/s, Pro 100/s). |
 | `X-RateLimit-Remaining` | Requests that can still go through right now; drops by one per request. |
-| `X-RateLimit-Reset`     | Unix timestamp when the bucket has ≥ 1 token.   |
+| `X-RateLimit-Reset`     | Unix timestamp when the bucket is full again (Remaining back at Limit). Sent on every authenticated route. |
 
 Plan limits: **Free 10 req/sec sustained, bursts up to 20; Pro 100 req/sec, bursts up to 200.** Contact us for design-partner overrides.
 
