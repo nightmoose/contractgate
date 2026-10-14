@@ -204,3 +204,14 @@ Customer-facing targets: [Support SLA](../support-sla.md).
 - Set `CONTRACTGATE_DEV_NO_AUTH` in production
 - Trust “CORS misconfigured” without reading Fly logs on 502
 - Apply prod migrations from agent sessions without human approval
+
+## Staging (2026-10-14)
+
+- Branch **`staging`** (created from `main`). CG Dev / agents may merge PRs into
+  `staging` freely; **only Alex merges to `main`** (production).
+- Fly app `contractgate-api-staging` via `fly.staging.toml`: `auto_stop_machines`,
+  `min_machines_running = 0`, `KAFKA_ENABLED=false`. The app is **not created
+  yet** — Alex runs `fly apps create contractgate-api-staging` and sets staging-only
+  secrets (separate database; never prod DB or Stripe live keys).
+- CI deploy-on-push-to-staging is proposed in the staging PR (workflow edits need
+  a token with `workflow` scope).

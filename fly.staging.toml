@@ -1,0 +1,47 @@
+# Staging API — Fly app `contractgate-api-staging` (NOT created yet; Alex
+# creates it). Deployed from the `staging` branch. Scales to zero when idle.
+#
+#   fly apps create contractgate-api-staging          # Alex, once
+#   fly secrets set -a contractgate-api-staging DATABASE_URL=... (staging DB only)
+#   fly deploy -c fly.staging.toml
+#
+# Never point staging at the production database or Stripe live keys.
+
+app = 'contractgate-api-staging'
+primary_region = 'iad'
+
+[build]
+  dockerfile = 'Dockerfile'
+
+[env]
+  PORT = '3001'
+  RUST_LOG = 'contractgate=debug,tower_http=info'
+  # Confluent Cloud is closed; no Kafka consumers on staging either.
+  KAFKA_ENABLED = 'false'
+
+[http_service]
+  internal_port = 3001
+  force_https = true
+  auto_stop_machines = 'stop'
+  auto_start_machines = true
+  min_machines_running = 0
+
+  [http_service.concurrency]
+    type = 'requests'
+    hard_limit = 200
+    soft_limit = 150
+
+[checks]
+  [checks.ready]
+    port = 3001
+    type = 'http'
+    interval = '30s'
+    timeout = '5s'
+    grace_period = '20s'
+    method = 'GET'
+    path = '/ready'
+
+[[vm]]
+  cpu_kind = 'shared'
+  cpus = 1
+  memory_mb = 256
