@@ -242,7 +242,7 @@ pub async fn openapi_handler() -> impl IntoResponse {
 /// this with utoipa-generated output; the shape is identical so no client
 /// changes will be needed.
 fn build_openapi() -> String {
-    serde_json::to_string_pretty(&json!({
+    let mut doc = json!({
       "openapi": "3.1.0",
       "info": {
         "title": "DataContractGate Ingest API",
@@ -493,8 +493,26 @@ fn build_openapi() -> String {
           }
         }
       }
-    }))
-    .unwrap_or_else(|_| "{}".to_string())
+    });
+    if let Some(paths) = doc["paths"].as_object_mut() {
+        extra_openapi_paths(paths);
+    }
+    serde_json::to_string_pretty(&doc).unwrap_or_else(|_| "{}".to_string())
+}
+
+/// Paths added after the main `json!` block, which sits at the macro's
+/// recursion limit. One small `json!` per path keeps each expansion shallow.
+fn extra_openapi_paths(paths: &mut serde_json::Map<String, Value>) {
+    paths.insert("/contracts/{id}/kafka-ingress".into(), json!({"get": {"operationId": "get_kafka_ingress", "summary": "Kafka ingress config (owner)", "parameters": [{"name": "id", "in": "path", "required": true, "schema": {"type": "string", "format": "uuid"}}], "responses": {"200": {"description": "Config (no secret)"}, "401": {"description": "Missing or invalid credentials"}, "404": {"description": "Contract not found or not owned by the caller's org"}}, "security": [{"ApiKeyAuth": []}]}}));
+    paths.insert("/contracts/{id}/kafka-ingress/enable".into(), json!({"post": {"operationId": "enable_kafka_ingress", "summary": "Enable Kafka ingress (owner, Enterprise; available on request)", "parameters": [{"name": "id", "in": "path", "required": true, "schema": {"type": "string", "format": "uuid"}}], "responses": {"200": {"description": "Already enabled"}, "201": {"description": "Enabled; secret shown once"}, "400": {"description": "Kafka ingress unavailable on this deployment (KAFKA_ENABLED=false)"}, "401": {"description": "Missing or invalid credentials"}, "404": {"description": "Contract not found or not owned by the caller's org"}, "403": {"description": "Collaborator grant (owner required), or org below Enterprise: \"Kafka/Kinesis streaming ingress requires the Enterprise plan (available on request)\""}}, "security": [{"ApiKeyAuth": []}]}}));
+    paths.insert("/contracts/{id}/kafka-ingress/disable".into(), json!({"delete": {"operationId": "disable_kafka_ingress", "summary": "Disable Kafka ingress (owner, any plan)", "parameters": [{"name": "id", "in": "path", "required": true, "schema": {"type": "string", "format": "uuid"}}], "responses": {"204": {"description": "Disabled; credentials revoked"}, "401": {"description": "Missing or invalid credentials"}, "404": {"description": "Contract not found or not owned by the caller's org"}}, "security": [{"ApiKeyAuth": []}]}}));
+    paths.insert("/contracts/{id}/kinesis-ingress".into(), json!({"get": {"operationId": "get_kinesis_ingress", "summary": "Kinesis ingress config (owner)", "parameters": [{"name": "id", "in": "path", "required": true, "schema": {"type": "string", "format": "uuid"}}], "responses": {"200": {"description": "Config (no secret)"}, "401": {"description": "Missing or invalid credentials"}, "404": {"description": "Contract not found or not owned by the caller's org"}, "501": {"description": "kinesis-ingress feature not compiled in"}}, "security": [{"ApiKeyAuth": []}]}}));
+    paths.insert("/contracts/{id}/kinesis-ingress/enable".into(), json!({"post": {"operationId": "enable_kinesis_ingress", "summary": "Enable Kinesis ingress (owner, Enterprise; available on request)", "parameters": [{"name": "id", "in": "path", "required": true, "schema": {"type": "string", "format": "uuid"}}], "responses": {"200": {"description": "Already enabled"}, "201": {"description": "Enabled; secret shown once"}, "401": {"description": "Missing or invalid credentials"}, "404": {"description": "Contract not found or not owned by the caller's org"}, "403": {"description": "Collaborator grant (owner required), or org below Enterprise: \"Kafka/Kinesis streaming ingress requires the Enterprise plan (available on request)\""}, "501": {"description": "kinesis-ingress feature not compiled in"}}, "security": [{"ApiKeyAuth": []}]}}));
+    paths.insert("/contracts/{id}/kinesis-ingress/disable".into(), json!({"delete": {"operationId": "disable_kinesis_ingress", "summary": "Disable Kinesis ingress (owner, any plan)", "parameters": [{"name": "id", "in": "path", "required": true, "schema": {"type": "string", "format": "uuid"}}], "responses": {"204": {"description": "Disabled"}, "401": {"description": "Missing or invalid credentials"}, "404": {"description": "Contract not found or not owned by the caller's org"}, "501": {"description": "kinesis-ingress feature not compiled in"}}, "security": [{"ApiKeyAuth": []}]}}));
+    paths.insert("/contracts/{id}/kinesis-ingress/rotate-credentials".into(), json!({"post": {"operationId": "rotate_kinesis_credentials", "summary": "Rotate Kinesis IAM credentials (owner, Enterprise)", "parameters": [{"name": "id", "in": "path", "required": true, "schema": {"type": "string", "format": "uuid"}}], "responses": {"200": {"description": "New credentials; secret shown once"}, "401": {"description": "Missing or invalid credentials"}, "404": {"description": "Contract not found or not owned by the caller's org"}, "403": {"description": "Collaborator grant (owner required), or org below Enterprise: \"Kafka/Kinesis streaming ingress requires the Enterprise plan (available on request)\""}, "501": {"description": "kinesis-ingress feature not compiled in"}}, "security": [{"ApiKeyAuth": []}]}}));
+    paths.insert("/contracts/deploy".into(), json!({"post": {"operationId": "deploy_contract", "summary": "Create or update a contract from YAML and promote it to stable", "requestBody": {"required": true, "content": {"application/json": {"schema": {"type": "object", "required": ["name", "yaml_content"], "properties": {"name": {"type": "string"}, "yaml_content": {"type": "string", "description": "Contract YAML; the version is read from it"}, "source": {"type": ["string", "null"]}, "deployed_by": {"type": ["string", "null"]}}}}}}, "responses": {"201": {"description": "Deployed: contract_id, version_id, name, version"}, "400": {"description": "Invalid YAML or request"}, "401": {"description": "Missing or invalid credentials"}, "409": {"description": "Version conflict"}}, "security": [{"ApiKeyAuth": []}]}}));
+    paths.insert("/ingest/{contract_id}".into(), json!({"post": {"operationId": "ingest", "summary": "Validate one event or an array of events (legacy ingest; pin with {contract_id}@{version} or X-Contract-Version)", "parameters": [{"name": "contract_id", "in": "path", "required": true, "description": "Contract UUID, optionally suffixed @version. Pins match exactly first, then by normalised numeric version (1.0.0 matches a stored 1.0).", "schema": {"type": "string"}}, {"name": "X-Contract-Version", "in": "header", "required": false, "schema": {"type": "string"}}, {"name": "dry_run", "in": "query", "required": false, "schema": {"type": "boolean", "default": false}}, {"name": "atomic", "in": "query", "required": false, "schema": {"type": "boolean", "default": false}}], "requestBody": {"required": true, "content": {"application/json": {"schema": {"oneOf": [{"type": "object"}, {"type": "array", "items": {"type": "object"}}]}}}}, "responses": {"200": {"description": "Per-event results"}, "400": {"description": "Invalid contract id or body"}, "401": {"description": "Missing or invalid credentials"}, "404": {"description": "Contract or pinned version not found"}, "409": {"description": "No stable version, or ambiguous version pin"}, "422": {"description": "Pinned version is deprecated (code contract_version_deprecated)"}, "429": {"description": "Plan limit exceeded"}}, "security": [{"ApiKeyAuth": []}]}}));
+    paths.insert("/contracts/{id}/versions".into(), json!({"get": {"operationId": "list_versions", "summary": "List versions (viewer+)", "parameters": [{"name": "id", "in": "path", "required": true, "schema": {"type": "string", "format": "uuid"}}], "responses": {"200": {"description": "Version summaries"}, "401": {"description": "Missing or invalid credentials"}, "404": {"description": "Contract not found"}}, "security": [{"ApiKeyAuth": []}]}, "post": {"operationId": "create_version", "summary": "Create a draft version", "parameters": [{"name": "id", "in": "path", "required": true, "schema": {"type": "string", "format": "uuid"}}], "requestBody": {"required": true, "content": {"application/json": {"schema": {"type": "object", "required": ["version", "yaml_content"], "properties": {"version": {"type": "string", "description": "e.g. 1.1.0; unique per contract"}, "yaml_content": {"type": "string"}}}}}}, "responses": {"201": {"description": "Draft created"}, "400": {"description": "Invalid YAML"}, "401": {"description": "Missing or invalid credentials"}, "403": {"description": "Caller lacks the required role"}, "404": {"description": "Contract not found"}, "409": {"description": "Version already exists"}}, "security": [{"ApiKeyAuth": []}]}}));
 }
 
 // ---------------------------------------------------------------------------
@@ -696,7 +714,9 @@ pub async fn v1_ingest_handler(
         resolve_version(&state, contract_id, pick_pin(query.version, path_version)).await?;
 
     let version_row =
-        storage::get_version(&state.db, contract_id, &resolved_version, org_id).await?;
+        storage::get_version_for_pin(&state.db, contract_id, &resolved_version, org_id).await?;
+    // A normalised pin (`1.0.0` for a stored `1.0`) continues as the stored string.
+    let resolved_version = version_row.version.clone();
 
     tracing::debug!(
         contract_id = %contract_id,
@@ -1337,6 +1357,16 @@ mod tests {
             "/contracts/{name}/proposals/{id}",
             "/me",
             "/v1/me",
+            "/contracts/{id}/kafka-ingress",
+            "/contracts/{id}/kafka-ingress/enable",
+            "/contracts/{id}/kafka-ingress/disable",
+            "/contracts/{id}/kinesis-ingress",
+            "/contracts/{id}/kinesis-ingress/enable",
+            "/contracts/{id}/kinesis-ingress/disable",
+            "/contracts/{id}/kinesis-ingress/rotate-credentials",
+            "/contracts/deploy",
+            "/ingest/{contract_id}",
+            "/contracts/{id}/versions",
         ] {
             assert!(v["paths"][path].is_object(), "openapi missing path {path}");
         }

@@ -51,9 +51,70 @@ pub fn payloads_stored(plan: &str, org_switch: bool, contract_switch: bool) -> b
     is_paid(plan) && org_switch && contract_switch
 }
 
+/// Message returned (403) when a below-Enterprise org tries to turn on
+/// Kafka/Kinesis streaming ingress.
+pub const STREAMING_REQUIRES_ENTERPRISE: &str =
+    "Kafka/Kinesis streaming ingress requires the Enterprise plan (available on request). \
+     Use POST /v1/ingest instead, or contact datacontractgate@nightmoose.com.";
+
+/// Whether a plan may enable Kafka/Kinesis streaming ingress. Enterprise only:
+/// streaming is not part of any self-serve plan.
+pub fn streaming_allowed(plan: &str) -> bool {
+    plan == "enterprise"
+}
+
+/// Pure gate: `Ok` for Enterprise, 403 [`crate::error::AppError::Forbidden`]
+/// otherwise. `None` (org row missing) is treated as below Enterprise.
+pub fn check_streaming_plan(plan: Option<&str>) -> Result<(), crate::error::AppError> {
+    match plan {
+        Some(p) if streaming_allowed(p) => Ok(()),
+        _ => Err(crate::error::AppError::Forbidden(
+            STREAMING_REQUIRES_ENTERPRISE.to_string(),
+        )),
+    }
+}
+
+/// Server-side gate for routes that turn streaming ingress on.
+///
+/// - Auth configured and no org on the request → 401.
+/// - No org and auth off (self-host / dev, no tenancy) → allowed; there is no
+///   plan to check.
+/// - Org present → its plan must be Enterprise, else 403.
+pub async fn require_streaming_plan(
+    state: &crate::AppState,
+    org_id: Option<uuid::Uuid>,
+) -> Result<(), crate::error::AppError> {
+    let Some(oid) = org_id else {
+        if state.auth_configured() {
+            return Err(crate::error::AppError::Unauthorized);
+        }
+        return Ok(());
+    };
+    let plan = crate::storage::get_org_plan(&state.db, oid).await?;
+    check_streaming_plan(plan.as_deref())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn streaming_gate_status_codes() {
+        use axum::{http::StatusCode, response::IntoResponse};
+        assert!(check_streaming_plan(Some("enterprise")).is_ok());
+        for p in [
+            Some("free"),
+            Some("growth"),
+            Some("aisg_free"),
+            Some("aisg_pro"),
+            Some("bogus"),
+            None,
+        ] {
+            let err = check_streaming_plan(p).expect_err("below enterprise must be denied");
+            assert!(err.to_string().contains("requires the Enterprise plan"));
+            assert_eq!(err.into_response().status(), StatusCode::FORBIDDEN, "{p:?}");
+        }
+    }
 
     #[test]
     fn payloads_stored_truth_table() {

@@ -430,8 +430,11 @@ async fn soft_delete_kafka_ingress_row(pool: &PgPool, contract_id: Uuid) -> AppR
 
 pub async fn get_kafka_ingress_handler(
     State(state): State<Arc<AppState>>,
+    crate::OrgId(org_id): crate::OrgId,
     Path(contract_id): Path<Uuid>,
 ) -> AppResult<Json<KafkaIngressResponse>> {
+    // Owner-only: a caller whose org does not own the contract gets 404.
+    crate::require_owner(&state, contract_id, org_id).await?;
     let row = get_kafka_ingress_row(&state.db, contract_id)
         .await?
         .ok_or_else(|| {
@@ -461,6 +464,11 @@ pub async fn enable_kafka_ingress_handler(
     req: axum::extract::Request,
 ) -> AppResult<(StatusCode, Json<KafkaIngressResponse>)> {
     let org_id = crate::org_id_from_req(&req);
+    // Owner-only: a caller whose org does not own the contract gets 404 (checked before the plan, so a
+    // foreign org never learns more than "not found").
+    crate::require_owner(&state, contract_id, org_id).await?;
+    // Streaming is Enterprise-only (available on request). Read/disable stay open.
+    crate::plan::require_streaming_plan(&state, org_id).await?;
 
     if !kafka_enabled() {
         return Err(AppError::BadRequest(
@@ -520,8 +528,11 @@ pub async fn enable_kafka_ingress_handler(
 
 pub async fn disable_kafka_ingress_handler(
     State(state): State<Arc<AppState>>,
+    crate::OrgId(org_id): crate::OrgId,
     Path(contract_id): Path<Uuid>,
 ) -> AppResult<StatusCode> {
+    // Owner-only: a caller whose org does not own the contract gets 404.
+    crate::require_owner(&state, contract_id, org_id).await?;
     let row = get_kafka_ingress_row(&state.db, contract_id)
         .await?
         .ok_or_else(|| {

@@ -468,7 +468,11 @@ async fn read_scope(
 }
 
 /// Owner-only by-id routes: grantees get 403, strangers keep the 404.
-async fn require_owner(state: &AppState, contract_id: Uuid, org_id: Option<Uuid>) -> AppResult<()> {
+pub(crate) async fn require_owner(
+    state: &AppState,
+    contract_id: Uuid,
+    org_id: Option<Uuid>,
+) -> AppResult<()> {
     scope_for(state, contract_id, org_id, collaboration::CallerRole::Owner)
         .await
         .map(|_| ())
