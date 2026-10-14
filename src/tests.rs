@@ -4243,13 +4243,10 @@ mod equivalent_versions {
             .expect("pin 1");
         assert_eq!(row.version, "1.0");
 
-        sqlx::query("DELETE FROM contracts WHERE id = $1")
+        // Stable versions can't be deleted (contract_versions_delete_guard), so
+        // a hard delete of the contract or org would fail; soft-delete instead.
+        sqlx::query("UPDATE contracts SET deleted_at = NOW() WHERE id = $1")
             .bind(cid)
-            .execute(&pool)
-            .await
-            .unwrap();
-        sqlx::query("DELETE FROM orgs WHERE id = $1")
-            .bind(org)
             .execute(&pool)
             .await
             .unwrap();
