@@ -114,7 +114,7 @@ pub struct V1IngestResponse {
     /// to a differently written stored version (e.g. `@1` → `1.0`).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub requested_version: Option<String>,
-    /// One of: `"query_param"` | `"default_stable"` | `"pinned_deprecated"`.
+    /// One of: `"query_param"` | `"path"` | `"default_stable"` | `"pinned_deprecated"`.
     pub version_pin_source: &'static str,
     pub results: Vec<V1IngestEventResult>,
 }
@@ -507,6 +507,7 @@ fn build_openapi() -> String {
 /// Paths added after the main `json!` block, which sits at the macro's
 /// recursion limit. One small `json!` per path keeps each expansion shallow.
 fn extra_openapi_paths(paths: &mut serde_json::Map<String, Value>) {
+    paths.insert("/contracts/import".into(), json!({"post": {"operationId": "import_odcs", "summary": "Import an ODCS v3.1 document as a draft version", "description": "With target_contract_id (or its alias contract_id) the document is imported as a new draft version on that contract, which must be owned by the caller. Without a target, a new contract is created, unless the caller already owns a live contract with that name (409; pass target_contract_id).", "requestBody": {"required": true, "content": {"application/json": {"schema": {"type": "object", "required": ["odcs_yaml"], "properties": {"odcs_yaml": {"type": "string"}, "name_override": {"type": ["string", "null"]}, "target_contract_id": {"type": ["string", "null"], "format": "uuid"}, "contract_id": {"type": ["string", "null"], "format": "uuid", "description": "Alias of target_contract_id"}}}}}}, "responses": {"201": {"description": "Draft version created"}, "400": {"description": "Invalid ODCS document, or target_contract_id and contract_id disagree"}, "401": {"description": "Missing or invalid credentials"}, "403": {"description": "Collaborator grant on the target (owner required)"}, "404": {"description": "Target contract not found or not owned by the caller's org"}, "409": {"description": "Version (or an equivalent, e.g. 1.0 vs 1.0.0) already exists on the target, or a live contract with this name exists and no target was given"}}, "security": [{"ApiKeyAuth": []}]}}));
     paths.insert("/contracts/{id}/kafka-ingress".into(), json!({"get": {"operationId": "get_kafka_ingress", "summary": "Kafka ingress config (owner)", "parameters": [{"name": "id", "in": "path", "required": true, "schema": {"type": "string", "format": "uuid"}}], "responses": {"200": {"description": "Config (no secret)"}, "401": {"description": "Missing or invalid credentials"}, "404": {"description": "Contract not found or not owned by the caller's org"}}, "security": [{"ApiKeyAuth": []}]}}));
     paths.insert("/contracts/{id}/kafka-ingress/enable".into(), json!({"post": {"operationId": "enable_kafka_ingress", "summary": "Enable Kafka ingress (owner, Enterprise; available on request)", "parameters": [{"name": "id", "in": "path", "required": true, "schema": {"type": "string", "format": "uuid"}}], "responses": {"200": {"description": "Already enabled"}, "201": {"description": "Enabled; secret shown once"}, "400": {"description": "Kafka ingress unavailable on this deployment (KAFKA_ENABLED=false)"}, "401": {"description": "Missing or invalid credentials"}, "404": {"description": "Contract not found or not owned by the caller's org"}, "403": {"description": "Collaborator grant (owner required), or org below Enterprise: \"Kafka/Kinesis streaming ingress requires the Enterprise plan (available on request)\""}}, "security": [{"ApiKeyAuth": []}]}}));
     paths.insert("/contracts/{id}/kafka-ingress/disable".into(), json!({"delete": {"operationId": "disable_kafka_ingress", "summary": "Disable Kafka ingress (owner, any plan)", "parameters": [{"name": "id", "in": "path", "required": true, "schema": {"type": "string", "format": "uuid"}}], "responses": {"204": {"description": "Disabled; credentials revoked"}, "401": {"description": "Missing or invalid credentials"}, "404": {"description": "Contract not found or not owned by the caller's org"}}, "security": [{"ApiKeyAuth": []}]}}));
@@ -540,10 +541,10 @@ async fn parallel_validate(
 async fn resolve_version(
     state: &AppState,
     contract_id: Uuid,
-    version_param: Option<String>,
+    pin: Option<(String, &'static str)>,
 ) -> AppResult<(String, &'static str)> {
-    if let Some(v) = version_param {
-        return Ok((v, "query_param"));
+    if let Some(p) = pin {
+        return Ok(p);
     }
     let latest = storage::get_latest_stable_version(&state.db, contract_id)
         .await?
@@ -1188,11 +1189,15 @@ async fn deprecated_quarantine(
 
 /// `?version=` wins over an `@version` path suffix (it is the documented
 /// /v1 form); both name the same thing.
-fn pick_pin(query: Option<String>, path: Option<String>) -> Option<String> {
+/// The pin and where it came from: `?version=` (`"query_param"`) wins over
+/// the `@version` path suffix (`"path"`).
+fn pick_pin(query: Option<String>, path: Option<String>) -> Option<(String, &'static str)> {
     if query.is_some() && path.is_some() && query != path {
         tracing::warn!("both ?version= and @version given on /v1/ingest; ?version wins");
     }
-    query.or(path)
+    query
+        .map(|v| (v, "query_param"))
+        .or(path.map(|v| (v, "path")))
 }
 
 /// R-X2b: explain a deprecated pin instead of a bare 422 with empty
@@ -1220,11 +1225,19 @@ mod tests {
         let m = deprecated_message("1.0", id, false);
         assert!(m.contains("1.0") && m.contains("deprecated") && m.contains("quarantined"));
         assert!(m.contains("?version="));
-        assert_eq!(pick_pin(None, Some("1.0".into())), Some("1.0".into()));
+        assert_eq!(
+            pick_pin(None, Some("1.0".into())),
+            Some(("1.0".into(), "path"))
+        );
         assert_eq!(
             pick_pin(Some("2.0".into()), Some("1.0".into())),
-            Some("2.0".into())
+            Some(("2.0".into(), "query_param"))
         );
+        assert_eq!(
+            pick_pin(Some("2.0".into()), None),
+            Some(("2.0".into(), "query_param"))
+        );
+        assert_eq!(pick_pin(None, None), None);
         assert!(deprecated_message("1.0", id, true).contains("nothing was quarantined"));
     }
 
@@ -1375,6 +1388,7 @@ mod tests {
             "/contracts/deploy",
             "/ingest/{contract_id}",
             "/contracts/{id}/versions",
+            "/contracts/import",
         ] {
             assert!(v["paths"][path].is_object(), "openapi missing path {path}");
         }

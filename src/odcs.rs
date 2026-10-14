@@ -684,6 +684,13 @@ pub struct ImportOdcsRequest {
     /// reads `dataProduct` (or `schema[0].name`) from the ODCS document.
     #[serde(default)]
     pub name_override: Option<String>,
+    /// Import as a new version on this existing contract (must be owned by
+    /// the caller). Alias: `contract_id`.
+    #[serde(default)]
+    pub target_contract_id: Option<uuid::Uuid>,
+    /// Alias of `target_contract_id`.
+    #[serde(default)]
+    pub contract_id: Option<uuid::Uuid>,
     /// Org id for multi-tenant scoping (passed through from the auth layer).
     #[serde(default)]
     #[allow(dead_code)]
