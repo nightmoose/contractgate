@@ -388,6 +388,87 @@ fn build_openapi() -> String {
             },
             "security": [{ "ApiKeyAuth": [] }]
           }
+        },
+        "/published/{publication_ref}": {
+          "get": {
+            "operationId": "fetch_published",
+            "summary": "Fetch a published contract by ref (no API key)",
+            "description": "Public publications need no token. Link/org publications need ?token=; a missing or wrong token returns 403 with a specific message (not the API-key 401).",
+            "parameters": [
+              { "name": "publication_ref", "in": "path", "required": true, "schema": { "type": "string" } },
+              { "name": "token", "in": "query", "required": false, "schema": { "type": "string" } }
+            ],
+            "responses": {
+              "200": { "description": "Publication YAML and metadata" },
+              "403": { "description": "Link token missing or invalid" },
+              "404": { "description": "Unknown or revoked publication" }
+            }
+          }
+        },
+        "/catalog": {
+          "get": {
+            "operationId": "list_public_catalog",
+            "summary": "List public publications (no API key)",
+            "parameters": [
+              { "name": "limit", "in": "query", "required": false, "schema": { "type": "integer", "default": 20, "maximum": 100 } }
+            ],
+            "responses": { "200": { "description": "Newest-first list with publication_ref, contract_name, contract_version, published_by, published_at" } }
+          }
+        },
+        "/contracts/publications": {
+          "get": {
+            "operationId": "list_my_publications",
+            "summary": "List the caller's live publications",
+            "responses": { "200": { "description": "Live publications owned by the caller's org" }, "401": { "description": "Missing or invalid X-Api-Key" } },
+            "security": [{ "ApiKeyAuth": [] }]
+          }
+        },
+        "/contracts/publications/{publication_ref}": {
+          "delete": {
+            "operationId": "revoke_publication",
+            "summary": "Unpublish (revoke) a publication",
+            "parameters": [
+              { "name": "publication_ref", "in": "path", "required": true, "schema": { "type": "string" } }
+            ],
+            "responses": {
+              "200": { "description": "Revoked" },
+              "401": { "description": "Missing or invalid X-Api-Key" },
+              "403": { "description": "Publication belongs to another org" },
+              "404": { "description": "Unknown or already revoked" },
+              "409": { "description": "Publication has been imported; publish a new version instead" }
+            },
+            "security": [{ "ApiKeyAuth": [] }]
+          }
+        },
+        "/contracts/import-published": {
+          "post": {
+            "operationId": "import_published",
+            "summary": "Import a published contract into the caller's org",
+            "description": "A published stable version is imported as stable (same version number) so it validates immediately. Link/org publications need link_token.",
+            "requestBody": {
+              "required": true,
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "type": "object",
+                    "required": ["publication_ref"],
+                    "properties": {
+                      "publication_ref": { "type": "string" },
+                      "link_token": { "type": "string" },
+                      "import_mode": { "type": "string", "enum": ["snapshot", "subscribe"], "default": "snapshot" }
+                    }
+                  }
+                }
+              }
+            },
+            "responses": {
+              "201": { "description": "Imported; body includes state (stable|draft) and a message" },
+              "401": { "description": "Missing or invalid X-Api-Key" },
+              "403": { "description": "Link token missing or invalid" },
+              "404": { "description": "Unknown or revoked publication" }
+            },
+            "security": [{ "ApiKeyAuth": [] }]
+          }
         }
       },
       "components": {
@@ -1187,5 +1268,19 @@ mod tests {
         let v: Value = serde_json::from_str(&build_openapi()).unwrap();
         assert!(v["paths"]["/v1/ingest/{contract_id}"]["post"].is_object());
         assert!(v["paths"]["/egress/{contract_id}"]["post"].is_object());
+    }
+
+    #[test]
+    fn openapi_lists_publication_endpoints() {
+        let v: Value = serde_json::from_str(&build_openapi()).unwrap();
+        for path in [
+            "/published/{publication_ref}",
+            "/catalog",
+            "/contracts/publications",
+            "/contracts/publications/{publication_ref}",
+            "/contracts/import-published",
+        ] {
+            assert!(v["paths"][path].is_object(), "openapi missing path {path}");
+        }
     }
 }

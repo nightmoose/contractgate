@@ -1520,6 +1520,10 @@ fn build_router(state: Arc<AppState>) -> Router {
             post(publication::publish_handler),
         )
         .route(
+            "/contracts/publications",
+            get(publication::list_my_publications_handler),
+        )
+        .route(
             "/contracts/publications/{publication_ref}",
             axum::routing::delete(publication::revoke_handler),
         )

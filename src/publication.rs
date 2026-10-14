@@ -98,6 +98,10 @@ pub struct ImportPublishedResponse {
     /// The new contract_id in the consumer's org.
     pub contract_id: Uuid,
     pub version: String,
+    /// `stable` when the published version was stable (S-I3), else `draft`.
+    pub state: String,
+    /// Human-readable summary of what was created.
+    pub message: String,
     pub import_mode: String,
     pub imported_from_ref: String,
 }
@@ -186,6 +190,21 @@ pub async fn revoke_handler(
 }
 
 // ---------------------------------------------------------------------------
+// GET /contracts/publications — the caller org's live publications (S-U1)
+// ---------------------------------------------------------------------------
+
+pub async fn list_my_publications_handler(
+    State(state): State<Arc<AppState>>,
+    req: axum::extract::Request,
+) -> AppResult<Json<Vec<storage::MyPublicationRow>>> {
+    let org_id = crate::org_id_from_req(&req)
+        .ok_or_else(|| AppError::Forbidden("an organization is required".into()))?;
+    Ok(Json(
+        storage::list_org_publications(&state.db, org_id).await?,
+    ))
+}
+
+// ---------------------------------------------------------------------------
 // GET /published/{ref}  — public route, no auth middleware
 // ---------------------------------------------------------------------------
 
@@ -198,7 +217,7 @@ pub async fn fetch_published_handler(
 
     // 404 for revoked publications — don't reveal that it existed.
     if row.is_revoked() {
-        return Err(AppError::BadRequest(format!(
+        return Err(AppError::NotFound(format!(
             "publication '{}' not found",
             publication_ref
         )));
@@ -212,15 +231,7 @@ pub async fn fetch_published_handler(
     match vis {
         PublicationVisibility::Public => {}
         PublicationVisibility::Link | PublicationVisibility::Org => {
-            let provided = q.token.as_deref().unwrap_or("");
-            let expected = row.link_token.as_deref().unwrap_or("");
-            if provided.is_empty() {
-                return Err(AppError::Unauthorized);
-            }
-            // Constant-time comparison to avoid timing attacks.
-            if !constant_time_eq(provided.as_bytes(), expected.as_bytes()) {
-                return Err(AppError::Unauthorized);
-            }
+            check_link_token(q.token.as_deref(), row.link_token.as_deref(), "?token=")?;
         }
     }
 
@@ -272,6 +283,28 @@ pub async fn catalog_handler(
     Ok(Json(entries))
 }
 
+/// S-P2: a link/org publication needs its link token. Missing or wrong
+/// tokens get a specific 403, not the API-key 401.
+pub(crate) fn check_link_token(
+    provided: Option<&str>,
+    expected: Option<&str>,
+    how: &str,
+) -> AppResult<()> {
+    let provided = provided.unwrap_or("");
+    if provided.is_empty() {
+        return Err(AppError::LinkToken(format!(
+            "link token missing: this publication is shared by link; pass its token as {how}"
+        )));
+    }
+    let expected = expected.unwrap_or("");
+    if expected.is_empty() || !constant_time_eq(provided.as_bytes(), expected.as_bytes()) {
+        return Err(AppError::LinkToken(
+            "link token invalid: it does not match this publication".to_string(),
+        ));
+    }
+    Ok(())
+}
+
 /// Constant-time byte slice comparison.  `pub(crate)` so tests in `tests.rs` can call it.
 pub(crate) fn constant_time_eq(a: &[u8], b: &[u8]) -> bool {
     if a.len() != b.len() {
@@ -321,26 +354,35 @@ pub async fn import_published_handler(
     match vis {
         PublicationVisibility::Public => {}
         PublicationVisibility::Link | PublicationVisibility::Org => {
-            let provided = body.link_token.as_deref().unwrap_or("");
-            let expected = pub_row.link_token.as_deref().unwrap_or("");
-            if provided.is_empty() {
-                return Err(AppError::BadRequest(
-                    "link_token is required for this publication".to_string(),
-                ));
-            }
-            if !constant_time_eq(provided.as_bytes(), expected.as_bytes()) {
-                return Err(AppError::Unauthorized);
-            }
+            check_link_token(
+                body.link_token.as_deref(),
+                pub_row.link_token.as_deref(),
+                "\"link_token\"",
+            )?;
         }
     }
 
     let cv = storage::import_published_contract(&state.db, &pub_row, import_mode, org_id).await?;
+    let state_str = cv.state.as_str().to_string();
+    let message = if state_str == "stable" {
+        format!(
+            "Imported {} v{} as a stable version; it validates events right away.",
+            pub_row.contract_name, cv.version
+        )
+    } else {
+        format!(
+            "Imported {} v{} as a draft (the published version was not stable); promote it before validating.",
+            pub_row.contract_name, cv.version
+        )
+    };
 
     Ok((
         StatusCode::CREATED,
         Json(ImportPublishedResponse {
             contract_id: cv.contract_id,
             version: cv.version,
+            state: state_str,
+            message,
             import_mode: import_mode.as_str().to_string(),
             imported_from_ref: pub_row.publication_ref,
         }),
@@ -357,4 +399,34 @@ pub async fn import_status_handler(
 ) -> AppResult<Json<ImportStatusResult>> {
     let result = storage::check_import_status(&state.db, contract_id).await?;
     Ok(Json(result))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn link_token_missing_is_specific_403() {
+        let err = check_link_token(None, Some("abc"), "?token=").unwrap_err();
+        let msg = err.to_string();
+        assert!(msg.contains("link token missing"), "{msg}");
+        assert!(!msg.to_lowercase().contains("api key"));
+    }
+
+    #[test]
+    fn link_token_wrong_is_specific_403() {
+        let err = check_link_token(Some("nope"), Some("abc"), "\"link_token\"").unwrap_err();
+        assert!(err.to_string().contains("link token invalid"));
+    }
+
+    #[test]
+    fn link_token_match_ok() {
+        check_link_token(Some("abc"), Some("abc"), "?token=").unwrap();
+    }
+
+    #[test]
+    fn constant_time_eq_rejects_length_mismatch() {
+        assert!(!constant_time_eq(b"a", b"ab"));
+        assert!(constant_time_eq(b"ab", b"ab"));
+    }
 }

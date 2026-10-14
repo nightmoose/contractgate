@@ -407,6 +407,16 @@ function AccountContent() {
               <span className="font-mono text-slate-500">{org.org_name}</span>
               <span className="text-slate-700">·</span>
               <span className="text-slate-600 capitalize">{org.role}</span>
+              <span className="text-slate-700">·</span>
+              <code className="font-mono text-slate-500 select-all" title="Organization ID">{org.org_id}</code>
+              <button
+                type="button"
+                onClick={() => navigator.clipboard.writeText(org.org_id).catch(() => undefined)}
+                className="text-[10px] px-1.5 py-0.5 rounded bg-[#1f2937] hover:bg-[#374151] text-slate-400"
+                title="Copy organization ID"
+              >
+                Copy ID
+              </button>
             </p>
           )}
         </div>
@@ -470,7 +480,7 @@ function AccountContent() {
         </div>
       )}
 
-      <OrgIdCard />
+      <OrgIdCard orgId={org?.org_id} />
 
       <ProfileSecurity user={user} />
 

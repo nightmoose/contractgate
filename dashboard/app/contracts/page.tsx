@@ -21,6 +21,7 @@ import { useState, useEffect, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import useSWR, { mutate } from "swr";
 import AuthGate from "@/components/AuthGate";
+import MyPublications from "@/components/contracts/MyPublications";
 import PlanGate, { FreeLimitBanner } from "@/components/PlanGate";
 import { useOrg, planAtLeast } from "@/lib/org";
 import { useBrand } from "@/components/BrandProvider";
@@ -673,12 +674,14 @@ function PublishModal({
   const [err, setErr] = useState<string | null>(null);
   const [tokenCopied, setTokenCopied] = useState(false);
   const [refCopied, setRefCopied] = useState(false);
+  const [pubsKey, setPubsKey] = useState(0);
 
   const handlePublish = async () => {
     setPublishing(true); setErr(null);
     try {
       const res = await publishVersion(contractId, version, { visibility });
       setResult(res);
+      setPubsKey((k) => k + 1);
     } catch (e) {
       setErr(e instanceof Error ? e.message : String(e));
     } finally { setPublishing(false); }
@@ -812,6 +815,9 @@ function PublishModal({
             </button>
           </>
         )}
+
+        {/* S-U1: this contract's publications; Unpublish only if never imported */}
+        <MyPublications contractId={contractId} refreshKey={pubsKey} title="Published versions of this contract" />
       </div>
     </div>
   );
@@ -1675,13 +1681,13 @@ function ImportFromRefModal({
     if (!ref.trim()) return;
     setImporting(true); setErr(null);
     try {
-      await importPublished({
+      const res = await importPublished({
         publication_ref: ref.trim(),
         ...(token.trim() ? { link_token: token.trim() } : {}),
         import_mode: mode,
       });
       await mutate("contracts");
-      setSuccess(`Imported as ${mode} — contract added to your list.`);
+      setSuccess(res.message || `Imported as ${mode} (${res.state}) — contract added to your list.`);
       setTimeout(() => { onImported(); }, 1800);
     } catch (e) {
       setErr(e instanceof Error ? e.message : String(e));
