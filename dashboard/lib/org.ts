@@ -65,7 +65,7 @@ export function planDisplayName(plan: PlanTier): string {
     case "free": return "Free";
     case "growth": return "Pro";
     case "enterprise": return "Enterprise";
-    case "aisg_free": return "AISchemaGate Developer";
+    case "aisg_free": return "Free";
     case "aisg_pro": return "AISchemaGate Pro";
   }
 }

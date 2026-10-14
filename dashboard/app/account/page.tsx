@@ -11,6 +11,7 @@ import { HelpTarget } from "@/components/help/HelpTarget";
 import { DEMO_MODE } from "@/lib/demo";
 import DemoFeatureUnavailable from "@/components/DemoFeatureUnavailable";
 import UsageWidget from "@/components/UsageWidget";
+import ProfileSecurity from "@/components/account/ProfileSecurity";
 import { getPayloadStorage, setPayloadStorage } from "@/lib/api";
 import type { PayloadStorageStatus } from "@/lib/api";
 
@@ -370,7 +371,9 @@ function AccountContent() {
 
   async function handleSignOut() {
     await supabase.auth.signOut();
-    router.push("/auth/login");
+    // Hard navigation: a client push left the signed-out tab on /account
+    // rendering the AuthGate sample (tester polish round).
+    window.location.assign("/auth/login");
   }
 
   if (loading) {
@@ -424,7 +427,9 @@ function AccountContent() {
               </HelpTarget>
               <div className="text-xs text-slate-500">
                 Plan: <span className="font-medium text-slate-300">{planDisplayName(org.plan)}</span>
-                {org.plan_status && <span className="ml-1 text-slate-400">({org.plan_status})</span>}
+                {org.plan_status && !isFreePlan(org.plan) && (
+                  <span className="ml-1 text-slate-400">({org.plan_status})</span>
+                )}
               </div>
             </div>
             {isFreePlan(org.plan) ? (
@@ -457,11 +462,14 @@ function AccountContent() {
               </button>
             )}
           </div>
+          {!isFreePlan(org.plan) && <SubscriptionDetails />}
           <p className="text-[11px] text-slate-500">
             Self-serve upgrades use Stripe Checkout (in-app from the pricing page).
           </p>
         </div>
       )}
+
+      <ProfileSecurity user={user} />
 
       {/* Per-org monthly usage (RFC-083) */}
       {org && <UsageWidget />}
@@ -1014,6 +1022,41 @@ transforms.contractgate.contractgate.contract.id=<your contract UUID>`}
 }
 
 // ── Event payload storage (RFC-086) ────────────────────────────────────────────
+interface SubInfo {
+  status: string;
+  trial_end: number | null;
+  cancel_at_period_end: boolean;
+  cancel_at: number | null;
+  current_period_end: number | null;
+}
+
+/** Trial end and pending cancellation, read live from Stripe. */
+function SubscriptionDetails() {
+  const [sub, setSub] = useState<SubInfo | null>(null);
+  useEffect(() => {
+    fetch("/api/stripe/subscription")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => setSub(d?.subscription ?? null))
+      .catch(() => setSub(null));
+  }, []);
+  if (!sub) return null;
+  const day = (t: number) =>
+    new Date(t * 1000).toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
+  const endsAt = sub.cancel_at ?? (sub.cancel_at_period_end ? sub.current_period_end : null);
+  return (
+    <div className="text-xs text-slate-400 mb-3 space-y-1">
+      {sub.status === "trialing" && sub.trial_end && <p>Trial ends {day(sub.trial_end)}.</p>}
+      {endsAt ? (
+        <p className="text-amber-400">
+          Cancellation scheduled: Pro ends {day(endsAt)}, then the account moves to Free.
+        </p>
+      ) : (
+        sub.status !== "trialing" && sub.current_period_end && <p>Renews {day(sub.current_period_end)}.</p>
+      )}
+    </div>
+  );
+}
+
 function EventPayloadStorageSection() {
   const [status, setStatus] = useState<PayloadStorageStatus | null>(null);
   const [loading, setLoading] = useState(true);

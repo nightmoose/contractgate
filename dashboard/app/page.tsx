@@ -11,6 +11,7 @@ import { useOrg } from "@/lib/org";
 import { useBrand } from "@/components/BrandProvider";
 import { HelpTarget } from "@/components/help/HelpTarget";
 import { FirstRunLoop } from "@/components/help/FirstRun";
+import { DEMO_MODE } from "@/lib/demo";
 
 // ---------------------------------------------------------------------------
 // Hero banner — dismissible pitch for first-time / non-technical visitors
@@ -157,6 +158,9 @@ function DemoContextBanner({
   onToggle: () => void;
 }) {
   if (passRate === null) return null;
+  // Demo framing only: a real account below 90% is not "intentionally sending
+  // malformed events", and an empty account has no pass rate at all.
+  if (!DEMO_MODE) return null;
   // Show when pass rate is below 90% (stress-test territory), or when healthy mode is on
   if (passRate >= 0.9 && !healthyMode) return null;
 
@@ -422,7 +426,9 @@ function DashboardContent() {
 
   const stats = healthyMode ? HEALTHY_BASELINE : rawStats;
 
-  const passRate = stats ? (stats.pass_rate * 100).toFixed(1) : "—";
+  // No events yet: neutral "—" instead of a red 0.0% (tester polish round).
+  const hasEvents = !!stats && stats.total_events > 0;
+  const passRate = hasEvents ? `${(stats.pass_rate * 100).toFixed(1)}%` : "—";
   const avgLatency = stats
     ? stats.avg_validation_us < 1000
       ? `${stats.avg_validation_us.toFixed(0)}µs`
@@ -451,7 +457,7 @@ function DashboardContent() {
 
       {/* Demo context banner */}
       <DemoContextBanner
-        passRate={rawStats?.pass_rate ?? null}
+        passRate={rawStats && rawStats.total_events > 0 ? rawStats.pass_rate : null}
         healthyMode={healthyMode}
         onToggle={() => setHealthyMode((x) => !x)}
       />
@@ -466,11 +472,14 @@ function DashboardContent() {
         <StatCard
           helpId="dashboard.pass-rate"
           label="Pass Rate"
-          value={`${passRate}%`}
+          value={passRate}
+          sub={hasEvents ? undefined : "No events yet"}
           color={
-            stats && stats.pass_rate > 0.95
+            !hasEvents
+              ? "text-slate-400"
+              : stats.pass_rate > 0.95
               ? "text-green-400"
-              : stats && stats.pass_rate > 0.8
+              : stats.pass_rate > 0.8
               ? "text-yellow-400"
               : "text-red-400"
           }
@@ -479,7 +488,7 @@ function DashboardContent() {
           helpId="dashboard.violations"
           label="Violations"
           value={stats?.failed_events.toLocaleString() ?? "—"}
-          color="text-red-400"
+          color={stats && stats.failed_events > 0 ? "text-red-400" : "text-slate-400"}
         />
         <StatCard
           helpId="dashboard.avg-latency"
