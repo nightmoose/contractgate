@@ -66,7 +66,6 @@ gating.
 - Scaffold page (brownfield scaffolder + PII detection)
 - Egress Validator (Catalog page)
 - Import from ref — subscribe mode
-- Kafka / Kinesis integration tabs
 - Batch ingest (backend limit; UI surfaced in docs)
 - Multi-tenancy, PII transform rules (backend)
 - Team invites and roles
@@ -78,6 +77,8 @@ gating.
 - Custom SLA
 - Dedicated deployment
 - Priority support and SRE on-call
+- Kafka / Kinesis streaming: available on request. (Copy only: the dashboard
+  tab gate in code is still `planAtLeast(plan, "growth")` in `contracts/page.tsx`.)
 - Custom contract templates
 
 ---
