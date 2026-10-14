@@ -75,7 +75,7 @@ After a successful response, DataContractGate infers a field schema from the JSO
 | ISO 8601 datetime string | `temporal_type: datetime` |
 | Numeric Unix timestamp | `temporal_type: timestamp` |
 | Email-shaped string | `pattern: ^[^\s@]+@[^\s@]+\.[^\s@]+$` |
-| ≤8 distinct string values | `enum: [...]` |
+| 2–8 distinct string values, ≥5 samples, values repeat | `enum: [...]` |
 | Field null in any sample | `required: false` |
 | Integer values | `type: integer` |
 | Decimal values | `type: number` |

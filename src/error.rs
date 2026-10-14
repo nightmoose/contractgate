@@ -533,14 +533,17 @@ pub async fn redirect_legacy_hosts(
         .get(axum::http::header::HOST)
         .and_then(|v| v.to_str().ok())
         .map(|h| h.split(':').next().unwrap_or(h).to_ascii_lowercase());
-    let path = req.uri().path();
     let is_legacy = host.is_some_and(|h| {
         hosts
             .split(',')
             .map(str::trim)
             .any(|l| !l.is_empty() && l.eq_ignore_ascii_case(&h))
     });
-    if !is_legacy || path == "/health" || path == "/ready" {
+    // R-S3: /health and /ready redirect too on the legacy *public* host (they
+    // returned 200 + ACAO * there). Fly's checks (fly.toml `[checks.ready]`)
+    // hit the machine's internal address, whose Host is never the legacy
+    // name, so they are unaffected.
+    if !is_legacy {
         return next.run(req).await;
     }
     let origin = std::env::var(CANONICAL_API_ORIGIN_ENV)
@@ -610,7 +613,18 @@ mod legacy_host_tests {
             .oneshot(req("contractgate-api.fly.dev", "/health"))
             .await
             .unwrap();
-        assert_eq!(r.status(), StatusCode::OK, "probes stay served");
+        assert_eq!(
+            r.status(),
+            StatusCode::PERMANENT_REDIRECT,
+            "legacy public host redirects probes too (R-S3)"
+        );
+
+        // Fly's internal health check: Host is the machine address.
+        let r = app()
+            .oneshot(req("172.19.0.2:3001", "/health"))
+            .await
+            .unwrap();
+        assert_eq!(r.status(), StatusCode::OK, "internal checks stay served");
 
         let r = app()
             .oneshot(req("api.datacontractgate.com", "/contracts"))

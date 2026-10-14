@@ -217,7 +217,20 @@ POST /v1/ingest/{contract_id}?version=1.0.0
 ```
 
 Pinning a `deprecated` version quarantines the entire batch with a
-`deprecated_contract_version` violation.
+`deprecated_contract_version` violation (nothing is quarantined on
+`dry_run`). The 422 body says why; per-event `violations` stay empty because
+no event was validated:
+
+```json
+{
+  "error": "Version 1.0 of contract … is deprecated and no longer accepts events (every event was quarantined). Remove the version pin to use the latest stable version, or pin a stable version with ?version=X.Y.",
+  "code": "contract_version_deprecated",
+  "deprecated_version": "1.0",
+  "version_pin_source": "pinned_deprecated",
+  "total": 1, "passed": 0, "failed": 1, "dry_run": false,
+  "results": [ … ]
+}
+```
 
 ---
 
