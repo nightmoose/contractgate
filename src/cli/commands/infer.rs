@@ -213,7 +213,8 @@ pub fn run(args: &InferArgs) -> Result<i32> {
     let field_count = fields.len();
 
     // 5. Render DataContractGate YAML.
-    let yaml = render_contractgate_yaml(&name, &description, &fields);
+    let null_as_absent = crate::infer::samples_have_nulls(&samples);
+    let yaml = render_contractgate_yaml(&name, &description, &fields, null_as_absent);
 
     // 6. Write DataContractGate YAML.
     match &args.out {
@@ -312,6 +313,7 @@ fn render_contractgate_yaml(
     name: &str,
     description: &str,
     fields: &[crate::contract::FieldDefinition],
+    null_as_absent: bool,
 ) -> String {
     use crate::contract::FieldType;
 
@@ -321,10 +323,13 @@ fn render_contractgate_yaml(
         "version: \"1.0\"".to_string(),
         format!("name: \"{name}\""),
         format!("description: \"{description}\""),
-        String::new(),
-        "ontology:".into(),
-        "  entities:".into(),
     ];
+    // The samples had explicit nulls on optional fields; without this the
+    // contract rejects them as type mismatches (RFC-087).
+    if null_as_absent {
+        lines.push("null_as_absent: true".into());
+    }
+    lines.extend([String::new(), "ontology:".into(), "  entities:".into()]);
 
     for f in fields {
         let type_str = match f.field_type {

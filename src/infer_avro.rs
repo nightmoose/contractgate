@@ -115,7 +115,8 @@ pub async fn infer_avro_handler(
         metrics: vec![],
         quality: vec![],
         envelope: None,
-        null_as_absent: false,
+        // Schema-driven contracts carry no samples, so this is false there.
+        null_as_absent: crate::infer::samples_have_nulls(&req.samples),
     };
 
     let yaml_content = serde_yaml::to_string(&contract)

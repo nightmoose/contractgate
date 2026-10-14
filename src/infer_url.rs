@@ -395,7 +395,7 @@ fn infer_from_json_bytes(
         metrics: vec![],
         quality: vec![],
         envelope: None,
-        null_as_absent: false,
+        null_as_absent: crate::infer::samples_have_nulls(&sample),
     };
 
     let yaml_content = serde_yaml::to_string(&contract)
