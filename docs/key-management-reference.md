@@ -152,8 +152,8 @@ security-hardening migration (noted in migration 027).
 | `key_prefix`          | varchar(12)   | First 12 chars of raw key; plain text              |
 | `key_hash`            | text          | `base64(sha256(raw_key))`; 44 chars (CHECK enforced) |
 | `allowed_contract_ids`| uuid[]        | NULL = unrestricted; non-null = contract allowlist |
-| `rate_limit_rps`      | integer       | NULL = default (100)                               |
-| `rate_limit_burst`    | integer       | NULL = default (1000)                              |
+| `rate_limit_rps`      | integer       | NULL = plan default (Free 10, Pro 100)                             |
+| `rate_limit_burst`    | integer       | NULL = plan default (Free 20, Pro 200)                             |
 | `created_at`          | timestamptz   |                                                    |
 | `last_used_at`        | timestamptz   | Updated async on each validated request            |
 | `revoked_at`          | timestamptz   | NULL = active                                      |

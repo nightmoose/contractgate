@@ -12,7 +12,7 @@ trim its navigation for them; limits, prices and billing are identical.
 | Plan values | `free`, `aisg_free` | `growth`, `aisg_pro` | `enterprise` |
 | Price | $0 | $199 / month, or $166 / month billed annually ($1,992 / year) | custom |
 | Validations (events) / month | 100,000 | 25,000,000 (hard cap) | unlimited |
-| Rate limit per API key | 10 / sec (burst 100) | 100 / sec (burst 1,000) | 100 / sec, raised per key on request |
+| Rate limit per API key | 10 / sec (burst 20) | 100 / sec (burst 200) | 100 / sec, raised per key on request |
 | Audit / quarantine log retention | 7 days | 90 days | 365 days (adjustable) |
 | Payload storage, replay | no | yes | yes |
 
