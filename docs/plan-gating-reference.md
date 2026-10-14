@@ -77,8 +77,10 @@ gating.
 - Custom SLA
 - Dedicated deployment
 - Priority support and SRE on-call
-- Kafka / Kinesis streaming: available on request. (Copy only: the dashboard
-  tab gate in code is still `planAtLeast(plan, "growth")` in `contracts/page.tsx`.)
+- Kafka / Kinesis streaming: available on request. The dashboard tabs are gated
+  with `planAtLeast(plan, "enterprise")` in `contracts/page.tsx`. The API
+  enable routes have no plan check (Kafka is off via `KAFKA_ENABLED`; Kinesis
+  needs `--features kinesis-ingress`).
 - Custom contract templates
 
 ---
