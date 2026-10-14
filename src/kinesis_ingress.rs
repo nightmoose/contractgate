@@ -587,10 +587,11 @@ pub async fn enable_kinesis_ingress_handler(
     req: axum::extract::Request,
 ) -> AppResult<(StatusCode, Json<KinesisIngressResponse>)> {
     let org_id = crate::org_id_from_req(&req);
+    // Owner-only: a caller whose org does not own the contract gets 404 (checked before the plan, so a
+    // foreign org never learns more than "not found").
+    crate::require_owner(&state, contract_id, org_id).await?;
     // Streaming is Enterprise-only (available on request). Read/disable stay open.
     crate::plan::require_streaming_plan(&state, org_id).await?;
-    // Owner-only: a caller whose org does not own the contract gets 404.
-    crate::require_owner(&state, contract_id, org_id).await?;
 
     // Idempotent: return existing config if already enabled.
     if let Some(row) = get_kinesis_ingress_row(&state.db, contract_id).await? {
@@ -676,10 +677,11 @@ pub async fn rotate_kinesis_credentials_handler(
     crate::OrgId(org_id): crate::OrgId,
     Path(contract_id): Path<Uuid>,
 ) -> AppResult<Json<KinesisIngressResponse>> {
+    // Owner-only: a caller whose org does not own the contract gets 404 (checked before the plan, so a
+    // foreign org never learns more than "not found").
+    crate::require_owner(&state, contract_id, org_id).await?;
     // Issuing fresh credentials keeps streaming usable: Enterprise only.
     crate::plan::require_streaming_plan(&state, org_id).await?;
-    // Owner-only: a caller whose org does not own the contract gets 404.
-    crate::require_owner(&state, contract_id, org_id).await?;
     let row = get_kinesis_ingress_row(&state.db, contract_id)
         .await?
         .ok_or_else(|| {

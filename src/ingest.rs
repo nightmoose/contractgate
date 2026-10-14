@@ -277,7 +277,9 @@ pub async fn ingest_handler(
 
     // --- Fetch version row so we know its state (draft/stable/deprecated) --
     let version_row =
-        storage::get_version(&state.db, contract_id, &resolved_version, org_id).await?;
+        storage::get_version_for_pin(&state.db, contract_id, &resolved_version, org_id).await?;
+    // A normalised pin (`1.0.0` for a stored `1.0`) continues as the stored string.
+    let resolved_version = version_row.version.clone();
 
     tracing::debug!(
         contract_id = %contract_id,
