@@ -4252,3 +4252,161 @@ mod equivalent_versions {
             .unwrap();
     }
 }
+
+// ---------------------------------------------------------------------------
+// POST /contracts/import: target_contract_id / contract_id and duplicate names.
+// ---------------------------------------------------------------------------
+
+#[cfg(test)]
+mod odcs_import_target {
+    use axum::http::StatusCode;
+    use axum_test::TestServer;
+    use serde_json::json;
+    use std::sync::Arc;
+    use uuid::Uuid;
+
+    use super::super::{api_key_auth::ValidatedKey, import_odcs_handler, AppState};
+
+    fn server(state: Arc<AppState>, org: Uuid) -> TestServer {
+        let app = axum::Router::new()
+            .route(
+                "/contracts/import",
+                axum::routing::post(import_odcs_handler),
+            )
+            .layer(axum::middleware::from_fn(
+                move |mut req: axum::extract::Request, next: axum::middleware::Next| async move {
+                    req.extensions_mut().insert(ValidatedKey {
+                        api_key_id: Uuid::new_v4(),
+                        user_id: Uuid::new_v4(),
+                        org_id: org,
+                        allowed_contract_ids: None,
+                        rate_limit_rps: None,
+                        rate_limit_burst: None,
+                    });
+                    next.run(req).await
+                },
+            ))
+            .with_state(state);
+        TestServer::new(app)
+    }
+
+    fn odcs(name: &str, version: &str) -> String {
+        format!(
+            "apiVersion: v3.1.0\nkind: DataContract\nid: \"x\"\nversion: \"{version}\"\nstatus: active\ndataProduct: {name}\nschema:\n  - name: {name}\n    properties:\n      - name: event_id\n        logicalType: string\n        required: true\n"
+        )
+    }
+
+    /// Requires DATABASE_URL.
+    #[tokio::test]
+    #[ignore = "requires DATABASE_URL and a live Supabase/Postgres instance"]
+    async fn import_targets_existing_contract_and_refuses_duplicate_names() {
+        let db_url = std::env::var("DATABASE_URL").expect("DATABASE_URL must be set");
+        let pool = sqlx::PgPool::connect(&db_url).await.unwrap();
+        let state = Arc::new(AppState::new(pool.clone(), false, None, None));
+        let (org_a, org_b) = (Uuid::new_v4(), Uuid::new_v4());
+        for org in [org_a, org_b] {
+            sqlx::query("INSERT INTO orgs (id, name, slug) VALUES ($1, $2, $3)")
+                .bind(org)
+                .bind("odcs import")
+                .bind(format!("odcs-import-{}", org.simple()))
+                .execute(&pool)
+                .await
+                .expect("seed org");
+        }
+        let name = format!("odcs_imp_{}", org_a.simple());
+        let a = server(state.clone(), org_a);
+
+        // First import creates the contract.
+        let r = a
+            .post("/contracts/import")
+            .json(&json!({ "odcs_yaml": odcs(&name, "2.0.0") }))
+            .await;
+        assert_eq!(r.status_code(), StatusCode::CREATED, "{}", r.text());
+        let cid: Uuid = r.json::<serde_json::Value>()["contract_id"]
+            .as_str()
+            .unwrap()
+            .parse()
+            .unwrap();
+
+        // Same name, no target → 409 pointing at target_contract_id.
+        let r = a
+            .post("/contracts/import")
+            .json(&json!({ "odcs_yaml": odcs(&name, "2.1.0") }))
+            .await;
+        assert_eq!(r.status_code(), StatusCode::CONFLICT);
+        assert!(r.text().contains("target_contract_id"), "{}", r.text());
+
+        // Target: exact and equivalent versions → 409; a new version → 201 on cid.
+        for dup in ["2.0.0", "2.0"] {
+            let r = a
+                .post("/contracts/import")
+                .json(&json!({ "odcs_yaml": odcs(&name, dup), "target_contract_id": cid }))
+                .await;
+            assert_eq!(r.status_code(), StatusCode::CONFLICT, "{dup}: {}", r.text());
+        }
+        let r = a
+            .post("/contracts/import")
+            .json(&json!({ "odcs_yaml": odcs(&name, "2.1.0"), "target_contract_id": cid }))
+            .await;
+        assert_eq!(r.status_code(), StatusCode::CREATED, "{}", r.text());
+        let v = r.json::<serde_json::Value>();
+        assert_eq!(v["contract_id"], json!(cid));
+        assert_eq!(v["version"], "2.1.0");
+        // `contract_id` alias works too.
+        let r = a
+            .post("/contracts/import")
+            .json(&json!({ "odcs_yaml": odcs(&name, "2.2.0"), "contract_id": cid }))
+            .await;
+        assert_eq!(r.status_code(), StatusCode::CREATED, "{}", r.text());
+        // Disagreeing ids → 400.
+        let r = a
+            .post("/contracts/import")
+            .json(&json!({ "odcs_yaml": odcs(&name, "2.3.0"), "contract_id": cid, "target_contract_id": Uuid::new_v4() }))
+            .await;
+        assert_eq!(r.status_code(), StatusCode::BAD_REQUEST);
+        // Unknown target → 404.
+        let r = a
+            .post("/contracts/import")
+            .json(
+                &json!({ "odcs_yaml": odcs(&name, "2.3.0"), "target_contract_id": Uuid::new_v4() }),
+            )
+            .await;
+        assert_eq!(r.status_code(), StatusCode::NOT_FOUND);
+
+        // Another org targeting A's contract → 404, nothing written.
+        let b = server(state.clone(), org_b);
+        let r = b
+            .post("/contracts/import")
+            .json(&json!({ "odcs_yaml": odcs(&name, "9.0.0"), "target_contract_id": cid }))
+            .await;
+        assert_eq!(r.status_code(), StatusCode::NOT_FOUND, "{}", r.text());
+        let n: (i64,) =
+            sqlx::query_as("SELECT COUNT(*) FROM contract_versions WHERE contract_id = $1")
+                .bind(cid)
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        assert_eq!(n.0, 3, "2.0.0, 2.1.0, 2.2.0 only");
+        let live: (i64,) =
+            sqlx::query_as("SELECT COUNT(*) FROM contracts WHERE name = $1 AND deleted_at IS NULL")
+                .bind(&name)
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        assert_eq!(live.0, 1, "no duplicate-named contracts");
+
+        // Imported versions are drafts, so a hard delete is allowed.
+        sqlx::query("DELETE FROM contracts WHERE id = $1")
+            .bind(cid)
+            .execute(&pool)
+            .await
+            .unwrap();
+        for org in [org_a, org_b] {
+            sqlx::query("DELETE FROM orgs WHERE id = $1")
+                .bind(org)
+                .execute(&pool)
+                .await
+                .unwrap();
+        }
+    }
+}

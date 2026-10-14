@@ -787,6 +787,47 @@ async fn import_odcs_handler(
         .unwrap_or(&name_in_yaml.name)
         .to_string();
 
+    // Explicit target: import as a new version on that contract (owner only).
+    let target = match (body.target_contract_id, body.contract_id) {
+        (Some(a), Some(b)) if a != b => {
+            return Err(AppError::BadRequest(
+                "target_contract_id and contract_id disagree; pass one".into(),
+            ))
+        }
+        (a, b) => a.or(b),
+    };
+    if let Some(contract_id) = target {
+        if state.auth_configured() && org_id.is_none() {
+            return Err(AppError::Unauthorized);
+        }
+        // 404 if missing or another org's; 403 for a collaborator grant.
+        require_owner(&state, contract_id, org_id).await?;
+        // Dev/no-auth has no org to scope by: still 404 a missing contract.
+        let _ = storage::get_contract_identity(&state.db, contract_id, org_id).await?;
+        // Equivalent-version 409 is enforced inside create_version_from_import.
+        let cv = storage::create_version_from_import(
+            &state.db,
+            contract_id,
+            &result.version,
+            &result.yaml_content,
+            result.import_source,
+            org_id,
+        )
+        .await?;
+        return Ok((StatusCode::CREATED, Json(VersionResponse::from(&cv))));
+    }
+
+    // No target: refuse to pile up a second live contract with this name.
+    if let Some(org) = org_id {
+        let existing = storage::owned_contract_ids_by_name(&state.db, &name, org).await?;
+        if let Some(id) = existing.first() {
+            return Err(AppError::Conflict(format!(
+                "a contract named '{name}' already exists in your org (id {id}); \
+                 pass target_contract_id to import as a new version"
+            )));
+        }
+    }
+
     // Step 2: create identity + throwaway v1.0.0 draft.
     let (identity, _) = storage::create_contract(
         &state.db,
