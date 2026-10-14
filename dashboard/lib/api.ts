@@ -1086,6 +1086,10 @@ export interface RevokeResponse {
 export interface ImportPublishedResponse {
   contract_id: string;
   version: string;
+  /** "stable" when the published version was stable, else "draft". */
+  state: "stable" | "draft";
+  /** Human-readable summary of what was created. */
+  message: string;
   import_mode: ImportMode;
   imported_from_ref: string;
 }
@@ -1125,6 +1129,20 @@ export const revokePublication = (publicationRef: string) =>
   apiFetch<RevokeResponse>(`/contracts/publications/${publicationRef}`, {
     method: "DELETE",
   });
+
+/** One of the caller org's live publications (`GET /contracts/publications`). */
+export interface MyPublication {
+  publication_ref: string;
+  contract_id: string;
+  contract_name: string;
+  contract_version: string;
+  visibility: PublicationVisibility;
+  published_at: string;
+  /** Imports so far; > 0 means it can't be unpublished (409). */
+  import_count: number;
+}
+
+export const listMyPublications = () => apiFetch<MyPublication[]>("/contracts/publications");
 
 /** A single entry in the public contract catalog (no yaml_content). */
 export interface CatalogEntry {

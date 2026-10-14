@@ -210,8 +210,18 @@ Customer-facing targets: [Support SLA](../support-sla.md).
 - Branch **`staging`** (created from `main`). CG Dev / agents may merge PRs into
   `staging` freely; **only Alex merges to `main`** (production).
 - Fly app `contractgate-api-staging` via `fly.staging.toml`: `auto_stop_machines`,
-  `min_machines_running = 0`, `KAFKA_ENABLED=false`. The app is **not created
-  yet** — Alex runs `fly apps create contractgate-api-staging` and sets staging-only
-  secrets (separate database; never prod DB or Stripe live keys).
+  `min_machines_running = 0`, `KAFKA_ENABLED=false`. Created 2026-10-14.
+- Staging **shares the production Supabase database** (Alex's decision while there
+  are no customers): same `DATABASE_URL`, `ENCRYPTION_KEY`, `SUPABASE_URL`. Treat
+  staging writes as real data. No Confluent or AWS secrets on staging.
 - CI deploy-on-push-to-staging is proposed in the staging PR (workflow edits need
-  a token with `workflow` scope).
+  a token with `workflow` scope); the prod deploy job must stay guarded to `main`.
+
+## Kafka / Confluent ingress — disabled (2026-10-14)
+
+The Confluent Cloud account is closed. `KAFKA_ENABLED` defaults to **false**
+(`fly.toml` sets it explicitly): boot does not restore Kafka consumers and
+`POST /contracts/{id}/kafka-ingress/enable` returns 400 pointing at `/v1/ingest`.
+Existing `kafka_ingress` rows are left as they are. To re-enable: provision a
+broker, set the `CONFLUENT_*` secrets, set `KAFKA_ENABLED=true`, redeploy.
+The `kafka-ingress` cargo feature stays compiled in (no code removal).

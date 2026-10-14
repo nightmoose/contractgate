@@ -6,13 +6,21 @@
 import { useState } from "react";
 import { useOrg } from "@/lib/org";
 
-export default function OrgIdCard({ compact = false }: { compact?: boolean }) {
+export default function OrgIdCard({
+  compact = false,
+  orgId: orgIdProp,
+}: {
+  compact?: boolean;
+  /** Prefer the caller's already-resolved org id so we don't wait on a second useOrg. */
+  orgId?: string | null;
+}) {
   const { org } = useOrg();
+  const orgId = orgIdProp ?? org?.org_id ?? null;
   const [copied, setCopied] = useState(false);
-  if (!org) return null;
+  if (!orgId) return null;
   const copy = async () => {
     try {
-      await navigator.clipboard.writeText(org.org_id);
+      await navigator.clipboard.writeText(orgId);
       setCopied(true);
       setTimeout(() => setCopied(false), 1500);
     } catch {
@@ -23,11 +31,13 @@ export default function OrgIdCard({ compact = false }: { compact?: boolean }) {
     <div className={compact ? "text-xs" : "bg-[#111827] border border-[#1f2937] rounded-2xl p-6 mb-8"}>
       {!compact && <div className="text-sm font-semibold text-slate-200 mb-1">Organization ID</div>}
       <p className="text-xs text-slate-500 mb-2">
-        {compact ? "Your org ID" : "Share this with a contract owner in another organization so they can invite you to collaborate."}
+        {compact
+          ? "Your org ID"
+          : "Share this with a contract owner in another organization so they can invite you to collaborate. Also shown next to your org name above."}
       </p>
       <div className="flex items-center gap-2">
         <code className="flex-1 font-mono text-xs text-slate-300 bg-[#0a0d12] border border-[#374151] rounded px-2 py-1.5 select-all break-all">
-          {org.org_id}
+          {orgId}
         </code>
         <button type="button" onClick={copy}
           className="text-xs px-2.5 py-1.5 rounded bg-[#1f2937] hover:bg-[#374151] text-slate-200">
