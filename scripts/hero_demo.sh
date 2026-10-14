@@ -21,7 +21,7 @@
 #
 # Usage:
 #   # Hosted / keyed gateway (service-role key needed for deploy):
-#   KEY=cg_live_xxx HOST=https://contractgate-api.fly.dev bash scripts/hero_demo.sh
+#   KEY=cg_live_xxx HOST=https://api.datacontractgate.com bash scripts/hero_demo.sh
 #
 #   # Local `make demo` stack (dev-no-auth, no key — pass the demo org id):
 #   ORG_ID=cccccccc-cccc-cccc-cccc-cccccccccccc HOST=http://localhost:8080 \

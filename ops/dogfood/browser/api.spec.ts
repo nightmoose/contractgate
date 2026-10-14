@@ -9,7 +9,7 @@ import * as fs from "fs";
 import * as path from "path";
 
 const API =
-  process.env.CG_API_URL?.replace(/\/$/, "") || "https://contractgate-api.fly.dev";
+  process.env.CG_API_URL?.replace(/\/$/, "") || "https://api.datacontractgate.com";
 const KEY = process.env.CG_API_KEY?.trim() || "";
 
 test.describe("Public API", () => {

@@ -24,7 +24,7 @@
 #       N=3000 C=16 bash scripts/perf_metering_smoke.sh
 #
 #   # hosted / keyed (service-role key; runs against a REAL org — use a test org)
-#   KEY=cg_live_xxx HOST=https://contractgate-api.fly.dev bash scripts/perf_metering_smoke.sh
+#   KEY=cg_live_xxx HOST=https://api.datacontractgate.com bash scripts/perf_metering_smoke.sh
 #
 # Env: HOST, KEY | ORG_ID, N (requests, default 2000), C (concurrency, default 16),
 #      P99_BUDGET_MS (default 25).

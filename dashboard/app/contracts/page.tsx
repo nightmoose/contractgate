@@ -128,7 +128,7 @@ function EditContractModal({
   const [loadingNameHistory, setLoadingNameHistory] = useState(false);
 
   const BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001";
-  const ingestUrl = `${BASE}/ingest/${contractId}`;
+  const ingestUrl = `${BASE}/v1/ingest/${contractId}`;
 
   const isDraft = currentVersion?.state === "draft";
   const dirty = currentVersion != null && yamlDraft !== currentVersion.yaml_content;

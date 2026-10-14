@@ -180,9 +180,9 @@ public class ContractGateClient {
      *
      * <p>Example outputs:
      * <ul>
-     *   <li>{@code https://contractgate-api.fly.dev/v1/ingest/abc-123}</li>
-     *   <li>{@code https://contractgate-api.fly.dev/v1/ingest/abc-123?dry_run=true}</li>
-     *   <li>{@code https://contractgate-api.fly.dev/v1/ingest/abc-123?version=1.2.0}</li>
+     *   <li>{@code https://api.datacontractgate.com/v1/ingest/abc-123}</li>
+     *   <li>{@code https://api.datacontractgate.com/v1/ingest/abc-123?dry_run=true}</li>
+     *   <li>{@code https://api.datacontractgate.com/v1/ingest/abc-123?version=1.2.0}</li>
      * </ul>
      * </p>
      */

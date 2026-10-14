@@ -113,7 +113,7 @@ Allowed headers: `Authorization, Content-Type, Accept, x-api-key`.
 > **Note on browser “CORS” errors:** If Fly returns **502 Bad Gateway**
 > (machine restart, deploy, OOM), the proxy response has **no** CORS
 > headers. Chrome then reports a CORS failure even though the root cause is
-> the 502. Check `https://contractgate-api.fly.dev/health` and Fly logs
+> the 502. Check `https://api.datacontractgate.com/health` and Fly logs
 > before changing CORS config.
 
 **Public surface** (`/health`, `/metrics`, `/openapi.json`, `/demo/*`,

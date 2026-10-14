@@ -72,7 +72,7 @@ clients don't hardcode it.
 ## Example
 
 ```bash
-curl -H "x-api-key: $KEY" https://contractgate-api.fly.dev/usage
+curl -H "x-api-key: $KEY" https://api.datacontractgate.com/usage
 ```
 
 ## Notes

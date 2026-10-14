@@ -62,7 +62,7 @@ function isPublic(pathname: string) {
 // this Next.js app — so API calls arriving here are proxied, not redirected. A
 // 307 to /auth/login turns a POST into a GET (Zapier saw HTTP 405), and GET
 // /contracts returned this app's HTML page with a 200.
-const API_ORIGIN = process.env.CONTRACTGATE_API_ORIGIN || "https://contractgate-api.fly.dev";
+const API_ORIGIN = process.env.CONTRACTGATE_API_ORIGIN || "https://api.datacontractgate.com";
 
 // A browser loading a dashboard page never sends an API key header; an API
 // client always does. /v1/* has no dashboard page, so it is always the API.

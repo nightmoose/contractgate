@@ -173,7 +173,7 @@ unzip confluent-connector/target/datacontractgate-kafka-connect-contractgate-0.2
           </p>
           <Code language="properties">{`transforms=contractgate
 transforms.contractgate.type=io.datacontractgate.connect.smt.ContractGateValidator
-transforms.contractgate.contractgate.api.url=https://contractgate-api.fly.dev
+transforms.contractgate.contractgate.api.url=https://api.datacontractgate.com
 transforms.contractgate.contractgate.api.key=cg_live_YOUR_API_KEY
 transforms.contractgate.contractgate.contract.id=YOUR_CONTRACT_UUID
 
@@ -237,7 +237,7 @@ plugin.path=/usr/share/confluent-hub-components`}</Code>
             <tbody>
               <ConfigRow name="contractgate.api.url" required>
                 Base URL of the DataContractGate API. No trailing slash.
-                Use <code className="text-slate-300">https://contractgate-api.fly.dev</code> for the hosted service.
+                Use <code className="text-slate-300">https://api.datacontractgate.com</code> for the hosted service.
               </ConfigRow>
               <ConfigRow name="contractgate.contract.id" required>
                 UUID of the contract to validate against. Copy from the{" "}
@@ -293,7 +293,7 @@ plugin.path=/usr/share/confluent-hub-components`}</Code>
         <Code language="properties">{`# ── DataContractGate SMT ──────────────────────────────────────
 transforms=contractgate
 transforms.contractgate.type=io.datacontractgate.connect.smt.ContractGateValidator
-transforms.contractgate.contractgate.api.url=https://contractgate-api.fly.dev
+transforms.contractgate.contractgate.api.url=https://api.datacontractgate.com
 transforms.contractgate.contractgate.api.key=cg_live_YOUR_API_KEY
 transforms.contractgate.contractgate.contract.id=YOUR_CONTRACT_UUID
 transforms.contractgate.contractgate.on.failure=DLQ
@@ -396,7 +396,7 @@ errors.retry.delay.max.ms=5000`}</Code>
 
     "transforms": "contractgate",
     "transforms.contractgate.type": "io.datacontractgate.connect.smt.ContractGateValidator",
-    "transforms.contractgate.contractgate.api.url": "https://contractgate-api.fly.dev",
+    "transforms.contractgate.contractgate.api.url": "https://api.datacontractgate.com",
     "transforms.contractgate.contractgate.api.key": "\${file:/secrets/cg.properties:api.key}",
     "transforms.contractgate.contractgate.contract.id": "YOUR_CONTRACT_UUID",
 
@@ -417,7 +417,7 @@ errors.retry.delay.max.ms=5000`}</Code>
 
     "transforms": "contractgate",
     "transforms.contractgate.type": "io.datacontractgate.connect.smt.ContractGateValidator",
-    "transforms.contractgate.contractgate.api.url": "https://contractgate-api.fly.dev",
+    "transforms.contractgate.contractgate.api.url": "https://api.datacontractgate.com",
     "transforms.contractgate.contractgate.api.key": "\${file:/secrets/cg.properties:api.key}",
     "transforms.contractgate.contractgate.contract.id": "YOUR_CONTRACT_UUID",
     "transforms.contractgate.contractgate.dry.run": "true",
