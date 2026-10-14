@@ -1811,8 +1811,14 @@ async fn main() -> anyhow::Result<()> {
 
     // RFC-025: restore Kafka consumers for all currently-enabled contracts.
     // Runs in the background; boot is not blocked if Confluent is unavailable.
-    state.kafka_consumers.restore_all(Arc::clone(&state)).await;
-    tracing::info!("kafka consumer pool restored");
+    // Off by default (KAFKA_ENABLED): the Confluent account is closed and
+    // restored consumers only spun in reconnect loops.
+    if kafka_ingress::kafka_enabled() {
+        state.kafka_consumers.restore_all(Arc::clone(&state)).await;
+        tracing::info!("kafka consumer pool restored");
+    } else {
+        tracing::info!("kafka ingress disabled (KAFKA_ENABLED not true); consumers not started");
+    }
     state
         .kinesis_consumers
         .restore_all(Arc::clone(&state))
