@@ -26,7 +26,14 @@ export default function ResetPasswordPage() {
   useEffect(() => {
     const supabase = createClient();
     let settled = false;
+    const early = new URLSearchParams(window.location.search);
+    const earlyErr = early.get("error");
+    const rejected =
+      !early.get("code") &&
+      (earlyErr === "link_invalid" || earlyErr === "confirmation_failed" ||
+        earlyErr === "access_denied" || earlyErr === "otp_expired");
     const markReady = () => {
+      if (rejected) return;
       settled = true;
       setReady(true);
     };
@@ -52,6 +59,9 @@ export default function ResetPasswordPage() {
       err === "otp_expired";
     let timer: number | undefined;
     if (alreadyRejected && !code) {
+      // Wins over an existing session: a used/expired link must say so
+      // rather than show an empty form (tester polish round).
+      settled = true;
       setLinkError(true);
     } else if (code || err) {
       setPendingLink(true);
@@ -105,18 +115,21 @@ export default function ResetPasswordPage() {
             <div className="bg-green-900/20 border border-green-700/40 rounded-lg px-3 py-3 text-sm text-green-400">
               Password updated. Redirecting…
             </div>
-          ) : !ready ? (
+          ) : linkError || !ready ? (
             <div className="text-sm text-slate-500">
-              <p>
+              <p
+                role={linkError ? "alert" : undefined}
+                className={linkError ? "bg-amber-900/20 border border-amber-700/40 rounded-lg px-3 py-3 text-amber-300" : undefined}
+              >
                 {linkError
-                  ? "This link was opened in a different browser or has expired."
+                  ? "This reset link has expired or was already used. Request a new one below."
                   : pendingLink
                     ? "Checking your reset link…"
                     : "Open this page from the reset link in your email. If you got here directly, request a new link."}
               </p>
               <p className="mt-4">
                 <Link href="/auth/forgot" className="text-green-400 hover:text-green-300">
-                  Request a reset link
+                  {linkError ? "Request a new reset link" : "Request a reset link"}
                 </Link>
               </p>
             </div>
