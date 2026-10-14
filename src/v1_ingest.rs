@@ -260,7 +260,8 @@ fn build_openapi() -> String {
                 "name": "contract_id",
                 "in": "path",
                 "required": true,
-                "schema": { "type": "string", "format": "uuid" }
+                "description": "Contract UUID, optionally suffixed with @<version> (same as ?version=).",
+                "schema": { "type": "string" }
               },
               {
                 "name": "version",
@@ -318,7 +319,7 @@ fn build_openapi() -> String {
               "400": { "description": "Malformed body, empty batch, or size limit exceeded" },
               "401": { "description": "Missing or invalid X-Api-Key" },
               "413": { "description": "Body > 10 MB or event > 1 MB" },
-              "422": { "description": "All events failed, atomic rejection, idempotency conflict, or deprecated version pin" },
+              "422": { "description": "All events failed, atomic rejection, idempotency conflict, or deprecated version pin (code contract_version_deprecated)" },
               "429": { "description": "Per-key rate limit exceeded" }
             },
             "security": [{ "ApiKeyAuth": [] }]
@@ -383,7 +384,7 @@ fn build_openapi() -> String {
               "400": { "description": "Malformed body or contract id" },
               "401": { "description": "Missing or invalid X-Api-Key" },
               "413": { "description": "Body > 1 MB" },
-              "422": { "description": "Every record failed, or any failed with disposition=fail. The body is still a full egress response with per-record violations." },
+              "422": { "description": "Every record failed, or any failed with disposition=fail (full egress response with per-record violations); or a deprecated version pin (code contract_version_deprecated)." },
               "429": { "description": "Per-key rate limit exceeded" }
             },
             "security": [{ "ApiKeyAuth": [] }]
@@ -473,14 +474,15 @@ fn build_openapi() -> String {
         "/contracts/{id}/versions/{version}/publish": { "post": { "operationId": "publish_version", "summary": "Publish a contract version (owner org)", "parameters": [ { "name": "id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }, { "name": "version", "in": "path", "required": true, "schema": { "type": "string" } } ], "requestBody": { "required": false, "content": { "application/json": { "schema": { "type": "object", "properties": { "visibility": { "type": "string", "enum": ["public", "link", "org"], "default": "link" } } } } } }, "responses": { "201": { "description": "Published; body has publication_ref (and link_token for link/org)" }, "401": { "description": "Missing or invalid credentials" }, "404": { "description": "Contract or version not found" } }, "security": [{ "ApiKeyAuth": [] }] } },
         "/me": { "get": { "operationId": "me", "summary": "Caller org id, org name and plan (no emails). Also at /v1/me.", "responses": { "200": { "description": "org_id, org_name, plan, plan_display, auth (api_key|session), api_key_id, monthly_event_limit, rate_limit_rps, rate_limit_burst" }, "401": { "description": "Missing or invalid credentials" } }, "security": [{ "ApiKeyAuth": [] }] } },
         "/v1/me": { "get": { "operationId": "v1_me", "summary": "Alias of /me", "responses": { "200": { "description": "Same as /me" }, "401": { "description": "Missing or invalid credentials" } }, "security": [{ "ApiKeyAuth": [] }] } },
-        "/contracts/{name}/collaborators": { "get": { "operationId": "list_collaborators", "summary": "List collaborators (viewer+)", "parameters": [{ "name": "name", "in": "path", "required": true, "description": "Contract name", "schema": { "type": "string" } }], "responses": { "200": { "description": "Collaborator grants" }, "401": { "description": "Missing or invalid credentials" }, "403": { "description": "Caller lacks the required role; the message names it, e.g. requires owner role on contract 'x'" }, "404": { "description": "Contract not found" } }, "security": [{ "ApiKeyAuth": [] }] }, "post": { "operationId": "grant_collaborator", "summary": "Grant a role to another org (owner)", "parameters": [{ "name": "name", "in": "path", "required": true, "description": "Contract name", "schema": { "type": "string" } }], "requestBody": { "required": true, "content": { "application/json": { "schema": { "type": "object", "required": ["org_id", "role"], "properties": { "org_id": { "type": "string", "format": "uuid" }, "role": { "type": "string", "enum": ["viewer", "editor", "reviewer"] } } } } } }, "responses": { "201": { "description": "Grant created or updated" }, "401": { "description": "Missing or invalid credentials" }, "403": { "description": "Caller lacks the required role; the message names it, e.g. requires owner role on contract 'x'" }, "404": { "description": "Contract not found" } }, "security": [{ "ApiKeyAuth": [] }] } },
-        "/contracts/{name}/collaborators/{org_id}": { "patch": { "operationId": "patch_collaborator", "summary": "Change a role (owner)", "parameters": [{ "name": "name", "in": "path", "required": true, "description": "Contract name", "schema": { "type": "string" } }, { "name": "org_id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }], "requestBody": { "required": true, "content": { "application/json": { "schema": { "type": "object", "required": ["role"], "properties": { "role": { "type": "string", "enum": ["viewer", "editor", "reviewer"] } } } } } }, "responses": { "200": { "description": "Updated grant" }, "401": { "description": "Missing or invalid credentials" }, "403": { "description": "Caller lacks the required role; the message names it, e.g. requires owner role on contract 'x'" }, "404": { "description": "Contract not found" } }, "security": [{ "ApiKeyAuth": [] }] }, "delete": { "operationId": "revoke_collaborator", "summary": "Revoke a grant (owner)", "parameters": [{ "name": "name", "in": "path", "required": true, "description": "Contract name", "schema": { "type": "string" } }, { "name": "org_id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }], "responses": { "204": { "description": "Revoked" }, "401": { "description": "Missing or invalid credentials" }, "403": { "description": "Caller lacks the required role; the message names it, e.g. requires owner role on contract 'x'" }, "404": { "description": "Contract not found" } }, "security": [{ "ApiKeyAuth": [] }] } },
-        "/contracts/{name}/comments": { "get": { "operationId": "list_comments", "summary": "List comments (viewer+)", "parameters": [{ "name": "name", "in": "path", "required": true, "description": "Contract name", "schema": { "type": "string" } }], "responses": { "200": { "description": "Comments, oldest first" }, "401": { "description": "Missing or invalid credentials" }, "403": { "description": "Caller lacks the required role; the message names it, e.g. requires owner role on contract 'x'" }, "404": { "description": "Contract not found" } }, "security": [{ "ApiKeyAuth": [] }] }, "post": { "operationId": "add_comment", "summary": "Add a comment (viewer+)", "parameters": [{ "name": "name", "in": "path", "required": true, "description": "Contract name", "schema": { "type": "string" } }], "requestBody": { "required": true, "content": { "application/json": { "schema": { "type": "object", "required": ["author", "body"], "properties": { "field": { "type": ["string", "null"] }, "author": { "type": "string" }, "body": { "type": "string" } } } } } }, "responses": { "201": { "description": "Created" }, "401": { "description": "Missing or invalid credentials" }, "403": { "description": "Caller lacks the required role; the message names it, e.g. requires owner role on contract 'x'" }, "404": { "description": "Contract not found" } }, "security": [{ "ApiKeyAuth": [] }] } },
-        "/contracts/{name}/comments/{id}": { "delete": { "operationId": "delete_comment", "summary": "Delete a comment (author org or owner)", "parameters": [{ "name": "name", "in": "path", "required": true, "description": "Contract name", "schema": { "type": "string" } }, { "name": "id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }], "responses": { "204": { "description": "Deleted" }, "401": { "description": "Missing or invalid credentials" }, "403": { "description": "Caller lacks the required role; the message names it, e.g. requires owner role on contract 'x'" }, "404": { "description": "Contract not found" } }, "security": [{ "ApiKeyAuth": [] }] } },
-        "/contracts/{name}/comments/{id}/resolve": { "post": { "operationId": "resolve_comment", "summary": "Resolve a comment (viewer+)", "parameters": [{ "name": "name", "in": "path", "required": true, "description": "Contract name", "schema": { "type": "string" } }, { "name": "id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }], "responses": { "200": { "description": "Resolved" }, "401": { "description": "Missing or invalid credentials" }, "403": { "description": "Caller lacks the required role; the message names it, e.g. requires owner role on contract 'x'" }, "404": { "description": "Contract not found" } }, "security": [{ "ApiKeyAuth": [] }] } },
-        "/contracts/{name}/proposals": { "get": { "operationId": "list_proposals", "summary": "List proposals (viewer+)", "parameters": [{ "name": "name", "in": "path", "required": true, "description": "Contract name", "schema": { "type": "string" } }], "responses": { "200": { "description": "Newest first" }, "401": { "description": "Missing or invalid credentials" }, "403": { "description": "Caller lacks the required role; the message names it, e.g. requires owner role on contract 'x'" }, "404": { "description": "Contract not found" } }, "security": [{ "ApiKeyAuth": [] }] }, "post": { "operationId": "create_proposal", "summary": "Open a proposal (editor+)", "parameters": [{ "name": "name", "in": "path", "required": true, "description": "Contract name", "schema": { "type": "string" } }], "requestBody": { "required": true, "content": { "application/json": { "schema": { "type": "object", "required": ["proposed_yaml"], "properties": { "proposed_yaml": { "type": "string" } } } } } }, "responses": { "201": { "description": "Opened" }, "401": { "description": "Missing or invalid credentials" }, "403": { "description": "Caller lacks the required role; the message names it, e.g. requires owner role on contract 'x'" }, "404": { "description": "Contract not found" } }, "security": [{ "ApiKeyAuth": [] }] } },
-        "/contracts/{name}/proposals/{id}/decide": { "post": { "operationId": "decide_proposal", "summary": "Approve or reject (reviewer+)", "parameters": [{ "name": "name", "in": "path", "required": true, "description": "Contract name", "schema": { "type": "string" } }, { "name": "id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }], "requestBody": { "required": true, "content": { "application/json": { "schema": { "type": "object", "required": ["decision"], "properties": { "decision": { "type": "string", "enum": ["approved", "rejected"] } } } } } }, "responses": { "200": { "description": "Decided" }, "401": { "description": "Missing or invalid credentials" }, "403": { "description": "Caller lacks the required role; the message names it, e.g. requires owner role on contract 'x'" }, "404": { "description": "Contract not found" } }, "security": [{ "ApiKeyAuth": [] }] } },
-        "/contracts/{name}/proposals/{id}/apply": { "post": { "operationId": "apply_proposal", "summary": "Mark an approved proposal applied (owner)", "parameters": [{ "name": "name", "in": "path", "required": true, "description": "Contract name", "schema": { "type": "string" } }, { "name": "id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }], "responses": { "200": { "description": "Applied" }, "401": { "description": "Missing or invalid credentials" }, "403": { "description": "Caller lacks the required role; the message names it, e.g. requires owner role on contract 'x'" }, "404": { "description": "Contract not found" } }, "security": [{ "ApiKeyAuth": [] }] } }
+        "/contracts/{name}/collaborators": { "get": { "operationId": "list_collaborators", "summary": "List collaborators (viewer+)", "parameters": [{ "name": "name", "in": "path", "required": true, "description": "Contract name, or contract UUID to address a shared contract by id", "schema": { "type": "string" } }], "responses": { "200": { "description": "Collaborator grants" }, "401": { "description": "Missing or invalid credentials" }, "403": { "description": "Caller lacks the required role; the message names it, e.g. requires owner role on contract 'x'" }, "404": { "description": "Contract not found" } }, "security": [{ "ApiKeyAuth": [] }] }, "post": { "operationId": "grant_collaborator", "summary": "Grant a role to another org (owner)", "parameters": [{ "name": "name", "in": "path", "required": true, "description": "Contract name, or contract UUID to address a shared contract by id", "schema": { "type": "string" } }], "requestBody": { "required": true, "content": { "application/json": { "schema": { "type": "object", "required": ["org_id", "role"], "properties": { "org_id": { "type": "string", "format": "uuid" }, "role": { "type": "string", "enum": ["viewer", "editor", "reviewer"] } } } } } }, "responses": { "201": { "description": "Grant created or updated" }, "401": { "description": "Missing or invalid credentials" }, "403": { "description": "Caller lacks the required role; the message names it, e.g. requires owner role on contract 'x'" }, "404": { "description": "Contract not found" } }, "security": [{ "ApiKeyAuth": [] }] } },
+        "/contracts/{name}/collaborators/{org_id}": { "patch": { "operationId": "patch_collaborator", "summary": "Change a role (owner)", "parameters": [{ "name": "name", "in": "path", "required": true, "description": "Contract name, or contract UUID to address a shared contract by id", "schema": { "type": "string" } }, { "name": "org_id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }], "requestBody": { "required": true, "content": { "application/json": { "schema": { "type": "object", "required": ["role"], "properties": { "role": { "type": "string", "enum": ["viewer", "editor", "reviewer"] } } } } } }, "responses": { "200": { "description": "Updated grant" }, "401": { "description": "Missing or invalid credentials" }, "403": { "description": "Caller lacks the required role; the message names it, e.g. requires owner role on contract 'x'" }, "404": { "description": "Contract not found" } }, "security": [{ "ApiKeyAuth": [] }] }, "delete": { "operationId": "revoke_collaborator", "summary": "Revoke a grant (owner)", "parameters": [{ "name": "name", "in": "path", "required": true, "description": "Contract name, or contract UUID to address a shared contract by id", "schema": { "type": "string" } }, { "name": "org_id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }], "responses": { "204": { "description": "Revoked" }, "401": { "description": "Missing or invalid credentials" }, "403": { "description": "Caller lacks the required role; the message names it, e.g. requires owner role on contract 'x'" }, "404": { "description": "Contract not found" } }, "security": [{ "ApiKeyAuth": [] }] } },
+        "/contracts/{name}/comments": { "get": { "operationId": "list_comments", "summary": "List comments (viewer+)", "parameters": [{ "name": "name", "in": "path", "required": true, "description": "Contract name, or contract UUID to address a shared contract by id", "schema": { "type": "string" } }], "responses": { "200": { "description": "Comments, oldest first" }, "401": { "description": "Missing or invalid credentials" }, "403": { "description": "Caller lacks the required role; the message names it, e.g. requires owner role on contract 'x'" }, "404": { "description": "Contract not found" } }, "security": [{ "ApiKeyAuth": [] }] }, "post": { "operationId": "add_comment", "summary": "Add a comment (viewer+)", "parameters": [{ "name": "name", "in": "path", "required": true, "description": "Contract name, or contract UUID to address a shared contract by id", "schema": { "type": "string" } }], "requestBody": { "required": true, "content": { "application/json": { "schema": { "type": "object", "required": ["author", "body"], "properties": { "field": { "type": ["string", "null"] }, "author": { "type": "string" }, "body": { "type": "string" } } } } } }, "responses": { "201": { "description": "Created" }, "401": { "description": "Missing or invalid credentials" }, "403": { "description": "Caller lacks the required role; the message names it, e.g. requires owner role on contract 'x'" }, "404": { "description": "Contract not found" } }, "security": [{ "ApiKeyAuth": [] }] } },
+        "/contracts/{name}/comments/{id}": { "delete": { "operationId": "delete_comment", "summary": "Delete a comment (author org or owner)", "parameters": [{ "name": "name", "in": "path", "required": true, "description": "Contract name, or contract UUID to address a shared contract by id", "schema": { "type": "string" } }, { "name": "id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }], "responses": { "204": { "description": "Deleted" }, "401": { "description": "Missing or invalid credentials" }, "403": { "description": "Caller lacks the required role; the message names it, e.g. requires owner role on contract 'x'" }, "404": { "description": "Contract not found" } }, "security": [{ "ApiKeyAuth": [] }] } },
+        "/contracts/{name}/comments/{id}/resolve": { "post": { "operationId": "resolve_comment", "summary": "Resolve a comment (viewer+)", "parameters": [{ "name": "name", "in": "path", "required": true, "description": "Contract name, or contract UUID to address a shared contract by id", "schema": { "type": "string" } }, { "name": "id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }], "responses": { "200": { "description": "Resolved" }, "401": { "description": "Missing or invalid credentials" }, "403": { "description": "Caller lacks the required role; the message names it, e.g. requires owner role on contract 'x'" }, "404": { "description": "Contract not found" } }, "security": [{ "ApiKeyAuth": [] }] } },
+        "/contracts/{name}/proposals": { "get": { "operationId": "list_proposals", "summary": "List proposals (viewer+)", "parameters": [{ "name": "name", "in": "path", "required": true, "description": "Contract name, or contract UUID to address a shared contract by id", "schema": { "type": "string" } }], "responses": { "200": { "description": "Newest first" }, "401": { "description": "Missing or invalid credentials" }, "403": { "description": "Caller lacks the required role; the message names it, e.g. requires owner role on contract 'x'" }, "404": { "description": "Contract not found" } }, "security": [{ "ApiKeyAuth": [] }] }, "post": { "operationId": "create_proposal", "summary": "Open a proposal (editor+)", "parameters": [{ "name": "name", "in": "path", "required": true, "description": "Contract name, or contract UUID to address a shared contract by id", "schema": { "type": "string" } }], "requestBody": { "required": true, "content": { "application/json": { "schema": { "type": "object", "required": ["proposed_yaml"], "properties": { "proposed_yaml": { "type": "string" } } } } } }, "responses": { "201": { "description": "Opened" }, "401": { "description": "Missing or invalid credentials" }, "403": { "description": "Caller lacks the required role; the message names it, e.g. requires owner role on contract 'x'" }, "404": { "description": "Contract not found" } }, "security": [{ "ApiKeyAuth": [] }] } },
+        "/contracts/{name}/proposals/{id}": { "delete": { "operationId": "delete_proposal", "summary": "Delete a proposal (proposing org while open, or owner)", "parameters": [ { "name": "name", "in": "path", "required": true, "description": "Contract name or contract UUID", "schema": { "type": "string" } }, { "name": "id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } } ], "responses": { "204": { "description": "Deleted" }, "401": { "description": "Missing or invalid credentials" }, "403": { "description": "Not the proposing org or owner" }, "404": { "description": "Contract or proposal not found" }, "409": { "description": "Proposing org, but the proposal is no longer open" } }, "security": [{ "ApiKeyAuth": [] }] } },
+        "/contracts/{name}/proposals/{id}/decide": { "post": { "operationId": "decide_proposal", "summary": "Approve or reject (reviewer+)", "parameters": [{ "name": "name", "in": "path", "required": true, "description": "Contract name, or contract UUID to address a shared contract by id", "schema": { "type": "string" } }, { "name": "id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }], "requestBody": { "required": true, "content": { "application/json": { "schema": { "type": "object", "required": ["decision"], "properties": { "decision": { "type": "string", "enum": ["approved", "rejected"] } } } } } }, "responses": { "200": { "description": "Decided" }, "401": { "description": "Missing or invalid credentials" }, "403": { "description": "Caller lacks the required role; the message names it, e.g. requires owner role on contract 'x'" }, "404": { "description": "Contract not found" } }, "security": [{ "ApiKeyAuth": [] }] } },
+        "/contracts/{name}/proposals/{id}/apply": { "post": { "operationId": "apply_proposal", "summary": "Mark an approved proposal applied (owner)", "parameters": [{ "name": "name", "in": "path", "required": true, "description": "Contract name, or contract UUID to address a shared contract by id", "schema": { "type": "string" } }, { "name": "id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }], "responses": { "200": { "description": "Applied" }, "401": { "description": "Missing or invalid credentials" }, "403": { "description": "Caller lacks the required role; the message names it, e.g. requires owner role on contract 'x'" }, "404": { "description": "Contract not found" } }, "security": [{ "ApiKeyAuth": [] }] } }
       },
       "components": {
         "securitySchemes": {
@@ -541,8 +543,8 @@ pub async fn v1_ingest_handler(
     body: Bytes,
 ) -> AppResult<Response> {
     // --- 1. Parse + validate contract_id -----------------------------------
-    let contract_id = Uuid::parse_str(&contract_id_str)
-        .map_err(|_| AppError::BadRequest(format!("invalid contract_id: {contract_id_str}")))?;
+    // D1: accept `{id}@{version}` like /ingest and /egress.
+    let (contract_id, path_version) = crate::version_pin::parse_pinned_id(&contract_id_str)?;
 
     // --- 2. Rate limit -----------------------------------------------------
     let (rl_rps, rl_burst, key_id, org_id) = if let Some(Extension(ref k)) = key_ext {
@@ -691,7 +693,7 @@ pub async fn v1_ingest_handler(
 
     // --- 8. Resolve version -----------------------------------------------
     let (resolved_version, pin_source) =
-        resolve_version(&state, contract_id, query.version).await?;
+        resolve_version(&state, contract_id, pick_pin(query.version, path_version)).await?;
 
     let version_row =
         storage::get_version(&state.db, contract_id, &resolved_version, org_id).await?;
@@ -1101,7 +1103,10 @@ async fn deprecated_quarantine(
         .map(|idx| V1IngestEventResult {
             index: idx,
             passed: false,
-            violations: vec![],
+            violations: vec![crate::version_pin::deprecated_violation(
+                pinned_version,
+                None,
+            )],
             validation_us: 0,
             forwarded: false,
             contract_version: pinned_version.to_string(),
@@ -1153,6 +1158,15 @@ async fn deprecated_quarantine(
     Ok((StatusCode::UNPROCESSABLE_ENTITY, Json(body)).into_response())
 }
 
+/// `?version=` wins over an `@version` path suffix (it is the documented
+/// /v1 form); both name the same thing.
+fn pick_pin(query: Option<String>, path: Option<String>) -> Option<String> {
+    if query.is_some() && path.is_some() && query != path {
+        tracing::warn!("both ?version= and @version given on /v1/ingest; ?version wins");
+    }
+    query.or(path)
+}
+
 /// R-X2b: explain a deprecated pin instead of a bare 422 with empty
 /// per-event violations.
 fn deprecated_message(pinned_version: &str, contract_id: Uuid, dry_run: bool) -> String {
@@ -1161,11 +1175,7 @@ fn deprecated_message(pinned_version: &str, contract_id: Uuid, dry_run: bool) ->
     } else {
         "every event was quarantined"
     };
-    format!(
-        "Version {pinned_version} of contract {contract_id} is deprecated and no longer \
-         accepts events ({fate}). Remove the version pin to use the latest stable version, \
-         or pin a stable version with ?version=X.Y."
-    )
+    crate::version_pin::deprecated_message(pinned_version, contract_id, fate)
 }
 
 // ---------------------------------------------------------------------------
@@ -1182,6 +1192,11 @@ mod tests {
         let m = deprecated_message("1.0", id, false);
         assert!(m.contains("1.0") && m.contains("deprecated") && m.contains("quarantined"));
         assert!(m.contains("?version="));
+        assert_eq!(pick_pin(None, Some("1.0".into())), Some("1.0".into()));
+        assert_eq!(
+            pick_pin(Some("2.0".into()), Some("1.0".into())),
+            Some("2.0".into())
+        );
         assert!(deprecated_message("1.0", id, true).contains("nothing was quarantined"));
     }
 
@@ -1319,6 +1334,7 @@ mod tests {
             "/contracts/{name}/comments",
             "/contracts/{name}/comments/{id}",
             "/contracts/{name}/proposals",
+            "/contracts/{name}/proposals/{id}",
             "/me",
             "/v1/me",
         ] {

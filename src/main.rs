@@ -90,6 +90,7 @@ mod stream_demo;
 mod tests;
 mod usage;
 mod v1_ingest;
+mod version_pin;
 
 use contract::{
     Contract, ContractIdentity, ContractResponse, ContractSummary, ContractVersion,
@@ -426,29 +427,51 @@ async fn get_contract_handler(
     Ok(Json(identity_to_response(&state.db, identity).await?))
 }
 
-/// C3: org scope to use for a read-only lookup of `contract_id`.
+/// Org scope for a by-id request needing `min_role` (C3 reads, N2 writes).
 ///
 /// The caller's own org if it owns the live contract; otherwise the owner's
-/// org when the caller holds an active collaborator grant (viewer and up).
-/// Anyone else gets the same 404 as a missing contract.  `None` in dev mode.
+/// org when the caller holds an active grant on this contract id with at
+/// least `min_role`.  No access → 404 (same as a missing contract); a grant
+/// below `min_role` → 403 naming the role.  `None` in dev mode.
+async fn scope_for(
+    state: &AppState,
+    contract_id: Uuid,
+    org_id: Option<Uuid>,
+    min_role: collaboration::CallerRole,
+) -> AppResult<Option<Uuid>> {
+    let Some(org) = org_id else {
+        return Ok(None);
+    };
+    if storage::org_owns_contract_id(&state.db, contract_id, org).await? {
+        return Ok(Some(org));
+    }
+    let grant = storage::collaborator_grant_by_id(&state.db, contract_id, org).await?;
+    let role = grant
+        .as_ref()
+        .and_then(|(_, r)| collaboration::CallerRole::from_str(r));
+    collaboration::decide_id_access(role, min_role, contract_id)?;
+    Ok(grant.map(|(owner, _)| owner))
+}
+
 async fn read_scope(
     state: &AppState,
     contract_id: Uuid,
     org_id: Option<Uuid>,
 ) -> AppResult<Option<Uuid>> {
-    let Some(org) = org_id else {
-        return Ok(None);
-    };
-    match storage::get_contract_identity(&state.db, contract_id, Some(org)).await {
-        Ok(_) => Ok(Some(org)),
-        Err(AppError::ContractNotFound(_)) => {
-            match storage::collaborator_read_owner(&state.db, contract_id, org).await? {
-                Some(owner) => Ok(Some(owner)),
-                None => Err(AppError::ContractNotFound(contract_id)),
-            }
-        }
-        Err(e) => Err(e),
-    }
+    scope_for(
+        state,
+        contract_id,
+        org_id,
+        collaboration::CallerRole::Viewer,
+    )
+    .await
+}
+
+/// Owner-only by-id routes: grantees get 403, strangers keep the 404.
+async fn require_owner(state: &AppState, contract_id: Uuid, org_id: Option<Uuid>) -> AppResult<()> {
+    scope_for(state, contract_id, org_id, collaboration::CallerRole::Owner)
+        .await
+        .map(|_| ())
 }
 
 async fn list_contracts_handler(
@@ -469,6 +492,7 @@ async fn patch_contract_handler(
     if state.auth_configured() && org_id.is_none() {
         return Err(error::AppError::Unauthorized);
     }
+    require_owner(&state, id, org_id).await?;
     let identity = storage::patch_contract_identity(
         &state.db,
         id,
@@ -490,6 +514,7 @@ async fn delete_contract_handler(
     if state.auth_configured() && org_id.is_none() {
         return Err(error::AppError::Unauthorized);
     }
+    require_owner(&state, id, org_id).await?;
     storage::delete_contract(&state.db, id, org_id).await?;
     state.invalidate_contract_all(id);
     Ok(StatusCode::NO_CONTENT)
@@ -508,12 +533,20 @@ async fn create_version_handler(
     if state.auth_configured() && org_id.is_none() {
         return Err(error::AppError::Unauthorized);
     }
+    // N2: editors (and above) may add draft versions via the contract id.
+    let scope = scope_for(
+        &state,
+        contract_id,
+        org_id,
+        collaboration::CallerRole::Editor,
+    )
+    .await?;
     let v = storage::create_version(
         &state.db,
         contract_id,
         &req.version,
         &req.yaml_content,
-        org_id,
+        scope,
     )
     .await?;
     // Drafts are cached lazily on first pin — no eager insert.
@@ -571,9 +604,20 @@ async fn patch_version_handler(
     if state.auth_configured() && org_id.is_none() {
         return Err(error::AppError::Unauthorized);
     }
-    let v =
-        storage::patch_version_yaml(&state.db, contract_id, &version, &req.yaml_content, org_id)
-            .await?;
+    let v = storage::patch_version_yaml(
+        &state.db,
+        contract_id,
+        &version,
+        &req.yaml_content,
+        scope_for(
+            &state,
+            contract_id,
+            org_id,
+            collaboration::CallerRole::Editor,
+        )
+        .await?,
+    )
+    .await?;
     // Evict: a draft edit changes its compiled form.
     state.invalidate_version(contract_id, &version);
     Ok(Json(VersionResponse::from(&v)))
@@ -587,6 +631,7 @@ async fn promote_version_handler(
     if state.auth_configured() && org_id.is_none() {
         return Err(error::AppError::Unauthorized);
     }
+    require_owner(&state, contract_id, org_id).await?;
     let v = storage::promote_version(&state.db, contract_id, &version, org_id).await?;
     // Version is now stable and frozen.  Pre-warm the cache so the first
     // ingest request doesn't take the slow path.
@@ -602,6 +647,7 @@ async fn deprecate_version_handler(
     if state.auth_configured() && org_id.is_none() {
         return Err(error::AppError::Unauthorized);
     }
+    require_owner(&state, contract_id, org_id).await?;
     let v = storage::deprecate_version(&state.db, contract_id, &version, org_id).await?;
     // Cached compiled form is still correct (YAML didn't change); the
     // deprecated-pin short-circuit in ingest.rs looks at the DB row's state,
@@ -617,6 +663,7 @@ async fn delete_version_handler(
     if state.auth_configured() && org_id.is_none() {
         return Err(error::AppError::Unauthorized);
     }
+    require_owner(&state, contract_id, org_id).await?;
     storage::delete_version(&state.db, contract_id, &version, org_id).await?;
     state.invalidate_version(contract_id, &version);
     Ok(StatusCode::NO_CONTENT)
@@ -1605,6 +1652,10 @@ fn build_router(state: Arc<AppState>) -> Router {
         .route(
             "/contracts/{name}/proposals",
             get(collaboration::list_proposals_handler).post(collaboration::create_proposal_handler),
+        )
+        .route(
+            "/contracts/{name}/proposals/{id}",
+            axum::routing::delete(collaboration::delete_proposal_handler),
         )
         .route(
             "/contracts/{name}/proposals/{id}/decide",

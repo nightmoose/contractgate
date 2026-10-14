@@ -254,10 +254,18 @@ impl IntoResponse for AppError {
             }
         };
 
-        let body = Json(json!({
-            "error": message,
-            "status": status.as_u16(),
-        }));
+        let body = if matches!(self, AppError::DeprecatedVersionPinned { .. }) {
+            Json(json!({
+                "error": message,
+                "status": status.as_u16(),
+                "code": "contract_version_deprecated",
+            }))
+        } else {
+            Json(json!({
+                "error": message,
+                "status": status.as_u16(),
+            }))
+        };
 
         (status, body).into_response()
     }

@@ -110,29 +110,44 @@ pub async fn contract_name_exists(pool: &PgPool, contract_name: &str) -> AppResu
     Ok(row.is_some())
 }
 
-/// C3: if `caller_org` holds an active grant (viewer and up) on the live
-/// contract `contract_id`, return its owner org.  `None` = no access.
-pub async fn collaborator_read_owner(
+/// Active grant of `caller_org` on the live contract `contract_id`:
+/// `(owner_org, role)`.  `None` = no grant.
+pub async fn collaborator_grant_by_id(
     pool: &PgPool,
     contract_id: Uuid,
     caller_org: Uuid,
-) -> AppResult<Option<Uuid>> {
-    let row: Option<(Uuid,)> = sqlx::query_as(
+) -> AppResult<Option<(Uuid, String)>> {
+    let row: Option<(Uuid, String)> = sqlx::query_as(
         r#"
-        SELECT c.org_id
+        SELECT c.org_id, cc.role
         FROM   contracts c
         JOIN   contract_collaborators cc ON cc.contract_id = c.id
-        WHERE  c.id = $1 AND c.deleted_at IS NULL
-          AND  cc.org_id = $2
-          AND  cc.role IN ('viewer', 'editor', 'reviewer')
+        WHERE  c.id = $1 AND c.deleted_at IS NULL AND cc.org_id = $2
         "#,
     )
     .bind(contract_id)
     .bind(caller_org)
     .fetch_optional(pool)
     .await
-    .db_op("collaborator_read_owner")?;
-    Ok(row.map(|(id,)| id))
+    .db_op("collaborator_grant_by_id")?;
+    Ok(row)
+}
+
+/// True if `org_id` owns the live contract `contract_id`.
+pub async fn org_owns_contract_id(
+    pool: &PgPool,
+    contract_id: Uuid,
+    org_id: Uuid,
+) -> AppResult<bool> {
+    let row: Option<(i32,)> = sqlx::query_as(
+        "SELECT 1 FROM contracts WHERE id = $1 AND org_id = $2 AND deleted_at IS NULL",
+    )
+    .bind(contract_id)
+    .bind(org_id)
+    .fetch_optional(pool)
+    .await
+    .db_op("org_owns_contract_id")?;
+    Ok(row.is_some())
 }
 
 // ---------------------------------------------------------------------------
@@ -449,4 +464,38 @@ pub async fn apply_proposal(
                 "proposal '{proposal_id}' not found or is not in 'approved' status"
             ))
         })
+}
+
+/// `(proposed_by, status)` of one proposal on `contract_id`.
+pub async fn get_proposal_meta(
+    pool: &PgPool,
+    contract_id: Uuid,
+    proposal_id: Uuid,
+) -> AppResult<Option<(Uuid, String)>> {
+    let row: Option<(Uuid, String)> = sqlx::query_as(
+        "SELECT proposed_by, status FROM contract_change_proposals WHERE id = $1 AND contract_id = $2",
+    )
+    .bind(proposal_id)
+    .bind(contract_id)
+    .fetch_optional(pool)
+    .await
+    .db_op("get_proposal_meta")?;
+    Ok(row)
+}
+
+/// Delete one proposal on `contract_id`.  Caller checks permission.
+pub async fn delete_proposal(pool: &PgPool, contract_id: Uuid, proposal_id: Uuid) -> AppResult<()> {
+    let result =
+        sqlx::query("DELETE FROM contract_change_proposals WHERE id = $1 AND contract_id = $2")
+            .bind(proposal_id)
+            .bind(contract_id)
+            .execute(pool)
+            .await
+            .db_op("delete_proposal")?;
+    if result.rows_affected() == 0 {
+        return Err(AppError::NotFound(format!(
+            "proposal '{proposal_id}' not found"
+        )));
+    }
+    Ok(())
 }
