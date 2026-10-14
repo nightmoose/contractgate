@@ -1675,13 +1675,13 @@ function ImportFromRefModal({
     if (!ref.trim()) return;
     setImporting(true); setErr(null);
     try {
-      await importPublished({
+      const res = await importPublished({
         publication_ref: ref.trim(),
         ...(token.trim() ? { link_token: token.trim() } : {}),
         import_mode: mode,
       });
       await mutate("contracts");
-      setSuccess(`Imported as ${mode} — contract added to your list.`);
+      setSuccess(res.message || `Imported as ${mode} (${res.state}) — contract added to your list.`);
       setTimeout(() => { onImported(); }, 1800);
     } catch (e) {
       setErr(e instanceof Error ? e.message : String(e));

@@ -109,6 +109,20 @@ pub async fn revoke_publication(
     publication_ref: &str,
     org_id: Option<Uuid>,
 ) -> AppResult<PublicationRow> {
+    // Distinguish unknown (404), another org's (403) and already revoked (409).
+    let existing = get_publication(pool, publication_ref).await?;
+    if let Some(caller) = org_id {
+        if existing.org_id != Some(caller) {
+            return Err(AppError::Forbidden(format!(
+                "publication '{publication_ref}' belongs to another organization"
+            )));
+        }
+    }
+    if existing.revoked_at.is_some() {
+        return Err(AppError::NotFound(format!(
+            "publication '{publication_ref}' is already revoked"
+        )));
+    }
     let row = sqlx::query_as::<_, PublicationRow>(
         r#"
         UPDATE contract_publications
@@ -137,8 +151,9 @@ pub async fn revoke_publication(
     .await
     .db_op("revoke_publication")?
     .ok_or_else(|| {
-        AppError::BadRequest(format!(
-            "publication '{}' not found, already revoked, or not owned by this org",
+        // Lost a race with a concurrent revoke.
+        AppError::NotFound(format!(
+            "publication '{}' is already revoked",
             publication_ref
         ))
     })?;
@@ -171,9 +186,37 @@ pub async fn get_publication(pool: &PgPool, publication_ref: &str) -> AppResult<
     .fetch_optional(pool)
     .await
     .db_op("get_publication")?
-    .ok_or_else(|| AppError::BadRequest(format!("publication '{}' not found", publication_ref)))?;
+    .ok_or_else(|| AppError::NotFound(format!("publication '{}' not found", publication_ref)))?;
 
     Ok(row)
+}
+
+/// One of the caller org's live publications (no link token, no YAML).
+#[derive(Debug, Clone, serde::Serialize, sqlx::FromRow)]
+pub struct MyPublicationRow {
+    pub publication_ref: String,
+    pub contract_id: Uuid,
+    pub contract_name: String,
+    pub contract_version: String,
+    pub visibility: String,
+    pub published_at: chrono::DateTime<chrono::Utc>,
+}
+
+pub async fn list_org_publications(pool: &PgPool, org_id: Uuid) -> AppResult<Vec<MyPublicationRow>> {
+    sqlx::query_as::<_, MyPublicationRow>(
+        r#"
+        SELECT ref AS publication_ref, contract_id, contract_name, contract_version,
+               visibility, published_at
+        FROM contract_publications
+        WHERE org_id = $1 AND revoked_at IS NULL
+        ORDER BY published_at DESC
+        LIMIT 200
+        "#,
+    )
+    .bind(org_id)
+    .fetch_all(pool)
+    .await
+    .db_op("list_org_publications")
 }
 
 /// Lightweight row for public catalog listings — omits yaml_content for efficiency.
@@ -225,6 +268,20 @@ pub async fn import_published_contract(
     let parsed: Contract = serde_yaml::from_str(&pub_row.yaml_content)
         .map_err(|e| AppError::InvalidContractYaml(e.to_string()))?;
 
+    // S-I3: keep the source version's lifecycle. A published stable version
+    // imports as stable (same number); anything else stays a draft.
+    let source_state: Option<String> =
+        sqlx::query_scalar("SELECT state FROM contract_versions WHERE id = $1")
+            .bind(pub_row.version_id)
+            .fetch_optional(pool)
+            .await
+            .db_op("import_published:source_state")?;
+    let import_state = if source_state.as_deref() == Some("stable") {
+        "stable"
+    } else {
+        "draft"
+    };
+
     let compliance_mode = parsed.compliance_mode;
     let egress_leakage_mode = parsed.egress_leakage_mode.as_str();
 
@@ -258,9 +315,11 @@ pub async fn import_published_contract(
     let version_row = sqlx::query_as::<_, ContractVersionRow>(
         r#"
         INSERT INTO contract_versions
-            (id, contract_id, version, state, yaml_content, created_at,
+            (id, contract_id, version, state, yaml_content, created_at, promoted_at,
              compliance_mode, egress_leakage_mode, import_source, requires_review)
-        VALUES ($1, $2, $3, 'draft', $4, NOW(), $5, $6, 'publication', FALSE)
+        VALUES ($1, $2, $3, $7, $4, NOW(),
+                CASE WHEN $7 = 'stable' THEN NOW() END,
+                $5, $6, 'publication', FALSE)
         RETURNING id, contract_id, version, state, yaml_content,
                   created_at, promoted_at, deprecated_at, compliance_mode,
                   egress_leakage_mode, import_source, requires_review
@@ -272,6 +331,7 @@ pub async fn import_published_contract(
     .bind(&pub_row.yaml_content)
     .bind(compliance_mode)
     .bind(egress_leakage_mode)
+    .bind(import_state)
     .fetch_one(&mut *tx)
     .await
     .db_op("import_published:insert_version")?;

@@ -307,9 +307,9 @@ function ImportPanel() {
                     <span className="ml-2 text-slate-700 font-sans">
                       · {new Date(e.published_at).toLocaleDateString()}
                     </span>
-                    {e.published_by && (
-                      <span className="ml-2 text-slate-700 font-sans">· {e.published_by}</span>
-                    )}
+                    <span className="ml-2 text-slate-500 font-mono" title="Publication ref">
+                      · {e.publication_ref}
+                    </span>
                   </p>
                 </div>
                 <span className="text-xs text-slate-600 group-hover:text-teal-400 transition-colors shrink-0">

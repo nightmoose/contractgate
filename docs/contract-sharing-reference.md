@@ -284,3 +284,21 @@ await revokePublication(pub.publication_ref);
 - **Auto-pull of subscribed updates** — never silent; always consumer-initiated.
 - **Browsable public contract catalog** — `public` visibility seeds it; catalog UI is a later RFC.
 - **Cross-instance federation** — the `ref` design does not preclude it.
+
+
+## Import, link tokens, unpublish (2026-10-14)
+
+- **Importing a published stable version** creates a **stable** version with the
+  same number (not a draft). The 201 body includes `state: "stable"` and a
+  `message` saying it validates events right away (S-I3). Non-stable published
+  versions still import as draft.
+- **Link / org publications** need the link token. Preview uses `?token=`;
+  import uses `"link_token"`. Missing or wrong tokens return **403** with
+  `link token missing` / `link token invalid` — never the API-key 401 (S-P2).
+- **Unpublish** (API only for now; UI deferred pending impact review):
+  `DELETE /contracts/publications/{ref}` (owner org only). Other org → 403;
+  unknown/already-revoked → 404. `GET /contracts/publications` lists the
+  caller org's live publications.
+- **Catalog** lists `publication_ref` (not `published_by`) (S-C1).
+- **Org ID** is on Account (header + Organization ID card) for collaboration
+  invites (S-A1).
