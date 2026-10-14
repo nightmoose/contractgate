@@ -85,8 +85,11 @@ fn flatten_to_odcs_properties(
             format!("{}.{}", prefix, f.name)
         };
 
-        if let (FieldType::Object, Some(nested)) = (&f.field_type, &f.properties) {
-            // Recurse — the parent "object" node is omitted from ODCS; only
+        if let (FieldType::Object, Some(nested)) = (
+            &f.field_type,
+            f.properties.as_ref().filter(|n| !n.is_empty()),
+        ) {
+            // Recurse (an object with no fields is kept as a leaf below) — the parent "object" node is omitted from ODCS; only
             // leaves appear as properties (D-001).
             out.extend(flatten_to_odcs_properties(&name, nested, quality_rules));
         } else {
@@ -169,7 +172,45 @@ fn build_odcs_property(name: &str, f: &FieldDefinition, prop_quality: &[&Quality
         prop.insert(v_str("customProperties"), Value::Sequence(custom));
     }
 
+    // An object leaf here has no nested fields (those are flattened by the
+    // caller); arrays carry their element schema as ODCS `items`, with an
+    // object element's fields nested natively under `items.properties`.
+    if let (FieldType::Array, Some(item)) = (&f.field_type, &f.items) {
+        prop.insert(v_str("items"), build_odcs_item(item));
+    }
+
     Value::Mapping(prop)
+}
+
+/// Build an ODCS element schema (`items`) for an array field, recursively.
+/// Element fields are nested natively (`properties[]` with leaf names), since
+/// dot-notation paths can't address inside an array.
+fn build_odcs_item(item: &FieldDefinition) -> Value {
+    let name = if item.name.is_empty() {
+        "item"
+    } else {
+        item.name.as_str()
+    };
+    let mut v = build_odcs_property(name, item, &[]);
+    if let (FieldType::Object, Some(nested), Value::Mapping(m)) =
+        (&item.field_type, &item.properties, &mut v)
+    {
+        let children: Vec<Value> = nested.iter().map(build_odcs_nested_property).collect();
+        m.insert(v_str("properties"), Value::Sequence(children));
+    }
+    v
+}
+
+/// One natively nested ODCS property (inside an array element), recursive.
+fn build_odcs_nested_property(f: &FieldDefinition) -> Value {
+    let mut v = build_odcs_property(&f.name, f, &[]);
+    if let (FieldType::Object, Some(nested), Value::Mapping(m)) =
+        (&f.field_type, &f.properties, &mut v)
+    {
+        let children: Vec<Value> = nested.iter().map(build_odcs_nested_property).collect();
+        m.insert(v_str("properties"), Value::Sequence(children));
+    }
+    v
 }
 
 // ---------------------------------------------------------------------------
@@ -573,9 +614,20 @@ fn build_field_tree(pairs: Vec<(String, FieldDefinition)>) -> Result<Vec<FieldDe
         }
     }
 
-    // Build implicit Object nodes for each parent group.
+    // Build implicit Object nodes for each parent group, or merge into an
+    // explicit object property of the same name.
     for (parent_name, children) in nested {
         let child_fields = build_field_tree(children)?;
+        if let Some(existing) = top_level
+            .iter_mut()
+            .find(|f| f.name == parent_name && f.field_type == FieldType::Object)
+        {
+            existing
+                .properties
+                .get_or_insert_with(Vec::new)
+                .extend(child_fields);
+            continue;
+        }
         top_level.push(FieldDefinition {
             name: parent_name,
             field_type: FieldType::Object,
@@ -662,6 +714,21 @@ fn odcs_prop_to_field(m: &Mapping, full_name: &str) -> Result<FieldDefinition, S
         }
     }
 
+    // ODCS v3 nests object fields natively under `properties[]` and array
+    // element schemas under `items`; convert both recursively so nested
+    // fields aren't dropped.
+    let properties = match m.get("properties").and_then(|v| v.as_sequence()) {
+        Some(seq) if field_type == FieldType::Object => Some(unflatten_odcs_properties(seq)?),
+        _ => None,
+    };
+    let items = match m.get("items").and_then(|v| v.as_mapping()) {
+        Some(im) if field_type == FieldType::Array => {
+            let item_name = im.get("name").and_then(|v| v.as_str()).unwrap_or("item");
+            Some(Box::new(odcs_prop_to_field(im, item_name)?))
+        }
+        _ => None,
+    };
+
     Ok(FieldDefinition {
         name: leaf_name,
         field_type,
@@ -672,8 +739,8 @@ fn odcs_prop_to_field(m: &Mapping, full_name: &str) -> Result<FieldDefinition, S
         max,
         min_length,
         max_length,
-        properties: None,
-        items: None,
+        properties,
+        items,
         transform: None,
     })
 }
