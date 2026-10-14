@@ -294,3 +294,29 @@ browser or has expired"). Other failures land on
   enforced CSP `frame-ancestors 'none'; object-src 'none'; base-uri 'self'`,
   plus a full `Content-Security-Policy-Report-Only` allow-list (see
   `dashboard/next.config.ts`).
+
+## `GET /me` (2026-10-14)
+
+Who am I. Also served at `GET /v1/me`. Works with an API key (`x-api-key`)
+or a dashboard session (`Authorization: Bearer <jwt>`).
+
+```json
+{
+  "org_id": "7d0c…",
+  "org_name": "acme",
+  "plan": "growth",
+  "plan_display": "Pro",
+  "auth": "api_key",
+  "api_key_id": "b41e…",
+  "monthly_event_limit": 25000000,
+  "rate_limit_rps": 100,
+  "rate_limit_burst": 200
+}
+```
+
+- `plan` is the org's plan, which sets the key's limits; `rate_limit_*` are
+  the key's own override when set, else the plan default.
+- `auth` is `api_key` or `session`; `api_key_id` is `null` for sessions.
+- No emails or user ids are returned. `org_name` is `null` if the stored name
+  looks like an email.
+- `401` on missing or invalid credentials.

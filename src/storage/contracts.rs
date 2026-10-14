@@ -842,7 +842,7 @@ pub async fn get_version(
         WHERE contract_id = $1 AND version = $2
           AND contract_id IN (
               SELECT id FROM contracts
-              WHERE id = $1 AND ($3 IS NULL OR org_id = $3)
+              WHERE id = $1 AND deleted_at IS NULL AND ($3 IS NULL OR org_id = $3)
           )
         "#,
     )

@@ -67,6 +67,7 @@ mod kafka_consumer;
 mod kafka_ingress;
 mod kinesis_consumer;
 mod kinesis_ingress;
+mod me;
 mod metering;
 pub mod observability;
 mod odcs;
@@ -420,8 +421,34 @@ async fn get_contract_handler(
     if state.auth_configured() && org_id.is_none() {
         return Err(error::AppError::Unauthorized);
     }
-    let identity = storage::get_contract_identity(&state.db, id, org_id).await?;
+    let scope = read_scope(&state, id, org_id).await?;
+    let identity = storage::get_contract_identity(&state.db, id, scope).await?;
     Ok(Json(identity_to_response(&state.db, identity).await?))
+}
+
+/// C3: org scope to use for a read-only lookup of `contract_id`.
+///
+/// The caller's own org if it owns the live contract; otherwise the owner's
+/// org when the caller holds an active collaborator grant (viewer and up).
+/// Anyone else gets the same 404 as a missing contract.  `None` in dev mode.
+async fn read_scope(
+    state: &AppState,
+    contract_id: Uuid,
+    org_id: Option<Uuid>,
+) -> AppResult<Option<Uuid>> {
+    let Some(org) = org_id else {
+        return Ok(None);
+    };
+    match storage::get_contract_identity(&state.db, contract_id, Some(org)).await {
+        Ok(_) => Ok(Some(org)),
+        Err(AppError::ContractNotFound(_)) => {
+            match storage::collaborator_read_owner(&state.db, contract_id, org).await? {
+                Some(owner) => Ok(Some(owner)),
+                None => Err(AppError::ContractNotFound(contract_id)),
+            }
+        }
+        Err(e) => Err(e),
+    }
 }
 
 async fn list_contracts_handler(
@@ -501,7 +528,8 @@ async fn list_versions_handler(
     if state.auth_configured() && org_id.is_none() {
         return Err(error::AppError::Unauthorized);
     }
-    let versions = storage::list_versions(&state.db, contract_id, org_id).await?;
+    let scope = read_scope(&state, contract_id, org_id).await?;
+    let versions = storage::list_versions(&state.db, contract_id, scope).await?;
     Ok(Json(versions))
 }
 
@@ -513,7 +541,8 @@ async fn get_version_handler(
     if state.auth_configured() && org_id.is_none() {
         return Err(error::AppError::Unauthorized);
     }
-    let v = storage::get_version(&state.db, contract_id, &version, org_id).await?;
+    let scope = read_scope(&state, contract_id, org_id).await?;
+    let v = storage::get_version(&state.db, contract_id, &version, scope).await?;
     Ok(Json(VersionResponse::from(&v)))
 }
 
@@ -526,7 +555,7 @@ async fn get_latest_stable_handler(
         return Err(error::AppError::Unauthorized);
     }
     // Org-scoped existence check (RFC-047); stable lookup unscoped — same contract_id.
-    let _ = storage::get_contract_identity(&state.db, contract_id, org_id).await?;
+    let _ = read_scope(&state, contract_id, org_id).await?;
     let v = storage::get_latest_stable_version(&state.db, contract_id)
         .await?
         .ok_or(AppError::NoStableVersion { contract_id })?;
@@ -1463,6 +1492,9 @@ fn build_router(state: Arc<AppState>) -> Router {
         .route("/contracts/{id}/report", get(report::report_handler))
         // Per-org event usage vs plan limit (RFC-083 Phase 1).
         .route("/usage", get(usage::usage_handler))
+        // Caller identity: org id/name + plan (no emails).
+        .route("/me", get(me::me_handler))
+        .route("/v1/me", get(me::me_handler))
         // Org-scoped top-level quarantine API (RFC-081) — backs the dashboard
         // Quarantine tab: list, replay-by-event-id, and per-event history.
         .route("/quarantine", get(quarantine::list_quarantine_handler))
@@ -1560,6 +1592,10 @@ fn build_router(state: Arc<AppState>) -> Router {
         .route(
             "/contracts/{name}/comments",
             get(collaboration::list_comments_handler).post(collaboration::add_comment_handler),
+        )
+        .route(
+            "/contracts/{name}/comments/{id}",
+            axum::routing::delete(collaboration::delete_comment_handler),
         )
         .route(
             "/contracts/{name}/comments/{id}/resolve",

@@ -55,26 +55,43 @@ pub struct ProposalRow {
 // Collaborator functions
 // ---------------------------------------------------------------------------
 
-/// Return the `org_id` of the org that owns a contract by name.
-/// Returns `None` if no such contract exists (or it is deleted).
-pub async fn get_contract_owner_org(pool: &PgPool, contract_name: &str) -> AppResult<Option<Uuid>> {
-    let row: Option<(Uuid,)> = sqlx::query_as(
+/// True if `org_id` owns a live (non-deleted) contract named `contract_name`.
+pub async fn org_owns_contract_name(
+    pool: &PgPool,
+    contract_name: &str,
+    org_id: Uuid,
+) -> AppResult<bool> {
+    let row: Option<(i32,)> = sqlx::query_as(
         r#"
-        SELECT org_id FROM contracts
-        WHERE  name = $1 AND deleted_at IS NULL
+        SELECT 1 FROM contracts
+        WHERE  name = $1 AND org_id = $2 AND deleted_at IS NULL
         LIMIT 1
         "#,
     )
     .bind(contract_name)
+    .bind(org_id)
     .fetch_optional(pool)
     .await
-    .db_op("get_contract_owner_org")?;
-
-    Ok(row.map(|(id,)| id))
+    .db_op("org_owns_contract_name")?;
+    Ok(row.is_some())
 }
 
-/// Return the stored collaborator role for `org_id` on `contract_name`.
-/// Returns `None` if no row exists (no access).
+/// True if any org has a live contract named `contract_name`.  Used only to
+/// choose between 403 (exists, caller lacks the role) and 404.
+pub async fn contract_name_exists(pool: &PgPool, contract_name: &str) -> AppResult<bool> {
+    let row: Option<(i32,)> =
+        sqlx::query_as("SELECT 1 FROM contracts WHERE name = $1 AND deleted_at IS NULL LIMIT 1")
+            .bind(contract_name)
+            .fetch_optional(pool)
+            .await
+            .db_op("contract_name_exists")?;
+    Ok(row.is_some())
+}
+
+/// Active collaborator role for `org_id` on `contract_name`.
+///
+/// A grant counts only while the granting org still owns a live contract of
+/// that name, so grants on deleted contracts (or made by a non-owner) are void.
 pub async fn get_collaborator_role(
     pool: &PgPool,
     contract_name: &str,
@@ -82,8 +99,14 @@ pub async fn get_collaborator_role(
 ) -> AppResult<Option<String>> {
     let row: Option<(String,)> = sqlx::query_as(
         r#"
-        SELECT role FROM contract_collaborators
-        WHERE  contract_name = $1 AND org_id = $2
+        SELECT cc.role FROM contract_collaborators cc
+        WHERE  cc.contract_name = $1 AND cc.org_id = $2
+          AND  EXISTS (
+                 SELECT 1 FROM contracts c
+                 WHERE  c.name = cc.contract_name
+                   AND  c.org_id = cc.granted_by
+                   AND  c.deleted_at IS NULL
+               )
         "#,
     )
     .bind(contract_name)
@@ -93,6 +116,34 @@ pub async fn get_collaborator_role(
     .db_op("get_collaborator_role")?;
 
     Ok(row.map(|(r,)| r))
+}
+
+/// C3: if `caller_org` holds an active collaborator grant (any role, viewer
+/// and up) on the live contract `contract_id`, return the owner org id so the
+/// caller can read it with the owner's scope.  `None` = no access.
+pub async fn collaborator_read_owner(
+    pool: &PgPool,
+    contract_id: Uuid,
+    caller_org: Uuid,
+) -> AppResult<Option<Uuid>> {
+    let row: Option<(Uuid,)> = sqlx::query_as(
+        r#"
+        SELECT c.org_id
+        FROM   contracts c
+        JOIN   contract_collaborators cc
+               ON cc.contract_name = c.name AND cc.granted_by = c.org_id
+        WHERE  c.id = $1 AND c.deleted_at IS NULL
+          AND  cc.org_id = $2
+          AND  cc.role IN ('viewer', 'editor', 'reviewer')
+        LIMIT 1
+        "#,
+    )
+    .bind(contract_id)
+    .bind(caller_org)
+    .fetch_optional(pool)
+    .await
+    .db_op("collaborator_read_owner")?;
+    Ok(row.map(|(id,)| id))
 }
 
 /// List all collaborator grants for a contract, ordered by granted_at.
@@ -255,22 +306,59 @@ pub async fn add_comment(
 }
 
 /// Mark a comment as resolved.
-pub async fn resolve_comment(pool: &PgPool, comment_id: Uuid) -> AppResult<CommentRow> {
+pub async fn resolve_comment(
+    pool: &PgPool,
+    contract_name: &str,
+    comment_id: Uuid,
+) -> AppResult<CommentRow> {
     let row = sqlx::query_as::<_, CommentRow>(
         r#"
         UPDATE contract_comments
         SET    resolved = true
-        WHERE  id = $1
+        WHERE  id = $1 AND contract_name = $2
         RETURNING id, contract_name, field, org_id, author, body, resolved, created_at
         "#,
     )
     .bind(comment_id)
+    .bind(contract_name)
     .fetch_optional(pool)
     .await
     .db_op("resolve_comment")?
-    .ok_or_else(|| AppError::BadRequest(format!("comment '{comment_id}' not found")))?;
+    .ok_or_else(|| AppError::NotFound(format!("comment '{comment_id}' not found")))?;
 
     Ok(row)
+}
+
+/// Fetch one comment's author org, scoped to its contract.
+pub async fn get_comment_org(
+    pool: &PgPool,
+    contract_name: &str,
+    comment_id: Uuid,
+) -> AppResult<Option<Uuid>> {
+    let row: Option<(Uuid,)> =
+        sqlx::query_as("SELECT org_id FROM contract_comments WHERE id = $1 AND contract_name = $2")
+            .bind(comment_id)
+            .bind(contract_name)
+            .fetch_optional(pool)
+            .await
+            .db_op("get_comment_org")?;
+    Ok(row.map(|(o,)| o))
+}
+
+/// Delete one comment, scoped to its contract.  Caller checks permission.
+pub async fn delete_comment(pool: &PgPool, contract_name: &str, comment_id: Uuid) -> AppResult<()> {
+    let result = sqlx::query("DELETE FROM contract_comments WHERE id = $1 AND contract_name = $2")
+        .bind(comment_id)
+        .bind(contract_name)
+        .execute(pool)
+        .await
+        .db_op("delete_comment")?;
+    if result.rows_affected() == 0 {
+        return Err(AppError::NotFound(format!(
+            "comment '{comment_id}' not found"
+        )));
+    }
+    Ok(())
 }
 
 // ---------------------------------------------------------------------------
@@ -324,6 +412,7 @@ pub async fn create_proposal(
 /// Only operates on proposals that are currently `open`.
 pub async fn decide_proposal(
     pool: &PgPool,
+    contract_name: &str,
     proposal_id: Uuid,
     new_status: &str, // "approved" | "rejected"
     decided_by: Uuid,
@@ -332,13 +421,14 @@ pub async fn decide_proposal(
         r#"
         UPDATE contract_change_proposals
         SET    status = $2, decided_by = $3
-        WHERE  id = $1 AND status = 'open'
+        WHERE  id = $1 AND status = 'open' AND contract_name = $4
         RETURNING id, contract_name, proposed_by, proposed_yaml, status, decided_by, created_at
         "#,
     )
     .bind(proposal_id)
     .bind(new_status)
     .bind(decided_by)
+    .bind(contract_name)
     .fetch_optional(pool)
     .await
     .db_op("decide_proposal")?
@@ -354,16 +444,21 @@ pub async fn decide_proposal(
 /// Mark an `approved` proposal as `applied`.
 /// Only the owner calls this; the handler has already enforced that.
 /// Only operates on proposals that are currently `approved`.
-pub async fn apply_proposal(pool: &PgPool, proposal_id: Uuid) -> AppResult<ProposalRow> {
+pub async fn apply_proposal(
+    pool: &PgPool,
+    contract_name: &str,
+    proposal_id: Uuid,
+) -> AppResult<ProposalRow> {
     let row = sqlx::query_as::<_, ProposalRow>(
         r#"
         UPDATE contract_change_proposals
         SET    status = 'applied'
-        WHERE  id = $1 AND status = 'approved'
+        WHERE  id = $1 AND status = 'approved' AND contract_name = $2
         RETURNING id, contract_name, proposed_by, proposed_yaml, status, decided_by, created_at
         "#,
     )
     .bind(proposal_id)
+    .bind(contract_name)
     .fetch_optional(pool)
     .await
     .db_op("apply_proposal")?

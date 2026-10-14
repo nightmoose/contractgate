@@ -21,6 +21,19 @@ A collaborator role scopes to the contract definition and its review surface onl
 Collaborators **cannot** access the owner org's `audit_log`, `quarantine_events`,
 or `contracts.pii_salt` — these remain owner-org-scoped by Postgres RLS.
 
+## Reading the contract as a collaborator (2026-10-14, C3)
+
+Any active collaborator (viewer and up) can read the owner's contract by id:
+
+- `GET /contracts/{id}`
+- `GET /contracts/{id}/versions`
+- `GET /contracts/{id}/versions/{version}` (includes `yaml_content`)
+- `GET /contracts/{id}/versions/latest-stable`
+
+These are read-only. Orgs without an active grant (never granted, or revoked)
+get the same `404` as for a missing contract. Writes and owner-only data
+(audit, quarantine, payloads, `pii_salt`) stay owner-scoped.
+
 ---
 
 ## Authentication
@@ -167,6 +180,15 @@ Mark a comment as resolved.
 
 **Response** `200 OK` — the updated `CommentRow` with `"resolved": true`.
 
+#### `DELETE /contracts/{name}/comments/{id}`
+
+Delete a comment.
+
+**Allowed:** the org that wrote the comment, or the contract owner. Other
+collaborators get `403`.
+
+**Response** `204 No Content`. Unknown id → `404`.
+
 ---
 
 ### Change Proposals
@@ -273,9 +295,17 @@ All errors follow the standard DataContractGate error envelope:
 
 | Status | When |
 |--------|------|
-| `401 Unauthorized` | Missing API key, or caller has no role on this contract. |
+| `401 Unauthorized` | Missing or invalid credentials only (no API key / bad JWT). |
+| `403 Forbidden`    | Authenticated, but the caller's role is too low or it has no grant (including a revoked one). The message names the role needed, e.g. `requires owner role on contract 'orders'` or `requires viewer role or higher on contract 'orders'`. Deleting someone else's comment: `requires owner role on contract 'orders' or the comment's author org`. |
 | `400 Bad Request`  | Invalid role string, empty body, attempting to decide a non-open proposal, etc. |
-| `404 Not Found`    | Contract name not found (reported as 401 to avoid enumeration). |
+| `404 Not Found`    | No live contract with that name, or the comment/proposal id doesn't belong to it. |
+
+Changed 2026-10-14 (C2): role denials used to return `401 missing or invalid API key`.
+
+A grant counts only while the granting org still owns a live (non-deleted)
+contract of that name. Comment resolve/delete and proposal decide/apply are
+scoped to the contract in the path; an id from another contract is 404 (400
+for proposals not in the expected state).
 
 ## Finding your org ID (2026-10-14)
 

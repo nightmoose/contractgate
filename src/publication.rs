@@ -339,9 +339,11 @@ pub async fn import_published_handler(
     // Fetch the publication and validate its state + token.
     let pub_row = storage::get_publication(&state.db, &body.publication_ref).await?;
 
+    // R3: same 404 as the preview (GET /published/{ref}) — don't reveal
+    // that a revoked publication existed.
     if pub_row.is_revoked() {
-        return Err(AppError::BadRequest(format!(
-            "publication '{}' has been revoked",
+        return Err(AppError::NotFound(format!(
+            "publication '{}' not found",
             body.publication_ref
         )));
     }
