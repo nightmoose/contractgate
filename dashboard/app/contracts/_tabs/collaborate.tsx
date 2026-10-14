@@ -14,6 +14,7 @@
 
 import { useState, useEffect } from "react";
 import clsx from "clsx";
+import OrgIdCard from "@/components/account/OrgIdCard";
 import {
   listCollaborators,
   grantCollaborator,
@@ -134,6 +135,10 @@ function CollaboratorsPanel({
 
   const handleInvite = async () => {
     if (!inviteOrgId.trim()) { setInviteErr("Org ID is required."); return; }
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(inviteOrgId.trim())) {
+      setInviteErr("That isn't an org ID. Ask the other team to copy it from Account → Organization ID.");
+      return;
+    }
     setInviting(true); setInviteErr(null);
     try {
       await grantCollaborator(contractName, { org_id: inviteOrgId.trim(), role: inviteRole });
@@ -218,6 +223,9 @@ function CollaboratorsPanel({
         </div>
       )}
 
+      {/* Own org ID, so a non-owner can hand it to the contract owner */}
+      <OrgIdCard compact />
+
       {/* Invite form — owner only */}
       {isOwner && (
         <div className="border border-dashed border-[#2d3748] rounded-lg p-4 space-y-3">
@@ -226,13 +234,14 @@ function CollaboratorsPanel({
           </p>
           <p className="text-xs text-slate-600">
             Grant a scoped role to another org — they can only see this contract, nothing else in your org.
+            Ask them for their org ID: it is on their Account page under &ldquo;Organization ID&rdquo;.
           </p>
           <div className="flex gap-2 flex-wrap">
             <input
               type="text"
               value={inviteOrgId}
               onChange={(e) => setInviteOrgId(e.target.value)}
-              placeholder="Org UUID"
+              placeholder="Their org ID (from their Account page)"
               className="flex-1 min-w-[200px] bg-[#0d1117] border border-[#1f2937] rounded-lg px-3 py-1.5 text-xs text-slate-200 font-mono placeholder-slate-600 outline-none focus:border-indigo-600 transition-colors"
             />
             <select

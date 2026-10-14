@@ -275,3 +275,22 @@ browser or has expired"). Other failures land on
    primary org membership (authoritative).
 3. **Dev mode** (`CONTRACTGATE_DEV_NO_AUTH=1`, local only) — no auth; `x-org-id`
    header trusted for org context. Never enabled in production.
+
+## Account self-service (2026-10-14)
+
+- `/account` → **Profile & security**: change name (`user_metadata.full_name`),
+  change password (`supabase.auth.updateUser`), delete account.
+- **Delete account**: `POST /api/account/delete` with `{"confirm": "<your email>"}`.
+  Calls `delete_user_account(uuid)` (migration 040, service role only): 409 if
+  you are the last owner of an org that has other members; otherwise purges
+  orgs where you are the only member, clears `invited_by`-style references,
+  cancels those orgs' Stripe subscriptions, then deletes the auth user.
+- Signed-out `/account` redirects to `/auth/login?next=/account`; sign-out
+  hard-navigates to `/auth/login`.
+- `/auth/reset?error=link_invalid|otp_expired|…` always shows "This reset link
+  has expired or was already used", even if a session exists.
+- Unknown top-level paths return a real 404 (not a 307 to sign-in).
+- Response headers: `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`,
+  enforced CSP `frame-ancestors 'none'; object-src 'none'; base-uri 'self'`,
+  plus a full `Content-Security-Policy-Report-Only` allow-list (see
+  `dashboard/next.config.ts`).

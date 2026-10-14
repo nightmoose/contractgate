@@ -17,6 +17,31 @@ function BillingSuccessContent() {
   const searchParams = useSearchParams();
   const sessionId = searchParams.get('session_id');
   const [status, setStatus] = useState<'processing' | 'success' | 'error'>('processing');
+  const [opening, setOpening] = useState(false);
+  const [portalError, setPortalError] = useState<string | null>(null);
+
+  // Stripe customer portal (same route /account uses). Same-tab navigation, so
+  // no popup blocker; the portal returns to /account.
+  async function openPortal() {
+    setOpening(true);
+    setPortalError(null);
+    try {
+      const res = await fetch('/api/stripe/portal', { method: 'POST' });
+      const data = await res.json().catch(() => ({}));
+      if (data.url) {
+        window.location.assign(data.url);
+        return;
+      }
+      setPortalError(
+        res.status === 400
+          ? 'Your subscription is still being set up. Try again in a few seconds.'
+          : data.error || 'Could not open the billing portal.',
+      );
+    } catch {
+      setPortalError('Could not open the billing portal.');
+    }
+    setOpening(false);
+  }
   const [message, setMessage] = useState('Confirming your subscription with Stripe...');
 
   useEffect(() => {
@@ -49,12 +74,15 @@ function BillingSuccessContent() {
           >
             Go to Dashboard →
           </Link>
-          <Link
-            href="/account"
-            className="block w-full py-2.5 rounded-lg bg-[#1f2937] hover:bg-[#374151] text-slate-200 font-medium"
+          <button
+            type="button"
+            onClick={openPortal}
+            disabled={opening}
+            className="block w-full py-2.5 rounded-lg bg-[#1f2937] hover:bg-[#374151] text-slate-200 font-medium disabled:opacity-60"
           >
-            Manage billing &amp; account
-          </Link>
+            {opening ? 'Opening Stripe…' : 'Manage billing & account'}
+          </button>
+          {portalError && <p className="text-xs text-red-400">{portalError}</p>}
           <p className="text-xs text-slate-500 mt-4">
             Session: {sessionId ? sessionId.slice(0, 20) + '…' : 'via Payment Link'}
           </p>
