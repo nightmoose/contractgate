@@ -11,6 +11,7 @@
 //! | GET    | /contracts/{name}/comments                      | viewer  | List comments |
 //! | POST   | /contracts/{name}/comments                      | viewer  | Add a comment |
 //! | POST   | /contracts/{name}/comments/{id}/resolve         | viewer  | Resolve a comment |
+//! | DELETE | /contracts/{name}/comments/{id}                 | author org or owner | Delete a comment |
 //! | GET    | /contracts/{name}/proposals                     | viewer  | List proposals |
 //! | POST   | /contracts/{name}/proposals                     | editor  | Open a proposal |
 //! | POST   | /contracts/{name}/proposals/{id}/decide         | reviewer| Approve / reject |
@@ -75,45 +76,72 @@ impl CallerRole {
     }
 }
 
-/// Resolve the caller's effective role on `contract_name`.
-///
-/// Returns `None` if the caller has no access at all.
-async fn resolve_role(
-    state: &AppState,
-    contract_name: &str,
-    caller_org: Option<Uuid>,
-) -> AppResult<CallerRole> {
-    let caller_org = caller_org.ok_or(AppError::Unauthorized)?;
-
-    // Check if this org owns the contract.
-    let owner_org = storage::get_contract_owner_org(&state.db, contract_name).await?;
-    if owner_org == Some(caller_org) {
-        return Ok(CallerRole::Owner);
+impl CallerRole {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            CallerRole::Owner => "owner",
+            CallerRole::Reviewer => "reviewer",
+            CallerRole::Editor => "editor",
+            CallerRole::Viewer => "viewer",
+        }
     }
 
-    // Check collaborator table.
-    let role_str = storage::get_collaborator_role(&state.db, contract_name, caller_org).await?;
-    match role_str.as_deref() {
-        Some("editor") => Ok(CallerRole::Editor),
-        Some("reviewer") => Ok(CallerRole::Reviewer),
-        Some("viewer") => Ok(CallerRole::Viewer),
-        _ => Err(AppError::Unauthorized),
+    fn from_stored(s: Option<&str>) -> Option<Self> {
+        match s {
+            Some("editor") => Some(Self::Editor),
+            Some("reviewer") => Some(Self::Reviewer),
+            Some("viewer") => Some(Self::Viewer),
+            _ => None,
+        }
     }
 }
 
+/// C2: map the caller's (possibly absent) role to an access decision.
+///
+/// - role satisfies `min_role` → Ok
+/// - contract doesn't exist anywhere → 404
+/// - otherwise → 403 naming the role required (never the API-key 401)
+pub(crate) fn decide_access(
+    role: Option<CallerRole>,
+    contract_exists: bool,
+    min_role: CallerRole,
+    contract_name: &str,
+) -> AppResult<CallerRole> {
+    match role {
+        Some(r) if r.satisfies(min_role) => Ok(r),
+        None if !contract_exists => Err(AppError::NotFound(format!(
+            "contract '{contract_name}' not found"
+        ))),
+        _ => Err(forbidden_role(min_role, contract_name)),
+    }
+}
+
+pub(crate) fn forbidden_role(min_role: CallerRole, contract_name: &str) -> AppError {
+    let need = if min_role == CallerRole::Owner {
+        "owner role".to_string()
+    } else {
+        format!("{} role or higher", min_role.as_str())
+    };
+    AppError::Forbidden(format!("requires {need} on contract '{contract_name}'"))
+}
+
 /// Asserts the caller meets `min_role`.  Returns the resolved role on success.
+/// 401 only when there is no authenticated org (real auth failure).
 async fn require_role(
     state: &AppState,
     contract_name: &str,
     caller_org: Option<Uuid>,
     min_role: CallerRole,
 ) -> AppResult<CallerRole> {
-    let role = resolve_role(state, contract_name, caller_org).await?;
-    if role.satisfies(min_role) {
-        Ok(role)
+    let caller_org = caller_org.ok_or(AppError::Unauthorized)?;
+    let role = if storage::org_owns_contract_name(&state.db, contract_name, caller_org).await? {
+        Some(CallerRole::Owner)
     } else {
-        Err(AppError::Unauthorized)
-    }
+        let stored = storage::get_collaborator_role(&state.db, contract_name, caller_org).await?;
+        CallerRole::from_stored(stored.as_deref())
+    };
+    let exists = role.is_some() || storage::contract_name_exists(&state.db, contract_name).await?;
+    decide_access(role, exists, min_role, contract_name)
 }
 
 // ---------------------------------------------------------------------------
@@ -294,8 +322,45 @@ pub async fn resolve_comment_handler(
 ) -> AppResult<Json<CommentRow>> {
     let org_id = crate::org_id_from_req(&req);
     require_role(&state, &contract_name, org_id, CallerRole::Viewer).await?;
-    let row = storage::resolve_comment(&state.db, comment_id).await?;
+    let row = storage::resolve_comment(&state.db, &contract_name, comment_id).await?;
     Ok(Json(row))
+}
+
+// ---------------------------------------------------------------------------
+// DELETE /contracts/{name}/comments/{id}
+// ---------------------------------------------------------------------------
+
+/// Delete a comment.  Allowed for the comment's author org or the contract
+/// owner; any other collaborator gets 403.
+pub async fn delete_comment_handler(
+    State(state): State<Arc<AppState>>,
+    Path((contract_name, comment_id)): Path<(String, Uuid)>,
+    req: axum::extract::Request,
+) -> AppResult<StatusCode> {
+    let org_id = crate::org_id_from_req(&req);
+    let role = require_role(&state, &contract_name, org_id, CallerRole::Viewer).await?;
+    let caller_org = org_id.ok_or(AppError::Unauthorized)?;
+    let author_org = storage::get_comment_org(&state.db, &contract_name, comment_id)
+        .await?
+        .ok_or_else(|| AppError::NotFound(format!("comment '{comment_id}' not found")))?;
+    check_comment_delete(role, caller_org, author_org, &contract_name)?;
+    storage::delete_comment(&state.db, &contract_name, comment_id).await?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+pub(crate) fn check_comment_delete(
+    role: CallerRole,
+    caller_org: Uuid,
+    author_org: Uuid,
+    contract_name: &str,
+) -> AppResult<()> {
+    if role == CallerRole::Owner || caller_org == author_org {
+        Ok(())
+    } else {
+        Err(AppError::Forbidden(format!(
+            "requires owner role on contract '{contract_name}' or the comment's author org"
+        )))
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -368,7 +433,14 @@ pub async fn decide_proposal_handler(
         }
     };
 
-    let row = storage::decide_proposal(&state.db, proposal_id, new_status, caller_org).await?;
+    let row = storage::decide_proposal(
+        &state.db,
+        &contract_name,
+        proposal_id,
+        new_status,
+        caller_org,
+    )
+    .await?;
     Ok(Json(row))
 }
 
@@ -385,7 +457,7 @@ pub async fn apply_proposal_handler(
     // Only the owner may apply a proposal.
     require_role(&state, &contract_name, org_id, CallerRole::Owner).await?;
 
-    let row = storage::apply_proposal(&state.db, proposal_id).await?;
+    let row = storage::apply_proposal(&state.db, &contract_name, proposal_id).await?;
     Ok(Json(row))
 }
 
@@ -469,6 +541,76 @@ mod tests {
         let err = validate_collaborator_role("owner").unwrap_err();
         let msg = format!("{err:?}");
         assert!(msg.contains("owner") || msg.to_lowercase().contains("owner"));
+    }
+
+    fn status(e: AppError) -> (axum::http::StatusCode, String) {
+        use axum::response::IntoResponse;
+        let msg = e.to_string();
+        (e.into_response().status(), msg)
+    }
+
+    #[test]
+    fn non_collaborator_gets_403_naming_role() {
+        let (code, msg) =
+            status(decide_access(None, true, CallerRole::Viewer, "orders").unwrap_err());
+        assert_eq!(code, StatusCode::FORBIDDEN);
+        assert!(
+            msg.contains("requires viewer role or higher on contract 'orders'"),
+            "{msg}"
+        );
+        assert!(!msg.contains("API key"));
+    }
+
+    #[test]
+    fn non_owner_grant_gets_403_owner_role() {
+        for r in [CallerRole::Viewer, CallerRole::Editor, CallerRole::Reviewer] {
+            let (code, msg) =
+                status(decide_access(Some(r), true, CallerRole::Owner, "orders").unwrap_err());
+            assert_eq!(code, StatusCode::FORBIDDEN);
+            assert!(
+                msg.contains("requires owner role on contract 'orders'"),
+                "{msg}"
+            );
+        }
+    }
+
+    #[test]
+    fn viewer_cannot_open_proposal_403() {
+        let (code, msg) = status(
+            decide_access(Some(CallerRole::Viewer), true, CallerRole::Editor, "x").unwrap_err(),
+        );
+        assert_eq!(code, StatusCode::FORBIDDEN);
+        assert!(msg.contains("editor role or higher"));
+    }
+
+    #[test]
+    fn viewer_can_read() {
+        assert_eq!(
+            decide_access(Some(CallerRole::Viewer), true, CallerRole::Viewer, "x").unwrap(),
+            CallerRole::Viewer
+        );
+    }
+
+    #[test]
+    fn unknown_contract_gets_404() {
+        let (code, _) = status(decide_access(None, false, CallerRole::Viewer, "nope").unwrap_err());
+        assert_eq!(code, StatusCode::NOT_FOUND);
+    }
+
+    #[test]
+    fn real_auth_failure_stays_401() {
+        let (code, _) = status(AppError::Unauthorized);
+        assert_eq!(code, StatusCode::UNAUTHORIZED);
+    }
+
+    #[test]
+    fn comment_delete_author_or_owner_only() {
+        let a = Uuid::new_v4();
+        let b = Uuid::new_v4();
+        assert!(check_comment_delete(CallerRole::Viewer, a, a, "x").is_ok());
+        assert!(check_comment_delete(CallerRole::Owner, a, b, "x").is_ok());
+        let (code, _) = status(check_comment_delete(CallerRole::Reviewer, a, b, "x").unwrap_err());
+        assert_eq!(code, StatusCode::FORBIDDEN);
     }
 
     #[test]

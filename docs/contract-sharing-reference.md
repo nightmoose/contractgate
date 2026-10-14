@@ -301,6 +301,11 @@ await revokePublication(pub.publication_ref);
   imported; publish a new version instead"). "Used" = at least one import
   (`contracts.imported_from_ref = ref`, soft-deleted contracts included).
   Previews are not recorded today, so they don't count yet.
+- **Revoked refs are 404 everywhere**: preview (`GET /published/{ref}`) and
+  import (`POST /contracts/import-published`) both return
+  `404 publication '<ref>' not found` (import used to return 400; R3).
+- `POST /contracts/{id}/versions/{version}/publish` and the collaborator,
+  comment and proposal routes are in `/openapi.json` (O2).
 - `GET /contracts/publications` lists the caller org's live publications with
   `import_count`. Dashboard: Publish dialog → "Published versions of this
   contract" shows **Unpublish** (with confirm) only when `import_count = 0`;
