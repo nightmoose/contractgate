@@ -150,6 +150,10 @@ pub struct EgressResponse {
     /// RFC-030: the egress leakage mode in effect for this request.
     pub egress_leakage_mode: &'static str,
     pub resolved_version: String,
+    /// The pin exactly as the caller sent it, present only when it resolved
+    /// to a differently written stored version (e.g. `@1` → `1.0`).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub requested_version: Option<String>,
     /// RFC-030: cleaned payload — post-transform (RFC-004) and post-leakage
     /// (RFC-030) — returned to the caller.  Raw PII never appears here.
     ///
@@ -397,7 +401,10 @@ pub async fn egress_handler(
     // --- Fetch version row (check deprecated) --------------------------------
     let version_row =
         storage::get_version_for_pin(&state.db, contract_id, &resolved_version, org_id).await?;
-    // A normalised pin (`1.0.0` for a stored `1.0`) continues as the stored string.
+    // A normalised pin (`1.0.0` for a stored `1.0`) continues as the stored string;
+    // the caller's spelling is echoed back as `requested_version`.
+    let requested_version =
+        (resolved_version != version_row.version).then(|| resolved_version.clone());
     let resolved_version = version_row.version.clone();
 
     tracing::debug!(
@@ -570,6 +577,7 @@ pub async fn egress_handler(
         disposition: query.disposition.as_str(),
         egress_leakage_mode: compiled.contract.egress_leakage_mode.as_str(),
         resolved_version,
+        requested_version,
         payload,
         outcomes,
     };

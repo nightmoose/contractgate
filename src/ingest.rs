@@ -158,6 +158,10 @@ pub struct BatchIngestResponse {
     /// Resolved version the request was dispatched against (before any
     /// fallback).  Mirrors what got logged to tracing.
     pub resolved_version: String,
+    /// The pin exactly as the caller sent it, present only when it resolved
+    /// to a differently written stored version (e.g. `@1` → `1.0`).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub requested_version: Option<String>,
     /// Where the resolved version came from: `"header"`, `"path"`,
     /// `"default_stable"`, or `"pinned_deprecated"`.  Always one of a
     /// closed set of `&'static str` constants — no per-request allocation.
@@ -278,7 +282,10 @@ pub async fn ingest_handler(
     // --- Fetch version row so we know its state (draft/stable/deprecated) --
     let version_row =
         storage::get_version_for_pin(&state.db, contract_id, &resolved_version, org_id).await?;
-    // A normalised pin (`1.0.0` for a stored `1.0`) continues as the stored string.
+    // A normalised pin (`1.0.0` for a stored `1.0`) continues as the stored string;
+    // the caller's spelling is echoed back as `requested_version`.
+    let requested_version =
+        (resolved_version != version_row.version).then(|| resolved_version.clone());
     let resolved_version = version_row.version.clone();
 
     tracing::debug!(
@@ -741,6 +748,7 @@ pub async fn ingest_handler(
         dry_run: query.dry_run,
         atomic: query.atomic,
         resolved_version: resolved_version.clone(),
+        requested_version: requested_version.clone(),
         version_pin_source: pin_source,
         results: per_event_results,
     };
@@ -908,6 +916,7 @@ async fn deprecated_pin_quarantine(
         dry_run: query.dry_run,
         atomic: query.atomic,
         resolved_version: pinned_version.to_string(),
+        requested_version: None,
         version_pin_source: "pinned_deprecated",
         results: per_event_results,
     };

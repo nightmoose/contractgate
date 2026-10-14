@@ -110,6 +110,10 @@ pub struct V1IngestResponse {
     pub dry_run: bool,
     pub atomic: bool,
     pub resolved_version: String,
+    /// The pin exactly as the caller sent it, present only when it resolved
+    /// to a differently written stored version (e.g. `@1` → `1.0`).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub requested_version: Option<String>,
     /// One of: `"query_param"` | `"default_stable"` | `"pinned_deprecated"`.
     pub version_pin_source: &'static str,
     pub results: Vec<V1IngestEventResult>,
@@ -715,7 +719,10 @@ pub async fn v1_ingest_handler(
 
     let version_row =
         storage::get_version_for_pin(&state.db, contract_id, &resolved_version, org_id).await?;
-    // A normalised pin (`1.0.0` for a stored `1.0`) continues as the stored string.
+    // A normalised pin (`1.0.0` for a stored `1.0`) continues as the stored string;
+    // the caller's spelling is echoed back as `requested_version`.
+    let requested_version =
+        (resolved_version != version_row.version).then(|| resolved_version.clone());
     let resolved_version = version_row.version.clone();
 
     tracing::debug!(
@@ -1053,6 +1060,7 @@ pub async fn v1_ingest_handler(
         dry_run: query.dry_run,
         atomic: query.atomic,
         resolved_version: resolved_version.clone(),
+        requested_version: requested_version.clone(),
         version_pin_source: pin_source,
         results: per_event_results,
     };

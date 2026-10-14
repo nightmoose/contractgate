@@ -84,6 +84,17 @@ pub fn match_pin<'a>(pin: &str, stored: &'a [String]) -> Result<Option<&'a str>,
     }
 }
 
+/// A stored version that is equivalent to `new` under [`normalize_version`]
+/// but written differently (`1.0` vs `1.0.0`). Exact duplicates are left to
+/// the `(contract_id, version)` unique constraint, which already 409s them.
+pub fn find_equivalent<'a>(new: &str, stored: &'a [String]) -> Option<&'a str> {
+    let want = normalize_version(new)?;
+    stored
+        .iter()
+        .find(|v| v.as_str() != new && normalize_version(v) == Some(want))
+        .map(String::as_str)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -98,6 +109,18 @@ mod tests {
         assert_eq!(normalize_version("1.0.0.0"), None);
         assert_eq!(normalize_version("v1"), None);
         assert_eq!(normalize_version("1..0"), None);
+    }
+
+    #[test]
+    fn find_equivalent_ignores_exact_and_non_numeric() {
+        let s = |v: &[&str]| v.iter().map(|x| x.to_string()).collect::<Vec<_>>();
+        let stored = s(&["1.0", "2.0.0-rc1"]);
+        assert_eq!(find_equivalent("1.0.0", &stored), Some("1.0"));
+        assert_eq!(find_equivalent("1", &stored), Some("1.0"));
+        assert_eq!(find_equivalent("1.0", &stored), None); // exact: unique constraint
+        assert_eq!(find_equivalent("1.1", &stored), None);
+        assert_eq!(find_equivalent("2.0.0-rc1", &stored), None);
+        assert_eq!(find_equivalent("2.0.0", &stored), None);
     }
 
     #[test]
