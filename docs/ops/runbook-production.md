@@ -26,8 +26,8 @@
 | `GET /ready` | DB `SELECT 1` with timeout (readiness). Fly check path. |
 
 ```bash
-curl -sS https://contractgate-api.fly.dev/health
-curl -sS https://contractgate-api.fly.dev/ready
+curl -sS https://api.datacontractgate.com/health
+curl -sS https://api.datacontractgate.com/ready
 ```
 
 **Gotcha:** `/health` 200 while JWT path panics → dashboard “CORS”/502. Always check **logs** for panics (see §6).

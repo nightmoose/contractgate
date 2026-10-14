@@ -1047,10 +1047,9 @@ async fn deprecated_quarantine(
     }
 
     let body = json!({
-        "error": format!(
-            "Version {} on contract {} is deprecated; batch quarantined.",
-            pinned_version, contract_id,
-        ),
+        "error": deprecated_message(pinned_version, contract_id, dry_run),
+        "code": "contract_version_deprecated",
+        "deprecated_version": pinned_version,
         "total": total,
         "passed": 0,
         "failed": total,
@@ -1062,6 +1061,21 @@ async fn deprecated_quarantine(
     Ok((StatusCode::UNPROCESSABLE_ENTITY, Json(body)).into_response())
 }
 
+/// R-X2b: explain a deprecated pin instead of a bare 422 with empty
+/// per-event violations.
+fn deprecated_message(pinned_version: &str, contract_id: Uuid, dry_run: bool) -> String {
+    let fate = if dry_run {
+        "dry run: nothing was quarantined"
+    } else {
+        "every event was quarantined"
+    };
+    format!(
+        "Version {pinned_version} of contract {contract_id} is deprecated and no longer \
+         accepts events ({fate}). Remove the version pin to use the latest stable version, \
+         or pin a stable version with ?version=X.Y."
+    )
+}
+
 // ---------------------------------------------------------------------------
 // Unit tests
 // ---------------------------------------------------------------------------
@@ -1069,6 +1083,15 @@ async fn deprecated_quarantine(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn deprecated_message_explains_and_says_what_to_do() {
+        let id = Uuid::nil();
+        let m = deprecated_message("1.0", id, false);
+        assert!(m.contains("1.0") && m.contains("deprecated") && m.contains("quarantined"));
+        assert!(m.contains("?version="));
+        assert!(deprecated_message("1.0", id, true).contains("nothing was quarantined"));
+    }
 
     #[test]
     fn content_type_json_ndjson_or_missing_accepted_others_415() {
