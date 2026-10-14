@@ -666,15 +666,26 @@ pub async fn deploy_contract_version(
     let mut tx = pool.begin().await?;
 
     // ── 1. Find or create contract identity by name ───────────────────────────
+    // Only this org's live contracts. Names are not unique across orgs (or
+    // across deleted rows), and the unscoped `WHERE name = $1` used to match
+    // another org's contract or a soft-deleted one: the version then landed
+    // on an id the caller could not see or delete (2026-10-14 E2E: S9).
+    // `$2 IS NULL` keeps dev/no-auth deploys working. If an org has two live
+    // contracts with one name, the newest wins.
     let maybe_identity = sqlx::query_as::<_, ContractIdentityRow>(
         r#"
         SELECT id, name, description, multi_stable_resolution, created_at, updated_at,
                pii_salt, store_event_payloads
         FROM contracts
         WHERE name = $1
+          AND deleted_at IS NULL
+          AND ($2::uuid IS NULL OR org_id = $2)
+        ORDER BY created_at DESC
+        LIMIT 1
         "#,
     )
     .bind(name)
+    .bind(org_id)
     .fetch_optional(&mut *tx)
     .await?;
 

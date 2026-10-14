@@ -29,7 +29,7 @@ Smoke test without Kafka:
 rpk connect run docs/examples/redpanda-connect/generate.yaml
 ```
 
-Hosted API: `https://contractgate-api.fly.dev`. Self-hosted: set `CONTRACTGATE_URL`.
+Hosted API: `https://api.datacontractgate.com`. Self-hosted: set `CONTRACTGATE_URL`.
 
 ## Community blurb (Redpanda Slack / forum)
 

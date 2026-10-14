@@ -1097,6 +1097,26 @@ async fn maybe_refresh_jwks_on_unknown_kid(state: &AppState) -> bool {
 // Auth middleware
 // ---------------------------------------------------------------------------
 
+/// Add the `X-RateLimit-*` headers to an authenticated response unless the
+/// handler already set them (v1 ingest does). Before this only /v1/ingest
+/// carried them; /egress and the rest sent none (2026-10-14 E2E: L4).
+/// `Retry-After` is left to 429s.
+fn with_rate_limit_headers(
+    mut resp: axum::response::Response,
+    outcome: &rate_limit::RateLimitOutcome,
+) -> axum::response::Response {
+    let headers = resp.headers_mut();
+    for (name, value) in outcome.headers() {
+        if name == "Retry-After" || headers.contains_key(name) {
+            continue;
+        }
+        if let Ok(v) = axum::http::HeaderValue::from_str(&value) {
+            headers.insert(name, v);
+        }
+    }
+    resp
+}
+
 async fn require_api_key(
     State(state): State<Arc<AppState>>,
     mut request: Request,
@@ -1157,9 +1177,9 @@ async fn require_api_key(
                         return Err(error::AppError::RateLimitExceeded(outcome));
                     }
                     // Same reuse as the API-key path below.
-                    request.extensions_mut().insert(outcome);
+                    request.extensions_mut().insert(outcome.clone());
                     request.extensions_mut().insert(validated);
-                    return Ok(next.run(request).await);
+                    return Ok(with_rate_limit_headers(next.run(request).await, &outcome));
                 }
                 Err(e) => {
                     tracing::warn!("JWT verification failed: {e}");
@@ -1203,11 +1223,11 @@ async fn require_api_key(
                 // Handlers that report rate-limit headers (v1 ingest) reuse
                 // this outcome; checking again would spend a second token
                 // and halve the key's effective rate.
-                request.extensions_mut().insert(outcome);
+                request.extensions_mut().insert(outcome.clone());
                 // Inject the validated key into request extensions so
                 // downstream handlers can scope queries to the correct org.
                 request.extensions_mut().insert(validated);
-                return Ok(next.run(request).await);
+                return Ok(with_rate_limit_headers(next.run(request).await, &outcome));
             }
             Err(()) => {
                 // Evict so the next retry re-checks the DB immediately.
@@ -1650,6 +1670,10 @@ fn build_router(state: Arc<AppState>) -> Router {
             StatusCode::REQUEST_TIMEOUT,
             std::time::Duration::from_secs(30),
         ))
+        // Retire the old contractgate-api.fly.dev host (opt-in via the
+        // LEGACY_API_HOSTS secret). Outside CORS/auth so a legacy request is
+        // redirected before anything else runs.
+        .layer(middleware::from_fn(error::redirect_legacy_hosts))
         // RFC-100: outermost so headers land on every response — including
         // 404s, 429s, CORS pre-flights, and /metrics 401s.
         .layer(middleware::from_fn(security_headers::security_headers))

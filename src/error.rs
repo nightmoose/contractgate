@@ -468,3 +468,119 @@ mod json_error_body_tests {
         assert_eq!(&bytes[..], b"hi");
     }
 }
+
+// ---------------------------------------------------------------------------
+// Legacy API host redirect
+// ---------------------------------------------------------------------------
+
+/// Hosts (comma-separated, e.g. `contractgate-api.fly.dev`) that should stop
+/// serving the API and 308-redirect to [`CANONICAL_API_ORIGIN_ENV`] instead.
+/// Unset (the default) disables the redirect, so it can be switched on with a
+/// Fly secret once every client has moved off the old host.
+pub const LEGACY_API_HOSTS_ENV: &str = "LEGACY_API_HOSTS";
+/// Where legacy-host requests go. Defaults to the public API origin.
+pub const CANONICAL_API_ORIGIN_ENV: &str = "CANONICAL_API_ORIGIN";
+
+/// Middleware: 308 requests that arrive on a legacy host to the same path and
+/// query on the canonical origin. 308 keeps the method and body, so old POST
+/// clients that follow redirects keep working. `/health` and `/ready` stay
+/// served on every host for platform probes.
+pub async fn redirect_legacy_hosts(
+    req: axum::extract::Request,
+    next: axum::middleware::Next,
+) -> Response {
+    let Ok(hosts) = std::env::var(LEGACY_API_HOSTS_ENV) else {
+        return next.run(req).await;
+    };
+    let host = req
+        .headers()
+        .get(axum::http::header::HOST)
+        .and_then(|v| v.to_str().ok())
+        .map(|h| h.split(':').next().unwrap_or(h).to_ascii_lowercase());
+    let path = req.uri().path();
+    let is_legacy = host.is_some_and(|h| {
+        hosts
+            .split(',')
+            .map(str::trim)
+            .any(|l| !l.is_empty() && l.eq_ignore_ascii_case(&h))
+    });
+    if !is_legacy || path == "/health" || path == "/ready" {
+        return next.run(req).await;
+    }
+    let origin = std::env::var(CANONICAL_API_ORIGIN_ENV)
+        .unwrap_or_else(|_| "https://api.datacontractgate.com".to_string());
+    let target = format!(
+        "{}{}",
+        origin.trim_end_matches('/'),
+        req.uri()
+            .path_and_query()
+            .map(|p| p.as_str())
+            .unwrap_or("/")
+    );
+    (
+        StatusCode::PERMANENT_REDIRECT,
+        [(axum::http::header::LOCATION, target.clone())],
+        Json(json!({
+            "error": format!("This host is retired; use {origin}"),
+            "status": 308,
+            "location": target,
+        })),
+    )
+        .into_response()
+}
+
+#[cfg(test)]
+mod legacy_host_tests {
+    use super::*;
+    use axum::{body::Body, http::Request, routing::get, Router};
+    use tower::ServiceExt;
+
+    // One test so the process-wide env var isn't raced by parallel tests.
+    #[tokio::test]
+    async fn legacy_host_redirects_except_probes_and_only_when_configured() {
+        let app = || {
+            Router::new()
+                .route("/health", get(|| async { "ok" }))
+                .route("/contracts", get(|| async { "list" }))
+                .layer(axum::middleware::from_fn(redirect_legacy_hosts))
+        };
+        let req = |host: &str, path: &str| {
+            Request::get(path)
+                .header("host", host)
+                .body(Body::empty())
+                .unwrap()
+        };
+
+        std::env::remove_var(LEGACY_API_HOSTS_ENV);
+        let r = app()
+            .oneshot(req("contractgate-api.fly.dev", "/contracts"))
+            .await
+            .unwrap();
+        assert_eq!(r.status(), StatusCode::OK, "off unless configured");
+
+        std::env::set_var(LEGACY_API_HOSTS_ENV, "contractgate-api.fly.dev");
+        std::env::remove_var(CANONICAL_API_ORIGIN_ENV);
+        let r = app()
+            .oneshot(req("contractgate-api.fly.dev:443", "/contracts?limit=5"))
+            .await
+            .unwrap();
+        assert_eq!(r.status(), StatusCode::PERMANENT_REDIRECT);
+        assert_eq!(
+            r.headers()["location"],
+            "https://api.datacontractgate.com/contracts?limit=5"
+        );
+
+        let r = app()
+            .oneshot(req("contractgate-api.fly.dev", "/health"))
+            .await
+            .unwrap();
+        assert_eq!(r.status(), StatusCode::OK, "probes stay served");
+
+        let r = app()
+            .oneshot(req("api.datacontractgate.com", "/contracts"))
+            .await
+            .unwrap();
+        assert_eq!(r.status(), StatusCode::OK, "canonical host untouched");
+        std::env::remove_var(LEGACY_API_HOSTS_ENV);
+    }
+}

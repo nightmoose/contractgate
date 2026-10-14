@@ -2,7 +2,7 @@
 # ============================================================
 # DataContractGate — Live API smoke test + data seeder
 # Usage: API_KEY=cg_live_... bash test_live.sh [BASE_URL]
-# Default BASE_URL: https://contractgate-api.fly.dev
+# Default BASE_URL: https://api.datacontractgate.com
 # ============================================================
 #
 # API_KEY must be a DB-backed key (`cg_live_...`).  Every management route
@@ -22,7 +22,7 @@ set -euo pipefail
 
 : "${API_KEY:?API_KEY env var required — use a DB-backed cg_live_ key}"
 
-BASE="${1:-https://contractgate-api.fly.dev}"
+BASE="${1:-https://api.datacontractgate.com}"
 PASS=0; FAIL=0
 
 # Auth header reused on every protected call.

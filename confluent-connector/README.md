@@ -13,7 +13,7 @@ Add two lines to any existing connector config:
 ```properties
 transforms=contractgate
 transforms.contractgate.type=io.datacontractgate.connect.smt.ContractGateValidator
-transforms.contractgate.contractgate.api.url=https://contractgate-api.fly.dev
+transforms.contractgate.contractgate.api.url=https://api.datacontractgate.com
 transforms.contractgate.contractgate.api.key=YOUR_API_KEY
 transforms.contractgate.contractgate.contract.id=YOUR_CONTRACT_UUID
 

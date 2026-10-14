@@ -56,8 +56,8 @@ impl Bucket {
 
     /// Refill tokens proportional to elapsed time, then attempt to consume
     /// one token.  Returns `(allowed, remaining_tokens_floor,
-    /// reset_millis_from_now)`.
-    fn check(&mut self) -> (bool, u32, u64) {
+    /// retry_after_millis, full_in_millis)`.
+    fn check(&mut self) -> (bool, u32, u64, u64) {
         let now = Instant::now();
         let elapsed = now.duration_since(self.last_refill).as_secs_f64();
         self.last_refill = now;
@@ -78,7 +78,11 @@ impl Bucket {
             ((deficit / self.rate) * 1_000.0).ceil() as u64
         };
 
-        (allowed, self.tokens.floor() as u32, reset_ms)
+        // How long until the bucket is full again (IETF draft
+        // RateLimit-Reset semantics: when the whole quota is back).
+        let full_ms = (((self.burst - self.tokens).max(0.0) / self.rate) * 1_000.0).ceil() as u64;
+
+        (allowed, self.tokens.floor() as u32, reset_ms, full_ms)
     }
 }
 
@@ -114,8 +118,8 @@ pub struct RateLimitOutcome {
     pub limit: u32,
     /// Requests that can still go through right now (bucket tokens, floored).
     pub remaining: u32,
-    /// Unix timestamp (seconds) when the bucket will have ≥1 token.
-    /// Equals `now + reset_ms/1000`.  Always set; 0 when allowed.
+    /// Unix timestamp (seconds) when the bucket is full again, i.e. when
+    /// `remaining` is back to `limit`. Equals "now" only for a full bucket.
     pub reset_unix: u64,
     /// Milliseconds until at least one token is available (0 when allowed).
     pub retry_after_ms: u64,
@@ -167,12 +171,12 @@ impl RateLimitState {
         bucket.rate = rate;
         bucket.burst = burst;
 
-        let (allowed, remaining, reset_ms) = bucket.check();
+        let (allowed, remaining, reset_ms, full_ms) = bucket.check();
         drop(bucket); // release lock before computing unix timestamp
 
         let reset_unix = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
-            .map(|d| d.as_secs() + reset_ms / 1_000 + if reset_ms % 1_000 > 0 { 1 } else { 0 })
+            .map(|d| d.as_secs() + full_ms.div_ceil(1_000))
             .unwrap_or(0);
 
         // X-RateLimit-Limit is the bucket capacity and Remaining the tokens

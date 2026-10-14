@@ -39,7 +39,7 @@ test.describe("Authenticated product surfaces", () => {
     test.skip(!fs.existsSync(yamlPath), "run author_contract first");
 
     // Free plan is 3 contracts — free a slot if needed so create can succeed.
-    const api = process.env.CG_API_URL?.replace(/\/$/, "") || "https://contractgate-api.fly.dev";
+    const api = process.env.CG_API_URL?.replace(/\/$/, "") || "https://api.datacontractgate.com";
     const key = process.env.CG_API_KEY || "";
     if (key) {
       const list = await request.get(`${api}/contracts`, { headers: { "X-Api-Key": key } });

@@ -997,7 +997,7 @@ function AccountContent() {
           <pre className="text-xs text-slate-400 font-mono bg-[#0a0d12] rounded-lg p-3 overflow-x-auto leading-relaxed">
 {`transforms=contractgate
 transforms.contractgate.type=io.datacontractgate.connect.smt.ContractGateValidator
-transforms.contractgate.contractgate.api.url=https://contractgate-api.fly.dev
+transforms.contractgate.contractgate.api.url=https://api.datacontractgate.com
 transforms.contractgate.contractgate.api.key=<your key>
 transforms.contractgate.contractgate.contract.id=<your contract UUID>`}
           </pre>

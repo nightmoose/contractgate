@@ -11,16 +11,24 @@
 //! | Observation                        | Output                          |
 //! |------------------------------------|---------------------------------|
 //! | Field absent from some samples     | `required: false`               |
-//! | Field null in any sample           | `required: false`               |
-//! | All values are integers            | `type: integer` + min/max       |
-//! | All values are decimals            | `type: float` + min/max         |
+//! | Field null in any sample           | `required: false`, and the      |
+//! |                                    | contract gets `null_as_absent`  |
+//! | All values are integers            | `type: integer` (`min: 0` when  |
+//! |                                    | none are negative)              |
+//! | All values are decimals            | `type: float` (same `min: 0`)   |
 //! | All values are booleans            | `type: boolean`                 |
 //! | All values are objects             | `type: object` + properties     |
-//! | All values are arrays              | `type: array` + items           |
+//! | All values are arrays              | `type: array` + items (inferred |
+//! |                                    | like a field, so objects get    |
+//! |                                    | their properties)               |
 //! | All strings match UUID shape       | `pattern: ^[0-9a-f]{8}-…$`     |
 //! | All strings match ISO-8601 date    | `type: date` (RFC-044)          |
 //! | All strings match ISO-8601 dt      | `pattern: ^\d{4}-…T\d{2}:…$`   |
-//! | ≤8 distinct string values, ≥2 seen | `enum: [...]`                   |
+//! | ≤8 distinct strings, each seen ~2× | `enum: [...]` (needs ≥ 5 values)|
+//!
+//! Bounds are kept loose on purpose: a draft inferred from a handful of
+//! samples must accept the next real event, so no exact min/max, no exact
+//! string lengths, and no enum from values seen once (2026-10-14 E2E: S2–S4).
 //! | Mixed types across samples         | `type: any`                     |
 
 use crate::contract::{Contract, EgressLeakageMode, FieldDefinition, FieldType, Ontology};
@@ -89,7 +97,7 @@ pub async fn infer_handler(Json(req): Json<InferRequest>) -> AppResult<Json<Infe
         metrics: vec![],
         quality: vec![],
         envelope: None,
-        null_as_absent: false,
+        null_as_absent: samples_have_nulls(&req.samples),
     };
 
     let yaml_content = serde_yaml::to_string(&contract)
@@ -174,23 +182,15 @@ fn infer_field(name: &str, values: &[&Value], total_samples: usize) -> FieldDefi
     match &field_type {
         FieldType::String => {
             let strings: Vec<&str> = non_null.iter().filter_map(|v| v.as_str()).collect();
-            refine_string(&mut def, &strings, total_samples);
+            refine_string(&mut def, &strings);
         }
         FieldType::Integer => {
             let nums: Vec<i64> = non_null.iter().filter_map(|v| v.as_i64()).collect();
-            if !nums.is_empty() {
-                def.min = nums.iter().copied().min().map(|n| n as f64);
-                def.max = nums.iter().copied().max().map(|n| n as f64);
-            }
+            def.min = non_negative_floor(nums.iter().map(|&n| n as f64));
         }
         FieldType::Float => {
             let nums: Vec<f64> = non_null.iter().filter_map(|v| v.as_f64()).collect();
-            if !nums.is_empty() {
-                let min = nums.iter().cloned().fold(f64::INFINITY, f64::min);
-                let max = nums.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
-                def.min = Some(min);
-                def.max = Some(max);
-            }
+            def.min = non_negative_floor(nums.into_iter());
         }
         FieldType::Object => {
             // Collect sub-objects and recurse.
@@ -212,22 +212,11 @@ fn infer_field(name: &str, values: &[&Value], total_samples: usize) -> FieldDefi
                 .flat_map(|arr| arr.iter().cloned())
                 .collect();
             if !all_elements.is_empty() {
+                // Infer the element like any field, so arrays of objects get
+                // their properties and arrays of strings their refinements.
                 let elem_refs: Vec<&Value> = all_elements.iter().collect();
-                let elem_type = infer_type(&elem_refs);
-                let items_def = FieldDefinition {
-                    name: "item".to_string(),
-                    field_type: elem_type,
-                    required: true,
-                    pattern: None,
-                    allowed_values: None,
-                    min: None,
-                    max: None,
-                    min_length: None,
-                    max_length: None,
-                    properties: None,
-                    items: None,
-                    transform: None,
-                };
+                let mut items_def = infer_field("item", &elem_refs, elem_refs.len());
+                items_def.required = true;
                 def.items = Some(Box::new(items_def));
             }
         }
@@ -236,6 +225,36 @@ fn infer_field(name: &str, values: &[&Value], total_samples: usize) -> FieldDefi
     }
 
     def
+}
+
+/// `min: 0` when no observed value is negative, otherwise no bound. Exact
+/// sample bounds rejected the next real value (and floats printed as
+/// `53.900000000000006`); "never negative" is the useful signal.
+fn non_negative_floor(nums: impl Iterator<Item = f64>) -> Option<f64> {
+    let mut seen = false;
+    for n in nums {
+        if n < 0.0 {
+            return None;
+        }
+        seen = true;
+    }
+    seen.then_some(0.0)
+}
+
+/// Whether any object in the samples (at any depth, including objects inside
+/// arrays) carries an explicit `null`. Inferred contracts then set
+/// `null_as_absent: true`; otherwise the optional field inferred from those
+/// nulls rejects them as `type_mismatch` and the contract fails its own
+/// samples (2026-10-14 E2E: S2).
+pub fn samples_have_nulls(samples: &[Value]) -> bool {
+    fn walk(v: &Value) -> bool {
+        match v {
+            Value::Object(map) => map.values().any(|x| x.is_null() || walk(x)),
+            Value::Array(items) => items.iter().any(walk),
+            _ => false,
+        }
+    }
+    samples.iter().any(walk)
 }
 
 // ---------------------------------------------------------------------------
@@ -295,21 +314,21 @@ fn infer_type(non_null: &[&Value]) -> FieldType {
 // String refinements
 // ---------------------------------------------------------------------------
 
+/// Fewest non-null observations before a string field may become an enum.
+const ENUM_MIN_OBSERVATIONS: usize = 5;
+/// Most distinct values an inferred enum may have.
+const ENUM_MAX_DISTINCT: usize = 8;
+
 /// Attach pattern / enum / length constraints to a string field definition.
-fn refine_string(def: &mut FieldDefinition, strings: &[&str], total_samples: usize) {
+fn refine_string(def: &mut FieldDefinition, strings: &[&str]) {
     if strings.is_empty() {
         return;
     }
 
-    // Length bounds (always useful).
-    let min_len = strings.iter().map(|s| s.len()).min().unwrap_or(0);
-    let max_len = strings.iter().map(|s| s.len()).max().unwrap_or(0);
-    // Only emit if informative (non-trivial bounds).
-    if min_len > 0 {
-        def.min_length = Some(min_len);
-    }
-    if max_len > 0 && max_len < usize::MAX {
-        def.max_length = Some(max_len);
+    // Length: only "never empty". Exact sample lengths rejected the next
+    // longer/shorter value.
+    if strings.iter().all(|s| !s.is_empty()) {
+        def.min_length = Some(1);
     }
 
     // Pattern detection — checked in priority order.  Only emitted when
@@ -336,11 +355,15 @@ fn refine_string(def: &mut FieldDefinition, strings: &[&str], total_samples: usi
         return;
     }
 
-    // Enum detection — low-cardinality string fields.
-    // Threshold: at most 8 distinct values, and we need at least 2 non-null
-    // observations to avoid spurious enums on single-sample inference.
+    // Enum detection — low-cardinality string fields whose values repeat.
+    // Needs ENUM_MIN_OBSERVATIONS values and each distinct value seen about
+    // twice on average; otherwise ids, emails and names seen once each
+    // became one-value enums (2026-10-14 E2E: S3).
     let distinct: HashSet<&&str> = strings.iter().collect();
-    if distinct.len() <= 8 && strings.len() >= 2.min(total_samples) {
+    if strings.len() >= ENUM_MIN_OBSERVATIONS
+        && distinct.len() <= ENUM_MAX_DISTINCT
+        && distinct.len() * 2 <= strings.len()
+    {
         let mut sorted: Vec<Value> = distinct
             .into_iter()
             .map(|s| Value::String(s.to_string()))
@@ -419,7 +442,18 @@ mod tests {
             metrics: vec![],
             quality: vec![],
             envelope: None,
-            null_as_absent: false,
+            null_as_absent: samples_have_nulls(&samples),
+        }
+    }
+
+    /// Infer from `samples`, then validate every sample against the result
+    /// through the real engine. An inferred draft must accept its own input.
+    fn assert_accepts_own_samples(samples: Vec<Value>) {
+        let contract = run_infer("roundtrip", samples.clone());
+        let compiled = crate::validation::CompiledContract::compile(contract).unwrap();
+        for (i, s) in samples.iter().enumerate() {
+            let r = crate::validation::validate(&compiled, s);
+            assert!(r.passed, "sample {i} rejected: {:?}", r.violations);
         }
     }
 
@@ -483,6 +517,9 @@ mod tests {
             json!({"status": "active"}),
             json!({"status": "inactive"}),
             json!({"status": "active"}),
+            json!({"status": "inactive"}),
+            json!({"status": "active"}),
+            json!({"status": "active"}),
         ];
         let contract = run_infer("test", samples);
         let status = contract
@@ -514,17 +551,91 @@ mod tests {
     }
 
     #[test]
-    fn detects_integer_min_max() {
-        let samples = vec![json!({"n": 5}), json!({"n": 15}), json!({"n": 10})];
+    fn non_negative_numbers_get_min_zero_and_no_max() {
+        let samples = vec![json!({"n": 5, "amt": 53.9}), json!({"n": 15, "amt": 0.1})];
         let contract = run_infer("test", samples);
-        let n = contract
-            .ontology
-            .entities
+        for name in ["n", "amt"] {
+            let f = contract
+                .ontology
+                .entities
+                .iter()
+                .find(|f| f.name == name)
+                .unwrap();
+            assert_eq!((f.min, f.max), (Some(0.0), None), "{name}");
+        }
+        let neg = run_infer("test", vec![json!({"d": -3}), json!({"d": 4})]);
+        assert_eq!(
+            (neg.ontology.entities[0].min, neg.ontology.entities[0].max),
+            (None, None)
+        );
+    }
+
+    #[test]
+    fn single_or_unique_samples_do_not_become_enums_or_exact_lengths() {
+        let one = run_infer("t", vec![json!({"id": "INV-000000", "email": "a@b.co"})]);
+        for f in &one.ontology.entities {
+            assert!(f.allowed_values.is_none(), "{} became an enum", f.name);
+            assert_eq!(f.max_length, None, "{}", f.name);
+            assert_eq!(f.min_length, Some(1), "{}", f.name);
+        }
+        let ids: Vec<Value> = (0..10).map(|i| json!({"id": format!("u{i}")})).collect();
+        assert!(run_infer("t", ids).ontology.entities[0]
+            .allowed_values
+            .is_none());
+    }
+
+    #[test]
+    fn sometimes_null_field_accepts_its_samples() {
+        // 2026-10-14 E2E S2: 25 of 50 samples failed their own contract.
+        let samples: Vec<Value> = (0..50)
+            .map(|i| {
+                if i % 2 == 0 {
+                    json!({"id": i, "opt": null})
+                } else {
+                    json!({"id": i, "opt": format!("v{i}")})
+                }
+            })
+            .collect();
+        assert!(run_infer("t", samples.clone()).null_as_absent);
+        assert_accepts_own_samples(samples);
+    }
+
+    #[test]
+    fn arrays_of_objects_infer_item_properties() {
+        let samples = vec![
+            json!({"items": [{"sku": "A1", "qty": 2}, {"sku": "B2", "qty": 1}]}),
+            json!({"items": [{"sku": "C3", "qty": 5}]}),
+        ];
+        let contract = run_infer("t", samples.clone());
+        let items = contract.ontology.entities[0].items.as_ref().unwrap();
+        assert_eq!(items.field_type, FieldType::Object);
+        let props = items.properties.as_ref().unwrap();
+        assert!(props
             .iter()
-            .find(|f| f.name == "n")
-            .unwrap();
-        assert_eq!(n.min, Some(5.0));
-        assert_eq!(n.max, Some(15.0));
+            .any(|p| p.name == "sku" && p.field_type == FieldType::String));
+        assert!(props
+            .iter()
+            .any(|p| p.name == "qty" && p.field_type == FieldType::Integer));
+        assert_accepts_own_samples(samples);
+    }
+
+    #[test]
+    fn invoice_style_samples_round_trip() {
+        let samples: Vec<Value> = (0..5)
+            .map(|i| {
+                let vendor = ["Acme", "Globex"][i % 2];
+                let note = if i == 0 { Value::Null } else { json!("ok") };
+                json!({
+                    "invoice_id": format!("INV-00012{i}"),
+                    "vendor": vendor,
+                    "amount": 1200.5 + i as f64,
+                    "currency": "USD",
+                    "due_date": "2026-11-01",
+                    "note": note,
+                })
+            })
+            .collect();
+        assert_accepts_own_samples(samples);
     }
 
     #[test]

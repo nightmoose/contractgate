@@ -28,7 +28,7 @@ public class ContractGateValidatorConfig extends AbstractConfig {
 
     public static final String API_URL_CONFIG = "contractgate.api.url";
     private static final String API_URL_DOC =
-        "Base URL of the DataContractGate API server, e.g. https://contractgate-api.fly.dev. " +
+        "Base URL of the DataContractGate API server, e.g. https://api.datacontractgate.com. " +
         "No trailing slash.";
 
     public static final String CONTRACT_ID_CONFIG = "contractgate.contract.id";

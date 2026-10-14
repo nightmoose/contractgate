@@ -122,5 +122,5 @@ def build_batches(
 
 def env_api() -> tuple[str, str]:
     key = os.environ.get("CG_API_KEY", "").strip()
-    url = os.environ.get("CG_API_URL", "https://contractgate-api.fly.dev").rstrip("/")
+    url = os.environ.get("CG_API_URL", "https://api.datacontractgate.com").rstrip("/")
     return key, url

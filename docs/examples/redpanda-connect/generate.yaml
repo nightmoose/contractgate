@@ -23,7 +23,7 @@ pipeline:
         request_map: "root = this"
         processors:
           - http:
-              url: '${CONTRACTGATE_URL:https://contractgate-api.fly.dev}/v1/ingest/${CONTRACTGATE_CONTRACT_ID}'
+              url: '${CONTRACTGATE_URL:https://api.datacontractgate.com}/v1/ingest/${CONTRACTGATE_CONTRACT_ID}'
               verb: POST
               headers:
                 Content-Type: application/json
