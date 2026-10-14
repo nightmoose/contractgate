@@ -199,7 +199,9 @@ pub async fn list_my_publications_handler(
 ) -> AppResult<Json<Vec<storage::MyPublicationRow>>> {
     let org_id = crate::org_id_from_req(&req)
         .ok_or_else(|| AppError::Forbidden("an organization is required".into()))?;
-    Ok(Json(storage::list_org_publications(&state.db, org_id).await?))
+    Ok(Json(
+        storage::list_org_publications(&state.db, org_id).await?,
+    ))
 }
 
 // ---------------------------------------------------------------------------

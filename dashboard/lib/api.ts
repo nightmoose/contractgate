@@ -1138,6 +1138,8 @@ export interface MyPublication {
   contract_version: string;
   visibility: PublicationVisibility;
   published_at: string;
+  /** Imports so far; > 0 means it can't be unpublished (409). */
+  import_count: number;
 }
 
 export const listMyPublications = () => apiFetch<MyPublication[]>("/contracts/publications");

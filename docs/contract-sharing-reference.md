@@ -295,10 +295,16 @@ await revokePublication(pub.publication_ref);
 - **Link / org publications** need the link token. Preview uses `?token=`;
   import uses `"link_token"`. Missing or wrong tokens return **403** with
   `link token missing` / `link token invalid` — never the API-key 401 (S-P2).
-- **Unpublish** (API only for now; UI deferred pending impact review):
-  `DELETE /contracts/publications/{ref}` (owner org only). Other org → 403;
-  unknown/already-revoked → 404. `GET /contracts/publications` lists the
-  caller org's live publications.
+- **Unpublish** (soft delete, sets `revoked_at`): `DELETE /contracts/publications/{ref}`,
+  owner org only. Other org → 403; unknown/already revoked → 404. **A used
+  publication can't be unpublished → 409** ("this publication has been
+  imported; publish a new version instead"). "Used" = at least one import
+  (`contracts.imported_from_ref = ref`, soft-deleted contracts included).
+  Previews are not recorded today, so they don't count yet.
+- `GET /contracts/publications` lists the caller org's live publications with
+  `import_count`. Dashboard: Publish dialog → "Published versions of this
+  contract" shows **Unpublish** (with confirm) only when `import_count = 0`;
+  otherwise it shows why and says to promote a new version and publish it.
 - **Catalog** lists `publication_ref` (not `published_by`) (S-C1).
 - **Org ID** is on Account (header + Organization ID card) for collaboration
   invites (S-A1).

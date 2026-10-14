@@ -131,6 +131,10 @@ pub enum AppError {
     #[error("Not found: {0}")]
     NotFound(String),
 
+    /// Request conflicts with the resource's current state.  409.
+    #[error("{0}")]
+    Conflict(String),
+
     /// Authenticated, but not allowed to act on this resource.  403.
     #[error("Forbidden: {0}")]
     Forbidden(String),
@@ -230,6 +234,7 @@ impl IntoResponse for AppError {
             AppError::OdcsReviewRequired { .. } => (StatusCode::CONFLICT, self.to_string()),
             AppError::NotFound(_) => (StatusCode::NOT_FOUND, self.to_string()),
             AppError::Forbidden(_) => (StatusCode::FORBIDDEN, self.to_string()),
+            AppError::Conflict(_) => (StatusCode::CONFLICT, self.to_string()),
             AppError::LinkToken(_) => (StatusCode::FORBIDDEN, self.to_string()),
 
             AppError::Database(e) => {

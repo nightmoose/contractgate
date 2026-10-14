@@ -434,7 +434,8 @@ fn build_openapi() -> String {
               "200": { "description": "Revoked" },
               "401": { "description": "Missing or invalid X-Api-Key" },
               "403": { "description": "Publication belongs to another org" },
-              "404": { "description": "Unknown or already revoked" }
+              "404": { "description": "Unknown or already revoked" },
+              "409": { "description": "Publication has been imported; publish a new version instead" }
             },
             "security": [{ "ApiKeyAuth": [] }]
           }
@@ -1279,10 +1280,7 @@ mod tests {
             "/contracts/publications/{publication_ref}",
             "/contracts/import-published",
         ] {
-            assert!(
-                v["paths"][path].is_object(),
-                "openapi missing path {path}"
-            );
+            assert!(v["paths"][path].is_object(), "openapi missing path {path}");
         }
     }
 }

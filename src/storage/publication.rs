@@ -123,6 +123,13 @@ pub async fn revoke_publication(
             "publication '{publication_ref}' is already revoked"
         )));
     }
+    // S-U1: a publication that has been used can't be unpublished. "Used" =
+    // imported at least once (soft-deleted imports count). Previews aren't
+    // recorded anywhere today, so they don't count yet.
+    let imports = count_imports(pool, publication_ref).await?;
+    if let Some(reason) = unpublish_block_reason(imports) {
+        return Err(AppError::Conflict(reason));
+    }
     let row = sqlx::query_as::<_, PublicationRow>(
         r#"
         UPDATE contract_publications
@@ -191,6 +198,26 @@ pub async fn get_publication(pool: &PgPool, publication_ref: &str) -> AppResult<
     Ok(row)
 }
 
+/// Imports of a publication, including soft-deleted importing contracts.
+pub async fn count_imports(pool: &PgPool, publication_ref: &str) -> AppResult<i64> {
+    sqlx::query_scalar::<_, i64>("SELECT count(*) FROM contracts WHERE imported_from_ref = $1")
+        .bind(publication_ref)
+        .fetch_one(pool)
+        .await
+        .db_op("count_publication_imports")
+}
+
+/// Why a publication with `imports` imports can't be unpublished, if it can't.
+pub fn unpublish_block_reason(imports: i64) -> Option<String> {
+    (imports > 0).then(|| {
+        format!(
+            "this publication has been imported ({imports} time{}); publish a new version instead \
+             (promote a new version and publish it)",
+            if imports == 1 { "" } else { "s" }
+        )
+    })
+}
+
 /// One of the caller org's live publications (no link token, no YAML).
 #[derive(Debug, Clone, serde::Serialize, sqlx::FromRow)]
 pub struct MyPublicationRow {
@@ -200,15 +227,21 @@ pub struct MyPublicationRow {
     pub contract_version: String,
     pub visibility: String,
     pub published_at: chrono::DateTime<chrono::Utc>,
+    /// Imports so far (soft-deleted included). > 0 → can't unpublish.
+    pub import_count: i64,
 }
 
-pub async fn list_org_publications(pool: &PgPool, org_id: Uuid) -> AppResult<Vec<MyPublicationRow>> {
+pub async fn list_org_publications(
+    pool: &PgPool,
+    org_id: Uuid,
+) -> AppResult<Vec<MyPublicationRow>> {
     sqlx::query_as::<_, MyPublicationRow>(
         r#"
-        SELECT ref AS publication_ref, contract_id, contract_name, contract_version,
-               visibility, published_at
-        FROM contract_publications
-        WHERE org_id = $1 AND revoked_at IS NULL
+        SELECT p.ref AS publication_ref, p.contract_id, p.contract_name, p.contract_version,
+               p.visibility, p.published_at,
+               (SELECT count(*) FROM contracts c WHERE c.imported_from_ref = p.ref) AS import_count
+        FROM contract_publications p
+        WHERE p.org_id = $1 AND p.revoked_at IS NULL
         ORDER BY published_at DESC
         LIMIT 200
         "#,
@@ -494,6 +527,15 @@ mod tests {
     #[test]
     fn is_revoked_true_when_revoked_at_set() {
         assert!(publication_row(true).is_revoked());
+    }
+
+    #[test]
+    fn unpublish_allowed_only_when_never_imported() {
+        assert!(unpublish_block_reason(0).is_none());
+        let one = unpublish_block_reason(1).unwrap();
+        assert!(one.contains("has been imported (1 time)"));
+        assert!(one.contains("publish a new version instead"));
+        assert!(unpublish_block_reason(3).unwrap().contains("3 times"));
     }
 
     #[test]
