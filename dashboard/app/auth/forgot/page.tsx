@@ -19,6 +19,9 @@ export default function ForgotPasswordPage() {
     setError("");
     setLoading(true);
     const supabase = createClient();
+    // The message body is the Supabase recovery template. It must link to
+    // /auth/confirm?token_hash={{ .TokenHash }}&type=recovery, not to
+    // {{ .ConfirmationURL }}: that URL is PKCE and only works in this browser.
     const { error: authError } = await supabase.auth.resetPasswordForEmail(email, {
       redirectTo: `${location.origin}/auth/reset`,
       captchaToken,

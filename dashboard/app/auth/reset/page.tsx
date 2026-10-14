@@ -1,8 +1,9 @@
 "use client";
 
-// Landing page for the Supabase password-recovery email link. The Supabase
-// client (detectSessionInUrl, default on) establishes a short-lived recovery
-// session from the URL, after which updateUser({ password }) sets the new one.
+// Landing page after /auth/confirm has verified the recovery token_hash and
+// set a session cookie. Older emails still arrive as /auth/reset?code= (PKCE).
+// That exchange needs the code verifier from the browser that requested the
+// reset; when it fails, say so instead of the generic "open your email" line.
 
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
@@ -13,6 +14,8 @@ import BrandWordmark from "@/components/BrandWordmark";
 export default function ResetPasswordPage() {
   const router = useRouter();
   const [ready, setReady] = useState(false);
+  const [linkError, setLinkError] = useState(false);
+  const [pendingLink, setPendingLink] = useState(false);
   const [password, setPassword] = useState("");
   const [confirm, setConfirm] = useState("");
   const [error, setError] = useState("");
@@ -22,14 +25,45 @@ export default function ResetPasswordPage() {
   // Confirm a recovery session is present before showing the form.
   useEffect(() => {
     const supabase = createClient();
+    let settled = false;
+    const markReady = () => {
+      settled = true;
+      setReady(true);
+    };
     const { data: sub } = supabase.auth.onAuthStateChange((event) => {
-      if (event === "PASSWORD_RECOVERY" || event === "SIGNED_IN") setReady(true);
+      if (event === "PASSWORD_RECOVERY" || event === "SIGNED_IN") markReady();
     });
     // Also check immediately in case the event fired before we subscribed.
     supabase.auth.getSession().then(({ data }) => {
-      if (data.session) setReady(true);
+      if (data.session) markReady();
     });
-    return () => sub.subscription.unsubscribe();
+
+    // PKCE links land here with ?code=. A different browser has no verifier,
+    // so the exchange never produces a session. Fragments cover the case
+    // where Supabase itself rejected the token before the redirect.
+    const q = new URLSearchParams(window.location.search);
+    const hash = new URLSearchParams(window.location.hash.replace(/^#/, ""));
+    const code = q.get("code");
+    const err = q.get("error") || hash.get("error") || hash.get("error_code");
+    const alreadyRejected =
+      err === "link_invalid" ||
+      err === "confirmation_failed" ||
+      err === "access_denied" ||
+      err === "otp_expired";
+    let timer: number | undefined;
+    if (alreadyRejected && !code) {
+      setLinkError(true);
+    } else if (code || err) {
+      setPendingLink(true);
+      timer = window.setTimeout(() => {
+        if (!settled) setLinkError(true);
+      }, 2500);
+    }
+
+    return () => {
+      sub.subscription.unsubscribe();
+      if (timer) window.clearTimeout(timer);
+    };
   }, []);
 
   async function handleSubmit(e: React.FormEvent) {
@@ -74,8 +108,11 @@ export default function ResetPasswordPage() {
           ) : !ready ? (
             <div className="text-sm text-slate-500">
               <p>
-                Open this page from the reset link in your email. If you got here
-                directly, request a new link.
+                {linkError
+                  ? "This link was opened in a different browser or has expired."
+                  : pendingLink
+                    ? "Checking your reset link…"
+                    : "Open this page from the reset link in your email. If you got here directly, request a new link."}
               </p>
               <p className="mt-4">
                 <Link href="/auth/forgot" className="text-green-400 hover:text-green-300">

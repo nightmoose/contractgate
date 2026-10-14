@@ -212,6 +212,39 @@ users were bounced to login, and the "redirect signed-in users away from
 /auth/*" rule bounced the recovery session away from `/auth/reset`. Both are now
 public and `/auth/reset` is exempt from that redirect.
 
+**Email links must not use the PKCE `ConfirmationURL` (fixed 2026-10-13).**
+`resetPasswordForEmail` from the browser stores a code verifier in that
+browser only. The default template link
+(`https://<project>.supabase.co/auth/v1/verify?token=pkce_…`) redirects to
+`/auth/reset?code=…`, and exchanging the code fails everywhere else: another
+browser, a phone, a private window, or an email scanner that prefetches the
+URL. Signup confirmation and magic links have the same shape.
+
+Hosted templates (Authentication → Emails) must use `{{ .TokenHash }}` and
+point at the app. Source HTML is `supabase/templates/`. Recovery:
+
+```html
+<a href="{{ .SiteURL }}/auth/confirm?token_hash={{ .TokenHash }}&type=recovery&next=/auth/reset">Reset Password</a>
+```
+
+Confirmation uses `type=signup&next=/`, magic link `type=magiclink&next=/`,
+email change `type=email_change&next=/account`, invite `type=invite&next=/`.
+`/auth/confirm` only renders a form. Submitting it calls
+`verifyOtp({ type, token_hash })` on the server, which does not need the code
+verifier, and then redirects to `next`. The form is not submitted on GET, so a
+scanner that only opens the link does not consume the token. Do not switch
+these templates back to `{{ .ConfirmationURL }}`. Apply them to the hosted
+project only after `/auth/confirm` is deployed:
+
+```bash
+SUPABASE_ACCESS_TOKEN=… python3 scripts/apply-auth-email-templates.py --apply
+```
+
+`/auth/confirm` is public and exempt from the signed-in redirect. A failed
+recovery lands on `/auth/reset?error=link_invalid` ("opened in a different
+browser or has expired"). Other failures land on
+`/auth/login?error=confirmation_failed`.
+
 ### Removed defenses
 
 - **Cloudflare Turnstile, first attempt (removed 2026-08-13; re-added
