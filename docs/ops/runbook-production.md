@@ -214,8 +214,10 @@ Customer-facing targets: [Support SLA](../support-sla.md).
 - Staging **shares the production Supabase database** (Alex's decision while there
   are no customers): same `DATABASE_URL`, `ENCRYPTION_KEY`, `SUPABASE_URL`. Treat
   staging writes as real data. No Confluent or AWS secrets on staging.
-- CI deploy-on-push-to-staging is proposed in the staging PR (workflow edits need
-  a token with `workflow` scope); the prod deploy job must stay guarded to `main`.
+- CI: a push to `staging` builds the image, pushes it to
+  `registry.fly.io/contractgate-api-staging:<sha>` (token `FLY_API_TOKEN_STAGING`)
+  and `deploy-fly-staging` runs `flyctl deploy -c fly.staging.toml --image …`.
+  Prod registry push and `deploy-fly` are guarded to `refs/heads/main`.
 
 ## Kafka / Confluent ingress — disabled (2026-10-14)
 

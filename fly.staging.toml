@@ -2,10 +2,12 @@
 # creates it). Deployed from the `staging` branch. Scales to zero when idle.
 #
 #   fly apps create contractgate-api-staging          # Alex, once
-#   fly secrets set -a contractgate-api-staging DATABASE_URL=... (staging DB only)
+#   fly secrets set -a contractgate-api-staging DATABASE_URL=... (same as prod)
 #   fly deploy -c fly.staging.toml
 #
-# Never point staging at the production database or Stripe live keys.
+# Staging SHARES the production Supabase database (Alex's decision while there
+# are no customers): treat staging writes as real data. Never put Stripe live
+# keys, Confluent or AWS secrets on staging. CI deploys it on push to `staging`.
 
 app = 'contractgate-api-staging'
 primary_region = 'iad'
