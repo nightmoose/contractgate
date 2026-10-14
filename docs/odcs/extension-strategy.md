@@ -392,3 +392,8 @@ The following decisions affect the Week 2 implementation directly. Each one has 
   - `version:` is set to the version row, which is the ODCS document's `version`.
   - `name:` is set to the contract's name: the target contract's name when importing with `target_contract_id` / `contract_id`, otherwise `name_override` or the ODCS `dataProduct`.
 - These two rewrites change only the `version:` / `name:` line and keep any trailing `# comment` on it. Rows stored before this behaviour are not backfilled.
+
+### Nested objects and arrays
+
+- Export flattens nested object fields to dot-notation properties (`customer.email`). Array fields carry their element schema as ODCS `items`; fields of an object element are nested natively under `items.properties[]`, recursively.
+- Import (stripped/foreign ODCS) accepts both dot-notation and natively nested `properties[]` on object properties, and `items` on array properties, recursively. Dotted children are merged into an explicit object property of the same name.

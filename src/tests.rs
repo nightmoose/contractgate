@@ -961,6 +961,207 @@ mod odcs_tests {
         );
     }
 
+    // ---- nested objects / arrays (Mode A + Mode B) ---------------------------
+
+    const NESTED_CONTRACT: &str = r#"
+version: "1.0.0"
+name: orders
+ontology:
+  entities:
+    - name: order_id
+      type: string
+      required: true
+    - name: customer
+      type: object
+      required: true
+      properties:
+        - name: email
+          type: string
+          required: true
+          pattern: "^.+@.+$"
+        - name: address
+          type: object
+          required: false
+          properties:
+            - name: city
+              type: string
+              required: true
+    - name: lines
+      type: array
+      required: true
+      items:
+        name: line
+        type: object
+        required: true
+        properties:
+          - name: sku
+            type: string
+            required: true
+          - name: qty
+            type: integer
+            required: true
+            min: 1
+          - name: tags
+            type: array
+            required: false
+            items:
+              name: tag
+              type: string
+              required: true
+"#;
+
+    fn field<'a>(
+        fs: &'a [crate::contract::FieldDefinition],
+        n: &str,
+    ) -> &'a crate::contract::FieldDefinition {
+        fs.iter()
+            .find(|f| f.name == n)
+            .unwrap_or_else(|| panic!("field {n} missing"))
+    }
+
+    fn assert_nested_preserved(c: &crate::contract::Contract) {
+        let es = &c.ontology.entities;
+        let customer = field(es, "customer");
+        assert_eq!(customer.field_type, FieldType::Object);
+        let cp = customer.properties.as_ref().expect("customer.properties");
+        let email = field(cp, "email");
+        assert_eq!(email.field_type, FieldType::String);
+        assert!(email.required);
+        assert_eq!(email.pattern.as_deref(), Some("^.+@.+$"));
+        let addr = field(cp, "address");
+        let city = field(
+            addr.properties.as_ref().expect("address.properties"),
+            "city",
+        );
+        assert_eq!(city.field_type, FieldType::String);
+
+        let lines = field(es, "lines");
+        assert_eq!(lines.field_type, FieldType::Array);
+        let item = lines.items.as_ref().expect("lines.items");
+        assert_eq!(item.field_type, FieldType::Object);
+        let ip = item.properties.as_ref().expect("lines.items.properties");
+        assert_eq!(field(ip, "sku").field_type, FieldType::String);
+        let qty = field(ip, "qty");
+        assert_eq!(qty.field_type, FieldType::Integer);
+        assert_eq!(qty.min, Some(1.0));
+        let tags = field(ip, "tags");
+        assert_eq!(tags.field_type, FieldType::Array);
+        assert_eq!(
+            tags.items.as_ref().expect("tags.items").field_type,
+            FieldType::String
+        );
+    }
+
+    fn nested_export() -> String {
+        let original: crate::contract::Contract = serde_yaml::from_str(NESTED_CONTRACT).unwrap();
+        let identity = make_identity("orders");
+        let cv = make_version(identity.id, "1.0.0", NESTED_CONTRACT);
+        odcs::export_odcs(odcs::OdcsExportInput {
+            identity: &identity,
+            version: &cv,
+            contract: &original,
+        })
+        .unwrap()
+    }
+
+    #[test]
+    fn nested_roundtrip_mode_a() {
+        let r = odcs::import_odcs(&nested_export()).unwrap();
+        assert_eq!(r.import_source, ImportSource::Odcs);
+        assert_nested_preserved(&serde_yaml::from_str(&r.yaml_content).unwrap());
+    }
+
+    #[test]
+    fn nested_roundtrip_mode_b_stripped_export() {
+        // Strip the x-contractgate-* extensions so only the ODCS-native
+        // schema section is left.
+        let mut doc: serde_yaml::Value = serde_yaml::from_str(&nested_export()).unwrap();
+        let m = doc.as_mapping_mut().unwrap();
+        let keys: Vec<_> = m
+            .keys()
+            .filter(|k| k.as_str().is_some_and(|s| s.starts_with("x-contractgate")))
+            .cloned()
+            .collect();
+        for k in keys {
+            m.remove(&k);
+        }
+        let stripped = serde_yaml::to_string(&doc).unwrap();
+        // Export writes array element schemas as ODCS `items`.
+        assert!(stripped.contains("items:"), "{stripped}");
+        let r = odcs::import_odcs(&stripped).unwrap();
+        assert_eq!(r.import_source, ImportSource::OdcsStripped);
+        let c: crate::contract::Contract = serde_yaml::from_str(&r.yaml_content).unwrap();
+        assert_nested_preserved(&c);
+        // Re-export of the imported contract is stable (same field tree).
+        let identity = make_identity("orders");
+        let cv = make_version(identity.id, "1.0.0", &r.yaml_content);
+        let again = odcs::export_odcs(odcs::OdcsExportInput {
+            identity: &identity,
+            version: &cv,
+            contract: &c,
+        })
+        .unwrap();
+        let r2 = odcs::import_odcs(&again).unwrap();
+        assert_nested_preserved(&serde_yaml::from_str(&r2.yaml_content).unwrap());
+    }
+
+    #[test]
+    fn foreign_odcs_native_nested_properties_and_items() {
+        // Hand-written ODCS v3 with natively nested properties (Tessie's case).
+        let odcs_yaml = r#"
+apiVersion: v3.1.0
+kind: DataContract
+id: 7f0c1e2a-0000-0000-0000-000000000001
+version: 1.0.0
+status: active
+dataProduct: orders
+schema:
+  - name: orders
+    properties:
+      - name: order_id
+        logicalType: string
+        required: true
+      - name: customer
+        logicalType: object
+        required: true
+        properties:
+          - name: email
+            logicalType: string
+            required: true
+            customProperties:
+              - property: x-cg-pattern
+                value: "^.+@.+$"
+          - name: address
+            logicalType: object
+            properties:
+              - name: city
+                logicalType: string
+                required: true
+      - name: lines
+        logicalType: array
+        required: true
+        items:
+          logicalType: object
+          properties:
+            - name: sku
+              logicalType: string
+              required: true
+            - name: qty
+              logicalType: integer
+              required: true
+              customProperties:
+                - property: x-cg-min
+                  value: 1
+            - name: tags
+              logicalType: array
+              items:
+                logicalType: string
+"#;
+        let r = odcs::import_odcs(odcs_yaml).unwrap();
+        let c: crate::contract::Contract = serde_yaml::from_str(&r.yaml_content).unwrap();
+        assert_nested_preserved(&c);
+    }
+
     // ---- import Mode A (lossless) -------------------------------------------
 
     #[test]
