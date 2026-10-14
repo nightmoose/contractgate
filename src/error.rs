@@ -223,7 +223,7 @@ impl IntoResponse for AppError {
 
             AppError::Database(e) => {
                 tracing::error!("Database error: {:?}", e);
-                (StatusCode::INTERNAL_SERVER_ERROR, "Database error".into())
+                (StatusCode::INTERNAL_SERVER_ERROR, database_error_message(e))
             }
             AppError::Internal(msg) => {
                 tracing::error!("Internal error: {}", msg);
@@ -271,6 +271,26 @@ pub type AppResult<T> = Result<T, AppError>;
 ///
 /// The HTTP status mapping is unchanged (still `AppError::Database` → 500);
 /// only the `tracing::error!` line in the logs gains the operation label.
+/// Client-facing text for a database error: the SQLSTATE class and the
+/// constraint name (schema metadata, no row data) instead of a bare
+/// "Database error", so a failing publish says *what* failed.
+fn database_error_message(e: &sqlx::Error) -> String {
+    let Some(db) = e.as_database_error() else {
+        return "Database error".into();
+    };
+    let kind = match db.code().as_deref() {
+        Some("23503") => "a referenced record is missing (foreign key violation)",
+        Some("23505") => "a record with the same key already exists (unique violation)",
+        Some("23514") => "a value failed a database check (check violation)",
+        Some("23502") => "a required value is missing (not-null violation)",
+        _ => return "Database error".into(),
+    };
+    match db.constraint() {
+        Some(c) => format!("Database error: {kind} on constraint {c}"),
+        None => format!("Database error: {kind}"),
+    }
+}
+
 pub trait DbOpContext<T> {
     fn db_op(self, op: &'static str) -> AppResult<T>;
 }
