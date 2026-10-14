@@ -989,6 +989,9 @@ mod odcs_tests {
             serde_yaml::from_str(&result.yaml_content).expect("yaml must be valid");
 
         assert_eq!(recovered.name, original.name);
+        // The embedded contract's version is rewritten to the row's (ODCS
+        // `version`), even when the original YAML said something else.
+        assert_eq!(recovered.version, "1.0.0");
         assert_eq!(
             recovered.ontology.entities.len(),
             original.ontology.entities.len()
@@ -1034,6 +1037,9 @@ schema:
 
         assert_eq!(result.import_source, ImportSource::OdcsStripped);
         assert_eq!(result.version, "2.0.0");
+        // Stored YAML agrees with the version row (was hardcoded "1.0").
+        let c: crate::contract::Contract = serde_yaml::from_str(&result.yaml_content).unwrap();
+        assert_eq!(c.version, "2.0.0");
 
         // Recovered contract must parse
         let contract: crate::contract::Contract =
@@ -4236,6 +4242,14 @@ mod equivalent_versions {
         storage::create_version(&pool, cid, "1.1", &yaml("1.1"), Some(org))
             .await
             .expect("1.1 is new");
+        // Body version wins over a stale `version:` in the YAML; the stored
+        // YAML is rewritten to agree with the row.
+        let v = storage::create_version(&pool, cid, "1.2", &yaml("1.0"), Some(org))
+            .await
+            .expect("1.2 with stale yaml version");
+        assert_eq!(v.version, "1.2");
+        let c: super::super::contract::Contract = serde_yaml::from_str(&v.yaml_content).unwrap();
+        assert_eq!(c.version, "1.2");
 
         // Pin @1 resolves to the stored 1.0.
         let row = storage::get_version_for_pin(&pool, cid, "1", Some(org))
@@ -4352,6 +4366,13 @@ mod odcs_import_target {
         let v = r.json::<serde_json::Value>();
         assert_eq!(v["contract_id"], json!(cid));
         assert_eq!(v["version"], "2.1.0");
+        let stored: serde_yaml::Value =
+            serde_yaml::from_str(v["yaml_content"].as_str().unwrap()).unwrap();
+        assert_eq!(
+            stored["version"].as_str(),
+            Some("2.1.0"),
+            "yaml agrees with row"
+        );
         // `contract_id` alias works too.
         let r = a
             .post("/contracts/import")

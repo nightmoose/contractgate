@@ -168,6 +168,9 @@ pub async fn create_contract(
     // extract `compliance_mode` so the column stays in sync with the YAML
     // (RFC-004: YAML is authoritative; column is a denormalization for
     // SQL-level filtering).
+    // The first version row is always 1.0.0; the stored YAML says the same.
+    let yaml_owned = crate::version_pin::set_yaml_version(yaml_content, "1.0.0");
+    let yaml_content = yaml_owned.as_str();
     let parsed: Contract = serde_yaml::from_str(yaml_content)
         .map_err(|e| AppError::InvalidContractYaml(e.to_string()))?;
     let compliance_mode = parsed.compliance_mode;
@@ -458,6 +461,9 @@ pub async fn create_version(
     yaml_content: &str,
     org_id: Option<Uuid>,
 ) -> AppResult<ContractVersion> {
+    // The stored YAML's `version:` always matches the version row.
+    let yaml_owned = crate::version_pin::set_yaml_version(yaml_content, version);
+    let yaml_content = yaml_owned.as_str();
     let parsed: Contract = serde_yaml::from_str(yaml_content)
         .map_err(|e| AppError::InvalidContractYaml(e.to_string()))?;
     let compliance_mode = parsed.compliance_mode;
@@ -1071,6 +1077,9 @@ pub async fn create_version_from_import(
     import_source: ImportSource,
     org_id: Option<Uuid>,
 ) -> AppResult<ContractVersion> {
+    // The stored YAML's `version:` always matches the version row.
+    let yaml_owned = crate::version_pin::set_yaml_version(yaml_content, version);
+    let yaml_content = yaml_owned.as_str();
     let parsed: Contract = serde_yaml::from_str(yaml_content)
         .map_err(|e| AppError::InvalidContractYaml(e.to_string()))?;
     let compliance_mode = parsed.compliance_mode;
