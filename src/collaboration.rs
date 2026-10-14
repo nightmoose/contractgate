@@ -23,6 +23,13 @@
 //!
 //! "owner" is implicit — the org whose `org_id` matches `contracts.org_id`.
 //! It is never stored in `contract_collaborators`.
+//!
+//! ## Contract identity (migration 042)
+//!
+//! The URL carries a contract name; it is resolved to one contract id (the
+//! caller's own live contract, else one it holds a grant on) and every query
+//! runs by that id. Grants, comments and proposals point at a contract id.
+//! Two live matches → 409.
 
 use axum::{
     extract::{FromRequest, Path, State},
@@ -125,23 +132,46 @@ pub(crate) fn forbidden_role(min_role: CallerRole, contract_name: &str) -> AppEr
     AppError::Forbidden(format!("requires {need} on contract '{contract_name}'"))
 }
 
-/// Asserts the caller meets `min_role`.  Returns the resolved role on success.
+/// At most one match is allowed; several live contracts behind one URL name
+/// is a 409 instead of silently picking one.
+pub(crate) fn pick_one<T>(
+    mut found: Vec<T>,
+    contract_name: &str,
+    whose: &str,
+) -> AppResult<Option<T>> {
+    match found.len() {
+        0 => Ok(None),
+        1 => Ok(found.pop()),
+        n => Err(AppError::Conflict(format!(
+            "{n} live contracts named '{contract_name}' {whose}; rename or delete the extras"
+        ))),
+    }
+}
+
+/// Resolve the URL contract name to a contract id for the caller (its own org
+/// first, then a collaborator grant) and assert `min_role`.
 /// 401 only when there is no authenticated org (real auth failure).
 async fn require_role(
     state: &AppState,
     contract_name: &str,
     caller_org: Option<Uuid>,
     min_role: CallerRole,
-) -> AppResult<CallerRole> {
+) -> AppResult<(Uuid, CallerRole)> {
     let caller_org = caller_org.ok_or(AppError::Unauthorized)?;
-    let role = if storage::org_owns_contract_name(&state.db, contract_name, caller_org).await? {
-        Some(CallerRole::Owner)
-    } else {
-        let stored = storage::get_collaborator_role(&state.db, contract_name, caller_org).await?;
-        CallerRole::from_stored(stored.as_deref())
+    let owned = storage::owned_contract_ids_by_name(&state.db, contract_name, caller_org).await?;
+    let found = match pick_one(owned, contract_name, "in your org")? {
+        Some(id) => Some((id, CallerRole::Owner)),
+        None => {
+            let granted =
+                storage::granted_contracts_by_name(&state.db, contract_name, caller_org).await?;
+            pick_one(granted, contract_name, "are shared with your org")?.and_then(|(id, role)| {
+                CallerRole::from_stored(Some(role.as_str())).map(|r| (id, r))
+            })
+        }
     };
-    let exists = role.is_some() || storage::contract_name_exists(&state.db, contract_name).await?;
-    decide_access(role, exists, min_role, contract_name)
+    let exists = found.is_some() || storage::contract_name_exists(&state.db, contract_name).await?;
+    let role = decide_access(found.map(|(_, r)| r), exists, min_role, contract_name)?;
+    Ok((found.expect("decide_access ok implies a role").0, role))
 }
 
 // ---------------------------------------------------------------------------
@@ -189,8 +219,8 @@ pub async fn list_collaborators_handler(
     req: axum::extract::Request,
 ) -> AppResult<Json<Vec<CollaboratorRow>>> {
     let org_id = crate::org_id_from_req(&req);
-    require_role(&state, &contract_name, org_id, CallerRole::Viewer).await?;
-    let rows = storage::list_collaborators(&state.db, &contract_name).await?;
+    let (cid, _) = require_role(&state, &contract_name, org_id, CallerRole::Viewer).await?;
+    let rows = storage::list_collaborators(&state.db, cid).await?;
     Ok(Json(rows))
 }
 
@@ -204,22 +234,14 @@ pub async fn grant_collaborator_handler(
     req: axum::extract::Request,
 ) -> AppResult<(StatusCode, Json<CollaboratorRow>)> {
     let org_id = crate::org_id_from_req(&req);
-    require_role(&state, &contract_name, org_id, CallerRole::Owner).await?;
+    let (cid, _) = require_role(&state, &contract_name, org_id, CallerRole::Owner).await?;
 
     let Json(body): Json<GrantCollaboratorRequest> = axum::Json::from_request(req, &state)
         .await
         .map_err(|e| AppError::BadRequest(e.to_string()))?;
 
     validate_collaborator_role(&body.role)?;
-    let granted_by = org_id.ok_or(AppError::Unauthorized)?;
-    let row = storage::grant_collaborator(
-        &state.db,
-        &contract_name,
-        body.org_id,
-        &body.role,
-        granted_by,
-    )
-    .await?;
+    let row = storage::grant_collaborator(&state.db, cid, body.org_id, &body.role).await?;
     Ok((StatusCode::CREATED, Json(row)))
 }
 
@@ -233,15 +255,14 @@ pub async fn patch_collaborator_handler(
     req: axum::extract::Request,
 ) -> AppResult<Json<CollaboratorRow>> {
     let org_id = crate::org_id_from_req(&req);
-    require_role(&state, &contract_name, org_id, CallerRole::Owner).await?;
+    let (cid, _) = require_role(&state, &contract_name, org_id, CallerRole::Owner).await?;
 
     let Json(body): Json<PatchCollaboratorRequest> = axum::Json::from_request(req, &state)
         .await
         .map_err(|e| AppError::BadRequest(e.to_string()))?;
 
     validate_collaborator_role(&body.role)?;
-    let row = storage::update_collaborator_role(&state.db, &contract_name, target_org, &body.role)
-        .await?;
+    let row = storage::update_collaborator_role(&state.db, cid, target_org, &body.role).await?;
     Ok(Json(row))
 }
 
@@ -255,8 +276,8 @@ pub async fn revoke_collaborator_handler(
     req: axum::extract::Request,
 ) -> AppResult<StatusCode> {
     let org_id = crate::org_id_from_req(&req);
-    require_role(&state, &contract_name, org_id, CallerRole::Owner).await?;
-    storage::revoke_collaborator(&state.db, &contract_name, target_org).await?;
+    let (cid, _) = require_role(&state, &contract_name, org_id, CallerRole::Owner).await?;
+    storage::revoke_collaborator(&state.db, cid, target_org).await?;
     Ok(StatusCode::NO_CONTENT)
 }
 
@@ -270,8 +291,8 @@ pub async fn list_comments_handler(
     req: axum::extract::Request,
 ) -> AppResult<Json<Vec<CommentRow>>> {
     let org_id = crate::org_id_from_req(&req);
-    require_role(&state, &contract_name, org_id, CallerRole::Viewer).await?;
-    let rows = storage::list_comments(&state.db, &contract_name).await?;
+    let (cid, _) = require_role(&state, &contract_name, org_id, CallerRole::Viewer).await?;
+    let rows = storage::list_comments(&state.db, cid).await?;
     Ok(Json(rows))
 }
 
@@ -285,7 +306,7 @@ pub async fn add_comment_handler(
     req: axum::extract::Request,
 ) -> AppResult<(StatusCode, Json<CommentRow>)> {
     let org_id = crate::org_id_from_req(&req);
-    require_role(&state, &contract_name, org_id, CallerRole::Viewer).await?;
+    let (cid, _) = require_role(&state, &contract_name, org_id, CallerRole::Viewer).await?;
 
     let caller_org = org_id.ok_or(AppError::Unauthorized)?;
     let Json(body): Json<AddCommentRequest> = axum::Json::from_request(req, &state)
@@ -301,7 +322,7 @@ pub async fn add_comment_handler(
 
     let row = storage::add_comment(
         &state.db,
-        &contract_name,
+        cid,
         body.field.as_deref(),
         caller_org,
         &body.author,
@@ -321,8 +342,8 @@ pub async fn resolve_comment_handler(
     req: axum::extract::Request,
 ) -> AppResult<Json<CommentRow>> {
     let org_id = crate::org_id_from_req(&req);
-    require_role(&state, &contract_name, org_id, CallerRole::Viewer).await?;
-    let row = storage::resolve_comment(&state.db, &contract_name, comment_id).await?;
+    let (cid, _) = require_role(&state, &contract_name, org_id, CallerRole::Viewer).await?;
+    let row = storage::resolve_comment(&state.db, cid, comment_id).await?;
     Ok(Json(row))
 }
 
@@ -338,13 +359,13 @@ pub async fn delete_comment_handler(
     req: axum::extract::Request,
 ) -> AppResult<StatusCode> {
     let org_id = crate::org_id_from_req(&req);
-    let role = require_role(&state, &contract_name, org_id, CallerRole::Viewer).await?;
+    let (cid, role) = require_role(&state, &contract_name, org_id, CallerRole::Viewer).await?;
     let caller_org = org_id.ok_or(AppError::Unauthorized)?;
-    let author_org = storage::get_comment_org(&state.db, &contract_name, comment_id)
+    let author_org = storage::get_comment_org(&state.db, cid, comment_id)
         .await?
         .ok_or_else(|| AppError::NotFound(format!("comment '{comment_id}' not found")))?;
     check_comment_delete(role, caller_org, author_org, &contract_name)?;
-    storage::delete_comment(&state.db, &contract_name, comment_id).await?;
+    storage::delete_comment(&state.db, cid, comment_id).await?;
     Ok(StatusCode::NO_CONTENT)
 }
 
@@ -373,8 +394,8 @@ pub async fn list_proposals_handler(
     req: axum::extract::Request,
 ) -> AppResult<Json<Vec<ProposalRow>>> {
     let org_id = crate::org_id_from_req(&req);
-    require_role(&state, &contract_name, org_id, CallerRole::Viewer).await?;
-    let rows = storage::list_proposals(&state.db, &contract_name).await?;
+    let (cid, _) = require_role(&state, &contract_name, org_id, CallerRole::Viewer).await?;
+    let rows = storage::list_proposals(&state.db, cid).await?;
     Ok(Json(rows))
 }
 
@@ -389,7 +410,7 @@ pub async fn create_proposal_handler(
 ) -> AppResult<(StatusCode, Json<ProposalRow>)> {
     let org_id = crate::org_id_from_req(&req);
     // Only editors (and owners) may open proposals.
-    require_role(&state, &contract_name, org_id, CallerRole::Editor).await?;
+    let (cid, _) = require_role(&state, &contract_name, org_id, CallerRole::Editor).await?;
 
     let caller_org = org_id.ok_or(AppError::Unauthorized)?;
     let Json(body): Json<CreateProposalRequest> = axum::Json::from_request(req, &state)
@@ -400,8 +421,7 @@ pub async fn create_proposal_handler(
         return Err(AppError::BadRequest("proposed_yaml cannot be empty".into()));
     }
 
-    let row = storage::create_proposal(&state.db, &contract_name, caller_org, &body.proposed_yaml)
-        .await?;
+    let row = storage::create_proposal(&state.db, cid, caller_org, &body.proposed_yaml).await?;
     Ok((StatusCode::CREATED, Json(row)))
 }
 
@@ -416,7 +436,7 @@ pub async fn decide_proposal_handler(
 ) -> AppResult<Json<ProposalRow>> {
     let org_id = crate::org_id_from_req(&req);
     // Reviewers and owners may decide.
-    require_role(&state, &contract_name, org_id, CallerRole::Reviewer).await?;
+    let (cid, _) = require_role(&state, &contract_name, org_id, CallerRole::Reviewer).await?;
 
     let caller_org = org_id.ok_or(AppError::Unauthorized)?;
     let Json(body): Json<DecideProposalRequest> = axum::Json::from_request(req, &state)
@@ -433,14 +453,7 @@ pub async fn decide_proposal_handler(
         }
     };
 
-    let row = storage::decide_proposal(
-        &state.db,
-        &contract_name,
-        proposal_id,
-        new_status,
-        caller_org,
-    )
-    .await?;
+    let row = storage::decide_proposal(&state.db, cid, proposal_id, new_status, caller_org).await?;
     Ok(Json(row))
 }
 
@@ -455,9 +468,9 @@ pub async fn apply_proposal_handler(
 ) -> AppResult<Json<ProposalRow>> {
     let org_id = crate::org_id_from_req(&req);
     // Only the owner may apply a proposal.
-    require_role(&state, &contract_name, org_id, CallerRole::Owner).await?;
+    let (cid, _) = require_role(&state, &contract_name, org_id, CallerRole::Owner).await?;
 
-    let row = storage::apply_proposal(&state.db, &contract_name, proposal_id).await?;
+    let row = storage::apply_proposal(&state.db, cid, proposal_id).await?;
     Ok(Json(row))
 }
 
@@ -595,6 +608,18 @@ mod tests {
     fn unknown_contract_gets_404() {
         let (code, _) = status(decide_access(None, false, CallerRole::Viewer, "nope").unwrap_err());
         assert_eq!(code, StatusCode::NOT_FOUND);
+    }
+
+    #[test]
+    fn pick_one_resolves_single_and_rejects_ambiguous() {
+        assert_eq!(
+            pick_one(Vec::<u8>::new(), "x", "in your org").unwrap(),
+            None
+        );
+        assert_eq!(pick_one(vec![7u8], "x", "in your org").unwrap(), Some(7));
+        let (code, msg) = status(pick_one(vec![1u8, 2], "orders", "in your org").unwrap_err());
+        assert_eq!(code, StatusCode::CONFLICT);
+        assert!(msg.contains("2 live contracts named 'orders'"), "{msg}");
     }
 
     #[test]

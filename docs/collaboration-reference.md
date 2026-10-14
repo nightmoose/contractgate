@@ -298,12 +298,22 @@ All errors follow the standard DataContractGate error envelope:
 | `401 Unauthorized` | Missing or invalid credentials only (no API key / bad JWT). |
 | `403 Forbidden`    | Authenticated, but the caller's role is too low or it has no grant (including a revoked one). The message names the role needed, e.g. `requires owner role on contract 'orders'` or `requires viewer role or higher on contract 'orders'`. Deleting someone else's comment: `requires owner role on contract 'orders' or the comment's author org`. |
 | `400 Bad Request`  | Invalid role string, empty body, attempting to decide a non-open proposal, etc. |
+| `409 Conflict`     | The name matches more than one live contract for you. |
 | `404 Not Found`    | No live contract with that name, or the comment/proposal id doesn't belong to it. |
 
 Changed 2026-10-14 (C2): role denials used to return `401 missing or invalid API key`.
 
-A grant counts only while the granting org still owns a live (non-deleted)
-contract of that name. Comment resolve/delete and proposal decide/apply are
+## Contract identity (migration 042)
+
+Grants, comments and proposals belong to one contract **id**, not a name.
+`{name}` in the URL resolves to your org's live contract with that name, or,
+if you have none, the contract shared with you under that name. Two orgs with
+contracts of the same name no longer share grants, comments or proposals.
+Deleting a contract removes its grants, comments and proposals.
+If the name matches more than one live contract (two in your org, or two
+shared with you), the API returns `409` asking you to rename or delete the
+extras. `org`-visibility imports grant `viewer` on the published contract's
+id, granted by its owner org. Comment resolve/delete and proposal decide/apply are
 scoped to the contract in the path; an id from another contract is 404 (400
 for proposals not in the expected state).
 
