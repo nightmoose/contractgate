@@ -4373,12 +4373,25 @@ mod odcs_import_target {
             Some("2.1.0"),
             "yaml agrees with row"
         );
-        // `contract_id` alias works too.
+        // `contract_id` alias works too. The ODCS table is named `orders`, but
+        // the stored YAML takes the target contract's name.
         let r = a
             .post("/contracts/import")
-            .json(&json!({ "odcs_yaml": odcs(&name, "2.2.0"), "contract_id": cid }))
+            .json(&json!({ "odcs_yaml": odcs("orders", "2.2.0"), "contract_id": cid }))
             .await;
         assert_eq!(r.status_code(), StatusCode::CREATED, "{}", r.text());
+        let stored: serde_yaml::Value = serde_yaml::from_str(
+            r.json::<serde_json::Value>()["yaml_content"]
+                .as_str()
+                .unwrap(),
+        )
+        .unwrap();
+        assert_eq!(
+            stored["name"].as_str(),
+            Some(name.as_str()),
+            "target's name"
+        );
+        assert_eq!(stored["version"].as_str(), Some("2.2.0"));
         // Disagreeing ids → 400.
         let r = a
             .post("/contracts/import")

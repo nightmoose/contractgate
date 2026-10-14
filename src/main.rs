@@ -803,13 +803,15 @@ async fn import_odcs_handler(
         // 404 if missing or another org's; 403 for a collaborator grant.
         require_owner(&state, contract_id, org_id).await?;
         // Dev/no-auth has no org to scope by: still 404 a missing contract.
-        let _ = storage::get_contract_identity(&state.db, contract_id, org_id).await?;
+        let target = storage::get_contract_identity(&state.db, contract_id, org_id).await?;
+        // The stored YAML names the target contract, not the ODCS table name.
+        let yaml = crate::version_pin::set_yaml_name(&result.yaml_content, &target.name);
         // Equivalent-version 409 is enforced inside create_version_from_import.
         let cv = storage::create_version_from_import(
             &state.db,
             contract_id,
             &result.version,
-            &result.yaml_content,
+            &yaml,
             result.import_source,
             org_id,
         )
@@ -828,12 +830,15 @@ async fn import_odcs_handler(
         }
     }
 
+    // The stored YAML's `name:` matches the contract identity (name_override).
+    let yaml_named = crate::version_pin::set_yaml_name(&result.yaml_content, &name);
+
     // Step 2: create identity + throwaway v1.0.0 draft.
     let (identity, _) = storage::create_contract(
         &state.db,
         &name,
         name_in_yaml.description.as_deref(),
-        &result.yaml_content,
+        &yaml_named,
         Default::default(),
         org_id,
     )
@@ -848,7 +853,7 @@ async fn import_odcs_handler(
         &state.db,
         identity.id,
         &result.version,
-        &result.yaml_content,
+        &yaml_named,
         result.import_source,
         org_id,
     )
