@@ -1,5 +1,7 @@
 # Kafka Ingress Reference
 
+> **Disabled (2026-10-14).** Hosted Kafka ingress is turned off (`KAFKA_ENABLED=false`); enabling returns 400. Use `POST /v1/ingest`.
+
 **Status:** Available (RFC-025)
 
 DataContractGate can consume events directly from Confluent Cloud on your behalf.

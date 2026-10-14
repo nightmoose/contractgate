@@ -204,3 +204,13 @@ Customer-facing targets: [Support SLA](../support-sla.md).
 - Set `CONTRACTGATE_DEV_NO_AUTH` in production
 - Trust “CORS misconfigured” without reading Fly logs on 502
 - Apply prod migrations from agent sessions without human approval
+
+
+## Kafka / Confluent ingress — disabled (2026-10-14)
+
+The Confluent Cloud account is closed. `KAFKA_ENABLED` defaults to **false**
+(`fly.toml` sets it explicitly): boot does not restore Kafka consumers and
+`POST /contracts/{id}/kafka-ingress/enable` returns 400 pointing at `/v1/ingest`.
+Existing `kafka_ingress` rows are left as they are. To re-enable: provision a
+broker, set the `CONFLUENT_*` secrets, set `KAFKA_ENABLED=true`, redeploy.
+The `kafka-ingress` cargo feature stays compiled in (no code removal).

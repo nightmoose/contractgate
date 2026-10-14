@@ -444,12 +444,30 @@ pub async fn get_kafka_ingress_handler(
     Ok(Json(row_to_response(row, None)))
 }
 
+/// Kafka/Confluent ingress is off unless `KAFKA_ENABLED=true` (or `1`).
+/// The Confluent Cloud account is closed (2026-10-14); with it on, every
+/// restored consumer sat in a reconnect loop.
+pub fn kafka_enabled() -> bool {
+    kafka_enabled_from(std::env::var("KAFKA_ENABLED").ok().as_deref())
+}
+
+fn kafka_enabled_from(v: Option<&str>) -> bool {
+    matches!(v.map(str::trim), Some(s) if s == "1" || s.eq_ignore_ascii_case("true"))
+}
+
 pub async fn enable_kafka_ingress_handler(
     State(state): State<Arc<AppState>>,
     Path(contract_id): Path<Uuid>,
     req: axum::extract::Request,
 ) -> AppResult<(StatusCode, Json<KafkaIngressResponse>)> {
     let org_id = crate::org_id_from_req(&req);
+
+    if !kafka_enabled() {
+        return Err(AppError::BadRequest(
+            "Kafka ingress is currently unavailable on this deployment. Use POST /v1/ingest instead."
+                .to_string(),
+        ));
+    }
 
     if let Some(row) = get_kafka_ingress_row(&state.db, contract_id).await? {
         return Ok((StatusCode::OK, Json(row_to_response(row, None))));
@@ -552,5 +570,21 @@ fn row_to_response(row: KafkaIngressRow, plaintext_secret: Option<String>) -> Ka
         topic_quarantine: topic_quarantine(contract_id),
         partition_count: row.partition_count,
         created_at: row.created_at,
+    }
+}
+
+#[cfg(test)]
+mod kafka_enabled_tests {
+    use super::kafka_enabled_from;
+
+    #[test]
+    fn kafka_is_off_unless_explicitly_enabled() {
+        assert!(!kafka_enabled_from(None));
+        assert!(!kafka_enabled_from(Some("")));
+        assert!(!kafka_enabled_from(Some("false")));
+        assert!(!kafka_enabled_from(Some("0")));
+        assert!(kafka_enabled_from(Some("true")));
+        assert!(kafka_enabled_from(Some("TRUE")));
+        assert!(kafka_enabled_from(Some("1")));
     }
 }
