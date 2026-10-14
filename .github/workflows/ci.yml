@@ -16,9 +16,9 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, staging]
   pull_request:
-    branches: [main]
+    branches: [main, staging]
 
 # Cancel stale PR runs when a new commit lands. On main, never cancel a run
 # that is already going: each merge must reach the deploy (back-to-back
@@ -268,22 +268,30 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4
 
+      # Registry push only on push to main (prod app) or staging (staging app).
+      # PRs and any other ref build without pushing.
       - name: Set up flyctl
-        if: github.event_name == 'push'
+        if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/staging')
         uses: superfly/flyctl-actions/setup-flyctl@master
 
-      - name: Log in to the Fly registry
-        if: github.event_name == 'push'
+      - name: Log in to the Fly registry (prod)
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         run: flyctl auth docker
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+
+      - name: Log in to the Fly registry (staging)
+        if: github.event_name == 'push' && github.ref == 'refs/heads/staging'
+        run: flyctl auth docker
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN_STAGING }}
 
       - name: Build Docker image (with GHA layer cache)
         uses: docker/build-push-action@v7
         with:
           context: .
-          push: ${{ github.event_name == 'push' }}
-          tags: registry.fly.io/contractgate-api:${{ github.sha }}
+          push: ${{ github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/staging') }}
+          tags: ${{ github.ref == 'refs/heads/staging' && format('registry.fly.io/contractgate-api-staging:{0}', github.sha) || format('registry.fly.io/contractgate-api:{0}', github.sha) }}
           build-args: GIT_SHA=${{ github.sha }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
@@ -447,6 +455,27 @@ jobs:
             exit 1
           fi
           echo "Sentinel A1c OK: authenticated can read contracts without RLS recursion (migration 039)."
+
+          # Sentinel A1d — migration 040: delete_user_account exists and is
+          # service-role only (authenticated must not be able to call it).
+          DEL_OK=$(psql "$DATABASE_URL" -Atc \
+            "SELECT has_function_privilege('service_role', 'public.delete_user_account(uuid)', 'EXECUTE')
+                AND NOT has_function_privilege('authenticated', 'public.delete_user_account(uuid)', 'EXECUTE')")
+          if [[ "$DEL_OK" != "t" ]]; then
+            echo "::error::Migration 040 sentinel failed — delete_user_account missing or callable by authenticated."
+            exit 1
+          fi
+          echo "Sentinel A1d OK: delete_user_account is service-role only (migration 040)."
+
+          # Sentinel A1e — migration 041: contract_publications.org_id → orgs.
+          PUB_FK=$(psql "$DATABASE_URL" -Atc \
+            "SELECT confrelid::regclass::text FROM pg_constraint
+             WHERE conname = 'contract_publications_org_id_fkey'")
+          if [[ "$PUB_FK" != "orgs" ]]; then
+            echo "::error::Migration 041 sentinel failed — contract_publications.org_id references '$PUB_FK', expected orgs."
+            exit 1
+          fi
+          echo "Sentinel A1e OK: contract_publications.org_id references orgs (migration 041)."
 
           # Sentinel A2 — migration 027 (api_keys server-side issuance, RFC-056):
           # verify the authenticated INSERT policy is gone and the service_role
@@ -829,7 +858,8 @@ jobs:
   #   GitHub → repo Settings → Secrets → Actions → FLY_API_TOKEN
   deploy-fly:
     name: Deploy — Fly.io
-    if: github.event_name == 'push'
+    # Prod only. Staging pushes deploy via deploy-fly-staging below.
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     needs:
       - changes
       - rust-check
@@ -855,3 +885,34 @@ jobs:
         run: flyctl deploy --image registry.fly.io/contractgate-api:${{ github.sha }}
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+
+  # Staging: same gated image, pushed to the staging app's registry by the
+  # docker job, deployed with fly.staging.toml. Staging shares the prod DB.
+  deploy-fly-staging:
+    name: Deploy — Fly.io (staging)
+    if: github.event_name == 'push' && github.ref == 'refs/heads/staging'
+    needs:
+      - changes
+      - rust-check
+      - dashboard
+      - docker
+      - migrations-check
+      - security
+      - compose-smoke
+      - compose-demo-smoke
+      - compose-isolation-smoke
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Set up flyctl
+        uses: superfly/flyctl-actions/setup-flyctl@master
+
+      - name: Deploy to Fly.io (staging)
+        # Ships the image the docker job built and pushed for this commit;
+        # no rebuild here (that took ~8 min per deploy).
+        run: flyctl deploy -c fly.staging.toml --image registry.fly.io/contractgate-api-staging:${{ github.sha }}
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN_STAGING }}
