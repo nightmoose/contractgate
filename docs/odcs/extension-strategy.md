@@ -221,9 +221,11 @@ The extension schema (the set of `x-contractgate-*` keys and their value shapes)
 x-contractgate-version: "1.0"
 ```
 
-This top-level key declares the version of the CG extension schema used in this document. Import layer checks this field:
+This top-level key declares the version of the CG extension schema used in this document (the **extension format version**). It is *not* the contract's version: that is the ODCS top-level `version`, which export writes from the contract version row. `"1.0"` here means "x-contractgate-* keys as defined in this document" and stays `1.0` for every contract version until the extension schema itself changes. Import layer checks this field:
 - If absent: assume v1.0 (first released version)
 - If higher than current: emit a warning and attempt best-effort import
+
+Import does not currently compare the value. Its presence selects lossless (Mode A) import.
 
 **Extension schema changelog:**
 - `1.0` (Week 2): initial set as defined in this document
@@ -379,3 +381,14 @@ The following decisions affect the Week 2 implementation directly. Each one has 
 | D-003 | Should `x-contractgate-ontology` (the verbatim native block) always be written, or only when there is content that would otherwise be lost? | Always write; Write only when lossy | **Always write** — simpler import logic, clearer round-trip guarantee. Accept the verbosity. |
 | D-004 | When exporting, should `name` populate `dataProduct`, `schema[0].name`, or both? | Both; only `dataProduct`; only `schema[0].name` | **Both** — maximises compatibility with ODCS consumers that look in different places. |
 | D-005 | For the ODCS quality rules generated from CG `min`/`max`, should CG document the off-by-one (inclusive vs exclusive) explicitly in the export, or attempt to compensate with epsilon adjustment? | Document only; Epsilon compensate | **Document only** — epsilon adjustment introduces floating-point noise and is hard to reverse on import. The `x-contractgate-min/max` extensions carry the exact values. |
+
+
+---
+
+## Import notes (stored YAML)
+
+- Import is a conversion: the stored contract YAML is rebuilt from the ODCS document (Mode A re-serializes `x-contractgate-ontology`; Mode B reconstructs it from `schema[0]`). Comments and key order from any original YAML are not preserved.
+- After the rebuild, two top-level keys are set so the stored YAML agrees with the records it belongs to:
+  - `version:` is set to the version row, which is the ODCS document's `version`.
+  - `name:` is set to the contract's name: the target contract's name when importing with `target_contract_id` / `contract_id`, otherwise `name_override` or the ODCS `dataProduct`.
+- These two rewrites change only the `version:` / `name:` line and keep any trailing `# comment` on it. Rows stored before this behaviour are not backfilled.
