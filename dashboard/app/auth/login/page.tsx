@@ -11,6 +11,7 @@ function LoginForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const next = searchParams.get("next") ?? "/";
+  const linkError = searchParams.get("error");
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -72,6 +73,12 @@ function LoginForm() {
 
         <div className="bg-[#111827] border border-[#1f2937] rounded-xl p-8">
           <h1 className="text-xl font-semibold text-slate-100 mb-6">Sign in to your account</h1>
+
+          {linkError === "confirmation_failed" && (
+            <div className="bg-red-900/20 border border-red-700/40 rounded-lg px-3 py-2.5 text-sm text-red-400 mb-4">
+              This link was opened in a different browser or has expired.
+            </div>
+          )}
 
           {/* GitHub OAuth */}
           <button

@@ -86,6 +86,10 @@ export default function SignupPage() {
             ? { product: "aischemagate" }
             : {}),
         },
+        // The confirmation email must use the token_hash template (see
+        // supabase/templates/confirmation.html), not {{ .ConfirmationURL }}.
+        // product is already in user metadata; /auth/confirm copies it onto
+        // the brand cookie after verifyOtp.
         emailRedirectTo: `${location.origin}/auth/callback?next=/${productSuffix()}`,
         captchaToken,
       },

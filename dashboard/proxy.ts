@@ -12,8 +12,11 @@ const PUBLIC_ROUTES = [
   "/auth/signup",
   "/auth/callback",
   "/auth/forgot",
-  // Reached from the recovery email before the browser client has exchanged
-  // the ?code= for a session, so the user is still anonymous here.
+  // Email links land here with a token_hash. The page only renders a form;
+  // verifyOtp runs on submit, so the visitor is still anonymous on GET.
+  "/auth/confirm",
+  // Reached after confirm, or from an older PKCE recovery link, before a
+  // session exists. A failed exchange leaves the visitor anonymous here too.
   "/auth/reset",
   "/pricing",
   // Legal pages: linked from signup and from directory listings, so they must
@@ -157,11 +160,14 @@ async function route(request: NextRequest): Promise<NextResponse> {
 
   // Redirect authenticated users away from auth pages. /auth/reset is exempt:
   // a password-recovery session is a real session, and bouncing it to / would
-  // make the new password impossible to set.
+  // make the new password impossible to set. /auth/confirm is exempt so a
+  // person who is already signed in can still open an email link; the form
+  // POST is this same path, and a redirect would drop it.
   if (
     user &&
     pathname.startsWith("/auth/") &&
     pathname !== "/auth/callback" &&
+    pathname !== "/auth/confirm" &&
     pathname !== "/auth/reset"
   ) {
     const url = request.nextUrl.clone();
