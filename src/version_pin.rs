@@ -95,9 +95,65 @@ pub fn find_equivalent<'a>(new: &str, stored: &'a [String]) -> Option<&'a str> {
         .map(String::as_str)
 }
 
+/// Make a contract YAML's top-level `version:` say `version`, so the stored
+/// YAML always agrees with its `contract_versions.version` row.
+///
+/// Only the first column-0 `version:` line is replaced (comments and the
+/// rest of the document are kept byte-for-byte); if there is none, one is
+/// prepended. Returns the input unchanged when it already matches exactly.
+pub fn set_yaml_version(yaml: &str, version: &str) -> String {
+    let quoted = format!(
+        "version: \"{}\"",
+        version.replace('\\', "\\\\").replace('"', "\\\"")
+    );
+    let mut out = String::with_capacity(yaml.len() + quoted.len());
+    let mut replaced = false;
+    for line in yaml.split_inclusive('\n') {
+        if !replaced && line.starts_with("version:") {
+            let current = line["version:".len()..]
+                .trim()
+                .trim_matches(|c| c == '"' || c == '\'');
+            if current == version {
+                return yaml.to_string();
+            }
+            out.push_str(&quoted);
+            out.push_str(if line.ends_with('\n') { "\n" } else { "" });
+            replaced = true;
+        } else {
+            out.push_str(line);
+        }
+    }
+    if !replaced {
+        return format!("{quoted}\n{yaml}");
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn set_yaml_version_rewrites_or_prepends() {
+        let y = "# keep me\nversion: \"1.0\"\nname: \"x\"\nontology:\n  version: inner\n";
+        let out = set_yaml_version(y, "1.3");
+        assert_eq!(
+            out,
+            "# keep me\nversion: \"1.3\"\nname: \"x\"\nontology:\n  version: inner\n"
+        );
+        assert_eq!(set_yaml_version(y, "1.0"), y);
+        assert_eq!(
+            set_yaml_version("version: 1.0\nname: x", "2.0"),
+            "version: \"2.0\"\nname: x"
+        );
+        assert_eq!(
+            set_yaml_version("name: x\n", "1.1"),
+            "version: \"1.1\"\nname: x\n"
+        );
+        // Result parses with the row's version.
+        let c: serde_yaml::Value = serde_yaml::from_str(&set_yaml_version(y, "1.3")).unwrap();
+        assert_eq!(c["version"].as_str(), Some("1.3"));
+    }
 
     #[test]
     fn normalize_pads_numeric_versions() {
