@@ -14,6 +14,7 @@
 //! | DELETE | /contracts/{name}/comments/{id}                 | author org or owner | Delete a comment |
 //! | GET    | /contracts/{name}/proposals                     | viewer  | List proposals |
 //! | POST   | /contracts/{name}/proposals                     | editor  | Open a proposal |
+//! | DELETE | /contracts/{name}/proposals/{id}                | proposer org (open) or owner | Delete a proposal |
 //! | POST   | /contracts/{name}/proposals/{id}/decide         | reviewer| Approve / reject |
 //! | POST   | /contracts/{name}/proposals/{id}/apply          | owner   | Apply an approved proposal |
 //!
@@ -29,7 +30,10 @@
 //! The URL carries a contract name; it is resolved to one contract id (the
 //! caller's own live contract, else one it holds a grant on) and every query
 //! runs by that id. Grants, comments and proposals point at a contract id.
-//! Two live matches → 409.
+//! Two live matches → 409. A UUID in the `{name}` slot is treated as a
+//! contract id and checked against the caller's own contract or its grant on
+//! that id (N2), so grantees that own a same-named contract can still reach
+//! the shared one. Names keep resolving to the caller's own contract first.
 
 use axum::{
     extract::{FromRequest, Path, State},
@@ -58,7 +62,6 @@ pub enum CallerRole {
 }
 
 impl CallerRole {
-    #[allow(dead_code)]
     pub fn from_str(s: &str) -> Option<Self> {
         match s {
             "owner" => Some(Self::Owner),
@@ -132,6 +135,33 @@ pub(crate) fn forbidden_role(min_role: CallerRole, contract_name: &str) -> AppEr
     AppError::Forbidden(format!("requires {need} on contract '{contract_name}'"))
 }
 
+/// Caller's role on a contract id: owner, its active grant, or `None`.
+pub(crate) async fn id_role(
+    state: &AppState,
+    contract_id: Uuid,
+    caller_org: Uuid,
+) -> AppResult<Option<CallerRole>> {
+    if storage::org_owns_contract_id(&state.db, contract_id, caller_org).await? {
+        return Ok(Some(CallerRole::Owner));
+    }
+    let grant = storage::collaborator_grant_by_id(&state.db, contract_id, caller_org).await?;
+    Ok(grant.and_then(|(_, r)| CallerRole::from_stored(Some(r.as_str()))))
+}
+
+/// N2: decision for by-id routes.  No role at all → 404 (don't reveal the
+/// contract); a role below `min_role` → 403 naming the role.
+pub(crate) fn decide_id_access(
+    role: Option<CallerRole>,
+    min_role: CallerRole,
+    contract_id: Uuid,
+) -> AppResult<CallerRole> {
+    match role {
+        None => Err(AppError::ContractNotFound(contract_id)),
+        Some(r) if r.satisfies(min_role) => Ok(r),
+        Some(_) => Err(forbidden_role(min_role, &contract_id.to_string())),
+    }
+}
+
 /// At most one match is allowed; several live contracts behind one URL name
 /// is a 409 instead of silently picking one.
 pub(crate) fn pick_one<T>(
@@ -158,6 +188,12 @@ async fn require_role(
     min_role: CallerRole,
 ) -> AppResult<(Uuid, CallerRole)> {
     let caller_org = caller_org.ok_or(AppError::Unauthorized)?;
+    // N2: a UUID in the path is a contract id — resolve it directly, so a
+    // grantee that owns a same-named contract can still reach the shared one.
+    if let Ok(contract_id) = Uuid::parse_str(contract_name) {
+        let role = id_role(state, contract_id, caller_org).await?;
+        return decide_id_access(role, min_role, contract_id).map(|r| (contract_id, r));
+    }
     let owned = storage::owned_contract_ids_by_name(&state.db, contract_name, caller_org).await?;
     let found = match pick_one(owned, contract_name, "in your org")? {
         Some(id) => Some((id, CallerRole::Owner)),
@@ -426,6 +462,51 @@ pub async fn create_proposal_handler(
 }
 
 // ---------------------------------------------------------------------------
+// DELETE /contracts/{name}/proposals/{id}
+// ---------------------------------------------------------------------------
+
+/// Delete a proposal: the proposing org while it is still `open`, or the
+/// contract owner at any time.
+pub async fn delete_proposal_handler(
+    State(state): State<Arc<AppState>>,
+    Path((contract_name, proposal_id)): Path<(String, Uuid)>,
+    req: axum::extract::Request,
+) -> AppResult<StatusCode> {
+    let org_id = crate::org_id_from_req(&req);
+    let (cid, role) = require_role(&state, &contract_name, org_id, CallerRole::Viewer).await?;
+    let caller_org = org_id.ok_or(AppError::Unauthorized)?;
+    let (proposed_by, status) = storage::get_proposal_meta(&state.db, cid, proposal_id)
+        .await?
+        .ok_or_else(|| AppError::NotFound(format!("proposal '{proposal_id}' not found")))?;
+    check_proposal_delete(role, caller_org, proposed_by, &status, &contract_name)?;
+    storage::delete_proposal(&state.db, cid, proposal_id).await?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+pub(crate) fn check_proposal_delete(
+    role: CallerRole,
+    caller_org: Uuid,
+    proposed_by: Uuid,
+    status: &str,
+    contract_name: &str,
+) -> AppResult<()> {
+    if role == CallerRole::Owner {
+        return Ok(());
+    }
+    if caller_org == proposed_by {
+        if status == "open" {
+            return Ok(());
+        }
+        return Err(AppError::Conflict(format!(
+            "proposal is '{status}'; the proposing org can delete it only while it is open"
+        )));
+    }
+    Err(AppError::Forbidden(format!(
+        "requires owner role on contract '{contract_name}' or the proposing org"
+    )))
+}
+
+// ---------------------------------------------------------------------------
 // POST /contracts/{name}/proposals/{id}/decide
 // ---------------------------------------------------------------------------
 
@@ -620,6 +701,38 @@ mod tests {
         let (code, msg) = status(pick_one(vec![1u8, 2], "orders", "in your org").unwrap_err());
         assert_eq!(code, StatusCode::CONFLICT);
         assert!(msg.contains("2 live contracts named 'orders'"), "{msg}");
+    }
+
+    #[test]
+    fn id_access_editor_writes_viewer_403_stranger_404() {
+        let id = Uuid::new_v4();
+        assert!(decide_id_access(Some(CallerRole::Editor), CallerRole::Editor, id).is_ok());
+        assert!(decide_id_access(Some(CallerRole::Reviewer), CallerRole::Editor, id).is_ok());
+        assert!(decide_id_access(Some(CallerRole::Owner), CallerRole::Owner, id).is_ok());
+        let (code, msg) =
+            status(decide_id_access(Some(CallerRole::Viewer), CallerRole::Editor, id).unwrap_err());
+        assert_eq!(code, StatusCode::FORBIDDEN);
+        assert!(msg.contains("editor role or higher"), "{msg}");
+        let (code, msg) =
+            status(decide_id_access(Some(CallerRole::Editor), CallerRole::Owner, id).unwrap_err());
+        assert_eq!(code, StatusCode::FORBIDDEN);
+        assert!(msg.contains("requires owner role"), "{msg}");
+        let (code, _) = status(decide_id_access(None, CallerRole::Viewer, id).unwrap_err());
+        assert_eq!(code, StatusCode::NOT_FOUND);
+    }
+
+    #[test]
+    fn proposal_delete_rules() {
+        let (a, b) = (Uuid::new_v4(), Uuid::new_v4());
+        assert!(check_proposal_delete(CallerRole::Editor, a, a, "open", "x").is_ok());
+        assert!(check_proposal_delete(CallerRole::Owner, a, b, "approved", "x").is_ok());
+        let (code, _) =
+            status(check_proposal_delete(CallerRole::Editor, a, a, "approved", "x").unwrap_err());
+        assert_eq!(code, StatusCode::CONFLICT);
+        let (code, msg) =
+            status(check_proposal_delete(CallerRole::Reviewer, a, b, "open", "x").unwrap_err());
+        assert_eq!(code, StatusCode::FORBIDDEN);
+        assert!(msg.contains("proposing org"));
     }
 
     #[test]

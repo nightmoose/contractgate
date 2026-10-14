@@ -172,16 +172,7 @@ pub struct BatchIngestResponse {
 /// Split the path parameter into `(uuid, optional_version)`.  The `@version`
 /// suffix is an RFC-002 fallback for clients that can't set headers.
 fn parse_ingest_path(raw: &str) -> AppResult<(Uuid, Option<String>)> {
-    let (uuid_part, path_version) = match raw.split_once('@') {
-        Some((id, v)) if !v.is_empty() => (id, Some(v.to_string())),
-        // Empty suffix (e.g. `<uuid>@`) is treated as "no pin" — but the
-        // UUID still lives before the `@`, so split on that boundary.
-        Some((id, _)) => (id, None),
-        None => (raw, None),
-    };
-    let uuid = Uuid::parse_str(uuid_part)
-        .map_err(|_| AppError::BadRequest(format!("invalid contract_id: {uuid_part}")))?;
-    Ok((uuid, path_version))
+    crate::version_pin::parse_pinned_id(raw)
 }
 
 /// Resolve the version this request should use and where it came from.
@@ -821,7 +812,10 @@ async fn deprecated_pin_quarantine(
         .iter()
         .map(|tp| IngestEventResult {
             passed: false,
-            violations: vec![],
+            violations: vec![crate::version_pin::deprecated_violation(
+                pinned_version,
+                latest_stable.as_deref(),
+            )],
             validation_us: 0,
             forwarded: false,
             contract_version: pinned_version.to_string(),
@@ -917,11 +911,15 @@ async fn deprecated_pin_quarantine(
     };
 
     let body = json!({
-        "error": format!(
-            "Version {} on contract {} is deprecated; batch quarantined.",
-            pinned_version, contract_id,
+        "error": crate::version_pin::deprecated_message(
+            pinned_version,
+            contract_id,
+            if query.dry_run { "dry run: nothing was quarantined" } else { "every event was quarantined" },
         ),
         "status": StatusCode::UNPROCESSABLE_ENTITY.as_u16(),
+        "code": crate::version_pin::DEPRECATED_CODE,
+        "deprecated_version": pinned_version,
+        "latest_stable": latest_stable,
         "batch": response_body,
     });
 

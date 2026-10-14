@@ -36,6 +36,27 @@ get the same `404` as for a missing contract. Writes and owner-only data
 
 ---
 
+## Editors writing by contract id (2026-10-14, N2)
+
+By-id routes check the caller's own contract first, then its grant on that
+exact contract id:
+
+| Route | Minimum role |
+|---|---|
+| `GET /contracts/{id}`, `/versions`, `/versions/{v}`, `/versions/latest-stable` | viewer |
+| `POST /contracts/{id}/versions` (new draft) | editor |
+| `PATCH /contracts/{id}/versions/{v}` (edit a draft) | editor |
+| `PATCH`/`DELETE /contracts/{id}`, `promote`, `deprecate`, `DELETE` a version | owner |
+
+No grant → `404`; a grant below the minimum → `403 requires … role`. Drafts
+never validate events until the owner promotes them.
+
+**Name vs id.** In the collaboration routes (`/contracts/{name}/collaborators`,
+`/comments`, `/proposals`) a name resolves to **your own** contract of that
+name first, then to one shared with you. If you own a contract with the same
+name as one shared with you, pass the shared contract's **UUID** in the
+`{name}` slot; it is resolved by id against your grant.
+
 ## Authentication
 
 All collaboration endpoints require `x-api-key` (the standard DataContractGate header).
@@ -192,6 +213,13 @@ collaborators get `403`.
 ---
 
 ### Change Proposals
+
+#### `DELETE /contracts/{name}/proposals/{id}`
+
+Delete a proposal. Allowed for the proposing org while the proposal is
+`open` (otherwise `409`), and for the contract owner at any time. Others get
+`403`. Unknown id → `404`. Response `204`.
+
 
 Editors propose YAML changes; reviewers or the owner approve or reject; the owner applies.
 A collaborator's edit **never** lands on a stable version directly.

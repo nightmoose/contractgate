@@ -3784,13 +3784,15 @@ mod collab_by_id {
             .unwrap();
         assert_eq!(granted, vec![(ca, "viewer".to_string())]);
         assert_eq!(
-            storage::collaborator_read_owner(&pool, ca, c)
+            storage::collaborator_grant_by_id(&pool, ca, c)
                 .await
                 .unwrap(),
-            Some(a)
+            Some((a, "viewer".to_string()))
         );
+        assert!(storage::org_owns_contract_id(&pool, ca, a).await.unwrap());
+        assert!(!storage::org_owns_contract_id(&pool, ca, c).await.unwrap());
         assert_eq!(
-            storage::collaborator_read_owner(&pool, cb, c)
+            storage::collaborator_grant_by_id(&pool, cb, c)
                 .await
                 .unwrap(),
             None
@@ -3836,6 +3838,19 @@ mod collab_by_id {
             "applied"
         );
         assert!(storage::list_proposals(&pool, cb).await.unwrap().is_empty());
+        let p2 = storage::create_proposal(&pool, ca, c, "x: 2")
+            .await
+            .unwrap();
+        assert_eq!(
+            storage::get_proposal_meta(&pool, ca, p2.id).await.unwrap(),
+            Some((c, "open".to_string()))
+        );
+        assert_eq!(
+            storage::get_proposal_meta(&pool, cb, p2.id).await.unwrap(),
+            None
+        );
+        assert!(storage::delete_proposal(&pool, cb, p2.id).await.is_err());
+        storage::delete_proposal(&pool, ca, p2.id).await.unwrap();
 
         // Org-visibility import grant: granted_by is the owner, never the importer.
         storage::ensure_viewer_collaborator(&pool, cb, c)
@@ -3858,7 +3873,7 @@ mod collab_by_id {
             .unwrap();
         storage::revoke_collaborator(&pool, ca, c).await.unwrap();
         assert_eq!(
-            storage::collaborator_read_owner(&pool, ca, c)
+            storage::collaborator_grant_by_id(&pool, ca, c)
                 .await
                 .unwrap(),
             None

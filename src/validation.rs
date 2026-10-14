@@ -137,6 +137,8 @@ pub enum ViolationKind {
     /// Quality rule: field value appears more than once in the same ingest
     /// batch.  Emitted by `rule_type: uniqueness` checks.
     UniquenessViolation,
+    /// D1: the request pinned a deprecated contract version.
+    ContractVersionDeprecated,
 }
 
 // ---------------------------------------------------------------------------

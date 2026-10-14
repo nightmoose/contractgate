@@ -214,16 +214,24 @@ contract. Pin a specific version with the `?version=` query parameter:
 
 ```
 POST /v1/ingest/{contract_id}?version=1.0.0
+POST /v1/ingest/{contract_id}@1.0.0        # same thing (D1, 2026-10-14)
 ```
 
-Pinning a `deprecated` version quarantines the entire batch with a
-`deprecated_contract_version` violation (nothing is quarantined on
-`dry_run`). The 422 body says why; per-event `violations` stay empty because
-no event was validated:
+`?version=` wins if both are given. The same `{id}@{version}` form works on
+`/ingest` and `/egress`.
+
+### Deprecated pin — same 422 on every route
+
+Pinning a `deprecated` version on `/v1/ingest`, `/ingest` or `/egress`
+returns **422** with `"code": "contract_version_deprecated"`, the pinned
+version, the latest stable version (where known) and a message saying what to
+do. Ingest quarantines the whole batch (nothing on `dry_run`); egress forwards
+nothing. Each per-event result carries one violation with
+`kind: "contract_version_deprecated"`:
 
 ```json
 {
-  "error": "Version 1.0 of contract … is deprecated and no longer accepts events (every event was quarantined). Remove the version pin to use the latest stable version, or pin a stable version with ?version=X.Y.",
+  "error": "Version 1.0 of contract … is deprecated and no longer accepts events (every event was quarantined). Remove the version pin to use the latest stable version, or pin a stable version (e.g. …@X.Y or ?version=X.Y).",
   "code": "contract_version_deprecated",
   "deprecated_version": "1.0",
   "version_pin_source": "pinned_deprecated",
