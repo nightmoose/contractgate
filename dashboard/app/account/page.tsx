@@ -12,6 +12,7 @@ import { DEMO_MODE } from "@/lib/demo";
 import DemoFeatureUnavailable from "@/components/DemoFeatureUnavailable";
 import UsageWidget from "@/components/UsageWidget";
 import ProfileSecurity from "@/components/account/ProfileSecurity";
+import OrgIdCard from "@/components/account/OrgIdCard";
 import { getPayloadStorage, setPayloadStorage } from "@/lib/api";
 import type { PayloadStorageStatus } from "@/lib/api";
 
@@ -427,8 +428,8 @@ function AccountContent() {
               </HelpTarget>
               <div className="text-xs text-slate-500">
                 Plan: <span className="font-medium text-slate-300">{planDisplayName(org.plan)}</span>
-                {org.plan_status && !isFreePlan(org.plan) && (
-                  <span className="ml-1 text-slate-400">({org.plan_status})</span>
+                {planStatusLabel(org.plan, org.plan_status) && (
+                  <span className="ml-1 text-slate-400">({planStatusLabel(org.plan, org.plan_status)})</span>
                 )}
               </div>
             </div>
@@ -462,12 +463,14 @@ function AccountContent() {
               </button>
             )}
           </div>
-          {!isFreePlan(org.plan) && <SubscriptionDetails />}
+          {!isFreePlan(org.plan) && !isComplimentary(org.plan, org.plan_status) && <SubscriptionDetails />}
           <p className="text-[11px] text-slate-500">
             Self-serve upgrades use Stripe Checkout (in-app from the pricing page).
           </p>
         </div>
       )}
+
+      <OrgIdCard />
 
       <ProfileSecurity user={user} />
 
@@ -1022,6 +1025,23 @@ transforms.contractgate.contractgate.contract.id=<your contract UUID>`}
 }
 
 // ── Event payload storage (RFC-086) ────────────────────────────────────────────
+/** Stripe statuses meaning "no live subscription". */
+const ENDED_STATUSES = new Set(["canceled", "incomplete_expired"]);
+
+/**
+ * A paid plan whose Stripe subscription has ended (or never existed) was set
+ * by hand — e.g. a comped org. Don't show the stale "(canceled)".
+ */
+function isComplimentary(plan: Parameters<typeof isFreePlan>[0], status?: string | null): boolean {
+  return !isFreePlan(plan) && plan !== "enterprise" && (!status || ENDED_STATUSES.has(status));
+}
+
+function planStatusLabel(plan: Parameters<typeof isFreePlan>[0], status?: string | null): string | null {
+  if (isFreePlan(plan)) return null;
+  if (isComplimentary(plan, status)) return "complimentary";
+  return status ?? null;
+}
+
 interface SubInfo {
   status: string;
   trial_end: number | null;
