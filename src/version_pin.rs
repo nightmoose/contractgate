@@ -96,28 +96,63 @@ pub fn find_equivalent<'a>(new: &str, stored: &'a [String]) -> Option<&'a str> {
 }
 
 /// Make a contract YAML's top-level `version:` say `version`, so the stored
-/// YAML always agrees with its `contract_versions.version` row.
-///
-/// Only the first column-0 `version:` line is replaced (comments and the
-/// rest of the document are kept byte-for-byte); if there is none, one is
-/// prepended. Returns the input unchanged when it already matches exactly.
+/// YAML always agrees with its `contract_versions.version` row. See
+/// [`set_yaml_top_key`].
 pub fn set_yaml_version(yaml: &str, version: &str) -> String {
+    set_yaml_top_key(yaml, "version", version)
+}
+
+/// Make a contract YAML's top-level `name:` say `name` (a targeted import
+/// stores the target contract's name, not the ODCS table name).
+pub fn set_yaml_name(yaml: &str, name: &str) -> String {
+    set_yaml_top_key(yaml, "name", name)
+}
+
+/// Split the text after `key:` into `(value, trailing)` where `trailing` is
+/// the whitespace + `# comment` (if any) that follows the value.
+fn split_value_comment(rest: &str) -> (&str, &str) {
+    let body = rest.trim_end_matches(['\n', '\r']);
+    let lead = body.len() - body.trim_start().len();
+    let v = &body[lead..];
+    let end = match v.chars().next() {
+        Some(q @ ('"' | '\'')) => v[1..].find(q).map(|i| i + 2).unwrap_or(v.len()),
+        _ => {
+            let b = v.as_bytes();
+            (1..b.len())
+                .find(|&i| b[i] == b'#' && (b[i - 1] == b' ' || b[i - 1] == b'\t'))
+                .map(|i| v[..i].trim_end().len())
+                .unwrap_or(v.trim_end().len())
+        }
+    };
+    (&v[..end], &v[end..])
+}
+
+/// Set a top-level scalar `key:` in contract YAML by rewriting only that
+/// line. The first column-0 `key:` line is replaced; a trailing `# comment`
+/// on it is kept, as is every other line byte-for-byte. If the key is
+/// missing, `key: "value"` is prepended. Unchanged input is returned when
+/// the value already matches exactly.
+pub fn set_yaml_top_key(yaml: &str, key: &str, value: &str) -> String {
+    let prefix = format!("{key}:");
     let quoted = format!(
-        "version: \"{}\"",
-        version.replace('\\', "\\\\").replace('"', "\\\"")
+        "{key}: \"{}\"",
+        value.replace('\\', "\\\\").replace('"', "\\\"")
     );
     let mut out = String::with_capacity(yaml.len() + quoted.len());
     let mut replaced = false;
     for line in yaml.split_inclusive('\n') {
-        if !replaced && line.starts_with("version:") {
-            let current = line["version:".len()..]
-                .trim()
-                .trim_matches(|c| c == '"' || c == '\'');
-            if current == version {
+        if !replaced && line.starts_with(&prefix) {
+            let (current, trailing) = split_value_comment(&line[prefix.len()..]);
+            if current.trim_matches(|c| c == '"' || c == '\'') == value {
                 return yaml.to_string();
             }
             out.push_str(&quoted);
-            out.push_str(if line.ends_with('\n') { "\n" } else { "" });
+            out.push_str(trailing);
+            if line.ends_with("\r\n") {
+                out.push_str("\r\n");
+            } else if line.ends_with('\n') {
+                out.push('\n');
+            }
             replaced = true;
         } else {
             out.push_str(line);
@@ -132,6 +167,40 @@ pub fn set_yaml_version(yaml: &str, version: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn set_yaml_top_key_keeps_trailing_comments() {
+        assert_eq!(
+            set_yaml_version("version: 1.0  # bump\nname: x\n", "1.1"),
+            "version: \"1.1\"  # bump\nname: x\n"
+        );
+        assert_eq!(
+            set_yaml_version("version: \"1.0\" # q\n", "2.0"),
+            "version: \"2.0\" # q\n"
+        );
+        assert_eq!(
+            set_yaml_name("version: 1.0\nname: orders\t# from ODCS\n", "billing"),
+            "version: 1.0\nname: \"billing\"\t# from ODCS\n"
+        );
+        // `#` inside a quoted value is not a comment.
+        assert_eq!(
+            set_yaml_name("name: \"a # b\"  # c\n", "z"),
+            "name: \"z\"  # c\n"
+        );
+        // Unquoted `a#b` (no space before #) is part of the value.
+        assert_eq!(set_yaml_name("name: a#b\n", "z"), "name: \"z\"\n");
+        // Already equal → unchanged, comment and all.
+        let y = "version: 1.0  # keep\n";
+        assert_eq!(set_yaml_version(y, "1.0"), y);
+        // Nested `name:` is never touched; missing top-level key is prepended.
+        assert_eq!(
+            set_yaml_name("version: 1.0\nontology:\n  name: inner\n", "c"),
+            "name: \"c\"\nversion: 1.0\nontology:\n  name: inner\n"
+        );
+        let v: serde_yaml::Value =
+            serde_yaml::from_str(&set_yaml_name("name: orders # x\n", "billing")).unwrap();
+        assert_eq!(v["name"].as_str(), Some("billing"));
+    }
 
     #[test]
     fn set_yaml_version_rewrites_or_prepends() {

@@ -325,6 +325,9 @@ pub fn export_odcs(input: OdcsExportInput<'_>) -> Result<String, String> {
     // ── x-contractgate-* extensions ──────────────────────────────────────────
     // Always written (D-003) so imports can reconstruct losslessly.
 
+    // Extension *format* version (the x-contractgate-* schema, see
+    // docs/odcs/extension-strategy.md §6), not the contract version, which
+    // is the top-level `version` above.
     doc.insert(v_str("x-contractgate-version"), v_str("1.0"));
 
     // x-contractgate-ontology: verbatim CG contract as a YAML subtree.
