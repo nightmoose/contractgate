@@ -141,3 +141,13 @@ is authoritative. Org resolution is deterministic via `metadata.orgId`.
   is data to validate against.
 - `stripe_failed_events` is written but not yet wired to an external alerter
   (Slack/email/PagerDuty). Until then, monitor it with the SQL query above.
+
+## Subscription details on /account (2026-10-14)
+
+`GET /api/stripe/subscription` reads the org's subscription live from Stripe
+and returns `status`, `trial_end`, `cancel_at_period_end`, `cancel_at`,
+`current_period_end` (Unix seconds). `/account` shows "Trial ends …" and
+"Cancellation scheduled: Pro ends …". Free plans no longer show the stale
+`plan_status` (e.g. "(canceled)" after a downgrade), and `aisg_free` displays
+as **Free**. `/billing/success` → "Manage billing & account" opens the Stripe
+portal (`POST /api/stripe/portal`).

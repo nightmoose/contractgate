@@ -36,6 +36,12 @@ export default function AuthGate({ page, children }: AuthGateProps) {
   // Authenticated — show real content
   if (authed) return <>{children}</>;
 
+  // Account has nothing to preview: send signed-out visitors to sign-in.
+  if (page === "account") {
+    if (typeof window !== "undefined") window.location.replace("/auth/login?next=/account");
+    return null;
+  }
+
   // Unauthenticated — show compelling preview
   const preview = PREVIEWS[page];
   return (

@@ -30,7 +30,8 @@ const PUBLIC_ROUTES = [
   "/contracts",
   "/audit",
   "/playground",
-  "/account",
+  // /account is NOT public: signed-out visitors go to sign-in instead of a
+  // sample page with made-up keys (tester polish round).
   // RFC-089 agent-facing docs. These MUST be reachable anonymously — the whole
   // point is that Claude/Cursor/Codex fetch them without credentials. Also
   // listed here as defense in depth: the matcher below already excludes them,
@@ -41,6 +42,20 @@ const PUBLIC_ROUTES = [
   "/llm-output-validation.md",
   "/llm-sdk-reference.md",
 ];
+
+// Top-level segments that have an app/ route. Anything else is a real 404:
+// let Next render not-found.tsx (status 404) instead of 307-ing anonymous
+// visitors to sign-in, which made unknown URLs end in a 200 (tester polish
+// round). Keep in sync with app/ (one entry per top-level directory).
+const KNOWN_TOP_LEVEL = new Set([
+  "", "account", "api", "audit", "auth", "billing", "catalog", "contracts", "docs",
+  "playground", "pricing", "privacy", "scaffold", "scorecard", "stream-demo", "terms",
+  "usage", "workbench",
+]);
+
+function isKnownRoute(pathname: string) {
+  return KNOWN_TOP_LEVEL.has(pathname.split("/")[1] ?? "");
+}
 
 function isPublic(pathname: string) {
   return PUBLIC_ROUTES.some((r) => pathname === r || pathname.startsWith(r + "/"));
@@ -151,7 +166,7 @@ async function route(request: NextRequest): Promise<NextResponse> {
   const { pathname } = request.nextUrl;
 
   // Redirect unauthenticated users to login
-  if (!user && !isPublic(pathname)) {
+  if (!user && !isPublic(pathname) && isKnownRoute(pathname)) {
     const url = request.nextUrl.clone();
     url.pathname = "/auth/login";
     url.searchParams.set("next", pathname);

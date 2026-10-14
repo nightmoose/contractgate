@@ -12,6 +12,9 @@ primary_region = 'iad'
 [env]
   PORT = '3001'
   RUST_LOG = 'contractgate=info,tower_http=warn'
+  # Confluent Cloud account closed 2026-10-14: no Kafka consumers. Set to
+  # 'true' only with a working broker + CONFLUENT_* secrets.
+  KAFKA_ENABLED = 'false'
   # RFC-050: DASHBOARD_ORIGIN is intentionally NOT set here — it contains the
   # production origins and must be injected via fly secrets so it is never
   # committed to source control. Prod carries three origins per RFC-096

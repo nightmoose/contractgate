@@ -276,3 +276,12 @@ All errors follow the standard DataContractGate error envelope:
 | `401 Unauthorized` | Missing API key, or caller has no role on this contract. |
 | `400 Bad Request`  | Invalid role string, empty body, attempting to decide a non-open proposal, etc. |
 | `404 Not Found`    | Contract name not found (reported as 401 to avoid enumeration). |
+
+## Finding your org ID (2026-10-14)
+
+Grants are by org ID. Each org's ID is shown with a copy button on
+**Account → Organization ID** and at the top of a contract's Collaborate tab.
+The invite field rejects anything that isn't a UUID with a hint to ask the
+other team for theirs. Inviting by email is not supported yet (see PR notes:
+it would reveal whether an email has an account unless done as a pending,
+recipient-accepted invite).
