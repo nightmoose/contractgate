@@ -1,6 +1,8 @@
 # Kafka Ingress Reference
 
 > **Disabled (2026-10-14).** Hosted Kafka ingress is turned off (`KAFKA_ENABLED=false`); enabling returns 400. Use `POST /v1/ingest`.
+>
+> **Enterprise only, available on request.** Below Enterprise, `POST …/kafka-ingress/enable` returns `403` (checked before the `KAFKA_ENABLED` 400). `GET` and `DELETE …/disable` stay open on every plan.
 
 **Status:** Available (RFC-025)
 

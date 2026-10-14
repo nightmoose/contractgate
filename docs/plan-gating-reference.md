@@ -78,9 +78,14 @@ gating.
 - Dedicated deployment
 - Priority support and SRE on-call
 - Kafka / Kinesis streaming: available on request. The dashboard tabs are gated
-  with `planAtLeast(plan, "enterprise")` in `contracts/page.tsx`. The API
-  enable routes have no plan check (Kafka is off via `KAFKA_ENABLED`; Kinesis
-  needs `--features kinesis-ingress`).
+  with `planAtLeast(plan, "enterprise")` in `contracts/page.tsx`. The API enforces
+  it too: `POST /contracts/{id}/kafka-ingress/enable`,
+  `POST /contracts/{id}/kinesis-ingress/enable` and
+  `POST /contracts/{id}/kinesis-ingress/rotate-credentials` return **403**
+  (`Forbidden: Kafka/Kinesis streaming ingress requires the Enterprise plan …`)
+  below Enterprise (`plan::require_streaming_plan`). Read (`GET`) and disable
+  (`DELETE …/disable`) stay open on every plan so an org can turn existing
+  config off. Self-host with auth off (no org) is not plan-checked.
 - Custom contract templates
 
 ---

@@ -461,6 +461,8 @@ pub async fn enable_kafka_ingress_handler(
     req: axum::extract::Request,
 ) -> AppResult<(StatusCode, Json<KafkaIngressResponse>)> {
     let org_id = crate::org_id_from_req(&req);
+    // Streaming is Enterprise-only (available on request). Read/disable stay open.
+    crate::plan::require_streaming_plan(&state, org_id).await?;
 
     if !kafka_enabled() {
         return Err(AppError::BadRequest(
