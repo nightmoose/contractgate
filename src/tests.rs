@@ -3880,3 +3880,134 @@ mod collab_by_id {
         );
     }
 }
+
+// ---------------------------------------------------------------------------
+// Kafka/Kinesis streaming ingress is Enterprise-only (server-side gate).
+// ---------------------------------------------------------------------------
+
+#[cfg(test)]
+mod streaming_gate {
+    use axum::http::StatusCode;
+    use axum::routing::{delete, get, post};
+    use axum_test::TestServer;
+    use std::sync::Arc;
+    use uuid::Uuid;
+
+    use super::super::{api_key_auth::ValidatedKey, kafka_ingress, kinesis_ingress, AppState};
+
+    fn router(state: Arc<AppState>, org: Option<Uuid>) -> TestServer {
+        let app = axum::Router::new()
+            .route(
+                "/contracts/{id}/kafka-ingress",
+                get(kafka_ingress::get_kafka_ingress_handler),
+            )
+            .route(
+                "/contracts/{id}/kafka-ingress/enable",
+                post(kafka_ingress::enable_kafka_ingress_handler),
+            )
+            .route(
+                "/contracts/{id}/kafka-ingress/disable",
+                delete(kafka_ingress::disable_kafka_ingress_handler),
+            )
+            .route(
+                "/contracts/{id}/kinesis-ingress/enable",
+                post(kinesis_ingress::enable_kinesis_ingress_handler),
+            )
+            .route(
+                "/contracts/{id}/kinesis-ingress/rotate-credentials",
+                post(kinesis_ingress::rotate_kinesis_credentials_handler),
+            )
+            .layer(axum::middleware::from_fn(
+                move |mut req: axum::extract::Request, next: axum::middleware::Next| async move {
+                    if let Some(org_id) = org {
+                        req.extensions_mut().insert(ValidatedKey {
+                            api_key_id: Uuid::new_v4(),
+                            user_id: Uuid::new_v4(),
+                            org_id,
+                            allowed_contract_ids: None,
+                            rate_limit_rps: None,
+                            rate_limit_burst: None,
+                        });
+                    }
+                    next.run(req).await
+                },
+            ))
+            .with_state(state);
+        TestServer::new(app)
+    }
+
+    const TURN_ON: [&str; 3] = [
+        "kafka-ingress/enable",
+        "kinesis-ingress/enable",
+        "kinesis-ingress/rotate-credentials",
+    ];
+
+    /// Auth on, no org on the request → 401 before any provisioning.
+    #[tokio::test]
+    async fn turn_on_routes_401_without_org() {
+        let pool = sqlx::PgPool::connect_lazy("postgres://invalid:5432/none").unwrap();
+        let server = router(Arc::new(AppState::new(pool, false, None, None)), None);
+        for path in TURN_ON {
+            let resp = server
+                .post(&format!("/contracts/{}/{path}", Uuid::new_v4()))
+                .await;
+            assert_eq!(resp.status_code(), StatusCode::UNAUTHORIZED, "{path}");
+        }
+    }
+
+    /// Free / Growth / aisg orgs get 403 on every route that turns streaming
+    /// on; Enterprise passes the gate. Requires DATABASE_URL.
+    #[tokio::test]
+    #[ignore = "requires DATABASE_URL and a live Supabase/Postgres instance"]
+    async fn turn_on_routes_require_enterprise() {
+        let db_url = std::env::var("DATABASE_URL").expect("DATABASE_URL must be set");
+        let pool = sqlx::PgPool::connect(&db_url).await.unwrap();
+        let state = Arc::new(AppState::new(pool.clone(), false, None, None));
+
+        for plan in ["free", "growth", "aisg_free", "aisg_pro", "enterprise"] {
+            let org = Uuid::new_v4();
+            sqlx::query("INSERT INTO orgs (id, name, slug, plan) VALUES ($1, $2, $3, $4)")
+                .bind(org)
+                .bind(format!("streaming gate {plan}"))
+                .bind(format!("streaming-gate-{}", org.simple()))
+                .bind(plan)
+                .execute(&pool)
+                .await
+                .expect("seed org");
+
+            let server = router(state.clone(), Some(org));
+            let cid = Uuid::new_v4();
+            for path in TURN_ON {
+                let resp = server.post(&format!("/contracts/{cid}/{path}")).await;
+                if plan == "enterprise" {
+                    assert_ne!(resp.status_code(), StatusCode::FORBIDDEN, "{plan} {path}");
+                    assert_ne!(
+                        resp.status_code(),
+                        StatusCode::UNAUTHORIZED,
+                        "{plan} {path}"
+                    );
+                } else {
+                    assert_eq!(resp.status_code(), StatusCode::FORBIDDEN, "{plan} {path}");
+                    assert!(
+                        resp.text().contains("requires the Enterprise plan"),
+                        "{plan} {path}: {}",
+                        resp.text()
+                    );
+                }
+            }
+            // Read and disable stay open below Enterprise (no 403).
+            let read = server.get(&format!("/contracts/{cid}/kafka-ingress")).await;
+            assert_ne!(read.status_code(), StatusCode::FORBIDDEN, "{plan} read");
+            let off = server
+                .delete(&format!("/contracts/{cid}/kafka-ingress/disable"))
+                .await;
+            assert_ne!(off.status_code(), StatusCode::FORBIDDEN, "{plan} disable");
+
+            sqlx::query("DELETE FROM orgs WHERE id = $1")
+                .bind(org)
+                .execute(&pool)
+                .await
+                .unwrap();
+        }
+    }
+}
