@@ -1,0 +1,70 @@
+apiVersion: v3.2.0
+kind: DataContract
+id: 9c6c9453-b977-4de4-9640-5df2e8428747
+version: 1.0.0
+status: active
+dataProduct: csvpath_portability_test
+description:
+  purpose: TEST
+schema:
+- name: csvpath_portability_test
+  description: TEST - CsvPath ODCS portability probe. Safe to delete.
+  properties:
+  - name: order_id
+    logicalType: string
+    required: true
+    quality: []
+    logicalTypeOptions:
+      pattern: ^ORD-[0-9]{6}$
+    unique: true
+  - name: status
+    logicalType: string
+    required: true
+    quality: []
+    enum:
+    - value: open
+    - value: shipped
+    - value: cancelled
+  - name: quantity
+    logicalType: integer
+    required: true
+    quality: []
+    logicalTypeOptions:
+      minimum: 1.0
+      maximum: 999.0
+  - name: amount
+    logicalType: number
+    required: false
+    quality:
+    - type: library
+      metric: missingValues
+      mustBeLessThan: 0.05
+    logicalTypeOptions:
+      minimum: 0.0
+  - name: email
+    logicalType: string
+    required: false
+    classification: pii
+    quality: []
+    logicalTypeOptions:
+      minLength: 5
+      maxLength: 120
+  - name: customer.id
+    logicalType: string
+    required: true
+    quality: []
+    logicalTypeOptions:
+      pattern: ^C[0-9]+$
+  - name: customer.address.country
+    logicalType: string
+    required: true
+    quality: []
+    enum:
+    - value: US
+    - value: CA
+  - name: created_at
+    logicalType: integer
+    required: true
+    quality: []
+  logicalType: object
+name: csvpath_portability_test

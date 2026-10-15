@@ -1,0 +1,258 @@
+apiVersion: v3.1.0
+kind: DataContract
+id: 9c6c9453-b977-4de4-9640-5df2e8428747
+version: 1.0.0
+status: active
+dataProduct: csvpath_portability_test
+description: TEST
+schema:
+- name: csvpath_portability_test
+  description: TEST - CsvPath ODCS portability probe. Safe to delete.
+  properties:
+  - name: order_id
+    logicalType: string
+    required: true
+    quality:
+    - type: uniqueness
+    customProperties:
+    - property: x-cg-pattern
+      value: ^ORD-[0-9]{6}$
+  - name: status
+    logicalType: string
+    required: true
+    quality: []
+    customProperties:
+    - property: x-cg-enum
+      value:
+      - open
+      - shipped
+      - cancelled
+  - name: quantity
+    logicalType: integer
+    required: true
+    quality: []
+    customProperties:
+    - property: x-cg-min
+      value: 1.0
+    - property: x-cg-max
+      value: 999.0
+  - name: amount
+    logicalType: double
+    required: false
+    quality:
+    - type: completeness
+      attributes:
+        threshold: 0.95
+    customProperties:
+    - property: x-cg-min
+      value: 0.0
+  - name: email
+    logicalType: string
+    required: false
+    classification: pii
+    quality: []
+    customProperties:
+    - property: x-cg-min-length
+      value: 5
+    - property: x-cg-max-length
+      value: 120
+    - property: x-cg-transform-kind
+      value: mask
+    - property: x-cg-transform-style
+      value: format_preserving
+  - name: customer.id
+    logicalType: string
+    required: true
+    quality: []
+    customProperties:
+    - property: x-cg-pattern
+      value: ^C[0-9]+$
+  - name: customer.address.country
+    logicalType: string
+    required: true
+    quality: []
+    customProperties:
+    - property: x-cg-enum
+      value:
+      - US
+      - CA
+  - name: created_at
+    logicalType: integer
+    required: true
+    quality: []
+x-contractgate-version: '1.0'
+x-contractgate-ontology:
+  version: 1.0.0
+  name: csvpath_portability_test
+  description: TEST - CsvPath ODCS portability probe. Safe to delete.
+  compliance_mode: true
+  ontology:
+    entities:
+    - name: order_id
+      type: string
+      required: true
+      pattern: ^ORD-[0-9]{6}$
+      enum: null
+      min: null
+      max: null
+      min_length: null
+      max_length: null
+      properties: null
+      items: null
+      transform: null
+    - name: status
+      type: string
+      required: true
+      pattern: null
+      enum:
+      - open
+      - shipped
+      - cancelled
+      min: null
+      max: null
+      min_length: null
+      max_length: null
+      properties: null
+      items: null
+      transform: null
+    - name: quantity
+      type: integer
+      required: true
+      pattern: null
+      enum: null
+      min: 1.0
+      max: 999.0
+      min_length: null
+      max_length: null
+      properties: null
+      items: null
+      transform: null
+    - name: amount
+      type: float
+      required: false
+      pattern: null
+      enum: null
+      min: 0.0
+      max: null
+      min_length: null
+      max_length: null
+      properties: null
+      items: null
+      transform: null
+    - name: email
+      type: string
+      required: false
+      pattern: null
+      enum: null
+      min: null
+      max: null
+      min_length: 5
+      max_length: 120
+      properties: null
+      items: null
+      transform:
+        kind: mask
+        style: format_preserving
+    - name: customer
+      type: object
+      required: true
+      pattern: null
+      enum: null
+      min: null
+      max: null
+      min_length: null
+      max_length: null
+      properties:
+      - name: id
+        type: string
+        required: true
+        pattern: ^C[0-9]+$
+        enum: null
+        min: null
+        max: null
+        min_length: null
+        max_length: null
+        properties: null
+        items: null
+        transform: null
+      - name: address
+        type: object
+        required: false
+        pattern: null
+        enum: null
+        min: null
+        max: null
+        min_length: null
+        max_length: null
+        properties:
+        - name: country
+          type: string
+          required: true
+          pattern: null
+          enum:
+          - US
+          - CA
+          min: null
+          max: null
+          min_length: null
+          max_length: null
+          properties: null
+          items: null
+          transform: null
+        items: null
+        transform: null
+      items: null
+      transform: null
+    - name: created_at
+      type: integer
+      required: true
+      pattern: null
+      enum: null
+      min: null
+      max: null
+      min_length: null
+      max_length: null
+      properties: null
+      items: null
+      transform: null
+  glossary:
+  - field: amount
+    description: Monetary amount in USD
+    constraints: must be non-negative
+    synonyms: null
+  metrics:
+  - name: total_revenue
+    field: null
+    type: null
+    formula: sum(amount) where status = 'shipped'
+    min: null
+    max: null
+  quality:
+  - field: order_id
+    type: uniqueness
+    description: null
+    max_age_seconds: null
+    scope: null
+    threshold: null
+  - field: amount
+    type: completeness
+    description: null
+    max_age_seconds: null
+    scope: null
+    threshold: 0.95
+  egress_leakage_mode: off
+  envelope: null
+  null_as_absent: false
+x-contractgate-glossary:
+- field: amount
+  description: Monetary amount in USD
+  constraints: must be non-negative
+  synonyms: null
+x-contractgate-metrics:
+- name: total_revenue
+  field: null
+  type: null
+  formula: sum(amount) where status = 'shipped'
+  min: null
+  max: null
+x-contractgate-compliance-mode: true

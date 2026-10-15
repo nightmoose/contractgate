@@ -1,0 +1,72 @@
+version: 2.0.0-csvpath
+name: "csvpath_portability_test"
+description: null
+compliance_mode: false
+ontology:
+  entities:
+  - name: order_id
+    type: string
+    required: true
+    pattern: null
+    enum: null
+    min: null
+    max: null
+    min_length: null
+    max_length: null
+    properties: null
+    items: null
+    transform: null
+  - name: customer_email
+    type: string
+    required: false
+    pattern: null
+    enum: null
+    min: null
+    max: null
+    min_length: null
+    max_length: null
+    properties: null
+    items: null
+    transform: null
+  - name: quantity
+    type: integer
+    required: true
+    pattern: null
+    enum: null
+    min: null
+    max: null
+    min_length: null
+    max_length: null
+    properties: null
+    items: null
+    transform: null
+  - name: status
+    type: string
+    required: false
+    pattern: null
+    enum: null
+    min: null
+    max: null
+    min_length: null
+    max_length: null
+    properties: null
+    items: null
+    transform: null
+  - name: order_date
+    type: date
+    required: true
+    pattern: null
+    enum: null
+    min: null
+    max: null
+    min_length: null
+    max_length: null
+    properties: null
+    items: null
+    transform: null
+glossary: []
+metrics: []
+quality: []
+egress_leakage_mode: off
+envelope: null
+null_as_absent: false
