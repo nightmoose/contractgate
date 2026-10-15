@@ -1,0 +1,16 @@
+{
+  "window_minutes": 60,
+  "skip_empty": true,
+  "defaults": { "max_violation_rate": 0.0 },
+  "contracts": [
+    {
+      "contract_id": "00000000-0000-0000-0000-000000000000",
+      "table_fqn": "dcg_demo.analytics.public.orders",
+      "test_case_name": "dcg_orders_ingest",
+      "max_violation_rate": 0.01
+    },
+    {
+      "contract_id": "11111111-1111-1111-1111-111111111111"
+    }
+  ]
+}
