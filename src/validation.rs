@@ -744,6 +744,35 @@ fn validate_fields(
     }
 }
 
+/// Check a string against a named ODCS format.  Unknown formats pass.
+pub fn string_format_ok(fmt: &str, s: &str) -> bool {
+    match fmt.to_ascii_lowercase().as_str() {
+        "email" => {
+            let Some((local, domain)) = s.split_once('@') else {
+                return false;
+            };
+            !local.is_empty()
+                && !domain.contains('@')
+                && !s.chars().any(char::is_whitespace)
+                && domain
+                    .split_once('.')
+                    .is_some_and(|(a, b)| !a.is_empty() && !b.is_empty() && !b.ends_with('.'))
+        }
+        "uuid" => uuid::Uuid::parse_str(s).is_ok() && s.len() == 36,
+        "uri" | "url" => s.split_once(':').is_some_and(|(scheme, rest)| {
+            !rest.is_empty()
+                && scheme
+                    .chars()
+                    .next()
+                    .is_some_and(|c| c.is_ascii_alphabetic())
+                && scheme
+                    .chars()
+                    .all(|c| c.is_ascii_alphanumeric() || matches!(c, '+' | '-' | '.'))
+        }),
+        _ => true,
+    }
+}
+
 fn validate_value(
     field: &FieldDefinition,
     value: &Value,
@@ -836,6 +865,25 @@ fn validate_value(
                         "Emit '{path}' so it matches the contract regex, or relax the `pattern:` in the YAML if the producer output is intentional."
                     )),
                 });
+            }
+        }
+
+        // ODCS `logicalTypeOptions.format` (string fields only; other
+        // formats are metadata). Hand-rolled checks — no regex compile.
+        if field.field_type == FieldType::String {
+            if let Some(fmt) = field.format.as_deref() {
+                if !string_format_ok(fmt, s) {
+                    violations.push(Violation {
+                        field: path.to_string(),
+                        message: format!("Field '{}' value {:?} is not a valid {}", path, s, fmt),
+                        kind: ViolationKind::PatternMismatch,
+                        received: Some(value.clone()),
+                        expected: Some(format!("{fmt} string")),
+                        suggestion: Some(format!(
+                            "Emit '{path}' as a valid {fmt}, or remove `format:` from the contract."
+                        )),
+                    });
+                }
             }
         }
 
@@ -1313,6 +1361,7 @@ mod tests {
                         properties: None,
                         items: None,
                         transform: None,
+                        format: None,
                     },
                     FieldDefinition {
                         name: "event_type".into(),
@@ -1331,6 +1380,7 @@ mod tests {
                         properties: None,
                         items: None,
                         transform: None,
+                        format: None,
                     },
                     FieldDefinition {
                         name: "timestamp".into(),
@@ -1345,6 +1395,7 @@ mod tests {
                         properties: None,
                         items: None,
                         transform: None,
+                        format: None,
                     },
                 ],
             },
@@ -1406,6 +1457,7 @@ mod tests {
             properties: None,
             items: None,
             transform: None,
+            format: None,
         });
         c
     }

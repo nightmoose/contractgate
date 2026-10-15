@@ -1,0 +1,90 @@
+version: "1.0.0"
+name: odcs_strict_probe
+description: "ODCS strict-mode probe: every constraint kind DCG exports."
+compliance_mode: true
+ontology:
+  entities:
+    - name: order_id
+      type: string
+      required: true
+      pattern: "^ORD-[0-9]{6}$"
+    - name: status
+      type: string
+      required: true
+      enum: ["open", "shipped", "cancelled"]
+    - name: quantity
+      type: integer
+      required: true
+      min: 1
+      max: 999
+    - name: amount
+      type: number
+      required: false
+      min: 0
+    - name: email
+      type: string
+      required: false
+      min_length: 5
+      max_length: 120
+      format: email
+      transform:
+        kind: mask
+        style: format_preserving
+    - name: order_date
+      type: date
+      required: true
+    - name: payload
+      type: any
+      required: false
+    - name: customer
+      type: object
+      required: true
+      properties:
+        - name: id
+          type: string
+          required: true
+          pattern: "^C[0-9]+$"
+        - name: address
+          type: object
+          required: false
+          properties:
+            - name: country
+              type: string
+              required: true
+              enum: ["US", "CA"]
+    - name: lines
+      type: array
+      required: false
+      items:
+        name: line
+        type: object
+        properties:
+          - name: sku
+            type: string
+            required: true
+            min_length: 3
+          - name: qty
+            type: integer
+            required: true
+            min: 1
+    - name: created_at
+      type: integer
+      required: true
+glossary:
+  - field: amount
+    description: "Monetary amount in USD"
+    constraints: "must be non-negative"
+metrics:
+  - name: total_revenue
+    formula: "sum(amount) where status = 'shipped'"
+quality:
+  - field: order_id
+    type: uniqueness
+  - field: amount
+    type: completeness
+    threshold: 0.95
+  - field: status
+    type: validity
+  - field: created_at
+    type: freshness
+    max_age_seconds: 3600

@@ -150,6 +150,11 @@ pub struct FieldDefinition {
     /// transform declared is a compile-time error at contract load.
     #[serde(default)]
     pub transform: Option<Transform>,
+    /// Optional string format (ODCS `logicalTypeOptions.format`).  Enforced
+    /// for `email`, `uuid`, and `uri`/`url` on string values; other formats
+    /// are carried as metadata only.  Omitted from YAML when unset.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub format: Option<String>,
 }
 
 /// Supported field types inside a contract ontology.

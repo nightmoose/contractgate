@@ -204,27 +204,29 @@ This runs `GET /v1/dataContracts/{id}/odcs/yaml` (with `Accept: application/yaml
 
 `examples/roundtrip_check.py` exports a DCG version, imports it into OM on a table, exports
 it from OM and re-imports it into DCG with `target_contract_id`. It then diffs the `x-`
-extensions. Results against OM 2.0.5 (2026-10-15):
+extensions. Results against OM 2.0.5 after the strict-ODCS export (2026-10-15, see
+`docs/odcs/strict-odcs.md`):
 
 | Item | DCG export → OM | OM export | Back in DCG |
 |---|---|---|---|
-| Field names, logical types, `required` | kept | kept | kept |
+| Field names, logical types (`number`, not `double`), `required` | kept | kept | kept |
 | Contract `id` | used as the OM contract id | kept | n/a (target id passed) |
-| Top-level `description` (string) | **rejected (HTTP 400)**. OM needs the ODCS object form. The shim wraps it as `{purpose: ...}` | kept as `purpose` | **dropped** (DCG import reads only string descriptions) |
-| Property `customProperties` (`x-cg-pattern`, `x-cg-min`, `x-cg-enum`) | **rejected (HTTP 400)** by OM's parser. The shim drops them | gone | pattern, enum and min **lost** |
-| `x-contractgate-ontology`, `-glossary`, `-metrics`, `-version` | accepted, with no warning in the import report | **silently dropped** | glossary and metrics **lost** |
-| `name`, `version` | ignored. OM names it `contract_<hash>`, version `0.2` | as OM set them | DCG keeps its own name. The version comes from the doc (`0.2` unless overridden) |
+| `description` (now the ODCS object form) | accepted as-is | kept as `purpose` | **kept** (DCG reads the object form) |
+| `enum` (native `invalidValues` rule with `validValues`) | accepted | **kept** | **kept** as `enum` + a validity rule |
+| `pattern`, `minimum`/`maximum`, lengths (native `logicalTypeOptions`) | accepted | **dropped by OM** | lost |
+| Nested `customProperties` (`x-cg-*`, `x-cg-quality`) | **rejected (HTTP 400)**. OM deserializes them as an object, while the spec says array. The shim drops them | gone | covered by the native fields above where OM keeps them |
+| Root `customProperties` (`x-contractgate-*`) | object values **rejected**. OM needs string values, so the shim JSON-encodes them | **silently dropped** | glossary, metrics and transforms **lost** |
+| `type: custom` freshness rule | accepted (string `implementation`) | not returned | lost |
+| `name`, `version` | ignored. OM names it `contract_<hash>`, version `0.x` | as OM set them | DCG keeps its own name. The version comes from the doc |
 
-**Bottom line:** OM is not a lossless store for DCG contracts. The OM→DCG direction works
-and gives a schema-level contract (fields, types, required) that DCG flags as
-`import_source: odcs_stripped` with `requires_review: true`. Constraint rules must be added
-in DCG. Keep DCG as the source of truth for ingest rules and push only *results* to OM.
-Pushing DCG contracts into OM is out of scope. `dcg_openmetadata.sync.dcg_odcs_for_om()`
-(needs `pip install pyyaml`) exists only so the round-trip check can run.
-
-Possible DCG-side fixes, not in this PR: export `description` as an ODCS object, accept the
-object form on import, and map `pattern`/`enum`/`min`/`max` to ODCS `quality` rules or
-`logicalTypeOptions`, which OM does keep, instead of `customProperties`.
+**Bottom line:** OM is still not a lossless store for DCG contracts, but more now
+survives. The OM→DCG direction gives fields, types, required, description and enums
+(`import_source: odcs_stripped`, `requires_review: true`). Pattern and range rules must be
+re-added in DCG. Keep DCG as the source of truth for ingest rules and push only *results*
+to OM. `dcg_openmetadata.sync.dcg_odcs_for_om()` (needs `pip install pyyaml`) now only
+works around OM 2.0.5's two deviations from the ODCS schema: nested `customProperties`
+and non-string custom property values. It still wraps a string `description` for older
+DCG exports.
 
 ---
 

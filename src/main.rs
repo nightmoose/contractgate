@@ -340,6 +340,35 @@ fn org_id_from_req(req: &axum::extract::Request) -> Option<uuid::Uuid> {
         .map(|k| k.org_id)
 }
 
+/// Dev/no-auth only: trust `x-org-id` when no `ValidatedKey` is present.
+///
+/// `contracts.org_id` is NOT NULL, so creating a contract identity with no
+/// org fails at the DB.  When auth is not configured (compose smoke, local
+/// dev) the `x-org-id` header is accepted as a convenience; without it the
+/// request is rejected with a 400 naming the header instead of a 500.
+/// Never runs when auth is configured, so RFC-048's spoofing protection holds.
+fn dev_org_fallback(
+    state: &AppState,
+    req: &axum::extract::Request,
+    org_id: Option<Uuid>,
+) -> AppResult<Option<Uuid>> {
+    if org_id.is_some() || state.auth_configured() {
+        return Ok(org_id);
+    }
+    req.headers()
+        .get("x-org-id")
+        .and_then(|v| v.to_str().ok())
+        .and_then(|s| Uuid::parse_str(s.trim()).ok())
+        .map(Some)
+        .ok_or_else(|| {
+            AppError::BadRequest(
+                "no org context: auth is disabled (CONTRACTGATE_DEV_NO_AUTH), so send an \
+                 `x-org-id` header with an existing org id"
+                    .into(),
+            )
+        })
+}
+
 // ---------------------------------------------------------------------------
 // OrgId extractor — pulls org_id from request extensions for handlers that
 // also need to extract Path<T> or Json<T> as separate parameters.
@@ -385,14 +414,7 @@ async fn create_contract_handler(
     // operate without a full auth setup.  This branch is gated on
     // !auth_configured() — it never executes in production, so RFC-048's
     // spoofability protection is fully preserved for all real deployments.
-    let org_id = if org_id.is_none() && !state.auth_configured() {
-        req.headers()
-            .get("x-org-id")
-            .and_then(|v| v.to_str().ok())
-            .and_then(|s| Uuid::parse_str(s).ok())
-    } else {
-        org_id
-    };
+    let org_id = dev_org_fallback(&state, &req, org_id)?;
 
     // Extract JSON body after reading extensions (req move must come after
     // the header read above, which is a borrow — order is safe).
@@ -771,7 +793,11 @@ async fn import_odcs_handler(
     State(state): State<Arc<AppState>>,
     req: axum::extract::Request,
 ) -> AppResult<(StatusCode, Json<VersionResponse>)> {
-    let org_id = org_id_from_req(&req);
+    let raw_org = org_id_from_req(&req);
+    // Dev/no-auth: a header org (if any) scopes the import; a new identity
+    // still needs one (contracts.org_id is NOT NULL), checked below.
+    let dev_org = dev_org_fallback(&state, &req, raw_org);
+    let org_id = dev_org.as_ref().ok().copied().flatten();
     let Json(body): Json<odcs::ImportOdcsRequest> = axum::Json::from_request(req, &state)
         .await
         .map_err(|e| AppError::BadRequest(e.to_string()))?;
@@ -818,6 +844,9 @@ async fn import_odcs_handler(
         .await?;
         return Ok((StatusCode::CREATED, Json(VersionResponse::from(&cv))));
     }
+
+    // No target: a new identity needs an org (NOT NULL column).
+    let org_id = dev_org?;
 
     // No target: refuse to pile up a second live contract with this name.
     if let Some(org) = org_id {
