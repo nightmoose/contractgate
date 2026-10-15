@@ -1,5 +1,7 @@
 # ODCS v3.1.0 Gap Analysis — DataContractGate
 
+> **Superseded in part (2026-10-15):** see [`strict-odcs.md`](strict-odcs.md) for the current export/import shape. Extensions now live in the root `customProperties[]` array, constraints are also written as native ODCS fields, and floats export as `number`.
+
 **Status:** Week 1 deliverable  
 **Date:** 2026-05-01  
 **ODCS pin:** v3.1.0  

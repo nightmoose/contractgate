@@ -1,0 +1,123 @@
+# OpenMetadata 2.0.5 export (GET /v1/dataContracts/{id}/odcs/yaml) of a DCG
+# contract pushed through dcg_odcs_for_om, captured 2026-10-15.
+---
+apiVersion: "v3.1.0"
+kind: "DataContract"
+id: "40df62fa-42d3-49ac-956d-422a726f4164"
+name: "contract_a3d37c8e"
+version: "0.3"
+status: "active"
+tags: []
+description:
+  purpose: "TEST - OpenMetadata integration demo (openmetadata-table: dcg_demo.analytics.public.orders)"
+authoritativeDefinitions: []
+schema:
+- name: "contract_a3d37c8e"
+  physicalType: "table"
+  tags: []
+  authoritativeDefinitions: []
+  primaryKey: false
+  primaryKeyPosition: -1
+  logicalType: "object"
+  required: false
+  unique: false
+  partitionKeyPosition: -1
+  transformSourceObjects: []
+  examples: []
+  properties:
+  - name: "order_id"
+    physicalName: "order_id"
+    physicalType: "STRING"
+    tags: []
+    authoritativeDefinitions: []
+    primaryKey: false
+    primaryKeyPosition: -1
+    logicalType: "string"
+    required: true
+    unique: false
+    partitionKeyPosition: -1
+    transformSourceObjects: []
+    examples: []
+    properties: []
+    quality: []
+  - name: "customer_id"
+    physicalName: "customer_id"
+    physicalType: "STRING"
+    tags: []
+    authoritativeDefinitions: []
+    primaryKey: false
+    primaryKeyPosition: -1
+    logicalType: "string"
+    required: true
+    unique: false
+    partitionKeyPosition: -1
+    transformSourceObjects: []
+    examples: []
+    properties: []
+    quality: []
+  - name: "amount"
+    physicalName: "amount"
+    physicalType: "NUMBER"
+    tags: []
+    authoritativeDefinitions: []
+    primaryKey: false
+    primaryKeyPosition: -1
+    logicalType: "number"
+    required: true
+    unique: false
+    partitionKeyPosition: -1
+    transformSourceObjects: []
+    examples: []
+    properties: []
+    quality: []
+  - name: "currency"
+    physicalName: "currency"
+    physicalType: "STRING"
+    tags: []
+    authoritativeDefinitions: []
+    primaryKey: false
+    primaryKeyPosition: -1
+    logicalType: "string"
+    required: true
+    unique: false
+    partitionKeyPosition: -1
+    transformSourceObjects: []
+    examples: []
+    properties: []
+    quality:
+    - type: "library"
+      metric: "invalidValues"
+      column: "currency"
+      dimension: "conformity"
+      mustBe: 0.0
+      validValues: []
+      authoritativeDefinitions: []
+      tags: []
+      arguments:
+        validValues:
+        - "USD"
+        - "EUR"
+        - "GBP"
+  - name: "created_at"
+    physicalName: "created_at"
+    physicalType: "INT"
+    tags: []
+    authoritativeDefinitions: []
+    primaryKey: false
+    primaryKeyPosition: -1
+    logicalType: "integer"
+    required: true
+    unique: false
+    partitionKeyPosition: -1
+    transformSourceObjects: []
+    examples: []
+    properties: []
+    quality: []
+  quality: []
+support: []
+team: []
+roles: []
+slaProperties: []
+servers: []
+customProperties: []
+contractCreatedTs: 1792070059256

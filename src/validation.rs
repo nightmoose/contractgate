@@ -744,6 +744,35 @@ fn validate_fields(
     }
 }
 
+/// Check a string against a named ODCS format.  Unknown formats pass.
+pub fn string_format_ok(fmt: &str, s: &str) -> bool {
+    match fmt.to_ascii_lowercase().as_str() {
+        "email" => {
+            let Some((local, domain)) = s.split_once('@') else {
+                return false;
+            };
+            !local.is_empty()
+                && !domain.contains('@')
+                && !s.chars().any(char::is_whitespace)
+                && domain
+                    .split_once('.')
+                    .is_some_and(|(a, b)| !a.is_empty() && !b.is_empty() && !b.ends_with('.'))
+        }
+        "uuid" => uuid::Uuid::parse_str(s).is_ok() && s.len() == 36,
+        "uri" | "url" => s.split_once(':').is_some_and(|(scheme, rest)| {
+            !rest.is_empty()
+                && scheme
+                    .chars()
+                    .next()
+                    .is_some_and(|c| c.is_ascii_alphabetic())
+                && scheme
+                    .chars()
+                    .all(|c| c.is_ascii_alphanumeric() || matches!(c, '+' | '-' | '.'))
+        }),
+        _ => true,
+    }
+}
+
 fn validate_value(
     field: &FieldDefinition,
     value: &Value,
@@ -763,6 +792,7 @@ fn validate_value(
         FieldType::Any => true,
         // RFC-044: date must be a string; calendar check runs below
         FieldType::Date => value.is_string(),
+        FieldType::Timestamp => value.is_string(),
     };
 
     if !type_ok {
@@ -837,6 +867,44 @@ fn validate_value(
                     )),
                 });
             }
+        }
+
+        // ODCS `logicalTypeOptions.format` (string fields only; other
+        // formats are metadata). Hand-rolled checks — no regex compile.
+        if field.field_type == FieldType::String {
+            if let Some(fmt) = field.format.as_deref() {
+                if !string_format_ok(fmt, s) {
+                    violations.push(Violation {
+                        field: path.to_string(),
+                        message: format!("Field '{}' value {:?} is not a valid {}", path, s, fmt),
+                        kind: ViolationKind::PatternMismatch,
+                        received: Some(value.clone()),
+                        expected: Some(format!("{fmt} string")),
+                        suggestion: Some(format!(
+                            "Emit '{path}' as a valid {fmt}, or remove `format:` from the contract."
+                        )),
+                    });
+                }
+            }
+        }
+
+        // Timestamp fields: RFC 3339 / ISO 8601 date-time.
+        if field.field_type == FieldType::Timestamp
+            && chrono::DateTime::parse_from_rfc3339(s).is_err()
+        {
+            violations.push(Violation {
+                field: path.to_string(),
+                message: format!(
+                    "Field '{}' value {:?} is not an RFC 3339 timestamp",
+                    path, s
+                ),
+                kind: ViolationKind::PatternMismatch,
+                received: Some(value.clone()),
+                expected: Some("RFC 3339 timestamp string, e.g. 2026-10-15T12:00:00Z".into()),
+                suggestion: Some(
+                    "Emit an ISO 8601 date-time with offset (e.g. 2026-10-15T12:00:00Z).".into(),
+                ),
+            });
         }
 
         // RFC-044: calendar validation for date fields
@@ -1077,6 +1145,7 @@ fn field_type_label(ft: &FieldType) -> String {
         FieldType::Array => "array".into(),
         FieldType::Any => "any".into(),
         FieldType::Date => "date (YYYY-MM-DD)".into(),
+        FieldType::Timestamp => "timestamp (RFC 3339, e.g. 2026-10-15T12:00:00Z)".into(),
     }
 }
 
@@ -1313,6 +1382,7 @@ mod tests {
                         properties: None,
                         items: None,
                         transform: None,
+                        format: None,
                     },
                     FieldDefinition {
                         name: "event_type".into(),
@@ -1331,6 +1401,7 @@ mod tests {
                         properties: None,
                         items: None,
                         transform: None,
+                        format: None,
                     },
                     FieldDefinition {
                         name: "timestamp".into(),
@@ -1345,6 +1416,7 @@ mod tests {
                         properties: None,
                         items: None,
                         transform: None,
+                        format: None,
                     },
                 ],
             },
@@ -1406,6 +1478,7 @@ mod tests {
             properties: None,
             items: None,
             transform: None,
+            format: None,
         });
         c
     }

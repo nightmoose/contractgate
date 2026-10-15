@@ -150,6 +150,11 @@ pub struct FieldDefinition {
     /// transform declared is a compile-time error at contract load.
     #[serde(default)]
     pub transform: Option<Transform>,
+    /// Optional string format (ODCS `logicalTypeOptions.format`).  Enforced
+    /// for `email`, `uuid`, and `uri`/`url` on string values; other formats
+    /// are carried as metadata only.  Omitted from YAML when unset.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub format: Option<String>,
 }
 
 /// Supported field types inside a contract ontology.
@@ -173,6 +178,10 @@ pub enum FieldType {
     /// format and must represent a real calendar date (e.g. month ≤ 12).
     /// Maps to ODCS `logicalType: date`.
     Date,
+    /// Point in time. Value must be an RFC 3339 / ISO 8601 date-time string
+    /// (e.g. `2026-10-15T12:00:00Z`). Maps to ODCS `logicalType: timestamp`;
+    /// a `format` is carried as metadata.
+    Timestamp,
 }
 
 fn default_true() -> bool {

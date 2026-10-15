@@ -658,6 +658,7 @@ mod tests {
             properties: None,
             items: None,
             transform: None,
+            format: None,
         }
     }
 
