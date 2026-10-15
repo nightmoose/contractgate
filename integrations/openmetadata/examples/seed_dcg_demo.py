@@ -80,8 +80,11 @@ def main():
     events = [event(True) for _ in range(a.good)] + [event(False) for _ in range(a.bad)]
     if events:
         r = http.request("POST", f"{base}/ingest/{cid}", hdr, events)
-        print(json.dumps({k: r.get(k) for k in ("total", "passed", "failed", "quarantined")
-                          if isinstance(r, dict)}), file=sys.stderr)
+        # The ingest response has no `quarantined` key: in non-atomic mode every
+        # failed event is quarantined, so report `failed` under both names.
+        print(json.dumps({"total": r.get("total"), "passed": r.get("passed"),
+                          "failed": r.get("failed"), "quarantined": r.get("failed")}),
+              file=sys.stderr)
     print(cid)
 
 
