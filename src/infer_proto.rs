@@ -497,6 +497,7 @@ fn proto_field_to_definition(
         properties,
         items,
         transform: None,
+        format: None,
     })
 }
 
@@ -523,6 +524,7 @@ fn resolve_proto_type(f: &ProtoField, proto: &ParsedProto) -> ProtoTypeResolutio
             properties: item_props,
             items: item_items,
             transform: None,
+            format: None,
         };
         return (FieldType::Array, None, None, Some(Box::new(items_def)));
     }

@@ -48,6 +48,7 @@ mod fixtures {
             properties: None,
             items: None,
             transform: None,
+            format: None,
         }
     }
 
@@ -769,7 +770,7 @@ mod odcs_tests {
     use serde_json::json;
     use uuid::Uuid;
 
-    fn make_identity(name: &str) -> ContractIdentity {
+    pub(super) fn make_identity(name: &str) -> ContractIdentity {
         ContractIdentity {
             id: Uuid::new_v4(),
             name: name.to_string(),
@@ -782,7 +783,7 @@ mod odcs_tests {
         }
     }
 
-    fn make_version(contract_id: Uuid, ver: &str, yaml: &str) -> ContractVersion {
+    pub(super) fn make_version(contract_id: Uuid, ver: &str, yaml: &str) -> ContractVersion {
         ContractVersion {
             id: Uuid::new_v4(),
             contract_id,
@@ -881,20 +882,26 @@ mod odcs_tests {
         let doc: serde_yaml::Value = serde_yaml::from_str(&odcs_yaml).unwrap();
         let m = doc.as_mapping().unwrap();
 
+        // Strict ODCS: no unknown root keys; extensions live in customProperties[].
         assert!(
-            m.contains_key("x-contractgate-version"),
+            !m.keys()
+                .any(|k| k.as_str().is_some_and(|s| s.starts_with("x-"))),
+            "no bare x-* root keys: {odcs_yaml}"
+        );
+        assert!(
+            odcs::root_extension(m, "x-contractgate-version").is_some(),
             "must write x-contractgate-version (D-003)"
         );
         assert!(
-            m.contains_key("x-contractgate-ontology"),
+            odcs::root_extension(m, "x-contractgate-ontology").is_some(),
             "must write x-contractgate-ontology (D-003)"
         );
         assert!(
-            m.contains_key("x-contractgate-glossary"),
+            odcs::root_extension(m, "x-contractgate-glossary").is_some(),
             "must write x-contractgate-glossary when non-empty"
         );
         assert!(
-            m.contains_key("x-contractgate-metrics"),
+            odcs::root_extension(m, "x-contractgate-metrics").is_some(),
             "must write x-contractgate-metrics when non-empty"
         );
     }
@@ -1077,14 +1084,7 @@ ontology:
         // schema section is left.
         let mut doc: serde_yaml::Value = serde_yaml::from_str(&nested_export()).unwrap();
         let m = doc.as_mapping_mut().unwrap();
-        let keys: Vec<_> = m
-            .keys()
-            .filter(|k| k.as_str().is_some_and(|s| s.starts_with("x-contractgate")))
-            .cloned()
-            .collect();
-        for k in keys {
-            m.remove(&k);
-        }
+        m.remove("customProperties");
         let stripped = serde_yaml::to_string(&doc).unwrap();
         // Export writes array element schemas as ODCS `items`.
         assert!(stripped.contains("items:"), "{stripped}");
@@ -1389,12 +1389,14 @@ schema:
             .and_then(|v| v.as_sequence())
             .unwrap();
         assert_eq!(uid_quality.len(), 1, "user_id should have 1 quality rule");
+        let uq0 = uid_quality[0].as_mapping().unwrap();
+        assert_eq!(uq0.get("type").and_then(|v| v.as_str()), Some("library"));
         assert_eq!(
-            uid_quality[0]
-                .as_mapping()
-                .unwrap()
-                .get("type")
-                .and_then(|v| v.as_str()),
+            uq0.get("metric").and_then(|v| v.as_str()),
+            Some("missingValues")
+        );
+        assert_eq!(
+            uq0.get("dimension").and_then(|v| v.as_str()),
             Some("completeness")
         );
 
@@ -1415,16 +1417,15 @@ schema:
             .unwrap();
         assert_eq!(ts_quality.len(), 1);
         let ts_q0 = ts_quality[0].as_mapping().unwrap();
+        assert_eq!(ts_q0.get("type").and_then(|v| v.as_str()), Some("custom"));
         assert_eq!(
-            ts_q0.get("type").and_then(|v| v.as_str()),
-            Some("freshness")
+            ts_q0.get("engine").and_then(|v| v.as_str()),
+            Some("contractgate")
         );
-        let max_age = ts_q0
-            .get("attributes")
-            .and_then(|v| v.as_mapping())
-            .and_then(|m| m.get("maxAgeSeconds"))
-            .and_then(|v| v.as_u64());
-        assert_eq!(max_age, Some(3600));
+        assert_eq!(
+            ts_q0.get("implementation").and_then(|v| v.as_str()),
+            Some("freshness maxAgeSeconds=3600")
+        );
     }
 
     #[test]
@@ -2072,6 +2073,7 @@ mod rfc028_tests {
                         properties: None,
                         items: None,
                         transform: None,
+                        format: None,
                     },
                     FieldDefinition {
                         name: "tenant_id".into(),
@@ -2086,6 +2088,7 @@ mod rfc028_tests {
                         properties: None,
                         items: None,
                         transform: None,
+                        format: None,
                     },
                 ],
             },
@@ -4643,5 +4646,530 @@ mod odcs_import_target {
                 .await
                 .unwrap();
         }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// feat/odcs-strict: exports validate against the official ODCS v3.1.0 JSON
+// Schema (vendored, Apache-2.0), DCG→DCG stays lossless, and foreign ODCS
+// (CsvPath how-to) imports with its constraints.
+// ---------------------------------------------------------------------------
+#[cfg(test)]
+mod odcs_strict_tests {
+    use super::odcs_tests::{make_identity, make_version};
+    use crate::contract::{Contract, FieldDefinition, FieldType, ImportSource, QualityRuleType};
+    use crate::odcs;
+    use serde_json::json;
+
+    const PROBE: &str = include_str!("../tests/fixtures/odcs/dcg-strict-probe.yaml");
+    const CSVPATH_HOWTO: &str =
+        include_str!("../tests/fixtures/odcs/csvpath-orders-howto.odcs.yaml");
+    const SCHEMA_V310: &str =
+        include_str!("../tests/fixtures/odcs-schema/odcs-json-schema-v3.1.0.json");
+
+    fn probe() -> Contract {
+        serde_yaml::from_str(PROBE).unwrap()
+    }
+
+    fn export(c: &Contract) -> String {
+        let identity = make_identity(&c.name);
+        let cv = make_version(identity.id, &c.version, PROBE);
+        odcs::export_odcs(odcs::OdcsExportInput {
+            identity: &identity,
+            version: &cv,
+            contract: c,
+        })
+        .unwrap()
+    }
+
+    fn schema_errors(odcs_yaml: &str) -> Vec<String> {
+        let schema: serde_json::Value = serde_json::from_str(SCHEMA_V310).unwrap();
+        let validator = jsonschema::draft201909::new(&schema).expect("schema compiles");
+        let instance: serde_json::Value = serde_yaml::from_str(odcs_yaml).unwrap();
+        let errors: Vec<String> = match validator.validate(&instance) {
+            Ok(()) => vec![],
+            Err(errs) => errs
+                .map(|e| format!("{} at {}", e, e.instance_path))
+                .collect(),
+        };
+        errors
+    }
+
+    fn field<'a>(fields: &'a [FieldDefinition], name: &str) -> &'a FieldDefinition {
+        fields
+            .iter()
+            .find(|f| f.name == name)
+            .unwrap_or_else(|| panic!("field {name} missing"))
+    }
+
+    fn canon(c: &Contract) -> serde_json::Value {
+        serde_json::to_value(c).unwrap()
+    }
+
+    #[test]
+    fn export_validates_against_official_odcs_v310_schema() {
+        let y = export(&probe());
+        let errs = schema_errors(&y);
+        assert!(errs.is_empty(), "schema errors: {errs:#?}\n{y}");
+    }
+
+    #[test]
+    fn legacy_export_shape_fails_official_schema() {
+        // Guard that the validator is really strict: a bare root x-* key
+        // (the pre-strict export shape) must be rejected.
+        let mut doc: serde_yaml::Value = serde_yaml::from_str(&export(&probe())).unwrap();
+        doc.as_mapping_mut()
+            .unwrap()
+            .insert("x-contractgate-version".into(), "1.0".into());
+        let y = serde_yaml::to_string(&doc).unwrap();
+        assert!(!schema_errors(&y).is_empty());
+    }
+
+    #[test]
+    fn export_writes_native_odcs_constraints() {
+        let doc: serde_json::Value = serde_yaml::from_str(&export(&probe())).unwrap();
+        assert_eq!(doc["description"], json!({"purpose": "test contract"}));
+        let props = doc["schema"][0]["properties"].as_array().unwrap();
+        let p = |n: &str| {
+            props
+                .iter()
+                .find(|p| p["name"] == n)
+                .unwrap_or_else(|| panic!("{n}"))
+        };
+        assert_eq!(
+            p("order_id")["logicalTypeOptions"]["pattern"],
+            "^ORD-[0-9]{6}$"
+        );
+        assert_eq!(p("order_id")["unique"], true);
+        assert_eq!(p("quantity")["logicalTypeOptions"]["minimum"], 1.0);
+        assert_eq!(p("quantity")["logicalTypeOptions"]["maximum"], 999.0);
+        assert_eq!(p("amount")["logicalType"], "number");
+        assert_eq!(p("email")["logicalTypeOptions"]["minLength"], 5);
+        assert_eq!(p("email")["logicalTypeOptions"]["maxLength"], 120);
+        assert_eq!(p("email")["logicalTypeOptions"]["format"], "email");
+        assert_eq!(
+            p("order_date")["logicalTypeOptions"]["format"],
+            "yyyy-MM-dd"
+        );
+        assert!(p("payload").get("logicalType").is_none());
+        // enum → invalidValues validValues (ODCS v3.1.0 has no property enum)
+        let country = p("customer.address.country");
+        let q = &country["quality"][0];
+        assert_eq!(q["metric"], "invalidValues");
+        assert_eq!(q["arguments"]["validValues"], json!(["US", "CA"]));
+        // validity rule on status carries the enum itself (no duplicate entry)
+        let sq = p("status")["quality"].as_array().unwrap();
+        assert_eq!(sq.len(), 1);
+        assert_eq!(
+            sq[0]["arguments"]["validValues"],
+            json!(["open", "shipped", "cancelled"])
+        );
+    }
+
+    #[test]
+    fn dcg_roundtrip_mode_a_is_lossless() {
+        let c = probe();
+        let r = odcs::import_odcs(&export(&c)).unwrap();
+        assert_eq!(r.import_source, ImportSource::Odcs);
+        let back: Contract = serde_yaml::from_str(&r.yaml_content).unwrap();
+        assert_eq!(canon(&back), canon(&c));
+    }
+
+    #[test]
+    fn legacy_root_extension_export_still_imports_mode_a() {
+        // Pre-strict exports put x-contractgate-* as bare root keys.
+        let c = probe();
+        let mut doc: serde_yaml::Value = serde_yaml::from_str(&export(&c)).unwrap();
+        let m = doc.as_mapping_mut().unwrap();
+        let cps = m.remove("customProperties").unwrap();
+        for cp in cps.as_sequence().unwrap() {
+            let cp = cp.as_mapping().unwrap();
+            m.insert(cp["property"].clone(), cp["value"].clone());
+        }
+        m.insert("description".into(), "test contract".into());
+        let r = odcs::import_odcs(&serde_yaml::to_string(&doc).unwrap()).unwrap();
+        assert_eq!(r.import_source, ImportSource::Odcs);
+        let back: Contract = serde_yaml::from_str(&r.yaml_content).unwrap();
+        assert_eq!(canon(&back), canon(&c));
+    }
+
+    #[test]
+    fn dcg_roundtrip_mode_b_keeps_constraints_and_quality() {
+        // Strip every DCG extension (root and per-property): only ODCS-native
+        // fields remain, as a strict third-party tool would emit them.
+        let c = probe();
+        let mut doc: serde_json::Value = serde_yaml::from_str(&export(&c)).unwrap();
+        doc.as_object_mut().unwrap().remove("customProperties");
+        fn strip(v: &mut serde_json::Value) {
+            match v {
+                serde_json::Value::Object(o) => {
+                    o.remove("customProperties");
+                    o.values_mut().for_each(strip);
+                }
+                serde_json::Value::Array(a) => a.iter_mut().for_each(strip),
+                _ => {}
+            }
+        }
+        strip(&mut doc);
+        let y = serde_yaml::to_string(&doc).unwrap();
+        assert!(schema_errors(&y).is_empty());
+        let r = odcs::import_odcs(&y).unwrap();
+        assert_eq!(r.import_source, ImportSource::OdcsStripped);
+        let back: Contract = serde_yaml::from_str(&r.yaml_content).unwrap();
+
+        let mut expect = c.clone();
+        // Not representable without extensions: transforms, `any`, glossary,
+        // metrics, compliance_mode.
+        for f in expect.ontology.entities.iter_mut() {
+            f.transform = None;
+            if f.field_type == FieldType::Any {
+                f.field_type = FieldType::String;
+            }
+        }
+        expect.glossary.clear();
+        expect.metrics.clear();
+        expect.compliance_mode = false;
+        let e = &expect.ontology.entities;
+        let b = &back.ontology.entities;
+        for name in [
+            "order_id",
+            "status",
+            "quantity",
+            "amount",
+            "email",
+            "order_date",
+            "lines",
+        ] {
+            assert_eq!(
+                serde_json::to_value(field(b, name)).unwrap(),
+                serde_json::to_value(field(e, name)).unwrap(),
+                "field {name}"
+            );
+        }
+        let cust = field(b, "customer").properties.as_ref().unwrap();
+        assert_eq!(field(cust, "id").pattern.as_deref(), Some("^C[0-9]+$"));
+        let addr = field(cust, "address").properties.as_ref().unwrap();
+        assert_eq!(
+            field(addr, "country").allowed_values,
+            Some(vec![json!("US"), json!("CA")])
+        );
+        // Quality rules survive via library metrics / custom engine.
+        let mut kinds: Vec<_> = back
+            .quality
+            .iter()
+            .map(|r| (r.field.clone(), r.rule_type, r.threshold, r.max_age_seconds))
+            .collect();
+        kinds.sort_by(|a, b| a.0.cmp(&b.0));
+        assert_eq!(
+            kinds,
+            vec![
+                (
+                    "amount".into(),
+                    QualityRuleType::Completeness,
+                    Some(0.95),
+                    None
+                ),
+                (
+                    "created_at".into(),
+                    QualityRuleType::Freshness,
+                    None,
+                    Some(3600)
+                ),
+                // Without its x-cg-derived marker the enum restatement reads
+                // as an explicit validity overlay (same enforcement).
+                (
+                    "customer.address.country".into(),
+                    QualityRuleType::Validity,
+                    None,
+                    None
+                ),
+                ("order_id".into(), QualityRuleType::Uniqueness, None, None),
+                ("status".into(), QualityRuleType::Validity, None, None),
+            ]
+        );
+    }
+
+    #[test]
+    fn x_cg_extension_wins_over_native_field() {
+        let y = r#"
+apiVersion: v3.1.0
+kind: DataContract
+id: conflict
+version: "1.0.0"
+status: active
+schema:
+  - name: t
+    properties:
+      - name: code
+        logicalType: string
+        logicalTypeOptions: { pattern: "^native$", maxLength: 9 }
+        customProperties:
+          - { property: x-cg-pattern, value: "^cg$" }
+"#;
+        let r = odcs::import_odcs(y).unwrap();
+        let c: Contract = serde_yaml::from_str(&r.yaml_content).unwrap();
+        let f = field(&c.ontology.entities, "code");
+        assert_eq!(f.pattern.as_deref(), Some("^cg$"));
+        assert_eq!(f.max_length, Some(9));
+    }
+
+    #[test]
+    fn csvpath_howto_example_imports_with_constraints() {
+        let r = odcs::import_odcs(CSVPATH_HOWTO).unwrap();
+        assert_eq!(r.import_source, ImportSource::OdcsStripped);
+        let c: Contract = serde_yaml::from_str(&r.yaml_content).unwrap();
+        assert_eq!(c.name, "orders");
+        let e = &c.ontology.entities;
+
+        let id = field(e, "order_id");
+        assert!(id.required);
+        assert_eq!(id.pattern.as_deref(), Some("^ORD-[0-9]{6}$"));
+        assert!(c
+            .quality
+            .iter()
+            .any(|q| q.field == "order_id" && q.rule_type == QualityRuleType::Uniqueness));
+
+        let email = field(e, "customer_email");
+        assert!(!email.required);
+        assert_eq!(email.format.as_deref(), Some("email"));
+
+        let qty = field(e, "quantity");
+        assert_eq!(qty.field_type, FieldType::Integer);
+        assert!(qty.required);
+        assert_eq!((qty.min, qty.max), (Some(1.0), Some(999.0)));
+
+        let status = field(e, "status");
+        assert_eq!(
+            status.allowed_values,
+            Some(vec![json!("open"), json!("shipped"), json!("cancelled")])
+        );
+
+        let date = field(e, "order_date");
+        assert_eq!(date.field_type, FieldType::Date);
+        assert!(date.required);
+        assert_eq!(date.format, None, "yyyy-MM-dd is CG's built-in date format");
+
+        // Schema-level `rowCount` has no per-event CG equivalent: dropped.
+        assert_eq!(c.quality.len(), 1);
+
+        // The imported contract compiles and enforces the constraints.
+        let cc = crate::validation::CompiledContract::compile(c).unwrap();
+        let ok = json!({"order_id": "ORD-000001", "customer_email": "a@b.co",
+            "quantity": 2, "status": "open", "order_date": "2026-10-15"});
+        assert!(crate::validation::validate(&cc, &ok).passed);
+        let bad = json!({"order_id": "X1", "customer_email": "nope",
+            "quantity": 0, "status": "lost", "order_date": "2026-13-01"});
+        let res = crate::validation::validate(&cc, &bad);
+        assert!(!res.passed);
+        assert!(res.violations.len() >= 5, "{:?}", res.violations);
+    }
+
+    #[test]
+    fn foreign_v32_lengths_and_object_description() {
+        let y = r#"
+apiVersion: v3.2.0
+kind: DataContract
+id: lens
+version: "1.0.0"
+status: active
+description: { purpose: "Partner feed", usage: "ingest" }
+schema:
+  - name: lens
+    logicalType: object
+    properties:
+      - name: code
+        logicalType: string
+        required: true
+        logicalTypeOptions: { minLength: 2, maxLength: 8, format: uuid }
+      - name: price
+        logicalType: number
+        logicalTypeOptions: { minimum: 0.5 }
+        quality:
+          - { metric: missingValues, mustBeLessOrEqualTo: 10, unit: percent }
+"#;
+        let r = odcs::import_odcs(y).unwrap();
+        let c: Contract = serde_yaml::from_str(&r.yaml_content).unwrap();
+        assert_eq!(c.description.as_deref(), Some("Partner feed"));
+        let code = field(&c.ontology.entities, "code");
+        assert_eq!((code.min_length, code.max_length), (Some(2), Some(8)));
+        assert_eq!(code.format.as_deref(), Some("uuid"));
+        let price = field(&c.ontology.entities, "price");
+        assert_eq!(price.min, Some(0.5));
+        let q = &c.quality[0];
+        assert_eq!(q.rule_type, QualityRuleType::Completeness);
+        assert!((q.threshold.unwrap() - 0.9).abs() < 1e-9);
+    }
+
+    #[test]
+    fn string_format_checks() {
+        use crate::validation::string_format_ok as ok;
+        assert!(ok("email", "a@b.co"));
+        assert!(!ok("email", "a@b"));
+        assert!(!ok("email", "a b@c.d"));
+        assert!(ok("uuid", "123e4567-e89b-12d3-a456-426614174000"));
+        assert!(!ok("uuid", "123e4567e89b12d3a456426614174000"));
+        assert!(ok("uri", "https://x.y/z"));
+        assert!(!ok("uri", "not a uri"));
+        assert!(ok("hostname", "anything")); // unknown formats are metadata
+    }
+
+    #[test]
+    fn stringified_root_extension_still_imports_mode_a() {
+        let c = probe();
+        let mut doc: serde_json::Value = serde_yaml::from_str(&export(&c)).unwrap();
+        for cp in doc["customProperties"].as_array_mut().unwrap() {
+            if !cp["value"].is_string() {
+                cp["value"] = json!(cp["value"].to_string());
+            }
+        }
+        let r = odcs::import_odcs(&serde_yaml::to_string(&doc).unwrap()).unwrap();
+        assert_eq!(r.import_source, ImportSource::Odcs);
+        let back: Contract = serde_yaml::from_str(&r.yaml_content).unwrap();
+        assert_eq!(canon(&back), canon(&c));
+    }
+
+    #[test]
+    fn openmetadata_export_keeps_description_and_enum() {
+        let y = include_str!("../tests/fixtures/odcs/om-2.0.5-export.odcs.yaml");
+        let r = odcs::import_odcs(y).unwrap();
+        assert_eq!(r.import_source, ImportSource::OdcsStripped);
+        let c: Contract = serde_yaml::from_str(&r.yaml_content).unwrap();
+        assert!(c
+            .description
+            .as_deref()
+            .unwrap()
+            .starts_with("TEST - OpenMetadata"));
+        let cur = field(&c.ontology.entities, "currency");
+        assert_eq!(
+            cur.allowed_values,
+            Some(vec![json!("USD"), json!("EUR"), json!("GBP")])
+        );
+        assert_eq!(
+            field(&c.ontology.entities, "amount").field_type,
+            FieldType::Float
+        );
+    }
+
+    #[test]
+    fn joint_standard_odcs_orders_imports_with_constraints() {
+        // Pure ODCS v3.1.0 (no x-, no customProperties) shared with CsvPath.
+        let y = include_str!("../tests/fixtures/odcs/joint-orders.odcs.yaml");
+        assert!(schema_errors(y).is_empty(), "{:?}", schema_errors(y));
+        let r = odcs::import_odcs(y).unwrap();
+        assert_eq!(r.import_source, ImportSource::OdcsStripped);
+        let c: Contract = serde_yaml::from_str(&r.yaml_content).unwrap();
+        assert_eq!(c.name, "orders");
+        assert!(c
+            .description
+            .as_deref()
+            .unwrap()
+            .starts_with("Canonical order records"));
+        let e = &c.ontology.entities;
+        assert_eq!(e.len(), 11);
+
+        let id = field(e, "order_id");
+        assert!(id.required);
+        assert_eq!(id.pattern.as_deref(), Some("^ORD-[0-9]{8}$"));
+        assert_eq!(
+            field(e, "customer_id").pattern.as_deref(),
+            Some("^CUST-[0-9]{6}$")
+        );
+        let ts = field(e, "order_ts");
+        assert_eq!(ts.field_type, FieldType::Timestamp);
+        assert_eq!(ts.format.as_deref(), Some("yyyy-MM-dd'T'HH:mm:ss'Z'"));
+        assert_eq!(
+            field(e, "status").allowed_values,
+            Some(
+                ["pending", "paid", "shipped", "delivered", "cancelled"]
+                    .map(|v| json!(v))
+                    .to_vec()
+            )
+        );
+        assert_eq!(
+            field(e, "currency").allowed_values,
+            Some(vec![json!("USD"), json!("EUR"), json!("GBP")])
+        );
+        assert_eq!(
+            field(e, "sales_channel").allowed_values,
+            Some(vec![json!("web"), json!("mobile"), json!("store")])
+        );
+        assert!(!field(e, "sales_channel").required);
+        let amount = field(e, "amount");
+        assert_eq!(
+            (amount.field_type.clone(), amount.min, amount.max),
+            (FieldType::Float, Some(0.0), None)
+        );
+        let qty = field(e, "quantity");
+        assert_eq!(
+            (qty.field_type.clone(), qty.min, qty.max),
+            (FieldType::Integer, Some(1.0), Some(100.0))
+        );
+        let email = field(e, "email");
+        assert_eq!(email.format.as_deref(), Some("email"));
+        assert!(email.pattern.is_some());
+        let sc = field(e, "ship_country");
+        assert_eq!(sc.pattern.as_deref(), Some("^[A-Z]{2}$"));
+        assert_eq!((sc.min_length, sc.max_length), (Some(2), Some(2)));
+        let d = field(e, "discount_pct");
+        assert_eq!((d.min, d.max, d.required), (Some(0.0), Some(100.0), false));
+
+        let rule = |f: &str, t: QualityRuleType| {
+            c.quality.iter().any(|q| q.field == f && q.rule_type == t)
+        };
+        // duplicateValues + unique: true → exactly one uniqueness rule
+        assert_eq!(
+            c.quality
+                .iter()
+                .filter(|q| q.field == "order_id" && q.rule_type == QualityRuleType::Uniqueness)
+                .count(),
+            1
+        );
+        assert!(rule("customer_id", QualityRuleType::Completeness)); // nullValues
+        assert!(rule("status", QualityRuleType::Validity));
+        // Schema-level rowCount has no per-event equivalent (dropped).
+        assert_eq!(c.quality.len(), 5);
+
+        // Constraints are enforced on events.
+        let cc = crate::validation::CompiledContract::compile(c.clone()).unwrap();
+        let good = json!({"order_id": "ORD-00000001", "customer_id": "CUST-000001",
+            "order_ts": "2026-10-15T12:00:00Z", "status": "paid", "currency": "USD",
+            "amount": 10.5, "quantity": 2, "email": "a@example.com", "ship_country": "US"});
+        let res = crate::validation::validate(&cc, &good);
+        assert!(res.passed, "{:?}", res.violations);
+        let bad = json!({"order_id": "ORD-1", "customer_id": "C1",
+            "order_ts": "yesterday", "status": "lost", "currency": "JPY",
+            "amount": -1, "quantity": 101, "email": "nope", "ship_country": "usa",
+            "discount_pct": 120, "sales_channel": "fax"});
+        let res = crate::validation::validate(&cc, &bad);
+        let bad_fields: std::collections::BTreeSet<_> =
+            res.violations.iter().map(|v| v.field.as_str()).collect();
+        for f in [
+            "order_id",
+            "customer_id",
+            "order_ts",
+            "status",
+            "currency",
+            "amount",
+            "quantity",
+            "email",
+            "ship_country",
+            "discount_pct",
+            "sales_channel",
+        ] {
+            assert!(
+                bad_fields.contains(f),
+                "{f} not flagged: {:?}",
+                res.violations
+            );
+        }
+
+        // DCG re-export of the imported contract is schema-valid and keeps timestamp.
+        let again = export(&c);
+        assert!(
+            schema_errors(&again).is_empty(),
+            "{:?}",
+            schema_errors(&again)
+        );
+        assert!(again.contains("logicalType: timestamp"));
     }
 }

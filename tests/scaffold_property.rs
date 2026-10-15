@@ -248,6 +248,7 @@ fn make_contract(fields: &[(&str, FieldType, bool)]) -> Contract {
                     properties: None,
                     items: None,
                     transform: None,
+                    format: None,
                 })
                 .collect(),
         },
@@ -287,6 +288,7 @@ proptest! {
             properties: None,
             items: None,
             transform: None,
+            format: None,
         });
 
         let merged = three_way_merge(Some(&base), &ours, &theirs);
@@ -319,6 +321,7 @@ proptest! {
             properties: None,
             items: None,
             transform: None,
+            format: None,
         });
         let theirs = base.clone(); // theirs == base
 
@@ -352,6 +355,7 @@ proptest! {
             properties: None,
             items: None,
             transform: None,
+            format: None,
         });
 
         let merged = three_way_merge(None, &ours, &theirs);

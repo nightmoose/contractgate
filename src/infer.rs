@@ -177,6 +177,7 @@ fn infer_field(name: &str, values: &[&Value], total_samples: usize) -> FieldDefi
         properties: None,
         items: None,
         transform: None,
+        format: None,
     };
 
     match &field_type {

@@ -132,3 +132,36 @@ class OmCompatShim(unittest.TestCase):
         self.assertEqual(out["description"], {"purpose": "hello"})
         self.assertNotIn("customProperties", out["schema"][0]["properties"][0])
         self.assertEqual(out["x-contractgate-ontology"], {"a": 1})
+
+    def test_strict_export_nested_custom_properties_and_root_values(self):
+        import json
+        import yaml
+        from dcg_openmetadata.sync import dcg_odcs_for_om
+        src = yaml.safe_dump({
+            "apiVersion": "v3.1.0", "kind": "DataContract", "id": "x", "version": "1.0.0",
+            "status": "active", "description": {"purpose": "hello"},
+            "schema": [{"name": "t", "logicalType": "object", "properties": [{
+                "name": "a", "logicalType": "string",
+                "customProperties": [{"property": "x-cg-enum", "value": ["A"]}],
+                "quality": [{"type": "library", "metric": "invalidValues", "mustBe": 0,
+                             "arguments": {"validValues": ["A"]},
+                             "customProperties": [{"property": "x-cg-derived",
+                                                   "value": "enum"}]}],
+                "items": {"name": "i", "customProperties": []},
+            }]}],
+            "customProperties": [
+                {"property": "x-contractgate-version", "value": "1.0"},
+                {"property": "x-contractgate-ontology", "value": {"a": 1}},
+            ],
+        })
+        out = yaml.safe_load(dcg_odcs_for_om(src))
+        self.assertEqual(out["description"], {"purpose": "hello"})
+        prop = out["schema"][0]["properties"][0]
+        self.assertNotIn("customProperties", prop)
+        self.assertNotIn("customProperties", prop["quality"][0])
+        self.assertNotIn("customProperties", prop["items"])
+        self.assertEqual(prop["quality"][0]["arguments"]["validValues"], ["A"])
+        root = {c["property"]: c["value"] for c in out["customProperties"]}
+        self.assertEqual(root["x-contractgate-version"], "1.0")
+        self.assertEqual(json.loads(root["x-contractgate-ontology"]), {"a": 1})
+

@@ -341,6 +341,7 @@ fn render_contractgate_yaml(
             FieldType::Array => "array",
             FieldType::Any => "any",
             FieldType::Date => "date",
+            FieldType::Timestamp => "timestamp",
         };
         lines.push(format!("    - name: {}", f.name));
         lines.push(format!("      type: {type_str}"));

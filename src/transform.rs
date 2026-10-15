@@ -244,6 +244,7 @@ mod tests {
             properties: None,
             items: None,
             transform,
+            format: None,
         }
     }
 

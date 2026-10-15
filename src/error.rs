@@ -237,6 +237,17 @@ impl IntoResponse for AppError {
             AppError::Conflict(_) => (StatusCode::CONFLICT, self.to_string()),
             AppError::LinkToken(_) => (StatusCode::FORBIDDEN, self.to_string()),
 
+            // An unknown org id (only reachable via the dev/no-auth
+            // `x-org-id` header) is a client error, not a 500.
+            AppError::Database(e)
+                if e.as_database_error().and_then(|d| d.constraint())
+                    == Some("contracts_org_id_fkey") =>
+            {
+                (
+                    StatusCode::BAD_REQUEST,
+                    "unknown org: the `x-org-id` org does not exist".into(),
+                )
+            }
             AppError::Database(e) => {
                 tracing::error!("Database error: {:?}", e);
                 (StatusCode::INTERNAL_SERVER_ERROR, database_error_message(e))

@@ -207,6 +207,7 @@ fn json_schema_to_definition(
                     properties: item_props,
                     items: item_items,
                     transform: None,
+                    format: None,
                 }
             } else {
                 FieldDefinition {
@@ -222,6 +223,7 @@ fn json_schema_to_definition(
                     properties: None,
                     items: None,
                     transform: None,
+                    format: None,
                 }
             };
             (FieldType::Array, None, Some(Box::new(items_def)))
@@ -268,6 +270,7 @@ fn json_schema_to_definition(
         properties,
         items,
         transform: None,
+        format: None,
     })
 }
 

@@ -1,5 +1,7 @@
 # ODCS v3.1.0 Field Mapping — DataContractGate Native → ODCS
 
+> **Superseded in part (2026-10-15):** see [`strict-odcs.md`](strict-odcs.md) for the current export/import shape. Extensions now live in the root `customProperties[]` array, constraints are also written as native ODCS fields, and floats export as `number`.
+
 **Status:** Week 1 deliverable  
 **Date:** 2026-05-01  
 **ODCS pin:** v3.1.0 (`apiVersion: v3.1.0`)  
@@ -44,7 +46,7 @@ Mapped to ODCS `schema[0].properties[n]`.
 | CG Path | CG Type | CG Card. | ODCS Path | ODCS Type | ODCS Card. | Status | ODCS § | Notes |
 |---------|---------|----------|-----------|-----------|------------|--------|--------|-------|
 | `ontology.entities[].name` | string | required | `schema[].properties[].name` | string | M | **Renamed / Restructured** | [Schema](https://bitol-io.github.io/open-data-contract-standard/v3.1.0/schema/) | Direct semantic equivalent. Position in hierarchy changes (entities[] → properties[]). Safe round-trip. |
-| `ontology.entities[].type` | FieldType enum | required | `schema[].properties[].logicalType` | string | R | **Renamed** | [Schema](https://bitol-io.github.io/open-data-contract-standard/v3.1.0/schema/) | CG `type` → ODCS `logicalType`. CG accepts `"number"` as alias for `"float"`; ODCS uses freeform strings (`"string"`, `"integer"`, `"date"`, etc.). CG `"float"` / `"number"` should export as `"double"` or `"float"` per ODCS convention. CG `"any"` has no ODCS equivalent logical type — export as `"any"` with an extension note. **Naming decision needed.** |
+| `ontology.entities[].type` | FieldType enum | required | `schema[].properties[].logicalType` | string | R | **Renamed** | [Schema](https://bitol-io.github.io/open-data-contract-standard/v3.1.0/schema/) | CG `type` → ODCS `logicalType`. CG accepts `"number"` as alias for `"float"`; ODCS uses freeform strings (`"string"`, `"integer"`, `"date"`, etc.). CG `"float"` / `"number"` exports as `"number"` (the only ODCS v3.1.0 float type). CG `"any"` has no ODCS logical type: `logicalType` is omitted and `x-cg-type: any` is written. CG `"timestamp"` ⇄ ODCS `"timestamp"` (RFC 3339 string; `logicalTypeOptions.format` kept as metadata). |
 | `ontology.entities[].required` | bool (default true) | optional | `schema[].properties[].required` | bool | O | **Direct match** | [Schema](https://bitol-io.github.io/open-data-contract-standard/v3.1.0/schema/) | Same field name, same semantics. Safe round-trip. |
 | `ontology.entities[].pattern` | string (regex) | optional | _(none)_ | — | — | **No equivalent** | — | ODCS has no regex-pattern constraint on properties. Closest: `schema[].properties[].quality[]` with `type: custom` and a SQL/regex expression. However, this loses the machine-parseable constraint on import. Must be preserved as `x-contractgate-pattern` in `customProperties`. **Round-trip risk.** |
 | `ontology.entities[].enum` (YAML: `enum`) | Value[] | optional | _(none)_ | — | — | **No equivalent** | — | No allowed-values list in ODCS schema properties. Same situation as `pattern` — can be expressed as a quality rule but loses import fidelity. Must be preserved as `x-contractgate-enum`. **Round-trip risk.** |
