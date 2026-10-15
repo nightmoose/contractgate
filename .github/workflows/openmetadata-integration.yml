@@ -1,0 +1,26 @@
+name: openmetadata-integration
+
+on:
+  push:
+    branches: [main, staging]
+    paths: ["integrations/openmetadata/**", ".github/workflows/openmetadata-integration.yml"]
+  pull_request:
+    branches: [main, staging]
+    paths: ["integrations/openmetadata/**", ".github/workflows/openmetadata-integration.yml"]
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: integrations/openmetadata
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - run: pip install pyyaml
+      - run: python -m unittest discover -s tests -v
