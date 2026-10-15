@@ -17,7 +17,12 @@ This integration connects the two:
 It is about 400 lines of Python. The publisher and contract sync use only the standard
 library; the optional DCG→OM shim needs PyYAML. MIT licensed, like DCG.
 
-![DCG results on the OpenMetadata Data Quality tab](../../docs/images/openmetadata/table-data-quality.png)
+> **Scope.** DCG is the source of truth for contracts and ingest rules. OpenMetadata
+> receives **results**, plus an optional **one-way OM → DCG** contract import. The reverse
+> direction (DCG contracts into OM) is **not supported**: it is lossy, because OM drops
+> DCG's constraint rules, glossary and metrics (see the round-trip findings below).
+
+![DCG results on the OpenMetadata Data Quality tab](../../docs/images/openmetadata/03-table-data-quality.png)
 
 ---
 
@@ -86,8 +91,6 @@ ADMIN=$(curl -s -X POST localhost:8585/api/v1/users/login -H 'Content-Type: appl
 BOT=$(curl -s -H "Authorization: Bearer $ADMIN" localhost:8585/api/v1/bots/name/ingestion-bot | jq -r .botUser.id)
 export OM_JWT=$(curl -s -H "Authorization: Bearer $ADMIN" localhost:8585/api/v1/users/auth-mechanism/$BOT | jq -r .config.JWTToken)
 ```
-
-![Settings → Bots → ingestion-bot](../../docs/images/openmetadata/bot-token.png)
 
 ### Create a demo table (optional)
 
@@ -178,11 +181,9 @@ only add results. Schedule it with cron at the same interval as `window_minutes`
 */15 * * * * cd /opt/contractgate/integrations/openmetadata && python -m dcg_openmetadata publish --config mapping.json
 ```
 
-![A passing and a failing DCG result on the test case page](../../docs/images/openmetadata/test-case-results.png)
+![A passing and a failing DCG result on the test case page](../../docs/images/openmetadata/01-test-case-results.png)
 
-![Result details with quarantined count, violation rate and contract version](../../docs/images/openmetadata/test-case-result-detail.png)
-
-![DCG test cases in the Data Quality overview](../../docs/images/openmetadata/data-quality-overview.png)
+![DCG test cases in the Data Quality overview](../../docs/images/openmetadata/04-data-quality-overview.png)
 
 ---
 
@@ -198,8 +199,6 @@ python -m dcg_openmetadata sync --om-contract-id <om uuid> --target-contract-id 
 This runs `GET /v1/dataContracts/{id}/odcs/yaml` (with `Accept: application/yaml`) and then
 `POST /contracts/import`. DCG imports the document as a **draft** with
 `requires_review: true`. Review it and promote it in DCG before it is enforced.
-
-![OM data contract](../../docs/images/openmetadata/om-data-contract.png)
 
 ### Round trip: what survives DCG → OM → DCG
 
@@ -220,8 +219,8 @@ extensions. Results against OM 2.0.5 (2026-10-15):
 and gives a schema-level contract (fields, types, required) that DCG flags as
 `import_source: odcs_stripped` with `requires_review: true`. Constraint rules must be added
 in DCG. Keep DCG as the source of truth for ingest rules and push only *results* to OM.
-To push DCG contracts into OM, use `dcg_openmetadata.sync.dcg_odcs_for_om()` (needs
-`pip install pyyaml`).
+Pushing DCG contracts into OM is out of scope. `dcg_openmetadata.sync.dcg_odcs_for_om()`
+(needs `pip install pyyaml`) exists only so the round-trip check can run.
 
 Possible DCG-side fixes, not in this PR: export `description` as an ODCS object, accept the
 object form on import, and map `pattern`/`enum`/`min`/`max` to ODCS `quality` rules or
@@ -239,8 +238,18 @@ echo "{\"window_minutes\":10,\"contracts\":[{\"contract_id\":\"$CID\",\"max_viol
 python -m dcg_openmetadata publish --config /tmp/map.json      # -> Success
 python examples/seed_dcg_demo.py --contract-id $CID --good 80 --bad 20
 python -m dcg_openmetadata publish --config /tmp/map.json      # -> Failed (10% > 2%)
-python examples/seed_dcg_demo.py --delete $CID                 # clean up
+python examples/seed_dcg_demo.py --delete $CID                 # clean up DCG
 ```
+
+### Clean up OpenMetadata
+
+```bash
+python examples/cleanup_om.py                    # test case(s), dcgIngestContract definition,
+                                                 # dcg_demo service (+ db, schema, table, contract)
+python examples/cleanup_om.py --keep-definition  # keep the definition if other tables use it
+```
+
+This uses hard deletes, so it can't be undone. Skip it if you want to keep the demo pages.
 
 The seed contract is named `om_integration_test_orders` and declares
 `x-openmetadata-table`, so it needs no `table_fqn`.
@@ -265,8 +274,7 @@ config and metadata lookup. `tests/test_mock_om.py` starts an in-process mock of
 and checks that the definition and test case are created once and that results, auth
 headers and `target_contract_id` are sent correctly.
 
-## Screenshot placeholders
+## Screenshots
 
-`docs/images/openmetadata/`: `table-data-quality.png`, `bot-token.png`,
-`test-case-results.png`, `test-case-result-detail.png`, `data-quality-overview.png`,
-`om-data-contract.png`.
+`docs/images/openmetadata/`: `01-test-case-results.png`, `03-table-data-quality.png`,
+`04-data-quality-overview.png` (OM 2.0.5, captured with headless Chrome).

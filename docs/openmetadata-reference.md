@@ -33,3 +33,11 @@
 
 `testCaseStatus` (Success/Failed against `max_violation_rate`). `testResultValue`: `total`,
 `passed`, `quarantined`, `violation_rate`, `contract_version`. Also `passedRows` and `failedRows`.
+
+## Scope
+
+DCG is the source of truth. OM receives results plus a one-way OM → DCG contract import. DCG → OM is not supported (lossy).
+
+## Cleanup
+
+`python examples/cleanup_om.py [--keep-definition] [--table-fqn ..] [--service ..]` hard-deletes the test cases, the `dcgIngestContract` definition and the demo service tree.
