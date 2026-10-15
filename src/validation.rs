@@ -792,6 +792,7 @@ fn validate_value(
         FieldType::Any => true,
         // RFC-044: date must be a string; calendar check runs below
         FieldType::Date => value.is_string(),
+        FieldType::Timestamp => value.is_string(),
     };
 
     if !type_ok {
@@ -885,6 +886,25 @@ fn validate_value(
                     });
                 }
             }
+        }
+
+        // Timestamp fields: RFC 3339 / ISO 8601 date-time.
+        if field.field_type == FieldType::Timestamp
+            && chrono::DateTime::parse_from_rfc3339(s).is_err()
+        {
+            violations.push(Violation {
+                field: path.to_string(),
+                message: format!(
+                    "Field '{}' value {:?} is not an RFC 3339 timestamp",
+                    path, s
+                ),
+                kind: ViolationKind::PatternMismatch,
+                received: Some(value.clone()),
+                expected: Some("RFC 3339 timestamp string, e.g. 2026-10-15T12:00:00Z".into()),
+                suggestion: Some(
+                    "Emit an ISO 8601 date-time with offset (e.g. 2026-10-15T12:00:00Z).".into(),
+                ),
+            });
         }
 
         // RFC-044: calendar validation for date fields
@@ -1125,6 +1145,7 @@ fn field_type_label(ft: &FieldType) -> String {
         FieldType::Array => "array".into(),
         FieldType::Any => "any".into(),
         FieldType::Date => "date (YYYY-MM-DD)".into(),
+        FieldType::Timestamp => "timestamp (RFC 3339, e.g. 2026-10-15T12:00:00Z)".into(),
     }
 }
 

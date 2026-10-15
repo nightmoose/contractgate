@@ -5049,4 +5049,127 @@ schema:
             FieldType::Float
         );
     }
+
+    #[test]
+    fn joint_standard_odcs_orders_imports_with_constraints() {
+        // Pure ODCS v3.1.0 (no x-, no customProperties) shared with CsvPath.
+        let y = include_str!("../tests/fixtures/odcs/joint-orders.odcs.yaml");
+        assert!(schema_errors(y).is_empty(), "{:?}", schema_errors(y));
+        let r = odcs::import_odcs(y).unwrap();
+        assert_eq!(r.import_source, ImportSource::OdcsStripped);
+        let c: Contract = serde_yaml::from_str(&r.yaml_content).unwrap();
+        assert_eq!(c.name, "orders");
+        assert!(c
+            .description
+            .as_deref()
+            .unwrap()
+            .starts_with("Canonical order records"));
+        let e = &c.ontology.entities;
+        assert_eq!(e.len(), 11);
+
+        let id = field(e, "order_id");
+        assert!(id.required);
+        assert_eq!(id.pattern.as_deref(), Some("^ORD-[0-9]{8}$"));
+        assert_eq!(
+            field(e, "customer_id").pattern.as_deref(),
+            Some("^CUST-[0-9]{6}$")
+        );
+        let ts = field(e, "order_ts");
+        assert_eq!(ts.field_type, FieldType::Timestamp);
+        assert_eq!(ts.format.as_deref(), Some("yyyy-MM-dd'T'HH:mm:ss'Z'"));
+        assert_eq!(
+            field(e, "status").allowed_values,
+            Some(
+                ["pending", "paid", "shipped", "delivered", "cancelled"]
+                    .map(|v| json!(v))
+                    .to_vec()
+            )
+        );
+        assert_eq!(
+            field(e, "currency").allowed_values,
+            Some(vec![json!("USD"), json!("EUR"), json!("GBP")])
+        );
+        assert_eq!(
+            field(e, "sales_channel").allowed_values,
+            Some(vec![json!("web"), json!("mobile"), json!("store")])
+        );
+        assert!(!field(e, "sales_channel").required);
+        let amount = field(e, "amount");
+        assert_eq!(
+            (amount.field_type.clone(), amount.min, amount.max),
+            (FieldType::Float, Some(0.0), None)
+        );
+        let qty = field(e, "quantity");
+        assert_eq!(
+            (qty.field_type.clone(), qty.min, qty.max),
+            (FieldType::Integer, Some(1.0), Some(100.0))
+        );
+        let email = field(e, "email");
+        assert_eq!(email.format.as_deref(), Some("email"));
+        assert!(email.pattern.is_some());
+        let sc = field(e, "ship_country");
+        assert_eq!(sc.pattern.as_deref(), Some("^[A-Z]{2}$"));
+        assert_eq!((sc.min_length, sc.max_length), (Some(2), Some(2)));
+        let d = field(e, "discount_pct");
+        assert_eq!((d.min, d.max, d.required), (Some(0.0), Some(100.0), false));
+
+        let rule = |f: &str, t: QualityRuleType| {
+            c.quality.iter().any(|q| q.field == f && q.rule_type == t)
+        };
+        // duplicateValues + unique: true → exactly one uniqueness rule
+        assert_eq!(
+            c.quality
+                .iter()
+                .filter(|q| q.field == "order_id" && q.rule_type == QualityRuleType::Uniqueness)
+                .count(),
+            1
+        );
+        assert!(rule("customer_id", QualityRuleType::Completeness)); // nullValues
+        assert!(rule("status", QualityRuleType::Validity));
+        // Schema-level rowCount has no per-event equivalent (dropped).
+        assert_eq!(c.quality.len(), 5);
+
+        // Constraints are enforced on events.
+        let cc = crate::validation::CompiledContract::compile(c.clone()).unwrap();
+        let good = json!({"order_id": "ORD-00000001", "customer_id": "CUST-000001",
+            "order_ts": "2026-10-15T12:00:00Z", "status": "paid", "currency": "USD",
+            "amount": 10.5, "quantity": 2, "email": "a@example.com", "ship_country": "US"});
+        let res = crate::validation::validate(&cc, &good);
+        assert!(res.passed, "{:?}", res.violations);
+        let bad = json!({"order_id": "ORD-1", "customer_id": "C1",
+            "order_ts": "yesterday", "status": "lost", "currency": "JPY",
+            "amount": -1, "quantity": 101, "email": "nope", "ship_country": "usa",
+            "discount_pct": 120, "sales_channel": "fax"});
+        let res = crate::validation::validate(&cc, &bad);
+        let bad_fields: std::collections::BTreeSet<_> =
+            res.violations.iter().map(|v| v.field.as_str()).collect();
+        for f in [
+            "order_id",
+            "customer_id",
+            "order_ts",
+            "status",
+            "currency",
+            "amount",
+            "quantity",
+            "email",
+            "ship_country",
+            "discount_pct",
+            "sales_channel",
+        ] {
+            assert!(
+                bad_fields.contains(f),
+                "{f} not flagged: {:?}",
+                res.violations
+            );
+        }
+
+        // DCG re-export of the imported contract is schema-valid and keeps timestamp.
+        let again = export(&c);
+        assert!(
+            schema_errors(&again).is_empty(),
+            "{:?}",
+            schema_errors(&again)
+        );
+        assert!(again.contains("logicalType: timestamp"));
+    }
 }

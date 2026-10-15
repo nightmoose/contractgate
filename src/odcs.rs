@@ -69,6 +69,7 @@ fn field_type_to_logical(ft: &FieldType) -> Option<&'static str> {
         FieldType::Any => None,
         // RFC-044
         FieldType::Date => Some("date"),
+        FieldType::Timestamp => Some("timestamp"),
     }
 }
 
@@ -81,6 +82,7 @@ fn logical_to_field_type(s: &str) -> FieldType {
         "array" | "list" => FieldType::Array,
         // RFC-044: date32 is the Arrow/Iceberg alias
         "date" | "date32" => FieldType::Date,
+        "timestamp" | "datetime" | "timestamptz" => FieldType::Timestamp,
         "any" => FieldType::Any,
         _ => FieldType::String,
     }
@@ -155,6 +157,11 @@ fn native_type_options(f: &FieldDefinition) -> Mapping {
         FieldType::Date => {
             let fmt = f.format.as_deref().unwrap_or(CG_DATE_FORMAT);
             o.insert(v_str("format"), v_str(fmt));
+        }
+        FieldType::Timestamp => {
+            if let Some(fmt) = &f.format {
+                o.insert(v_str("format"), v_str(fmt));
+            }
         }
         _ => {}
     }

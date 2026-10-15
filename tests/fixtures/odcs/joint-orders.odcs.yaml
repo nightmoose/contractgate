@@ -1,0 +1,152 @@
+# Joint DCG/CsvPath example (pure standard ODCS v3.1.0), from /workspace/odcs-joint
+apiVersion: v3.1.0
+kind: DataContract
+id: urn:example:contracts:orders
+name: Orders
+version: 1.0.0
+status: active
+domain: commerce
+dataProduct: orders
+tenant: example
+description:
+  purpose: >-
+    Canonical order records shared by batch files (validated with CsvPath) and
+    streaming events (validated with DataContractGate). One contract, two runtimes.
+  usage: Flat, one row/event per order. Amounts are in the order currency.
+  limitations: Example contract; no PII beyond a contact email at example.com.
+team:
+  name: orders-data
+  members:
+    - username: orders-owner@example.com
+      name: Orders Owner
+      role: owner
+schema:
+  - name: orders
+    physicalName: orders
+    physicalType: table
+    logicalType: object
+    description: One record per customer order.
+    properties:
+      - name: order_id
+        logicalType: string
+        physicalType: varchar(12)
+        description: Order identifier, ORD- followed by 8 digits.
+        required: true
+        unique: true
+        primaryKey: true
+        primaryKeyPosition: 1
+        logicalTypeOptions:
+          pattern: "^ORD-[0-9]{8}$"
+        examples: ["ORD-00000001"]
+        quality:
+          - type: library
+            metric: duplicateValues
+            mustBe: 0
+            description: order_id must be unique within a batch.
+            dimension: uniqueness
+      - name: customer_id
+        logicalType: string
+        physicalType: varchar(11)
+        description: Customer identifier, CUST- followed by 6 digits.
+        required: true
+        logicalTypeOptions:
+          pattern: "^CUST-[0-9]{6}$"
+        quality:
+          - type: library
+            metric: nullValues
+            mustBe: 0
+            description: Every order has a customer.
+            dimension: completeness
+      - name: order_ts
+        logicalType: timestamp
+        physicalType: timestamp
+        description: Order creation time (UTC, ISO 8601).
+        required: true
+        logicalTypeOptions:
+          format: "yyyy-MM-dd'T'HH:mm:ss'Z'"
+      - name: status
+        logicalType: string
+        physicalType: varchar(16)
+        description: Order lifecycle status.
+        required: true
+        quality:
+          - type: library
+            metric: invalidValues
+            arguments:
+              validValues: [pending, paid, shipped, delivered, cancelled]
+            mustBe: 0
+            description: Allowed values only.
+            dimension: conformity
+      - name: currency
+        logicalType: string
+        physicalType: char(3)
+        description: ISO 4217 currency code.
+        required: true
+        quality:
+          - type: library
+            metric: invalidValues
+            arguments:
+              validValues: [USD, EUR, GBP]
+            mustBe: 0
+            description: Allowed values only.
+            dimension: conformity
+      - name: amount
+        logicalType: number
+        physicalType: decimal(12,2)
+        description: Order total after discount, in currency.
+        required: true
+        logicalTypeOptions:
+          minimum: 0
+      - name: quantity
+        logicalType: integer
+        physicalType: int
+        description: Total items in the order.
+        required: true
+        logicalTypeOptions:
+          minimum: 1
+          maximum: 100
+      - name: email
+        logicalType: string
+        physicalType: varchar(254)
+        description: Customer contact email.
+        required: true
+        classification: restricted
+        logicalTypeOptions:
+          format: email
+          pattern: "^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$"
+      - name: ship_country
+        logicalType: string
+        physicalType: char(2)
+        description: ISO 3166-1 alpha-2 shipping country.
+        required: true
+        logicalTypeOptions:
+          pattern: "^[A-Z]{2}$"
+          minLength: 2
+          maxLength: 2
+      - name: discount_pct
+        logicalType: number
+        physicalType: decimal(5,2)
+        description: Discount applied, percent 0-100. Optional.
+        required: false
+        logicalTypeOptions:
+          minimum: 0
+          maximum: 100
+      - name: sales_channel
+        logicalType: string
+        physicalType: varchar(8)
+        description: Channel the order came from.
+        required: false
+        quality:
+          - type: library
+            metric: invalidValues
+            arguments:
+              validValues: [web, mobile, store]
+            mustBe: 0
+            description: Allowed values only.
+            dimension: conformity
+    quality:
+      - type: library
+        metric: rowCount
+        mustBeGreaterThan: 0
+        description: File/batch must not be empty.
+        dimension: completeness

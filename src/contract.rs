@@ -178,6 +178,10 @@ pub enum FieldType {
     /// format and must represent a real calendar date (e.g. month ≤ 12).
     /// Maps to ODCS `logicalType: date`.
     Date,
+    /// Point in time. Value must be an RFC 3339 / ISO 8601 date-time string
+    /// (e.g. `2026-10-15T12:00:00Z`). Maps to ODCS `logicalType: timestamp`;
+    /// a `format` is carried as metadata.
+    Timestamp,
 }
 
 fn default_true() -> bool {

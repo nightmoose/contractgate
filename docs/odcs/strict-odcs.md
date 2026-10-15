@@ -77,3 +77,15 @@ Nested objects keep the D-001 shape: flattened to dot-notation leaf names
   nested ones and stringifies root values. OM keeps the description and the
   `invalidValues` (enum) rule. It drops `logicalTypeOptions` and root
   `customProperties`.
+
+## Pure standard ODCS v3.1 (joint DCG/CsvPath example)
+
+`tests/fixtures/odcs/joint-orders.odcs.yaml` (no `x-`, no `customProperties`) imports as a new
+contract (201, Mode B) with every constraint intact: `logicalTypeOptions` pattern /
+minimum / maximum / minLength / maxLength / format; `library` quality metrics
+(`invalidValues` + `validValues` → enum, `duplicateValues` / `unique: true` → one uniqueness
+rule, `nullValues` → completeness); object-form description; top-level name.
+`logicalType: timestamp` maps to the DCG `timestamp` field type (RFC 3339 string, validated on
+ingest; the ODCS `format` is kept as metadata and re-exported). The schema-level `rowCount`
+rule has no per-event equivalent in DCG and is dropped (CsvPath enforces it on files).
+An `x-org-id` that names no existing org (dev/no-auth) now returns 400, not a 500.
