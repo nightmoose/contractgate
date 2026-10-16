@@ -35,10 +35,41 @@ pub fn default_rate_limit(plan: &str) -> (u32, u32) {
     }
 }
 
+/// Plans for which [`is_paid`] is true. Payload-storage upgrade copy is built
+/// from this list so it cannot name a different set than the gate.
+///
+/// `growth` is DataContractGate Pro, `aisg_pro` is AISchemaGate Pro, and
+/// `enterprise` is shared. `free` and `aisg_free` are absent on purpose.
+pub const PAID_PLANS: &[&str] = &["growth", "aisg_pro", "enterprise"];
+
 /// Whether a plan is a paid plan. Paid plans unlock payload storage (RFC-086)
 /// and the org settings that depend on it.
 pub fn is_paid(plan: &str) -> bool {
-    matches!(plan, "growth" | "enterprise" | "aisg_pro")
+    PAID_PLANS.contains(&plan)
+}
+
+/// English list of [`PAID_PLANS`], e.g. `growth, aisg_pro, or enterprise`.
+pub fn paid_plans_phrase() -> String {
+    english_or(PAID_PLANS)
+}
+
+/// 400 body when a non-paid plan tries to turn payload storage on.
+///
+/// The plan names are [`PAID_PLANS`] (the same slice [`is_paid`] checks).
+pub fn payload_storage_upgrade_message() -> String {
+    format!(
+        "event payload storage is a paid-plan feature; upgrade to {}",
+        paid_plans_phrase()
+    )
+}
+
+fn english_or(items: &[&str]) -> String {
+    match items.split_last() {
+        None => String::new(),
+        Some((only, [])) => (*only).to_string(),
+        Some((last, [only])) => format!("{only} or {last}"),
+        Some((last, rest)) => format!("{}, or {last}", rest.join(", ")),
+    }
 }
 
 /// Whether an event body should be durably stored for this org/contract.
@@ -227,5 +258,29 @@ mod tests {
         assert_eq!(default_rate_limit("aisg_pro"), (100, 200));
         assert_eq!(default_rate_limit("enterprise"), (100, 200));
         assert_eq!(default_rate_limit("bogus"), (10, 20));
+    }
+
+    #[test]
+    fn upgrade_message_names_exactly_the_paid_plans() {
+        let msg = payload_storage_upgrade_message();
+        assert!(msg.starts_with("event payload storage is a paid-plan feature; upgrade to "));
+        let named: Vec<&str> = msg
+            .rsplit_once("upgrade to ")
+            .unwrap()
+            .1
+            .split(|c: char| !c.is_ascii_alphanumeric() && c != '_')
+            .filter(|w| !w.is_empty() && *w != "or")
+            .collect();
+        assert_eq!(named, PAID_PLANS);
+        for plan in PAID_PLANS {
+            assert!(is_paid(plan), "{plan}");
+        }
+        for plan in ["free", "aisg_free", "pro", "Growth", "Enterprise"] {
+            assert!(!is_paid(plan), "{plan} must not qualify");
+            assert!(
+                !named.contains(&plan),
+                "{msg} must not name {plan} separately from the paid-plan list"
+            );
+        }
     }
 }

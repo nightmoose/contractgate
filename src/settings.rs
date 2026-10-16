@@ -89,7 +89,7 @@ pub async fn set_payload_storage_handler(
     let eligible = is_paid(&plan);
     if body.enabled && !eligible {
         return Err(AppError::BadRequest(
-            "event payload storage is a paid-plan feature; upgrade to Growth or Enterprise".into(),
+            crate::plan::payload_storage_upgrade_message(),
         ));
     }
 

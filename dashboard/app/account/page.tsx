@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { createClient } from "@/lib/supabase/client";
-import { useOrg, planDisplayName, isFreePlan } from "@/lib/org";
+import { useOrg, planDisplayName, isFreePlan, paidPlansPhrase } from "@/lib/org";
 import { useBrand } from "@/components/BrandProvider";
 import { useRouter } from "next/navigation";
 import type { User } from "@supabase/supabase-js";
@@ -1168,7 +1168,7 @@ function EventPayloadStorageSection() {
           ? status.enabled
             ? "On — event bodies are stored. Turning this off purges all stored bodies org-wide."
             : "Off — only metadata is stored. Quarantined events can't be replayed until this is on."
-          : "Event payload storage is a paid-plan feature (Pro or Enterprise)."}
+          : `Event payload storage is a paid-plan feature (${paidPlansPhrase()}).`}
       </p>
 
       {error && (
