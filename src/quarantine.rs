@@ -200,9 +200,9 @@ pub async fn replay_all_handler(
     }
 
     // Emit in input order; unresolved ids get a not-found-style outcome.
-    // Clamp to the validated cap so the allocation is bounded independently
-    // of the request body (validate_ids_bounds already rejects > cap).
-    let mut outcomes = Vec::with_capacity(req.event_ids.len().min(crate::replay::MAX_REPLAY_IDS));
+    // No pre-sizing from the request body: ids are capped at MAX_REPLAY_IDS
+    // by validate_ids_bounds, so growing the Vec on demand is cheap.
+    let mut outcomes = Vec::new();
     for id in &req.event_ids {
         match outcome_for.remove(id) {
             Some(o) => outcomes.push(o),
