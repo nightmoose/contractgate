@@ -19,6 +19,15 @@ The body is required for exactly one feature: **quarantine replay**. Without a
 stored body, a quarantine row is non-replayable (it still shows what failed and
 why).
 
+Passing events also insert a `forwarded_events` row. That row keeps
+`contract_id`, `contract_version`, and `created_at` either way. The body is
+written only under the policy above. When storage is off, `payload` is JSON
+`null` (the column is `NOT NULL`, so the event is omitted without a schema
+change). Existing rows are not rewritten. Kafka and Kinesis publish the body
+from memory and do not write this table. A reader must treat JSON `null` as
+"body not stored"; a passing event is a JSON object, so `null` is not a
+captured body.
+
 ## Policy
 
 Bodies are stored only when **all** of:
