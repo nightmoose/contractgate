@@ -649,6 +649,8 @@ trait ConnectHttp: Send + Sync {
         path: &'a str,
         auth: &'a str,
     ) -> BoxFuture<'a, Result<HttpReply, String>>;
+
+    fn get<'a>(&'a self, path: &'a str, auth: &'a str) -> BoxFuture<'a, Result<HttpReply, String>>;
 }
 
 fn safe_id(id: &str) -> bool {
@@ -745,6 +747,18 @@ impl ConnectHttp for ReqwestFivetran {
             let request = self
                 .client
                 .delete(format!("{FIVETRAN_API}{path}"))
+                .header(reqwest::header::AUTHORIZATION, auth)
+                .header(reqwest::header::ACCEPT, "application/json")
+                .header(reqwest::header::USER_AGENT, USER_AGENT);
+            self.send(request).await
+        })
+    }
+
+    fn get<'a>(&'a self, path: &'a str, auth: &'a str) -> BoxFuture<'a, Result<HttpReply, String>> {
+        Box::pin(async move {
+            let request = self
+                .client
+                .get(format!("{FIVETRAN_API}{path}"))
                 .header(reqwest::header::AUTHORIZATION, auth)
                 .header(reqwest::header::ACCEPT, "application/json")
                 .header(reqwest::header::USER_AGENT, USER_AGENT);
@@ -854,6 +868,30 @@ fn setup_url(connection_id: &str) -> Option<String> {
     }
 }
 
+fn group_path(group_id: &str) -> String {
+    format!("/v1/groups/{group_id}")
+}
+
+/// Confirms the Fivetran key and `group_id` before a ContractGate key is minted.
+async fn verify_group<H: ConnectHttp + ?Sized>(http: &H, input: &ConnectInput) -> AppResult<()> {
+    let path = group_path(&input.group_id);
+    let reply = http
+        .get(&path, &input.secrets.basic)
+        .await
+        .map_err(|err| transport(err, &input.secrets))?;
+    if (200..300).contains(&reply.status) {
+        return Ok(());
+    }
+    if reply.status == 404 {
+        log_upstream(reply.status, &reply.body, &input.secrets);
+        return Err(AppError::BadRequest(format!(
+            "Fivetran group {} was not found",
+            input.group_id
+        )));
+    }
+    Err(upstream_error(reply.status, &reply.body, &input.secrets))
+}
+
 fn transport(err: String, secrets: &HeldSecrets) -> AppError {
     let detail = truncate_chars(&redact(&err, &secrets.needles()), 180);
     tracing::warn!(detail = %detail, "fivetran request failed");
@@ -945,6 +983,7 @@ async fn finish_connect<H: ConnectHttp + ?Sized, K: ConnectorKeys + ?Sized>(
         return Err(AppError::ContractNotFound(id));
     }
     let base_url = parse_public_base_url(base_url)?;
+    verify_group(http, &input).await?;
     let raw = mint_raw_key();
     let prefix = &raw[..12];
     let hash = hash_key(&raw);
@@ -1093,7 +1132,7 @@ pub(crate) fn openapi_operation() -> Value {
                     }
                 }
             },
-            "400": {"description": "Invalid body, contract id, or table name"},
+            "400": {"description": "Invalid body, contract id, table name, or a Fivetran group_id that was not found"},
             "401": {"description": "Missing ContractGate credentials, or Fivetran rejected the API key"},
             "403": {"description": upgrade},
             "404": {"description": "A contract id is not in the caller's org"},
@@ -1186,6 +1225,8 @@ mod tests {
     struct ScriptHttp {
         /// When false, any HTTP call panics.
         allow: bool,
+        group_status: u16,
+        group_body: String,
         upload_status: u16,
         upload_body: String,
         /// First create status. 404 triggers the legacy path.
@@ -1202,6 +1243,8 @@ mod tests {
         fn ok() -> Self {
             Self {
                 allow: true,
+                group_status: 200,
+                group_body: r#"{"code":"Success","data":{"id":"projected_sickle"}}"#.into(),
                 upload_status: 200,
                 upload_body: r#"{"code":"Success","data":{"id":"pkg_test_1"}}"#.into(),
                 connections_status: 201,
@@ -1284,6 +1327,22 @@ mod tests {
                 Ok(HttpReply {
                     status: 200,
                     body: r#"{"code":"Success"}"#.into(),
+                })
+            })
+        }
+
+        fn get<'a>(
+            &'a self,
+            path: &'a str,
+            auth: &'a str,
+        ) -> BoxFuture<'a, Result<HttpReply, String>> {
+            Box::pin(async move {
+                assert!(self.allow, "HTTP called");
+                self.calls.lock().unwrap().push(path.to_string());
+                self.auth.lock().unwrap().push(auth.to_string());
+                Ok(HttpReply {
+                    status: self.group_status,
+                    body: self.group_body.clone(),
                 })
             })
         }
@@ -1536,7 +1595,11 @@ mod tests {
         assert_eq!(response.status, "paused");
         assert_eq!(
             http.calls.lock().unwrap().as_slice(),
-            [PACKAGE_PATH, CONNECTIONS_PATH]
+            [
+                "/v1/groups/projected_sickle",
+                PACKAGE_PATH,
+                CONNECTIONS_PATH
+            ]
         );
         let created = http.created.lock().unwrap();
         let payload = &created[0];
@@ -1605,7 +1668,12 @@ mod tests {
         assert_eq!(response.connection_id, "conn_test_1");
         assert_eq!(
             http.calls.lock().unwrap().as_slice(),
-            [PACKAGE_PATH, CONNECTIONS_PATH, CONNECTORS_PATH]
+            [
+                "/v1/groups/projected_sickle",
+                PACKAGE_PATH,
+                CONNECTIONS_PATH,
+                CONNECTORS_PATH
+            ]
         );
     }
 
@@ -1649,6 +1717,86 @@ mod tests {
             .unwrap()
             .iter()
             .any(|c| c.contains("connections")));
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn bad_credentials_mint_no_key() {
+        let id = contract(14);
+        let http = ScriptHttp {
+            group_status: 401,
+            group_body:
+                r#"{"message":"rejected ftkeyTESTfivetrankeyvalue1 ftsecTESTfivetransecretvalue1"}"#
+                    .into(),
+            ..ScriptHttp::ok()
+        };
+        let keys = MemKeys::new();
+        let input = parse_connect_body(&body(&[id], None)).unwrap();
+        let logs = LogCapture::start();
+        let err = finish_connect(
+            &http,
+            &keys,
+            &caller(),
+            "growth",
+            &[id],
+            input,
+            "https://api.datacontractgate.com",
+        )
+        .await
+        .unwrap_err();
+        let logs = logs.text();
+        let response = err.into_response();
+        assert_eq!(response.status(), axum::http::StatusCode::UNAUTHORIZED);
+        let bytes = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+        let text = String::from_utf8(bytes.to_vec()).unwrap();
+        assert!(text.contains("Fivetran rejected the API key"));
+        assert_clean(&text);
+        assert_clean(&logs);
+        assert!(keys.inserted.lock().unwrap().is_empty());
+        assert!(keys.revoked.lock().unwrap().is_empty());
+        assert_eq!(
+            http.calls.lock().unwrap().as_slice(),
+            ["/v1/groups/projected_sickle"]
+        );
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn bad_group_id_is_a_clear_error_and_mints_no_key() {
+        let id = contract(15);
+        let http = ScriptHttp {
+            group_status: 404,
+            group_body:
+                r#"{"message":"missing ftkeyTESTfivetrankeyvalue1 ftsecTESTfivetransecretvalue1"}"#
+                    .into(),
+            ..ScriptHttp::ok()
+        };
+        let keys = MemKeys::new();
+        let input = parse_connect_body(&body(&[id], None)).unwrap();
+        let logs = LogCapture::start();
+        let err = finish_connect(
+            &http,
+            &keys,
+            &caller(),
+            "enterprise",
+            &[id],
+            input,
+            "https://api.datacontractgate.com",
+        )
+        .await
+        .unwrap_err();
+        let logs = logs.text();
+        let response = err.into_response();
+        assert_eq!(response.status(), axum::http::StatusCode::BAD_REQUEST);
+        let bytes = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+        let text = String::from_utf8(bytes.to_vec()).unwrap();
+        assert!(text.contains("Fivetran group projected_sickle was not found"));
+        assert_clean(&text);
+        assert_clean(&logs);
+        assert!(keys.inserted.lock().unwrap().is_empty());
+        assert!(keys.revoked.lock().unwrap().is_empty());
+        assert_eq!(
+            http.calls.lock().unwrap().as_slice(),
+            ["/v1/groups/projected_sickle"]
+        );
     }
 
     #[test]
