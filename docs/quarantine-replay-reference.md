@@ -22,7 +22,11 @@ the same replay engine.
 
 ## `GET /quarantine`
 
-List source quarantine rows for the caller's org, newest first.
+List source quarantine rows for the caller's org, newest first. Rows whose
+contract has been soft-deleted are not listed. `DELETE /contracts/{id}`
+removes that contract's quarantine rows in the same transaction as the soft
+delete (audit rows and contract versions are kept; a published version is
+not unpublished).
 
 Query parameters:
 

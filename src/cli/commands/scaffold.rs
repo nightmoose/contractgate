@@ -218,7 +218,7 @@ fn run_kafka_topic(
         } else {
             0
         };
-        return Ok(exit);
+        Ok(exit)
     }
 
     #[cfg(not(feature = "scaffold"))]
