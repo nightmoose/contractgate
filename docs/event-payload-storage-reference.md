@@ -30,6 +30,14 @@ captured body. Paid plans can pull these rows with
 [`GET /v1/contracts/{id}/passed`](passed-events-reference.md). That response
 uses the same `null` payload.
 
+Ingest quarantine uses the same policy: the body is SQL `NULL` and
+`payload_redacted` is set when storage is off, and that row cannot be
+replayed. A **failed replay** is the exception. Replay only runs when the
+source row already had a body, and the new quarantine row keeps that body
+so a later replay can run. A **passing replay** writes `audit_log` with the
+same body rule as ingest (`{}` and `raw_event_redacted` when storage is
+off) and a `forwarded_events` row under the same rule.
+
 ## Policy
 
 Bodies are stored only when **all** of:
