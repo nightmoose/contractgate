@@ -36,10 +36,11 @@ X-Api-Key: cg_live_...
 | Query | Default | Rule |
 |---|---|---|
 | `cursor` | absent | Opaque cursor from `next_cursor`. Send it back unchanged. |
-| `limit` | 500 | Max 1000. Larger values are capped. `0` is 400. |
+| `limit` | 500 | Max 1000. Larger integers are capped. `0`, negatives, and non-integers (`-1`, `abc`) are 400. |
 
 404 when the contract does not exist, is owned by another org, or is
-soft-deleted. Those three cases look the same.
+soft-deleted. Those three cases look the same. Deleting a contract removes
+its `forwarded_events` rows in that same transaction. The audit log is kept.
 
 The per-key token bucket already on `/v1` applies. A full bucket is 429
 with `X-RateLimit-*` and `Retry-After`.
@@ -72,6 +73,10 @@ were removed. Re-sync reads what is still stored, from the start.
 ```
 
 ```json
+{ "error": "Invalid request: limit must be an integer 1-1000", "status": 400 }
+```
+
+```json
 { "error": "passed-event cursor is older than the 90-day retention window for this plan; drop the cursor and re-sync from the start", "status": 410 }
 ```
 
@@ -88,7 +93,7 @@ were removed. Re-sync reads what is still stored, from the start.
     }
   ],
   "next_cursor": "MTc5MjE1MjAwMDEyMzQ1Niw1NTBlODQwMC1lMjliLTQxZDQtYTcxNi00NDY2NTU0NDAwMDA",
-  "has_more": false
+  "has_more": true
 }
 ```
 
@@ -96,11 +101,18 @@ were removed. Re-sync reads what is still stored, from the start.
 for a paid plan with the org switch and the per-contract override both on
 (see [event payload storage](event-payload-storage-reference.md)). A passing
 event is a JSON object, so `null` means "body not stored", not an empty
-event. Still advance the cursor.
+event. A null payload is still an event: when `has_more` is true, advance
+with `next_cursor`.
 
-`next_cursor` is the last event on this page. When the page is empty it
-repeats the cursor you sent (or `null` on the first page). Save it and pass
-it on the next call. `has_more` is false when this page ended inside the
+`next_cursor` is the last event on this page when `has_more` is true. Save it
+and send it as `cursor` on the next call.
+
+When `has_more` is false, `next_cursor` is null. That is the last page,
+including an empty page. The connector keeps its last cursor when
+`next_cursor` is null: do not replace a stored cursor with null, and do not
+treat null as a signal to start over or re-sync. If this was the first page
+and no cursor was stored, the next poll with no cursor returns the same
+rows; dedupe by `id`. `has_more` is false when this page ended inside the
 holdback window.
 
 Kafka and Kinesis consumers publish from memory and do **not** insert

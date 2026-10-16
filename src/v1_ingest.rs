@@ -1008,7 +1008,7 @@ fn more_openapi_paths_tail(
         json!({
             "operationId": "set_payload_storage",
             "summary": "Set the org event-payload storage switch",
-            "description": "Enabling requires a paid plan. Disabling purges stored bodies for the org.",
+            "description": "Enabling requires a paid plan. Disabling purges stored bodies for the org, including forwarded_events payloads (JSON null). Rows are kept.",
             "requestBody": {"required": true, "content": {"application/json": {"schema": enabled_body.clone()}}},
             "responses": {
                 "200": {"description": "Updated status", "content": {"application/json": {"schema": payload_status}}},
@@ -1043,7 +1043,7 @@ fn more_openapi_paths_tail(
         json!({
             "operationId": "purge_contract_bodies",
             "summary": "Redact stored bodies for one contract",
-            "description": "Keeps audit and quarantine rows. Never deletes a row.",
+            "description": "Keeps audit, quarantine, and forwarded_events rows. Nulls stored bodies; forwarded_events.payload becomes JSON null. Never deletes a row.",
             "parameters": [id_param.clone()],
             "responses": {
                 "200": {"description": "Rows whose bodies were redacted", "content": {"application/json": {"schema": {"type": "object", "properties": {"quarantine_bodies_redacted": {"type": "integer"}, "audit_bodies_redacted": {"type": "integer"}}}}}},
@@ -2077,10 +2077,15 @@ mod tests {
         for plan in crate::plan::PAID_PLANS {
             assert!(forbidden.contains(plan), "{forbidden}");
         }
-        assert!(op["responses"]["400"]["description"]
+        let bad_request = op["responses"]["400"]["description"].as_str().unwrap();
+        assert!(bad_request.contains("re-sync"));
+        assert!(bad_request.contains("limit must be an integer 1-1000"));
+        let next_cursor = &schema["properties"]["next_cursor"];
+        assert_eq!(next_cursor["type"], json!(["string", "null"]));
+        assert!(next_cursor["description"]
             .as_str()
             .unwrap()
-            .contains("re-sync"));
+            .contains("Null when has_more is false"));
         assert!(op["responses"]["410"]["description"]
             .as_str()
             .unwrap()

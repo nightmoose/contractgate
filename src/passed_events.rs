@@ -35,12 +35,14 @@ const MAX_CURSOR_LEN: usize = 256;
 
 const CURSOR_MALFORMED: &str =
     "passed-event cursor is malformed; drop the cursor and re-sync from the start";
-const LIMIT_RANGE: &str = "limit must be between 1 and 1000";
+const LIMIT_RANGE: &str = "limit must be an integer 1-1000";
 
 #[derive(Debug, Deserialize)]
 pub struct PassedQuery {
     pub cursor: Option<String>,
-    pub limit: Option<u32>,
+    /// Raw query text. Parsed in [`parse_limit`] so `-1` and `abc` are the
+    /// standard JSON 400, not serde's "invalid digit" error.
+    pub limit: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -74,15 +76,24 @@ pub(crate) fn cursor_origin() -> (DateTime<Utc>, Uuid) {
 
 /// Cap `limit` without allocating from the raw query value.
 ///
-/// `None` is [`DEFAULT_LIMIT`]. Values above [`MAX_LIMIT`] become
-/// [`MAX_LIMIT`]. Zero is 400. The returned value is what the SQL `LIMIT`
-/// is derived from (`value + 1` for the look-ahead row).
-pub(crate) fn clamp_limit(raw: Option<u32>) -> AppResult<u32> {
-    match raw {
-        None => Ok(DEFAULT_LIMIT),
-        Some(0) => Err(AppError::BadRequest(LIMIT_RANGE.into())),
-        Some(n) => Ok(n.min(MAX_LIMIT)),
+/// Missing or blank is [`DEFAULT_LIMIT`]. Integers above [`MAX_LIMIT`] become
+/// [`MAX_LIMIT`]. Zero, negatives, and non-integers are 400 with
+/// [`LIMIT_RANGE`]. The returned value is what the SQL `LIMIT` is derived
+/// from (`value + 1` for the look-ahead row).
+pub(crate) fn parse_limit(raw: Option<&str>) -> AppResult<u32> {
+    let Some(text) = raw.map(str::trim).filter(|s| !s.is_empty()) else {
+        return Ok(DEFAULT_LIMIT);
+    };
+    let Ok(n) = text.parse::<i64>() else {
+        return Err(AppError::BadRequest(LIMIT_RANGE.into()));
+    };
+    if n > i64::from(MAX_LIMIT) {
+        return Ok(MAX_LIMIT);
     }
+    if n < 1 {
+        return Err(AppError::BadRequest(LIMIT_RANGE.into()));
+    }
+    Ok(u32::try_from(n).unwrap_or(MAX_LIMIT))
 }
 
 pub(crate) fn encode_cursor(created_at: DateTime<Utc>, id: Uuid) -> String {
@@ -117,12 +128,11 @@ fn retention_start(now: DateTime<Utc>, days: i32) -> DateTime<Utc> {
     now - window
 }
 
-/// Bound for the keyset predicate, plus the cursor to echo on an empty page.
+/// Bound for the keyset predicate.
 #[derive(Debug)]
 pub(crate) struct ResolvedCursor {
     pub after_created_at: DateTime<Utc>,
     pub after_id: Uuid,
-    pub echo: Option<String>,
 }
 
 /// `Ok` with the origin bound when `raw` is missing or blank.
@@ -138,7 +148,6 @@ pub(crate) fn resolve_cursor(
         return Ok(ResolvedCursor {
             after_created_at,
             after_id,
-            echo: None,
         });
     };
     let cursor =
@@ -151,7 +160,6 @@ pub(crate) fn resolve_cursor(
     Ok(ResolvedCursor {
         after_created_at: cursor.created_at,
         after_id: cursor.id,
-        echo: Some(token.to_string()),
     })
 }
 
@@ -221,18 +229,17 @@ fn take_rate_limit(
     state.rate_limiter.check(bucket, rps, burst)
 }
 
-pub(crate) fn finish_page(
-    mut rows: Vec<ForwardedEventRow>,
-    limit: usize,
-    echo: Option<String>,
-) -> PassedEventsResponse {
+pub(crate) fn finish_page(mut rows: Vec<ForwardedEventRow>, limit: usize) -> PassedEventsResponse {
     let has_more = rows.len() > limit;
     if has_more {
         rows.truncate(limit);
     }
-    let next_cursor = match rows.last() {
-        Some(row) => Some(encode_cursor(row.created_at, row.id)),
-        None => echo,
+    // A finished page has no newer bookmark. The connector keeps the cursor
+    // it already stored; null is not a signal to start over.
+    let next_cursor = if has_more {
+        rows.last().map(|row| encode_cursor(row.created_at, row.id))
+    } else {
+        None
     };
     let events = rows
         .into_iter()
@@ -261,6 +268,9 @@ pub async fn list_passed_events(
     key_ext: Option<Extension<ValidatedKey>>,
     rl_ext: Option<Extension<crate::rate_limit::RateLimitOutcome>>,
 ) -> AppResult<Json<PassedEventsResponse>> {
+    // Before auth and the database, so `-1` / `abc` are this 400 and not a
+    // later 401/404. The extractor accepts the raw string.
+    let limit = parse_limit(query.limit.as_deref())?;
     let key = key_ext.as_ref().map(|Extension(k)| k);
     let rl = take_rate_limit(&state, key, rl_ext.map(|Extension(outcome)| outcome));
     if !rl.allowed {
@@ -300,7 +310,6 @@ pub async fn list_passed_events(
         Err(deny) => return Err(deny_error(deny, contract_id)),
     };
 
-    let limit = clamp_limit(query.limit)?;
     let resolved = resolve_cursor(query.cursor.as_deref(), Utc::now(), retention_days)?;
     // Look ahead one row for `has_more`. `fetch_n` is at most 1001 and is a
     // SQL parameter, not a buffer size.
@@ -313,7 +322,7 @@ pub async fn list_passed_events(
         fetch_n,
     )
     .await?;
-    Ok(Json(finish_page(rows, limit as usize, resolved.echo)))
+    Ok(Json(finish_page(rows, limit as usize)))
 }
 
 /// OpenAPI operation object for `build_openapi` in `v1_ingest.rs`.
@@ -328,7 +337,8 @@ pub(crate) fn openapi_operation() -> Value {
              {upgrade} Payload is null when event-body storage is off. \
              A malformed cursor is 400 and a cursor older than plan retention is 410; \
              drop the cursor and re-sync. Rows newer than 5 seconds are held back. \
-             Kafka and Kinesis consumers do not write this table."
+             next_cursor is null when has_more is false; the connector keeps the cursor \
+             it already stored. Kafka and Kinesis consumers do not write this table."
         ),
         "parameters": [
             {
@@ -348,7 +358,10 @@ pub(crate) fn openapi_operation() -> Value {
                 "name": "limit",
                 "in": "query",
                 "required": false,
-                "description": "Page size. Default 500. Values above 1000 are capped at 1000. Zero is 400.",
+                "description": format!(
+                    "Page size. Default 500. Integers above 1000 are capped at 1000. \
+                     Zero, negatives, and non-integers are 400: {LIMIT_RANGE}."
+                ),
                 "schema": {"type": "integer", "default": 500, "minimum": 1, "maximum": 1000}
             }
         ],
@@ -377,7 +390,10 @@ pub(crate) fn openapi_operation() -> Value {
                                         }
                                     }
                                 },
-                                "next_cursor": {"type": ["string", "null"]},
+                                "next_cursor": {
+                                    "type": ["string", "null"],
+                                    "description": "Last event on this page when has_more is true. Null when has_more is false, including an empty page. The connector keeps its last cursor when this is null."
+                                },
                                 "has_more": {"type": "boolean"}
                             }
                         }
@@ -385,7 +401,9 @@ pub(crate) fn openapi_operation() -> Value {
                 }
             },
             "400": {
-                "description": format!("Invalid request: {CURSOR_MALFORMED} Also returned when limit is 0."),
+                "description": format!(
+                    "Invalid request: {CURSOR_MALFORMED} Also returned when {LIMIT_RANGE}."
+                ),
                 "content": {"application/json": {"schema": error_schema()}}
             },
             "401": {
@@ -473,7 +491,7 @@ mod tests {
         if eligible.len() > fetch_n {
             eligible.truncate(fetch_n);
         }
-        finish_page(eligible, usize::try_from(limit).unwrap_or(0), resolved.echo)
+        finish_page(eligible, usize::try_from(limit).unwrap_or(0))
     }
 
     async fn error_json(err: AppError) -> (axum::http::StatusCode, Value) {
@@ -524,23 +542,29 @@ mod tests {
         let mut seen = Vec::new();
         for _ in 0..6 {
             let page = select_page(&rows, cursor.as_deref(), 2, at);
-            if page.events.is_empty() {
-                assert!(!page.has_more);
-                break;
-            }
             assert!(page.events.len() <= 2);
             seen.extend(page.events.iter().map(|e| e.id.as_u128()));
-            assert!(page.next_cursor.is_some());
-            cursor = page.next_cursor;
-            if !page.has_more {
+            if page.has_more {
+                assert!(page.next_cursor.is_some());
+                cursor = page.next_cursor;
+            } else {
+                assert!(page.next_cursor.is_none());
                 break;
             }
         }
         assert_eq!(seen, vec![1, 2, 4, 9, 3, 5]);
-        let tail = select_page(&rows, cursor.as_deref(), 2, at);
-        assert!(tail.events.is_empty());
-        assert!(!tail.has_more);
-        assert_eq!(tail.next_cursor, cursor);
+        // The connector keeps the cursor that produced the last page.
+        let again = select_page(&rows, cursor.as_deref(), 2, at);
+        assert!(!again.has_more);
+        assert!(again.next_cursor.is_none());
+        assert_eq!(
+            again
+                .events
+                .iter()
+                .map(|e| e.id.as_u128())
+                .collect::<Vec<_>>(),
+            vec![3, 5]
+        );
     }
 
     #[test]
@@ -560,30 +584,37 @@ mod tests {
         assert_eq!(page.events.len(), 1);
         assert_eq!(page.events[0].id.as_u128(), 1);
         assert!(!page.has_more);
+        assert!(page.next_cursor.is_none());
     }
 
     #[test]
     fn limit_cap_and_default() {
-        assert_eq!(clamp_limit(None).unwrap(), DEFAULT_LIMIT);
-        assert_eq!(clamp_limit(Some(1)).unwrap(), 1);
-        assert_eq!(clamp_limit(Some(1000)).unwrap(), MAX_LIMIT);
-        assert_eq!(clamp_limit(Some(1001)).unwrap(), MAX_LIMIT);
-        assert_eq!(clamp_limit(Some(u32::MAX)).unwrap(), MAX_LIMIT);
-        assert!(clamp_limit(Some(0)).is_err());
+        assert_eq!(parse_limit(None).unwrap(), DEFAULT_LIMIT);
+        assert_eq!(parse_limit(Some("")).unwrap(), DEFAULT_LIMIT);
+        assert_eq!(parse_limit(Some("1")).unwrap(), 1);
+        assert_eq!(parse_limit(Some("1000")).unwrap(), MAX_LIMIT);
+        assert_eq!(parse_limit(Some("1001")).unwrap(), MAX_LIMIT);
+        assert_eq!(parse_limit(Some(&u32::MAX.to_string())).unwrap(), MAX_LIMIT);
+        for bad in ["0", "-1", "abc", "1.5"] {
+            let err = parse_limit(Some(bad)).unwrap_err();
+            assert!(err.to_string().contains(LIMIT_RANGE), "{bad}: {err}");
+        }
 
         let at = now();
         let old = at - Duration::hours(1);
         let rows: Vec<_> = (1..=1001).map(|i| row(i, old, json!({"i": i}))).collect();
-        let capped = clamp_limit(Some(50_000)).unwrap();
+        let capped = parse_limit(Some("50000")).unwrap();
         let first = select_page(&rows, None, capped, at);
         assert_eq!(first.events.len(), 1000);
         assert!(first.has_more);
+        assert!(first.next_cursor.is_some());
         let second = select_page(&rows, first.next_cursor.as_deref(), capped, at);
         assert_eq!(second.events.len(), 1);
         assert!(!second.has_more);
+        assert!(second.next_cursor.is_none());
         assert_eq!(second.events[0].id.as_u128(), 1001);
 
-        let defaulted = select_page(&rows, None, clamp_limit(None).unwrap(), at);
+        let defaulted = select_page(&rows, None, parse_limit(None).unwrap(), at);
         assert_eq!(defaulted.events.len(), DEFAULT_LIMIT as usize);
         assert!(defaulted.has_more);
     }
@@ -601,6 +632,8 @@ mod tests {
         assert!(body["events"][0]["payload"].is_null());
         assert_eq!(body["events"][1]["payload"]["user_id"], "u_1");
         assert!(body["events"][0]["contract_version"].is_string());
+        assert!(!page.has_more);
+        assert!(body["next_cursor"].is_null());
     }
 
     #[tokio::test]
@@ -622,10 +655,65 @@ mod tests {
             assert!(msg.contains("re-sync"), "{msg}");
             assert!(msg.contains("malformed"), "{msg}");
         }
-        assert!(resolve_cursor(Some("   "), at, Some(90))
-            .unwrap()
-            .echo
-            .is_none());
+        let blank = resolve_cursor(Some("   "), at, Some(90)).unwrap();
+        let (origin_at, origin_id) = cursor_origin();
+        assert_eq!(blank.after_created_at, origin_at);
+        assert_eq!(blank.after_id, origin_id);
+    }
+
+    #[tokio::test]
+    async fn bad_limit_is_standard_json_not_a_parse_error() {
+        use axum::body::Body;
+        use axum::http::Request;
+        use axum::routing::get;
+        use axum::Router;
+        use tower::ServiceExt;
+
+        async fn probe(Query(q): Query<PassedQuery>) -> AppResult<Json<Value>> {
+            let n = parse_limit(q.limit.as_deref())?;
+            Ok(Json(json!({ "limit": n })))
+        }
+
+        let app = Router::new()
+            .route("/passed", get(probe))
+            .layer(axum::middleware::from_fn(crate::error::json_error_bodies));
+
+        for raw in ["-1", "abc", "1.5", "0"] {
+            let resp = app
+                .clone()
+                .oneshot(
+                    Request::get(format!("/passed?limit={raw}"))
+                        .body(Body::empty())
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+            let status = resp.status();
+            let bytes = axum::body::to_bytes(resp.into_body(), 4096).await.unwrap();
+            let body: Value = serde_json::from_slice(&bytes).unwrap();
+            assert_eq!(status, axum::http::StatusCode::BAD_REQUEST, "{raw}");
+            assert_eq!(body["status"], 400, "{raw}");
+            let msg = body["error"].as_str().unwrap();
+            assert!(msg.contains(LIMIT_RANGE), "{raw}: {msg}");
+            assert!(
+                !msg.to_ascii_lowercase().contains("invalid digit"),
+                "{raw}: {msg}"
+            );
+        }
+
+        let ok = app
+            .clone()
+            .oneshot(
+                Request::get("/passed?limit=1001")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(ok.status(), axum::http::StatusCode::OK);
+        let bytes = axum::body::to_bytes(ok.into_body(), 4096).await.unwrap();
+        let body: Value = serde_json::from_slice(&bytes).unwrap();
+        assert_eq!(body["limit"], MAX_LIMIT);
     }
 
     #[tokio::test]

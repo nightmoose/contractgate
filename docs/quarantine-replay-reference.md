@@ -24,9 +24,11 @@ the same replay engine.
 
 List source quarantine rows for the caller's org, newest first. Rows whose
 contract has been soft-deleted are not listed. `DELETE /contracts/{id}`
-removes that contract's quarantine rows in the same transaction as the soft
-delete (audit rows and contract versions are kept; a published version is
-not unpublished).
+removes that contract's quarantine rows and `forwarded_events` rows in the
+same transaction as the soft delete (audit rows and contract versions are
+kept; a published version is not unpublished). `forwarded_events` is the
+passed-event export copy, not the audit record. Soft delete does not cascade,
+so those rows are deleted explicitly.
 
 Query parameters:
 

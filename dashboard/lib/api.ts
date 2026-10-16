@@ -619,7 +619,7 @@ export const setContractPayloadStorage = (contractId: string, enabled: boolean) 
     body: JSON.stringify({ enabled }),
   });
 
-/** Redact stored bodies for one contract, retaining all audit history. */
+/** Redact stored bodies for one contract, retaining audit, quarantine, and forwarded rows. */
 export const purgeContractBodies = (contractId: string) =>
   apiFetch<PurgeResult>(`/contracts/${contractId}/purge-bodies`, {
     method: "POST",
