@@ -74,6 +74,7 @@ return the same effective field on `ContractResponse`.
 - **Org switch on → off:** all stored bodies for the org are purged.
 - **Per-contract override on → off:** write-forward only — new events stop
   storing bodies; existing bodies are **not** purged.
+  Turning off a contract's payload override does not delete stored bodies; they stay until someone runs `POST /contracts/{id}/purge-bodies` (or turns off the org switch).
 - **Purge body history (per contract):** redacts stored bodies on demand,
   independent of the toggles.
 
