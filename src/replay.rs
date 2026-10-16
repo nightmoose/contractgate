@@ -22,6 +22,9 @@
 //!   same way fresh ingest does.
 //! - **Q4**: 1 000-row cap per request, matching batch ingest.
 
+/// Maximum event ids accepted by a single replay request.
+pub const MAX_REPLAY_IDS: usize = 1_000;
+
 use axum::{
     extract::{Path, State},
     Json,
@@ -57,7 +60,7 @@ impl ReplayRequest {
     /// contracts-scoped and RFC-081 top-level replay paths (both work from a
     /// bare id list).
     pub fn validate_ids_bounds(ids: &[Uuid]) -> AppResult<()> {
-        const MAX: usize = 1_000;
+        const MAX: usize = MAX_REPLAY_IDS;
         if ids.is_empty() {
             return Err(AppError::BadRequest(
                 "replay request must include at least one id".into(),
