@@ -1008,7 +1008,7 @@ fn more_openapi_paths_tail(
         json!({
             "operationId": "set_payload_storage",
             "summary": "Set the org event-payload storage switch",
-            "description": "Enabling requires a paid plan. Disabling purges stored bodies for the org.",
+            "description": "Enabling requires a paid plan. Disabling purges stored bodies for the org, including forwarded_events payloads (JSON null). Rows are kept.",
             "requestBody": {"required": true, "content": {"application/json": {"schema": enabled_body.clone()}}},
             "responses": {
                 "200": {"description": "Updated status", "content": {"application/json": {"schema": payload_status}}},
@@ -1043,10 +1043,10 @@ fn more_openapi_paths_tail(
         json!({
             "operationId": "purge_contract_bodies",
             "summary": "Redact stored bodies for one contract",
-            "description": "Keeps audit and quarantine rows. Never deletes a row.",
+            "description": "Keeps audit, quarantine, and forwarded_events rows. Nulls stored bodies; forwarded_events.payload becomes JSON null. Never deletes a row.",
             "parameters": [id_param.clone()],
             "responses": {
-                "200": {"description": "Rows whose bodies were redacted", "content": {"application/json": {"schema": {"type": "object", "properties": {"quarantine_bodies_redacted": {"type": "integer"}, "audit_bodies_redacted": {"type": "integer"}}}}}},
+                "200": {"description": "Rows whose bodies were redacted", "content": {"application/json": {"schema": {"type": "object", "required": ["quarantine_bodies_redacted", "audit_bodies_redacted", "forwarded_bodies_redacted"], "properties": {"quarantine_bodies_redacted": {"type": "integer"}, "audit_bodies_redacted": {"type": "integer"}, "forwarded_bodies_redacted": {"type": "integer", "description": "forwarded_events rows whose payload was set to JSON null"}}}}}},
                 "401": unauthorized.clone(),
                 "404": {"description": "Contract not found"}
             },
@@ -1225,6 +1225,12 @@ fn more_openapi_paths_tail(
             },
             "security": auth.clone()
         }),
+    );
+    merge_openapi_op(
+        paths,
+        "/v1/contracts/{id}/passed",
+        "get",
+        crate::passed_events::openapi_operation(),
     );
     crate::openapi_schemas::apply(paths);
 }
@@ -1688,7 +1694,9 @@ pub async fn v1_ingest_handler(
         if !forward_rows.is_empty() {
             let pool = state.db.clone();
             tokio::spawn(async move {
-                if let Err(e) = storage::forward_events_batch(&pool, &forward_rows).await {
+                if let Err(e) =
+                    storage::forward_events_batch(&pool, &forward_rows, store_payloads).await
+                {
                     tracing::warn!("v1 ingest: forward write failed: {e:?}");
                 }
             });
@@ -2045,6 +2053,49 @@ mod tests {
     }
 
     #[test]
+    fn openapi_passed_events_schema() {
+        let v: Value = serde_json::from_str(&build_openapi()).unwrap();
+        let op = &v["paths"]["/v1/contracts/{id}/passed"]["get"];
+        let schema = &op["responses"]["200"]["content"]["application/json"]["schema"];
+        for field in ["events", "next_cursor", "has_more"] {
+            assert!(
+                schema["required"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .any(|v| v == field),
+                "missing {field}"
+            );
+        }
+        let item = &schema["properties"]["events"]["items"];
+        assert_eq!(
+            item["properties"]["payload"]["type"],
+            json!(["object", "null"])
+        );
+        let forbidden = op["responses"]["403"]["description"].as_str().unwrap();
+        assert!(forbidden.contains(&crate::plan::passed_events_upgrade_message()));
+        for plan in crate::plan::PAID_PLANS {
+            assert!(forbidden.contains(plan), "{forbidden}");
+        }
+        let bad_request = op["responses"]["400"]["description"].as_str().unwrap();
+        assert!(bad_request.contains("re-sync"));
+        assert!(bad_request.contains("invalid cursor"));
+        assert!(bad_request.contains("limit must be an integer 1-1000"));
+        let next_cursor = &schema["properties"]["next_cursor"];
+        assert_eq!(next_cursor["type"], json!(["string", "null"]));
+        let cursor_doc = next_cursor["description"].as_str().unwrap();
+        assert!(
+            cursor_doc.contains("even if has_more is false"),
+            "{cursor_doc}"
+        );
+        assert!(cursor_doc.contains("request cursor"), "{cursor_doc}");
+        assert!(op["responses"]["410"]["description"]
+            .as_str()
+            .unwrap()
+            .contains("re-sync"));
+    }
+
+    #[test]
     fn openapi_spec_is_valid_json() {
         let spec = build_openapi();
         let parsed: Result<Value, _> = serde_json::from_str(&spec);
@@ -2210,6 +2261,23 @@ mod tests {
                 ["type"],
             "boolean"
         );
+        let purge = &v["paths"]["/contracts/{id}/purge-bodies"]["post"];
+        let counts = &purge["responses"]["200"]["content"]["application/json"]["schema"];
+        for field in [
+            "quarantine_bodies_redacted",
+            "audit_bodies_redacted",
+            "forwarded_bodies_redacted",
+        ] {
+            assert_eq!(counts["properties"][field]["type"], "integer", "{field}");
+            assert!(
+                counts["required"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .any(|v| v == field),
+                "missing {field}"
+            );
+        }
         let audit = &v["paths"]["/audit"]["get"];
         let names: Vec<&str> = audit["parameters"]
             .as_array()

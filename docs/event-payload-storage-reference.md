@@ -19,6 +19,29 @@ The body is required for exactly one feature: **quarantine replay**. Without a
 stored body, a quarantine row is non-replayable (it still shows what failed and
 why).
 
+Passing events also insert a `forwarded_events` row. That row keeps
+`contract_id`, `contract_version`, and `created_at` either way. The body is
+written only under the policy above. When storage is off, `payload` is JSON
+`null` (the column is `NOT NULL`, so the event is omitted without a schema
+change). A new insert does not rewrite older rows. Turning the org switch off,
+or calling the per-contract purge, does: those set existing
+`forwarded_events.payload` values to JSON `null` in the same transaction as
+the audit and quarantine body purge. The per-contract override off does not.
+Kafka and Kinesis publish the body
+from memory and do not write this table. A reader must treat JSON `null` as
+"body not stored"; a passing event is a JSON object, so `null` is not a
+captured body. Paid plans can pull these rows with
+[`GET /v1/contracts/{id}/passed`](passed-events-reference.md). That response
+uses the same `null` payload.
+
+Ingest quarantine uses the same policy: the body is SQL `NULL` and
+`payload_redacted` is set when storage is off, and that row cannot be
+replayed. A **failed replay** is the exception. Replay only runs when the
+source row already had a body, and the new quarantine row keeps that body
+so a later replay can run. A **passing replay** writes `audit_log` with the
+same body rule as ingest (`{}` and `raw_event_redacted` when storage is
+off) and a `forwarded_events` row under the same rule.
+
 ## Policy
 
 Bodies are stored only when **all** of:
@@ -55,8 +78,12 @@ return the same effective field on `ContractResponse`.
   independent of the toggles.
 
 Purge redacts **in place**: it nulls the body column and sets the redaction
-marker. It never deletes an `audit_log` or `quarantine_events` row — all rows and
-metadata are retained.
+marker. It never deletes an `audit_log`, `quarantine_events`, or
+`forwarded_events` row — all rows and metadata are retained.
+`forwarded_events.payload` is set to JSON `null` (the column is `NOT NULL`).
+Org switch off and `POST /contracts/{id}/purge-bodies` both do this, for the
+org or for that contract. The per-contract override off does not purge any
+of the three tables.
 
 ## API
 
@@ -77,7 +104,8 @@ response is `400` and the message names every plan the paid-plan check accepts
 (`growth`, `aisg_pro`, `enterprise` — DataContractGate Pro, AISchemaGate Pro,
 and Enterprise). That list is the same slice the check uses, so a new paid
 plan shows up in the message without a separate copy. Setting `false` purges
-all stored bodies for the org. Returns the same shape as GET.
+all stored bodies for the org, including `forwarded_events` payloads (JSON
+`null`). Returns the same shape as GET.
 
 ### `PATCH /contracts/{id}/payload-storage`
 
@@ -86,11 +114,15 @@ not purge history. `404` if the contract isn't owned by the caller's org.
 
 ### `POST /contracts/{id}/purge-bodies`
 
-Redacts stored bodies for one contract, retaining all audit/quarantine rows.
+Redacts stored bodies for one contract, retaining all audit, quarantine, and
+forwarded rows. `forwarded_events.payload` becomes JSON `null`.
 
 ```json
-{ "quarantine_bodies_redacted": 12, "audit_bodies_redacted": 480 }
+{ "quarantine_bodies_redacted": 12, "audit_bodies_redacted": 480, "forwarded_bodies_redacted": 90 }
 ```
+
+`forwarded_bodies_redacted` is the number of `forwarded_events` rows whose
+payload was set to JSON `null`.
 
 ## Setting a plan
 
@@ -102,6 +134,7 @@ UPDATE orgs SET plan = 'growth' WHERE id = 'your-org-id';
 
 ## Related
 
+- [Passed events](passed-events-reference.md) — cursor page of forwarded (passing) events.
 - [RFC-086](rfcs/086-gated-event-payload-storage.md) — design + implementation notes.
 - [Quarantine + Replay reference](quarantine-replay-reference.md) — replay
   requires a stored body; redacted rows are non-replayable.

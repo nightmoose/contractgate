@@ -245,3 +245,6 @@ nothing. Each per-event result carries one violation with
 ## OpenAPI spec
 
 The machine-readable spec is available at `/openapi.json` (no auth required).
+
+Passing events written to `forwarded_events` are read back with
+[`GET /v1/contracts/{id}/passed`](passed-events-reference.md).

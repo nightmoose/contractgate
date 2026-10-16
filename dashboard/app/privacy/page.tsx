@@ -49,8 +49,8 @@ export default function PrivacyPage() {
               <li>
                 <strong>Event bodies</strong> are stored only if your organization turns
                 on event payload storage (paid plans), which enables quarantine replay.
-                You can turn it off, which purges stored bodies, or purge them per
-                contract at any time.
+                You can turn it off, which purges stored bodies (audit, quarantine, and
+                passed-event export), or purge them per contract at any time.
               </li>
               <li>
                 <strong>Contracts</strong> you deploy are stored until you delete them.

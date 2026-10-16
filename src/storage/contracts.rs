@@ -425,15 +425,23 @@ pub async fn patch_contract_identity(
     row.into_identity()
 }
 
+/// `forwarded_events` rows for a deleted contract.
+///
+/// Soft delete does not fire `ON DELETE CASCADE`, so these rows would keep
+/// their payloads. They are an export copy, not the audit record, and are
+/// removed in the same transaction as the quarantine rows. `audit_log` stays.
+pub(crate) const DELETE_CONTRACT_FORWARDED_EVENTS_SQL: &str =
+    "DELETE FROM forwarded_events WHERE contract_id = $1";
+
 /// Soft-delete a contract (RFC-001 §6).  `org_id` scope guard (RFC-047):
 /// returns `ContractNotFound` when no row matches id + org, so UUID
 /// existence is never leaked to the wrong tenant.
 ///
-/// Quarantine rows for that contract are removed in the same transaction.
-/// Soft delete does not fire `ON DELETE CASCADE`. `audit_log` rows stay
-/// (validation history); only `replay_of_quarantine_id` is cleared so the
-/// quarantine delete is not blocked by that foreign key. Contract versions
-/// are left as they are — a published version is not unpublished.
+/// Quarantine rows and `forwarded_events` rows for that contract are removed
+/// in the same transaction. Soft delete does not fire `ON DELETE CASCADE`.
+/// `audit_log` rows stay (validation history); only `replay_of_quarantine_id`
+/// is cleared so the quarantine delete is not blocked by that foreign key.
+/// Contract versions are left as they are — a published version is not unpublished.
 pub async fn delete_contract(pool: &PgPool, id: Uuid, org_id: Option<Uuid>) -> AppResult<()> {
     let mut tx = pool.begin().await.db_op("delete_contract:begin")?;
 
@@ -482,6 +490,13 @@ pub async fn delete_contract(pool: &PgPool, id: Uuid, org_id: Option<Uuid>) -> A
         .execute(&mut *tx)
         .await
         .db_op("delete_contract:quarantine")?;
+
+    // Export copy of passing events. Not the retained audit history.
+    sqlx::query(DELETE_CONTRACT_FORWARDED_EVENTS_SQL)
+        .bind(id)
+        .execute(&mut *tx)
+        .await
+        .db_op("delete_contract:forwarded")?;
 
     tx.commit().await.db_op("delete_contract:commit")?;
     Ok(())
@@ -1232,4 +1247,20 @@ pub async fn list_name_history(
     .await?;
 
     Ok(rows)
+}
+
+#[cfg(test)]
+mod delete_forwarded_tests {
+    use super::DELETE_CONTRACT_FORWARDED_EVENTS_SQL;
+
+    #[test]
+    fn delete_contract_removes_forwarded_rows() {
+        let sql = DELETE_CONTRACT_FORWARDED_EVENTS_SQL;
+        assert!(sql.starts_with("DELETE FROM forwarded_events"), "{sql}");
+        assert!(sql.contains("WHERE contract_id = $1"), "{sql}");
+        assert!(
+            !sql.to_ascii_lowercase().contains("payload"),
+            "delete removes the export copy; it does not leave a nulled row"
+        );
+    }
 }
