@@ -5302,7 +5302,8 @@ mod api_bugfixes {
     use super::super::storage::{self, QuarantineEventInsert};
     use super::super::transform::TransformedPayload;
     use super::super::{
-        api_key_auth::ValidatedKey, list_contracts_handler, quarantine, replay, AppState,
+        api_key_auth::ValidatedKey, get_contract_handler, list_contracts_handler, quarantine,
+        replay, AppState,
     };
 
     const YAML: &str = r#"
@@ -5321,6 +5322,7 @@ metrics: []
     fn server(state: Arc<AppState>, org: Uuid) -> TestServer {
         let app = axum::Router::new()
             .route("/contracts", get(list_contracts_handler))
+            .route("/contracts/{id}", get(get_contract_handler))
             .route("/quarantine/replay", post(quarantine::replay_all_handler))
             .route(
                 "/contracts/{id}/quarantine/replay",
@@ -5573,6 +5575,107 @@ metrics: []
                 .await
                 .unwrap();
         assert!(!now_stored);
+
+        sqlx::query("DELETE FROM contracts WHERE id = $1")
+            .bind(cid)
+            .execute(&pool)
+            .await
+            .unwrap();
+        sqlx::query("DELETE FROM orgs WHERE id = $1")
+            .bind(org)
+            .execute(&pool)
+            .await
+            .unwrap();
+    }
+
+    /// `GET /contracts/{id}` reports `store_event_payloads` with the same
+    /// decision as the list: paid plan AND org switch AND per-contract override.
+    #[tokio::test]
+    #[ignore = "requires DATABASE_URL and a live Postgres migrated through 036"]
+    async fn contract_get_effective_store_event_payloads() {
+        let db_url = std::env::var("DATABASE_URL").expect("DATABASE_URL must be set");
+        let pool = sqlx::PgPool::connect(&db_url).await.unwrap();
+        let org = Uuid::new_v4();
+        seed_org(&pool, org, "free").await;
+        let (identity, _) = storage::create_contract(
+            &pool,
+            "api_bugfix_get",
+            Some("t"),
+            YAML,
+            Default::default(),
+            Some(org),
+        )
+        .await
+        .expect("create contract");
+        let cid = identity.id;
+        let state = Arc::new(AppState::new(pool.clone(), false, None, None));
+        let http = server(state, org);
+
+        async fn fetched(http: &TestServer, cid: Uuid) -> bool {
+            let resp = http.get(&format!("/contracts/{cid}")).await;
+            assert_eq!(resp.status_code(), StatusCode::OK, "{}", resp.text());
+            let row: Value = resp.json();
+            row["store_event_payloads"]
+                .as_bool()
+                .expect("store_event_payloads bool")
+        }
+
+        assert!(
+            !fetched(&http, cid).await,
+            "free org must report store_event_payloads false"
+        );
+        sqlx::query("UPDATE orgs SET plan = 'aisg_free' WHERE id = $1")
+            .bind(org)
+            .execute(&pool)
+            .await
+            .unwrap();
+        assert!(
+            !fetched(&http, cid).await,
+            "aisg_free must report store_event_payloads false"
+        );
+        for plan in ["growth", "aisg_pro", "enterprise"] {
+            sqlx::query("UPDATE orgs SET plan = $2, store_event_payloads = false WHERE id = $1")
+                .bind(org)
+                .bind(plan)
+                .execute(&pool)
+                .await
+                .unwrap();
+            assert!(
+                !fetched(&http, cid).await,
+                "{plan} with the org switch off must report false"
+            );
+        }
+        for plan in ["growth", "aisg_pro", "enterprise"] {
+            sqlx::query("UPDATE orgs SET plan = $2, store_event_payloads = true WHERE id = $1")
+                .bind(org)
+                .bind(plan)
+                .execute(&pool)
+                .await
+                .unwrap();
+            assert!(
+                fetched(&http, cid).await,
+                "{plan} with the org switch and column on must report true"
+            );
+        }
+        sqlx::query("UPDATE contracts SET store_event_payloads = false WHERE id = $1")
+            .bind(cid)
+            .execute(&pool)
+            .await
+            .unwrap();
+        assert!(
+            !fetched(&http, cid).await,
+            "paid plan reports the stored false override"
+        );
+        let now_stored: bool =
+            sqlx::query_scalar("SELECT store_event_payloads FROM contracts WHERE id = $1")
+                .bind(cid)
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        assert!(
+            !now_stored,
+            "response must not be the only place the column changed"
+        );
 
         sqlx::query("DELETE FROM contracts WHERE id = $1")
             .bind(cid)

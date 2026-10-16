@@ -833,6 +833,12 @@ pub struct ContractResponse {
     pub updated_at: chrono::DateTime<chrono::Utc>,
     pub version_count: i64,
     pub latest_stable_version: Option<String>,
+    /// Effective event-body storage. Same decision as
+    /// [`crate::plan::effective_store_event_payloads`]: paid plan and the org
+    /// master switch and this contract's override. `false` for `free`,
+    /// `aisg_free`, and unknown plans, and for a paid plan whose org switch
+    /// is off. The columns are not rewritten.
+    pub store_event_payloads: bool,
 }
 
 /// Lightweight listing row.
