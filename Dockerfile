@@ -56,8 +56,11 @@ RUN mkdir -p src/bin \
 # scenario YAML files at compile time via include_str!("../demo/scenarios/…").
 # contracts/ must be present because demo-seeder embeds starter YAMLs via
 # include_str!("../../contracts/starters/…") (RFC-017).
+# vendor/fivetran-connector must be present because src/fivetran.rs embeds
+# connector.py and requirements.txt via include_str!("../vendor/fivetran-connector/…").
 COPY demo ./demo
 COPY contracts ./contracts
+COPY vendor/fivetran-connector ./vendor/fivetran-connector
 COPY src ./src
 # Build the web server and demo-seeder binaries in one invocation with the
 # same args as the dependency layer, so only this crate compiles here.
