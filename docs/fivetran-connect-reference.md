@@ -54,8 +54,9 @@ letters, digits, and underscores, and must be unique across the selected contrac
 The connection is created paused. `setup_url` is omitted when Fivetran returns an id
 that is not safe to put in a URL.
 
-Free and `aisg_free` plans receive `403`. A rejected Fivetran key receives `401`.
-Unknown contract ids receive `404`.
+Free and `aisg_free` plans receive `403`. A rejected Fivetran key receives `401`
+before a ContractGate key is minted. An unknown `group_id` receives `400`
+(`Fivetran group <id> was not found`). Unknown contract ids receive `404`.
 
 ## Package
 
