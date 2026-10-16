@@ -60,7 +60,8 @@ not skipped. Events show up about 5 seconds late.
 | Cursor | Status | What the connector does |
 |---|---|---|
 | Missing or blank | 200 | First page, oldest row still stored. |
-| Not decodable | 400 | Drop the cursor and re-sync (call with no cursor). |
+| Not decodable | 400 | The message contains `invalid cursor`. Drop the cursor and re-sync (call with no cursor). This is the only 400 that means the cursor is bad. |
+| Other 400 (`limit`) | 400 | Keep the cursor. The message does not contain `invalid cursor`. |
 | Older than retention | 410 | Drop the cursor and re-sync. |
 
 Retention is the plan's log window (migration 037): **90 days** on Pro
@@ -69,8 +70,12 @@ window is not a safe resume point. Continuing would skip a gap if those rows
 were removed. Re-sync reads what is still stored, from the start.
 
 ```json
-{ "error": "Invalid request: passed-event cursor is malformed; drop the cursor and re-sync from the start", "status": 400 }
+{ "error": "Invalid request: invalid cursor; drop the cursor and re-sync from the start", "status": 400 }
 ```
+
+Drop the stored cursor only when a 400 contains `invalid cursor`. A bad
+`limit` is also 400 and does not contain that phrase, so keep the cursor
+and fix the query.
 
 ```json
 { "error": "Invalid request: limit must be an integer 1-1000", "status": 400 }
@@ -93,7 +98,7 @@ were removed. Re-sync reads what is still stored, from the start.
     }
   ],
   "next_cursor": "MTc5MjE1MjAwMDEyMzQ1Niw1NTBlODQwMC1lMjliLTQxZDQtYTcxNi00NDY2NTU0NDAwMDA",
-  "has_more": true
+  "has_more": false
 }
 ```
 
@@ -101,19 +106,19 @@ were removed. Re-sync reads what is still stored, from the start.
 for a paid plan with the org switch and the per-contract override both on
 (see [event payload storage](event-payload-storage-reference.md)). A passing
 event is a JSON object, so `null` means "body not stored", not an empty
-event. A null payload is still an event: when `has_more` is true, advance
-with `next_cursor`.
+event. A null payload is still an event on this page.
 
-`next_cursor` is the last event on this page when `has_more` is true. Save it
-and send it as `cursor` on the next call.
+`next_cursor` is always a resume cursor. Save it and send it as `cursor` on
+the next call.
 
-When `has_more` is false, `next_cursor` is null. That is the last page,
-including an empty page. The connector keeps its last cursor when
-`next_cursor` is null: do not replace a stored cursor with null, and do not
-treat null as a signal to start over or re-sync. If this was the first page
-and no cursor was stored, the next poll with no cursor returns the same
-rows; dedupe by `id`. `has_more` is false when this page ended inside the
-holdback window.
+When this page has events, `next_cursor` is the cursor of the last returned
+event, even when `has_more` is false. A one-page contract still returns that
+cursor, so the next poll does not start over.
+
+When this page is empty, `next_cursor` repeats the cursor you sent. It is
+null only when you sent no cursor. `has_more` alone says whether to keep
+paging now. `has_more` is false when this page ended inside the holdback
+window; still store `next_cursor`.
 
 Kafka and Kinesis consumers publish from memory and do **not** insert
 `forwarded_events`. Those passes are not in this feed. HTTP ingest, egress,

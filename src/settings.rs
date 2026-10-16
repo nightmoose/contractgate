@@ -35,6 +35,8 @@ pub struct SetEnabled {
 pub struct PurgeResult {
     pub quarantine_bodies_redacted: u64,
     pub audit_bodies_redacted: u64,
+    /// `forwarded_events` rows whose payload was set to JSON null.
+    pub forwarded_bodies_redacted: u64,
 }
 
 fn ensure_org(state: &AppState, org_id: Option<Uuid>) -> AppResult<()> {
@@ -136,9 +138,28 @@ pub async fn purge_contract_bodies_handler(
     ensure_org(&state, org_id)?;
     // 404 if the contract isn't owned by / visible to this org.
     storage::get_contract_identity(&state.db, contract_id, org_id).await?;
-    let (q, a) = storage::purge_bodies(&state.db, org_id, Some(contract_id)).await?;
+    let (q, a, f) = storage::purge_bodies(&state.db, org_id, Some(contract_id)).await?;
     Ok(Json(PurgeResult {
         quarantine_bodies_redacted: q,
         audit_bodies_redacted: a,
+        forwarded_bodies_redacted: f,
     }))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::PurgeResult;
+
+    #[test]
+    fn purge_result_includes_forwarded_count() {
+        let body = serde_json::to_value(PurgeResult {
+            quarantine_bodies_redacted: 12,
+            audit_bodies_redacted: 480,
+            forwarded_bodies_redacted: 90,
+        })
+        .unwrap();
+        assert_eq!(body["quarantine_bodies_redacted"], 12);
+        assert_eq!(body["audit_bodies_redacted"], 480);
+        assert_eq!(body["forwarded_bodies_redacted"], 90);
+    }
 }

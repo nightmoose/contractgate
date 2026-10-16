@@ -768,12 +768,12 @@ const PURGE_BODY_OPS: [&str; 3] = [
 /// The three updates share one transaction so a failure cannot leave a
 /// forwarded body after the audit and quarantine bodies are gone.
 ///
-/// Returns `(quarantine_rows_redacted, audit_rows_redacted)`.
+/// Returns `(quarantine_rows_redacted, audit_rows_redacted, forwarded_rows_redacted)`.
 pub async fn purge_bodies(
     pool: &PgPool,
     org_id: Option<Uuid>,
     contract_id: Option<Uuid>,
-) -> AppResult<(u64, u64)> {
+) -> AppResult<(u64, u64, u64)> {
     let mut tx = pool.begin().await.db_op("purge_bodies:begin")?;
     let mut redacted = [0u64; 3];
     for (i, sql) in purge_body_statements().into_iter().enumerate() {
@@ -786,7 +786,7 @@ pub async fn purge_bodies(
         redacted[i] = result.rows_affected();
     }
     tx.commit().await.db_op("purge_bodies:commit")?;
-    Ok((redacted[0], redacted[1]))
+    Ok((redacted[0], redacted[1], redacted[2]))
 }
 
 /// Batch-insert forwarded events in a single round-trip.

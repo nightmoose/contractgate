@@ -6,8 +6,9 @@
 //! order is `(created_at, id)`, not id alone.
 //!
 //! Rows newer than 5 seconds are held back. A cursor that does not decode is
-//! 400. A cursor older than the plan's retention window is 410. Both messages
-//! tell the connector to drop the cursor and re-sync.
+//! 400 and the message contains `invalid cursor`; that is the only 400 on
+//! which the connector drops its cursor. A bad `limit` is a different 400.
+//! A cursor older than the plan's retention window is 410.
 
 use axum::{
     extract::{Extension, Path, Query, State},
@@ -33,8 +34,9 @@ pub const MAX_LIMIT: u32 = 1000;
 /// Reject cursors longer than this before decoding them.
 const MAX_CURSOR_LEN: usize = 256;
 
-const CURSOR_MALFORMED: &str =
-    "passed-event cursor is malformed; drop the cursor and re-sync from the start";
+/// Stable phrase the connector matches. Other 400s (a bad `limit`) must not
+/// contain it, so a limit error does not wipe a stored cursor.
+const CURSOR_MALFORMED: &str = "invalid cursor; drop the cursor and re-sync from the start";
 const LIMIT_RANGE: &str = "limit must be an integer 1-1000";
 
 #[derive(Debug, Deserialize)]
@@ -128,11 +130,14 @@ fn retention_start(now: DateTime<Utc>, days: i32) -> DateTime<Utc> {
     now - window
 }
 
-/// Bound for the keyset predicate.
+/// Bound for the keyset predicate, plus the cursor to echo on an empty page.
 #[derive(Debug)]
 pub(crate) struct ResolvedCursor {
     pub after_created_at: DateTime<Utc>,
     pub after_id: Uuid,
+    /// Request cursor, returned when this page has no events. `None` when the
+    /// caller sent no cursor.
+    pub echo: Option<String>,
 }
 
 /// `Ok` with the origin bound when `raw` is missing or blank.
@@ -148,6 +153,7 @@ pub(crate) fn resolve_cursor(
         return Ok(ResolvedCursor {
             after_created_at,
             after_id,
+            echo: None,
         });
     };
     let cursor =
@@ -160,6 +166,7 @@ pub(crate) fn resolve_cursor(
     Ok(ResolvedCursor {
         after_created_at: cursor.created_at,
         after_id: cursor.id,
+        echo: Some(token.to_string()),
     })
 }
 
@@ -229,17 +236,21 @@ fn take_rate_limit(
     state.rate_limiter.check(bucket, rps, burst)
 }
 
-pub(crate) fn finish_page(mut rows: Vec<ForwardedEventRow>, limit: usize) -> PassedEventsResponse {
+pub(crate) fn finish_page(
+    mut rows: Vec<ForwardedEventRow>,
+    limit: usize,
+    echo: Option<String>,
+) -> PassedEventsResponse {
     let has_more = rows.len() > limit;
     if has_more {
         rows.truncate(limit);
     }
-    // A finished page has no newer bookmark. The connector keeps the cursor
-    // it already stored; null is not a signal to start over.
-    let next_cursor = if has_more {
-        rows.last().map(|row| encode_cursor(row.created_at, row.id))
-    } else {
-        None
+    // Always a resume point. `has_more` is the only "keep paging now" flag.
+    // A one-page contract still returns the last event's cursor so the next
+    // poll does not start over. An empty page repeats the request cursor.
+    let next_cursor = match rows.last() {
+        Some(row) => Some(encode_cursor(row.created_at, row.id)),
+        None => echo,
     };
     let events = rows
         .into_iter()
@@ -322,7 +333,7 @@ pub async fn list_passed_events(
         fetch_n,
     )
     .await?;
-    Ok(Json(finish_page(rows, limit as usize)))
+    Ok(Json(finish_page(rows, limit as usize, resolved.echo)))
 }
 
 /// OpenAPI operation object for `build_openapi` in `v1_ingest.rs`.
@@ -335,10 +346,14 @@ pub(crate) fn openapi_operation() -> Value {
             "Cursor page of forwarded_events (records that passed validation), oldest first. \
              DataContractGate Free (free) and AISchemaGate Free (aisg_free) receive 403. \
              {upgrade} Payload is null when event-body storage is off. \
-             A malformed cursor is 400 and a cursor older than plan retention is 410; \
-             drop the cursor and re-sync. Rows newer than 5 seconds are held back. \
-             next_cursor is null when has_more is false; the connector keeps the cursor \
-             it already stored. Kafka and Kinesis consumers do not write this table."
+             A cursor that does not decode is 400 and the message contains \"invalid cursor\"; \
+             the connector drops its cursor only on that 400. A bad limit is a different 400. \
+             A cursor older than plan retention is 410; drop the cursor and re-sync. \
+             Rows newer than 5 seconds are held back. next_cursor is always a resume cursor: \
+             the last returned event when the page has events (even when has_more is false), \
+             or the request cursor when the page is empty (null only if no cursor was sent). \
+             has_more alone says whether to keep paging now. \
+             Kafka and Kinesis consumers do not write this table."
         ),
         "parameters": [
             {
@@ -351,7 +366,7 @@ pub(crate) fn openapi_operation() -> Value {
                 "name": "cursor",
                 "in": "query",
                 "required": false,
-                "description": "Opaque base64url cursor from next_cursor. Malformed → 400. Older than plan retention → 410. Drop it and re-sync.",
+                "description": "Opaque base64url cursor from next_cursor. A cursor that does not decode is 400 and the message contains \"invalid cursor\"; drop the stored cursor only on that 400. Older than plan retention → 410.",
                 "schema": {"type": "string"}
             },
             {
@@ -392,9 +407,12 @@ pub(crate) fn openapi_operation() -> Value {
                                 },
                                 "next_cursor": {
                                     "type": ["string", "null"],
-                                    "description": "Last event on this page when has_more is true. Null when has_more is false, including an empty page. The connector keeps its last cursor when this is null."
+                                    "description": "Resume cursor. When this page has events, the cursor of the last returned event, even if has_more is false. When this page is empty, the request cursor, or null if none was sent. has_more alone says whether to keep paging now."
                                 },
-                                "has_more": {"type": "boolean"}
+                                "has_more": {
+                                    "type": "boolean",
+                                    "description": "True when another page is available now. False does not clear next_cursor."
+                                }
                             }
                         }
                     }
@@ -402,7 +420,7 @@ pub(crate) fn openapi_operation() -> Value {
             },
             "400": {
                 "description": format!(
-                    "Invalid request: {CURSOR_MALFORMED} Also returned when {LIMIT_RANGE}."
+                    "Invalid request: {CURSOR_MALFORMED} The connector drops its cursor only when this 400 contains \"invalid cursor\". Also returned when {LIMIT_RANGE}; that 400 does not contain \"invalid cursor\", so the cursor is kept."
                 ),
                 "content": {"application/json": {"schema": error_schema()}}
             },
@@ -491,7 +509,7 @@ mod tests {
         if eligible.len() > fetch_n {
             eligible.truncate(fetch_n);
         }
-        finish_page(eligible, usize::try_from(limit).unwrap_or(0))
+        finish_page(eligible, usize::try_from(limit).unwrap_or(0), resolved.echo)
     }
 
     async fn error_json(err: AppError) -> (axum::http::StatusCode, Value) {
@@ -542,29 +560,53 @@ mod tests {
         let mut seen = Vec::new();
         for _ in 0..6 {
             let page = select_page(&rows, cursor.as_deref(), 2, at);
+            if page.events.is_empty() {
+                assert!(!page.has_more);
+                assert_eq!(page.next_cursor, cursor);
+                break;
+            }
             assert!(page.events.len() <= 2);
+            let last = page.events.last().unwrap();
+            assert_eq!(
+                page.next_cursor.as_deref(),
+                Some(encode_cursor(last.created_at, last.id).as_str())
+            );
             seen.extend(page.events.iter().map(|e| e.id.as_u128()));
-            if page.has_more {
-                assert!(page.next_cursor.is_some());
-                cursor = page.next_cursor;
-            } else {
-                assert!(page.next_cursor.is_none());
+            cursor = page.next_cursor;
+            if !page.has_more {
+                let tail = select_page(&rows, cursor.as_deref(), 2, at);
+                assert!(tail.events.is_empty());
+                assert!(!tail.has_more);
+                assert_eq!(tail.next_cursor, cursor);
                 break;
             }
         }
         assert_eq!(seen, vec![1, 2, 4, 9, 3, 5]);
-        // The connector keeps the cursor that produced the last page.
-        let again = select_page(&rows, cursor.as_deref(), 2, at);
+    }
+
+    #[test]
+    fn one_page_contract_still_returns_a_resume_cursor() {
+        let at = now();
+        let old = at - Duration::hours(1);
+        let rows = vec![
+            row(1, old, json!({"n": 1})),
+            row(2, old + Duration::seconds(1), json!({"n": 2})),
+        ];
+        let page = select_page(&rows, None, 10, at);
+        assert_eq!(page.events.len(), 2);
+        assert!(!page.has_more);
+        let last = page.events.last().unwrap();
+        let resume = encode_cursor(last.created_at, last.id);
+        assert_eq!(page.next_cursor.as_deref(), Some(resume.as_str()));
+
+        let again = select_page(&rows, page.next_cursor.as_deref(), 10, at);
+        assert!(again.events.is_empty());
         assert!(!again.has_more);
-        assert!(again.next_cursor.is_none());
-        assert_eq!(
-            again
-                .events
-                .iter()
-                .map(|e| e.id.as_u128())
-                .collect::<Vec<_>>(),
-            vec![3, 5]
-        );
+        assert_eq!(again.next_cursor, page.next_cursor);
+
+        let empty_start = select_page(&[], None, 10, at);
+        assert!(empty_start.events.is_empty());
+        assert!(empty_start.next_cursor.is_none());
     }
 
     #[test]
@@ -584,7 +626,11 @@ mod tests {
         assert_eq!(page.events.len(), 1);
         assert_eq!(page.events[0].id.as_u128(), 1);
         assert!(!page.has_more);
-        assert!(page.next_cursor.is_none());
+        let only = &page.events[0];
+        assert_eq!(
+            page.next_cursor.as_deref(),
+            Some(encode_cursor(only.created_at, only.id).as_str())
+        );
     }
 
     #[test]
@@ -611,8 +657,12 @@ mod tests {
         let second = select_page(&rows, first.next_cursor.as_deref(), capped, at);
         assert_eq!(second.events.len(), 1);
         assert!(!second.has_more);
-        assert!(second.next_cursor.is_none());
-        assert_eq!(second.events[0].id.as_u128(), 1001);
+        let last = &second.events[0];
+        assert_eq!(last.id.as_u128(), 1001);
+        assert_eq!(
+            second.next_cursor.as_deref(),
+            Some(encode_cursor(last.created_at, last.id).as_str())
+        );
 
         let defaulted = select_page(&rows, None, parse_limit(None).unwrap(), at);
         assert_eq!(defaulted.events.len(), DEFAULT_LIMIT as usize);
@@ -633,7 +683,11 @@ mod tests {
         assert_eq!(body["events"][1]["payload"]["user_id"], "u_1");
         assert!(body["events"][0]["contract_version"].is_string());
         assert!(!page.has_more);
-        assert!(body["next_cursor"].is_null());
+        let last = page.events.last().unwrap();
+        assert_eq!(
+            body["next_cursor"].as_str(),
+            Some(encode_cursor(last.created_at, last.id).as_str())
+        );
     }
 
     #[tokio::test]
@@ -652,13 +706,15 @@ mod tests {
             assert_eq!(status, axum::http::StatusCode::BAD_REQUEST);
             assert_eq!(body["status"], 400);
             let msg = body["error"].as_str().unwrap();
+            assert!(msg.contains("invalid cursor"), "{msg}");
             assert!(msg.contains("re-sync"), "{msg}");
-            assert!(msg.contains("malformed"), "{msg}");
+            assert!(!msg.contains(LIMIT_RANGE), "{msg}");
         }
         let blank = resolve_cursor(Some("   "), at, Some(90)).unwrap();
         let (origin_at, origin_id) = cursor_origin();
         assert_eq!(blank.after_created_at, origin_at);
         assert_eq!(blank.after_id, origin_id);
+        assert!(blank.echo.is_none());
     }
 
     #[tokio::test]
@@ -698,6 +754,10 @@ mod tests {
             assert!(
                 !msg.to_ascii_lowercase().contains("invalid digit"),
                 "{raw}: {msg}"
+            );
+            assert!(
+                !msg.contains("invalid cursor"),
+                "{raw}: a limit error must not look like an invalid cursor: {msg}"
             );
         }
 

@@ -600,6 +600,8 @@ export interface PayloadStorageStatus {
 export interface PurgeResult {
   quarantine_bodies_redacted: number;
   audit_bodies_redacted: number;
+  /** `forwarded_events` rows whose payload was set to JSON null. */
+  forwarded_bodies_redacted: number;
 }
 
 export const getPayloadStorage = () =>

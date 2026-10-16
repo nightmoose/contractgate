@@ -3820,11 +3820,13 @@ metrics: []
         assert_eq!((q_before, a_before), (3, 3));
 
         // Purge this contract.
-        let (q_redacted, a_redacted) = storage::purge_bodies(&pool, Some(org), Some(cid))
-            .await
-            .unwrap();
+        let (q_redacted, a_redacted, f_redacted) =
+            storage::purge_bodies(&pool, Some(org), Some(cid))
+                .await
+                .unwrap();
         assert_eq!(q_redacted, 3, "all 3 quarantine bodies redacted");
         assert_eq!(a_redacted, 3, "all 3 audit bodies redacted");
+        assert_eq!(f_redacted, 2, "both forwarded bodies redacted");
 
         // Row counts UNCHANGED — nothing deleted.
         let q_after: i64 =
@@ -3884,10 +3886,10 @@ metrics: []
         );
 
         // Idempotent: nothing left to redact.
-        let (q2, a2) = storage::purge_bodies(&pool, Some(org), Some(cid))
+        let (q2, a2, f2) = storage::purge_bodies(&pool, Some(org), Some(cid))
             .await
             .unwrap();
-        assert_eq!((q2, a2), (0, 0), "second purge is a no-op");
+        assert_eq!((q2, a2, f2), (0, 0, 0), "second purge is a no-op");
 
         cleanup(&pool, cid, org).await;
     }

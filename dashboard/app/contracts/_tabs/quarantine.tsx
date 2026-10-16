@@ -596,7 +596,7 @@ function PerContractStorageControls({
     try {
       const r = await purgeContractBodies(contract.id);
       setMsg(
-        `Purged ${r.quarantine_bodies_redacted} quarantine + ${r.audit_bodies_redacted} audit bodies.`
+        `Purged ${r.quarantine_bodies_redacted} quarantine + ${r.audit_bodies_redacted} audit + ${r.forwarded_bodies_redacted} forwarded bodies.`
       );
       onPurged();
     } catch (e) {
