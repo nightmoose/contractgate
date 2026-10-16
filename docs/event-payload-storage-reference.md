@@ -23,7 +23,7 @@ why).
 
 Bodies are stored only when **all** of:
 
-1. the org is on a paid plan (`growth` or `enterprise`), **and**
+1. the org is on a paid plan (`growth`, `aisg_pro`, or `enterprise`), **and**
 2. the org master switch `orgs.store_event_payloads` is on, **and**
 3. the per-contract override `contracts.store_event_payloads` is on (default
    true; only consulted when the org switch is on).
@@ -37,13 +37,13 @@ redaction marker (`raw_event_redacted` / `payload_redacted`). `GET /quarantine`
 returns `payload_redacted: true` and `raw_event: null` for such rows.
 
 `GET /contracts` reports `store_event_payloads` as the **effective** value, not
-the raw column (the column defaults to `true` and is not rewritten). It is
-`false` whenever the org's plan does not permit payload storage — the same
-`payloads_stored` plan gate ingest, egress, and the Kafka/Kinesis consumers
-use (`free`, `aisg_free`, and unknown plans never store). Paid plans
-(`growth`, `aisg_pro`, `enterprise`) report the stored per-contract override
-unchanged. Both products share `GET /contracts`. `GET /contracts/{id}` does
-not include this field.
+the raw column (neither column is rewritten). It is the same decision ingest
+uses: paid plan **and** `orgs.store_event_payloads` **and** the per-contract
+override. It is `false` for `free`, `aisg_free`, and unknown plans, and also
+`false` on a paid plan (`growth`, `aisg_pro`, `enterprise`) while the org
+master switch is off (that column defaults to `false`). A paid org with the
+switch on reports the per-contract override. Both products share
+`GET /contracts`. `GET /contracts/{id}` does not include this field.
 
 ## Turning it off purges history
 
