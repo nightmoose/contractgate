@@ -171,6 +171,8 @@ pub struct QuarantineListRow {
 /// - `org_id = None` (dev-no-auth only) skips the org filter, matching the rest
 ///   of the dev surface. In production the handler guarantees `Some`.
 /// - `contract_id = None` lists across all of the org's contracts.
+/// - Soft-deleted contracts are excluded. `DELETE /contracts/{id}` also
+///   removes the rows; this filter hides any left from an earlier soft delete.
 pub async fn list_quarantine_events(
     pool: &PgPool,
     org_id: Option<Uuid>,
@@ -211,6 +213,7 @@ pub async fn list_quarantine_events(
             ) a
         ) att ON true
         WHERE qe.replay_of_quarantine_id IS NULL
+          AND c.deleted_at IS NULL
           AND ($1::uuid IS NULL OR qe.contract_id = $1)
           AND ($2::uuid IS NULL OR c.org_id = $2)
         ORDER BY qe.created_at DESC

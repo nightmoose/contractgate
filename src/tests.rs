@@ -5586,3 +5586,244 @@ metrics: []
             .unwrap();
     }
 }
+
+// ---------------------------------------------------------------------------
+// Soft-deleting a contract removes its quarantine rows in the same
+// transaction and leaves audit rows + published versions in place.
+//
+//   DATABASE_URL=... cargo test delete_contract_removes_quarantine -- --ignored
+// ---------------------------------------------------------------------------
+#[cfg(test)]
+mod contract_delete_quarantine {
+    use serde_json::json;
+    use uuid::Uuid;
+
+    use super::super::error::AppError;
+    use super::super::storage::{self, AuditEntryInsert, QuarantineEventInsert};
+    use super::super::transform::TransformedPayload;
+
+    const YAML: &str = r#"
+version: "1.0"
+name: "delete_quar_contract"
+description: "delete removes quarantine"
+ontology:
+  entities:
+    - name: id
+      type: string
+      required: true
+glossary: []
+metrics: []
+"#;
+
+    #[tokio::test]
+    #[ignore = "requires DATABASE_URL and a live Postgres migrated through 004"]
+    async fn delete_contract_removes_quarantine_keeps_audit_and_version() {
+        let db_url = std::env::var("DATABASE_URL").expect("DATABASE_URL must be set");
+        let pool = sqlx::PgPool::connect(&db_url).await.unwrap();
+        let org = Uuid::new_v4();
+        sqlx::query("INSERT INTO orgs (id, name, slug) VALUES ($1, 'o', $2)")
+            .bind(org)
+            .bind(format!("del-quar-{}", org.simple()))
+            .execute(&pool)
+            .await
+            .unwrap();
+
+        let (identity, version) = storage::create_contract(
+            &pool,
+            "delete_quar",
+            Some("t"),
+            YAML,
+            Default::default(),
+            Some(org),
+        )
+        .await
+        .unwrap();
+        let cid = identity.id;
+        storage::promote_version(&pool, cid, &version.version, Some(org))
+            .await
+            .expect("promote draft to stable");
+
+        let parent = Uuid::new_v4();
+        let child = Uuid::new_v4();
+        storage::quarantine_events_batch(
+            &pool,
+            &[
+                QuarantineEventInsert {
+                    contract_id: cid,
+                    contract_version: version.version.clone(),
+                    payload: TransformedPayload::from_stored(json!({"id": "body"})),
+                    violation_count: 1,
+                    violation_details: json!([{"field":"id","kind":"x","message":"m"}]),
+                    validation_us: 4,
+                    source_ip: None,
+                    replay_of_quarantine_id: None,
+                    pre_assigned_id: Some(parent),
+                    direction: "ingress".to_string(),
+                },
+                QuarantineEventInsert {
+                    contract_id: cid,
+                    contract_version: version.version.clone(),
+                    payload: TransformedPayload::from_stored(json!({"id": "replay-fail"})),
+                    violation_count: 1,
+                    violation_details: json!([{"field":"id","kind":"x","message":"m"}]),
+                    validation_us: 4,
+                    source_ip: None,
+                    replay_of_quarantine_id: Some(parent),
+                    pre_assigned_id: Some(child),
+                    direction: "ingress".to_string(),
+                },
+            ],
+            true,
+        )
+        .await
+        .unwrap();
+
+        storage::log_audit_entries_batch(
+            &pool,
+            &[AuditEntryInsert {
+                contract_id: cid,
+                org_id: Some(org),
+                contract_version: version.version.clone(),
+                passed: true,
+                violation_count: 0,
+                violation_details: json!([]),
+                raw_event: TransformedPayload::from_stored(json!({"id": "kept"})),
+                validation_us: 3,
+                source_ip: None,
+                source: "http".into(),
+                pre_assigned_id: None,
+                replay_of_quarantine_id: Some(parent),
+                direction: "ingress".into(),
+            }],
+            true,
+        )
+        .await
+        .unwrap();
+
+        // Wrong org must not delete the contract or its quarantine rows.
+        let err = storage::delete_contract(&pool, cid, Some(Uuid::new_v4()))
+            .await
+            .unwrap_err();
+        assert!(matches!(err, AppError::ContractNotFound(_)));
+        let still: i64 =
+            sqlx::query_scalar("SELECT count(*) FROM quarantine_events WHERE contract_id = $1")
+                .bind(cid)
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        assert_eq!(still, 2, "wrong-org delete leaves quarantine rows");
+
+        storage::delete_contract(&pool, cid, Some(org))
+            .await
+            .expect("owner delete");
+
+        let missing = storage::get_contract_identity(&pool, cid, Some(org)).await;
+        assert!(matches!(missing, Err(AppError::ContractNotFound(_))));
+
+        let listed = storage::list_quarantine_events(&pool, Some(org), Some(cid), 50, 0)
+            .await
+            .unwrap();
+        assert!(
+            listed.is_empty(),
+            "GET /quarantine must not return deleted contract rows"
+        );
+
+        let left: i64 =
+            sqlx::query_scalar("SELECT count(*) FROM quarantine_events WHERE contract_id = $1")
+                .bind(cid)
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        assert_eq!(left, 0, "quarantine rows removed with the contract");
+
+        let (audit_n, replay_cleared): (i64, bool) = sqlx::query_as(
+            "SELECT count(*), bool_and(replay_of_quarantine_id IS NULL) \
+             FROM audit_log WHERE contract_id = $1",
+        )
+        .bind(cid)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(audit_n, 1, "audit history is kept");
+        assert!(
+            replay_cleared,
+            "replay link cleared so the quarantine delete can proceed"
+        );
+
+        let state: String = sqlx::query_scalar(
+            "SELECT state FROM contract_versions WHERE contract_id = $1 AND version = $2",
+        )
+        .bind(cid)
+        .bind(&version.version)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(state, "stable", "published version stays published");
+
+        // A contract soft-deleted without this helper (rows already left
+        // behind) is excluded from the list without a schema change.
+        let (other, _) = storage::create_contract(
+            &pool,
+            "delete_quar_orphan",
+            Some("t"),
+            YAML,
+            Default::default(),
+            Some(org),
+        )
+        .await
+        .unwrap();
+        storage::quarantine_events_batch(
+            &pool,
+            &[QuarantineEventInsert {
+                contract_id: other.id,
+                contract_version: "1.0.0".into(),
+                payload: TransformedPayload::from_stored(json!({"id": "orphan"})),
+                violation_count: 1,
+                violation_details: json!([]),
+                validation_us: 1,
+                source_ip: None,
+                replay_of_quarantine_id: None,
+                pre_assigned_id: None,
+                direction: "ingress".into(),
+            }],
+            false,
+        )
+        .await
+        .unwrap();
+        sqlx::query("UPDATE contracts SET deleted_at = NOW() WHERE id = $1")
+            .bind(other.id)
+            .execute(&pool)
+            .await
+            .unwrap();
+        let orphan_list = storage::list_quarantine_events(&pool, Some(org), Some(other.id), 50, 0)
+            .await
+            .unwrap();
+        assert!(
+            orphan_list.is_empty(),
+            "soft-deleted contract is excluded from the list"
+        );
+
+        // Fixture cleanup. Stable versions cannot be hard-deleted (trigger).
+        // session_replication_role is per connection, so hold one checkout.
+        // This role is superuser on the local test database only.
+        let mut conn = pool.acquire().await.unwrap();
+        sqlx::query("SET session_replication_role = 'replica'")
+            .execute(&mut *conn)
+            .await
+            .unwrap();
+        sqlx::query("DELETE FROM contracts WHERE id = ANY($1)")
+            .bind(vec![cid, other.id])
+            .execute(&mut *conn)
+            .await
+            .unwrap();
+        sqlx::query("DELETE FROM orgs WHERE id = $1")
+            .bind(org)
+            .execute(&mut *conn)
+            .await
+            .unwrap();
+        sqlx::query("SET session_replication_role = 'origin'")
+            .execute(&mut *conn)
+            .await
+            .unwrap();
+    }
+}

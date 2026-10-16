@@ -428,21 +428,62 @@ pub async fn patch_contract_identity(
 /// Soft-delete a contract (RFC-001 §6).  `org_id` scope guard (RFC-047):
 /// returns `ContractNotFound` when no row matches id + org, so UUID
 /// existence is never leaked to the wrong tenant.
+///
+/// Quarantine rows for that contract are removed in the same transaction.
+/// Soft delete does not fire `ON DELETE CASCADE`. `audit_log` rows stay
+/// (validation history); only `replay_of_quarantine_id` is cleared so the
+/// quarantine delete is not blocked by that foreign key. Contract versions
+/// are left as they are — a published version is not unpublished.
 pub async fn delete_contract(pool: &PgPool, id: Uuid, org_id: Option<Uuid>) -> AppResult<()> {
+    let mut tx = pool.begin().await.db_op("delete_contract:begin")?;
+
     let result = sqlx::query(
         "UPDATE contracts SET deleted_at = NOW() \
          WHERE id = $1 AND deleted_at IS NULL AND ($2 IS NULL OR org_id = $2)",
     )
     .bind(id)
     .bind(org_id)
-    .execute(pool)
-    .await?;
+    .execute(&mut *tx)
+    .await
+    .db_op("delete_contract")?;
 
     // 0 rows: either doesn't exist, already deleted, or belongs to another
     // org.  All map to 404 so we never reveal UUID existence (RFC-047).
+    // Roll back before any quarantine change so a wrong-org delete is a no-op.
     if result.rows_affected() == 0 {
+        tx.rollback().await.db_op("delete_contract:rollback")?;
         return Err(AppError::ContractNotFound(id));
     }
+
+    // audit_log.replay_of_quarantine_id → quarantine_events is NO ACTION.
+    // Clear the pointer; keep the audit row.
+    sqlx::query(
+        "UPDATE audit_log SET replay_of_quarantine_id = NULL \
+         WHERE contract_id = $1 AND replay_of_quarantine_id IS NOT NULL",
+    )
+    .bind(id)
+    .execute(&mut *tx)
+    .await
+    .db_op("delete_contract:clear_audit_replay_fk")?;
+
+    // Self-FK on failed-replay children. Null it in this transaction, then
+    // delete every quarantine row for the contract in one statement.
+    sqlx::query(
+        "UPDATE quarantine_events SET replay_of_quarantine_id = NULL \
+         WHERE contract_id = $1 AND replay_of_quarantine_id IS NOT NULL",
+    )
+    .bind(id)
+    .execute(&mut *tx)
+    .await
+    .db_op("delete_contract:clear_quarantine_replay_fk")?;
+
+    sqlx::query("DELETE FROM quarantine_events WHERE contract_id = $1")
+        .bind(id)
+        .execute(&mut *tx)
+        .await
+        .db_op("delete_contract:quarantine")?;
+
+    tx.commit().await.db_op("delete_contract:commit")?;
     Ok(())
 }
 
