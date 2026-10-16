@@ -5173,3 +5173,291 @@ schema:
         assert!(again.contains("logicalType: timestamp"));
     }
 }
+
+// ---------------------------------------------------------------------------
+// Org-wide replay redacted flag + effective store_event_payloads on GET /contracts.
+//
+// Requires DATABASE_URL and migrations through 034 (payload_redacted) / 036
+// (aisg plans). Run with:
+//   cargo test --bin contractgate-server api_bugfixes -- --ignored
+// ---------------------------------------------------------------------------
+#[cfg(test)]
+mod api_bugfixes {
+    use axum::http::StatusCode;
+    use axum::routing::{get, post};
+    use axum_test::TestServer;
+    use serde_json::{json, Value};
+    use std::sync::Arc;
+    use uuid::Uuid;
+
+    use super::super::storage::{self, QuarantineEventInsert};
+    use super::super::transform::TransformedPayload;
+    use super::super::{
+        api_key_auth::ValidatedKey, list_contracts_handler, quarantine, replay, AppState,
+    };
+
+    const YAML: &str = r#"
+version: "1.0"
+name: "api_bugfix_contract"
+description: "replay redacted + effective payload flag"
+ontology:
+  entities:
+    - name: id
+      type: string
+      required: true
+glossary: []
+metrics: []
+"#;
+
+    fn server(state: Arc<AppState>, org: Uuid) -> TestServer {
+        let app = axum::Router::new()
+            .route("/contracts", get(list_contracts_handler))
+            .route("/quarantine/replay", post(quarantine::replay_all_handler))
+            .route(
+                "/contracts/{id}/quarantine/replay",
+                post(replay::replay_handler),
+            )
+            .layer(axum::middleware::from_fn(
+                move |mut req: axum::extract::Request, next: axum::middleware::Next| async move {
+                    req.extensions_mut().insert(ValidatedKey {
+                        api_key_id: Uuid::new_v4(),
+                        user_id: Uuid::new_v4(),
+                        org_id: org,
+                        allowed_contract_ids: None,
+                        rate_limit_rps: None,
+                        rate_limit_burst: None,
+                    });
+                    next.run(req).await
+                },
+            ))
+            .with_state(state);
+        TestServer::new(app)
+    }
+
+    async fn seed_org(pool: &sqlx::PgPool, org: Uuid, plan: &str) {
+        sqlx::query("INSERT INTO orgs (id, name, slug, plan) VALUES ($1, $2, $3, $4)")
+            .bind(org)
+            .bind("api bugfix org")
+            .bind(format!("api-bugfix-{}", org.simple()))
+            .bind(plan)
+            .execute(pool)
+            .await
+            .expect("seed org");
+    }
+
+    /// Org-wide `POST /quarantine/replay` flags a row whose body was not stored
+    /// the same way the per-contract route does (`outcome: "redacted"`),
+    /// instead of `passed: false` with an empty violations list.
+    #[tokio::test]
+    #[ignore = "requires DATABASE_URL and a live Postgres migrated through 034"]
+    async fn org_wide_replay_redacted_matches_per_contract() {
+        let db_url = std::env::var("DATABASE_URL").expect("DATABASE_URL must be set");
+        let pool = sqlx::PgPool::connect(&db_url).await.unwrap();
+        let org = Uuid::new_v4();
+        seed_org(&pool, org, "free").await;
+        let (identity, version) = storage::create_contract(
+            &pool,
+            "api_bugfix_replay",
+            Some("t"),
+            YAML,
+            Default::default(),
+            Some(org),
+        )
+        .await
+        .expect("create contract");
+        let cid = identity.id;
+        let qid = Uuid::new_v4();
+        storage::quarantine_events_batch(
+            &pool,
+            &[QuarantineEventInsert {
+                contract_id: cid,
+                contract_version: version.version.clone(),
+                payload: TransformedPayload::from_stored(json!({"id": "not-stored"})),
+                violation_count: 1,
+                violation_details: json!([{"field":"id","kind":"x","message":"m"}]),
+                validation_us: 5,
+                source_ip: None,
+                replay_of_quarantine_id: None,
+                pre_assigned_id: Some(qid),
+                direction: "ingress".to_string(),
+            }],
+            false, // payload NULL + payload_redacted, same as Free ingest
+        )
+        .await
+        .unwrap();
+
+        let state = Arc::new(AppState::new(pool.clone(), false, None, None));
+        let http = server(state, org);
+        let body = json!({
+            "ids": [qid],
+            "target_version": version.version,
+        });
+        let per = http
+            .post(&format!("/contracts/{cid}/quarantine/replay"))
+            .json(&body)
+            .await;
+        assert_eq!(per.status_code(), StatusCode::OK, "{}", per.text());
+        let per_json: Value = per.json();
+        assert_eq!(
+            per_json["redacted"],
+            json!(1),
+            "per-contract redacted count: {per_json}"
+        );
+        assert_eq!(per_json["results"][0]["quarantine_id"], qid.to_string());
+        assert_eq!(
+            per_json["results"][0]["outcome"], "redacted",
+            "per-contract outcome tag: {per_json}"
+        );
+
+        let org_body = json!({
+            "event_ids": [qid],
+            "version": version.version,
+        });
+        let org_resp = http.post("/quarantine/replay").json(&org_body).await;
+        assert_eq!(
+            org_resp.status_code(),
+            StatusCode::OK,
+            "{}",
+            org_resp.text()
+        );
+        let org_json: Value = org_resp.json();
+        assert_eq!(org_json["replayed"], json!(0));
+        let outcome = &org_json["outcomes"][0];
+        assert_eq!(outcome["event_id"], qid.to_string());
+        assert_eq!(
+            outcome["redacted"],
+            json!(true),
+            "org-wide route must flag the redacted row: {org_json}"
+        );
+        assert_eq!(outcome["passed"], json!(false));
+        assert_eq!(outcome["violations"], json!([]));
+        // Org-wide `redacted: true` is the same classification the per-contract
+        // route tags `outcome: "redacted"`.
+        assert_eq!(per_json["results"][0]["outcome"], "redacted");
+
+        sqlx::query("DELETE FROM contracts WHERE id = $1")
+            .bind(cid)
+            .execute(&pool)
+            .await
+            .unwrap();
+        sqlx::query("DELETE FROM orgs WHERE id = $1")
+            .bind(org)
+            .execute(&pool)
+            .await
+            .unwrap();
+    }
+
+    /// `GET /contracts` reports `store_event_payloads: false` on Free and
+    /// AISchemaGate Free even though the column defaults to true. Paid plans
+    /// (`growth`, `aisg_pro`, `enterprise`) keep the stored override. The
+    /// column itself is not rewritten.
+    #[tokio::test]
+    #[ignore = "requires DATABASE_URL and a live Postgres migrated through 036"]
+    async fn contract_list_effective_store_event_payloads() {
+        let db_url = std::env::var("DATABASE_URL").expect("DATABASE_URL must be set");
+        let pool = sqlx::PgPool::connect(&db_url).await.unwrap();
+        let org = Uuid::new_v4();
+        seed_org(&pool, org, "free").await;
+        let (identity, _) = storage::create_contract(
+            &pool,
+            "api_bugfix_list",
+            Some("t"),
+            YAML,
+            Default::default(),
+            Some(org),
+        )
+        .await
+        .expect("create contract");
+        let cid = identity.id;
+        // Column default is true. The response must not depend on rewriting it.
+        let stored: bool =
+            sqlx::query_scalar("SELECT store_event_payloads FROM contracts WHERE id = $1")
+                .bind(cid)
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        assert!(stored, "column default is true; the bug is the response");
+
+        let state = Arc::new(AppState::new(pool.clone(), false, None, None));
+        let http = server(state, org);
+
+        async fn listed(http: &TestServer, cid: Uuid) -> bool {
+            let resp = http.get("/contracts").await;
+            assert_eq!(resp.status_code(), StatusCode::OK, "{}", resp.text());
+            let rows: Vec<Value> = resp.json();
+            let row = rows
+                .iter()
+                .find(|r| r["id"] == cid.to_string())
+                .expect("contract in list");
+            row["store_event_payloads"]
+                .as_bool()
+                .expect("store_event_payloads bool")
+        }
+
+        assert!(
+            !listed(&http, cid).await,
+            "free org must report store_event_payloads false"
+        );
+
+        sqlx::query("UPDATE orgs SET plan = 'aisg_free' WHERE id = $1")
+            .bind(org)
+            .execute(&pool)
+            .await
+            .unwrap();
+        assert!(
+            !listed(&http, cid).await,
+            "aisg_free must report store_event_payloads false"
+        );
+
+        // Paid plans report the stored override (still true). Unchanged.
+        for plan in ["growth", "aisg_pro", "enterprise"] {
+            sqlx::query("UPDATE orgs SET plan = $2 WHERE id = $1")
+                .bind(org)
+                .bind(plan)
+                .execute(&pool)
+                .await
+                .unwrap();
+            assert!(
+                listed(&http, cid).await,
+                "{plan} with the column on must still report true"
+            );
+        }
+
+        // Paid + stored override off stays off.
+        sqlx::query("UPDATE contracts SET store_event_payloads = false WHERE id = $1")
+            .bind(cid)
+            .execute(&pool)
+            .await
+            .unwrap();
+        sqlx::query("UPDATE orgs SET plan = 'growth' WHERE id = $1")
+            .bind(org)
+            .execute(&pool)
+            .await
+            .unwrap();
+        assert!(
+            !listed(&http, cid).await,
+            "paid plan reports the stored false override"
+        );
+
+        // Free response did not rewrite the column (it was still true until
+        // the explicit UPDATE above).
+        let now_stored: bool =
+            sqlx::query_scalar("SELECT store_event_payloads FROM contracts WHERE id = $1")
+                .bind(cid)
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        assert!(!now_stored);
+
+        sqlx::query("DELETE FROM contracts WHERE id = $1")
+            .bind(cid)
+            .execute(&pool)
+            .await
+            .unwrap();
+        sqlx::query("DELETE FROM orgs WHERE id = $1")
+            .bind(org)
+            .execute(&pool)
+            .await
+            .unwrap();
+    }
+}

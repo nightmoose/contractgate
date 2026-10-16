@@ -209,7 +209,8 @@ pub async fn replay_for_contract(
                 slot[idx] = Some(ReplayItemOutcome::AlreadyReplayed);
             }
             // RFC-086: body not stored / purged → nothing to replay.
-            Some(r) if r.payload_redacted || r.payload.is_none() => {
+            // Same predicate the org-wide route reports via `replay_item_view`.
+            Some(r) if source_body_missing(r.payload_redacted, r.payload.is_none()) => {
                 slot[idx] = Some(ReplayItemOutcome::Redacted);
             }
             Some(r) => {
@@ -525,6 +526,76 @@ pub async fn replay_history_handler(
 // Helpers
 // ---------------------------------------------------------------------------
 
+/// True when a quarantine row has no body to re-validate.
+///
+/// `payload_redacted` is the RFC-086 marker (never stored, or purged). A NULL
+/// payload without the marker is the same situation: there is nothing to
+/// replay. The per-contract engine classifies those rows as
+/// [`ReplayItemOutcome::Redacted`]; [`replay_item_view`] is what the org-wide
+/// route uses so both responses flag them.
+pub(crate) fn source_body_missing(payload_redacted: bool, payload_is_none: bool) -> bool {
+    payload_redacted || payload_is_none
+}
+
+/// Fields both replay routes agree on for one engine outcome.
+///
+/// Per-contract `POST /contracts/{id}/quarantine/replay` serializes
+/// [`ReplayItemOutcome::Redacted`] as `"outcome": "redacted"`. Org-wide
+/// `POST /quarantine/replay` sets [`Self::redacted`] from this view of the
+/// same outcome, instead of collapsing it into `passed: false` with an empty
+/// violations list.
+#[derive(Debug, Clone)]
+pub struct ReplayItemView {
+    pub passed: bool,
+    pub version: String,
+    pub violations: Vec<Violation>,
+    pub redacted: bool,
+}
+
+/// Map one engine outcome onto the shared replay view.
+///
+/// `target_version` is the version the engine resolved for the contract. Pass
+/// and still-quarantined outcomes carry their own version; every other
+/// outcome (including redacted) echoes `target_version`.
+pub fn replay_item_view(outcome: &ReplayItemOutcome, target_version: &str) -> ReplayItemView {
+    match outcome {
+        ReplayItemOutcome::Replayed {
+            contract_version_matched,
+            ..
+        } => ReplayItemView {
+            passed: true,
+            version: contract_version_matched.clone(),
+            violations: Vec::new(),
+            redacted: false,
+        },
+        ReplayItemOutcome::StillQuarantined {
+            contract_version_attempted,
+            violations,
+            ..
+        } => ReplayItemView {
+            passed: false,
+            version: contract_version_attempted.clone(),
+            violations: violations.clone(),
+            redacted: false,
+        },
+        ReplayItemOutcome::Redacted => ReplayItemView {
+            passed: false,
+            version: target_version.to_string(),
+            violations: Vec::new(),
+            redacted: true,
+        },
+        ReplayItemOutcome::AlreadyReplayed
+        | ReplayItemOutcome::NotFound
+        | ReplayItemOutcome::WrongContract
+        | ReplayItemOutcome::Purged => ReplayItemView {
+            passed: false,
+            version: target_version.to_string(),
+            violations: Vec::new(),
+            redacted: false,
+        },
+    }
+}
+
 /// Resolve the target version for a replay call.
 ///
 /// Returns `(version, source, is_draft)`:
@@ -722,5 +793,29 @@ mod tests {
         let o = ReplayItemOutcome::NotFound;
         let s = serde_json::to_string(&o).unwrap();
         assert!(s.contains("\"outcome\":\"not_found\""));
+
+        // Per-contract flag for a row with no stored body.
+        let redacted = ReplayItemResult {
+            quarantine_id: Uuid::nil(),
+            outcome: ReplayItemOutcome::Redacted,
+        };
+        let wire = serde_json::to_value(&redacted).unwrap();
+        assert_eq!(wire["outcome"], "redacted");
+
+        // Org-wide view of that same outcome. `redacted: true`, not a bare
+        // `passed: false` with an empty violations list (that is what purged /
+        // not-found look like).
+        let view = replay_item_view(&redacted.outcome, "1.0.0");
+        assert!(view.redacted);
+        assert!(!view.passed);
+        assert!(view.violations.is_empty());
+        assert_eq!(view.version, "1.0.0");
+
+        let purged = replay_item_view(&ReplayItemOutcome::Purged, "1.0.0");
+        assert!(!purged.redacted);
+        assert!(!purged.passed);
+        assert!(source_body_missing(true, false));
+        assert!(source_body_missing(false, true));
+        assert!(!source_body_missing(false, false));
     }
 }

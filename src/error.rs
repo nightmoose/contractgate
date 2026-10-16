@@ -248,10 +248,7 @@ impl IntoResponse for AppError {
                     "unknown org: the `x-org-id` org does not exist".into(),
                 )
             }
-            AppError::Database(e) => {
-                tracing::error!("Database error: {:?}", e);
-                (StatusCode::INTERNAL_SERVER_ERROR, database_error_message(e))
-            }
+            AppError::Database(e) => database_failure(e),
             AppError::Internal(msg) => {
                 tracing::error!("Internal error: {}", msg);
                 (
@@ -288,27 +285,27 @@ pub type AppResult<T> = Result<T, AppError>;
 // DB error context helper
 // ---------------------------------------------------------------------------
 
-/// Extension trait to attach an operation label to a `sqlx::Error` before it
-/// is propagated as `AppError::Database`.  Bare `?` on a `sqlx::Result`
-/// preserves the underlying SQL detail (constraint, query, etc.) but loses
-/// the application context — operators reading prod logs see "Database
-/// error" without knowing whether it came from a contract create, an ingest
-/// read, or an audit write.
-///
-/// Use:
-///
-/// ```ignore
-/// let row = sqlx::query_as::<_, Row>("...")
-///     .fetch_one(pool)
-///     .await
-///     .db_op("get_contract_identity")?;
-/// ```
-///
-/// The HTTP status mapping is unchanged (still `AppError::Database` → 500);
-/// only the `tracing::error!` line in the logs gains the operation label.
-/// Client-facing text for a database error: the SQLSTATE class and the
-/// constraint name (schema metadata, no row data) instead of a bare
-/// "Database error", so a failing publish says *what* failed.
+/// Pool, lock, and statement timeouts are 504 and log the route plus the
+/// stage. Every other database error stays a 500.
+fn database_failure(e: &sqlx::Error) -> (StatusCode, String) {
+    if let Some(wait) = crate::request_limits::db_timeout(e) {
+        tracing::error!(
+            route = %crate::request_limits::current_route(),
+            stage = wait.stage,
+            error = %e,
+            "database wait timed out"
+        );
+        return (StatusCode::GATEWAY_TIMEOUT, wait.message.to_string());
+    }
+    tracing::error!(
+        route = %crate::request_limits::current_route(),
+        stage = %crate::request_limits::current_stage(),
+        "Database error: {:?}",
+        e
+    );
+    (StatusCode::INTERNAL_SERVER_ERROR, database_error_message(e))
+}
+
 fn database_error_message(e: &sqlx::Error) -> String {
     let Some(db) = e.as_database_error() else {
         return "Database error".into();
@@ -326,6 +323,16 @@ fn database_error_message(e: &sqlx::Error) -> String {
     }
 }
 
+/// Attach an operation label to a `sqlx::Error` before it becomes
+/// `AppError::Database`. The error line includes the operation, the route,
+/// and the stage (`pool_acquire`, `lock_wait`, `db_statement`, or `handler`).
+///
+/// ```ignore
+/// let row = sqlx::query_as::<_, Row>("...")
+///     .fetch_one(pool)
+///     .await
+///     .db_op("get_contract_identity")?;
+/// ```
 pub trait DbOpContext<T> {
     fn db_op(self, op: &'static str) -> AppResult<T>;
 }
@@ -333,7 +340,14 @@ pub trait DbOpContext<T> {
 impl<T> DbOpContext<T> for Result<T, sqlx::Error> {
     fn db_op(self, op: &'static str) -> AppResult<T> {
         self.map_err(|e| {
-            tracing::error!("Database error during {}: {:?}", op, e);
+            let stage = crate::request_limits::db_timeout(&e)
+                .map(|wait| wait.stage)
+                .unwrap_or_else(crate::request_limits::current_stage);
+            tracing::error!(
+                route = %crate::request_limits::current_route(),
+                stage,
+                "Database error during {op}: {e:?}"
+            );
             AppError::Database(e)
         })
     }
@@ -373,6 +387,16 @@ mod tests {
         let parsed: serde_json::Value = serde_json::from_slice(&body).unwrap();
         assert_eq!(parsed["status"], 429);
         assert_eq!(parsed["retry_after_ms"], 1_250);
+    }
+
+    #[tokio::test]
+    async fn pool_acquire_timeout_is_504() {
+        let resp = AppError::Database(sqlx::Error::PoolTimedOut).into_response();
+        assert_eq!(resp.status(), StatusCode::GATEWAY_TIMEOUT);
+        let body = to_bytes(resp.into_body(), 1024).await.unwrap();
+        let parsed: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(parsed["status"], 504);
+        assert_eq!(parsed["error"], "timed out acquiring a database connection");
     }
 }
 

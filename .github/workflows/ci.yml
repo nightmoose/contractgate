@@ -686,12 +686,14 @@ jobs:
             tests::streaming_gate::streaming_routes_404_for_non_owner \
             tests::equivalent_versions::deploy_and_create_version_reject_equivalents \
             tests::odcs_import_target::import_targets_existing_contract_and_refuses_duplicate_names \
+            tests::api_bugfixes::org_wide_replay_redacted_matches_per_contract \
+            tests::api_bugfixes::contract_list_effective_store_event_payloads \
             2>&1 | tee /tmp/iso_test.out
           # Guard against the silent false-green: `cargo test` exits 0 even when
           # a filter matches zero tests (e.g. a future rename). Assert exactly
           # the expected tests actually ran.
-          if ! grep -qE '14 passed; 0 failed' /tmp/iso_test.out; then
-            echo "::error::Expected '14 passed; 0 failed' from the isolation/readiness/RFC-086 tests — got something else. A test may have been renamed or skipped."
+          if ! grep -qE '16 passed; 0 failed' /tmp/iso_test.out; then
+            echo "::error::Expected '16 passed; 0 failed' from the isolation/readiness/RFC-086 tests — got something else. A test may have been renamed or skipped."
             exit 1
           fi
 

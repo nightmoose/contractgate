@@ -35,7 +35,6 @@ use std::{
 };
 use tower_http::{
     cors::{AllowOrigin, Any, CorsLayer},
-    timeout::TimeoutLayer,
     trace::TraceLayer,
 };
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
@@ -80,6 +79,7 @@ mod rag_contract_tests;
 use contractgate::rate_limit;
 mod replay;
 mod report;
+mod request_limits;
 mod scaffold_handler;
 mod scorecard;
 mod security_headers;
@@ -505,7 +505,21 @@ async fn list_contracts_handler(
     req: axum::extract::Request,
 ) -> AppResult<Json<Vec<ContractSummary>>> {
     let org_id = org_id_from_req(&req);
-    let contracts = storage::list_contracts(&state.db, org_id).await?;
+    let mut contracts = storage::list_contracts(&state.db, org_id).await?;
+    // Report the effective flag. The column defaults to true, but Free and
+    // aisg_free never store bodies (same `payloads_stored` plan gate as ingest).
+    // Paid plans keep the stored per-contract override. No org on the request
+    // is self-host: leave the column. A present org with no row fail-closes
+    // to false, matching ingest.
+    if let Some(oid) = org_id {
+        let plan = storage::get_org_plan(&state.db, oid)
+            .await?
+            .unwrap_or_default();
+        for contract in &mut contracts {
+            contract.store_event_payloads =
+                plan::effective_store_event_payloads(Some(&plan), contract.store_event_payloads);
+        }
+    }
     Ok(Json(contracts))
 }
 
@@ -1836,10 +1850,11 @@ fn build_router(state: Arc<AppState>) -> Router {
         .layer(middleware::from_fn(error::json_error_bodies))
         .layer(middleware::from_fn(observability::track_requests))
         .layer(TraceLayer::new_for_http())
-        .layer(TimeoutLayer::with_status_code(
-            StatusCode::REQUEST_TIMEOUT,
-            std::time::Duration::from_secs(30),
-        ))
+        // 30s budget. Logs the route and the stage that was in progress
+        // (`handler`, `pool_acquire`, `db_statement`) and returns 504.
+        // Demo SSE streams are excluded; a wedged worker is still logged by
+        // the deadline thread because that wait does not yield.
+        .layer(middleware::from_fn(request_limits::request_timeout))
         // Retire the old contractgate-api.fly.dev host (opt-in via the
         // LEGACY_API_HOSTS secret). Outside CORS/auth so a legacy request is
         // redirected before anything else runs.
@@ -1870,7 +1885,7 @@ async fn main() -> anyhow::Result<()> {
             .with(tracing_subscriber::fmt::layer())
             .init();
         let database_url = std::env::var("DATABASE_URL").expect("DATABASE_URL must be set");
-        let pool = sqlx::PgPool::connect(&database_url).await?;
+        let pool = request_limits::connect_pool(&database_url).await?;
         scorecard::run_baseline_rollup(&pool).await?;
         tracing::info!("scorecard-rollup complete");
         return Ok(());
@@ -1888,7 +1903,7 @@ async fn main() -> anyhow::Result<()> {
             .with(tracing_subscriber::fmt::layer())
             .init();
         let database_url = std::env::var("DATABASE_URL").expect("DATABASE_URL must be set");
-        let pool = sqlx::PgPool::connect(&database_url).await?;
+        let pool = request_limits::connect_pool(&database_url).await?;
         let n = metering::reconcile_current_period(&pool).await?;
         tracing::info!(rows_raised = n, "usage-reconcile complete");
         return Ok(());
@@ -1913,7 +1928,7 @@ async fn main() -> anyhow::Result<()> {
 
     let database_url = std::env::var("DATABASE_URL").expect("DATABASE_URL must be set");
 
-    let pool = PgPool::connect(&database_url).await?;
+    let pool = request_limits::connect_pool(&database_url).await?;
     tracing::info!("Connected to database");
 
     // Fail fast if the DB is missing columns this binary depends on (deploy

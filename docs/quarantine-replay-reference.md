@@ -1,6 +1,6 @@
 # Quarantine + Replay API Reference
 
-**Last updated:** 2026-07-14 (RFC-081)
+**Last updated:** 2026-10-16
 
 Events that fail contract validation at ingest are written to the **quarantine**
 store instead of being forwarded. This API lists them, replays them against a
@@ -86,8 +86,9 @@ Response:
 {
   "replayed": 1,
   "outcomes": [
-    { "event_id": "uuid", "version": "2.0.0", "passed": true,  "violations": [],       "replayed_at": "..." },
-    { "event_id": "uuid", "version": "2.0.0", "passed": false, "violations": [ ... ],  "replayed_at": "..." }
+    { "event_id": "uuid", "version": "2.0.0", "passed": true,  "violations": [],       "replayed_at": "...", "redacted": false },
+    { "event_id": "uuid", "version": "2.0.0", "passed": false, "violations": [ ... ],  "replayed_at": "...", "redacted": false },
+    { "event_id": "uuid", "version": "2.0.0", "passed": false, "violations": [],       "replayed_at": "...", "redacted": true }
   ]
 }
 ```
@@ -97,7 +98,14 @@ entry per input `event_id`, in input order. A passing event lands in the audit
 log and fires the contract's forward destination (same as fresh ingest); a
 failing event writes a new quarantine row linked to the source, and the source is
 left untouched. Ids that are not found, already replayed, purged, or belong to
-another org come back with `passed: false` and no violations.
+another org come back with `passed: false`, `redacted: false`, and no violations.
+
+`redacted: true` means the source body was never stored or was purged, so the
+row was not re-validated. `passed` is false and `violations` is empty; this is
+not a validation failure. It is the same classification the per-contract route
+reports as `"outcome": "redacted"`. Both routes use one helper
+(`replay_item_view`) over the shared replay engine. DataContractGate and
+AISchemaGate share these routes.
 
 ---
 
