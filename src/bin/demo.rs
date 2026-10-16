@@ -689,7 +689,12 @@ async fn validator_lane(state: Arc<DemoState>) {
                             let delta_us = (now_ns - produced_at_ns) / 1_000;
                             // Sample roughly 1-in-8 records for the histogram to keep
                             // contention down at very high rates.
-                            if state.validator.consumed.load(Ordering::Relaxed) % 8 == 0 {
+                            if state
+                                .validator
+                                .consumed
+                                .load(Ordering::Relaxed)
+                                .is_multiple_of(8)
+                            {
                                 let mut hist = state.validator.latency_hist_us.lock().await;
                                 let _ = hist.record(delta_us.min(60_000_000));
                             }
@@ -771,7 +776,12 @@ async fn copy_lane(state: Arc<DemoState>) {
                     {
                         if now_ns > produced_at_ns {
                             let delta_us = (now_ns - produced_at_ns) / 1_000;
-                            if state.copy.consumed.load(Ordering::Relaxed) % 8 == 0 {
+                            if state
+                                .copy
+                                .consumed
+                                .load(Ordering::Relaxed)
+                                .is_multiple_of(8)
+                            {
                                 let mut hist = state.copy.latency_hist_us.lock().await;
                                 let _ = hist.record(delta_us.min(60_000_000));
                             }
@@ -881,7 +891,7 @@ async fn snapshot_lane(lane: &LaneStats) -> LaneSnapshot {
     let rate = rate_per_sec(consumed, ms);
 
     let hist = lane.latency_hist_us.lock().await;
-    let (p50, p95, p99, max) = if hist.len() == 0 {
+    let (p50, p95, p99, max) = if hist.is_empty() {
         (0, 0, 0, 0)
     } else {
         (

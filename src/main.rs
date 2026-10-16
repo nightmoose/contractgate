@@ -506,18 +506,24 @@ async fn list_contracts_handler(
 ) -> AppResult<Json<Vec<ContractSummary>>> {
     let org_id = org_id_from_req(&req);
     let mut contracts = storage::list_contracts(&state.db, org_id).await?;
-    // Report the effective flag. The column defaults to true, but Free and
-    // aisg_free never store bodies (same `payloads_stored` plan gate as ingest).
-    // Paid plans keep the stored per-contract override. No org on the request
-    // is self-host: leave the column. A present org with no row fail-closes
-    // to false, matching ingest.
+    // Report the effective flag: the same `payloads_stored` decision ingest
+    // uses (paid plan AND org master switch AND per-contract override). Free
+    // and aisg_free never store. A paid plan with the org switch still off
+    // reports false — the column defaults to true and must not claim a body
+    // ingest will redact. No org on the request is self-host: leave the
+    // column. A present org with no row fail-closes to false.
     if let Some(oid) = org_id {
-        let plan = storage::get_org_plan(&state.db, oid)
+        // Same (plan, org switch) ingest reads. A missing org row fail-closes
+        // to false, matching `resolve_store_payloads`.
+        let (plan, org_switch) = storage::get_org_payload_policy(&state.db, oid)
             .await?
-            .unwrap_or_default();
+            .unwrap_or_else(|| (String::new(), false));
         for contract in &mut contracts {
-            contract.store_event_payloads =
-                plan::effective_store_event_payloads(Some(&plan), contract.store_event_payloads);
+            contract.store_event_payloads = plan::effective_store_event_payloads(
+                Some(&plan),
+                org_switch,
+                contract.store_event_payloads,
+            );
         }
     }
     Ok(Json(contracts))

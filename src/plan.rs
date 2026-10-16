@@ -53,25 +53,21 @@ pub fn payloads_stored(plan: &str, org_switch: bool, contract_switch: bool) -> b
 
 /// Effective `store_event_payloads` for contract list / GET responses.
 ///
-/// The column is the per-contract override and defaults to `true`. Ingest
-/// (and egress, Kafka, Kinesis) store a body only when [`payloads_stored`] is
-/// true, and that function's plan gate is [`is_paid`]: `free`, `aisg_free`,
-/// and unknown plans never store, whatever the switches say. Those plans
-/// report `false` here even when the column is on.
+/// This is the same decision ingest, egress, and the Kafka/Kinesis consumers
+/// make in [`payloads_stored`]: a body is stored only on a paid plan
+/// ([`is_paid`]) with the org master switch on and the per-contract override
+/// on. `free`, `aisg_free`, and unknown plans report `false` even when both
+/// columns are on. A paid plan whose org switch is still off (the column
+/// default) also reports `false` — reporting the per-contract column alone
+/// told the API the body would be stored while quarantine inserts redacted it.
 ///
-/// Paid plans (`growth`, `aisg_pro`, `enterprise`) report the stored
-/// per-contract override unchanged. The org master switch stays on
-/// `GET /settings/payload-storage`; folding it into this field would make a
-/// paid org's per-contract toggle disagree with the column it writes.
-///
-/// `plan == None` is self-host / dev (no org on the request). Ingest stores
-/// in that case, so the column is reported as stored.
-pub fn effective_store_event_payloads(plan: Option<&str>, stored: bool) -> bool {
+/// The columns are not rewritten. `plan == None` is self-host / dev (no org
+/// on the request). Ingest stores in that case regardless of the org switch,
+/// so the per-contract column is reported as stored.
+pub fn effective_store_event_payloads(plan: Option<&str>, org_switch: bool, stored: bool) -> bool {
     match plan {
         None => stored,
-        // `org_switch: true` so only the plan gate (and the stored per-contract
-        // override) changes the response. Same `payloads_stored` ingest uses.
-        Some(plan) => payloads_stored(plan, true, stored),
+        Some(plan) => payloads_stored(plan, org_switch, stored),
     }
 }
 
@@ -141,35 +137,56 @@ mod tests {
     }
 
     #[test]
-    fn effective_store_event_payloads_masks_unpaid_plans() {
-        // Free / AISchemaGate Free / unknown: column may be true, response is false.
+    fn effective_store_event_payloads_matches_ingest() {
+        // Free / AISchemaGate Free / unknown: columns may both be on, response is false.
         for plan in ["free", "aisg_free", "bogus", ""] {
             assert!(
-                !effective_store_event_payloads(Some(plan), true),
+                !effective_store_event_payloads(Some(plan), true, true),
                 "{plan} must report false"
             );
-            assert!(!effective_store_event_payloads(Some(plan), false), "{plan}");
-            // Same decision ingest makes when the org switch is on: the plan
-            // alone blocks storage.
+            assert!(
+                !effective_store_event_payloads(Some(plan), true, false),
+                "{plan}"
+            );
+            assert!(
+                !effective_store_event_payloads(Some(plan), false, true),
+                "{plan}"
+            );
             assert_eq!(
-                effective_store_event_payloads(Some(plan), true),
+                effective_store_event_payloads(Some(plan), true, true),
                 payloads_stored(plan, true, true),
                 "{plan}"
             );
         }
-        // Paid plans report the stored override unchanged (both products).
+        // Paid + org switch on reports the per-contract override.
+        // Paid + org switch off (column default) reports false — ingest redacts.
         for plan in ["growth", "aisg_pro", "enterprise"] {
-            assert!(effective_store_event_payloads(Some(plan), true), "{plan}");
-            assert!(!effective_store_event_payloads(Some(plan), false), "{plan}");
+            assert!(
+                effective_store_event_payloads(Some(plan), true, true),
+                "{plan} paid+on"
+            );
+            assert!(
+                !effective_store_event_payloads(Some(plan), true, false),
+                "{plan} paid + contract off"
+            );
+            assert!(
+                !effective_store_event_payloads(Some(plan), false, true),
+                "{plan} paid + org switch off must not claim storage"
+            );
             assert_eq!(
-                effective_store_event_payloads(Some(plan), true),
+                effective_store_event_payloads(Some(plan), true, true),
                 payloads_stored(plan, true, true),
                 "{plan}"
             );
+            assert_eq!(
+                effective_store_event_payloads(Some(plan), false, true),
+                payloads_stored(plan, false, true),
+                "{plan} org switch"
+            );
         }
-        // Self-host / no org: report the column. Ingest stores.
-        assert!(effective_store_event_payloads(None, true));
-        assert!(!effective_store_event_payloads(None, false));
+        // Self-host / no org: report the column. Ingest stores (org switch unused).
+        assert!(effective_store_event_payloads(None, false, true));
+        assert!(!effective_store_event_payloads(None, true, false));
     }
 
     #[test]
