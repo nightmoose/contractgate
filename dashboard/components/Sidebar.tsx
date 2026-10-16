@@ -26,6 +26,7 @@ const AISG_DOCS = { href: AISG_DOCS_URL, label: "Docs", icon: "📘", helpId: "n
 const PUBLIC_NAV = [
   { href: "/stream-demo",        label: "Stream Demo",  icon: "⚡", helpId: "nav.stream-demo" },
   { href: "/docs/kafka-connect", label: "Kafka Connect", icon: "🔗", helpId: "nav.kafka-connect" },
+  { href: "/docs/fivetran", label: "Fivetran", icon: "⟳", helpId: "nav.fivetran" },
   { href: "/docs/python-sdk",    label: "Python SDK",    icon: "🐍", helpId: "nav.python-sdk" },
   { href: "/pricing",            label: "Pricing",       icon: "💳", helpId: "nav.pricing" },
 ];

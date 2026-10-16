@@ -1232,6 +1232,12 @@ fn more_openapi_paths_tail(
         "get",
         crate::passed_events::openapi_operation(),
     );
+    merge_openapi_op(
+        paths,
+        "/v1/integrations/fivetran/connect",
+        "post",
+        crate::fivetran::openapi_operation(),
+    );
     crate::openapi_schemas::apply(paths);
 }
 
@@ -2118,6 +2124,20 @@ mod tests {
         let v: Value = serde_json::from_str(&build_openapi()).unwrap();
         assert!(v["paths"]["/v1/ingest/{contract_id}"]["post"].is_object());
         assert!(v["paths"]["/egress/{contract_id}"]["post"].is_object());
+    }
+
+    #[test]
+    fn openapi_lists_fivetran_connect_with_schemas() {
+        let v: Value = serde_json::from_str(&build_openapi()).unwrap();
+        let op = &v["paths"]["/v1/integrations/fivetran/connect"]["post"];
+        let request = &op["requestBody"]["content"]["application/json"]["schema"];
+        let ok = &op["responses"]["200"]["content"]["application/json"]["schema"];
+        assert_eq!(request["type"], "object");
+        assert_eq!(ok["type"], "object");
+        assert!(request["properties"].as_object().unwrap().len() >= 4);
+        assert!(ok["properties"].as_object().unwrap().len() >= 3);
+        let forbidden = op["responses"]["403"]["description"].as_str().unwrap();
+        assert!(forbidden.contains(&crate::plan::fivetran_connect_upgrade_message()));
     }
 
     #[test]

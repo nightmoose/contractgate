@@ -139,6 +139,15 @@ pub enum AppError {
     #[error("Forbidden: {0}")]
     Forbidden(String),
 
+    /// Fivetran rejected the API key or secret. 401. The message is fixed
+    /// and never includes the key, the secret, or the minted ContractGate key.
+    #[error("Fivetran rejected the API key")]
+    FivetranUnauthorized,
+
+    /// Fivetran returned another error. 502. The message is already redacted.
+    #[error("{0}")]
+    FivetranUpstream(String),
+
     /// The resource existed but is no longer valid to resume from.  410.
     /// Used when a passed-event cursor is older than plan retention; the
     /// message tells the caller to drop the cursor and re-sync.
@@ -240,6 +249,8 @@ impl IntoResponse for AppError {
             AppError::OdcsReviewRequired { .. } => (StatusCode::CONFLICT, self.to_string()),
             AppError::NotFound(_) => (StatusCode::NOT_FOUND, self.to_string()),
             AppError::Forbidden(_) => (StatusCode::FORBIDDEN, self.to_string()),
+            AppError::FivetranUnauthorized => (StatusCode::UNAUTHORIZED, self.to_string()),
+            AppError::FivetranUpstream(_) => (StatusCode::BAD_GATEWAY, self.to_string()),
             AppError::Gone(_) => (StatusCode::GONE, self.to_string()),
             AppError::Conflict(_) => (StatusCode::CONFLICT, self.to_string()),
             AppError::LinkToken(_) => (StatusCode::FORBIDDEN, self.to_string()),
