@@ -73,6 +73,16 @@ pub fn passed_events_upgrade_message() -> String {
     )
 }
 
+/// 403 body when a free plan calls `POST /v1/integrations/fivetran/connect`.
+///
+/// The plan names are [`PAID_PLANS`] (the same slice [`is_paid`] checks).
+pub fn fivetran_connect_upgrade_message() -> String {
+    format!(
+        "Connect Fivetran is a paid-plan feature; upgrade to {}",
+        paid_plans_phrase()
+    )
+}
+
 /// Audit, quarantine, and passed-event cursor retention, in days.
 ///
 /// Matches `log_retention_days` in migration 037. `growth` and `aisg_pro`

@@ -18,7 +18,6 @@
  */
 
 import * as yaml from "js-yaml";
-import { DEMO_MODE, DEMO_ORG_UUID } from "@/lib/demo";
 import { createClient } from "@/lib/supabase/client";
 
 const BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001";
@@ -1439,6 +1438,30 @@ export const getScorecardDrift = (source: string) =>
 /** Returns the URL for a CSV export of the scorecard — use as an <a href>. */
 export const getScorecardExportUrl = (source: string): string =>
   `${BASE}/scorecard/${encodeURIComponent(source)}/export?format=csv`;
+
+export interface FivetranConnectRequest {
+  fivetran_api_key: string;
+  fivetran_api_secret: string;
+  group_id: string;
+  contract_ids: string[];
+  table_names?: string;
+}
+
+export interface FivetranConnectResponse {
+  connection_id: string;
+  setup_url?: string | null;
+  status: string;
+}
+
+/**
+ * Deploy the ContractGate connector into the caller's Fivetran account.
+ * The Fivetran key and secret are sent once and are not stored.
+ */
+export const connectFivetran = (body: FivetranConnectRequest) =>
+  apiFetch<FivetranConnectResponse>("/v1/integrations/fivetran/connect", {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
 
 // ---------------------------------------------------------------------------
 // Helpers

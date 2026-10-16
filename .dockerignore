@@ -2,6 +2,11 @@
 # Rust
 **/target
 
+# vendor/fivetran-connector is include_str!'d by src/fivetran.rs. It must
+# stay in the gateway build context. Do not add a rule that excludes it.
+!vendor/fivetran-connector/
+!vendor/fivetran-connector/**
+
 # Environment
 **/.env
 **/.env.local

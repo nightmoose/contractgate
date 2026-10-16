@@ -51,6 +51,7 @@ mod collaboration;
 mod conformance;
 mod egress;
 mod error;
+mod fivetran;
 mod fork_filter;
 mod idempotency;
 mod infer;
@@ -1693,6 +1694,10 @@ fn build_router(state: Arc<AppState>) -> Router {
         // Caller identity: org id/name + plan (no emails).
         .route("/me", get(me::me_handler))
         .route("/v1/me", get(me::me_handler))
+        .route(
+            "/v1/integrations/fivetran/connect",
+            post(fivetran::connect_fivetran_handler),
+        )
         // Org-scoped top-level quarantine API (RFC-081) — backs the dashboard
         // Quarantine tab: list, replay-by-event-id, and per-event history.
         .route("/quarantine", get(quarantine::list_quarantine_handler))

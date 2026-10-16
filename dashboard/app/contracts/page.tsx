@@ -23,7 +23,7 @@ import useSWR, { mutate } from "swr";
 import AuthGate from "@/components/AuthGate";
 import MyPublications from "@/components/contracts/MyPublications";
 import PlanGate, { FreeLimitBanner } from "@/components/PlanGate";
-import { useOrg, planAtLeast } from "@/lib/org";
+import { useOrg, planAtLeast, isPaidPlan } from "@/lib/org";
 import { useBrand } from "@/components/BrandProvider";
 import { createClient } from "@/lib/supabase/client";
 import {
@@ -78,6 +78,7 @@ import {
 import clsx from "clsx";
 import { HelpTarget } from "@/components/help/HelpTarget";
 import { FirstRunLoop } from "@/components/help/FirstRun";
+import ConnectFivetran from "@/components/contracts/ConnectFivetran";
 
 // ---------------------------------------------------------------------------
 // Edit Contract Modal
@@ -1889,6 +1890,7 @@ function ContractsContent() {
   const [showImport, setShowImport] = useState(false);
   const [showImportRef, setShowImportRef] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [fivetranOpen, setFivetranOpen] = useState(false);
 
   // RFC-028: search + source filter
   const [query, setQuery] = useState("");
@@ -1948,7 +1950,15 @@ function ContractsContent() {
             Create and manage versioned semantic contracts
           </p>
         </div>
-        {(tab === "list" || tab === "consumed") && (
+        <div className="flex gap-2 flex-wrap">
+            <button
+              type="button"
+              onClick={() => setFivetranOpen((open) => !open)}
+              className="px-4 py-2 bg-[#1f2937] hover:bg-[#374151] text-slate-100 text-sm font-medium rounded-lg transition-colors"
+            >
+              Connect Fivetran
+            </button>
+            {(tab === "list" || tab === "consumed") && (
           <div className="flex gap-2 flex-wrap">
             {/* RFC-032: import from publication ref (consumer flow) */}
             <HelpTarget id="contracts.import-ref">
@@ -1979,9 +1989,18 @@ function ContractsContent() {
                 </HelpTarget>
               </>
             )}
-          </div>
-        )}
+            </div>
+          )}
+        </div>
       </div>
+
+      {fivetranOpen && (
+        <ConnectFivetran
+          paid={!!org && isPaidPlan(org.plan)}
+          contracts={(contracts ?? []).map((c) => ({ id: c.id, name: c.name }))}
+          onClose={() => setFivetranOpen(false)}
+        />
+      )}
 
       <div className="flex gap-1 mb-6 bg-[#111827] border border-[#1f2937] rounded-xl p-1 w-fit flex-wrap">
         {(aisg

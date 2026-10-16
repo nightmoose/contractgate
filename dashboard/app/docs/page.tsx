@@ -52,6 +52,18 @@ const DOCS = [
     pills: ["Java 11+", "Kafka Connect 2.8+", "DLQ support", "Apache 2.0"],
     cta: "Read the Kafka Connect docs →",
   },
+  {
+    external: false,
+    href: "/docs/fivetran",
+    icon: "⟳",
+    title: "Fivetran connector",
+    badge: "paid",
+    badgeColor: "text-amber-300 bg-amber-900/30 border-amber-700/40",
+    description:
+      "Deploy the ContractGate connector into your own Fivetran account from the Contracts page. Your Fivetran API key is used once and is not stored. Passed events land in one table per contract.",
+    pills: ["Connector SDK", "paid plans", "keys not stored", "paused on create"],
+    cta: "Read the Fivetran docs →",
+  },
 ];
 
 export default function DocsIndexPage() {
