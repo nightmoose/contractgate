@@ -178,3 +178,11 @@ replay attempt (passes and fails), newest first. An unknown or cross-org
   null`, and replay reports it as `redacted` (non-replayable) rather than
   re-validating an empty body. See
   [event-payload-storage-reference.md](event-payload-storage-reference.md).
+  A passing replay's audit body follows that same storage rule. A failed
+  replay's new quarantine row keeps the source body so it can be replayed
+  again.
+- The passing `audit_log` row is inserted before the replay response returns,
+  with `org_id` set to the caller's org. `GET /audit` lists
+  `WHERE org_id = $caller`, so that stamp is what makes the new passing row
+  appear. `forwarded_events` is inserted on a background task after the
+  response (a sink error must not fail the replay); the insert is not skipped.
