@@ -843,7 +843,10 @@ pub struct ContractSummary {
     pub multi_stable_resolution: MultiStableResolution,
     pub latest_stable_version: Option<String>,
     pub version_count: i64,
-    /// RFC-086: per-contract event-body storage override.
+    /// RFC-086: effective event-body storage. The column is the per-contract
+    /// override (default true). List responses report `false` when the org's
+    /// plan cannot store payloads (`free`, `aisg_free`, unknown) — the same
+    /// plan gate ingest uses. Paid plans report the stored override.
     pub store_event_payloads: bool,
 }
 

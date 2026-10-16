@@ -1,0 +1,473 @@
+apiVersion: v3.1.0
+kind: DataContract
+id: d1cf8d6b-97a8-454d-ae2b-13294527ba1d
+name: odcs_strict_probe_live
+version: 1.0.0
+status: active
+dataProduct: odcs_strict_probe_live
+description:
+  purpose: TEST - ODCS strict probe. Safe to delete.
+schema:
+- name: odcs_strict_probe_live
+  logicalType: object
+  description: 'ODCS strict-mode probe: every constraint kind DCG exports.'
+  properties:
+  - name: order_id
+    logicalType: string
+    logicalTypeOptions:
+      pattern: ^ORD-[0-9]{6}$
+    required: true
+    unique: true
+    quality:
+    - type: library
+      metric: duplicateValues
+      dimension: uniqueness
+      mustBe: 0
+      customProperties:
+      - property: x-cg-quality
+        value:
+          field: order_id
+          type: uniqueness
+          description: null
+          max_age_seconds: null
+          scope: null
+          threshold: null
+    customProperties:
+    - property: x-cg-pattern
+      value: ^ORD-[0-9]{6}$
+  - name: status
+    logicalType: string
+    required: true
+    quality:
+    - type: library
+      metric: invalidValues
+      dimension: conformity
+      mustBe: 0
+      arguments:
+        validValues:
+        - open
+        - shipped
+        - cancelled
+      customProperties:
+      - property: x-cg-quality
+        value:
+          field: status
+          type: validity
+          description: null
+          max_age_seconds: null
+          scope: null
+          threshold: null
+    customProperties:
+    - property: x-cg-enum
+      value:
+      - open
+      - shipped
+      - cancelled
+  - name: quantity
+    logicalType: integer
+    logicalTypeOptions:
+      minimum: 1.0
+      maximum: 999.0
+    required: true
+    quality: []
+    customProperties:
+    - property: x-cg-min
+      value: 1.0
+    - property: x-cg-max
+      value: 999.0
+  - name: amount
+    logicalType: number
+    logicalTypeOptions:
+      minimum: 0.0
+    required: false
+    quality:
+    - type: library
+      metric: missingValues
+      dimension: completeness
+      mustBeLessOrEqualTo: 5.0
+      unit: percent
+      customProperties:
+      - property: x-cg-quality
+        value:
+          field: amount
+          type: completeness
+          description: null
+          max_age_seconds: null
+          scope: null
+          threshold: 0.95
+    customProperties:
+    - property: x-cg-min
+      value: 0.0
+  - name: email
+    logicalType: string
+    logicalTypeOptions:
+      minLength: 5
+      maxLength: 120
+      format: email
+    required: false
+    classification: pii
+    quality: []
+    customProperties:
+    - property: x-cg-min-length
+      value: 5
+    - property: x-cg-max-length
+      value: 120
+    - property: x-cg-format
+      value: email
+    - property: x-cg-transform-kind
+      value: mask
+    - property: x-cg-transform-style
+      value: format_preserving
+  - name: order_date
+    logicalType: date
+    logicalTypeOptions:
+      format: yyyy-MM-dd
+    required: true
+    quality: []
+  - name: payload
+    required: false
+    quality: []
+    customProperties:
+    - property: x-cg-type
+      value: any
+  - name: customer.id
+    logicalType: string
+    logicalTypeOptions:
+      pattern: ^C[0-9]+$
+    required: true
+    quality: []
+    customProperties:
+    - property: x-cg-pattern
+      value: ^C[0-9]+$
+  - name: customer.address.country
+    logicalType: string
+    required: true
+    quality:
+    - type: library
+      metric: invalidValues
+      dimension: conformity
+      mustBe: 0
+      arguments:
+        validValues:
+        - US
+        - CA
+      customProperties:
+      - property: x-cg-derived
+        value: enum
+    customProperties:
+    - property: x-cg-enum
+      value:
+      - US
+      - CA
+  - name: lines
+    logicalType: array
+    required: false
+    quality: []
+    items:
+      name: line
+      logicalType: object
+      required: true
+      quality: []
+      properties:
+      - name: sku
+        logicalType: string
+        logicalTypeOptions:
+          minLength: 3
+        required: true
+        quality: []
+        customProperties:
+        - property: x-cg-min-length
+          value: 3
+      - name: qty
+        logicalType: integer
+        logicalTypeOptions:
+          minimum: 1.0
+        required: true
+        quality: []
+        customProperties:
+        - property: x-cg-min
+          value: 1.0
+  - name: created_at
+    logicalType: integer
+    required: true
+    quality:
+    - type: custom
+      engine: contractgate
+      dimension: timeliness
+      implementation: freshness maxAgeSeconds=3600
+      customProperties:
+      - property: x-cg-quality
+        value:
+          field: created_at
+          type: freshness
+          description: null
+          max_age_seconds: 3600
+          scope: null
+          threshold: null
+customProperties:
+- property: x-contractgate-version
+  value: '1.0'
+- property: x-contractgate-ontology
+  value:
+    version: 1.0.0
+    name: odcs_strict_probe
+    description: 'ODCS strict-mode probe: every constraint kind DCG exports.'
+    compliance_mode: true
+    ontology:
+      entities:
+      - name: order_id
+        type: string
+        required: true
+        pattern: ^ORD-[0-9]{6}$
+        enum: null
+        min: null
+        max: null
+        min_length: null
+        max_length: null
+        properties: null
+        items: null
+        transform: null
+      - name: status
+        type: string
+        required: true
+        pattern: null
+        enum:
+        - open
+        - shipped
+        - cancelled
+        min: null
+        max: null
+        min_length: null
+        max_length: null
+        properties: null
+        items: null
+        transform: null
+      - name: quantity
+        type: integer
+        required: true
+        pattern: null
+        enum: null
+        min: 1.0
+        max: 999.0
+        min_length: null
+        max_length: null
+        properties: null
+        items: null
+        transform: null
+      - name: amount
+        type: float
+        required: false
+        pattern: null
+        enum: null
+        min: 0.0
+        max: null
+        min_length: null
+        max_length: null
+        properties: null
+        items: null
+        transform: null
+      - name: email
+        type: string
+        required: false
+        pattern: null
+        enum: null
+        min: null
+        max: null
+        min_length: 5
+        max_length: 120
+        properties: null
+        items: null
+        transform:
+          kind: mask
+          style: format_preserving
+        format: email
+      - name: order_date
+        type: date
+        required: true
+        pattern: null
+        enum: null
+        min: null
+        max: null
+        min_length: null
+        max_length: null
+        properties: null
+        items: null
+        transform: null
+      - name: payload
+        type: any
+        required: false
+        pattern: null
+        enum: null
+        min: null
+        max: null
+        min_length: null
+        max_length: null
+        properties: null
+        items: null
+        transform: null
+      - name: customer
+        type: object
+        required: true
+        pattern: null
+        enum: null
+        min: null
+        max: null
+        min_length: null
+        max_length: null
+        properties:
+        - name: id
+          type: string
+          required: true
+          pattern: ^C[0-9]+$
+          enum: null
+          min: null
+          max: null
+          min_length: null
+          max_length: null
+          properties: null
+          items: null
+          transform: null
+        - name: address
+          type: object
+          required: false
+          pattern: null
+          enum: null
+          min: null
+          max: null
+          min_length: null
+          max_length: null
+          properties:
+          - name: country
+            type: string
+            required: true
+            pattern: null
+            enum:
+            - US
+            - CA
+            min: null
+            max: null
+            min_length: null
+            max_length: null
+            properties: null
+            items: null
+            transform: null
+          items: null
+          transform: null
+        items: null
+        transform: null
+      - name: lines
+        type: array
+        required: false
+        pattern: null
+        enum: null
+        min: null
+        max: null
+        min_length: null
+        max_length: null
+        properties: null
+        items:
+          name: line
+          type: object
+          required: true
+          pattern: null
+          enum: null
+          min: null
+          max: null
+          min_length: null
+          max_length: null
+          properties:
+          - name: sku
+            type: string
+            required: true
+            pattern: null
+            enum: null
+            min: null
+            max: null
+            min_length: 3
+            max_length: null
+            properties: null
+            items: null
+            transform: null
+          - name: qty
+            type: integer
+            required: true
+            pattern: null
+            enum: null
+            min: 1.0
+            max: null
+            min_length: null
+            max_length: null
+            properties: null
+            items: null
+            transform: null
+          items: null
+          transform: null
+        transform: null
+      - name: created_at
+        type: integer
+        required: true
+        pattern: null
+        enum: null
+        min: null
+        max: null
+        min_length: null
+        max_length: null
+        properties: null
+        items: null
+        transform: null
+    glossary:
+    - field: amount
+      description: Monetary amount in USD
+      constraints: must be non-negative
+      synonyms: null
+    metrics:
+    - name: total_revenue
+      field: null
+      type: null
+      formula: sum(amount) where status = 'shipped'
+      min: null
+      max: null
+    quality:
+    - field: order_id
+      type: uniqueness
+      description: null
+      max_age_seconds: null
+      scope: null
+      threshold: null
+    - field: amount
+      type: completeness
+      description: null
+      max_age_seconds: null
+      scope: null
+      threshold: 0.95
+    - field: status
+      type: validity
+      description: null
+      max_age_seconds: null
+      scope: null
+      threshold: null
+    - field: created_at
+      type: freshness
+      description: null
+      max_age_seconds: 3600
+      scope: null
+      threshold: null
+    egress_leakage_mode: off
+    envelope: null
+    null_as_absent: false
+- property: x-contractgate-glossary
+  value:
+  - field: amount
+    description: Monetary amount in USD
+    constraints: must be non-negative
+    synonyms: null
+- property: x-contractgate-metrics
+  value:
+  - name: total_revenue
+    field: null
+    type: null
+    formula: sum(amount) where status = 'shipped'
+    min: null
+    max: null
+- property: x-contractgate-compliance-mode
+  value: true

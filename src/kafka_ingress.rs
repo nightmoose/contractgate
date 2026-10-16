@@ -252,8 +252,8 @@ fn confluent_create_topics(contract_id: Uuid, partition_count: i32) -> anyhow::R
         ),
     ];
 
-    // 10 s — well under the router's 30 s TimeoutLayer so we return a clean
-    // error instead of racing to a 408 Request Timeout.
+    // 10 s — well under the router's 30 s request timeout so we return a clean
+    // error instead of racing to a 504.
     let opts = AdminOptions::new().request_timeout(Some(std::time::Duration::from_secs(10)));
 
     let results = Handle::current()

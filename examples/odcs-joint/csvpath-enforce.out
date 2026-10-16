@@ -1,0 +1,54 @@
+Exception ignored in: <_io.FileIO name='orders_sample.csv' mode='rb' closefd=True>
+Traceback (most recent call last):
+  File "/workspace/odcs-joint/enforce.py", line 11, in <module>
+    rows=list(csv.reader(open("orders_sample.csv")))[1:]
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+ResourceWarning: unclosed file <_io.TextIOWrapper name='orders_sample.csv' mode='r' encoding='UTF-8'>
+=== generated csvpath ===
+~
+  id: orders
+  odcs-contract-id: urn:example:contracts:orders
+  odcs-contract-version: 1.0.0
+  odcs-schema-object: orders
+  validation-mode: print, no-raise, no-fail, no-stop
+~
+$orders_sample.csv[*][
+    and.nocontrib( eq( count_lines(), total_lines() ), lte( subtract(total_lines(), 1), 0 ) ) -> fail()
+    first_line.nocontrib() -> skip()
+    line(
+        string.notnone.distinct(#order_id),
+        string.notnone(#customer_id),
+        datetime.notnone(#order_ts, "%Y-%m-%dT%H:%M:%SZ"),
+        string.notnone(#status),
+        string.notnone(#currency),
+        decimal.notnone(#amount, none(), 0),
+        integer.notnone(#quantity, 100, 1),
+        email.notnone(#email),
+        string.notnone(#ship_country, 2, 2),
+        decimal(#discount_pct, 100, 0),
+        string(#sales_channel)
+    )
+    regex(/^ORD-[0-9]{8}$/, #order_id)
+    regex(/^CUST-[0-9]{6}$/, #customer_id)
+    in(#status, "pending|paid|shipped|delivered|cancelled")
+    in(#currency, "USD|EUR|GBP")
+    regex(/^[^@\s]+@[^@\s]+\.[^@\s]+$/, #email)
+    regex(/^[A-Z]{2}$/, #ship_country)
+    or( empty(#sales_channel), in(#sales_channel, "web|mobile|store") )
+]
+
+=== skipped/report === {'skipped': []}
+2026-10-15 16h11m02s-853999:orders_sample.csv:23::orders:line[2].decimal[5]:  Value is out of bounds
+2026-10-15 16h11m02s-854886:orders_sample.csv:23::orders:line[2]:  Invalid value at line[2].decimal[5]: False
+2026-10-15 16h11m02s-855195:orders_sample.csv:23::orders:line[2]:  1 errors in line()
+2026-10-15 16h11m02s-856328:orders_sample.csv:24::orders:line[2].integer[6]:  Value is out of bounds
+2026-10-15 16h11m02s-856926:orders_sample.csv:24::orders:line[2]:  Invalid value at line[2].integer[6]: False
+2026-10-15 16h11m02s-857174:orders_sample.csv:24::orders:line[2]:  1 errors in line()
+2026-10-15 16h11m02s-858530:orders_sample.csv:25::orders:line[2]:  Invalid value at line[2].email[7]: False
+2026-10-15 16h11m02s-858753:orders_sample.csv:25::orders:line[2]:  1 errors in line()
+matched (valid) rows: 20 / 25
+REJECTED file line 22 ORD-123 ['ORD-123', 'CUST-100500', '2026-10-10T10:00:00Z', 'paid', 'USD', '19.99', '1', 'bad1@example.com', 'US', '', 'web']
+REJECTED file line 23 ORD-00000022 ['ORD-00000022', 'CUST-100501', '2026-10-10T10:05:00Z', 'refunded', 'USD', '19.99', '1', 'bad2@example.com', 'US', '', 'web']
+REJECTED file line 24 ORD-00000023 ['ORD-00000023', 'CUST-100502', '2026-10-10T10:10:00Z', 'paid', 'USD', '-5.00', '1', 'bad3@example.com', 'US', '', 'web']
+REJECTED file line 25 ORD-00000024 ['ORD-00000024', 'CUST-100503', '2026-10-10T10:15:00Z', 'paid', 'USD', '19.99', '500', 'bad4@example.com', 'US', '', 'web']
+REJECTED file line 26 ORD-00000025 ['ORD-00000025', 'CUST-100504', '2026-10-10T10:20:00Z', 'paid', 'USD', '19.99', '1', 'not-an-email', 'US', '', 'web']
