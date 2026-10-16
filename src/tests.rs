@@ -3917,6 +3917,115 @@ metrics: []
 
         cleanup(&pool, cid, org).await;
     }
+
+    /// Paid + org switch on must persist the quarantine body. Free, and paid
+    /// with the switch off, stay redacted. Covers aisg_pro (the plan QA hit).
+    #[tokio::test]
+    #[ignore = "requires DATABASE_URL and a live Postgres migrated through 036"]
+    async fn quarantine_write_respects_paid_payload_setting() {
+        let pool = connect().await;
+        let org = Uuid::new_v4();
+        seed_org(&pool, org, "rfc086-write").await;
+        let (identity, _) = storage::create_contract(
+            &pool,
+            "rfc086_write",
+            Some("t"),
+            YAML,
+            Default::default(),
+            Some(org),
+        )
+        .await
+        .expect("create contract");
+        let cid = identity.id;
+        assert!(
+            identity.store_event_payloads,
+            "new contract column defaults to storing (inherit org switch)"
+        );
+
+        let state = crate::AppState::new(pool.clone(), true, None, None);
+
+        async fn decide(state: &crate::AppState, org: Uuid, contract_switch: bool) -> bool {
+            crate::ingest::resolve_store_payloads(state, Some(org), contract_switch).await
+        }
+
+        async fn write_and_read(pool: &sqlx::PgPool, cid: Uuid, store: bool) -> (bool, bool) {
+            storage::quarantine_events_batch(pool, &[quar_insert(cid)], store)
+                .await
+                .unwrap();
+            let (redacted, payload_null): (bool, bool) = sqlx::query_as(
+                "SELECT payload_redacted, payload IS NULL FROM quarantine_events \
+                 WHERE contract_id = $1 ORDER BY created_at DESC LIMIT 1",
+            )
+            .bind(cid)
+            .fetch_one(pool)
+            .await
+            .unwrap();
+            (redacted, payload_null)
+        }
+
+        // Free + org switch on + contract on → redacted. The list flag agrees.
+        storage::set_org_store_payloads(&pool, org, true)
+            .await
+            .unwrap();
+        let store = decide(&state, org, identity.store_event_payloads).await;
+        assert!(!store, "free must not store");
+        assert!(
+            !crate::plan::effective_store_event_payloads(Some("free"), true, true),
+            "free reports store_event_payloads false"
+        );
+        let (redacted, payload_null) = write_and_read(&pool, cid, store).await;
+        assert!(redacted && payload_null, "free quarantine row is redacted");
+
+        // Paid (aisg_pro) + on → store body, payload_redacted false.
+        sqlx::query("UPDATE orgs SET plan = 'aisg_pro', store_event_payloads = true WHERE id = $1")
+            .bind(org)
+            .execute(&pool)
+            .await
+            .unwrap();
+        let (plan, enabled) = storage::get_org_payload_policy(&pool, org)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(plan, "aisg_pro");
+        assert!(enabled, "settings endpoint reads the org switch as true");
+        let reloaded = storage::get_contract_identity(&pool, cid, Some(org))
+            .await
+            .unwrap();
+        assert!(reloaded.store_event_payloads);
+        let store = decide(&state, org, reloaded.store_event_payloads).await;
+        assert!(store, "aisg_pro + enabled must store");
+        assert!(
+            crate::plan::effective_store_event_payloads(Some("aisg_pro"), true, true),
+            "paid+on reports store_event_payloads true"
+        );
+        let (redacted, payload_null) = write_and_read(&pool, cid, store).await;
+        assert!(
+            !redacted && !payload_null,
+            "paid+on quarantine row keeps the body"
+        );
+
+        // Paid + off → redacted.
+        storage::set_org_store_payloads(&pool, org, false)
+            .await
+            .unwrap();
+        let store = decide(&state, org, reloaded.store_event_payloads).await;
+        assert!(!store, "paid + org switch off must redact");
+        assert!(
+            !crate::plan::effective_store_event_payloads(
+                Some("aisg_pro"),
+                false,
+                reloaded.store_event_payloads
+            ),
+            "paid+off reports store_event_payloads false"
+        );
+        let (redacted, payload_null) = write_and_read(&pool, cid, store).await;
+        assert!(
+            redacted && payload_null,
+            "paid+off quarantine row is redacted"
+        );
+
+        cleanup(&pool, cid, org).await;
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -5347,10 +5456,11 @@ metrics: []
             .unwrap();
     }
 
-    /// `GET /contracts` reports `store_event_payloads: false` on Free and
-    /// AISchemaGate Free even though the column defaults to true. Paid plans
-    /// (`growth`, `aisg_pro`, `enterprise`) keep the stored override. The
-    /// column itself is not rewritten.
+    /// `GET /contracts` reports `store_event_payloads` with the same decision
+    /// ingest uses. Free stays false. A paid plan with the org master switch
+    /// still off (column default) reports false — that used to report true
+    /// while new quarantine rows were redacted. Paid + org switch on reports
+    /// the per-contract override. Columns are not rewritten.
     #[tokio::test]
     #[ignore = "requires DATABASE_URL and a live Postgres migrated through 036"]
     async fn contract_list_effective_store_event_payloads() {
@@ -5409,9 +5519,24 @@ metrics: []
             "aisg_free must report store_event_payloads false"
         );
 
-        // Paid plans report the stored override (still true). Unchanged.
+        // Paid + org switch still off (default) must not claim storage.
+        // Ingest redacts in this state; the list used to report true.
         for plan in ["growth", "aisg_pro", "enterprise"] {
-            sqlx::query("UPDATE orgs SET plan = $2 WHERE id = $1")
+            sqlx::query("UPDATE orgs SET plan = $2, store_event_payloads = false WHERE id = $1")
+                .bind(org)
+                .bind(plan)
+                .execute(&pool)
+                .await
+                .unwrap();
+            assert!(
+                !listed(&http, cid).await,
+                "{plan} with the org switch off must report false"
+            );
+        }
+
+        // Paid + org switch on reports the stored per-contract override (true).
+        for plan in ["growth", "aisg_pro", "enterprise"] {
+            sqlx::query("UPDATE orgs SET plan = $2, store_event_payloads = true WHERE id = $1")
                 .bind(org)
                 .bind(plan)
                 .execute(&pool)
@@ -5419,17 +5544,17 @@ metrics: []
                 .unwrap();
             assert!(
                 listed(&http, cid).await,
-                "{plan} with the column on must still report true"
+                "{plan} with the org switch and column on must report true"
             );
         }
 
-        // Paid + stored override off stays off.
+        // Paid + stored override off stays off, even with the org switch on.
         sqlx::query("UPDATE contracts SET store_event_payloads = false WHERE id = $1")
             .bind(cid)
             .execute(&pool)
             .await
             .unwrap();
-        sqlx::query("UPDATE orgs SET plan = 'growth' WHERE id = $1")
+        sqlx::query("UPDATE orgs SET plan = 'growth', store_event_payloads = true WHERE id = $1")
             .bind(org)
             .execute(&pool)
             .await

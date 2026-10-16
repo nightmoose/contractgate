@@ -161,9 +161,9 @@ pub fn sample_topic(
             detected_format = detect_wire_format(payload);
         }
 
-        match decode_payload(payload, &detected_format, config, &mut sr_unavailable) {
-            Some(v) => records.push(v),
-            None => {} // decode failure — skip
+        // Decode failure — skip the record.
+        if let Some(v) = decode_payload(payload, &detected_format, config, &mut sr_unavailable) {
+            records.push(v);
         }
     }
 
