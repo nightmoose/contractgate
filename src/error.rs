@@ -139,6 +139,12 @@ pub enum AppError {
     #[error("Forbidden: {0}")]
     Forbidden(String),
 
+    /// The resource existed but is no longer valid to resume from.  410.
+    /// Used when a passed-event cursor is older than plan retention; the
+    /// message tells the caller to drop the cursor and re-sync.
+    #[error("{0}")]
+    Gone(String),
+
     /// Link/org-visibility publication fetched or imported without the right
     /// `link_token` (S-P2). 403, distinct from the API-key 401.
     #[error("{0}")]
@@ -234,6 +240,7 @@ impl IntoResponse for AppError {
             AppError::OdcsReviewRequired { .. } => (StatusCode::CONFLICT, self.to_string()),
             AppError::NotFound(_) => (StatusCode::NOT_FOUND, self.to_string()),
             AppError::Forbidden(_) => (StatusCode::FORBIDDEN, self.to_string()),
+            AppError::Gone(_) => (StatusCode::GONE, self.to_string()),
             AppError::Conflict(_) => (StatusCode::CONFLICT, self.to_string()),
             AppError::LinkToken(_) => (StatusCode::FORBIDDEN, self.to_string()),
 

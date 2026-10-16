@@ -805,6 +805,55 @@ pub async fn forward_events_batch(
     Ok(())
 }
 
+/// One `forwarded_events` row for `GET /v1/contracts/{id}/passed`.
+///
+/// `payload` is JSON `null` when the body was not stored (RFC-086). The
+/// column is `NOT NULL`; the null is a JSON value, not SQL NULL.
+#[derive(Debug, Clone, sqlx::FromRow)]
+pub struct ForwardedEventRow {
+    pub id: Uuid,
+    pub contract_version: Option<String>,
+    pub created_at: chrono::DateTime<chrono::Utc>,
+    pub payload: serde_json::Value,
+}
+
+/// Keyset page of passed events for one contract.
+///
+/// Rows are ordered by `(created_at, id)` ascending. `$2, $3` is the
+/// exclusive lower bound (Unix epoch + nil UUID when the caller sent no
+/// cursor). Rows newer than `NOW() - 5 seconds` are held back so an insert
+/// that commits after this read cannot be skipped. `fetch_n` is a bound
+/// parameter (page size + 1) and is never used as an allocation size.
+///
+/// The index for this scan is migration 043
+/// `(contract_id, created_at, id)`.
+pub const LIST_FORWARDED_EVENTS_PAGE_SQL: &str = r#"
+SELECT id, contract_version, created_at, payload
+FROM forwarded_events
+WHERE contract_id = $1
+  AND created_at <= NOW() - INTERVAL '5 seconds'
+  AND (created_at, id) > ($2, $3)
+ORDER BY created_at ASC, id ASC
+LIMIT $4
+"#;
+
+pub async fn list_forwarded_events_page(
+    pool: &PgPool,
+    contract_id: Uuid,
+    after_created_at: chrono::DateTime<chrono::Utc>,
+    after_id: Uuid,
+    fetch_n: i64,
+) -> AppResult<Vec<ForwardedEventRow>> {
+    sqlx::query_as(LIST_FORWARDED_EVENTS_PAGE_SQL)
+        .bind(contract_id)
+        .bind(after_created_at)
+        .bind(after_id)
+        .bind(fetch_n)
+        .fetch_all(pool)
+        .await
+        .db_op("list_forwarded_events_page")
+}
+
 #[cfg(test)]
 mod forwarded_payload_tests {
     use super::persisted_forward_payload;

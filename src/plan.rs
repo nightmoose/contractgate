@@ -63,6 +63,29 @@ pub fn payload_storage_upgrade_message() -> String {
     )
 }
 
+/// 403 body when a free plan calls `GET /v1/contracts/{id}/passed`.
+///
+/// The plan names are [`PAID_PLANS`] (the same slice [`is_paid`] checks).
+pub fn passed_events_upgrade_message() -> String {
+    format!(
+        "passed-event export is a paid-plan feature; upgrade to {}",
+        paid_plans_phrase()
+    )
+}
+
+/// Audit, quarantine, and passed-event cursor retention, in days.
+///
+/// Matches `log_retention_days` in migration 037. `growth` and `aisg_pro`
+/// are Pro on the two products (90). `enterprise` is 365. Every other plan,
+/// including `free` and `aisg_free`, is 7.
+pub fn log_retention_days(plan: &str) -> i32 {
+    match plan {
+        "growth" | "aisg_pro" => 90,
+        "enterprise" => 365,
+        _ => 7,
+    }
+}
+
 fn english_or(items: &[&str]) -> String {
     match items.split_last() {
         None => String::new(),
@@ -282,5 +305,29 @@ mod tests {
                 "{msg} must not name {plan} separately from the paid-plan list"
             );
         }
+    }
+
+    #[test]
+    fn passed_events_upgrade_message_names_exactly_the_paid_plans() {
+        let msg = passed_events_upgrade_message();
+        assert!(msg.starts_with("passed-event export is a paid-plan feature; upgrade to "));
+        let named: Vec<&str> = msg
+            .rsplit_once("upgrade to ")
+            .unwrap()
+            .1
+            .split(|c: char| !c.is_ascii_alphanumeric() && c != '_')
+            .filter(|w| !w.is_empty() && *w != "or")
+            .collect();
+        assert_eq!(named, PAID_PLANS);
+    }
+
+    #[test]
+    fn log_retention_matches_migration_037() {
+        assert_eq!(log_retention_days("free"), 7);
+        assert_eq!(log_retention_days("aisg_free"), 7);
+        assert_eq!(log_retention_days("growth"), 90);
+        assert_eq!(log_retention_days("aisg_pro"), 90);
+        assert_eq!(log_retention_days("enterprise"), 365);
+        assert_eq!(log_retention_days("bogus"), 7);
     }
 }
