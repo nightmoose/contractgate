@@ -78,7 +78,11 @@ Request body:
 
 - `event_ids` (required): 1–1000 quarantine row ids. May span multiple contracts;
   they are grouped by contract and each group is replayed against its own
-  resolved target version.
+  resolved target version. An empty list is **400**
+  `Invalid request: replay request must include at least one id`. More than
+  1000 ids is **400**
+  `Invalid request: replay request exceeds cap of 1000 ids (got N)`.
+  `POST /contracts/{id}/quarantine/replay` uses the same two messages for `ids`.
 - `version` (optional): pin a target version. If omitted, each contract's latest
   stable is used. Draft targets are allowed.
 - `contract_id` (optional): assertion — if present, every `event_id` must belong
@@ -110,6 +114,38 @@ not a validation failure. It is the same classification the per-contract route
 reports as `"outcome": "redacted"`. Both routes use one helper
 (`replay_item_view`) over the shared replay engine. DataContractGate and
 AISchemaGate share these routes.
+
+`contract_id` set to a contract that does not own every id is **400**
+`Invalid request: event_ids span multiple contracts or a contract other than contract_id`.
+
+### `POST /contracts/{id}/quarantine/replay`
+
+Same engine. Body is `{ids, target_version?}`. **200** is one object, not the
+org-wide `{replayed, outcomes}` shape:
+
+```json
+{
+  "total": 1,
+  "replayed": 0,
+  "still_quarantined": 0,
+  "already_replayed": 0,
+  "not_found": 0,
+  "wrong_contract": 0,
+  "purged": 0,
+  "redacted": 1,
+  "target_version": "1.0.0",
+  "target_version_source": "default_stable",
+  "target_is_draft": false,
+  "results": [{ "quarantine_id": "uuid", "outcome": "redacted" }]
+}
+```
+
+`results[].outcome` is `replayed`, `still_quarantined`, `already_replayed`,
+`not_found`, `wrong_contract`, `purged`, or `redacted`. `replayed` adds
+`replayed_into_audit_id` and `contract_version_matched`. `still_quarantined`
+adds `new_quarantine_id`, `contract_version_attempted`, `violation_count`, and
+`violations`. The id-list **400** messages are the same as the org-wide route.
+**404** when the contract or an explicit target version does not exist.
 
 ---
 
