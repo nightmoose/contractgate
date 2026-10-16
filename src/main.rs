@@ -70,6 +70,7 @@ mod me;
 mod metering;
 pub mod observability;
 mod odcs;
+mod passed_events;
 mod plan;
 mod public_catalog;
 mod publication;
@@ -1878,6 +1879,10 @@ fn build_router(state: Arc<AppState>) -> Router {
         .route(
             "/v1/contracts/{contract_id}/version",
             get(v1_contract_version_handler),
+        )
+        .route(
+            "/v1/contracts/{id}/passed",
+            get(passed_events::list_passed_events),
         )
         .layer(tower_http::limit::RequestBodyLimitLayer::new(
             10 * 1024 * 1024, // 10 MB — RFC-021

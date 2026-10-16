@@ -26,7 +26,9 @@ written only under the policy above. When storage is off, `payload` is JSON
 change). Existing rows are not rewritten. Kafka and Kinesis publish the body
 from memory and do not write this table. A reader must treat JSON `null` as
 "body not stored"; a passing event is a JSON object, so `null` is not a
-captured body.
+captured body. Paid plans can pull these rows with
+[`GET /v1/contracts/{id}/passed`](passed-events-reference.md). That response
+uses the same `null` payload.
 
 ## Policy
 
@@ -111,6 +113,7 @@ UPDATE orgs SET plan = 'growth' WHERE id = 'your-org-id';
 
 ## Related
 
+- [Passed events](passed-events-reference.md) — cursor page of forwarded (passing) events.
 - [RFC-086](rfcs/086-gated-event-payload-storage.md) — design + implementation notes.
 - [Quarantine + Replay reference](quarantine-replay-reference.md) — replay
   requires a stored body; redacted rows are non-replayable.

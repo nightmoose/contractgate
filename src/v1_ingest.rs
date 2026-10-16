@@ -1226,6 +1226,12 @@ fn more_openapi_paths_tail(
             "security": auth.clone()
         }),
     );
+    merge_openapi_op(
+        paths,
+        "/v1/contracts/{id}/passed",
+        "get",
+        crate::passed_events::openapi_operation(),
+    );
     crate::openapi_schemas::apply(paths);
 }
 
@@ -2044,6 +2050,41 @@ mod tests {
         assert_eq!(hdrs[0].0, "X-RateLimit-Limit");
         assert_eq!(hdrs[1].0, "X-RateLimit-Remaining");
         assert_eq!(hdrs[2].0, "X-RateLimit-Reset");
+    }
+
+    #[test]
+    fn openapi_passed_events_schema() {
+        let v: Value = serde_json::from_str(&build_openapi()).unwrap();
+        let op = &v["paths"]["/v1/contracts/{id}/passed"]["get"];
+        let schema = &op["responses"]["200"]["content"]["application/json"]["schema"];
+        for field in ["events", "next_cursor", "has_more"] {
+            assert!(
+                schema["required"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .any(|v| v == field),
+                "missing {field}"
+            );
+        }
+        let item = &schema["properties"]["events"]["items"];
+        assert_eq!(
+            item["properties"]["payload"]["type"],
+            json!(["object", "null"])
+        );
+        let forbidden = op["responses"]["403"]["description"].as_str().unwrap();
+        assert!(forbidden.contains(&crate::plan::passed_events_upgrade_message()));
+        for plan in crate::plan::PAID_PLANS {
+            assert!(forbidden.contains(plan), "{forbidden}");
+        }
+        assert!(op["responses"]["400"]["description"]
+            .as_str()
+            .unwrap()
+            .contains("re-sync"));
+        assert!(op["responses"]["410"]["description"]
+            .as_str()
+            .unwrap()
+            .contains("re-sync"));
     }
 
     #[test]
