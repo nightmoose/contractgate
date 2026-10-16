@@ -77,6 +77,7 @@ mod quarantine;
 #[cfg(test)]
 mod rag_contract_tests;
 use contractgate::rate_limit;
+mod openapi_schemas;
 mod replay;
 mod report;
 mod request_limits;

@@ -501,6 +501,7 @@ fn build_openapi() -> String {
     if let Some(paths) = doc["paths"].as_object_mut() {
         extra_openapi_paths(paths);
     }
+    crate::openapi_schemas::expand_empty_schemas(&mut doc);
     serde_json::to_string_pretty(&doc).unwrap_or_else(|_| "{}".to_string())
 }
 
@@ -1225,6 +1226,7 @@ fn more_openapi_paths_tail(
             "security": auth.clone()
         }),
     );
+    crate::openapi_schemas::apply(paths);
 }
 
 // ---------------------------------------------------------------------------
@@ -2233,6 +2235,229 @@ mod tests {
             let desc = get["description"].as_str().unwrap_or("");
             assert!(desc.contains(plan), "{desc} missing {plan}");
         }
+    }
+
+    /// QA gaps: replay 200/400, contract-list fields, `/me`, egress 207.
+    #[test]
+    fn openapi_replay_me_egress_and_contract_list_schemas() {
+        let v: Value = serde_json::from_str(&build_openapi()).unwrap();
+        let cap = "replay request exceeds cap of 1000 ids (got N)";
+        let per = &v["paths"]["/contracts/{id}/quarantine/replay"]["post"];
+        let per_schema = &per["responses"]["200"]["content"]["application/json"]["schema"];
+        for field in [
+            "total",
+            "replayed",
+            "still_quarantined",
+            "already_replayed",
+            "not_found",
+            "wrong_contract",
+            "purged",
+            "redacted",
+            "target_version",
+            "target_version_source",
+            "target_is_draft",
+            "results",
+        ] {
+            assert!(
+                per_schema["required"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .any(|v| v == field),
+                "per-contract replay missing required {field}"
+            );
+        }
+        assert_eq!(per_schema["properties"]["redacted"]["type"], "integer");
+        let outcome = &per_schema["properties"]["results"]["items"]["properties"]["outcome"];
+        assert!(outcome["enum"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|v| v == "redacted"));
+        assert!(per["responses"]["400"]["description"]
+            .as_str()
+            .unwrap()
+            .contains(cap));
+        let org = &v["paths"]["/quarantine/replay"]["post"];
+        assert!(
+            org["responses"]["200"]["content"]["application/json"]["schema"]["properties"]
+                ["outcomes"]
+                .is_object()
+        );
+        assert!(org["responses"]["400"]["description"]
+            .as_str()
+            .unwrap()
+            .contains(cap));
+        assert!(
+            org["responses"]["400"]["content"]["application/json"]["schema"]["properties"]["error"]
+                .is_object()
+        );
+
+        let item = &v["paths"]["/contracts"]["get"]["responses"]["200"]["content"]
+            ["application/json"]["schema"]["items"];
+        assert_eq!(
+            item["properties"]["multi_stable_resolution"]["type"],
+            "string"
+        );
+        assert!(item["properties"]["multi_stable_resolution"]["type"]
+            .as_array()
+            .is_none());
+        assert_eq!(
+            item["properties"]["multi_stable_resolution"]["enum"],
+            json!(["strict", "fallback"])
+        );
+        assert_eq!(
+            item["properties"]["latest_stable_version"]["type"],
+            json!(["string", "null"])
+        );
+        assert_eq!(item["properties"]["version_count"]["type"], "integer");
+        for field in [
+            "multi_stable_resolution",
+            "latest_stable_version",
+            "version_count",
+        ] {
+            assert!(
+                item["required"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .any(|v| v == field),
+                "contract list missing required {field}"
+            );
+        }
+
+        for path in ["/me", "/v1/me"] {
+            let me = &v["paths"][path]["get"]["responses"]["200"]["content"]["application/json"]
+                ["schema"];
+            for field in [
+                "org_id",
+                "org_name",
+                "plan",
+                "plan_display",
+                "auth",
+                "api_key_id",
+                "monthly_event_limit",
+                "rate_limit_rps",
+                "rate_limit_burst",
+            ] {
+                assert!(
+                    me["required"]
+                        .as_array()
+                        .unwrap()
+                        .iter()
+                        .any(|v| v == field),
+                    "{path} missing {field}"
+                );
+            }
+            assert_eq!(
+                me["properties"]["org_name"]["type"],
+                json!(["string", "null"])
+            );
+            assert_eq!(me["properties"]["plan"]["type"], "string");
+            assert_eq!(
+                me["properties"]["api_key_id"]["type"],
+                json!(["string", "null"])
+            );
+            assert_eq!(
+                me["properties"]["monthly_event_limit"]["type"],
+                json!(["integer", "null"])
+            );
+            assert_eq!(
+                me["properties"]["auth"]["enum"],
+                json!(["api_key", "session"])
+            );
+        }
+
+        let egress = &v["paths"]["/egress/{contract_id}"]["post"]["responses"];
+        let eg207 = &egress["207"]["content"]["application/json"]["schema"];
+        let eg200 = &egress["200"]["content"]["application/json"]["schema"];
+        assert_eq!(eg200, eg207);
+        for field in [
+            "total",
+            "passed",
+            "failed",
+            "dry_run",
+            "disposition",
+            "egress_leakage_mode",
+            "resolved_version",
+            "payload",
+            "outcomes",
+        ] {
+            assert!(
+                eg207["required"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .any(|v| v == field),
+                "egress 207 missing {field}"
+            );
+        }
+        assert_eq!(
+            eg207["properties"]["outcomes"]["items"]["properties"]["action"]["enum"],
+            json!(["included", "blocked", "rejected", "tagged"])
+        );
+    }
+
+    /// Every documented 2xx body has a schema. 204 has no body.
+    #[test]
+    fn openapi_success_responses_have_nonempty_schemas() {
+        let v: Value = serde_json::from_str(&build_openapi()).unwrap();
+        let mut empty = Vec::new();
+        for (path, item) in v["paths"].as_object().expect("paths") {
+            for (method, op) in item.as_object().expect("path item") {
+                if !matches!(method.as_str(), "get" | "post" | "put" | "patch" | "delete") {
+                    continue;
+                }
+                let Some(responses) = op.get("responses").and_then(Value::as_object) else {
+                    continue;
+                };
+                for (status, resp) in responses {
+                    let Ok(code) = status.parse::<u16>() else {
+                        continue;
+                    };
+                    if !(200..300).contains(&code) || code == 204 {
+                        continue;
+                    }
+                    if !response_schema_nonempty(resp) {
+                        empty.push(format!("{method} {path} {status}"));
+                    }
+                }
+            }
+        }
+        assert!(
+            empty.is_empty(),
+            "2xx responses with an empty schema:\n{}",
+            empty.join("\n")
+        );
+    }
+
+    fn response_schema_nonempty(resp: &Value) -> bool {
+        let Some(content) = resp.get("content").and_then(Value::as_object) else {
+            return false;
+        };
+        !content.is_empty()
+            && content
+                .values()
+                .all(|media| schema_has_shape(media.get("schema").unwrap_or(&Value::Null)))
+    }
+
+    fn schema_has_shape(schema: &Value) -> bool {
+        let Some(obj) = schema.as_object() else {
+            return false;
+        };
+        [
+            "type",
+            "properties",
+            "oneOf",
+            "anyOf",
+            "allOf",
+            "$ref",
+            "enum",
+            "const",
+            "items",
+        ]
+        .iter()
+        .any(|key| obj.contains_key(*key))
     }
 
     fn router_operations(
