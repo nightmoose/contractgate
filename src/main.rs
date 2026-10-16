@@ -302,7 +302,11 @@ fn compile_version(v: &ContractVersion, salt: Vec<u8>) -> Result<CompiledContrac
 // ---------------------------------------------------------------------------
 
 /// Merge an identity row with aggregated version info into a response.
-async fn identity_to_response(db: &PgPool, id: ContractIdentity) -> AppResult<ContractResponse> {
+async fn identity_to_response(
+    db: &PgPool,
+    id: ContractIdentity,
+    store_event_payloads: bool,
+) -> AppResult<ContractResponse> {
     // identity was already org-verified before this helper is called — pass None.
     let summaries = storage::list_versions(db, id.id, None).await?;
     let version_count = summaries.len() as i64;
@@ -318,7 +322,33 @@ async fn identity_to_response(db: &PgPool, id: ContractIdentity) -> AppResult<Co
         updated_at: id.updated_at,
         version_count,
         latest_stable_version,
+        store_event_payloads,
     })
+}
+
+/// `(plan, org master switch)` for an org, or `None` when the request has no
+/// org (self-host / dev). A present org with no row fail-closes to an empty
+/// plan and the switch off — the same lookup [`list_contracts_handler`] and
+/// `GET /contracts/{id}` share before [`plan::effective_store_event_payloads`].
+async fn payload_decision(db: &PgPool, org_id: Option<Uuid>) -> AppResult<Option<(String, bool)>> {
+    let Some(oid) = org_id else {
+        return Ok(None);
+    };
+    Ok(Some(
+        storage::get_org_payload_policy(db, oid)
+            .await?
+            .unwrap_or_else(|| (String::new(), false)),
+    ))
+}
+
+/// Apply [`plan::effective_store_event_payloads`] to one stored override.
+fn effective_payload_flag(decision: Option<&(String, bool)>, stored: bool) -> bool {
+    match decision {
+        None => plan::effective_store_event_payloads(None, false, stored),
+        Some((plan, org_switch)) => {
+            plan::effective_store_event_payloads(Some(plan), *org_switch, stored)
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -432,7 +462,14 @@ async fn create_contract_handler(
     )
     .await?;
 
-    let resp = identity_to_response(&state.db, identity).await?;
+    let stored = identity.store_event_payloads;
+    let decision = payload_decision(&state.db, org_id).await?;
+    let resp = identity_to_response(
+        &state.db,
+        identity,
+        effective_payload_flag(decision.as_ref(), stored),
+    )
+    .await?;
     Ok((StatusCode::CREATED, Json(resp)))
 }
 
@@ -446,7 +483,19 @@ async fn get_contract_handler(
     }
     let scope = read_scope(&state, id, org_id).await?;
     let identity = storage::get_contract_identity(&state.db, id, scope).await?;
-    Ok(Json(identity_to_response(&state.db, identity).await?))
+    // Same effective flag as the list: the owning org's plan, its master
+    // switch, and this contract's override. `scope` is that owning org
+    // (the caller when they own it, the owner when they hold a grant).
+    let stored = identity.store_event_payloads;
+    let decision = payload_decision(&state.db, scope).await?;
+    Ok(Json(
+        identity_to_response(
+            &state.db,
+            identity,
+            effective_payload_flag(decision.as_ref(), stored),
+        )
+        .await?,
+    ))
 }
 
 /// Org scope for a by-id request needing `min_role` (C3 reads, N2 writes).
@@ -512,19 +561,11 @@ async fn list_contracts_handler(
     // reports false — the column defaults to true and must not claim a body
     // ingest will redact. No org on the request is self-host: leave the
     // column. A present org with no row fail-closes to false.
-    if let Some(oid) = org_id {
-        // Same (plan, org switch) ingest reads. A missing org row fail-closes
-        // to false, matching `resolve_store_payloads`.
-        let (plan, org_switch) = storage::get_org_payload_policy(&state.db, oid)
-            .await?
-            .unwrap_or_else(|| (String::new(), false));
-        for contract in &mut contracts {
-            contract.store_event_payloads = plan::effective_store_event_payloads(
-                Some(&plan),
-                org_switch,
-                contract.store_event_payloads,
-            );
-        }
+    // `GET /contracts/{id}` uses the same `payload_decision` + helper.
+    let decision = payload_decision(&state.db, org_id).await?;
+    for contract in &mut contracts {
+        contract.store_event_payloads =
+            effective_payload_flag(decision.as_ref(), contract.store_event_payloads);
     }
     Ok(Json(contracts))
 }
@@ -549,7 +590,16 @@ async fn patch_contract_handler(
     )
     .await?;
     // Identity-only patch doesn't touch yaml; no cache eviction needed.
-    Ok(Json(identity_to_response(&state.db, identity).await?))
+    let stored = identity.store_event_payloads;
+    let decision = payload_decision(&state.db, org_id).await?;
+    Ok(Json(
+        identity_to_response(
+            &state.db,
+            identity,
+            effective_payload_flag(decision.as_ref(), stored),
+        )
+        .await?,
+    ))
 }
 
 async fn delete_contract_handler(

@@ -36,14 +36,15 @@ When a body is not stored, the row is written with an empty/NULL body and a
 redaction marker (`raw_event_redacted` / `payload_redacted`). `GET /quarantine`
 returns `payload_redacted: true` and `raw_event: null` for such rows.
 
-`GET /contracts` reports `store_event_payloads` as the **effective** value, not
-the raw column (neither column is rewritten). It is the same decision ingest
-uses: paid plan **and** `orgs.store_event_payloads` **and** the per-contract
-override. It is `false` for `free`, `aisg_free`, and unknown plans, and also
-`false` on a paid plan (`growth`, `aisg_pro`, `enterprise`) while the org
-master switch is off (that column defaults to `false`). A paid org with the
-switch on reports the per-contract override. Both products share
-`GET /contracts`. `GET /contracts/{id}` does not include this field.
+`GET /contracts` and `GET /contracts/{id}` report `store_event_payloads` as the
+**effective** value, not the raw column (neither column is rewritten). It is
+the same decision ingest uses: paid plan **and** `orgs.store_event_payloads`
+**and** the per-contract override. It is `false` for `free`, `aisg_free`, and
+unknown plans, and also `false` on a paid plan (`growth`, `aisg_pro`,
+`enterprise`) while the org master switch is off (that column defaults to
+`false`). A paid org with the switch on reports the per-contract override.
+Both products share these responses. `POST /contracts` and `PATCH /contracts/{id}`
+return the same effective field on `ContractResponse`.
 
 ## Turning it off purges history
 
@@ -71,9 +72,12 @@ All routes are org-scoped (owner/admin; production requires a resolvable org).
 
 ### `PUT /settings/payload-storage`
 
-Body `{ "enabled": true }`. Enabling requires a paid plan (`400` otherwise).
-Setting `false` purges all stored bodies for the org. Returns the same shape as
-GET.
+Body `{ "enabled": true }`. Enabling requires a paid plan. Otherwise the
+response is `400` and the message names every plan the paid-plan check accepts
+(`growth`, `aisg_pro`, `enterprise` — DataContractGate Pro, AISchemaGate Pro,
+and Enterprise). That list is the same slice the check uses, so a new paid
+plan shows up in the message without a separate copy. Setting `false` purges
+all stored bodies for the org. Returns the same shape as GET.
 
 ### `PATCH /contracts/{id}/payload-storage`
 

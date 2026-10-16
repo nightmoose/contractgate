@@ -529,6 +529,702 @@ fn extra_openapi_paths(paths: &mut serde_json::Map<String, Value>) {
     paths.insert("/contracts".into(), json!({"get": {"operationId": "list_contracts", "summary": "List contracts for the caller's org", "description": "store_event_payloads is the effective value ingest uses: false unless the plan is paid (growth, aisg_pro, enterprise) AND the org master switch is on AND the per-contract override is on. free, aisg_free, and unknown plans report false. A paid plan with the org switch off (the default) also reports false. The columns are not rewritten. Shared by DataContractGate and AISchemaGate.", "responses": {"200": {"description": "Contract summaries. store_event_payloads is boolean and effective for the plan.", "content": {"application/json": {"schema": {"type": "array", "items": {"type": "object", "properties": {"id": {"type": "string", "format": "uuid"}, "name": {"type": "string"}, "store_event_payloads": {"type": "boolean", "description": "True only when ingest will store the body: paid plan, org switch on, per-contract override on."}}}}}}}, "401": {"description": "Missing or invalid credentials"}}, "security": [{"ApiKeyAuth": []}]}}));
     paths.insert("/quarantine/replay".into(), json!({"post": {"operationId": "replay_quarantine", "summary": "Replay quarantined events across the caller's contracts", "description": "Same engine as POST /contracts/{id}/quarantine/replay. A row whose body was not stored is redacted: true (per-contract route: outcome redacted), with passed false and violations empty. Not a validation failure.", "requestBody": {"required": true, "content": {"application/json": {"schema": {"type": "object", "required": ["event_ids"], "properties": {"event_ids": {"type": "array", "items": {"type": "string", "format": "uuid"}}, "version": {"type": "string"}, "contract_id": {"type": "string", "format": "uuid"}}}}}}, "responses": {"200": {"description": "One outcome per event_id, in input order.", "content": {"application/json": {"schema": {"type": "object", "properties": {"replayed": {"type": "integer"}, "outcomes": {"type": "array", "items": {"type": "object", "properties": {"event_id": {"type": "string", "format": "uuid"}, "version": {"type": "string"}, "passed": {"type": "boolean"}, "violations": {"type": "array"}, "replayed_at": {"type": "string", "format": "date-time"}, "redacted": {"type": "boolean", "description": "True when the source body was not stored. Same classification as per-contract outcome=redacted."}}}}}}}}}, "400": {"description": "Empty event_ids, over the 1000 cap, or contract_id assertion failed"}, "401": {"description": "Missing or invalid credentials"}}, "security": [{"ApiKeyAuth": []}]}}));
     paths.insert("/contracts/{id}/quarantine/replay".into(), json!({"post": {"operationId": "replay_contract_quarantine", "summary": "Replay quarantined events for one contract", "description": "A row whose body was not stored returns outcome redacted (and increments the redacted count). The org-wide POST /quarantine/replay reports that same row with redacted true.", "parameters": [{"name": "id", "in": "path", "required": true, "schema": {"type": "string", "format": "uuid"}}], "requestBody": {"required": true, "content": {"application/json": {"schema": {"type": "object", "required": ["ids"], "properties": {"ids": {"type": "array", "items": {"type": "string", "format": "uuid"}}, "target_version": {"type": "string"}}}}}}, "responses": {"200": {"description": "Per-id results. outcome=redacted when the body was not stored."}, "401": {"description": "Missing or invalid credentials"}, "404": {"description": "Contract or target version not found"}}, "security": [{"ApiKeyAuth": []}]}}));
+    more_openapi_paths(paths);
+}
+
+/// Add or merge one HTTP operation. Merging keeps a method already documented
+/// on the same path (for example `POST /contracts` next to `GET /contracts`).
+fn merge_openapi_op(
+    paths: &mut serde_json::Map<String, Value>,
+    path: &str,
+    method: &str,
+    op: Value,
+) {
+    let item = paths.entry(path.to_string()).or_insert_with(|| json!({}));
+    if let Some(obj) = item.as_object_mut() {
+        obj.insert(method.to_string(), op);
+    }
+}
+
+/// Routes registered in `build_router` that were not in the original `json!`
+/// document. Schemas match the handler request and response types.
+fn more_openapi_paths(paths: &mut serde_json::Map<String, Value>) {
+    let upgrade = crate::plan::payload_storage_upgrade_message();
+    let paid = crate::plan::paid_plans_phrase();
+    let auth = json!([{"ApiKeyAuth": []}]);
+    let unauthorized = json!({"description": "Missing or invalid credentials"});
+
+    merge_openapi_op(
+        paths,
+        "/health",
+        "get",
+        json!({
+            "operationId": "health",
+            "summary": "Liveness probe (no database)",
+            "responses": {"200": {"description": "Process is up", "content": {"application/json": {"schema": {"type": "object", "properties": {"status": {"type": "string"}, "version": {"type": "string"}, "build": {"type": ["string", "null"]}, "service": {"type": "string"}}}}}}}
+        }),
+    );
+    merge_openapi_op(
+        paths,
+        "/ready",
+        "get",
+        json!({
+            "operationId": "ready",
+            "summary": "Readiness probe (SELECT 1, 2s timeout)",
+            "responses": {
+                "200": {"description": "Pool is healthy", "content": {"application/json": {"schema": {"type": "object", "properties": {"status": {"type": "string"}, "db": {"type": "string"}, "version": {"type": "string"}, "pool": {"type": "object", "properties": {"size": {"type": "integer"}, "idle": {"type": "integer"}}}}}}}},
+                "503": {"description": "Pool exhausted or database unreachable", "content": {"application/json": {"schema": {"type": "object", "properties": {"status": {"type": "string"}, "db": {"type": "string"}}}}}}
+            }
+        }),
+    );
+    merge_openapi_op(
+        paths,
+        "/openapi.json",
+        "get",
+        json!({
+            "operationId": "openapi",
+            "summary": "This OpenAPI document",
+            "responses": {"200": {"description": "OpenAPI 3.1 JSON", "content": {"application/json": {"schema": {"type": "object"}}}}}
+        }),
+    );
+    merge_openapi_op(
+        paths,
+        "/metrics",
+        "get",
+        json!({
+            "operationId": "metrics",
+            "summary": "Prometheus metrics",
+            "description": "401 unless METRICS_AUTH_TOKEN matches Authorization: Bearer, or METRICS_PUBLIC=1.",
+            "parameters": [{"name": "Authorization", "in": "header", "required": false, "schema": {"type": "string"}}],
+            "responses": {
+                "200": {"description": "Prometheus text exposition", "content": {"text/plain": {"schema": {"type": "string"}}}},
+                "401": {"description": "Metrics are not public and the bearer token is missing or wrong"}
+            }
+        }),
+    );
+    merge_openapi_op(
+        paths,
+        "/demo/start",
+        "post",
+        json!({
+            "operationId": "demo_start",
+            "summary": "Start the local stream demo",
+            "requestBody": {"required": true, "content": {"application/json": {"schema": {"type": "object", "required": ["scenario", "fail_ratio", "duration_secs"], "properties": {"scenario": {"type": "string"}, "fail_ratio": {"type": "number"}, "target_rate": {"type": ["integer", "null"]}, "duration_secs": {"type": "integer"}}}}}},
+            "responses": {
+                "200": {"description": "Started", "content": {"application/json": {"schema": {"type": "object", "properties": {"status": {"type": "string"}, "scenario": {"type": "string"}}}}}},
+                "400": {"description": "Unknown scenario"}
+            }
+        }),
+    );
+    merge_openapi_op(
+        paths,
+        "/demo/stop",
+        "post",
+        json!({
+            "operationId": "demo_stop",
+            "summary": "Stop the local stream demo",
+            "responses": {"200": {"description": "Stopped", "content": {"application/json": {"schema": {"type": "object", "properties": {"status": {"type": "string"}}}}}}}
+        }),
+    );
+    merge_openapi_op(
+        paths,
+        "/demo/stream",
+        "get",
+        json!({
+            "operationId": "demo_stream",
+            "summary": "Server-sent stats snapshots for the stream demo",
+            "responses": {"200": {"description": "text/event-stream of stats snapshots", "content": {"text/event-stream": {"schema": {"type": "string"}}}}}
+        }),
+    );
+    merge_openapi_op(
+        paths,
+        "/demo/events",
+        "get",
+        json!({
+            "operationId": "demo_events",
+            "summary": "Server-sent demo events",
+            "responses": {"200": {"description": "text/event-stream of demo events", "content": {"text/event-stream": {"schema": {"type": "string"}}}}}
+        }),
+    );
+    merge_openapi_op(
+        paths,
+        "/demo/contract",
+        "get",
+        json!({
+            "operationId": "demo_contract",
+            "summary": "YAML for a demo scenario",
+            "parameters": [{"name": "scenario", "in": "query", "required": false, "schema": {"type": "string", "enum": ["simple", "nested"], "default": "simple"}}],
+            "responses": {
+                "200": {"description": "Contract YAML", "content": {"text/plain": {"schema": {"type": "string"}}}},
+                "404": {"description": "Unknown scenario"}
+            }
+        }),
+    );
+    merge_openapi_op(
+        paths,
+        "/public-contracts",
+        "get",
+        json!({
+            "operationId": "list_public_contracts",
+            "summary": "List curated public-catalog contracts (no API key)",
+            "responses": {"200": {"description": "Catalog summaries", "content": {"application/json": {"schema": {"type": "array", "items": {"type": "object", "properties": {"id": {"type": "string", "format": "uuid"}, "name": {"type": "string"}, "description": {"type": ["string", "null"]}, "source_format": {"type": "string"}, "version": {"type": "string"}, "created_at": {"type": "string", "format": "date-time"}, "updated_at": {"type": "string", "format": "date-time"}}}}}}}}
+        }),
+    );
+    merge_openapi_op(
+        paths,
+        "/public-contracts/{id}",
+        "get",
+        json!({
+            "operationId": "get_public_contract",
+            "summary": "One public-catalog contract, including YAML (no API key)",
+            "parameters": [{"name": "id", "in": "path", "required": true, "schema": {"type": "string", "format": "uuid"}}],
+            "responses": {
+                "200": {"description": "Catalog entry", "content": {"application/json": {"schema": {"type": "object", "properties": {"id": {"type": "string", "format": "uuid"}, "name": {"type": "string"}, "description": {"type": ["string", "null"]}, "source_url": {"type": "string"}, "source_format": {"type": "string"}, "contract_yaml": {"type": "string"}, "version": {"type": "string"}, "created_at": {"type": "string", "format": "date-time"}, "updated_at": {"type": "string", "format": "date-time"}}}}}},
+                "404": {"description": "Unknown id"}
+            }
+        }),
+    );
+
+    let store_desc = format!(
+        "True only when ingest will store the body: paid plan ({paid}), org master switch on, and per-contract override on. free, aisg_free, and unknown plans are false. A paid plan with the org switch off is false. Columns are not rewritten."
+    );
+    let store_flag = json!({
+        "type": "boolean",
+        "description": store_desc
+    });
+    let contract_schema = json!({
+        "type": "object",
+        "properties": {
+            "id": {"type": "string", "format": "uuid"},
+            "name": {"type": "string"},
+            "description": {"type": ["string", "null"]},
+            "multi_stable_resolution": {"type": "string", "enum": ["strict", "fallback"]},
+            "created_at": {"type": "string", "format": "date-time"},
+            "updated_at": {"type": "string", "format": "date-time"},
+            "version_count": {"type": "integer"},
+            "latest_stable_version": {"type": ["string", "null"]},
+            "store_event_payloads": store_flag
+        }
+    });
+    merge_openapi_op(
+        paths,
+        "/contracts",
+        "post",
+        json!({
+            "operationId": "create_contract",
+            "summary": "Create a contract and its initial v1.0.0 draft",
+            "requestBody": {"required": true, "content": {"application/json": {"schema": {"type": "object", "required": ["name", "yaml_content"], "properties": {"name": {"type": "string"}, "description": {"type": ["string", "null"]}, "yaml_content": {"type": "string"}, "multi_stable_resolution": {"type": "string", "enum": ["strict", "fallback"]}}}}}},
+            "responses": {
+                "201": {"description": "Created. store_event_payloads is the effective flag.", "content": {"application/json": {"schema": contract_schema.clone()}}},
+                "400": {"description": "Invalid YAML or missing org context in dev mode"},
+                "401": unauthorized.clone()
+            },
+            "security": auth.clone()
+        }),
+    );
+    let id_param = json!({"name": "id", "in": "path", "required": true, "schema": {"type": "string", "format": "uuid"}});
+    let get_desc = format!(
+        "store_event_payloads is the effective value, the same decision as GET /contracts: paid plan ({paid}) AND org master switch AND per-contract override. Shared by DataContractGate and AISchemaGate."
+    );
+    merge_openapi_op(
+        paths,
+        "/contracts/{id}",
+        "get",
+        json!({
+            "operationId": "get_contract",
+            "summary": "Get one contract (viewer+)",
+            "description": get_desc,
+            "parameters": [id_param.clone()],
+            "responses": {
+                "200": {"description": "Contract. store_event_payloads is boolean and effective for the plan.", "content": {"application/json": {"schema": contract_schema.clone()}}},
+                "401": unauthorized.clone(),
+                "403": {"description": "Caller holds a grant below viewer"},
+                "404": {"description": "Contract not found"}
+            },
+            "security": auth.clone()
+        }),
+    );
+    merge_openapi_op(
+        paths,
+        "/contracts/{id}",
+        "patch",
+        json!({
+            "operationId": "patch_contract",
+            "summary": "Update contract identity metadata (owner)",
+            "parameters": [id_param.clone()],
+            "requestBody": {"required": true, "content": {"application/json": {"schema": {"type": "object", "properties": {"name": {"type": "string"}, "description": {"type": ["string", "null"]}, "multi_stable_resolution": {"type": "string", "enum": ["strict", "fallback"]}}}}}},
+            "responses": {
+                "200": {"description": "Updated contract. store_event_payloads is the effective flag.", "content": {"application/json": {"schema": contract_schema}}},
+                "401": unauthorized.clone(),
+                "403": {"description": "Caller is not the owner"},
+                "404": {"description": "Contract not found"}
+            },
+            "security": auth.clone()
+        }),
+    );
+    merge_openapi_op(
+        paths,
+        "/contracts/{id}",
+        "delete",
+        json!({
+            "operationId": "delete_contract",
+            "summary": "Soft-delete a contract (owner)",
+            "parameters": [id_param.clone()],
+            "responses": {"204": {"description": "Deleted"}, "401": unauthorized.clone(), "403": {"description": "Caller is not the owner"}, "404": {"description": "Contract not found"}},
+            "security": auth.clone()
+        }),
+    );
+    merge_openapi_op(
+        paths,
+        "/contracts/{id}/name-history",
+        "get",
+        json!({
+            "operationId": "list_name_history",
+            "summary": "Rename history for a contract",
+            "parameters": [id_param.clone()],
+            "responses": {
+                "200": {"description": "History, newest changes included", "content": {"application/json": {"schema": {"type": "array", "items": {"type": "object", "properties": {"id": {"type": "string", "format": "uuid"}, "contract_id": {"type": "string", "format": "uuid"}, "old_name": {"type": "string"}, "new_name": {"type": "string"}, "changed_at": {"type": "string", "format": "date-time"}}}}}}},
+                "401": unauthorized.clone(),
+                "404": {"description": "Contract not found"}
+            },
+            "security": auth.clone()
+        }),
+    );
+    merge_openapi_op(
+        paths,
+        "/contracts/diff",
+        "post",
+        json!({
+            "operationId": "diff_contracts",
+            "summary": "Diff two contract YAML documents",
+            "requestBody": {"required": true, "content": {"application/json": {"schema": {"type": "object", "required": ["contract_yaml_a", "contract_yaml_b"], "properties": {"contract_yaml_a": {"type": "string"}, "contract_yaml_b": {"type": "string"}}}}}},
+            "responses": {
+                "200": {"description": "Summary and structured changes", "content": {"application/json": {"schema": {"type": "object", "properties": {"summary": {"type": "string"}, "changes": {"type": "array", "items": {"type": "object", "properties": {"kind": {"type": "string"}, "field": {"type": "string"}, "detail": {"type": "string"}}}}}}}}},
+                "400": {"description": "Invalid YAML"},
+                "401": unauthorized.clone()
+            },
+            "security": auth.clone()
+        }),
+    );
+    merge_openapi_op(
+        paths,
+        "/contracts/scaffold",
+        "post",
+        json!({
+            "operationId": "scaffold_contract",
+            "summary": "Scaffold a draft contract from samples or a schema file",
+            "requestBody": {"required": true, "content": {"application/json": {"schema": {"type": "object", "required": ["name"], "properties": {"name": {"type": "string"}, "description": {"type": ["string", "null"]}, "content": {"type": ["string", "null"]}, "samples": {"type": "array", "items": {"type": "object"}}, "format": {"type": "string", "enum": ["json", "ndjson", "avro_schema", "proto"]}, "fast": {"type": "boolean"}, "pii_threshold": {"type": "number"}, "max_records": {"type": "integer"}}}}}},
+            "responses": {
+                "200": {"description": "Draft YAML plus PII candidates", "content": {"application/json": {"schema": {"type": "object", "properties": {"yaml_content": {"type": "string"}, "field_count": {"type": "integer"}, "sample_count": {"type": "integer"}, "pii_candidate_count": {"type": "integer"}, "pii_candidates": {"type": "array", "items": {"type": "object", "properties": {"field_name": {"type": "string"}, "confidence": {"type": "number"}, "reason": {"type": "string"}, "suggested_transform": {"type": "string"}}}}, "format": {"type": "string"}, "sr_unavailable": {"type": "boolean"}}}}}},
+                "400": {"description": "Unusable input"},
+                "401": unauthorized.clone()
+            },
+            "security": auth.clone()
+        }),
+    );
+    more_openapi_paths_tail(paths, &upgrade, &auth, &unauthorized, &id_param);
+}
+
+fn more_openapi_paths_tail(
+    paths: &mut serde_json::Map<String, Value>,
+    upgrade: &str,
+    auth: &Value,
+    unauthorized: &Value,
+    id_param: &Value,
+) {
+    merge_openapi_op(
+        paths,
+        "/ingest/{contract_id}/stats",
+        "get",
+        json!({
+            "operationId": "ingest_stats",
+            "summary": "Ingestion stats for one contract",
+            "parameters": [{"name": "contract_id", "in": "path", "required": true, "schema": {"type": "string", "format": "uuid"}}],
+            "responses": {
+                "200": {"description": "Totals and latency percentiles", "content": {"application/json": {"schema": {"type": "object", "properties": {"total_events": {"type": "integer"}, "passed_events": {"type": "integer"}, "failed_events": {"type": "integer"}, "pass_rate": {"type": "number"}, "avg_validation_us": {"type": "number"}, "p50_validation_us": {"type": "integer"}, "p95_validation_us": {"type": "integer"}, "p99_validation_us": {"type": "integer"}}}}}},
+                "401": unauthorized.clone(),
+                "404": {"description": "Contract not found"}
+            },
+            "security": auth.clone()
+        }),
+    );
+    let source_param =
+        json!({"name": "source", "in": "path", "required": true, "schema": {"type": "string"}});
+    let drift_item = json!({"type": "object", "properties": {"source": {"type": "string"}, "contract_name": {"type": "string"}, "field": {"type": "string"}, "current_rate": {"type": "number"}, "baseline_rate": {"type": "number"}, "delta_pct": {"type": "number"}, "label": {"type": "string"}}});
+    merge_openapi_op(
+        paths,
+        "/scorecard/{source}",
+        "get",
+        json!({
+            "operationId": "get_scorecard",
+            "summary": "Provider scorecard for one source",
+            "parameters": [source_param.clone()],
+            "responses": {
+                "200": {"description": "Summary, field health, and drift", "content": {"application/json": {"schema": {"type": "object", "properties": {"source": {"type": "string"}, "summary": {"type": "array", "items": {"type": "object", "properties": {"source": {"type": "string"}, "contract_name": {"type": "string"}, "total_events": {"type": "integer"}, "passed": {"type": "integer"}, "quarantined": {"type": "integer"}, "quarantine_pct": {"type": ["number", "null"]}}}}, "top_violations": {"type": "array", "items": {"type": "object"}}, "field_health": {"type": "array", "items": {"type": "object", "properties": {"source": {"type": "string"}, "contract_name": {"type": "string"}, "field": {"type": "string"}, "code": {"type": "string"}, "violations": {"type": "integer"}}}}, "drift_signals": {"type": "array", "items": drift_item}}}}}},
+                "401": unauthorized.clone()
+            },
+            "security": auth.clone()
+        }),
+    );
+    merge_openapi_op(
+        paths,
+        "/scorecard/{source}/drift",
+        "get",
+        json!({
+            "operationId": "get_scorecard_drift",
+            "summary": "Active drift signals for one source",
+            "parameters": [source_param.clone()],
+            "responses": {"200": {"description": "Drift signals", "content": {"application/json": {"schema": {"type": "array", "items": {"type": "object", "properties": {"source": {"type": "string"}, "contract_name": {"type": "string"}, "field": {"type": "string"}, "current_rate": {"type": "number"}, "baseline_rate": {"type": "number"}, "delta_pct": {"type": "number"}, "label": {"type": "string"}}}}}}}, "401": unauthorized.clone()},
+            "security": auth.clone()
+        }),
+    );
+    merge_openapi_op(
+        paths,
+        "/scorecard/{source}/export",
+        "get",
+        json!({
+            "operationId": "export_scorecard",
+            "summary": "Download a scorecard as CSV",
+            "parameters": [source_param, {"name": "format", "in": "query", "required": false, "schema": {"type": "string", "enum": ["csv"], "default": "csv"}}],
+            "responses": {"200": {"description": "CSV", "content": {"text/csv": {"schema": {"type": "string"}}}}, "400": {"description": "Only format=csv is supported"}, "401": unauthorized.clone()},
+            "security": auth.clone()
+        }),
+    );
+    merge_openapi_op(
+        paths,
+        "/contracts/{id}/quarantine/{quar_id}/replay-history",
+        "get",
+        json!({
+            "operationId": "quarantine_replay_history",
+            "summary": "Replay history for one quarantine row",
+            "parameters": [id_param.clone(), {"name": "quar_id", "in": "path", "required": true, "schema": {"type": "string", "format": "uuid"}}],
+            "responses": {
+                "200": {"description": "Chain of source, failed_replay, and passed_replay entries (serde tag kind)", "content": {"application/json": {"schema": {"type": "array", "items": {"type": "object", "required": ["kind"], "properties": {"kind": {"type": "string", "enum": ["source", "failed_replay", "passed_replay"]}, "id": {"type": "string", "format": "uuid"}, "contract_version": {"type": "string"}, "status": {"type": "string"}, "violation_count": {"type": "integer"}, "replayed_at": {"type": ["string", "null"], "format": "date-time"}, "replayed_into_audit_id": {"type": ["string", "null"], "format": "uuid"}, "created_at": {"type": "string", "format": "date-time"}}}}}}},
+                "401": unauthorized.clone(),
+                "404": {"description": "Contract not found"}
+            },
+            "security": auth.clone()
+        }),
+    );
+    let report_schema = json!({
+        "type": "object",
+        "properties": {
+            "contract_id": {"type": "string", "format": "uuid"},
+            "contract_name": {"type": "string"},
+            "window": {"type": "object", "properties": {"from": {"type": ["string", "null"]}, "to": {"type": ["string", "null"]}}},
+            "generated_at": {"type": "string", "format": "date-time"},
+            "totals": {"type": "object", "properties": {"total": {"type": "integer"}, "passed": {"type": "integer"}, "quarantined": {"type": "integer"}, "pass_rate": {"type": "number"}}},
+            "by_version": {"type": "array", "items": {"type": "object"}},
+            "top_violations": {"type": "array", "items": {"type": "object", "properties": {"field": {"type": ["string", "null"]}, "kind": {"type": ["string", "null"]}, "count": {"type": "integer"}}}}
+        }
+    });
+    merge_openapi_op(
+        paths,
+        "/contracts/{id}/report",
+        "get",
+        json!({
+            "operationId": "contract_report",
+            "summary": "Pilot report for one contract (JSON or CSV)",
+            "parameters": [
+                id_param.clone(),
+                {"name": "from", "in": "query", "required": false, "schema": {"type": "string", "format": "date-time"}},
+                {"name": "to", "in": "query", "required": false, "schema": {"type": "string", "format": "date-time"}},
+                {"name": "format", "in": "query", "required": false, "schema": {"type": "string", "enum": ["json", "csv"], "default": "json"}}
+            ],
+            "responses": {
+                "200": {"description": "JSON report, or CSV when format=csv", "content": {"application/json": {"schema": report_schema}}},
+                "400": {"description": "Unsupported format"},
+                "401": unauthorized.clone(),
+                "404": {"description": "Contract not found"}
+            },
+            "security": auth.clone()
+        }),
+    );
+    merge_openapi_op(
+        paths,
+        "/usage",
+        "get",
+        json!({
+            "operationId": "get_usage",
+            "summary": "Current-month event usage against the plan limit",
+            "responses": {
+                "200": {"description": "Usage. limit, remaining, and pct are null when unlimited.", "content": {"application/json": {"schema": {"type": "object", "properties": {"plan": {"type": "string"}, "period_start": {"type": "string", "format": "date-time"}, "used": {"type": "integer"}, "limit": {"type": ["integer", "null"]}, "remaining": {"type": ["integer", "null"]}, "pct": {"type": ["number", "null"]}, "unlimited": {"type": "boolean"}}}}}},
+                "401": unauthorized.clone()
+            },
+            "security": auth.clone()
+        }),
+    );
+    let quarantined_event = json!({"type": "object", "properties": {"id": {"type": "string", "format": "uuid"}, "contract_id": {"type": "string", "format": "uuid"}, "contract_version": {"type": ["string", "null"]}, "raw_event": {}, "payload_redacted": {"type": "boolean"}, "violation_details": {}, "violation_count": {"type": "integer"}, "source_ip": {"type": ["string", "null"]}, "quarantined_at": {"type": "string", "format": "date-time"}, "replay_count": {"type": "integer"}, "last_replayed_at": {"type": ["string", "null"], "format": "date-time"}, "last_replay_passed": {"type": ["boolean", "null"]}}});
+    merge_openapi_op(
+        paths,
+        "/quarantine",
+        "get",
+        json!({
+            "operationId": "list_quarantine",
+            "summary": "List quarantined events for the caller's org",
+            "parameters": [
+                {"name": "contract_id", "in": "query", "required": false, "schema": {"type": "string", "format": "uuid"}},
+                {"name": "limit", "in": "query", "required": false, "schema": {"type": "integer", "default": 100, "maximum": 500}},
+                {"name": "offset", "in": "query", "required": false, "schema": {"type": "integer", "default": 0}}
+            ],
+            "responses": {"200": {"description": "Quarantine rows. payload_redacted true means raw_event is null.", "content": {"application/json": {"schema": {"type": "array", "items": quarantined_event}}}}, "401": unauthorized.clone()},
+            "security": auth.clone()
+        }),
+    );
+    let replay_outcome = json!({"type": "object", "properties": {"event_id": {"type": "string", "format": "uuid"}, "version": {"type": "string"}, "passed": {"type": "boolean"}, "violations": {"type": "array"}, "replayed_at": {"type": "string", "format": "date-time"}, "redacted": {"type": "boolean"}}});
+    merge_openapi_op(
+        paths,
+        "/quarantine/replay-history",
+        "get",
+        json!({
+            "operationId": "quarantine_replay_history_all",
+            "summary": "Replay attempts for one event across the caller's contracts",
+            "parameters": [
+                {"name": "event_id", "in": "query", "required": true, "schema": {"type": "string", "format": "uuid"}},
+                {"name": "limit", "in": "query", "required": false, "schema": {"type": "integer", "default": 100, "maximum": 500}}
+            ],
+            "responses": {"200": {"description": "Attempts, oldest source row excluded", "content": {"application/json": {"schema": {"type": "array", "items": replay_outcome}}}}, "401": unauthorized.clone()},
+            "security": auth.clone()
+        }),
+    );
+    let payload_status = json!({"type": "object", "required": ["enabled", "plan", "eligible"], "properties": {"enabled": {"type": "boolean", "description": "Org master switch"}, "plan": {"type": "string"}, "eligible": {"type": "boolean", "description": "True when the plan is paid, so enabling the switch is allowed"}}});
+    let enabled_body = json!({"type": "object", "required": ["enabled"], "properties": {"enabled": {"type": "boolean"}}});
+    merge_openapi_op(
+        paths,
+        "/settings/payload-storage",
+        "get",
+        json!({
+            "operationId": "get_payload_storage",
+            "summary": "Org event-payload storage switch and plan eligibility",
+            "responses": {"200": {"description": "enabled is the org master switch. eligible is true for a paid plan.", "content": {"application/json": {"schema": payload_status.clone()}}}, "401": unauthorized.clone()},
+            "security": auth.clone()
+        }),
+    );
+    merge_openapi_op(
+        paths,
+        "/settings/payload-storage",
+        "put",
+        json!({
+            "operationId": "set_payload_storage",
+            "summary": "Set the org event-payload storage switch",
+            "description": "Enabling requires a paid plan. Disabling purges stored bodies for the org.",
+            "requestBody": {"required": true, "content": {"application/json": {"schema": enabled_body.clone()}}},
+            "responses": {
+                "200": {"description": "Updated status", "content": {"application/json": {"schema": payload_status}}},
+                "400": {"description": upgrade},
+                "401": unauthorized.clone()
+            },
+            "security": auth.clone()
+        }),
+    );
+    merge_openapi_op(
+        paths,
+        "/contracts/{id}/payload-storage",
+        "patch",
+        json!({
+            "operationId": "set_contract_payload_storage",
+            "summary": "Set the per-contract payload-storage override",
+            "description": "Write-forward only: does not purge history. Effective when the org master switch is on.",
+            "parameters": [id_param.clone()],
+            "requestBody": {"required": true, "content": {"application/json": {"schema": enabled_body}}},
+            "responses": {
+                "200": {"description": "The override that was written", "content": {"application/json": {"schema": {"type": "object", "required": ["enabled"], "properties": {"enabled": {"type": "boolean"}}}}}},
+                "401": unauthorized.clone(),
+                "404": {"description": "Contract not found or not owned by the caller's org"}
+            },
+            "security": auth.clone()
+        }),
+    );
+    merge_openapi_op(
+        paths,
+        "/contracts/{id}/purge-bodies",
+        "post",
+        json!({
+            "operationId": "purge_contract_bodies",
+            "summary": "Redact stored bodies for one contract",
+            "description": "Keeps audit and quarantine rows. Never deletes a row.",
+            "parameters": [id_param.clone()],
+            "responses": {
+                "200": {"description": "Rows whose bodies were redacted", "content": {"application/json": {"schema": {"type": "object", "properties": {"quarantine_bodies_redacted": {"type": "integer"}, "audit_bodies_redacted": {"type": "integer"}}}}}},
+                "401": unauthorized.clone(),
+                "404": {"description": "Contract not found"}
+            },
+            "security": auth.clone()
+        }),
+    );
+    merge_openapi_op(
+        paths,
+        "/contracts/{id}/import-status",
+        "get",
+        json!({
+            "operationId": "import_status",
+            "summary": "Whether a newer published version is available for an import",
+            "parameters": [id_param.clone()],
+            "responses": {
+                "200": {"description": "Import provenance", "content": {"application/json": {"schema": {"type": "object", "properties": {"import_mode": {"type": ["string", "null"]}, "publication_ref": {"type": ["string", "null"]}, "source_revoked": {"type": "boolean"}, "update_available": {"type": "boolean"}, "latest_published_version": {"type": ["string", "null"]}, "imported_version": {"type": ["string", "null"]}}}}}},
+                "401": unauthorized.clone()
+            },
+            "security": auth.clone()
+        }),
+    );
+    merge_openapi_op(
+        paths,
+        "/contracts/{id}/fork",
+        "post",
+        json!({
+            "operationId": "fork_public_contract",
+            "summary": "Fork a public-catalog contract into the caller's org",
+            "description": "id is a public_contracts id, not a tenant contract id.",
+            "parameters": [id_param.clone()],
+            "requestBody": {"required": true, "content": {"application/json": {"schema": {"type": "object", "required": ["name"], "properties": {"name": {"type": "string"}, "description": {"type": ["string", "null"]}, "fork_filter": {"type": ["object", "null"], "properties": {"fields": {"type": ["array", "null"], "items": {"type": "string"}}, "predicates": {"type": "array", "items": {"type": "object", "properties": {"field": {"type": "string"}, "op": {"type": "string", "enum": ["eq", "neq", "gt", "gte", "lt", "lte", "in"]}, "value": {}}}}}}}}}}},
+            "responses": {
+                "201": {"description": "Forked contract", "content": {"application/json": {"schema": {"type": "object", "properties": {"contract_id": {"type": "string", "format": "uuid"}, "name": {"type": "string"}, "parent_public_contract_id": {"type": "string", "format": "uuid"}, "fork_filter": {"type": ["object", "null"]}, "created_at": {"type": "string", "format": "date-time"}}}}}},
+                "400": {"description": "Invalid body"},
+                "401": unauthorized.clone(),
+                "404": {"description": "Public contract not found"}
+            },
+            "security": auth.clone()
+        }),
+    );
+    merge_openapi_op(
+        paths,
+        "/audit",
+        "get",
+        json!({
+            "operationId": "list_audit",
+            "summary": "Recent audit log entries for the caller's org",
+            "parameters": [
+                {"name": "contract_id", "in": "query", "required": false, "schema": {"type": "string", "format": "uuid"}},
+                {"name": "limit", "in": "query", "required": false, "schema": {"type": "integer", "default": 50, "maximum": 500}},
+                {"name": "offset", "in": "query", "required": false, "schema": {"type": "integer", "default": 0}}
+            ],
+            "responses": {
+                "200": {"description": "Audit rows", "content": {"application/json": {"schema": {"type": "array", "items": {"type": "object", "properties": {"id": {"type": "string", "format": "uuid"}, "contract_id": {"type": "string", "format": "uuid"}, "contract_version": {"type": ["string", "null"]}, "passed": {"type": "boolean"}, "violation_count": {"type": "integer"}, "violation_details": {}, "raw_event": {}, "validation_us": {"type": "integer"}, "source_ip": {"type": ["string", "null"]}, "created_at": {"type": "string", "format": "date-time"}}}}}}},
+                "401": unauthorized.clone()
+            },
+            "security": auth.clone()
+        }),
+    );
+    merge_openapi_op(
+        paths,
+        "/stats",
+        "get",
+        json!({
+            "operationId": "get_stats",
+            "summary": "Org-wide ingestion stats",
+            "responses": {
+                "200": {"description": "Totals and latency percentiles", "content": {"application/json": {"schema": {"type": "object", "properties": {"total_events": {"type": "integer"}, "passed_events": {"type": "integer"}, "failed_events": {"type": "integer"}, "pass_rate": {"type": "number"}, "avg_validation_us": {"type": "number"}, "p50_validation_us": {"type": "integer"}, "p95_validation_us": {"type": "integer"}, "p99_validation_us": {"type": "integer"}}}}}},
+                "401": unauthorized.clone()
+            },
+            "security": auth.clone()
+        }),
+    );
+    merge_openapi_op(
+        paths,
+        "/playground/validate",
+        "post",
+        json!({
+            "operationId": "playground_validate",
+            "summary": "Validate one event against unsaved YAML",
+            "requestBody": {"required": true, "content": {"application/json": {"schema": {"type": "object", "required": ["yaml_content", "event"], "properties": {"yaml_content": {"type": "string"}, "event": {"type": "object"}}}}}},
+            "responses": {
+                "200": {"description": "Validation result plus the post-transform event", "content": {"application/json": {"schema": {"type": "object", "properties": {"passed": {"type": "boolean"}, "violations": {"type": "array", "items": {"type": "object", "properties": {"field": {"type": "string"}, "message": {"type": "string"}, "kind": {"type": "string"}}}}, "validation_us": {"type": "integer"}, "transformed_event": {}}}}}},
+                "400": {"description": "Invalid contract YAML"},
+                "401": unauthorized.clone()
+            },
+            "security": auth.clone()
+        }),
+    );
+    let infer_ok = json!({"type": "object", "properties": {"yaml_content": {"type": "string"}, "field_count": {"type": "integer"}, "sample_count": {"type": "integer"}}});
+    merge_openapi_op(
+        paths,
+        "/contracts/infer",
+        "post",
+        json!({
+            "operationId": "infer_json",
+            "summary": "Infer a draft contract from JSON samples",
+            "requestBody": {"required": true, "content": {"application/json": {"schema": {"type": "object", "required": ["name", "samples"], "properties": {"name": {"type": "string"}, "description": {"type": ["string", "null"]}, "samples": {"type": "array", "items": {"type": "object"}}}}}}},
+            "responses": {"200": {"description": "Draft YAML", "content": {"application/json": {"schema": infer_ok}}}, "400": {"description": "No samples, or a sample is not an object"}, "401": unauthorized.clone()},
+            "security": auth.clone()
+        }),
+    );
+    merge_openapi_op(
+        paths,
+        "/contracts/infer/avro",
+        "post",
+        json!({
+            "operationId": "infer_avro",
+            "summary": "Infer a draft contract from an Avro schema or samples",
+            "requestBody": {"required": true, "content": {"application/json": {"schema": {"type": "object", "required": ["name"], "properties": {"name": {"type": "string"}, "description": {"type": ["string", "null"]}, "schema": {"type": ["string", "null"]}, "samples": {"type": "array", "items": {"type": "object"}}}}}}},
+            "responses": {"200": {"description": "Draft YAML", "content": {"application/json": {"schema": {"type": "object", "properties": {"yaml_content": {"type": "string"}, "field_count": {"type": "integer"}, "mode": {"type": "string", "enum": ["schema", "samples"]}}}}}}, "400": {"description": "Invalid Avro schema or samples"}, "401": unauthorized.clone()},
+            "security": auth.clone()
+        }),
+    );
+    merge_openapi_op(
+        paths,
+        "/contracts/infer/proto",
+        "post",
+        json!({
+            "operationId": "infer_proto",
+            "summary": "Infer a draft contract from a proto3 file",
+            "requestBody": {"required": true, "content": {"application/json": {"schema": {"type": "object", "required": ["name", "proto_source"], "properties": {"name": {"type": "string"}, "description": {"type": ["string", "null"]}, "proto_source": {"type": "string"}, "message": {"type": ["string", "null"]}}}}}},
+            "responses": {"200": {"description": "Draft YAML", "content": {"application/json": {"schema": {"type": "object", "properties": {"yaml_content": {"type": "string"}, "field_count": {"type": "integer"}, "message_used": {"type": "string"}}}}}}, "400": {"description": "Empty or unparseable proto"}, "401": unauthorized.clone()},
+            "security": auth.clone()
+        }),
+    );
+    merge_openapi_op(
+        paths,
+        "/contracts/infer/openapi",
+        "post",
+        json!({
+            "operationId": "infer_openapi_document",
+            "summary": "Infer a draft contract from an OpenAPI or AsyncAPI document",
+            "requestBody": {"required": true, "content": {"application/json": {"schema": {"type": "object", "required": ["name", "openapi_source"], "properties": {"name": {"type": "string"}, "description": {"type": ["string", "null"]}, "openapi_source": {"type": "string"}, "schema_name": {"type": ["string", "null"]}}}}}},
+            "responses": {"200": {"description": "Draft YAML", "content": {"application/json": {"schema": {"type": "object", "properties": {"yaml_content": {"type": "string"}, "field_count": {"type": "integer"}, "schema_used": {"type": "string"}}}}}}, "400": {"description": "Empty or unparseable document"}, "401": unauthorized.clone()},
+            "security": auth.clone()
+        }),
+    );
+    merge_openapi_op(
+        paths,
+        "/contracts/infer/csv",
+        "post",
+        json!({
+            "operationId": "infer_csv",
+            "summary": "Infer a draft contract from CSV text",
+            "requestBody": {"required": true, "content": {"application/json": {"schema": {"type": "object", "required": ["name"], "properties": {"name": {"type": "string"}, "description": {"type": ["string", "null"]}, "csv_content": {"type": ["string", "null"]}, "base64": {"type": ["string", "null"]}, "delimiter": {"type": ["string", "null"]}}}}}},
+            "responses": {"200": {"description": "Draft YAML", "content": {"application/json": {"schema": {"type": "object", "properties": {"yaml_content": {"type": "string"}, "field_count": {"type": "integer"}, "sample_count": {"type": "integer"}}}}}}, "400": {"description": "Empty CSV, too large, or neither csv_content nor base64"}, "401": unauthorized.clone()},
+            "security": auth.clone()
+        }),
+    );
+    merge_openapi_op(
+        paths,
+        "/contracts/infer/url",
+        "post",
+        json!({
+            "operationId": "infer_url",
+            "summary": "Infer a draft contract by fetching a URL",
+            "requestBody": {"required": true, "content": {"application/json": {"schema": {"type": "object", "required": ["name", "url"], "properties": {"name": {"type": "string"}, "description": {"type": ["string", "null"]}, "url": {"type": "string"}, "headers": {"type": "object", "additionalProperties": {"type": "string"}}}}}}},
+            "responses": {"200": {"description": "Draft YAML", "content": {"application/json": {"schema": {"type": "object", "properties": {"yaml_content": {"type": "string"}, "field_count": {"type": "integer"}, "sample_count": {"type": "integer"}, "detected_format": {"type": "string", "enum": ["json", "csv"]}}}}}}, "400": {"description": "Invalid URL, blocked host, or unusable body"}, "401": unauthorized.clone()},
+            "security": auth.clone()
+        }),
+    );
+    merge_openapi_op(
+        paths,
+        "/v1/contracts/{contract_id}/version",
+        "get",
+        json!({
+            "operationId": "probe_contract_version",
+            "summary": "Latest stable version and YAML hash (SMT reload probe)",
+            "parameters": [{"name": "contract_id", "in": "path", "required": true, "schema": {"type": "string", "format": "uuid"}}],
+            "responses": {
+                "200": {"description": "version plus sha256 hex of the YAML", "content": {"application/json": {"schema": {"type": "object", "properties": {"version": {"type": "string"}, "hash": {"type": "string"}}}}}},
+                "401": unauthorized.clone(),
+                "404": {"description": "Contract not found"},
+                "409": {"description": "No stable version"}
+            },
+            "security": auth.clone()
+        }),
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -1439,5 +2135,240 @@ mod tests {
             .unwrap_or("");
         assert!(timed_out.contains("pool_acquire"), "{timed_out}");
         assert!(timed_out.contains("lock_wait"), "{timed_out}");
+    }
+
+    /// Every `.route` in `build_router` is in the spec, with the same methods,
+    /// and the spec has no extra path. Path-parameter names are ignored
+    /// (`{raw_id}` and `{contract_id}` are the same route).
+    #[test]
+    fn openapi_matches_router() {
+        let router = router_operations(include_str!("main.rs"));
+        let spec = spec_operations(&serde_json::from_str(&build_openapi()).unwrap());
+        let mut missing: Vec<String> = Vec::new();
+        for (path, methods) in &router {
+            match spec.get(path) {
+                None => missing.push(format!("{path} {methods:?}")),
+                Some(spec_methods) => {
+                    for method in methods {
+                        if !spec_methods.contains(method) {
+                            missing.push(format!("{method} {path}"));
+                        }
+                    }
+                }
+            }
+        }
+        assert!(
+            missing.is_empty(),
+            "router routes missing from openapi:\n{}",
+            missing.join("\n")
+        );
+        let mut extra: Vec<String> = Vec::new();
+        for (path, methods) in &spec {
+            match router.get(path) {
+                None => extra.push(path.clone()),
+                Some(router_methods) => {
+                    for method in methods {
+                        if !router_methods.contains(method) {
+                            extra.push(format!("{method} {path}"));
+                        }
+                    }
+                }
+            }
+        }
+        assert!(
+            extra.is_empty(),
+            "openapi documents routes the router does not register:\n{}",
+            extra.join("\n")
+        );
+    }
+
+    #[test]
+    fn openapi_payload_storage_audit_and_contract_get_schemas() {
+        let v: Value = serde_json::from_str(&build_openapi()).unwrap();
+        let settings = &v["paths"]["/settings/payload-storage"];
+        assert!(
+            settings["get"]["responses"]["200"]["content"]["application/json"]["schema"]
+                ["properties"]["eligible"]
+                .is_object()
+        );
+        let put = &settings["put"];
+        assert_eq!(
+            put["requestBody"]["content"]["application/json"]["schema"]["properties"]["enabled"]
+                ["type"],
+            "boolean"
+        );
+        assert_eq!(
+            put["responses"]["400"]["description"].as_str().unwrap(),
+            crate::plan::payload_storage_upgrade_message()
+        );
+        let patch = &v["paths"]["/contracts/{id}/payload-storage"]["patch"];
+        assert_eq!(patch["parameters"][0]["name"], "id");
+        assert_eq!(
+            patch["requestBody"]["content"]["application/json"]["schema"]["properties"]["enabled"]
+                ["type"],
+            "boolean"
+        );
+        let audit = &v["paths"]["/audit"]["get"];
+        let names: Vec<&str> = audit["parameters"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|p| p["name"].as_str().unwrap())
+            .collect();
+        assert!(names.contains(&"contract_id"));
+        assert!(names.contains(&"limit"));
+        assert!(names.contains(&"offset"));
+        assert_eq!(
+            audit["responses"]["200"]["content"]["application/json"]["schema"]["items"]
+                ["properties"]["passed"]["type"],
+            "boolean"
+        );
+        let get = &v["paths"]["/contracts/{id}"]["get"];
+        assert_eq!(
+            get["responses"]["200"]["content"]["application/json"]["schema"]["properties"]
+                ["store_event_payloads"]["type"],
+            "boolean"
+        );
+        for plan in crate::plan::PAID_PLANS {
+            let desc = get["description"].as_str().unwrap_or("");
+            assert!(desc.contains(plan), "{desc} missing {plan}");
+        }
+    }
+
+    fn router_operations(
+        src: &str,
+    ) -> std::collections::BTreeMap<String, std::collections::BTreeSet<String>> {
+        use std::collections::{BTreeMap, BTreeSet};
+        let start = src.find("fn build_router").expect("build_router");
+        let src = &src[start..];
+        let body_start = src.find('{').expect("build_router body");
+        let mut depth = 0usize;
+        let mut end = body_start;
+        for (i, b) in src.as_bytes().iter().enumerate().skip(body_start) {
+            match b {
+                b'{' => depth += 1,
+                b'}' => {
+                    depth -= 1;
+                    if depth == 0 {
+                        end = i;
+                        break;
+                    }
+                }
+                _ => {}
+            }
+        }
+        let body = &src[body_start..=end];
+        let mut out: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
+        let mut i = 0usize;
+        while let Some(rel) = body[i..].find(".route(") {
+            let args_start = i + rel + ".route(".len();
+            let mut paren = 1i32;
+            let mut j = args_start;
+            let bytes = body.as_bytes();
+            while j < bytes.len() && paren > 0 {
+                match bytes[j] {
+                    b'(' => paren += 1,
+                    b')' => paren -= 1,
+                    _ => {}
+                }
+                if paren > 0 {
+                    j += 1;
+                }
+            }
+            let args = &body[args_start..j];
+            let path = first_string(args).unwrap_or_else(|| panic!("route without path: {args}"));
+            let methods = http_methods(args);
+            assert!(!methods.is_empty(), "no methods on {path}");
+            let norm = normalize_openapi_path(&path);
+            let prev = out.insert(norm.clone(), methods.clone());
+            assert!(prev.is_none(), "two router paths normalize to {norm}");
+            i = j + 1;
+        }
+        assert!(out.len() > 40, "parser missed routes: {}", out.len());
+        out
+    }
+
+    fn spec_operations(
+        v: &Value,
+    ) -> std::collections::BTreeMap<String, std::collections::BTreeSet<String>> {
+        use std::collections::{BTreeMap, BTreeSet};
+        const METHODS: &[&str] = &["get", "post", "put", "patch", "delete"];
+        let mut out = BTreeMap::new();
+        for (path, item) in v["paths"].as_object().expect("paths") {
+            let methods = item
+                .as_object()
+                .expect("path item")
+                .keys()
+                .filter(|k| METHODS.contains(&k.as_str()))
+                .cloned()
+                .collect::<BTreeSet<_>>();
+            out.insert(normalize_openapi_path(path), methods);
+        }
+        out
+    }
+
+    fn normalize_openapi_path(path: &str) -> String {
+        let mut out = String::new();
+        let mut chars = path.chars().peekable();
+        while let Some(c) = chars.next() {
+            if c == '{' {
+                out.push_str("{}");
+                for c2 in chars.by_ref() {
+                    if c2 == '}' {
+                        break;
+                    }
+                }
+            } else {
+                out.push(c);
+            }
+        }
+        out
+    }
+
+    fn first_string(args: &str) -> Option<String> {
+        let bytes = args.as_bytes();
+        let start = bytes.iter().position(|b| *b == b'"')? + 1;
+        let mut end = start;
+        while end < bytes.len() && bytes[end] != b'"' {
+            end += 1;
+        }
+        Some(args[start..end].to_string())
+    }
+
+    fn http_methods(args: &str) -> std::collections::BTreeSet<String> {
+        use std::collections::BTreeSet;
+        const METHODS: &[&str] = &["get", "post", "put", "patch", "delete"];
+        let bytes = args.as_bytes();
+        let mut found = BTreeSet::new();
+        let mut i = 0usize;
+        while i < bytes.len() {
+            if bytes[i] == b'"' {
+                i += 1;
+                while i < bytes.len() && bytes[i] != b'"' {
+                    i += 1;
+                }
+                i = i.saturating_add(1);
+                continue;
+            }
+            for method in METHODS {
+                let mb = method.as_bytes();
+                if !bytes[i..].starts_with(mb) {
+                    continue;
+                }
+                let before_ok = i == 0 || {
+                    let p = bytes[i - 1];
+                    !p.is_ascii_alphanumeric() && p != b'_'
+                };
+                let mut j = i + mb.len();
+                while j < bytes.len() && bytes[j].is_ascii_whitespace() {
+                    j += 1;
+                }
+                if before_ok && j < bytes.len() && bytes[j] == b'(' {
+                    found.insert((*method).to_string());
+                }
+            }
+            i += 1;
+        }
+        found
     }
 }

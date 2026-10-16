@@ -163,6 +163,8 @@ export interface ContractResponse {
   updated_at: string;
   version_count: number;
   latest_stable_version: string | null;
+  /** Effective event-body storage. Same decision as `ContractSummary.store_event_payloads`. */
+  store_event_payloads: boolean;
 }
 
 /** Source of a contract version's YAML content. */
