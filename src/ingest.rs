@@ -725,7 +725,7 @@ pub async fn ingest_handler(
         if !forward_rows.is_empty() {
             let pool = state.db.clone();
             let row_count = forward_rows.len();
-            let forward_ok = storage::forward_events_batch(&pool, &forward_rows)
+            let forward_ok = storage::forward_events_batch(&pool, &forward_rows, store_payloads)
                 .await
                 .is_ok();
             if !forward_ok {
@@ -1239,7 +1239,9 @@ fn persist_envelope_batch(
         let pool = state.db.clone();
         let row_count = forward_rows.len();
         tokio::spawn(async move {
-            if let Err(e) = storage::forward_events_batch(&pool, &forward_rows).await {
+            if let Err(e) =
+                storage::forward_events_batch(&pool, &forward_rows, store_payloads).await
+            {
                 tracing::warn!("envelope: failed to batch-forward {row_count} events: {e:?}");
             }
         });

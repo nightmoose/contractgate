@@ -1688,7 +1688,9 @@ pub async fn v1_ingest_handler(
         if !forward_rows.is_empty() {
             let pool = state.db.clone();
             tokio::spawn(async move {
-                if let Err(e) = storage::forward_events_batch(&pool, &forward_rows).await {
+                if let Err(e) =
+                    storage::forward_events_batch(&pool, &forward_rows, store_payloads).await
+                {
                     tracing::warn!("v1 ingest: forward write failed: {e:?}");
                 }
             });

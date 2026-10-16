@@ -300,6 +300,7 @@ mod inner {
                 let transformed = apply_transforms(&compiled, event.clone());
 
                 if result.passed {
+                    // In-memory publish. This consumer does not insert `forwarded_events`.
                     route_clean(kinesis, clean_stream, &transformed.as_value().clone()).await;
                 } else {
                     let reason = result

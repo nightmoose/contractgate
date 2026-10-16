@@ -471,13 +471,32 @@ pub struct QuarantineEventInsert {
 ///
 /// `contract_version` is the version that accepted the event.
 ///
-/// `payload` is [`TransformedPayload`] so the forward destination also
-/// only ever sees the post-transform form (RFC-004 §6).
+/// `payload` is [`TransformedPayload`] so a stored body is the post-transform
+/// form (RFC-004 §6). The value stays in memory for the insert. It is written
+/// only when [`forward_events_batch`] is called with `store_payloads = true`.
 #[derive(Debug, Clone)]
 pub struct ForwardEventInsert {
     pub contract_id: Uuid,
     pub contract_version: String,
     pub payload: TransformedPayload,
+}
+
+/// JSON written to `forwarded_events.payload`.
+///
+/// The column is `JSONB NOT NULL` (migration 001) with no default, so SQL
+/// `NULL` cannot be inserted without `DROP NOT NULL`. When storage is off the
+/// event body is omitted as JSON `null`. `contract_id`, `contract_version`,
+/// and `created_at` are still written. A passing event is always a JSON
+/// object, so JSON `null` means "body not stored".
+pub(crate) fn persisted_forward_payload(
+    store_payloads: bool,
+    payload: &TransformedPayload,
+) -> serde_json::Value {
+    if store_payloads {
+        payload.as_value().clone()
+    } else {
+        serde_json::Value::Null
+    }
 }
 
 /// Batch-insert audit log entries in a single round-trip.
@@ -743,7 +762,17 @@ pub async fn purge_bodies(
 ///
 /// Unlike the other two helpers this one is awaited inline from the ingest
 /// handler so the response can mark individual events as `forwarded: true`.
-pub async fn forward_events_batch(pool: &PgPool, entries: &[ForwardEventInsert]) -> AppResult<()> {
+///
+/// RFC-086: `store_payloads` is the same gate as audit and quarantine
+/// ([`crate::plan::payloads_stored`]). When `false`, each row's `payload` is
+/// JSON `null` — the event body is not copied into the bind buffer. Metadata
+/// (`contract_id`, `contract_version`, `created_at`) is still inserted.
+/// Existing rows are not updated.
+pub async fn forward_events_batch(
+    pool: &PgPool,
+    entries: &[ForwardEventInsert],
+    store_payloads: bool,
+) -> AppResult<()> {
     if entries.is_empty() {
         return Ok(());
     }
@@ -751,10 +780,10 @@ pub async fn forward_events_batch(pool: &PgPool, entries: &[ForwardEventInsert])
     let contract_ids: Vec<Uuid> = entries.iter().map(|e| e.contract_id).collect();
     let contract_versions: Vec<String> =
         entries.iter().map(|e| e.contract_version.clone()).collect();
-    // RFC-004 §6: forward destination only ever sees post-transform payloads.
+    // RFC-004 §6: a stored body is post-transform. RFC-086: omit it otherwise.
     let payloads: Vec<serde_json::Value> = entries
         .iter()
-        .map(|e| e.payload.as_value().clone())
+        .map(|e| persisted_forward_payload(store_payloads, &e.payload))
         .collect();
 
     sqlx::query(
@@ -774,4 +803,53 @@ pub async fn forward_events_batch(pool: &PgPool, entries: &[ForwardEventInsert])
     .db_op("forward_events_batch")?;
 
     Ok(())
+}
+
+#[cfg(test)]
+mod forwarded_payload_tests {
+    use super::persisted_forward_payload;
+    use crate::plan::payloads_stored;
+    use crate::transform::TransformedPayload;
+    use serde_json::json;
+
+    fn secret() -> TransformedPayload {
+        TransformedPayload::from_stored(json!({"user_id": "u_1", "amount": 10}))
+    }
+
+    fn written(plan: &str, org_switch: bool, contract_switch: bool) -> serde_json::Value {
+        persisted_forward_payload(
+            payloads_stored(plan, org_switch, contract_switch),
+            &secret(),
+        )
+    }
+
+    #[test]
+    fn free_plan_omits_forwarded_payload() {
+        let body = written("free", true, true);
+        assert!(body.is_null(), "free plan must not store the event body");
+        assert!(written("aisg_free", true, true).is_null());
+        assert!(written("bogus", true, true).is_null());
+    }
+
+    #[test]
+    fn org_switch_off_omits_forwarded_payload() {
+        assert!(written("growth", false, true).is_null());
+        assert!(written("aisg_pro", false, true).is_null());
+        assert!(written("enterprise", false, true).is_null());
+    }
+
+    #[test]
+    fn contract_override_off_omits_forwarded_payload() {
+        assert!(written("growth", true, false).is_null());
+        assert!(written("aisg_pro", true, false).is_null());
+        assert!(written("enterprise", true, false).is_null());
+    }
+
+    #[test]
+    fn all_switches_on_stores_forwarded_payload() {
+        let expected = json!({"user_id": "u_1", "amount": 10});
+        assert_eq!(written("growth", true, true), expected);
+        assert_eq!(written("aisg_pro", true, true), expected);
+        assert_eq!(written("enterprise", true, true), expected);
+    }
 }

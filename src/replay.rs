@@ -416,6 +416,11 @@ pub async fn replay_for_contract(
     // ----- 5. Execute DB writes -------------------------------------------
     // RFC-086: replay only runs on rows whose body was stored (paid + opted-in),
     // so a re-quarantined failed replay stays storable for re-replay: store.
+    // The forwarded_events copy still follows the current storage rule. The
+    // body stays on `forward_inserts` in memory and is omitted from the row
+    // when the rule is off.
+    let store_forwarded =
+        crate::ingest::resolve_store_payloads(state, org_id, identity.store_event_payloads).await;
     storage::log_audit_entries_batch(&state.db, &audit_inserts, true).await?;
     storage::quarantine_events_batch(&state.db, &quar_inserts, true).await?;
     // Fire-and-forget forwarding on replay-passes, mirroring ingest path.
@@ -423,7 +428,8 @@ pub async fn replay_for_contract(
         let pool = state.db.clone();
         let to_forward = forward_inserts.clone();
         tokio::spawn(async move {
-            if let Err(e) = storage::forward_events_batch(&pool, &to_forward).await {
+            if let Err(e) = storage::forward_events_batch(&pool, &to_forward, store_forwarded).await
+            {
                 tracing::warn!("replay forward insert failed: {e}");
             }
         });
