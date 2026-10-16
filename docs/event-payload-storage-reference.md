@@ -36,6 +36,15 @@ When a body is not stored, the row is written with an empty/NULL body and a
 redaction marker (`raw_event_redacted` / `payload_redacted`). `GET /quarantine`
 returns `payload_redacted: true` and `raw_event: null` for such rows.
 
+`GET /contracts` reports `store_event_payloads` as the **effective** value, not
+the raw column (the column defaults to `true` and is not rewritten). It is
+`false` whenever the org's plan does not permit payload storage — the same
+`payloads_stored` plan gate ingest, egress, and the Kafka/Kinesis consumers
+use (`free`, `aisg_free`, and unknown plans never store). Paid plans
+(`growth`, `aisg_pro`, `enterprise`) report the stored per-contract override
+unchanged. Both products share `GET /contracts`. `GET /contracts/{id}` does
+not include this field.
+
 ## Turning it off purges history
 
 - **Org switch on → off:** all stored bodies for the org are purged.

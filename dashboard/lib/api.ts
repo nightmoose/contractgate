@@ -143,7 +143,9 @@ export interface ContractSummary {
   multi_stable_resolution: MultiStableResolution;
   latest_stable_version: string | null;
   version_count: number;
-  /** RFC-086: per-contract event-body storage override. */
+  /** RFC-086: effective event-body storage. False when the org plan cannot
+   * store payloads (Free / AISchemaGate Free), even if the stored per-contract
+   * override is on. Paid plans report that override. */
   store_event_payloads: boolean;
 }
 
@@ -329,6 +331,10 @@ export interface ReplayOutcome {
   passed: boolean;
   violations: Violation[];
   replayed_at: string;
+  /** True when the source body was not stored. Same classification as the
+   * per-contract replay route's `outcome: "redacted"`. `passed` is false and
+   * `violations` is empty; this is not a validation failure. */
+  redacted: boolean;
 }
 
 /** Response body for `POST /quarantine/replay`. */

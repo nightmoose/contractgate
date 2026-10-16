@@ -23,7 +23,7 @@ use std::sync::Arc;
 use uuid::Uuid;
 
 use crate::error::{AppError, AppResult};
-use crate::replay::{replay_for_contract, ReplayItemOutcome, ReplayRequest};
+use crate::replay::{replay_for_contract, replay_item_view, ReplayRequest};
 use crate::storage;
 use crate::validation::Violation;
 use crate::{AppState, OrgId};
@@ -121,6 +121,11 @@ pub struct ReplayOutcomeOut {
     pub passed: bool,
     pub violations: Vec<Violation>,
     pub replayed_at: chrono::DateTime<chrono::Utc>,
+    /// True when the source body was never stored or was purged. Same
+    /// classification as the per-contract route's `"outcome": "redacted"`.
+    /// `passed` is false and `violations` is empty; the row is not a
+    /// validation failure.
+    pub redacted: bool,
 }
 
 #[derive(Debug, Serialize)]
@@ -177,30 +182,18 @@ pub async fn replay_all_handler(
         let resp = replay_for_contract(&state, org_id, cid, ids, req.version.clone()).await?;
         let target = resp.target_version.clone();
         for item in resp.results {
-            let (passed, version, violations) = match item.outcome {
-                ReplayItemOutcome::Replayed {
-                    contract_version_matched,
-                    ..
-                } => (true, contract_version_matched, Vec::new()),
-                ReplayItemOutcome::StillQuarantined {
-                    contract_version_attempted,
-                    violations,
-                    ..
-                } => (false, contract_version_attempted, violations),
-                ReplayItemOutcome::AlreadyReplayed
-                | ReplayItemOutcome::NotFound
-                | ReplayItemOutcome::WrongContract
-                | ReplayItemOutcome::Purged
-                | ReplayItemOutcome::Redacted => (false, target.clone(), Vec::new()),
-            };
+            // Shared with the per-contract route: Redacted stays redacted
+            // instead of collapsing into passed:false / violations:[].
+            let view = replay_item_view(&item.outcome, &target);
             outcome_for.insert(
                 item.quarantine_id,
                 ReplayOutcomeOut {
                     event_id: item.quarantine_id,
-                    version,
-                    passed,
-                    violations,
+                    version: view.version,
+                    passed: view.passed,
+                    violations: view.violations,
                     replayed_at: now,
+                    redacted: view.redacted,
                 },
             );
         }
@@ -217,6 +210,7 @@ pub async fn replay_all_handler(
                 passed: false,
                 violations: Vec::new(),
                 replayed_at: now,
+                redacted: false,
             }),
         }
     }
@@ -271,6 +265,7 @@ pub async fn replay_history_all_handler(
                 passed: false,
                 violations: Vec::new(),
                 replayed_at: created_at,
+                redacted: false,
             }),
             PassedReplay {
                 contract_version,
@@ -282,6 +277,7 @@ pub async fn replay_history_all_handler(
                 passed: true,
                 violations: Vec::new(),
                 replayed_at: created_at,
+                redacted: false,
             }),
         }
     }
@@ -342,14 +338,21 @@ mod tests {
             passed: true,
             violations: Vec::new(),
             replayed_at: chrono::Utc::now(),
+            redacted: false,
         };
         let v = serde_json::to_value(&o).unwrap();
         let keys: std::collections::BTreeSet<&str> =
             v.as_object().unwrap().keys().map(String::as_str).collect();
-        let expected: std::collections::BTreeSet<&str> =
-            ["event_id", "version", "passed", "violations", "replayed_at"]
-                .into_iter()
-                .collect();
+        let expected: std::collections::BTreeSet<&str> = [
+            "event_id",
+            "version",
+            "passed",
+            "violations",
+            "replayed_at",
+            "redacted",
+        ]
+        .into_iter()
+        .collect();
         assert_eq!(keys, expected, "ReplayOutcome wire shape drifted");
 
         // ReplayAllResponse envelope: { replayed, outcomes }.
