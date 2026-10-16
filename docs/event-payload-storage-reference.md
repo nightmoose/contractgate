@@ -118,8 +118,11 @@ Redacts stored bodies for one contract, retaining all audit, quarantine, and
 forwarded rows. `forwarded_events.payload` becomes JSON `null`.
 
 ```json
-{ "quarantine_bodies_redacted": 12, "audit_bodies_redacted": 480 }
+{ "quarantine_bodies_redacted": 12, "audit_bodies_redacted": 480, "forwarded_bodies_redacted": 90 }
 ```
+
+`forwarded_bodies_redacted` is the number of `forwarded_events` rows whose
+payload was set to JSON `null`.
 
 ## Setting a plan
 
