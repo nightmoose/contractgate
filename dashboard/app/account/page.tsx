@@ -1105,7 +1105,7 @@ function EventPayloadStorageSection() {
   async function toggle(next: boolean) {
     if (!next) {
       const ok = confirm(
-        "Turn off event payload storage?\n\nThis immediately PURGES every stored event body for your org (audit + quarantine). " +
+        "Turn off event payload storage?\n\nThis immediately PURGES every stored event body for your org (audit, quarantine, and passed-event export). " +
           "Audit records and violation history are kept — only the source data is removed. " +
           "Quarantined events without a stored body can no longer be replayed. This cannot be undone."
       );
@@ -1131,7 +1131,8 @@ function EventPayloadStorageSection() {
           <div className="text-sm font-semibold text-slate-200">Event Payload Storage</div>
           <p className="text-xs text-slate-500 mt-1 max-w-md">
             When on, {brandName} retains the (post-transform) body of each event
-            in the audit log and quarantine store. Required for quarantine replay.
+            in the audit log, quarantine store, and passed-event export. Required
+            for quarantine replay.
             When off, only metadata is kept — what failed and why, never the source
             data.
           </p>

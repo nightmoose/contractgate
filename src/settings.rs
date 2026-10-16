@@ -94,7 +94,7 @@ pub async fn set_payload_storage_handler(
     }
 
     storage::set_org_store_payloads(&state.db, oid, body.enabled).await?;
-    // Off → purge every stored body for the org.
+    // Off → purge every stored body for the org, including forwarded_events.
     if !body.enabled {
         storage::purge_bodies(&state.db, Some(oid), None).await?;
     }
@@ -108,7 +108,8 @@ pub async fn set_payload_storage_handler(
 
 /// `PATCH /contracts/{id}/payload-storage` `{enabled}` — per-contract override.
 /// Only effective when the org master switch is on. Write-forward only: this
-/// does **not** purge history (use the purge endpoint for that).
+/// does **not** purge audit, quarantine, or `forwarded_events` history (use
+/// the purge endpoint for that).
 pub async fn set_contract_payload_storage_handler(
     State(state): State<Arc<AppState>>,
     OrgId(org_id): OrgId,
@@ -125,8 +126,8 @@ pub async fn set_contract_payload_storage_handler(
 }
 
 /// `POST /contracts/{id}/purge-bodies` — redact stored bodies for one contract,
-/// retaining every audit/quarantine row and its metadata. Independent of the
-/// toggles. Never deletes a row.
+/// retaining every audit, quarantine, and forwarded row and its metadata.
+/// Independent of the toggles. Never deletes a row.
 pub async fn purge_contract_bodies_handler(
     State(state): State<Arc<AppState>>,
     OrgId(org_id): OrgId,

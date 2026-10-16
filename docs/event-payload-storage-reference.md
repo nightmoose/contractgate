@@ -23,7 +23,11 @@ Passing events also insert a `forwarded_events` row. That row keeps
 `contract_id`, `contract_version`, and `created_at` either way. The body is
 written only under the policy above. When storage is off, `payload` is JSON
 `null` (the column is `NOT NULL`, so the event is omitted without a schema
-change). Existing rows are not rewritten. Kafka and Kinesis publish the body
+change). A new insert does not rewrite older rows. Turning the org switch off,
+or calling the per-contract purge, does: those set existing
+`forwarded_events.payload` values to JSON `null` in the same transaction as
+the audit and quarantine body purge. The per-contract override off does not.
+Kafka and Kinesis publish the body
 from memory and do not write this table. A reader must treat JSON `null` as
 "body not stored"; a passing event is a JSON object, so `null` is not a
 captured body. Paid plans can pull these rows with
@@ -74,8 +78,12 @@ return the same effective field on `ContractResponse`.
   independent of the toggles.
 
 Purge redacts **in place**: it nulls the body column and sets the redaction
-marker. It never deletes an `audit_log` or `quarantine_events` row — all rows and
-metadata are retained.
+marker. It never deletes an `audit_log`, `quarantine_events`, or
+`forwarded_events` row — all rows and metadata are retained.
+`forwarded_events.payload` is set to JSON `null` (the column is `NOT NULL`).
+Org switch off and `POST /contracts/{id}/purge-bodies` both do this, for the
+org or for that contract. The per-contract override off does not purge any
+of the three tables.
 
 ## API
 
@@ -96,7 +104,8 @@ response is `400` and the message names every plan the paid-plan check accepts
 (`growth`, `aisg_pro`, `enterprise` — DataContractGate Pro, AISchemaGate Pro,
 and Enterprise). That list is the same slice the check uses, so a new paid
 plan shows up in the message without a separate copy. Setting `false` purges
-all stored bodies for the org. Returns the same shape as GET.
+all stored bodies for the org, including `forwarded_events` payloads (JSON
+`null`). Returns the same shape as GET.
 
 ### `PATCH /contracts/{id}/payload-storage`
 
@@ -105,7 +114,8 @@ not purge history. `404` if the contract isn't owned by the caller's org.
 
 ### `POST /contracts/{id}/purge-bodies`
 
-Redacts stored bodies for one contract, retaining all audit/quarantine rows.
+Redacts stored bodies for one contract, retaining all audit, quarantine, and
+forwarded rows. `forwarded_events.payload` becomes JSON `null`.
 
 ```json
 { "quarantine_bodies_redacted": 12, "audit_bodies_redacted": 480 }

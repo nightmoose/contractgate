@@ -3594,7 +3594,9 @@ mod rfc086_payload_storage {
     use serde_json::json;
     use uuid::Uuid;
 
-    use super::super::storage::{self, AuditEntryInsert, QuarantineEventInsert};
+    use super::super::storage::{
+        self, AuditEntryInsert, ForwardEventInsert, QuarantineEventInsert,
+    };
     use super::super::transform::TransformedPayload;
 
     const YAML: &str = r#"
@@ -3784,6 +3786,24 @@ metrics: []
         storage::log_audit_entries_batch(&pool, &audits, true)
             .await
             .unwrap();
+        storage::forward_events_batch(
+            &pool,
+            &[
+                ForwardEventInsert {
+                    contract_id: cid,
+                    contract_version: "1.0.0".into(),
+                    payload: TransformedPayload::from_stored(json!({"id": "secret-body"})),
+                },
+                ForwardEventInsert {
+                    contract_id: cid,
+                    contract_version: "1.0.0".into(),
+                    payload: TransformedPayload::from_stored(json!({"id": "secret-body-2"})),
+                },
+            ],
+            true,
+        )
+        .await
+        .unwrap();
 
         let q_before: i64 =
             sqlx::query_scalar("SELECT count(*) FROM quarantine_events WHERE contract_id = $1")
@@ -3843,6 +3863,25 @@ metrics: []
         .await
         .unwrap();
         assert_eq!(a_unredacted, 0, "no audit body survives purge");
+        let f_bodies: i64 = sqlx::query_scalar(
+            "SELECT count(*) FROM forwarded_events \
+             WHERE contract_id = $1 AND jsonb_typeof(payload) <> 'null'",
+        )
+        .bind(cid)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(f_bodies, 0, "no forwarded body survives purge");
+        let f_rows: i64 =
+            sqlx::query_scalar("SELECT count(*) FROM forwarded_events WHERE contract_id = $1")
+                .bind(cid)
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        assert_eq!(
+            f_rows, 2,
+            "purge nulls forwarded payloads and keeps the rows"
+        );
 
         // Idempotent: nothing left to redact.
         let (q2, a2) = storage::purge_bodies(&pool, Some(org), Some(cid))
@@ -5702,7 +5741,9 @@ mod contract_delete_quarantine {
     use uuid::Uuid;
 
     use super::super::error::AppError;
-    use super::super::storage::{self, AuditEntryInsert, QuarantineEventInsert};
+    use super::super::storage::{
+        self, AuditEntryInsert, ForwardEventInsert, QuarantineEventInsert,
+    };
     use super::super::transform::TransformedPayload;
 
     const YAML: &str = r#"
@@ -5802,6 +5843,17 @@ metrics: []
         )
         .await
         .unwrap();
+        storage::forward_events_batch(
+            &pool,
+            &[ForwardEventInsert {
+                contract_id: cid,
+                contract_version: version.version.clone(),
+                payload: TransformedPayload::from_stored(json!({"id": "passed-body"})),
+            }],
+            true,
+        )
+        .await
+        .unwrap();
 
         // Wrong org must not delete the contract or its quarantine rows.
         let err = storage::delete_contract(&pool, cid, Some(Uuid::new_v4()))
@@ -5815,6 +5867,13 @@ metrics: []
                 .await
                 .unwrap();
         assert_eq!(still, 2, "wrong-org delete leaves quarantine rows");
+        let forwarded_still: i64 =
+            sqlx::query_scalar("SELECT count(*) FROM forwarded_events WHERE contract_id = $1")
+                .bind(cid)
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        assert_eq!(forwarded_still, 1, "wrong-org delete leaves forwarded rows");
 
         storage::delete_contract(&pool, cid, Some(org))
             .await
@@ -5838,6 +5897,16 @@ metrics: []
                 .await
                 .unwrap();
         assert_eq!(left, 0, "quarantine rows removed with the contract");
+        let forwarded_left: i64 =
+            sqlx::query_scalar("SELECT count(*) FROM forwarded_events WHERE contract_id = $1")
+                .bind(cid)
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        assert_eq!(
+            forwarded_left, 0,
+            "forwarded rows removed with the contract"
+        );
 
         let (audit_n, replay_cleared): (i64, bool) = sqlx::query_as(
             "SELECT count(*), bool_and(replay_of_quarantine_id IS NULL) \
