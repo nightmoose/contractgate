@@ -42,6 +42,11 @@ services:
       # RFC-066: local/demo stack runs without auth. This is the ONLY way to
       # disable auth now (the env-var master key was removed). Never set in prod.
       CONTRACTGATE_DEV_NO_AUTH: "1"
+      # Connect Fivetran reads CANONICAL_API_ORIGIN and returns 500 when it
+      # is unset. Fivetran cloud must reach that origin over public HTTPS.
+      # localhost:8080 is not reachable. Put a tunnel or a TLS reverse proxy
+      # in front of this gateway and set the public URL here.
+      # CANONICAL_API_ORIGIN: https://contractgate.example.com
       # RFC-100: /metrics is fail-closed by default. Dev/compose opts in with
       # METRICS_PUBLIC=1 so the local Prometheus scrapes without a token. Prod
       # leaves METRICS_PUBLIC unset AND sets METRICS_AUTH_TOKEN=<secret>.

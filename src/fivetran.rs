@@ -669,6 +669,29 @@ fn ensure_paid(plan: &str) -> AppResult<()> {
     }
 }
 
+/// Hosted calls have a caller. `plan == None` is a missing org row (401).
+/// An unpaid plan is 403. `caller == None` is self-host / auth off: no org,
+/// same allowance as `passed_events::authorize_passed_export`.
+fn connect_allowed(caller: Option<&ValidatedKey>, plan: Option<&str>) -> AppResult<()> {
+    match caller {
+        None => Ok(()),
+        Some(_) => match plan {
+            Some(plan) => ensure_paid(plan),
+            None => Err(AppError::Unauthorized),
+        },
+    }
+}
+
+/// Auth on and no caller is 401 before any plan check. Auth off with no
+/// caller is the self-host path `connect_allowed` permits.
+fn require_connect_caller(auth_configured: bool, has_caller: bool) -> AppResult<()> {
+    if auth_configured && !has_caller {
+        Err(AppError::Unauthorized)
+    } else {
+        Ok(())
+    }
+}
+
 fn parse_public_base_url(raw: &str) -> AppResult<String> {
     let trimmed = raw.trim().trim_end_matches('/');
     let url = reqwest::Url::parse(trimmed).map_err(|_| origin_error())?;
@@ -1138,37 +1161,49 @@ async fn delete_package<H: ConnectHttp + ?Sized>(http: &H, input: &ConnectInput,
 async fn finish_connect<H: ConnectHttp + ?Sized, K: ConnectorKeys + ?Sized>(
     http: &H,
     keys: &K,
-    caller: &ValidatedKey,
-    plan: &str,
+    caller: Option<&ValidatedKey>,
+    plan: Option<&str>,
     owned: &[Uuid],
     mut input: ConnectInput,
     base_url: &str,
 ) -> AppResult<ConnectResponse> {
-    ensure_paid(plan)?;
+    connect_allowed(caller, plan)?;
     if let Some(id) = missing_contract(&input.contract_ids, owned) {
         return Err(AppError::ContractNotFound(id));
     }
     let base_url = public_base_url_from(Some(base_url))?;
     verify_group(http, &input).await?;
     let raw = mint_raw_key();
-    let prefix = &raw[..12];
-    let hash = hash_key(&raw);
-    let key_id = keys
-        .insert(
-            caller.user_id,
-            caller.org_id,
-            prefix,
-            &hash,
-            &input.contract_ids,
+    // Hosted: persist a key scoped to the caller's org and the selected
+    // contracts. Self-host has no user and no org. `api_keys.user_id` and
+    // `org_id` are NOT NULL, and key lookup joins `orgs`, so there is no row
+    // to insert. Auth is off on that instance, so `GET /passed` does not look
+    // the key up. The connector still sends this key.
+    let key_id = if let Some(caller) = caller {
+        let prefix = &raw[..12];
+        let hash = hash_key(&raw);
+        Some(
+            keys.insert(
+                caller.user_id,
+                caller.org_id,
+                prefix,
+                &hash,
+                &input.contract_ids,
+            )
+            .await?,
         )
-        .await?;
+    } else {
+        None
+    };
     input.secrets.cg_key = raw;
 
     let zip = connector_zip();
     let package_id = match upload_package(http, &input, &zip).await {
         Ok(id) => id,
         Err(err) => {
-            revoke_quiet(keys, caller.org_id, key_id).await;
+            if let (Some(caller), Some(key_id)) = (caller, key_id) {
+                revoke_quiet(keys, caller.org_id, key_id).await;
+            }
             return Err(err);
         }
     };
@@ -1183,7 +1218,9 @@ async fn finish_connect<H: ConnectHttp + ?Sized, K: ConnectorKeys + ?Sized>(
         }
         Err(err) => {
             delete_package(http, &input, &package_id).await;
-            revoke_quiet(keys, caller.org_id, key_id).await;
+            if let (Some(caller), Some(key_id)) = (caller, key_id) {
+                revoke_quiet(keys, caller.org_id, key_id).await;
+            }
             Err(err)
         }
     }
@@ -1207,11 +1244,8 @@ pub async fn connect_fivetran_handler(
     State(state): State<Arc<AppState>>,
     req: axum::extract::Request,
 ) -> AppResult<Json<ConnectResponse>> {
-    let caller = req
-        .extensions()
-        .get::<ValidatedKey>()
-        .cloned()
-        .ok_or(AppError::Unauthorized)?;
+    let caller = req.extensions().get::<ValidatedKey>().cloned();
+    require_connect_caller(state.auth_configured(), caller.is_some())?;
     let bytes = axum::body::to_bytes(req.into_body(), MAX_CONNECT_BODY)
         .await
         .map_err(|_| {
@@ -1223,13 +1257,21 @@ pub async fn connect_fivetran_handler(
     // Resolve the public origin before a key is minted. Unset used to send
     // the connector to production.
     let base_url = public_base_url()?;
-    let plan = storage::get_org_plan(&state.db, caller.org_id)
-        .await?
-        .ok_or(AppError::Unauthorized)?;
-    ensure_paid(&plan)?;
+    // No caller is self-host / auth off: there is no org, so there is no plan.
+    // A caller whose org row is missing stays 401. Hosted free stays 403.
+    let plan = match &caller {
+        Some(caller) => Some(
+            storage::get_org_plan(&state.db, caller.org_id)
+                .await?
+                .ok_or(AppError::Unauthorized)?,
+        ),
+        None => None,
+    };
+    connect_allowed(caller.as_ref(), plan.as_deref())?;
+    let org_scope = caller.as_ref().map(|caller| caller.org_id);
     let mut contracts = Vec::new();
     for id in &input.contract_ids {
-        let identity = storage::get_contract_identity(&state.db, *id, Some(caller.org_id)).await?;
+        let identity = storage::get_contract_identity(&state.db, *id, org_scope).await?;
         if contracts.len() == MAX_CONTRACTS {
             return Err(AppError::BadRequest(format!(
                 "contract_ids exceeds {MAX_CONTRACTS}"
@@ -1250,7 +1292,16 @@ pub async fn connect_fivetran_handler(
             .collect(),
     };
     let keys = DbKeys { db: &state.db };
-    let response = finish_connect(&http, &keys, &caller, &plan, &owned, input, &base_url).await?;
+    let response = finish_connect(
+        &http,
+        &keys,
+        caller.as_ref(),
+        plan.as_deref(),
+        &owned,
+        input,
+        &base_url,
+    )
+    .await?;
     Ok(Json(response))
 }
 
@@ -1260,7 +1311,7 @@ pub(crate) fn openapi_operation() -> Value {
         "operationId": "connect_fivetran",
         "summary": "Deploy the ContractGate Fivetran connector into the caller's Fivetran account",
         "description": format!(
-            "Paid plans only ({upgrade}). The Fivetran API key and secret are used once to upload the connector package and create a paused connection, and are not stored. ContractGate mints a new API key named \"{KEY_NAME}\" for the connection and sends it as a Fivetran secret. base_url is CANONICAL_API_ORIGIN and the call fails with 500 when that variable is unset. Default table names are a slug of the contract name plus the first 8 hex digits of its id. destination_schema_names is SOURCE_NAMING so Fivetran keeps those names. An explicit table_names entry replaces the default for that contract."
+            "Paid plans only ({upgrade}). Self-host with auth off has no org and is allowed, the same way passed-event export is. The Fivetran API key and secret are used once to upload the connector package and create a paused connection, and are not stored. On a hosted org, ContractGate mints a new API key named \"{KEY_NAME}\" for the connection and sends it as a Fivetran secret. base_url is CANONICAL_API_ORIGIN and the call fails with 500 when that variable is unset. Default table names are a slug of the contract name plus the first 8 hex digits of its id. destination_schema_names is SOURCE_NAMING so Fivetran keeps those names. An explicit table_names entry replaces the default for that contract."
         ),
         "requestBody": {
             "required": true,
@@ -1693,8 +1744,8 @@ mod tests {
         let err = finish_connect(
             &http,
             &keys,
-            &caller(),
-            "growth",
+            Some(&caller()),
+            Some("growth"),
             &[],
             input,
             "https://api.datacontractgate.com",
@@ -1718,8 +1769,8 @@ mod tests {
             let err = finish_connect(
                 &http,
                 &keys,
-                &caller(),
-                plan,
+                Some(&caller()),
+                Some(plan),
                 &[id],
                 input,
                 "https://api.datacontractgate.com",
@@ -1742,6 +1793,76 @@ mod tests {
         }
     }
 
+    #[test]
+    fn self_host_is_allowed_and_hosted_free_is_403() {
+        assert!(connect_allowed(None, None).is_ok());
+        assert!(require_connect_caller(false, false).is_ok());
+        assert!(matches!(
+            require_connect_caller(true, false).unwrap_err(),
+            AppError::Unauthorized
+        ));
+        assert!(matches!(
+            connect_allowed(Some(&caller()), None).unwrap_err(),
+            AppError::Unauthorized
+        ));
+        for plan in ["free", "aisg_free"] {
+            let err = connect_allowed(Some(&caller()), Some(plan)).unwrap_err();
+            let response = err.into_response();
+            assert_eq!(
+                response.status(),
+                axum::http::StatusCode::FORBIDDEN,
+                "{plan}"
+            );
+        }
+        for plan in plan::PAID_PLANS {
+            connect_allowed(Some(&caller()), Some(plan)).unwrap();
+        }
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn self_host_connects_and_passed_export_accepts_the_sync() {
+        let id = contract(17);
+        let http = ScriptHttp::ok();
+        let keys = MemKeys::new();
+        let input = parse_connect_body(&body(&[id], None)).unwrap();
+        let response = finish_connect(
+            &http,
+            &keys,
+            None,
+            None,
+            &[id],
+            input,
+            "https://contractgate.example.com",
+        )
+        .await
+        .unwrap();
+        assert_eq!(response.status, "paused");
+        // No org and no user: the key is not written to api_keys.
+        assert!(keys.inserted.lock().unwrap().is_empty());
+        let created = http.created.lock().unwrap();
+        let secrets = created[0]["config"]["secrets_list"].as_array().unwrap();
+        let cg_key = secrets
+            .iter()
+            .find(|item| item["key"] == "api_key")
+            .unwrap()["value"]
+            .as_str()
+            .unwrap();
+        assert!(cg_key.starts_with("cg_live_"));
+        assert_eq!(
+            secrets
+                .iter()
+                .find(|item| item["key"] == "base_url")
+                .unwrap()["value"],
+            "https://contractgate.example.com"
+        );
+        // Auth off, no org: GET /passed does not look this key up and does
+        // not apply the plan gate. That is the sync this connector will make.
+        assert!(matches!(
+            crate::passed_events::authorize_passed_export(false, None, None, true, true),
+            Ok(None)
+        ));
+    }
+
     #[tokio::test(flavor = "current_thread")]
     async fn success_uploads_package_and_creates_connection() {
         let id = contract(11);
@@ -1756,8 +1877,8 @@ mod tests {
         let response = finish_connect(
             &http,
             &keys,
-            &caller(),
-            "growth",
+            Some(&caller()),
+            Some("growth"),
             &[id],
             input,
             "https://api.datacontractgate.com/",
@@ -1853,8 +1974,8 @@ mod tests {
         let response = finish_connect(
             &http,
             &keys,
-            &caller(),
-            "aisg_pro",
+            Some(&caller()),
+            Some("aisg_pro"),
             &[id],
             input,
             "https://api.datacontractgate.com",
@@ -1886,8 +2007,8 @@ mod tests {
         let err = finish_connect(
             &http,
             &keys,
-            &caller(),
-            "enterprise",
+            Some(&caller()),
+            Some("enterprise"),
             &[id],
             input,
             "https://api.datacontractgate.com",
@@ -1931,8 +2052,8 @@ mod tests {
         let err = finish_connect(
             &http,
             &keys,
-            &caller(),
-            "growth",
+            Some(&caller()),
+            Some("growth"),
             &[id],
             input,
             "https://api.datacontractgate.com",
@@ -1971,8 +2092,8 @@ mod tests {
         let err = finish_connect(
             &http,
             &keys,
-            &caller(),
-            "enterprise",
+            Some(&caller()),
+            Some("enterprise"),
             &[id],
             input,
             "https://api.datacontractgate.com",
@@ -2172,9 +2293,17 @@ mod tests {
         };
         let keys = MemKeys::new();
         let input = parse_connect_body(&body(&[id], None)).unwrap();
-        let err = finish_connect(&http, &keys, &caller(), "growth", &[id], input, "")
-            .await
-            .unwrap_err();
+        let err = finish_connect(
+            &http,
+            &keys,
+            Some(&caller()),
+            Some("growth"),
+            &[id],
+            input,
+            "",
+        )
+        .await
+        .unwrap_err();
         let text = err.to_string();
         assert!(text.contains("CANONICAL_API_ORIGIN is unset"), "{text}");
         let response = err.into_response();

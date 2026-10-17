@@ -40,6 +40,8 @@ export default function FivetranDocsPage() {
       <p className="text-slate-400 text-sm leading-relaxed">
         On a free plan the form says “Connect Fivetran is a paid-plan feature”
         and links to Upgrade. The API error names the same three plan ids.
+        An open-source instance with no org is not on those plans. See
+        Self-hosting.
       </p>
 
       <H2 id="fivetran-account">Fivetran API key and destination group</H2>
@@ -210,6 +212,37 @@ export default function FivetranDocsPage() {
           connection state yourself.
         </li>
       </ul>
+
+      <H2 id="self-hosting">Self-hosting</H2>
+      <p className="text-slate-300 text-sm leading-relaxed mb-3">
+        Open-source self-host and auth-off mode have no org. Connect Fivetran
+        is allowed there, and the connector key works against{" "}
+        <code className="text-slate-200">GET /v1/contracts/{"{id}"}/passed</code>{" "}
+        on that instance. Hosted <code className="text-slate-200">free</code> and{" "}
+        <code className="text-slate-200">aisg_free</code> still receive 403.
+      </p>
+      <p className="text-slate-300 text-sm leading-relaxed mb-3">
+        Fivetran&apos;s cloud must be able to reach your API over public HTTPS.
+        Set <code className="text-slate-200">CANONICAL_API_ORIGIN</code> to that
+        public URL. Connect returns 500 and mints no key when it is unset.
+      </p>
+      <p className="text-slate-300 text-sm leading-relaxed mb-3">
+        If the instance is not reachable from the internet, skip the button.
+        Deploy the connector yourself from{" "}
+        <a
+          className="text-green-400 hover:underline"
+          href="https://github.com/nightmoose/nmb-contractgate-fivetran"
+        >
+          github.com/nightmoose/nmb-contractgate-fivetran
+        </a>
+        . The commands are in the next section.
+      </p>
+      <p className="text-slate-400 text-sm leading-relaxed">
+        docker-compose publishes the gateway on localhost. Fivetran cannot call
+        that address. Put a tunnel or a reverse proxy with TLS in front of the
+        gateway, and set <code className="text-slate-200">CANONICAL_API_ORIGIN</code>{" "}
+        to the proxy&apos;s https URL.
+      </p>
 
       <H2 id="manual">Deploy the connector yourself</H2>
       <p className="text-slate-300 text-sm leading-relaxed mb-3">

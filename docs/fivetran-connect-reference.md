@@ -1,6 +1,6 @@
 # Connect Fivetran
 
-**Status:** Paid plans (`growth`, `aisg_pro`, `enterprise`).
+**Status:** Paid plans (`growth`, `aisg_pro`, `enterprise`). Self-host with auth off (no org) is allowed.
 
 Deploys the public ContractGate connector into the caller's own Fivetran account.
 ContractGate is DataContractGate and AISchemaGate sharing one engine. The connector
@@ -13,9 +13,17 @@ The dashboard button is on **Contracts**. The same call is `POST /v1/integration
 The Fivetran API key and secret are used for that one request and are not stored.
 They are redacted from logs and error text.
 
-ContractGate mints a new API key named `Fivetran connector`, scoped to the org and
-the selected contracts, and sends it to Fivetran as a secret. The dashboard user's
-key is not reused. The raw key is not returned to the browser.
+On a hosted org, ContractGate mints a new API key named `Fivetran connector`,
+scoped to the org and the selected contracts, and sends it to Fivetran as a
+secret. The dashboard user's key is not reused. The raw key is not returned
+to the browser.
+
+Self-host (`CONTRACTGATE_DEV_NO_AUTH=1`) has no org on the request. Connect is
+allowed, the same way `GET /v1/contracts/{id}/passed` is. The connector still
+receives an API key. That key is not written to `api_keys`: `user_id` and
+`org_id` are required, and key lookup joins `orgs`. Auth is off, so `/passed`
+does not look the key up and does not apply the plan gate. Hosted `free` and
+`aisg_free` still receive 403.
 
 `base_url` is `CANONICAL_API_ORIGIN` (`https://`). Connect returns 500 and does not
 mint a key when that variable is unset or empty. It does not fall back to production.
