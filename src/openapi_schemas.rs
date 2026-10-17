@@ -305,6 +305,7 @@ fn me_response_schema() -> Value {
             "org_name",
             "plan",
             "plan_display",
+            "paid_features",
             "auth",
             "api_key_id",
             "monthly_event_limit",
@@ -317,7 +318,14 @@ fn me_response_schema() -> Value {
                 "type": ["string", "null"],
                 "description": "Null when the stored name looks like an email."
             },
-            "plan": {"type": "string"},
+            "plan": {
+                "type": "string",
+                "description": "Stored org plan. Monthly limit and default rate limit follow this value."
+            },
+            "paid_features": {
+                "type": "boolean",
+                "description": "True when passed-event export, Connect Fivetran, and payload storage are allowed. True for a paid plan, and for every plan when CONTRACTGATE_SELF_HOSTED is set. A self-hosted free org still reports plan free."
+            },
             "plan_display": {
                 "type": "string",
                 "enum": [
