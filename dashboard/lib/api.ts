@@ -1445,6 +1445,8 @@ export interface FivetranConnectRequest {
   group_id: string;
   contract_ids: string[];
   table_names?: string;
+  /** Lowercase identifier, at most 63 characters. Omitted uses a random schema. */
+  destination_schema?: string;
 }
 
 export interface FivetranConnectResponse {

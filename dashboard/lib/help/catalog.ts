@@ -29,8 +29,8 @@ export const HELP_CATALOG: Record<string, HelpEntry> = {
   },
   "nav.fivetran": {
     title: "Fivetran",
-    what: "Docs for deploying the ContractGate connector into your own Fivetran account.",
-    does: "Explains the Contracts page button, which plans can use it, and that the Fivetran API key is used once and not stored.",
+    what: "Guide: Use ContractGate with Fivetran.",
+    does: "Walks through Connect Fivetran, the destination schema, table names, and a manual fivetran deploy.",
     href: "/docs/fivetran",
   },
   "nav.python-sdk": {
