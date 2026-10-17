@@ -34,7 +34,8 @@ export default function ConnectFivetran({
   contracts,
   onClose,
 }: {
-  paid: boolean;
+  /** `null` while GET /v1/me has not settled. `false` is a hosted free org. */
+  paid: boolean | null;
   contracts: FivetranContractOption[];
   onClose: () => void;
 }) {
@@ -57,8 +58,8 @@ export default function ConnectFivetran({
 
   const submit = async () => {
     setError(null);
-    if (!paid) {
-      setError("Connect Fivetran is a paid-plan feature.");
+    if (paid !== true) {
+      setError("Connect Fivetran is a paid-plan feature. Upgrade to Pro or Enterprise, then try again.");
       return;
     }
     if (selected.length === 0) {
@@ -129,7 +130,7 @@ export default function ConnectFivetran({
         Fivetran for this deploy only, then drops them. They are not written to the database or logs.
       </p>
 
-      {!paid && (
+      {paid === false && (
         <p className="text-sm text-slate-300 mb-4">
           Connect Fivetran is a paid-plan feature.{" "}
           <Link href="/pricing" className="text-green-400 hover:underline">
@@ -172,7 +173,7 @@ export default function ConnectFivetran({
                 type="password"
                 autoComplete="off"
                 value={apiKey}
-                disabled={!paid || busy}
+                disabled={paid !== true || busy}
                 onChange={(event) => setApiKey(event.target.value)}
                 className="mt-1 w-full bg-[#0b1220] border border-[#1f2937] rounded-lg px-3 py-2 text-slate-100"
               />
@@ -183,7 +184,7 @@ export default function ConnectFivetran({
                 type="password"
                 autoComplete="off"
                 value={apiSecret}
-                disabled={!paid || busy}
+                disabled={paid !== true || busy}
                 onChange={(event) => setApiSecret(event.target.value)}
                 className="mt-1 w-full bg-[#0b1220] border border-[#1f2937] rounded-lg px-3 py-2 text-slate-100"
               />
@@ -195,14 +196,14 @@ export default function ConnectFivetran({
               type="text"
               autoComplete="off"
               value={groupId}
-              disabled={!paid || busy}
+              disabled={paid !== true || busy}
               onChange={(event) => setGroupId(event.target.value)}
               placeholder="destination group id"
               className="mt-1 w-full bg-[#0b1220] border border-[#1f2937] rounded-lg px-3 py-2 text-slate-100"
             />
           </label>
 
-          <fieldset disabled={!paid || busy} className="space-y-2">
+          <fieldset disabled={paid !== true || busy} className="space-y-2">
             <legend className="text-sm text-slate-300 mb-2">
               Contracts to sync ({selected.length}/{MAX_CONTRACTS})
             </legend>
@@ -248,7 +249,7 @@ export default function ConnectFivetran({
 
           <button
             type="submit"
-            disabled={!paid || busy || contracts.length === 0}
+            disabled={paid !== true || busy || contracts.length === 0}
             className="px-4 py-2 bg-green-600 hover:bg-green-500 disabled:opacity-50 text-white text-sm font-medium rounded-lg transition-colors"
           >
             {busy ? "Connecting…" : "Deploy connector"}

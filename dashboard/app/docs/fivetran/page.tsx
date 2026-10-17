@@ -27,21 +27,30 @@ export default function FivetranDocsPage() {
         writes one table per contract.
       </p>
 
-      <H2 id="plans">Paid plan</H2>
+      <H2 id="plans-and-self-hosting">Plans and self-hosting</H2>
       <p className="text-slate-300 text-sm leading-relaxed mb-3">
-        Connect Fivetran and the passed-event export are paid-plan features.
-        Plans <code className="text-slate-200">free</code> and{" "}
-        <code className="text-slate-200">aisg_free</code> receive HTTP 403.
-        Paid plans are <code className="text-slate-200">growth</code>,{" "}
-        <code className="text-slate-200">aisg_pro</code>, and{" "}
-        <code className="text-slate-200">enterprise</code> (Pro and Enterprise
-        in the dashboard).
+        Connect Fivetran is available on paid hosted plans and on any self-hosted
+        instance with <code className="text-slate-200">CONTRACTGATE_SELF_HOSTED=true</code>.
+      </p>
+      <p className="text-slate-300 text-sm leading-relaxed mb-3">
+        Hosted free plans get 403. See{" "}
+        <Link href="#self-hosting" className="text-green-400 hover:underline">
+          Self-hosting
+        </Link>
+        .
       </p>
       <p className="text-slate-400 text-sm leading-relaxed">
-        On a free plan the form says “Connect Fivetran is a paid-plan feature”
-        and links to Upgrade. The API error names the same three plan ids.
-        A self-hosted instance sets CONTRACTGATE_SELF_HOSTED so a free org is
-        treated as paid. See Self-hosting.
+        Paid hosted plans are <code className="text-slate-200">growth</code>,{" "}
+        <code className="text-slate-200">aisg_pro</code>, and{" "}
+        <code className="text-slate-200">enterprise</code> (Pro and Enterprise
+        in the dashboard). Hosted <code className="text-slate-200">free</code>{" "}
+        and <code className="text-slate-200">aisg_free</code> receive that 403
+        when <code className="text-slate-200">CONTRACTGATE_SELF_HOSTED</code> is
+        unset. The API error names those three plan ids. The Contracts form
+        reads <code className="text-slate-200">paid_features</code> from{" "}
+        <code className="text-slate-200">GET /v1/me</code>. A hosted free org
+        sees an upgrade prompt. If that field is missing, the form follows
+        the stored plan.
       </p>
 
       <H2 id="fivetran-account">Fivetran API key and destination group</H2>
@@ -69,7 +78,7 @@ export default function FivetranDocsPage() {
   https://api.fivetran.com/v1/groups`}
       </pre>
       <p className="text-slate-400 text-sm leading-relaxed">
-        An unknown group returns 400: “Fivetran group &lt;id&gt; was not found”.
+        An unknown group returns 400: “Invalid request: Fivetran group &lt;id&gt; was not found”.
         No ContractGate key is minted in that case.
       </p>
 
@@ -189,9 +198,11 @@ export default function FivetranDocsPage() {
         <li>
           <span className="text-slate-100">400.</span> The body is not a JSON
           object, a required field is missing, a field fails the rule above, or
-          the group does not exist. An unknown group is{" "}
+          the group does not exist. The <code className="text-slate-200">error</code>{" "}
+          text starts with <code className="text-slate-200">Invalid request: </code>.
+          An unknown group is{" "}
           <code className="text-slate-200">
-            Fivetran group &lt;id&gt; was not found
+            Invalid request: Fivetran group &lt;id&gt; was not found
           </code>
           . No ContractGate key is minted.
         </li>
@@ -220,6 +231,14 @@ export default function FivetranDocsPage() {
         <li>
           <span className="text-slate-100">404.</span> A contract id is not in
           the caller&apos;s org. No key is minted.
+        </li>
+        <li>
+          <span className="text-slate-100">413.</span> The body is over 64 KiB
+          (65536 bytes). The error is{" "}
+          <code className="text-slate-200">
+            Payload too large: Connect Fivetran body exceeds 65536 bytes
+          </code>
+          . No key is minted.
         </li>
         <li>
           <span className="text-slate-100">500.</span>{" "}
@@ -256,7 +275,13 @@ export default function FivetranDocsPage() {
         to a schema that already exists. Use that when the destination user
         cannot create schemas. The value must start with a lowercase letter and
         then use only lowercase letters, digits, and underscores, at most 63
-        characters. Anything else is HTTP 400. Fivetran still needs permission
+        characters. Anything else is HTTP 400:{" "}
+        <code className="text-slate-200">
+          Invalid request: destination_schema must start with a lowercase letter
+          and contain only lowercase letters, digits, and underscores, at most
+          63 characters
+        </code>
+        . Fivetran still needs permission
         to create tables in that schema.
       </p>
       <p className="text-slate-400 text-sm leading-relaxed">
@@ -278,12 +303,14 @@ export default function FivetranDocsPage() {
         becomes <code className="text-slate-200">user_events_427c3304</code>.
       </p>
       <p className="text-slate-300 text-sm leading-relaxed mb-3">
-        The slug is the contract name lowercased. Each run of characters that
-        are not letters or digits becomes one underscore. Leading digits and
+        The slug keeps ASCII letters and digits only, lowercased. Each run of
+        other characters becomes one underscore. Leading digits and
         underscores are dropped, so 123 Orders with that same id is{" "}
-        <code className="text-slate-200">orders_427c3304</code>. The slug stops
+        <code className="text-slate-200">orders_427c3304</code>.{" "}
+        <code className="text-slate-200">Café</code> becomes{" "}
+        <code className="text-slate-200">caf_&lt;8hex&gt;</code>. The slug stops
         at 54 characters so the full name stays within 63. A name with no
-        letters left, such as !!!, becomes{" "}
+        ASCII letters left, such as !!!, becomes{" "}
         <code className="text-slate-200">passed_</code> plus those same 8 hex
         characters: <code className="text-slate-200">passed_427c3304</code>.
         An optional table name on the form, or a{" "}
@@ -320,15 +347,17 @@ export default function FivetranDocsPage() {
       <H2 id="troubleshooting">Troubleshooting</H2>
       <ul className="list-disc pl-5 text-slate-300 text-sm space-y-2">
         <li>
-          <span className="text-slate-100">400, bad group.</span> “Fivetran group
-          &lt;id&gt; was not found”. Check Destination group id against{" "}
+          <span className="text-slate-100">400, bad group.</span> “Invalid request:
+          Fivetran group &lt;id&gt; was not found”. Check Destination group id against{" "}
           <code className="text-slate-200">GET /v1/groups</code>. No key is minted.
         </li>
         <li>
-          <span className="text-slate-100">400, bad schema.</span>{" "}
-          <code className="text-slate-200">destination_schema</code> must match
-          the rule above. A table name must start with a letter or underscore
-          and use only lowercase letters, numbers, and underscores.
+          <span className="text-slate-100">400, bad schema.</span> “Invalid request:
+          destination_schema must start with a lowercase letter and contain only
+          lowercase letters, digits, and underscores, at most 63 characters”.
+          A bad table name is “Invalid request: table name must start with a
+          letter or underscore and use only lowercase letters, numbers, and
+          underscores”.
         </li>
         <li>
           <span className="text-slate-100">400, invalid cursor.</span> During a
@@ -344,10 +373,17 @@ export default function FivetranDocsPage() {
           was rejected.
         </li>
         <li>
-          <span className="text-slate-100">403.</span> The org is on{" "}
-          <code className="text-slate-200">free</code> or{" "}
-          <code className="text-slate-200">aisg_free</code>. Upgrade to Pro or
-          Enterprise, then connect again.
+          <span className="text-slate-100">403.</span> On a hosted free plan,
+          open{" "}
+          <Link href="/pricing" className="text-green-400 hover:underline">
+            Upgrade
+          </Link>{" "}
+          and move to Pro or Enterprise, then connect again. On a self-hosted
+          instance, set{" "}
+          <code className="text-slate-200">CONTRACTGATE_SELF_HOSTED</code> to{" "}
+          <code className="text-slate-200">1</code>,{" "}
+          <code className="text-slate-200">true</code>, or{" "}
+          <code className="text-slate-200">TRUE</code>.
         </li>
         <li>
           <span className="text-slate-100">410.</span> The cursor is older than
@@ -403,7 +439,7 @@ WHERE org_id = '<org uuid>'
         <code className="text-slate-200">$CONNECTION_ID</code> is{" "}
         <code className="text-slate-200">connection_id</code> from the 200
         response. ContractGate does not store it. A connect that fails before
-        the key is minted (400, 401, 403, 404, 500) leaves nothing to revoke.
+        the key is minted (400, 401, 403, 404, 413, 500) leaves nothing to revoke.
         A connect that fails after the key is minted revokes that key itself.
       </p>
 

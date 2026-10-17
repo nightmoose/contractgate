@@ -24,7 +24,8 @@ import useSWR, { mutate } from "swr";
 import AuthGate from "@/components/AuthGate";
 import MyPublications from "@/components/contracts/MyPublications";
 import PlanGate, { FreeLimitBanner } from "@/components/PlanGate";
-import { useOrg, planAtLeast, isPaidPlan } from "@/lib/org";
+import { useOrg, planAtLeast } from "@/lib/org";
+import { usePaidFeatures } from "@/lib/use-paid-features";
 import { useBrand } from "@/components/BrandProvider";
 import { createClient } from "@/lib/supabase/client";
 import {
@@ -1881,6 +1882,7 @@ type Tab = "list" | "consumed" | "build" | "generate" | "csv" | "quarantine";
 function ContractsContent() {
   const router = useRouter();
   const { org } = useOrg();
+  const paidFeatures = usePaidFeatures();
   const aisg = useBrand() === "aisg";
   const { data: contracts, isLoading, error: contractsError } = useSWR<ContractSummary[]>(
     org ? "contracts" : null,
@@ -2003,7 +2005,7 @@ function ContractsContent() {
 
       {fivetranOpen && (
         <ConnectFivetran
-          paid={!!org && isPaidPlan(org.plan)}
+          paid={paidFeatures}
           contracts={(contracts ?? []).map((c) => ({ id: c.id, name: c.name }))}
           onClose={() => setFivetranOpen(false)}
         />
