@@ -6,7 +6,7 @@
 **Code fix:** PR [#141](https://github.com/nightmoose/contractgate/pull/141)  
 **Also related:** PR [#140](https://github.com/nightmoose/contractgate/pull/140) CORS allowlist (secondary)
 
-This note exists so the next agent (Claude/Grok/human) does **not** re-debug
+This note exists so the next agent (an AI assistant or a human) does **not** re-debug
 CORS when the real bug is a JWT panic, and does **not** thrash Fly deploys.
 
 ---
@@ -153,5 +153,5 @@ dashboard + logs.
 
 ---
 
-*Written 2026-07-15 after v126 restored production. For Claude: read this before
+*Written 2026-07-15 after v126 restored production. For an AI assistant: read this before
 “fixing CORS” on contractgate-api 502s from the dashboard.*

@@ -1,6 +1,6 @@
 # Next steps — prioritized backlog (2026-07-15)
 
-**Author:** Claude (session synthesis). **For:** Grok to turn into RFCs/worklists;
+**Author:** an AI assistant (session synthesis). **For:** the dev team to turn into RFCs/worklists;
 Sonnet to implement.
 **Lens:** dual-sell — advance (A) first customer sale and (B) acquisition/diligence
 readiness. Prefer intersection work.
@@ -64,7 +64,7 @@ test green). Dev-only ergonomics, prod unaffected. Size: small.
 ### 4. Ops production runbook (`docs/ops/runbook-production.md`, dual-sell #13)
 Deploy, env vars, health/ready, rollback, Stripe-webhook-failure recovery,
 migration-apply procedure, the 2026-07-14 JWT incident pattern. Pure docs;
-data-room staple + "who runs this?" acquirer question. Grok can draft from the
+data-room staple + "who runs this?" acquirer question. The dev team can draft from the
 incident doc + `fly.toml` + CLAUDE.md. Size: ~1 day.
 
 ### 5. Prod migration-drift scheduled CI (dual-sell #17)
@@ -89,12 +89,12 @@ prod DB secret in CI for now.
 
 ---
 
-## Suggested order for Grok
+## Suggested order for the dev team
 P0 #1 (envelope) and #2 (deploy) first — #1 is the biggest first-sale risk, #2 is
 a quick win that also unblocks local demos. Then P1 #3–5 (billing integrity + the
 two ops/diligence docs). P2 as capacity allows.
 
-## Status (Grok)
+## Status (dev team)
 
 | Item | Status |
 |------|--------|
