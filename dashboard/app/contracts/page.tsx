@@ -19,6 +19,7 @@
 
 import { useState, useEffect, useMemo } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import useSWR, { mutate } from "swr";
 import AuthGate from "@/components/AuthGate";
 import MyPublications from "@/components/contracts/MyPublications";
@@ -1951,6 +1952,12 @@ function ContractsContent() {
           </p>
         </div>
         <div className="flex gap-2 flex-wrap">
+            <Link
+              href="/docs/fivetran"
+              className="px-3 py-2 text-sm text-slate-400 hover:text-green-400 self-center"
+            >
+              Fivetran guide
+            </Link>
             <button
               type="button"
               onClick={() => setFivetranOpen((open) => !open)}

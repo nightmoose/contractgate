@@ -56,13 +56,13 @@ const DOCS = [
     external: false,
     href: "/docs/fivetran",
     icon: "⟳",
-    title: "Fivetran connector",
+    title: "Use ContractGate with Fivetran",
     badge: "paid",
     badgeColor: "text-amber-300 bg-amber-900/30 border-amber-700/40",
     description:
-      "Deploy the ContractGate connector into your own Fivetran account from the Contracts page. Your Fivetran API key is used once and is not stored. Passed events land in one table per contract.",
+      "Put contract-passed events in your warehouse. Covers the Contracts page button, destination schema, table names, and a manual fivetran deploy.",
     pills: ["Connector SDK", "paid plans", "keys not stored", "paused on create"],
-    cta: "Read the Fivetran docs →",
+    cta: "Read the Fivetran guide →",
   },
 ];
 
