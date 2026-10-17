@@ -1107,7 +1107,7 @@ ontology:
 
     #[test]
     fn foreign_odcs_native_nested_properties_and_items() {
-        // Hand-written ODCS v3 with natively nested properties (Tessie's case).
+        // Hand-written ODCS v3 with natively nested properties (the nested-properties case).
         let odcs_yaml = r#"
 apiVersion: v3.1.0
 kind: DataContract

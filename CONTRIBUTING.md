@@ -10,6 +10,7 @@ and ship changes. The project is licensed MIT with a patent NOTICE — see
   stay fast (sub-millisecond p99) and never regress existing behavior.
 - **One issue or refactor per PR** unless agreed otherwise.
 - Prefer simple, idiomatic Rust. Comment only where behavior isn't obvious.
+- Use roles, not names, in commits, PRs, and docs (for example QA, the dev team, or an AI assistant).
 
 ## RFC-first for non-trivial work
 
