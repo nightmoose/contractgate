@@ -80,7 +80,7 @@ docs/marketing/drafts/
 .bot-outbox/
 
 # Claude Code screenshot attachments (local scratch folder, never project files)
-.agent-attachments/
+.clankerspanker-attachments/
 
 # npm auth tokens
 .npmrc
