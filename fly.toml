@@ -20,6 +20,7 @@ primary_region = 'iad'
   # committed to source control. Prod carries three origins per RFC-096
   # (one backend, two front doors):
   # fly secrets set DASHBOARD_ORIGIN=https://app.datacontractgate.com,https://aischemagate.com,https://aischemagate.dev
+  # Production must set CANONICAL_API_ORIGIN=https://api.datacontractgate.com
 
 [http_service]
   internal_port = 3001
