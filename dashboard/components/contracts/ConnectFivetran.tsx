@@ -58,7 +58,9 @@ export default function ConnectFivetran({
   const submit = async () => {
     setError(null);
     if (!paid) {
-      setError("Connect Fivetran is a paid-plan feature.");
+      setError(
+        "Connect Fivetran is available on paid hosted plans and on any self-hosted instance with CONTRACTGATE_SELF_HOSTED=true. Hosted free plans get 403."
+      );
       return;
     }
     if (selected.length === 0) {
@@ -131,11 +133,16 @@ export default function ConnectFivetran({
 
       {!paid && (
         <p className="text-sm text-slate-300 mb-4">
-          Connect Fivetran is a paid-plan feature.{" "}
+          Connect Fivetran is available on paid hosted plans and on any self-hosted
+          instance with CONTRACTGATE_SELF_HOSTED=true. Hosted free plans get 403.{" "}
           <Link href="/pricing" className="text-green-400 hover:underline">
             Upgrade
-          </Link>{" "}
-          to Pro or Enterprise, then try again.
+          </Link>
+          {" or see "}
+          <Link href="/docs/fivetran#self-hosting" className="text-green-400 hover:underline">
+            Self-hosting
+          </Link>
+          .
         </p>
       )}
 
