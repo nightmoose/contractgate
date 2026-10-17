@@ -1,6 +1,6 @@
 # ContractGate Sale-Readiness Review
 **Date:** 2026-05-28  
-**Reviewer:** Grok (synthesized from two specialized subagent deep dives + direct reconnaissance)  
+**Reviewer:** an AI assistant (synthesized from two specialized subagent deep dives + direct reconnaissance)  
 **Repo:** contractgate (github.com/nightmoose/contractgate)
 
 ---

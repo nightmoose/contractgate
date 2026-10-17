@@ -77,6 +77,7 @@ Set via `fly secrets set` (never commit).
 | Variable | Required | Purpose |
 |---|---|---|
 | `DATABASE_URL` | Yes | Supabase Postgres (service role for gateway) |
+| `CANONICAL_API_ORIGIN` | Yes | Public API origin. Production must set `https://api.datacontractgate.com`. Staging must set `https://contractgate-api-staging.fly.dev`. Connect Fivetran returns 500 and mints no key if this is unset. |
 | `DASHBOARD_ORIGIN` | Yes (prod) | CORS allowlist (comma-separated). Prod carries `https://app.datacontractgate.com,https://aischemagate.com,https://aischemagate.dev` (RFC-096: shared backend serves both DataContractGate and AISchemaGate). |
 | `PORT` | No | Default 3001 (matches `fly.toml`) |
 | `RUST_LOG` | No | e.g. `contractgate=info,tower_http=warn` |
@@ -207,8 +208,9 @@ Customer-facing targets: [Support SLA](../support-sla.md).
 
 ## Staging (2026-10-14)
 
-- Branch **`staging`** (created from `main`). CG Dev / agents may merge PRs into
+- Branch **`staging`** (created from `main`). The dev team may merge PRs into
   `staging` freely; **only Alex merges to `main`** (production).
+- Production must set `CANONICAL_API_ORIGIN=https://api.datacontractgate.com`. Staging must set `CANONICAL_API_ORIGIN=https://contractgate-api-staging.fly.dev`.
 - Fly app `contractgate-api-staging` via `fly.staging.toml`: `auto_stop_machines`,
   `min_machines_running = 0`, `KAFKA_ENABLED=false`. Created 2026-10-14.
 - Staging **shares the production Supabase database** (Alex's decision while there

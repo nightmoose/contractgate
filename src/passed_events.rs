@@ -191,6 +191,7 @@ pub(crate) fn authorize_passed_export(
     plan: Option<&str>,
     contract_visible: bool,
     key_permits: bool,
+    self_hosted: bool,
 ) -> Result<Option<i32>, PassedDeny> {
     if auth_configured && org_id.is_none() {
         return Err(PassedDeny::Unauthorized);
@@ -205,7 +206,9 @@ pub(crate) fn authorize_passed_export(
         return Ok(None);
     }
     match plan {
-        Some(p) if plan::is_paid(p) => Ok(Some(plan::log_retention_days(p))),
+        Some(p) if plan::gate_paid(self_hosted, p) => {
+            Ok(Some(plan::gate_retention_days(self_hosted, p)))
+        }
         _ => Err(PassedDeny::Forbidden),
     }
 }
@@ -316,6 +319,7 @@ pub async fn list_passed_events(
         plan.as_deref(),
         contract_visible,
         key_permits,
+        state.self_hosted,
     ) {
         Ok(days) => days,
         Err(deny) => return Err(deny_error(deny, contract_id)),
@@ -806,8 +810,8 @@ mod tests {
         let org = Uuid::new_v4();
         let contract = Uuid::new_v4();
         for plan_name in ["free", "aisg_free", "bogus"] {
-            let deny =
-                authorize_passed_export(true, Some(org), Some(plan_name), true, true).unwrap_err();
+            let deny = authorize_passed_export(true, Some(org), Some(plan_name), true, true, false)
+                .unwrap_err();
             let (status, body) = error_json(deny_error(deny, contract)).await;
             assert_eq!(status, axum::http::StatusCode::FORBIDDEN, "{plan_name}");
             assert_eq!(body["status"], 403);
@@ -819,17 +823,34 @@ mod tests {
             }
         }
         assert_eq!(
-            authorize_passed_export(true, Some(org), Some("growth"), true, true).unwrap(),
+            authorize_passed_export(true, Some(org), Some("growth"), true, true, false).unwrap(),
             Some(90)
         );
         assert_eq!(
-            authorize_passed_export(true, Some(org), Some("aisg_pro"), true, true).unwrap(),
+            authorize_passed_export(true, Some(org), Some("aisg_pro"), true, true, false).unwrap(),
             Some(90)
         );
         assert_eq!(
-            authorize_passed_export(true, Some(org), Some("enterprise"), true, true).unwrap(),
+            authorize_passed_export(true, Some(org), Some("enterprise"), true, true, false)
+                .unwrap(),
             Some(365)
         );
+    }
+
+    #[tokio::test]
+    async fn self_hosted_free_org_is_allowed_and_hosted_free_is_403() {
+        let org = Uuid::new_v4();
+        let contract = Uuid::new_v4();
+        for plan_name in ["free", "aisg_free"] {
+            let allowed =
+                authorize_passed_export(true, Some(org), Some(plan_name), true, true, true)
+                    .unwrap();
+            assert_eq!(allowed, Some(90), "{plan_name}");
+            let deny = authorize_passed_export(true, Some(org), Some(plan_name), true, true, false)
+                .unwrap_err();
+            let (status, _) = error_json(deny_error(deny, contract)).await;
+            assert_eq!(status, axum::http::StatusCode::FORBIDDEN, "{plan_name}");
+        }
     }
 
     #[tokio::test]
@@ -838,8 +859,9 @@ mod tests {
         let caller = Uuid::new_v4();
         // Missing, another org, and soft-deleted all surface as not visible.
         for plan_name in ["free", "aisg_free", "growth", "aisg_pro", "enterprise"] {
-            let deny = authorize_passed_export(true, Some(caller), Some(plan_name), false, true)
-                .unwrap_err();
+            let deny =
+                authorize_passed_export(true, Some(caller), Some(plan_name), false, true, false)
+                    .unwrap_err();
             let (status, body) = error_json(deny_error(deny, contract)).await;
             assert_eq!(status, axum::http::StatusCode::NOT_FOUND, "{plan_name}");
             assert_eq!(body["status"], 404);
@@ -853,15 +875,15 @@ mod tests {
     fn scoped_key_and_missing_org_are_401_before_the_plan_gate() {
         let org = Uuid::new_v4();
         assert!(matches!(
-            authorize_passed_export(true, None, Some("growth"), true, true),
+            authorize_passed_export(true, None, Some("growth"), true, true, false),
             Err(PassedDeny::Unauthorized)
         ));
         assert!(matches!(
-            authorize_passed_export(true, Some(org), Some("growth"), true, false),
+            authorize_passed_export(true, Some(org), Some("growth"), true, false, false),
             Err(PassedDeny::Unauthorized)
         ));
         assert!(matches!(
-            authorize_passed_export(false, None, None, true, true),
+            authorize_passed_export(false, None, None, true, true, false),
             Ok(None)
         ));
     }

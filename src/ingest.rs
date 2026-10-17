@@ -226,7 +226,7 @@ pub(crate) async fn resolve_store_payloads(
     };
     match storage::get_org_payload_policy(&state.db, org_id).await {
         Ok(Some((plan, org_switch))) => {
-            crate::plan::payloads_stored(&plan, org_switch, contract_switch)
+            crate::plan::payloads_stored_for(state.self_hosted, &plan, org_switch, contract_switch)
         }
         Ok(None) => false,
         Err(e) => {

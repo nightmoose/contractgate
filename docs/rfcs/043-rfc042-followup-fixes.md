@@ -233,7 +233,7 @@ Append to `.env.example`:
 
 ### Problem
 
-RFC-042 merged without an explicit cargo run logged.  This RFC's reviewer (Claude) cannot run cargo per project rules.
+RFC-042 merged without an explicit cargo run logged.  This RFC's reviewer (an AI assistant) cannot run cargo per project rules.
 
 ### Fix
 

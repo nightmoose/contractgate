@@ -20,6 +20,7 @@ primary_region = 'iad'
   RUST_LOG = 'contractgate=debug,tower_http=info'
   # Confluent Cloud is closed; no Kafka consumers on staging either.
   KAFKA_ENABLED = 'false'
+  # Staging must set CANONICAL_API_ORIGIN=https://contractgate-api-staging.fly.dev
 
 [http_service]
   internal_port = 3001

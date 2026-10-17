@@ -2,7 +2,7 @@
 
 **Status:** Implemented
 **Date:** 2026-07-16
-**Author:** Claude (proposes) → Sonnet (executes)
+**Author:** an AI assistant (proposes) → Sonnet (executes)
 **Branch:** `nightly-maintenance-2026-07-16-rfc085-team-admin` (Alex creates/commits — no agent git)
 **Migration:** none (reuses existing `org_memberships` / `org_invites` schema)
 

@@ -27,6 +27,12 @@ export const HELP_CATALOG: Record<string, HelpEntry> = {
     does: "Walks through installing the SMT, pointing it at a contract, and routing failures to a dead-letter topic.",
     href: "/docs/kafka-connect",
   },
+  "nav.fivetran": {
+    title: "Fivetran",
+    what: "Guide: Use ContractGate with Fivetran.",
+    does: "Walks through Connect Fivetran, the destination schema, table names, and a manual fivetran deploy.",
+    href: "/docs/fivetran",
+  },
   "nav.python-sdk": {
     title: "Python SDK",
     what: "First-party Python client for the gateway, plus a local validator for tests.",

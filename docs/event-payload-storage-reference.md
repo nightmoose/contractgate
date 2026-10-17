@@ -51,7 +51,10 @@ Bodies are stored only when **all** of:
 3. the per-contract override `contracts.store_event_payloads` is on (default
    true; only consulted when the org switch is on).
 
-Self-hosted / dev deployments (no org context) always store. On a lookup error
+`CONTRACTGATE_SELF_HOSTED=true` treats a `free` or `aisg_free` org as paid for
+this gate. The org switch and the per-contract override still have to be on.
+Hosted production leaves the variable unset. Self-hosted / dev deployments
+(no org context) always store. On a lookup error
 or missing org row, ingest **redacts** (fail-closed — never store what we're not
 paid/permitted to hold).
 
@@ -74,6 +77,7 @@ return the same effective field on `ContractResponse`.
 - **Org switch on → off:** all stored bodies for the org are purged.
 - **Per-contract override on → off:** write-forward only — new events stop
   storing bodies; existing bodies are **not** purged.
+  Turning off a contract's payload override does not delete stored bodies; they stay until someone runs `POST /contracts/{id}/purge-bodies` (or turns off the org switch).
 - **Purge body history (per contract):** redacts stored bodies on demand,
   independent of the toggles.
 

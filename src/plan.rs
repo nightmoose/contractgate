@@ -48,6 +48,34 @@ pub fn is_paid(plan: &str) -> bool {
     PAID_PLANS.contains(&plan)
 }
 
+/// Explicit opt-in that marks this process as a self-hosted deployment.
+/// Hosted production and staging leave it unset. A missing Stripe key is not
+/// this signal.
+pub const SELF_HOSTED_ENV: &str = "CONTRACTGATE_SELF_HOSTED";
+
+/// `true` only for `1`, `true`, or `TRUE`. Unset, blank, and every other
+/// value stay hosted.
+pub fn self_hosted_flag(raw: Option<&str>) -> bool {
+    matches!(raw.map(str::trim), Some("1" | "true" | "TRUE"))
+}
+
+/// Paid for passed-event export, Connect Fivetran, and payload storage.
+///
+/// `self_hosted` is [`SELF_HOSTED_ENV`]. Hosted (`false`) uses [`is_paid`].
+pub fn gate_paid(self_hosted: bool, plan: &str) -> bool {
+    self_hosted || is_paid(plan)
+}
+
+/// Cursor retention for a passed-event export that [`gate_paid`] allowed.
+/// A self-hosted org whose plan is not already paid uses the Pro window.
+pub fn gate_retention_days(self_hosted: bool, plan: &str) -> i32 {
+    if self_hosted && !is_paid(plan) {
+        log_retention_days("growth")
+    } else {
+        log_retention_days(plan)
+    }
+}
+
 /// English list of [`PAID_PLANS`], e.g. `growth, aisg_pro, or enterprise`.
 pub fn paid_plans_phrase() -> String {
     english_or(PAID_PLANS)
@@ -69,6 +97,16 @@ pub fn payload_storage_upgrade_message() -> String {
 pub fn passed_events_upgrade_message() -> String {
     format!(
         "passed-event export is a paid-plan feature; upgrade to {}",
+        paid_plans_phrase()
+    )
+}
+
+/// 403 body when a free plan calls `POST /v1/integrations/fivetran/connect`.
+///
+/// The plan names are [`PAID_PLANS`] (the same slice [`is_paid`] checks).
+pub fn fivetran_connect_upgrade_message() -> String {
+    format!(
+        "Connect Fivetran is a paid-plan feature; upgrade to {}",
         paid_plans_phrase()
     )
 }
@@ -101,8 +139,19 @@ fn english_or(items: &[&str]) -> String {
 /// the org master switch on and the per-contract override on. Free/unknown
 /// plans never store, regardless of the flags. Self-host/dev (no org row) is
 /// handled by the caller before this is reached.
+#[cfg(test)]
 pub fn payloads_stored(plan: &str, org_switch: bool, contract_switch: bool) -> bool {
-    is_paid(plan) && org_switch && contract_switch
+    payloads_stored_for(false, plan, org_switch, contract_switch)
+}
+
+/// Same rule as [`payloads_stored`]. `self_hosted` is [`SELF_HOSTED_ENV`].
+pub fn payloads_stored_for(
+    self_hosted: bool,
+    plan: &str,
+    org_switch: bool,
+    contract_switch: bool,
+) -> bool {
+    gate_paid(self_hosted, plan) && org_switch && contract_switch
 }
 
 /// Effective `store_event_payloads` for contract list / GET responses.
@@ -118,10 +167,22 @@ pub fn payloads_stored(plan: &str, org_switch: bool, contract_switch: bool) -> b
 /// The columns are not rewritten. `plan == None` is self-host / dev (no org
 /// on the request). Ingest stores in that case regardless of the org switch,
 /// so the per-contract column is reported as stored.
+#[cfg(test)]
 pub fn effective_store_event_payloads(plan: Option<&str>, org_switch: bool, stored: bool) -> bool {
+    effective_store_event_payloads_for(false, plan, org_switch, stored)
+}
+
+/// Same report as [`effective_store_event_payloads`]. `self_hosted` is
+/// [`SELF_HOSTED_ENV`].
+pub fn effective_store_event_payloads_for(
+    self_hosted: bool,
+    plan: Option<&str>,
+    org_switch: bool,
+    stored: bool,
+) -> bool {
     match plan {
         None => stored,
-        Some(plan) => payloads_stored(plan, org_switch, stored),
+        Some(plan) => payloads_stored_for(self_hosted, plan, org_switch, stored),
     }
 }
 
@@ -319,6 +380,44 @@ mod tests {
             .filter(|w| !w.is_empty() && *w != "or")
             .collect();
         assert_eq!(named, PAID_PLANS);
+    }
+
+    #[test]
+    fn self_hosted_flag_is_explicit_and_free_is_gated_as_paid() {
+        assert!(!self_hosted_flag(None));
+        assert!(!self_hosted_flag(Some("")));
+        assert!(!self_hosted_flag(Some("   ")));
+        assert!(!self_hosted_flag(Some("false")));
+        assert!(!self_hosted_flag(Some("0")));
+        assert!(!self_hosted_flag(Some("yes")));
+        assert!(self_hosted_flag(Some("true")));
+        assert!(self_hosted_flag(Some("TRUE")));
+        assert!(self_hosted_flag(Some("1")));
+        assert!(self_hosted_flag(Some("  true  ")));
+
+        for plan in ["free", "aisg_free"] {
+            assert!(gate_paid(true, plan), "{plan}");
+            assert!(!gate_paid(false, plan), "{plan}");
+            assert_eq!(gate_retention_days(true, plan), 90, "{plan}");
+            assert!(payloads_stored_for(true, plan, true, true), "{plan}");
+            assert!(!payloads_stored_for(false, plan, true, true), "{plan}");
+            assert!(!payloads_stored_for(true, plan, false, true), "{plan}");
+            assert!(effective_store_event_payloads_for(
+                true,
+                Some(plan),
+                true,
+                true
+            ));
+            assert!(!effective_store_event_payloads_for(
+                false,
+                Some(plan),
+                true,
+                true
+            ));
+        }
+        assert!(gate_paid(false, "growth"));
+        assert_eq!(gate_retention_days(true, "enterprise"), 365);
+        assert!(!is_paid("free"));
     }
 
     #[test]

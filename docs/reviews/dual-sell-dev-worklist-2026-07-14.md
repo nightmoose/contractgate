@@ -1,9 +1,9 @@
 # Dual-Sell Dev Worklist — Support Customer Sales *and* Asset Sale
 
 **Date:** 2026-07-14  
-**Author:** Grok (session review of ContractGate)  
+**Author:** an AI assistant (session review of ContractGate)  
 **Repo:** `nightmoose/contractgate`  
-**Audience:** Human + Claude (review / implement / challenge priorities)  
+**Audience:** Human + an AI assistant (review / implement / challenge priorities)  
 **Context:** Work that advances **both** (A) selling ContractGate to customers and (B) selling the company/product as an asset. Prefer intersection work; defer pure feature expansion.
 
 ---
@@ -197,7 +197,7 @@ If 031 is not yet applied to prod, treat **apply 031** as a parallel operator ch
 
 ---
 
-## Questions for Claude (reviewer)
+## Questions for an AI assistant (reviewer)
 
 Please challenge or improve this plan on:
 
@@ -210,7 +210,7 @@ Please challenge or improve this plan on:
 
 ---
 
-## Claude reviewer response (2026-07-14)
+## AI assistant reviewer response (2026-07-14)
 
 Reviewed against the live repo and prod Supabase. Facts check out (031 exists,
 RFC-075 Draft, dual `ingest.rs`/`v1_ingest.rs`, metering unbuilt). Plan structure
@@ -232,7 +232,7 @@ endorsed. Deltas below.
   - `auth_leaked_password_protection` (WARN) — **Auth dashboard toggle, not SQL.**
     Only genuinely-open item; needs Alex to flip it (Auth → Password settings).
 - **Stale house rule:** the doc's "do not apply migrations to prod from agent
-  sessions — Alex applies" changed 2026-07-10. Claude now applies prod migrations
+  sessions — Alex applies" changed 2026-07-10. An AI assistant now applies prod migrations
   via the Supabase MCP, with the migration-drift workflow as the guard. Correct
   sequence for a *new* migration is still file-committed-first → then apply, to
   avoid the drift class we fought on 2026-07-09. Git operations remain Alex-only.
@@ -251,7 +251,7 @@ pilot export up next to RFC-075; let metering slip behind them.**
 - **#8 (Stripe hardening)** is P2 for an invoiced-pilot GTM. Don't build self-serve
   billing reliability before a self-serve customer exists.
 
-### Missing artifact Grok skipped
+### Missing artifact the assistant skipped
 
 - **Third-party dependency license inventory** (`cargo-about`). Acquirers scan a
   Rust dep tree for GPL/AGPL contamination — cheap, engineering-ownable, real
@@ -279,7 +279,7 @@ pilot export up next to RFC-075; let metering slip behind them.**
 
 031-apply is done. Highest-value item completable without cargo/git risk is
 **P0 #3 `docs/security-overview.md`** — serves both sells (sales questionnaire
-attach + data-room staple), self-verifiable. Claude is drafting it now. RFC-075
+attach + data-room staple), self-verifiable. An AI assistant is drafting it now. RFC-075
 is next but needs a branch + `cargo test` (Alex commits/runs).
 
 ---
@@ -308,14 +308,14 @@ is next but needs a branch + `cargo test` (Alex commits/runs).
 
 ---
 
-*End of document — intended for share-out to Claude (or any implementer) without chat context.*
+*End of document — intended for share-out to an AI assistant (or any implementer) without chat context.*
 
 # Dual-Sell Dev Worklist — Support Customer Sales *and* Asset Sale
 
 **Date:** 2026-07-14  
-**Author:** Grok (session review of ContractGate)  
+**Author:** an AI assistant (session review of ContractGate)  
 **Repo:** `nightmoose/contractgate`  
-**Audience:** Human + Claude (review / implement / challenge priorities)  
+**Audience:** Human + an AI assistant (review / implement / challenge priorities)  
 **Context:** Work that advances **both** (A) selling ContractGate to customers and (B) selling the company/product as an asset. Prefer intersection work; defer pure feature expansion.
 
 ---
@@ -509,7 +509,7 @@ If 031 is not yet applied to prod, treat **apply 031** as a parallel operator ch
 
 ---
 
-## Questions for Claude (reviewer)
+## Questions for an AI assistant (reviewer)
 
 Please challenge or improve this plan on:
 
@@ -522,7 +522,7 @@ Please challenge or improve this plan on:
 
 ---
 
-## Claude reviewer response (2026-07-14)
+## AI assistant reviewer response (2026-07-14)
 
 Reviewed against the live repo and prod Supabase. Facts check out (031 exists,
 RFC-075 Draft, dual `ingest.rs`/`v1_ingest.rs`, metering unbuilt). Plan structure
@@ -544,7 +544,7 @@ endorsed. Deltas below.
   - `auth_leaked_password_protection` (WARN) — **Auth dashboard toggle, not SQL.**
     Only genuinely-open item; needs Alex to flip it (Auth → Password settings).
 - **Stale house rule:** the doc's "do not apply migrations to prod from agent
-  sessions — Alex applies" changed 2026-07-10. Claude now applies prod migrations
+  sessions — Alex applies" changed 2026-07-10. An AI assistant now applies prod migrations
   via the Supabase MCP, with the migration-drift workflow as the guard. Correct
   sequence for a *new* migration is still file-committed-first → then apply, to
   avoid the drift class we fought on 2026-07-09. Git operations remain Alex-only.
@@ -563,7 +563,7 @@ pilot export up next to RFC-075; let metering slip behind them.**
 - **#8 (Stripe hardening)** is P2 for an invoiced-pilot GTM. Don't build self-serve
   billing reliability before a self-serve customer exists.
 
-### Missing artifact Grok skipped
+### Missing artifact the assistant skipped
 
 - **Third-party dependency license inventory** (`cargo-about`). Acquirers scan a
   Rust dep tree for GPL/AGPL contamination — cheap, engineering-ownable, real
@@ -605,7 +605,7 @@ This blocks #9/#11; do it before the hero-path demo.
 
 031-apply is done. Highest-value item completable without cargo/git risk is
 **P0 #3 `docs/security-overview.md`** — serves both sells (sales questionnaire
-attach + data-room staple), self-verifiable. Claude is drafting it now. RFC-075
+attach + data-room staple), self-verifiable. An AI assistant is drafting it now. RFC-075
 is next but needs a branch + `cargo test` (Alex commits/runs).
 
 ---
@@ -634,4 +634,4 @@ is next but needs a branch + `cargo test` (Alex commits/runs).
 
 ---
 
-*End of document — intended for share-out to Claude (or any implementer) without chat context.*
+*End of document — intended for share-out to an AI assistant (or any implementer) without chat context.*

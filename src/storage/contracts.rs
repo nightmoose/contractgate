@@ -287,7 +287,11 @@ pub async fn set_contract_store_payloads(
 /// Only reached from the Kafka/Kinesis consumers (feature-gated), so it reads
 /// as dead code in the default build.
 #[allow(dead_code)]
-pub async fn contract_stores_payloads(pool: &PgPool, contract_id: Uuid) -> AppResult<bool> {
+pub async fn contract_stores_payloads(
+    pool: &PgPool,
+    contract_id: Uuid,
+    self_hosted: bool,
+) -> AppResult<bool> {
     // (plan, org_switch, contract_switch, contract.org_id) — org fields are
     // NULL when the contract has no owning org (self-host).
     type PayloadPolicyRow = (Option<String>, Option<bool>, bool, Option<Uuid>);
@@ -308,7 +312,7 @@ pub async fn contract_stores_payloads(pool: &PgPool, contract_id: Uuid) -> AppRe
         // No owning org → self-host / dev: store.
         Some((_, _, _, None)) => true,
         Some((Some(plan), Some(org_switch), contract_switch, Some(_org))) => {
-            crate::plan::payloads_stored(&plan, org_switch, contract_switch)
+            crate::plan::payloads_stored_for(self_hosted, &plan, org_switch, contract_switch)
         }
         // Org id present but the org row/flags didn't resolve → fail-closed.
         _ => false,

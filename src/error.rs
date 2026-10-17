@@ -139,6 +139,15 @@ pub enum AppError {
     #[error("Forbidden: {0}")]
     Forbidden(String),
 
+    /// Fivetran rejected the API key or secret. 401. The message is fixed
+    /// and never includes the key, the secret, or the minted ContractGate key.
+    #[error("Fivetran rejected the API key")]
+    FivetranUnauthorized,
+
+    /// Fivetran returned another error. 502. The message is already redacted.
+    #[error("{0}")]
+    FivetranUpstream(String),
+
     /// The resource existed but is no longer valid to resume from.  410.
     /// Used when a passed-event cursor is older than plan retention; the
     /// message tells the caller to drop the cursor and re-sync.
@@ -157,6 +166,11 @@ pub enum AppError {
     /// parsing, bad enum values read back from the DB, etc.
     #[error("Internal error: {0}")]
     Internal(String),
+
+    /// Deployment configuration is missing or invalid. 500. The message is
+    /// safe to return: it names a setting, never a secret or a request value.
+    #[error("{0}")]
+    Misconfigured(String),
 
     /// Upstream HTTP fetch timed out (infer/url, public-catalog export).  504.
     #[error("Gateway timeout: {0}")]
@@ -240,6 +254,8 @@ impl IntoResponse for AppError {
             AppError::OdcsReviewRequired { .. } => (StatusCode::CONFLICT, self.to_string()),
             AppError::NotFound(_) => (StatusCode::NOT_FOUND, self.to_string()),
             AppError::Forbidden(_) => (StatusCode::FORBIDDEN, self.to_string()),
+            AppError::FivetranUnauthorized => (StatusCode::UNAUTHORIZED, self.to_string()),
+            AppError::FivetranUpstream(_) => (StatusCode::BAD_GATEWAY, self.to_string()),
             AppError::Gone(_) => (StatusCode::GONE, self.to_string()),
             AppError::Conflict(_) => (StatusCode::CONFLICT, self.to_string()),
             AppError::LinkToken(_) => (StatusCode::FORBIDDEN, self.to_string()),
@@ -262,6 +278,10 @@ impl IntoResponse for AppError {
                     StatusCode::INTERNAL_SERVER_ERROR,
                     "Internal server error".into(),
                 )
+            }
+            AppError::Misconfigured(msg) => {
+                tracing::error!("configuration error: {msg}");
+                (StatusCode::INTERNAL_SERVER_ERROR, msg.clone())
             }
             AppError::GatewayTimeout(_) => (StatusCode::GATEWAY_TIMEOUT, self.to_string()),
             AppError::UnprocessableEntity(_) => {
@@ -564,8 +584,22 @@ mod json_error_body_tests {
 /// Unset (the default) disables the redirect, so it can be switched on with a
 /// Fly secret once every client has moved off the old host.
 pub const LEGACY_API_HOSTS_ENV: &str = "LEGACY_API_HOSTS";
-/// Where legacy-host requests go. Defaults to the public API origin.
+/// Where legacy-host requests go. A blank value is treated as unset.
+/// Unset still redirects to the public production origin, because this
+/// middleware only runs for a retired host. Connect Fivetran does not use
+/// that fallback: it fails until this variable is set for the deployment.
 pub const CANONICAL_API_ORIGIN_ENV: &str = "CANONICAL_API_ORIGIN";
+
+/// Production origin used only by the retired-host redirect.
+const LEGACY_REDIRECT_ORIGIN: &str = "https://api.datacontractgate.com";
+
+fn legacy_redirect_origin() -> String {
+    std::env::var(CANONICAL_API_ORIGIN_ENV)
+        .ok()
+        .map(|value| value.trim().trim_end_matches('/').to_string())
+        .filter(|value| !value.is_empty())
+        .unwrap_or_else(|| LEGACY_REDIRECT_ORIGIN.to_string())
+}
 
 /// Middleware: 308 requests that arrive on a legacy host to the same path and
 /// query on the canonical origin. 308 keeps the method and body, so old POST
@@ -596,11 +630,9 @@ pub async fn redirect_legacy_hosts(
     if !is_legacy {
         return next.run(req).await;
     }
-    let origin = std::env::var(CANONICAL_API_ORIGIN_ENV)
-        .unwrap_or_else(|_| "https://api.datacontractgate.com".to_string());
+    let origin = legacy_redirect_origin();
     let target = format!(
-        "{}{}",
-        origin.trim_end_matches('/'),
+        "{origin}{}",
         req.uri()
             .path_and_query()
             .map(|p| p.as_str())
@@ -658,6 +690,31 @@ mod legacy_host_tests {
             r.headers()["location"],
             "https://api.datacontractgate.com/contracts?limit=5"
         );
+
+        // A blank secret is the same as unset for this redirect only.
+        std::env::set_var(CANONICAL_API_ORIGIN_ENV, "  ");
+        let r = app()
+            .oneshot(req("contractgate-api.fly.dev", "/contracts?limit=5"))
+            .await
+            .unwrap();
+        assert_eq!(
+            r.headers()["location"],
+            "https://api.datacontractgate.com/contracts?limit=5"
+        );
+
+        std::env::set_var(
+            CANONICAL_API_ORIGIN_ENV,
+            "https://contractgate-api-staging.fly.dev/",
+        );
+        let r = app()
+            .oneshot(req("contractgate-api.fly.dev", "/contracts?limit=5"))
+            .await
+            .unwrap();
+        assert_eq!(
+            r.headers()["location"],
+            "https://contractgate-api-staging.fly.dev/contracts?limit=5"
+        );
+        std::env::remove_var(CANONICAL_API_ORIGIN_ENV);
 
         let r = app()
             .oneshot(req("contractgate-api.fly.dev", "/health"))

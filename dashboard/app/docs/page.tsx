@@ -52,6 +52,18 @@ const DOCS = [
     pills: ["Java 11+", "Kafka Connect 2.8+", "DLQ support", "Apache 2.0"],
     cta: "Read the Kafka Connect docs →",
   },
+  {
+    external: false,
+    href: "/docs/fivetran",
+    icon: "⟳",
+    title: "Use ContractGate with Fivetran",
+    badge: "paid",
+    badgeColor: "text-amber-300 bg-amber-900/30 border-amber-700/40",
+    description:
+      "Put contract-passed events in your warehouse. Covers the Contracts page button, destination schema, table names, and a manual fivetran deploy.",
+    pills: ["Connector SDK", "paid plans", "keys not stored", "paused on create"],
+    cta: "Read the Fivetran guide →",
+  },
 ];
 
 export default function DocsIndexPage() {

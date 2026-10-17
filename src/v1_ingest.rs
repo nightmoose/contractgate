@@ -476,7 +476,7 @@ fn build_openapi() -> String {
           }
         },
         "/contracts/{id}/versions/{version}/publish": { "post": { "operationId": "publish_version", "summary": "Publish a contract version (owner org)", "parameters": [ { "name": "id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }, { "name": "version", "in": "path", "required": true, "schema": { "type": "string" } } ], "requestBody": { "required": false, "content": { "application/json": { "schema": { "type": "object", "properties": { "visibility": { "type": "string", "enum": ["public", "link", "org"], "default": "link" } } } } } }, "responses": { "201": { "description": "Published; body has publication_ref (and link_token for link/org)" }, "401": { "description": "Missing or invalid credentials" }, "404": { "description": "Contract or version not found" } }, "security": [{ "ApiKeyAuth": [] }] } },
-        "/me": { "get": { "operationId": "me", "summary": "Caller org id, org name and plan (no emails). Also at /v1/me.", "responses": { "200": { "description": "org_id, org_name, plan, plan_display, auth (api_key|session), api_key_id, monthly_event_limit, rate_limit_rps, rate_limit_burst" }, "401": { "description": "Missing or invalid credentials" } }, "security": [{ "ApiKeyAuth": [] }] } },
+        "/me": { "get": { "operationId": "me", "summary": "Caller org id, org name and plan (no emails). Also at /v1/me.", "responses": { "200": { "description": "org_id, org_name, plan, plan_display, paid_features, auth (api_key|session), api_key_id, monthly_event_limit, rate_limit_rps, rate_limit_burst. paid_features is true for a paid plan and for every plan when CONTRACTGATE_SELF_HOSTED is set. plan stays the stored org plan." }, "401": { "description": "Missing or invalid credentials" } }, "security": [{ "ApiKeyAuth": [] }] } },
         "/v1/me": { "get": { "operationId": "v1_me", "summary": "Alias of /me", "responses": { "200": { "description": "Same as /me" }, "401": { "description": "Missing or invalid credentials" } }, "security": [{ "ApiKeyAuth": [] }] } },
         "/contracts/{name}/collaborators": { "get": { "operationId": "list_collaborators", "summary": "List collaborators (viewer+)", "parameters": [{ "name": "name", "in": "path", "required": true, "description": "Contract name, or contract UUID to address a shared contract by id", "schema": { "type": "string" } }], "responses": { "200": { "description": "Collaborator grants" }, "401": { "description": "Missing or invalid credentials" }, "403": { "description": "Caller lacks the required role; the message names it, e.g. requires owner role on contract 'x'" }, "404": { "description": "Contract not found" } }, "security": [{ "ApiKeyAuth": [] }] }, "post": { "operationId": "grant_collaborator", "summary": "Grant a role to another org (owner)", "parameters": [{ "name": "name", "in": "path", "required": true, "description": "Contract name, or contract UUID to address a shared contract by id", "schema": { "type": "string" } }], "requestBody": { "required": true, "content": { "application/json": { "schema": { "type": "object", "required": ["org_id", "role"], "properties": { "org_id": { "type": "string", "format": "uuid" }, "role": { "type": "string", "enum": ["viewer", "editor", "reviewer"] } } } } } }, "responses": { "201": { "description": "Grant created or updated" }, "401": { "description": "Missing or invalid credentials" }, "403": { "description": "Caller lacks the required role; the message names it, e.g. requires owner role on contract 'x'" }, "404": { "description": "Contract not found" } }, "security": [{ "ApiKeyAuth": [] }] } },
         "/contracts/{name}/collaborators/{org_id}": { "patch": { "operationId": "patch_collaborator", "summary": "Change a role (owner)", "parameters": [{ "name": "name", "in": "path", "required": true, "description": "Contract name, or contract UUID to address a shared contract by id", "schema": { "type": "string" } }, { "name": "org_id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }], "requestBody": { "required": true, "content": { "application/json": { "schema": { "type": "object", "required": ["role"], "properties": { "role": { "type": "string", "enum": ["viewer", "editor", "reviewer"] } } } } } }, "responses": { "200": { "description": "Updated grant" }, "401": { "description": "Missing or invalid credentials" }, "403": { "description": "Caller lacks the required role; the message names it, e.g. requires owner role on contract 'x'" }, "404": { "description": "Contract not found" } }, "security": [{ "ApiKeyAuth": [] }] }, "delete": { "operationId": "revoke_collaborator", "summary": "Revoke a grant (owner)", "parameters": [{ "name": "name", "in": "path", "required": true, "description": "Contract name, or contract UUID to address a shared contract by id", "schema": { "type": "string" } }, { "name": "org_id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }], "responses": { "204": { "description": "Revoked" }, "401": { "description": "Missing or invalid credentials" }, "403": { "description": "Caller lacks the required role; the message names it, e.g. requires owner role on contract 'x'" }, "404": { "description": "Contract not found" } }, "security": [{ "ApiKeyAuth": [] }] } },
@@ -1231,6 +1231,12 @@ fn more_openapi_paths_tail(
         "/v1/contracts/{id}/passed",
         "get",
         crate::passed_events::openapi_operation(),
+    );
+    merge_openapi_op(
+        paths,
+        "/v1/integrations/fivetran/connect",
+        "post",
+        crate::fivetran::openapi_operation(),
     );
     crate::openapi_schemas::apply(paths);
 }
@@ -2121,6 +2127,20 @@ mod tests {
     }
 
     #[test]
+    fn openapi_lists_fivetran_connect_with_schemas() {
+        let v: Value = serde_json::from_str(&build_openapi()).unwrap();
+        let op = &v["paths"]["/v1/integrations/fivetran/connect"]["post"];
+        let request = &op["requestBody"]["content"]["application/json"]["schema"];
+        let ok = &op["responses"]["200"]["content"]["application/json"]["schema"];
+        assert_eq!(request["type"], "object");
+        assert_eq!(ok["type"], "object");
+        assert!(request["properties"].as_object().unwrap().len() >= 4);
+        assert!(ok["properties"].as_object().unwrap().len() >= 3);
+        let forbidden = op["responses"]["403"]["description"].as_str().unwrap();
+        assert!(forbidden.contains(&crate::plan::fivetran_connect_upgrade_message()));
+    }
+
+    #[test]
     fn openapi_lists_publication_endpoints() {
         let v: Value = serde_json::from_str(&build_openapi()).unwrap();
         for path in [
@@ -2402,6 +2422,7 @@ mod tests {
                 "org_name",
                 "plan",
                 "plan_display",
+                "paid_features",
                 "auth",
                 "api_key_id",
                 "monthly_event_limit",
@@ -2422,6 +2443,7 @@ mod tests {
                 json!(["string", "null"])
             );
             assert_eq!(me["properties"]["plan"]["type"], "string");
+            assert_eq!(me["properties"]["paid_features"]["type"], "boolean");
             assert_eq!(
                 me["properties"]["api_key_id"]["type"],
                 json!(["string", "null"])
