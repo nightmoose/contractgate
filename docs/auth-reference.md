@@ -306,6 +306,7 @@ or a dashboard session (`Authorization: Bearer <jwt>`).
   "org_name": "acme",
   "plan": "growth",
   "plan_display": "Pro",
+  "paid_features": true,
   "auth": "api_key",
   "api_key_id": "b41e…",
   "monthly_event_limit": 25000000,
@@ -314,8 +315,15 @@ or a dashboard session (`Authorization: Bearer <jwt>`).
 }
 ```
 
-- `plan` is the org's plan, which sets the key's limits; `rate_limit_*` are
+- `plan` is the org's stored plan, which sets the key's limits; `rate_limit_*` are
   the key's own override when set, else the plan default.
+- `paid_features` is true when passed-event export, Connect Fivetran, and
+  payload storage are allowed. A paid plan (`growth`, `aisg_pro`, `enterprise`)
+  is true. `CONTRACTGATE_SELF_HOSTED` set to `1`, `true`, or `TRUE` makes it
+  true for every plan, including `free` and `aisg_free`. The stored `plan`,
+  `plan_display`, monthly limit, and default rate limit stay on the org row.
+  A self-hosted free org still reports `"plan": "free"` and
+  `"paid_features": true`.
 - `auth` is `api_key` or `session`; `api_key_id` is `null` for sessions.
 - No emails or user ids are returned. `org_name` is `null` if the stored name
   looks like an email.

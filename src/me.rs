@@ -19,6 +19,10 @@ pub struct MeResponse {
     pub org_name: Option<String>,
     pub plan: String,
     pub plan_display: &'static str,
+    /// Passed-event export, Connect Fivetran, and payload storage are allowed.
+    /// The stored `plan` is unchanged. `CONTRACTGATE_SELF_HOSTED` makes this
+    /// true for a free org.
+    pub paid_features: bool,
     /// `"api_key"` or `"session"` (dashboard JWT).
     pub auth: &'static str,
     /// The API key's id; `null` for session (JWT) auth.
@@ -48,13 +52,14 @@ pub fn safe_org_name(name: String) -> Option<String> {
     }
 }
 
-pub fn build(key: &ValidatedKey, org_name: String, plan: String) -> MeResponse {
+pub fn build(key: &ValidatedKey, org_name: String, plan: String, self_hosted: bool) -> MeResponse {
     let session = key.api_key_id.is_nil();
     let (def_rps, def_burst) = crate::plan::default_rate_limit(&plan);
     MeResponse {
         org_id: key.org_id,
         org_name: safe_org_name(org_name),
         plan_display: plan_display(&plan),
+        paid_features: crate::plan::gate_paid(self_hosted, &plan),
         auth: if session { "session" } else { "api_key" },
         api_key_id: (!session).then_some(key.api_key_id),
         monthly_event_limit: crate::plan::monthly_event_limit(&plan),
@@ -79,7 +84,7 @@ pub async fn me_handler(
         .await
         .db_op("me_org")?;
     let (name, plan) = row.ok_or_else(|| AppError::NotFound("org not found".into()))?;
-    Ok(Json(build(&key, name, plan)))
+    Ok(Json(build(&key, name, plan, state.self_hosted)))
 }
 
 #[cfg(test)]
@@ -100,7 +105,7 @@ mod tests {
     #[test]
     fn api_key_auth_reports_key_and_plan() {
         let id = Uuid::new_v4();
-        let me = build(&key(id), "acme".into(), "growth".into());
+        let me = build(&key(id), "acme".into(), "growth".into(), false);
         assert_eq!(me.auth, "api_key");
         assert_eq!(me.api_key_id, Some(id));
         assert_eq!(me.plan_display, "Pro");
@@ -109,15 +114,34 @@ mod tests {
 
     #[test]
     fn jwt_auth_has_no_key_id() {
-        let me = build(&key(Uuid::nil()), "acme".into(), "free".into());
+        let me = build(&key(Uuid::nil()), "acme".into(), "free".into(), false);
         assert_eq!(me.auth, "session");
         assert_eq!(me.api_key_id, None);
         assert_eq!(me.monthly_event_limit, Some(100_000));
+        assert!(!me.paid_features);
+    }
+
+    #[test]
+    fn self_hosted_free_org_keeps_the_free_plan_and_marks_paid_features() {
+        let me = build(&key(Uuid::nil()), "acme".into(), "free".into(), true);
+        assert_eq!(me.plan, "free");
+        assert_eq!(me.plan_display, "Free");
+        assert_eq!(me.monthly_event_limit, Some(100_000));
+        assert_eq!(me.rate_limit_rps, 10);
+        assert_eq!(me.rate_limit_burst, 20);
+        assert!(me.paid_features);
+
+        let hosted = build(&key(Uuid::nil()), "acme".into(), "free".into(), false);
+        assert!(!hosted.paid_features);
+
+        let paid = build(&key(Uuid::nil()), "acme".into(), "growth".into(), false);
+        assert!(paid.paid_features);
+        assert_eq!(paid.monthly_event_limit, Some(25_000_000));
     }
 
     #[test]
     fn email_like_org_name_is_dropped() {
-        let me = build(&key(Uuid::nil()), "a@b.com".into(), "free".into());
+        let me = build(&key(Uuid::nil()), "a@b.com".into(), "free".into(), false);
         assert!(me.org_name.is_none());
         let json = serde_json::to_string(&me).unwrap();
         assert!(!json.contains('@'));

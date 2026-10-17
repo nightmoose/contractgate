@@ -105,6 +105,141 @@ export default function FivetranDocsPage() {
         The scheduled sync is every 6 hours once you unpause it.
       </p>
 
+      <H2 id="request">Connect request</H2>
+      <p className="text-slate-300 text-sm leading-relaxed mb-3">
+        <code className="text-slate-200">POST /v1/integrations/fivetran/connect</code>{" "}
+        takes a JSON object. Send the ContractGate API key in{" "}
+        <code className="text-slate-200">x-api-key</code>. The body max is 64 KiB.
+      </p>
+      <ul className="list-disc pl-5 text-slate-300 text-sm space-y-2 mb-4">
+        <li>
+          <code className="text-slate-200">fivetran_api_key</code> — required
+          string, 8–256 ASCII graphic characters, no colon. Paste the key
+          Fivetran showed. Do not Base64-encode it.
+        </li>
+        <li>
+          <code className="text-slate-200">fivetran_api_secret</code> — required
+          string, same length and character rules. A colon is allowed.
+        </li>
+        <li>
+          <code className="text-slate-200">group_id</code> — required string,
+          1–128 letters, digits, underscores, or hyphens. This is the
+          destination group <code className="text-slate-200">id</code>, not the
+          group name.
+        </li>
+        <li>
+          <code className="text-slate-200">contract_ids</code> — required array
+          of 1–32 UUID strings. Duplicates are rejected. Each id must belong to
+          the caller&apos;s org.
+        </li>
+        <li>
+          <code className="text-slate-200">table_names</code> — optional string,
+          at most 2048 characters. Omit it, send null, or send{" "}
+          <code className="text-slate-200">&quot;&quot;</code> to use the default
+          name for every contract. Otherwise it is comma-separated{" "}
+          <code className="text-slate-200">contract_id=name</code> pairs. Each
+          id must be in <code className="text-slate-200">contract_ids</code> and
+          may appear once. A name starts with a lowercase letter or underscore
+          and then uses only lowercase letters, digits, and underscores, at most
+          63 characters. Two contracts cannot share a name. A contract with no
+          pair still gets the default name.
+        </li>
+        <li>
+          <code className="text-slate-200">destination_schema</code> — optional
+          string. Omit it or send null to get{" "}
+          <code className="text-slate-200">contractgate_</code> plus 8 hex
+          digits. A value starts with a lowercase letter and then uses only
+          lowercase letters, digits, and underscores, at most 63 characters.
+        </li>
+      </ul>
+      <pre className="bg-[#0d1117] border border-[#1f2937] rounded-lg p-4 overflow-x-auto text-sm text-slate-300 font-mono leading-relaxed mb-4">
+{`curl -sS -X POST "$API/v1/integrations/fivetran/connect" \\
+  -H "x-api-key: $CONTRACTGATE_API_KEY" \\
+  -H "content-type: application/json" \\
+  -d '{
+    "fivetran_api_key": "your_fivetran_key",
+    "fivetran_api_secret": "your_fivetran_secret",
+    "group_id": "projected_sickle",
+    "contract_ids": ["427c3304-ead1-4ba7-b7e0-123456789abc"],
+    "table_names": "427c3304-ead1-4ba7-b7e0-123456789abc=user_events_427c3304"
+  }'`}
+      </pre>
+
+      <H2 id="response">Connect response</H2>
+      <p className="text-slate-300 text-sm leading-relaxed mb-3">
+        A created connection returns HTTP 200.{" "}
+        <code className="text-slate-200">setup_url</code> is null when the
+        connection id is not safe to put in a URL.{" "}
+        <code className="text-slate-200">status</code> is{" "}
+        <code className="text-slate-200">paused</code> until you start the sync.
+        It is <code className="text-slate-200">setup_failed</code> when a setup
+        test reports FAILED or JOB_FAILED.
+      </p>
+      <pre className="bg-[#0d1117] border border-[#1f2937] rounded-lg p-4 overflow-x-auto text-sm text-slate-300 font-mono leading-relaxed mb-4">
+{`{
+  "connection_id": "conn_id",
+  "setup_url": "https://fivetran.com/dashboard/connections/conn_id/status",
+  "status": "paused"
+}`}
+      </pre>
+      <p className="text-slate-300 text-sm leading-relaxed mb-3">
+        Errors use <code className="text-slate-200">{`{"error","status"}`}</code>.
+      </p>
+      <ul className="list-disc pl-5 text-slate-300 text-sm space-y-2 mb-4">
+        <li>
+          <span className="text-slate-100">400.</span> The body is not a JSON
+          object, a required field is missing, a field fails the rule above, or
+          the group does not exist. An unknown group is{" "}
+          <code className="text-slate-200">
+            Fivetran group &lt;id&gt; was not found
+          </code>
+          . No ContractGate key is minted.
+        </li>
+        <li>
+          <span className="text-slate-100">401.</span>{" "}
+          <code className="text-slate-200">
+            Unauthorized: missing or invalid API key
+          </code>{" "}
+          when the ContractGate key is missing and auth is on.{" "}
+          <code className="text-slate-200">Fivetran rejected the API key</code>{" "}
+          when Fivetran rejects the key or secret. That check runs before a
+          ContractGate key is minted.
+        </li>
+        <li>
+          <span className="text-slate-100">403.</span> The org plan is{" "}
+          <code className="text-slate-200">free</code> or{" "}
+          <code className="text-slate-200">aisg_free</code> and{" "}
+          <code className="text-slate-200">CONTRACTGATE_SELF_HOSTED</code> is
+          not set. The error is{" "}
+          <code className="text-slate-200">
+            Forbidden: Connect Fivetran is a paid-plan feature; upgrade to
+            growth, aisg_pro, or enterprise
+          </code>
+          .
+        </li>
+        <li>
+          <span className="text-slate-100">404.</span> A contract id is not in
+          the caller&apos;s org. No key is minted.
+        </li>
+        <li>
+          <span className="text-slate-100">500.</span>{" "}
+          <code className="text-slate-200">CANONICAL_API_ORIGIN</code> is unset,
+          blank, or not an https origin with no path, query, or credentials.
+          The unset message is{" "}
+          <code className="text-slate-200">
+            CANONICAL_API_ORIGIN is unset. Set it to this deployment&apos;s
+            public https API origin before connecting Fivetran.
+          </code>{" "}
+          No key is minted. There is no production fallback.
+        </li>
+      </ul>
+      <p className="text-slate-400 text-sm leading-relaxed">
+        A later Fivetran failure is HTTP 502,{" "}
+        <code className="text-slate-200">Fivetran request failed (&lt;status&gt;)</code>.
+        The key minted for that attempt is revoked, and an uploaded package that
+        never became a connection is deleted.
+      </p>
+
       <H2 id="schema">Destination schema</H2>
       <p className="text-slate-300 text-sm leading-relaxed mb-3">
         The Connect Fivetran form does not ask for a schema. When the request
@@ -134,16 +269,27 @@ export default function FivetranDocsPage() {
 
       <H2 id="warehouse">What lands in the warehouse</H2>
       <p className="text-slate-300 text-sm leading-relaxed mb-3">
-        One table per contract. Connect Fivetran names it{" "}
-        <code className="text-slate-200">&lt;slug&gt;_&lt;8 hex&gt;</code>. The
-        slug is the contract name in lowercase, with other characters turned
-        into underscores, and leading digits dropped. Contract User Events and
-        id <code className="text-slate-200">427c3304-ead1-4ba7-b7e0-123456789abc</code>{" "}
-        becomes <code className="text-slate-200">user_events_427c3304</code>. A
-        contract name with no letters becomes{" "}
-        <code className="text-slate-200">passed_427c3304</code>. An optional
-        table name on the form replaces that default for that contract. Names
-        must be unique across the contracts you selected.
+        One table per contract. You can write the default name before the
+        first sync. It is <code className="text-slate-200">&lt;slug&gt;_</code>{" "}
+        plus the first 8 hex characters of the contract id, which are the eight
+        characters before the first hyphen, in lowercase. Contract User Events
+        and id{" "}
+        <code className="text-slate-200">427c3304-ead1-4ba7-b7e0-123456789abc</code>{" "}
+        becomes <code className="text-slate-200">user_events_427c3304</code>.
+      </p>
+      <p className="text-slate-300 text-sm leading-relaxed mb-3">
+        The slug is the contract name lowercased. Each run of characters that
+        are not letters or digits becomes one underscore. Leading digits and
+        underscores are dropped, so 123 Orders with that same id is{" "}
+        <code className="text-slate-200">orders_427c3304</code>. The slug stops
+        at 54 characters so the full name stays within 63. A name with no
+        letters left, such as !!!, becomes{" "}
+        <code className="text-slate-200">passed_</code> plus those same 8 hex
+        characters: <code className="text-slate-200">passed_427c3304</code>.
+        An optional table name on the form, or a{" "}
+        <code className="text-slate-200">table_names</code> pair, replaces that
+        default for that contract only. Names must be unique across the
+        contracts you selected.
       </p>
       <p className="text-slate-300 text-sm leading-relaxed mb-3">
         The primary key is <code className="text-slate-200">id</code>. Columns:
@@ -213,6 +359,54 @@ export default function FivetranDocsPage() {
         </li>
       </ul>
 
+      <H2 id="cleanup">Cleanup and another connect</H2>
+      <p className="text-slate-300 text-sm leading-relaxed mb-3">
+        Each successful connect inserts one <code className="text-slate-200">api_keys</code>{" "}
+        row named <code className="text-slate-200">Fivetran connector</code>,
+        limited to the selected contracts, and creates one new paused Fivetran
+        connection. The raw key is not returned. Connect does not look for an
+        existing connection and does not update one. A second click mints a
+        second key and a second connection.
+      </p>
+      <p className="text-slate-300 text-sm leading-relaxed mb-3">
+        Run connect once per set of contracts. To change the contracts, the
+        table names, or the schema, delete the Fivetran connection and revoke
+        the key, then connect again. Leaving the old connection in place keeps
+        it syncing on the old key.
+      </p>
+      <p className="text-slate-300 text-sm leading-relaxed mb-3">
+        Revoke the key on Account → API Keys. The button calls{" "}
+        <code className="text-slate-200">DELETE /api/keys</code> with{" "}
+        <code className="text-slate-200">{`{"id":"<api key uuid>"}`}</code> and
+        sets <code className="text-slate-200">revoked_at</code>. On the compose
+        database the same update is:
+      </p>
+      <pre className="bg-[#0d1117] border border-[#1f2937] rounded-lg p-4 overflow-x-auto text-sm text-slate-300 font-mono leading-relaxed mb-4">
+{`UPDATE api_keys
+SET revoked_at = now()
+WHERE org_id = '<org uuid>'
+  AND name = 'Fivetran connector'
+  AND revoked_at IS NULL
+  AND deleted_at IS NULL;`}
+      </pre>
+      <p className="text-slate-300 text-sm leading-relaxed mb-3">
+        The gateway cache keeps a revoked key working for up to 60 seconds.
+        Delete the connection in Fivetran from the{" "}
+        <code className="text-slate-200">setup_url</code>, or with the same key
+        and secret:
+      </p>
+      <pre className="bg-[#0d1117] border border-[#1f2937] rounded-lg p-4 overflow-x-auto text-sm text-slate-300 font-mono leading-relaxed mb-4">
+{`curl -sS -u "$FIVETRAN_KEY:$FIVETRAN_SECRET" -X DELETE \\
+  "https://api.fivetran.com/v1/connections/$CONNECTION_ID"`}
+      </pre>
+      <p className="text-slate-400 text-sm leading-relaxed">
+        <code className="text-slate-200">$CONNECTION_ID</code> is{" "}
+        <code className="text-slate-200">connection_id</code> from the 200
+        response. ContractGate does not store it. A connect that fails before
+        the key is minted (400, 401, 403, 404, 500) leaves nothing to revoke.
+        A connect that fails after the key is minted revokes that key itself.
+      </p>
+
       <H2 id="self-hosting">Self-hosting</H2>
       <p className="text-slate-300 text-sm leading-relaxed mb-3">
         Self-hosted orgs default to <code className="text-slate-200">free</code>.
@@ -252,6 +446,101 @@ export default function FivetranDocsPage() {
         and set <code className="text-slate-200">CANONICAL_API_ORIGIN</code> to
         the proxy&apos;s https URL.
       </p>
+      <p className="text-slate-300 text-sm leading-relaxed mb-3">
+        A fresh <code className="text-slate-200">docker compose up</code> applies{" "}
+        <code className="text-slate-200">supabase/migrations</code> once, then{" "}
+        <code className="text-slate-200">ops/postgres/seed/099_demo_org.sql</code>.
+        That seed inserts the demo org{" "}
+        <code className="text-slate-200">cccccccc-cccc-cccc-cccc-cccccccccccc</code>{" "}
+        on plan <code className="text-slate-200">free</code>. It does not insert
+        a user or an API key. The <code className="text-slate-200">contractgate</code>{" "}
+        CLI has no command that creates an org, a user, or a key.{" "}
+        <code className="text-slate-200">POST /api/keys</code> needs a dashboard
+        session, which this Postgres does not provide. Create the three rows in
+        the compose database (<code className="text-slate-200">cg</code> /{" "}
+        <code className="text-slate-200">cg</code>, database{" "}
+        <code className="text-slate-200">contractgate</code>).
+      </p>
+      <p className="text-slate-300 text-sm leading-relaxed mb-3">
+        Inserting <code className="text-slate-200">auth.users</code> fires{" "}
+        <code className="text-slate-200">handle_new_user()</code>. That function
+        inserts <code className="text-slate-200">user_profiles</code>, an{" "}
+        <code className="text-slate-200">orgs</code> row, and an owner{" "}
+        <code className="text-slate-200">org_memberships</code> row. The plan is{" "}
+        <code className="text-slate-200">free</code> unless{" "}
+        <code className="text-slate-200">raw_user_meta_data</code> has{" "}
+        <code className="text-slate-200">{`product = aischemagate`}</code>, which
+        starts the org on <code className="text-slate-200">aisg_free</code>.
+        This is a new org. It is not the demo org.
+      </p>
+      <pre className="bg-[#0d1117] border border-[#1f2937] rounded-lg p-4 overflow-x-auto text-sm text-slate-300 font-mono leading-relaxed mb-4">
+{`docker compose exec -T postgres psql -v ON_ERROR_STOP=1 -U cg -d contractgate <<'SQL'
+INSERT INTO auth.users (id, email, raw_user_meta_data)
+VALUES (
+  '11111111-1111-1111-1111-111111111111',
+  'owner@example.com',
+  '{"display_name":"Warehouse"}'::jsonb
+);
+SQL`}
+      </pre>
+      <p className="text-slate-300 text-sm leading-relaxed mb-3">
+        Then mint a key in the same shape as{" "}
+        <code className="text-slate-200">src/api_key_auth.rs</code>: raw{" "}
+        <code className="text-slate-200">cg_live_</code> plus 48 hex characters,
+        <code className="text-slate-200">key_prefix</code> the first 12
+        characters, <code className="text-slate-200">key_hash</code> standard
+        base64 of SHA-256 of the raw key (44 characters).{" "}
+        <code className="text-slate-200">pgcrypto</code> is already installed.
+        The statement prints the raw key once. Store it. It is not saved.
+      </p>
+      <pre className="bg-[#0d1117] border border-[#1f2937] rounded-lg p-4 overflow-x-auto text-sm text-slate-300 font-mono leading-relaxed mb-4">
+{`docker compose exec -T postgres psql -v ON_ERROR_STOP=1 -U cg -d contractgate <<'SQL'
+WITH minted AS (
+  SELECT 'cg_live_' || encode(gen_random_bytes(24), 'hex') AS raw_key
+),
+inserted AS (
+  INSERT INTO api_keys (user_id, org_id, name, key_prefix, key_hash)
+  SELECT
+    '11111111-1111-1111-1111-111111111111',
+    m.org_id,
+    'warehouse',
+    left(minted.raw_key, 12),
+    replace(encode(digest(minted.raw_key, 'sha256'), 'base64'), E'\\n', '')
+  FROM minted
+  JOIN org_memberships m
+    ON m.user_id = '11111111-1111-1111-1111-111111111111'
+   AND m.deleted_at IS NULL
+  RETURNING id, key_prefix
+)
+SELECT inserted.id, inserted.key_prefix, minted.raw_key
+FROM inserted CROSS JOIN minted;
+SQL`}
+      </pre>
+      <p className="text-slate-300 text-sm leading-relaxed mb-3">
+        On the gateway service, remove{" "}
+        <code className="text-slate-200">CONTRACTGATE_DEV_NO_AUTH</code> (only{" "}
+        <code className="text-slate-200">1</code>,{" "}
+        <code className="text-slate-200">true</code>, and{" "}
+        <code className="text-slate-200">TRUE</code> turn auth off). Set{" "}
+        <code className="text-slate-200">CONTRACTGATE_SELF_HOSTED</code> to{" "}
+        <code className="text-slate-200">1</code>,{" "}
+        <code className="text-slate-200">true</code>, or{" "}
+        <code className="text-slate-200">TRUE</code>. Any other value leaves the
+        process hosted. Set{" "}
+        <code className="text-slate-200">CANONICAL_API_ORIGIN</code> to the
+        public https origin, then recreate the gateway container.
+      </p>
+      <p className="text-slate-400 text-sm leading-relaxed">
+        <code className="text-slate-200">GET /v1/me</code> with that key still
+        reports <code className="text-slate-200">plan</code>{" "}
+        <code className="text-slate-200">free</code>, the free monthly limit,
+        and the free rate limit. <code className="text-slate-200">paid_features</code>{" "}
+        is true, which is the signal that passed-event export, Connect Fivetran,
+        and payload storage are on. Use this key as{" "}
+        <code className="text-slate-200">x-api-key</code> for connect, or as{" "}
+        <code className="text-slate-200">api_key</code> in a manual{" "}
+        <code className="text-slate-200">configuration.json</code>.
+      </p>
 
       <H2 id="manual">Deploy the connector yourself</H2>
       <p className="text-slate-300 text-sm leading-relaxed mb-3">
@@ -279,14 +568,47 @@ fivetran deploy \\
   --python 3.12`}
       </pre>
       <p className="text-slate-300 text-sm leading-relaxed mb-3">
-        <code className="text-slate-200">configuration.json</code> needs your
-        ContractGate API key (from Account → API Keys), comma-separated
-        contract ids, and optionally <code className="text-slate-200">base_url</code>{" "}
-        and <code className="text-slate-200">table_names</code>. Production base
-        URL is <code className="text-slate-200">https://api.datacontractgate.com</code>.
+        <code className="text-slate-200">configuration.json</code> is the object
+        the connector reads. <code className="text-slate-200">api_key</code> and{" "}
+        <code className="text-slate-200">contract_ids</code> are required.{" "}
+        <code className="text-slate-200">base_url</code> and{" "}
+        <code className="text-slate-200">table_names</code> are optional.
+        Production base URL is{" "}
+        <code className="text-slate-200">https://api.datacontractgate.com</code>.
         The connection is created paused until you start the initial sync in
         Fivetran.
       </p>
+      <ul className="list-disc pl-5 text-slate-300 text-sm space-y-2 mb-4">
+        <li>
+          <code className="text-slate-200">api_key</code> — required string. A
+          ContractGate key from Account → API Keys, or the compose key above.
+          The connector sends it as <code className="text-slate-200">x-api-key</code>.
+        </li>
+        <li>
+          <code className="text-slate-200">contract_ids</code> — required
+          string of comma-separated contract UUIDs. Not a JSON array.
+        </li>
+        <li>
+          <code className="text-slate-200">base_url</code> — optional https
+          origin with no path, query, or credentials. Blank uses production.
+          <code className="text-slate-200">http://</code> is accepted only for{" "}
+          <code className="text-slate-200">localhost</code> and{" "}
+          <code className="text-slate-200">127.0.0.1</code>.
+        </li>
+        <li>
+          <code className="text-slate-200">table_names</code> — optional string
+          of comma-separated <code className="text-slate-200">contract_id=name</code>{" "}
+          pairs. Each id must be in <code className="text-slate-200">contract_ids</code>.
+        </li>
+      </ul>
+      <pre className="bg-[#0d1117] border border-[#1f2937] rounded-lg p-4 overflow-x-auto text-sm text-slate-300 font-mono leading-relaxed mb-4">
+{`{
+  "api_key": "cg_live_0123456789abcdef0123456789abcdef0123456789abcdef",
+  "contract_ids": "427c3304-ead1-4ba7-b7e0-123456789abc",
+  "base_url": "https://api.datacontractgate.com",
+  "table_names": "427c3304-ead1-4ba7-b7e0-123456789abc=user_events_427c3304"
+}`}
+      </pre>
       <p className="text-slate-400 text-sm leading-relaxed">
         A manual deploy that leaves <code className="text-slate-200">table_names</code>{" "}
         empty uses the connector default{" "}
