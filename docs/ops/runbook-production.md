@@ -208,7 +208,7 @@ Customer-facing targets: [Support SLA](../support-sla.md).
 
 ## Staging (2026-10-14)
 
-- Branch **`staging`** (created from `main`). CG Dev / agents may merge PRs into
+- Branch **`staging`** (created from `main`). The dev team may merge PRs into
   `staging` freely; **only Alex merges to `main`** (production).
 - Production must set `CANONICAL_API_ORIGIN=https://api.datacontractgate.com`. Staging must set `CANONICAL_API_ORIGIN=https://contractgate-api-staging.fly.dev`.
 - Fly app `contractgate-api-staging` via `fly.staging.toml`: `auto_stop_machines`,

@@ -2,7 +2,7 @@
 
 **Companion to:** `TEST-PLAN-2026-05-24-public-launch.md`
 **Date:** 2026-05-24
-**Executor:** a Claude Haiku agent running live against production.
+**Executor:** an AI assistant running live against production.
 
 ## How to use
 
