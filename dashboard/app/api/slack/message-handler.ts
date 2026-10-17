@@ -11,6 +11,7 @@
 
 import Anthropic from "@anthropic-ai/sdk";
 import { createClient as createServiceClient } from "@supabase/supabase-js";
+import { supabaseServerUrl } from "@/lib/supabase/env";
 import { readFileSync } from "fs";
 import { join } from "path";
 
@@ -39,7 +40,7 @@ function getLlmProvider(): LlmProvider {
 
 function getSupabaseAdmin() {
   return createServiceClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    supabaseServerUrl(),
     process.env.SUPABASE_SERVICE_ROLE_KEY!,
     { auth: { persistSession: false } }
   );

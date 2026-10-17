@@ -3,6 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import { connectFivetran, type FivetranConnectResponse } from "@/lib/api";
+import { paidPlansPhrase } from "@/lib/org";
 
 export interface FivetranContractOption {
   id: string;
@@ -59,7 +60,7 @@ export default function ConnectFivetran({
   const submit = async () => {
     setError(null);
     if (paid !== true) {
-      setError("Connect Fivetran is a paid-plan feature. Upgrade to Pro or Enterprise, then try again.");
+      setError(`Connect Fivetran is a paid-plan feature. Upgrade to ${paidPlansPhrase()}, then try again.`);
       return;
     }
     if (selected.length === 0) {
@@ -136,7 +137,7 @@ export default function ConnectFivetran({
           <Link href="/pricing" className="text-green-400 hover:underline">
             Upgrade
           </Link>{" "}
-          to Pro or Enterprise, then try again.
+          to {paidPlansPhrase()}, then try again.
         </p>
       )}
 

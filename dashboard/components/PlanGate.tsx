@@ -22,6 +22,8 @@
 
 import Link from "next/link";
 import { useOrg, planAtLeast, isAisgPlan, planDisplayName, upgradePlanName, type PlanTier } from "@/lib/org";
+import { tierOpen } from "@/lib/paid-features";
+import { usePaidFeatures, useSelfHosted } from "@/lib/use-paid-features";
 import { PREVIEWS } from "@/lib/previews";
 
 // ---------------------------------------------------------------------------
@@ -153,11 +155,13 @@ interface PlanGateProps {
 
 export default function PlanGate({ minTier, feature, previewKey, children }: PlanGateProps) {
   const { org, loading } = useOrg();
+  const paidFeatures = usePaidFeatures();
+  const selfHosted = useSelfHosted();
 
   // Still resolving — render nothing to avoid flash.
-  if (loading || !org) return null;
+  if (loading || !org || paidFeatures === null || selfHosted === null) return null;
 
-  if (planAtLeast(org.plan, minTier)) {
+  if (tierOpen(selfHosted, paidFeatures, planAtLeast(org.plan, minTier), minTier === "enterprise")) {
     return <>{children}</>;
   }
 
@@ -185,7 +189,9 @@ interface FreeLimitBannerProps {
 
 export function FreeLimitBanner({ current, max, resource }: FreeLimitBannerProps) {
   const { org } = useOrg();
+  const selfHosted = useSelfHosted();
 
+  if (selfHosted !== false) return null;
   if (!org || (org.plan !== "free" && org.plan !== "aisg_free") || current < max) return null;
 
   return (

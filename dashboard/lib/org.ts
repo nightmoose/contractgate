@@ -7,12 +7,8 @@
  * auto-provisioned an org on first sign-up, and all resources (contracts,
  * api_keys, audit_log) carry an org_id FK.
  *
- * This hook fetches the user's first org membership (by created_at) so
- * client components can include org_id in INSERT statements and display
- * org context in the UI.
- *
- * RLS policies on the Supabase tables handle SELECT scoping automatically —
- * callers only need org_id when writing rows.
+ * Resolves the signed-in user's earliest org membership (`joined_at`
+ * ascending). Callers use it for plan checks, labels, and org-scoped reads.
  */
 
 import { useState, useEffect, useRef } from "react";
@@ -138,10 +134,7 @@ interface UseOrgResult {
 /**
  * Returns the current user's primary org.
  *
- * "Primary" = first membership row by created_at; for single-org users
- * (the typical case right now) this is always their personal org.
- * Multi-org support (org switcher) is a future concern — this hook is the
- * single place to upgrade when that lands.
+ * Earliest membership by `joined_at`. A single-org user has one row.
  */
 export function useOrg(): UseOrgResult {
   // Demo mode: return fixed org synchronously — no Supabase session needed.

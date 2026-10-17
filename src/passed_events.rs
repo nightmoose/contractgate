@@ -845,7 +845,7 @@ mod tests {
             let allowed =
                 authorize_passed_export(true, Some(org), Some(plan_name), true, true, true)
                     .unwrap();
-            assert_eq!(allowed, Some(90), "{plan_name}");
+            assert_eq!(allowed, Some(365), "{plan_name}");
             let deny = authorize_passed_export(true, Some(org), Some(plan_name), true, true, false)
                 .unwrap_err();
             let (status, _) = error_json(deny_error(deny, contract)).await;

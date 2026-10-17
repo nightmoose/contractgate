@@ -145,6 +145,9 @@ pub struct AppState {
     /// JWKS URL for the background refresh task and on-demand kid-refresh.
     /// None = no Supabase URL derived at startup.
     pub supabase_jwks_url: Option<String>,
+    /// HS256 secret for a self-hosted GoTrue that signs session tokens with
+    /// `SUPABASE_JWT_SECRET`. Unset on hosted projects, which use JWKS.
+    pub jwt_hs256_secret: Option<Vec<u8>>,
     /// Unix-epoch-seconds of the last out-of-band kid-refresh attempt.
     /// Used to debounce refresh-on-unknown-kid to at most once per 60 s.
     pub jwks_last_kid_refresh: Arc<AtomicU64>,
@@ -171,6 +174,11 @@ impl AppState {
             kinesis_consumers: kinesis_consumer::ConsumerPool::new(),
             supabase_jwks: Arc::new(ArcSwap::from_pointee(supabase_jwks)),
             supabase_jwks_url,
+            jwt_hs256_secret: std::env::var("SUPABASE_JWT_SECRET")
+                .ok()
+                .map(|s| s.trim().to_string())
+                .filter(|s| !s.is_empty())
+                .map(String::into_bytes),
             jwks_last_kid_refresh: Arc::new(AtomicU64::new(0)),
         }
     }
@@ -1381,9 +1389,12 @@ async fn require_api_key(
         }
         // RFC-052: load the live JWKS snapshot (lock-free ArcSwap read).
         let jwks_guard = state.supabase_jwks.load();
-        if let Some(jwks) = jwks_guard.as_ref() {
+        let hs256 = state.jwt_hs256_secret.as_deref();
+        if jwks_guard.as_ref().is_some() || hs256.is_some() {
+            let empty = jsonwebtoken::jwk::JwkSet { keys: vec![] };
+            let jwks = jwks_guard.as_ref().as_ref().unwrap_or(&empty);
             // First verification attempt with the current key set.
-            let result = jwt_auth::verify_supabase_jwt(&bearer, jwks, &state.db).await;
+            let result = jwt_auth::verify_supabase_jwt(&bearer, jwks, hs256, &state.db).await;
 
             // On NoMatchingKey, attempt a debounced out-of-band refresh and
             // retry once.  This makes key rotation near-instant instead of
@@ -1393,7 +1404,7 @@ async fn require_api_key(
                     if maybe_refresh_jwks_on_unknown_kid(&state).await {
                         let new_guard = state.supabase_jwks.load();
                         if let Some(new_jwks) = new_guard.as_ref() {
-                            jwt_auth::verify_supabase_jwt(&bearer, new_jwks, &state.db).await
+                            jwt_auth::verify_supabase_jwt(&bearer, new_jwks, hs256, &state.db).await
                         } else {
                             Err(jwt_auth::JwtAuthError::NoMatchingKey)
                         }
@@ -1451,7 +1462,11 @@ async fn require_api_key(
     // `x-api-key` credential path — the legacy env-var master key was removed
     // in RFC-066.
     if !provided.is_empty() {
-        match state.key_cache.validate(&provided, &state.db).await {
+        match state
+            .key_cache
+            .validate(&provided, &state.db, state.self_hosted)
+            .await
+        {
             Ok(validated) => {
                 // P1-1: rate-limit DB-backed keys using per-key overrides.
                 let outcome = state.rate_limiter.check(
@@ -2037,6 +2052,8 @@ async fn main() -> anyhow::Result<()> {
     //   2. Derived from DATABASE_URL (handles direct + pooler formats)
     let jwks_url: Option<String> = std::env::var("SUPABASE_URL")
         .ok()
+        .map(|u| u.trim().to_string())
+        .filter(|u| !u.is_empty())
         .map(|u| format!("{}/auth/v1/.well-known/jwks.json", u.trim_end_matches('/')))
         .or_else(|| jwt_auth::jwks_url_from_database_url(&database_url));
 
@@ -2069,7 +2086,7 @@ async fn main() -> anyhow::Result<()> {
     let state = Arc::new(AppState::new(pool, dev_no_auth, supabase_jwks, jwks_url));
     if state.self_hosted {
         tracing::info!(
-            "CONTRACTGATE_SELF_HOSTED is set — passed-event export, Connect Fivetran, and payload storage treat every org as paid"
+            "CONTRACTGATE_SELF_HOSTED is set — every org has paid features, unlimited events, the paid rate limit, and Enterprise retention"
         );
     }
 

@@ -15,13 +15,14 @@
  */
 
 import { createClient } from "@/lib/supabase/server";
+import { supabaseServerUrl } from "@/lib/supabase/env";
 import { createClient as createServiceClient } from "@supabase/supabase-js";
 import { NextResponse } from "next/server";
 
 // Service-role client — can read the github_token column that RLS hides from
 // the anon/user role. Only used server-side, never exposed to the browser.
 function getServiceClient() {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL!;
+  const url = supabaseServerUrl();
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY!;
   return createServiceClient(url, key);
 }

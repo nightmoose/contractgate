@@ -24,14 +24,18 @@ to the browser.
 
 Self-host that Fivetran can reach keeps auth on and sets
 `CONTRACTGATE_SELF_HOSTED`. Orgs still default to `free`. That flag treats
-the org as paid for Connect Fivetran, `GET /v1/contracts/{id}/passed`, and
-payload storage. The connector key is a normal org-scoped `api_keys` row, so
-`/passed` accepts it. Hosted production and staging leave the variable unset.
-Hosted `free` and `aisg_free` still receive 403.
+the org as paid for every paid gate, including Connect Fivetran,
+`GET /v1/contracts/{id}/passed`, and payload storage. The monthly event cap
+is unlimited, the default rate limit is the paid limit unless the key
+overrides it, and the passed-event window is 365 days. The connector key is
+a normal org-scoped `api_keys` row, so `/passed` accepts it. Hosted
+production and staging leave the variable unset. Hosted `free` and
+`aisg_free` still receive 403.
 
 `GET /v1/me` keeps the stored `plan`. A self-hosted free org reports
-`"plan": "free"` and `"paid_features": true`. Monthly limit and the default
-rate limit stay on the free plan. See [auth-reference.md](auth-reference.md).
+`"plan": "free"`, `"paid_features": true`, `"self_hosted": true`, and
+`"monthly_event_limit": null`. See [auth-reference.md](auth-reference.md)
+and [self-host-reference.md](self-host-reference.md).
 
 `CONTRACTGATE_DEV_NO_AUTH=1` is only for a local or private process. Do not
 put that process on a public URL.
