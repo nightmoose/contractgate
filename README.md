@@ -101,11 +101,10 @@ Auth on, dashboard sign-up, and every paid feature unlocked. From a fresh clone:
 ```bash
 git clone https://github.com/nightmoose/contractgate.git
 cd contractgate
-cp .env.selfhost.example .env
 docker compose -f docker-compose.yml -f docker-compose.selfhost.yml up --build
 ```
 
-Sign up at http://localhost:3000/auth/signup, then sign in at http://localhost:3000/auth/login. Mail is not configured; confirmation is automatic. Do not combine this with `--profile demo`. Exact steps, the flag, and the placeholder keys: [`docs/self-host-reference.md`](docs/self-host-reference.md).
+Sign up at http://localhost:3000/auth/signup, then sign in at http://localhost:3000/auth/login. Mail is not configured; confirmation is automatic. Do not combine this with `--profile demo`. First boot generates keys and binds ports to `127.0.0.1`. Exact steps: [`docs/self-host-reference.md`](docs/self-host-reference.md).
 
 The comparison table below is the zero-auth demo. With `CONTRACTGATE_SELF_HOSTED=true` the stored plan stays `free` and paid gates open.
 

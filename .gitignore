@@ -9,6 +9,7 @@ confluent-connector/*.zip.asc
 # Environment
 .env
 .env.local
+.selfhost/
 
 # Node / Next.js
 mcp/node_modules/

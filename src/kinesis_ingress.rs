@@ -53,6 +53,36 @@ fn aws_region() -> String {
     std::env::var("KINESIS_AWS_REGION").unwrap_or_else(|_| "us-east-1".to_string())
 }
 
+/// 400 body when a self-hosted gateway is asked to enable Kinesis with no
+/// AWS credentials in the environment.
+const KINESIS_AWS_UNCONFIGURED: &str = "Kinesis ingress is currently unavailable on this deployment (AWS credentials are not configured). Use POST /v1/ingest instead.";
+
+fn env_nonempty(get: &impl Fn(&str) -> Option<String>, name: &str) -> bool {
+    get(name).is_some_and(|value| !value.trim().is_empty())
+}
+
+/// Static AWS credentials, a named profile, a web-identity role, or the ECS
+/// container credentials URI. Instance metadata is intentionally absent:
+/// self-host compose has no metadata service, and a hosted process does not
+/// consult this check.
+fn kinesis_aws_configured_from(get: impl Fn(&str) -> Option<String>) -> bool {
+    if env_nonempty(&get, "AWS_ACCESS_KEY_ID") && env_nonempty(&get, "AWS_SECRET_ACCESS_KEY") {
+        return true;
+    }
+    if env_nonempty(&get, "AWS_PROFILE") {
+        return true;
+    }
+    if env_nonempty(&get, "AWS_WEB_IDENTITY_TOKEN_FILE") && env_nonempty(&get, "AWS_ROLE_ARN") {
+        return true;
+    }
+    env_nonempty(&get, "AWS_CONTAINER_CREDENTIALS_RELATIVE_URI")
+        || env_nonempty(&get, "AWS_CONTAINER_CREDENTIALS_FULL_URI")
+}
+
+fn kinesis_aws_configured() -> bool {
+    kinesis_aws_configured_from(|name| std::env::var(name).ok())
+}
+
 /// AES-256-GCM key from ENCRYPTION_KEY env var (32-byte hex).
 #[cfg(feature = "kinesis-ingress")]
 fn encryption_key() -> anyhow::Result<Key<Aes256Gcm>> {
@@ -598,6 +628,13 @@ pub async fn enable_kinesis_ingress_handler(
         return Ok((StatusCode::OK, Json(row_to_response(row, None))));
     }
 
+    // Self-host has no instance role. Missing AWS config used to surface as a
+    // bare 500 from the SDK. Hosted processes keep the previous path so an
+    // instance role still provisions.
+    if state.self_hosted && !kinesis_aws_configured() {
+        return Err(AppError::BadRequest(KINESIS_AWS_UNCONFIGURED.to_string()));
+    }
+
     let shard_count = 1_i32;
     let region = aws_region();
 
@@ -739,5 +776,50 @@ fn row_to_response(
         iam_secret_access_key: plaintext_secret,
         shard_count: row.shard_count,
         created_at: row.created_at,
+    }
+}
+
+#[cfg(test)]
+mod kinesis_aws_configured_tests {
+    use super::kinesis_aws_configured_from;
+
+    #[test]
+    fn missing_or_blank_credentials_are_not_configured() {
+        assert!(!kinesis_aws_configured_from(|_| None));
+        assert!(!kinesis_aws_configured_from(|name| match name {
+            "AWS_ACCESS_KEY_ID" => Some("  ".into()),
+            "AWS_SECRET_ACCESS_KEY" => Some("secret".into()),
+            _ => None,
+        }));
+        assert!(!kinesis_aws_configured_from(|name| match name {
+            "AWS_ACCESS_KEY_ID" => Some("akid".into()),
+            _ => None,
+        }));
+    }
+
+    #[test]
+    fn key_pair_profile_or_role_counts_as_configured() {
+        assert!(kinesis_aws_configured_from(|name| match name {
+            "AWS_ACCESS_KEY_ID" => Some("akid".into()),
+            "AWS_SECRET_ACCESS_KEY" => Some("secret".into()),
+            _ => None,
+        }));
+        assert!(kinesis_aws_configured_from(|name| match name {
+            "AWS_PROFILE" => Some("selfhost".into()),
+            _ => None,
+        }));
+        assert!(kinesis_aws_configured_from(|name| match name {
+            "AWS_WEB_IDENTITY_TOKEN_FILE" => Some("/var/run/token".into()),
+            "AWS_ROLE_ARN" => Some("arn:aws:iam::123:role/kinesis".into()),
+            _ => None,
+        }));
+        assert!(kinesis_aws_configured_from(|name| match name {
+            "AWS_CONTAINER_CREDENTIALS_RELATIVE_URI" => Some("/creds".into()),
+            _ => None,
+        }));
+        assert!(!kinesis_aws_configured_from(|name| match name {
+            "AWS_WEB_IDENTITY_TOKEN_FILE" => Some("/var/run/token".into()),
+            _ => None,
+        }));
     }
 }
