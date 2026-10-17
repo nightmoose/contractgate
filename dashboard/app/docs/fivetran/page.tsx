@@ -46,7 +46,11 @@ export default function FivetranDocsPage() {
         in the dashboard). Hosted <code className="text-slate-200">free</code>{" "}
         and <code className="text-slate-200">aisg_free</code> receive that 403
         when <code className="text-slate-200">CONTRACTGATE_SELF_HOSTED</code> is
-        unset. The API error names those three plan ids.
+        unset. The API error names those three plan ids. The Contracts form
+        reads <code className="text-slate-200">paid_features</code> from{" "}
+        <code className="text-slate-200">GET /v1/me</code>. A hosted free org
+        sees an upgrade prompt. If that field is missing, the form follows
+        the stored plan.
       </p>
 
       <H2 id="fivetran-account">Fivetran API key and destination group</H2>
@@ -369,15 +373,17 @@ export default function FivetranDocsPage() {
           was rejected.
         </li>
         <li>
-          <span className="text-slate-100">403.</span> Hosted free plans get 403.
-          Connect Fivetran is available on paid hosted plans and on any
-          self-hosted instance with{" "}
-          <code className="text-slate-200">CONTRACTGATE_SELF_HOSTED=true</code>.
-          See{" "}
-          <Link href="#self-hosting" className="text-green-400 hover:underline">
-            Self-hosting
-          </Link>
-          .
+          <span className="text-slate-100">403.</span> On a hosted free plan,
+          open{" "}
+          <Link href="/pricing" className="text-green-400 hover:underline">
+            Upgrade
+          </Link>{" "}
+          and move to Pro or Enterprise, then connect again. On a self-hosted
+          instance, set{" "}
+          <code className="text-slate-200">CONTRACTGATE_SELF_HOSTED</code> to{" "}
+          <code className="text-slate-200">1</code>,{" "}
+          <code className="text-slate-200">true</code>, or{" "}
+          <code className="text-slate-200">TRUE</code>.
         </li>
         <li>
           <span className="text-slate-100">410.</span> The cursor is older than
