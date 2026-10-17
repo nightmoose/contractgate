@@ -1318,7 +1318,7 @@ pub(crate) fn openapi_operation() -> Value {
         "operationId": "connect_fivetran",
         "summary": "Deploy the ContractGate Fivetran connector into the caller's Fivetran account",
         "description": format!(
-            "Paid plans only ({upgrade}). CONTRACTGATE_SELF_HOSTED=true treats the org as paid, including a free plan, and keeps auth on. The Fivetran API key and secret are used once to upload the connector package and create a paused connection, and are not stored. On a hosted org, ContractGate mints a new API key named \"{KEY_NAME}\" for the connection and sends it as a Fivetran secret. base_url is CANONICAL_API_ORIGIN and the call fails with 500 when that variable is unset. Default table names are a slug of the contract name plus the first 8 hex digits of its id. destination_schema_names is SOURCE_NAMING so Fivetran keeps those names. An explicit table_names entry replaces the default for that contract."
+            "Paid plans only ({upgrade}). CONTRACTGATE_SELF_HOSTED=true treats the org as paid, including a free plan, and keeps auth on. The Fivetran API key and secret are used once to upload the connector package and create a paused connection, and are not stored. On a hosted org, ContractGate mints a new API key named \"{KEY_NAME}\" for the connection and sends it as a Fivetran secret. base_url is CANONICAL_API_ORIGIN and the call fails with 500 when that variable is unset. Default table names are a slug of the contract name plus the first 8 hex digits of its id. The slug keeps ASCII letters and digits only, so Café becomes caf_<8hex>. destination_schema_names is SOURCE_NAMING so Fivetran keeps those names. An explicit table_names entry replaces the default for that contract."
         ),
         "requestBody": {
             "required": true,
@@ -1367,7 +1367,8 @@ pub(crate) fn openapi_operation() -> Value {
                     }
                 }
             },
-            "400": {"description": "Invalid body, contract id, table name, destination_schema, or a Fivetran group_id that was not found"},
+            "400": {"description": "Invalid body, contract id, table name, or destination_schema. The error text starts with \"Invalid request: \". An unknown group is \"Invalid request: Fivetran group <id> was not found\"."},
+            "413": {"description": "Body exceeds 65536 bytes (64 KiB): \"Payload too large: Connect Fivetran body exceeds 65536 bytes\". No ContractGate key is minted."},
             "500": {"description": "CANONICAL_API_ORIGIN is unset or is not an https origin. No ContractGate key is minted."},
             "401": {"description": "Missing ContractGate credentials, or Fivetran rejected the API key"},
             "403": {"description": upgrade},
@@ -2195,6 +2196,16 @@ mod tests {
             .as_str()
             .unwrap()
             .contains("CANONICAL_API_ORIGIN"));
+        let bad_request = op["responses"]["400"]["description"].as_str().unwrap();
+        assert!(bad_request.contains("Invalid request: Fivetran group <id> was not found"));
+        assert!(op["responses"]["413"]["description"]
+            .as_str()
+            .unwrap()
+            .contains("65536"));
+        assert!(op["description"]
+            .as_str()
+            .unwrap()
+            .contains("Café becomes caf_<8hex>"));
         let ok = &op["responses"]["200"]["content"]["application/json"]["schema"];
         assert_eq!(ok["type"], "object");
         for field in ["connection_id", "setup_url", "status"] {
@@ -2216,6 +2227,7 @@ mod tests {
             "user_events_427c3304"
         );
         assert_eq!(default_table_name("123 Orders", &id), "orders_427c3304");
+        assert_eq!(default_table_name("Café", &id), "caf_427c3304");
         assert_eq!(default_table_name("!!!", &id), "passed_427c3304");
         assert!(!default_table_name("User Events", &id).contains("_427_c_"));
         let long = "User Events ".repeat(20);
@@ -2223,6 +2235,19 @@ mod tests {
         assert!(table.len() <= MAX_TABLE_NAME_LEN, "{table}");
         assert!(table.ends_with("_427c3304"), "{table}");
         assert!(valid_table_name(&table), "{table}");
+    }
+
+    #[test]
+    fn connect_body_over_64_kib_is_413() {
+        let bytes = vec![b'x'; MAX_CONNECT_BODY + 1];
+        let err = parse_connect_body(&bytes).unwrap_err();
+        assert_eq!(
+            err.to_string(),
+            "Payload too large: Connect Fivetran body exceeds 65536 bytes"
+        );
+        assert_eq!(MAX_CONNECT_BODY, 64 * 1024);
+        let response = err.into_response();
+        assert_eq!(response.status(), axum::http::StatusCode::PAYLOAD_TOO_LARGE);
     }
 
     #[test]
