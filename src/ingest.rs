@@ -316,7 +316,7 @@ pub async fn ingest_handler(
     // dry_run is not billable — allow over-cap orgs to still validate.
     // A batch that *crosses* the cap while still under is allowed once; at/over → 429.
     if !query.dry_run {
-        crate::metering::enforce_plan_limit(&state.db, org_id).await?;
+        crate::metering::enforce_plan_limit(&state.db, org_id, state.self_hosted).await?;
     }
 
     // --- Capture source IP --------------------------------------------------

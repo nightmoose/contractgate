@@ -34,6 +34,7 @@
  */
 
 import { createClient } from "@/lib/supabase/server";
+import { supabaseServerUrl } from "@/lib/supabase/env";
 import { createClient as createServiceClient } from "@supabase/supabase-js";
 import { NextResponse } from "next/server";
 
@@ -56,7 +57,7 @@ function isValidBranch(branch: string): boolean {
 
 function getServiceClient() {
   return createServiceClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    supabaseServerUrl(),
     process.env.SUPABASE_SERVICE_ROLE_KEY!
   );
 }

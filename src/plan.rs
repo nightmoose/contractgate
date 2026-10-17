@@ -35,6 +35,28 @@ pub fn default_rate_limit(plan: &str) -> (u32, u32) {
     }
 }
 
+/// Monthly cap used for metering, `/usage`, and `/v1/me`.
+///
+/// `self_hosted` is [`SELF_HOSTED_ENV`]. Hosted (`false`) uses
+/// [`monthly_event_limit`]. Self-host is unlimited, the Enterprise cap.
+pub fn monthly_event_limit_for(self_hosted: bool, plan: &str) -> Option<i64> {
+    if self_hosted {
+        None
+    } else {
+        monthly_event_limit(plan)
+    }
+}
+
+/// Default per-key rate limit. Self-host uses the paid bucket. A key's own
+/// `rate_limit_rps` / `rate_limit_burst` still wins over this default.
+pub fn default_rate_limit_for(self_hosted: bool, plan: &str) -> (u32, u32) {
+    if self_hosted {
+        default_rate_limit("enterprise")
+    } else {
+        default_rate_limit(plan)
+    }
+}
+
 /// Plans for which [`is_paid`] is true. Payload-storage upgrade copy is built
 /// from this list so it cannot name a different set than the gate.
 ///
@@ -67,10 +89,12 @@ pub fn gate_paid(self_hosted: bool, plan: &str) -> bool {
 }
 
 /// Cursor retention for a passed-event export that [`gate_paid`] allowed.
-/// A self-hosted org whose plan is not already paid uses the Pro window.
+///
+/// Hosted uses the stored plan. Self-host uses the Enterprise window so a
+/// free org is not capped at the Pro or Free retention.
 pub fn gate_retention_days(self_hosted: bool, plan: &str) -> i32 {
-    if self_hosted && !is_paid(plan) {
-        log_retention_days("growth")
+    if self_hosted {
+        log_retention_days("enterprise")
     } else {
         log_retention_days(plan)
     }
@@ -193,9 +217,15 @@ pub const STREAMING_REQUIRES_ENTERPRISE: &str =
      Use POST /v1/ingest instead, or contact datacontractgate@nightmoose.com.";
 
 /// Whether a plan may enable Kafka/Kinesis streaming ingress. Enterprise only:
-/// streaming is not part of any self-serve plan.
+/// streaming is not part of any self-serve plan. Self-host allows it for
+/// every stored plan.
 pub fn streaming_allowed(plan: &str) -> bool {
     plan == "enterprise"
+}
+
+#[cfg(test)]
+fn streaming_allowed_for(self_hosted: bool, plan: &str) -> bool {
+    self_hosted || streaming_allowed(plan)
 }
 
 /// Pure gate: `Ok` for Enterprise, 403 [`crate::error::AppError::Forbidden`]
@@ -225,6 +255,9 @@ pub async fn require_streaming_plan(
         }
         return Ok(());
     };
+    if state.self_hosted {
+        return Ok(());
+    }
     let plan = crate::storage::get_org_plan(&state.db, oid).await?;
     check_streaming_plan(plan.as_deref())
 }
@@ -398,7 +431,17 @@ mod tests {
         for plan in ["free", "aisg_free"] {
             assert!(gate_paid(true, plan), "{plan}");
             assert!(!gate_paid(false, plan), "{plan}");
-            assert_eq!(gate_retention_days(true, plan), 90, "{plan}");
+            assert_eq!(gate_retention_days(true, plan), 365, "{plan}");
+            assert_eq!(monthly_event_limit_for(true, plan), None, "{plan}");
+            assert_eq!(default_rate_limit_for(true, plan), (100, 200), "{plan}");
+            assert_eq!(
+                monthly_event_limit_for(false, plan),
+                Some(100_000),
+                "{plan}"
+            );
+            assert_eq!(default_rate_limit_for(false, plan), (10, 20), "{plan}");
+            assert!(streaming_allowed_for(true, plan), "{plan}");
+            assert!(!streaming_allowed_for(false, plan), "{plan}");
             assert!(payloads_stored_for(true, plan, true, true), "{plan}");
             assert!(!payloads_stored_for(false, plan, true, true), "{plan}");
             assert!(!payloads_stored_for(true, plan, false, true), "{plan}");
@@ -416,7 +459,11 @@ mod tests {
             ));
         }
         assert!(gate_paid(false, "growth"));
+        assert_eq!(gate_retention_days(false, "growth"), 90);
         assert_eq!(gate_retention_days(true, "enterprise"), 365);
+        assert_eq!(monthly_event_limit_for(false, "growth"), Some(25_000_000));
+        assert!(!streaming_allowed_for(false, "growth"));
+        assert!(streaming_allowed_for(false, "enterprise"));
         assert!(!is_paid("free"));
     }
 

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import Stripe from 'stripe';
 import { createClient as createServiceClient } from '@supabase/supabase-js';
+import { supabaseServerUrl } from '@/lib/supabase/env';
 import { proPriceAnnual, proPriceMonthly } from '@/lib/stripe-prices';
 
 // This route must run per-request; never statically collected at build time.
@@ -20,7 +21,7 @@ function getStripe(): Stripe {
 
 function makeSupabaseAdmin() {
   return createServiceClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    supabaseServerUrl(),
     process.env.SUPABASE_SERVICE_ROLE_KEY!,
     { auth: { persistSession: false } }
   );

@@ -2,6 +2,7 @@ import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 import { DEMO_MODE } from "@/lib/demo";
 import { BRAND_COOKIE } from "@/lib/brand";
+import { supabaseServerUrl } from "@/lib/supabase/env";
 
 // Routes that don't require authentication at the middleware level.
 // Pages that use <AuthGate> for client-side gating are listed here so the
@@ -140,7 +141,7 @@ async function route(request: NextRequest): Promise<NextResponse> {
   let supabaseResponse = NextResponse.next({ request });
 
   const supabase = createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    supabaseServerUrl(),
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     {
       cookies: {

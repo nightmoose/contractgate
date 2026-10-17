@@ -10,3 +10,8 @@
 # re-audited against all currently-suspicious accounts (147 never-signed-in as
 # of 2026-08-07, vs the 57 total the original audit saw).
 035_bot_signup_cleanup
+
+# No-op on hosted Supabase when auth.uid() is not the NULL stub from 006.
+# An owner applies it, then deletes this line. The self-host compose file
+# applies it on plain Postgres, where the stub would otherwise stay.
+044_auth_uid_jwt_when_stub

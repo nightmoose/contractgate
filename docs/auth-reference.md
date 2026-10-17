@@ -307,6 +307,7 @@ or a dashboard session (`Authorization: Bearer <jwt>`).
   "plan": "growth",
   "plan_display": "Pro",
   "paid_features": true,
+  "self_hosted": false,
   "auth": "api_key",
   "api_key_id": "b41e…",
   "monthly_event_limit": 25000000,
@@ -317,13 +318,15 @@ or a dashboard session (`Authorization: Bearer <jwt>`).
 
 - `plan` is the org's stored plan, which sets the key's limits; `rate_limit_*` are
   the key's own override when set, else the plan default.
-- `paid_features` is true when passed-event export, Connect Fivetran, and
-  payload storage are allowed. A paid plan (`growth`, `aisg_pro`, `enterprise`)
-  is true. `CONTRACTGATE_SELF_HOSTED` set to `1`, `true`, or `TRUE` makes it
-  true for every plan, including `free` and `aisg_free`. The stored `plan`,
-  `plan_display`, monthly limit, and default rate limit stay on the org row.
-  A self-hosted free org still reports `"plan": "free"` and
-  `"paid_features": true`.
+- `paid_features` is true for a paid plan (`growth`, `aisg_pro`, `enterprise`)
+  and for every plan when `CONTRACTGATE_SELF_HOSTED` is `1`, `true`, or `TRUE`.
+- `self_hosted` is true only when that variable is set. The stored `plan` and
+  `plan_display` stay on the org row. A self-hosted free org reports
+  `"plan": "free"`, `"paid_features": true`, `"self_hosted": true`,
+  `"monthly_event_limit": null`, and the paid rate limit (100 / 200) unless
+  the key overrides it. Passed-event retention is 365 days. Streaming ingress
+  is allowed. Hosted free stays capped, and hosted Pro does not gain
+  Enterprise streaming from `paid_features` alone.
 - `auth` is `api_key` or `session`; `api_key_id` is `null` for sessions.
 - No emails or user ids are returned. `org_name` is `null` if the stored name
   looks like an email.

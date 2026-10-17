@@ -49,10 +49,18 @@ pub fn is_at_or_over_cap(used: i64, limit: Option<i64>) -> bool {
 /// than 500. The only error this returns is the intentional `PlanLimitExceeded`.
 /// This also de-risks deploy ordering — shipping the binary before migration 032
 /// simply means "not yet enforcing", not "every ingest 500s".
-pub async fn enforce_plan_limit(pool: &PgPool, org_id: Option<Uuid>) -> Result<(), AppError> {
+pub async fn enforce_plan_limit(
+    pool: &PgPool,
+    org_id: Option<Uuid>,
+    self_hosted: bool,
+) -> Result<(), AppError> {
     let Some(org_id) = org_id else {
         return Ok(());
     };
+    // Self-host is the Enterprise cap: unlimited. Skip the counter read.
+    if self_hosted {
+        return Ok(());
+    }
     let period = current_period_key();
 
     // One round-trip: plan + current-period counter (steady state is a single

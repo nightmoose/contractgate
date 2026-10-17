@@ -19,10 +19,12 @@ pub struct MeResponse {
     pub org_name: Option<String>,
     pub plan: String,
     pub plan_display: &'static str,
-    /// Passed-event export, Connect Fivetran, and payload storage are allowed.
-    /// The stored `plan` is unchanged. `CONTRACTGATE_SELF_HOSTED` makes this
-    /// true for a free org.
+    /// Every paid dashboard and API gate is allowed. The stored `plan` is
+    /// unchanged. `CONTRACTGATE_SELF_HOSTED` makes this true for a free org.
     pub paid_features: bool,
+    /// `CONTRACTGATE_SELF_HOSTED` is set on this process. Dashboard
+    /// Enterprise gates follow this. Hosted responses are false.
+    pub self_hosted: bool,
     /// `"api_key"` or `"session"` (dashboard JWT).
     pub auth: &'static str,
     /// The API key's id; `null` for session (JWT) auth.
@@ -54,15 +56,16 @@ pub fn safe_org_name(name: String) -> Option<String> {
 
 pub fn build(key: &ValidatedKey, org_name: String, plan: String, self_hosted: bool) -> MeResponse {
     let session = key.api_key_id.is_nil();
-    let (def_rps, def_burst) = crate::plan::default_rate_limit(&plan);
+    let (def_rps, def_burst) = crate::plan::default_rate_limit_for(self_hosted, &plan);
     MeResponse {
         org_id: key.org_id,
         org_name: safe_org_name(org_name),
         plan_display: plan_display(&plan),
         paid_features: crate::plan::gate_paid(self_hosted, &plan),
+        self_hosted,
         auth: if session { "session" } else { "api_key" },
         api_key_id: (!session).then_some(key.api_key_id),
-        monthly_event_limit: crate::plan::monthly_event_limit(&plan),
+        monthly_event_limit: crate::plan::monthly_event_limit_for(self_hosted, &plan),
         rate_limit_rps: key.rate_limit_rps.unwrap_or(def_rps),
         rate_limit_burst: key.rate_limit_burst.unwrap_or(def_burst),
         plan,
@@ -119,20 +122,25 @@ mod tests {
         assert_eq!(me.api_key_id, None);
         assert_eq!(me.monthly_event_limit, Some(100_000));
         assert!(!me.paid_features);
+        assert!(!me.self_hosted);
     }
 
     #[test]
-    fn self_hosted_free_org_keeps_the_free_plan_and_marks_paid_features() {
+    fn self_hosted_free_org_keeps_the_free_plan_and_unlocks_paid_limits() {
         let me = build(&key(Uuid::nil()), "acme".into(), "free".into(), true);
         assert_eq!(me.plan, "free");
         assert_eq!(me.plan_display, "Free");
-        assert_eq!(me.monthly_event_limit, Some(100_000));
-        assert_eq!(me.rate_limit_rps, 10);
-        assert_eq!(me.rate_limit_burst, 20);
+        assert_eq!(me.monthly_event_limit, None);
+        assert_eq!(me.rate_limit_rps, 100);
+        assert_eq!(me.rate_limit_burst, 200);
         assert!(me.paid_features);
+        assert!(me.self_hosted);
 
         let hosted = build(&key(Uuid::nil()), "acme".into(), "free".into(), false);
         assert!(!hosted.paid_features);
+        assert!(!hosted.self_hosted);
+        assert_eq!(hosted.monthly_event_limit, Some(100_000));
+        assert_eq!(hosted.rate_limit_rps, 10);
 
         let paid = build(&key(Uuid::nil()), "acme".into(), "growth".into(), false);
         assert!(paid.paid_features);

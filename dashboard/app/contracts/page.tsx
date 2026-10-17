@@ -25,7 +25,8 @@ import AuthGate from "@/components/AuthGate";
 import MyPublications from "@/components/contracts/MyPublications";
 import PlanGate, { FreeLimitBanner } from "@/components/PlanGate";
 import { useOrg, planAtLeast } from "@/lib/org";
-import { usePaidFeatures } from "@/lib/use-paid-features";
+import { tierOpen } from "@/lib/paid-features";
+import { usePaidFeatures, useSelfHosted } from "@/lib/use-paid-features";
 import { useBrand } from "@/components/BrandProvider";
 import { createClient } from "@/lib/supabase/client";
 import {
@@ -115,9 +116,15 @@ function EditContractModal({
 
   // RFC-045: plan gating inside modal
   const { org: modalOrg } = useOrg();
-  const isGrowth = modalOrg ? planAtLeast(modalOrg.plan, "growth") : false;
-  // Kafka/Kinesis streaming is Enterprise-only (available on request).
-  const isEnterprise = modalOrg ? planAtLeast(modalOrg.plan, "enterprise") : false;
+  const modalPaid = usePaidFeatures();
+  const modalSelfHosted = useSelfHosted();
+  const isGrowth = modalOrg
+    ? tierOpen(modalSelfHosted === true, modalPaid, planAtLeast(modalOrg.plan, "growth"), false)
+    : false;
+  // Kafka/Kinesis streaming is Enterprise-only on hosted plans.
+  const isEnterprise = modalOrg
+    ? tierOpen(modalSelfHosted === true, modalPaid, planAtLeast(modalOrg.plan, "enterprise"), true)
+    : false;
   // AISchemaGate validates LLM output; Kafka/Kinesis ingress doesn't apply.
   const aisgModal = useBrand() === "aisg";
 
@@ -1883,6 +1890,7 @@ function ContractsContent() {
   const router = useRouter();
   const { org } = useOrg();
   const paidFeatures = usePaidFeatures();
+  const selfHosted = useSelfHosted();
   const aisg = useBrand() === "aisg";
   const { data: contracts, isLoading, error: contractsError } = useSWR<ContractSummary[]>(
     org ? "contracts" : null,
@@ -2022,7 +2030,8 @@ function ContractsContent() {
           // Quarantine is open to Free on both brands per RFC-099 (content-
           // gated per-event by payload_redacted) — do not badge it as locked.
           const growthOnly = (aisg ? ["build"] : ["build", "generate", "csv"]).includes(t);
-          const locked = growthOnly && org && !planAtLeast(org.plan, "growth");
+          const locked = growthOnly && org && paidFeatures !== null && selfHosted !== null
+            && !tierOpen(selfHosted, paidFeatures, planAtLeast(org.plan, "growth"), false);
           const helpId =
             t === "list" ? "contracts.list" :
             t === "consumed" ? "contracts.consumed" :

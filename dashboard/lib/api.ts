@@ -369,6 +369,7 @@ export interface MeResponse {
   plan: string;
   plan_display: string;
   paid_features?: boolean;
+  self_hosted?: boolean;
   auth: string;
   api_key_id: string | null;
   monthly_event_limit: number | null;

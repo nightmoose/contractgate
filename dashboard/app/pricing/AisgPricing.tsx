@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useOrg, isPaidPlan } from "@/lib/org";
+import { useSelfHosted } from "@/lib/use-paid-features";
 
 // AISchemaGate tiers: the same plan ladder and prices as DataContractGate
 // (decided 2026-10-12), in LLM wording. Limits are enforced
@@ -131,6 +132,7 @@ function DeveloperCta() {
 
 function ProCta() {
   const { org, loading } = useOrg();
+  const selfHosted = useSelfHosted();
   const [busy, setBusy] = useState(false);
   const [annual, setAnnual] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -161,7 +163,7 @@ function ProCta() {
     );
   }
 
-  if (isPaidPlan(org.plan)) {
+  if (isPaidPlan(org.plan) || selfHosted === true) {
     return (
       <a
         href="/account"

@@ -63,9 +63,11 @@ resolvable org. Self-hosted deployments (no org) are unmetered.
 | `free`, `aisg_free` | 100,000 |
 | `growth`, `aisg_pro` | 25,000,000 |
 | `enterprise` | unlimited |
+| any plan, `CONTRACTGATE_SELF_HOSTED` set | unlimited (`limit` is null) |
 
-Defined in `src/plan.rs::monthly_event_limit`. The endpoint returns the limit so
-clients don't hardcode it.
+Defined in `src/plan.rs`. The endpoint returns the limit so clients don't
+hardcode it. The self-host flag does not change the stored `plan`. Hosted
+limits are unchanged when the variable is unset. Usage is still counted.
 
 ---
 

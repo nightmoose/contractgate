@@ -149,7 +149,12 @@ impl ApiKeyCache {
     /// - Valid hits (`Ok`) and definitive misses (not found / hash mismatch)
     ///   are cached for `TTL`.
     /// - Transient DB errors are *never* cached; the next call re-queries.
-    pub async fn validate(&self, raw_key: &str, db: &PgPool) -> Result<ValidatedKey, ()> {
+    pub async fn validate(
+        &self,
+        raw_key: &str,
+        db: &PgPool,
+        self_hosted: bool,
+    ) -> Result<ValidatedKey, ()> {
         // Compute cache key — SHA-256 hex digest.  No plaintext in the map.
         let cache_key = hex::encode(Sha256::digest(raw_key.as_bytes()));
 
@@ -168,7 +173,7 @@ impl ApiKeyCache {
         //    Ok(Some) = valid key.
         //    Ok(None) = definitively rejected (not found or hash mismatch) — cacheable.
         //    Err(())  = transient DB error — NOT cacheable.
-        let outcome = verify_against_db(raw_key, db).await;
+        let outcome = verify_against_db(raw_key, db, self_hosted).await;
 
         match outcome {
             Ok(opt_key) => {
@@ -287,7 +292,11 @@ impl ApiKeyCache {
 /// - `Ok(None)` — definitively rejected: prefix not found, already
 ///   revoked, or hash mismatch.  Cacheable.
 /// - `Err(())` — transient DB error.  The caller must not cache this.
-async fn verify_against_db(raw_key: &str, db: &PgPool) -> Result<Option<ValidatedKey>, ()> {
+async fn verify_against_db(
+    raw_key: &str,
+    db: &PgPool,
+    self_hosted: bool,
+) -> Result<Option<ValidatedKey>, ()> {
     // Sanity-check length / prefix to avoid DB queries for junk values.
     if raw_key.len() < 12 || !raw_key.starts_with("cg_") {
         return Ok(None); // definitively not a valid key — cacheable miss
@@ -336,7 +345,7 @@ async fn verify_against_db(raw_key: &str, db: &PgPool) -> Result<Option<Validate
     // Cast i32 → u32; the CHECK constraint guarantees > 0. A key without
     // its own override gets its org plan's default (cached with the key, so a
     // plan change takes effect within the 60 s TTL).
-    let (plan_rps, plan_burst) = crate::plan::default_rate_limit(&row.org_plan);
+    let (plan_rps, plan_burst) = crate::plan::default_rate_limit_for(self_hosted, &row.org_plan);
     Ok(Some(ValidatedKey {
         api_key_id: row.id,
         user_id: row.user_id,

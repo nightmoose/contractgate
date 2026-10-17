@@ -90,9 +90,24 @@ make demo-down    # stop and remove volumes
 make demo-logs    # follow all service logs
 ```
 
-> **Self-Hosted Free** runs the real gateway binary — not a sandbox.
+> **Self-Hosted Free** (`make demo`) runs the real gateway binary with auth off.
 > Unlimited local events, full YAML editor, playground, audit log.
 > [Feature comparison below ↓](#self-hosted-free-vs-cloud)
+
+## Real login (self-host)
+
+Auth on, dashboard sign-up, and every paid feature unlocked. From a fresh clone:
+
+```bash
+git clone https://github.com/nightmoose/contractgate.git
+cd contractgate
+cp .env.selfhost.example .env
+docker compose -f docker-compose.yml -f docker-compose.selfhost.yml up --build
+```
+
+Sign up at http://localhost:3000/auth/signup, then sign in at http://localhost:3000/auth/login. Mail is not configured; confirmation is automatic. Do not combine this with `--profile demo`. Exact steps, the flag, and the placeholder keys: [`docs/self-host-reference.md`](docs/self-host-reference.md).
+
+The comparison table below is the zero-auth demo. With `CONTRACTGATE_SELF_HOSTED=true` the stored plan stays `free` and paid gates open.
 
 ---
 

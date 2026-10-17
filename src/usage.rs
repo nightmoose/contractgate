@@ -10,7 +10,7 @@ use std::sync::Arc;
 
 use crate::error::{AppError, AppResult};
 use crate::metering::{current_month_start, current_period_key};
-use crate::plan::monthly_event_limit;
+use crate::plan::monthly_event_limit_for;
 use crate::storage;
 use crate::{AppState, OrgId};
 
@@ -53,7 +53,7 @@ pub async fn usage_handler(
         None => "free".to_string(),
     };
 
-    let limit = monthly_event_limit(&plan);
+    let limit = monthly_event_limit_for(state.self_hosted, &plan);
     let unlimited = limit.is_none();
     let remaining = limit.map(|l| (l - used).max(0));
     let pct = limit.map(|l| {

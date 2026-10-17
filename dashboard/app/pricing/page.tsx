@@ -3,6 +3,7 @@
 import { useState } from "react";
 import clsx from "clsx";
 import { useOrg, isPaidPlan } from "@/lib/org";
+import { useSelfHosted } from "@/lib/use-paid-features";
 import { useBrand } from "@/components/BrandProvider";
 import AisgPricing from "./AisgPricing";
 import { HelpTarget } from "@/components/help/HelpTarget";
@@ -393,9 +394,10 @@ export default function PricingPage() {
 // `annual` is driven by the page-level billing toggle so the CTA and the displayed price stay in sync.
 function GrowthUpgradeButton({ annual, onToggleAnnual }: { annual: boolean; onToggleAnnual: (v: boolean) => void }) {
   const { org, loading } = useOrg();
+  const selfHosted = useSelfHosted();
   const [loadingUpgrade, setLoadingUpgrade] = useState(false);
 
-  const isPaid = org && isPaidPlan(org.plan);
+  const isPaid = org && (isPaidPlan(org.plan) || selfHosted === true);
 
   async function startUpgrade(annual: boolean) {
     if (!org) {
