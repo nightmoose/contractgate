@@ -57,11 +57,11 @@ const DOCS = [
     href: "/docs/fivetran",
     icon: "⟳",
     title: "Use ContractGate with Fivetran",
-    badge: "paid",
+    badge: "paid or self-hosted",
     badgeColor: "text-amber-300 bg-amber-900/30 border-amber-700/40",
     description:
       "Put contract-passed events in your warehouse. Covers the Contracts page button, destination schema, table names, and a manual fivetran deploy.",
-    pills: ["Connector SDK", "paid plans", "keys not stored", "paused on create"],
+    pills: ["Connector SDK", "paid or self-hosted", "keys not stored", "paused on create"],
     cta: "Read the Fivetran guide →",
   },
 ];

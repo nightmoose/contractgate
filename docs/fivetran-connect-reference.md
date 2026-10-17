@@ -1,6 +1,6 @@
 # Connect Fivetran
 
-**Status:** Paid plans (`growth`, `aisg_pro`, `enterprise`). `CONTRACTGATE_SELF_HOSTED` set to `1`, `true`, or `TRUE` treats a free org as paid. Auth stays on.
+**Status:** Connect Fivetran is available on paid hosted plans (`growth`, `aisg_pro`, `enterprise`) and on any self-hosted instance with `CONTRACTGATE_SELF_HOSTED=true`. Hosted free plans get 403. Auth stays on. `CONTRACTGATE_SELF_HOSTED` accepts `1`, `true`, or `TRUE`.
 
 Deploys the public ContractGate connector into the caller's own Fivetran account.
 ContractGate is DataContractGate and AISchemaGate sharing one engine. The connector

@@ -27,21 +27,26 @@ export default function FivetranDocsPage() {
         writes one table per contract.
       </p>
 
-      <H2 id="plans">Paid plan</H2>
+      <H2 id="plans-and-self-hosting">Plans and self-hosting</H2>
       <p className="text-slate-300 text-sm leading-relaxed mb-3">
-        Connect Fivetran and the passed-event export are paid-plan features.
-        Plans <code className="text-slate-200">free</code> and{" "}
-        <code className="text-slate-200">aisg_free</code> receive HTTP 403.
-        Paid plans are <code className="text-slate-200">growth</code>,{" "}
-        <code className="text-slate-200">aisg_pro</code>, and{" "}
-        <code className="text-slate-200">enterprise</code> (Pro and Enterprise
-        in the dashboard).
+        Connect Fivetran is available on paid hosted plans and on any self-hosted
+        instance with <code className="text-slate-200">CONTRACTGATE_SELF_HOSTED=true</code>.
+      </p>
+      <p className="text-slate-300 text-sm leading-relaxed mb-3">
+        Hosted free plans get 403. See{" "}
+        <Link href="#self-hosting" className="text-green-400 hover:underline">
+          Self-hosting
+        </Link>
+        .
       </p>
       <p className="text-slate-400 text-sm leading-relaxed">
-        On a free plan the form says “Connect Fivetran is a paid-plan feature”
-        and links to Upgrade. The API error names the same three plan ids.
-        A self-hosted instance sets CONTRACTGATE_SELF_HOSTED so a free org is
-        treated as paid. See Self-hosting.
+        Paid hosted plans are <code className="text-slate-200">growth</code>,{" "}
+        <code className="text-slate-200">aisg_pro</code>, and{" "}
+        <code className="text-slate-200">enterprise</code> (Pro and Enterprise
+        in the dashboard). Hosted <code className="text-slate-200">free</code>{" "}
+        and <code className="text-slate-200">aisg_free</code> receive that 403
+        when <code className="text-slate-200">CONTRACTGATE_SELF_HOSTED</code> is
+        unset. The API error names those three plan ids.
       </p>
 
       <H2 id="fivetran-account">Fivetran API key and destination group</H2>
@@ -364,10 +369,15 @@ export default function FivetranDocsPage() {
           was rejected.
         </li>
         <li>
-          <span className="text-slate-100">403.</span> The org is on{" "}
-          <code className="text-slate-200">free</code> or{" "}
-          <code className="text-slate-200">aisg_free</code>. Upgrade to Pro or
-          Enterprise, then connect again.
+          <span className="text-slate-100">403.</span> Hosted free plans get 403.
+          Connect Fivetran is available on paid hosted plans and on any
+          self-hosted instance with{" "}
+          <code className="text-slate-200">CONTRACTGATE_SELF_HOSTED=true</code>.
+          See{" "}
+          <Link href="#self-hosting" className="text-green-400 hover:underline">
+            Self-hosting
+          </Link>
+          .
         </li>
         <li>
           <span className="text-slate-100">410.</span> The cursor is older than
