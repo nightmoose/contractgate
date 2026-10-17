@@ -6,7 +6,10 @@ Deploys the public ContractGate connector into the caller's own Fivetran account
 ContractGate is DataContractGate and AISchemaGate sharing one engine. The connector
 reads records that passed validation and writes one table per contract.
 
-The dashboard button is on **Contracts**. The same call is `POST /v1/integrations/fivetran/connect`.
+The dashboard button is on **Contracts**. The form opens when `GET /v1/me`
+returns `paid_features: true`, including a self-hosted free org. If that field
+is missing, the form follows the stored plan. A hosted free org sees an
+upgrade prompt. The same call is `POST /v1/integrations/fivetran/connect`.
 The guide is [dashboard/app/docs/fivetran/page.tsx](../dashboard/app/docs/fivetran/page.tsx).
 
 ## What is stored

@@ -362,6 +362,22 @@ export interface UsageResponse {
 
 export const getUsage = () => apiFetch<UsageResponse>("/usage");
 
+/** `GET /v1/me`. `paid_features` is absent on older gateways. */
+export interface MeResponse {
+  org_id: string;
+  org_name: string | null;
+  plan: string;
+  plan_display: string;
+  paid_features?: boolean;
+  auth: string;
+  api_key_id: string | null;
+  monthly_event_limit: number | null;
+  rate_limit_rps: number;
+  rate_limit_burst: number;
+}
+
+export const getMe = () => apiFetch<MeResponse>("/v1/me");
+
 export const listContracts = () => apiFetch<ContractSummary[]>("/contracts");
 
 export const getContract = (id: string) =>
