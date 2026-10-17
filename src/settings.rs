@@ -15,7 +15,7 @@ use uuid::Uuid;
 use crate::error::{AppError, AppResult};
 use crate::{storage, AppState, OrgId};
 
-use crate::plan::is_paid;
+use crate::plan::gate_paid;
 
 #[derive(Debug, Serialize)]
 pub struct PayloadStorageStatus {
@@ -63,7 +63,7 @@ pub async fn get_payload_storage_handler(
     let (plan, enabled) = storage::get_org_payload_policy(&state.db, oid)
         .await?
         .ok_or(AppError::Unauthorized)?;
-    let eligible = is_paid(&plan);
+    let eligible = gate_paid(state.self_hosted, &plan);
     Ok(Json(PayloadStorageStatus {
         enabled,
         plan,
@@ -88,7 +88,7 @@ pub async fn set_payload_storage_handler(
     let (plan, _current) = storage::get_org_payload_policy(&state.db, oid)
         .await?
         .ok_or(AppError::Unauthorized)?;
-    let eligible = is_paid(&plan);
+    let eligible = gate_paid(state.self_hosted, &plan);
     if body.enabled && !eligible {
         return Err(AppError::BadRequest(
             crate::plan::payload_storage_upgrade_message(),

@@ -3919,7 +3919,9 @@ metrics: []
             .await
             .unwrap();
         assert!(
-            !storage::contract_stores_payloads(&pool, cid).await.unwrap(),
+            !storage::contract_stores_payloads(&pool, cid, false)
+                .await
+                .unwrap(),
             "free plan never stores"
         );
 
@@ -3931,7 +3933,9 @@ metrics: []
             .unwrap();
 
         // Paid + org switch on + contract default (true) → stores.
-        assert!(storage::contract_stores_payloads(&pool, cid).await.unwrap());
+        assert!(storage::contract_stores_payloads(&pool, cid, false)
+            .await
+            .unwrap());
         // get_org_payload_policy reflects (plan, switch).
         let (plan, switch) = storage::get_org_payload_policy(&pool, org)
             .await
@@ -3945,7 +3949,9 @@ metrics: []
                 .await
                 .unwrap()
         );
-        assert!(!storage::contract_stores_payloads(&pool, cid).await.unwrap());
+        assert!(!storage::contract_stores_payloads(&pool, cid, false)
+            .await
+            .unwrap());
 
         // Contract back on, org master off → does not store.
         storage::set_contract_store_payloads(&pool, cid, Some(org), true)
@@ -3954,7 +3960,9 @@ metrics: []
         storage::set_org_store_payloads(&pool, org, false)
             .await
             .unwrap();
-        assert!(!storage::contract_stores_payloads(&pool, cid).await.unwrap());
+        assert!(!storage::contract_stores_payloads(&pool, cid, false)
+            .await
+            .unwrap());
 
         cleanup(&pool, cid, org).await;
     }

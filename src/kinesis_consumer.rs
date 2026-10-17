@@ -342,10 +342,13 @@ mod inner {
             if !audit_entries.is_empty() {
                 // RFC-086: gate event-body storage for this contract (single-
                 // contract batch → one indexed read per poll).
-                let store_payloads =
-                    crate::storage::contract_stores_payloads(&state.db, contract_id)
-                        .await
-                        .unwrap_or(false);
+                let store_payloads = crate::storage::contract_stores_payloads(
+                    &state.db,
+                    contract_id,
+                    state.self_hosted,
+                )
+                .await
+                .unwrap_or(false);
                 if let Err(e) =
                     log_audit_entries_batch(&state.db, &audit_entries, store_payloads).await
                 {

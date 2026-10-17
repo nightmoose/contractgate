@@ -42,6 +42,10 @@ services:
       # RFC-066: local/demo stack runs without auth. This is the ONLY way to
       # disable auth now (the env-var master key was removed). Never set in prod.
       CONTRACTGATE_DEV_NO_AUTH: "1"
+      # Public self-host opt-in. Leave unset here: this stack is auth-off and
+      # is for local use. A gateway Fivetran can reach keeps auth on and sets
+      # CONTRACTGATE_SELF_HOSTED=true so a free org is treated as paid.
+      # CONTRACTGATE_SELF_HOSTED: "true"
       # Connect Fivetran reads CANONICAL_API_ORIGIN and returns 500 when it
       # is unset. Fivetran cloud must reach that origin over public HTTPS.
       # localhost:8080 is not reachable. Put a tunnel or a TLS reverse proxy

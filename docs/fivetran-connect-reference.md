@@ -1,6 +1,6 @@
 # Connect Fivetran
 
-**Status:** Paid plans (`growth`, `aisg_pro`, `enterprise`). Self-host with auth off (no org) is allowed.
+**Status:** Paid plans (`growth`, `aisg_pro`, `enterprise`). `CONTRACTGATE_SELF_HOSTED=true` treats a free org as paid. Auth stays on.
 
 Deploys the public ContractGate connector into the caller's own Fivetran account.
 ContractGate is DataContractGate and AISchemaGate sharing one engine. The connector
@@ -18,12 +18,15 @@ scoped to the org and the selected contracts, and sends it to Fivetran as a
 secret. The dashboard user's key is not reused. The raw key is not returned
 to the browser.
 
-Self-host (`CONTRACTGATE_DEV_NO_AUTH=1`) has no org on the request. Connect is
-allowed, the same way `GET /v1/contracts/{id}/passed` is. The connector still
-receives an API key. That key is not written to `api_keys`: `user_id` and
-`org_id` are required, and key lookup joins `orgs`. Auth is off, so `/passed`
-does not look the key up and does not apply the plan gate. Hosted `free` and
-`aisg_free` still receive 403.
+Self-host that Fivetran can reach keeps auth on and sets
+`CONTRACTGATE_SELF_HOSTED=true`. Orgs still default to `free`. That flag treats
+the org as paid for Connect Fivetran, `GET /v1/contracts/{id}/passed`, and
+payload storage. The connector key is a normal org-scoped `api_keys` row, so
+`/passed` accepts it. Hosted production and staging leave the variable unset.
+Hosted `free` and `aisg_free` still receive 403.
+
+`CONTRACTGATE_DEV_NO_AUTH=1` is only for a local or private process. Do not
+put that process on a public URL.
 
 `base_url` is `CANONICAL_API_ORIGIN` (`https://`). Connect returns 500 and does not
 mint a key when that variable is unset or empty. It does not fall back to production.

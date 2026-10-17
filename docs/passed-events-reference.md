@@ -65,7 +65,9 @@ not skipped. Events show up about 5 seconds late.
 | Older than retention | 410 | Drop the cursor and re-sync. |
 
 Retention is the plan's log window (migration 037): **90 days** on Pro
-(`growth`, `aisg_pro`), **365 days** on Enterprise. A bookmark outside that
+(`growth`, `aisg_pro`), **365 days** on Enterprise. `CONTRACTGATE_SELF_HOSTED=true`
+allows a `free` or `aisg_free` org and uses the 90-day window. Hosted free
+stays 403. A bookmark outside that
 window is not a safe resume point. Continuing would skip a gap if those rows
 were removed. Re-sync reads what is still stored, from the start.
 

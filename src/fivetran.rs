@@ -17,7 +17,7 @@ use uuid::Uuid;
 
 use crate::api_key_auth::ValidatedKey;
 use crate::error::{AppError, AppResult, DbOpContext};
-use crate::plan::{self, is_paid};
+use crate::plan;
 use crate::{storage, AppState};
 
 /// Pinned source. `vendor/fivetran-connector/PIN` records the same commit.
@@ -661,8 +661,8 @@ fn missing_contract(requested: &[Uuid], owned: &[Uuid]) -> Option<Uuid> {
     requested.iter().copied().find(|id| !owned.contains(id))
 }
 
-fn ensure_paid(plan: &str) -> AppResult<()> {
-    if is_paid(plan) {
+fn ensure_paid(self_hosted: bool, plan: &str) -> AppResult<()> {
+    if plan::gate_paid(self_hosted, plan) {
         Ok(())
     } else {
         Err(AppError::Forbidden(plan::fivetran_connect_upgrade_message()))
@@ -670,13 +670,17 @@ fn ensure_paid(plan: &str) -> AppResult<()> {
 }
 
 /// Hosted calls have a caller. `plan == None` is a missing org row (401).
-/// An unpaid plan is 403. `caller == None` is self-host / auth off: no org,
-/// same allowance as `passed_events::authorize_passed_export`.
-fn connect_allowed(caller: Option<&ValidatedKey>, plan: Option<&str>) -> AppResult<()> {
+/// An unpaid plan is 403 unless `self_hosted` (`CONTRACTGATE_SELF_HOSTED`).
+/// `caller == None` is auth off: no org, same allowance as passed-event export.
+fn connect_allowed(
+    self_hosted: bool,
+    caller: Option<&ValidatedKey>,
+    plan: Option<&str>,
+) -> AppResult<()> {
     match caller {
         None => Ok(()),
         Some(_) => match plan {
-            Some(plan) => ensure_paid(plan),
+            Some(plan) => ensure_paid(self_hosted, plan),
             None => Err(AppError::Unauthorized),
         },
     }
@@ -1158,16 +1162,18 @@ async fn delete_package<H: ConnectHttp + ?Sized>(http: &H, input: &ConnectInput,
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn finish_connect<H: ConnectHttp + ?Sized, K: ConnectorKeys + ?Sized>(
     http: &H,
     keys: &K,
+    self_hosted: bool,
     caller: Option<&ValidatedKey>,
     plan: Option<&str>,
     owned: &[Uuid],
     mut input: ConnectInput,
     base_url: &str,
 ) -> AppResult<ConnectResponse> {
-    connect_allowed(caller, plan)?;
+    connect_allowed(self_hosted, caller, plan)?;
     if let Some(id) = missing_contract(&input.contract_ids, owned) {
         return Err(AppError::ContractNotFound(id));
     }
@@ -1267,7 +1273,7 @@ pub async fn connect_fivetran_handler(
         ),
         None => None,
     };
-    connect_allowed(caller.as_ref(), plan.as_deref())?;
+    connect_allowed(state.self_hosted, caller.as_ref(), plan.as_deref())?;
     let org_scope = caller.as_ref().map(|caller| caller.org_id);
     let mut contracts = Vec::new();
     for id in &input.contract_ids {
@@ -1295,6 +1301,7 @@ pub async fn connect_fivetran_handler(
     let response = finish_connect(
         &http,
         &keys,
+        state.self_hosted,
         caller.as_ref(),
         plan.as_deref(),
         &owned,
@@ -1311,7 +1318,7 @@ pub(crate) fn openapi_operation() -> Value {
         "operationId": "connect_fivetran",
         "summary": "Deploy the ContractGate Fivetran connector into the caller's Fivetran account",
         "description": format!(
-            "Paid plans only ({upgrade}). Self-host with auth off has no org and is allowed, the same way passed-event export is. The Fivetran API key and secret are used once to upload the connector package and create a paused connection, and are not stored. On a hosted org, ContractGate mints a new API key named \"{KEY_NAME}\" for the connection and sends it as a Fivetran secret. base_url is CANONICAL_API_ORIGIN and the call fails with 500 when that variable is unset. Default table names are a slug of the contract name plus the first 8 hex digits of its id. destination_schema_names is SOURCE_NAMING so Fivetran keeps those names. An explicit table_names entry replaces the default for that contract."
+            "Paid plans only ({upgrade}). CONTRACTGATE_SELF_HOSTED=true treats the org as paid, including a free plan, and keeps auth on. The Fivetran API key and secret are used once to upload the connector package and create a paused connection, and are not stored. On a hosted org, ContractGate mints a new API key named \"{KEY_NAME}\" for the connection and sends it as a Fivetran secret. base_url is CANONICAL_API_ORIGIN and the call fails with 500 when that variable is unset. Default table names are a slug of the contract name plus the first 8 hex digits of its id. destination_schema_names is SOURCE_NAMING so Fivetran keeps those names. An explicit table_names entry replaces the default for that contract."
         ),
         "requestBody": {
             "required": true,
@@ -1744,6 +1751,7 @@ mod tests {
         let err = finish_connect(
             &http,
             &keys,
+            false,
             Some(&caller()),
             Some("growth"),
             &[],
@@ -1769,6 +1777,7 @@ mod tests {
             let err = finish_connect(
                 &http,
                 &keys,
+                false,
                 Some(&caller()),
                 Some(plan),
                 &[id],
@@ -1789,33 +1798,34 @@ mod tests {
             assert!(keys.inserted.lock().unwrap().is_empty());
         }
         for plan in plan::PAID_PLANS {
-            ensure_paid(plan).unwrap();
+            ensure_paid(false, plan).unwrap();
         }
     }
 
     #[test]
-    fn self_host_is_allowed_and_hosted_free_is_403() {
-        assert!(connect_allowed(None, None).is_ok());
+    fn self_hosted_free_org_is_allowed_and_hosted_free_is_403() {
+        assert!(connect_allowed(false, None, None).is_ok());
         assert!(require_connect_caller(false, false).is_ok());
         assert!(matches!(
             require_connect_caller(true, false).unwrap_err(),
             AppError::Unauthorized
         ));
         assert!(matches!(
-            connect_allowed(Some(&caller()), None).unwrap_err(),
+            connect_allowed(false, Some(&caller()), None).unwrap_err(),
             AppError::Unauthorized
         ));
         for plan in ["free", "aisg_free"] {
-            let err = connect_allowed(Some(&caller()), Some(plan)).unwrap_err();
+            let err = connect_allowed(false, Some(&caller()), Some(plan)).unwrap_err();
             let response = err.into_response();
             assert_eq!(
                 response.status(),
                 axum::http::StatusCode::FORBIDDEN,
                 "{plan}"
             );
+            connect_allowed(true, Some(&caller()), Some(plan)).unwrap();
         }
         for plan in plan::PAID_PLANS {
-            connect_allowed(Some(&caller()), Some(plan)).unwrap();
+            connect_allowed(false, Some(&caller()), Some(plan)).unwrap();
         }
     }
 
@@ -1828,6 +1838,7 @@ mod tests {
         let response = finish_connect(
             &http,
             &keys,
+            false,
             None,
             None,
             &[id],
@@ -1858,8 +1869,56 @@ mod tests {
         // Auth off, no org: GET /passed does not look this key up and does
         // not apply the plan gate. That is the sync this connector will make.
         assert!(matches!(
-            crate::passed_events::authorize_passed_export(false, None, None, true, true),
+            crate::passed_events::authorize_passed_export(false, None, None, true, true, false),
             Ok(None)
+        ));
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn self_hosted_free_org_connects_and_mints_a_key() {
+        let id = contract(18);
+        let http = ScriptHttp::ok();
+        let keys = MemKeys::new();
+        let input = parse_connect_body(&body(&[id], None)).unwrap();
+        let response = finish_connect(
+            &http,
+            &keys,
+            true,
+            Some(&caller()),
+            Some("free"),
+            &[id],
+            input,
+            "https://contractgate.example.com",
+        )
+        .await
+        .unwrap();
+        assert_eq!(response.status, "paused");
+        let (prefix, _hash, contracts) = keys.inserted.lock().unwrap()[0].clone();
+        assert!(prefix.starts_with("cg_live_"));
+        assert_eq!(contracts, vec![id]);
+        assert_eq!(
+            crate::passed_events::authorize_passed_export(
+                true,
+                Some(caller().org_id),
+                Some("free"),
+                true,
+                true,
+                true,
+            )
+            .unwrap(),
+            Some(90)
+        );
+        assert!(matches!(
+            crate::passed_events::authorize_passed_export(
+                true,
+                Some(caller().org_id),
+                Some("free"),
+                true,
+                true,
+                false,
+            )
+            .unwrap_err(),
+            crate::passed_events::PassedDeny::Forbidden
         ));
     }
 
@@ -1877,6 +1936,7 @@ mod tests {
         let response = finish_connect(
             &http,
             &keys,
+            false,
             Some(&caller()),
             Some("growth"),
             &[id],
@@ -1974,6 +2034,7 @@ mod tests {
         let response = finish_connect(
             &http,
             &keys,
+            false,
             Some(&caller()),
             Some("aisg_pro"),
             &[id],
@@ -2007,6 +2068,7 @@ mod tests {
         let err = finish_connect(
             &http,
             &keys,
+            false,
             Some(&caller()),
             Some("enterprise"),
             &[id],
@@ -2052,6 +2114,7 @@ mod tests {
         let err = finish_connect(
             &http,
             &keys,
+            false,
             Some(&caller()),
             Some("growth"),
             &[id],
@@ -2092,6 +2155,7 @@ mod tests {
         let err = finish_connect(
             &http,
             &keys,
+            false,
             Some(&caller()),
             Some("enterprise"),
             &[id],
@@ -2296,6 +2360,7 @@ mod tests {
         let err = finish_connect(
             &http,
             &keys,
+            false,
             Some(&caller()),
             Some("growth"),
             &[id],

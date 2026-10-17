@@ -40,8 +40,8 @@ export default function FivetranDocsPage() {
       <p className="text-slate-400 text-sm leading-relaxed">
         On a free plan the form says “Connect Fivetran is a paid-plan feature”
         and links to Upgrade. The API error names the same three plan ids.
-        An open-source instance with no org is not on those plans. See
-        Self-hosting.
+        A self-hosted instance sets CONTRACTGATE_SELF_HOSTED so a free org is
+        treated as paid. See Self-hosting.
       </p>
 
       <H2 id="fivetran-account">Fivetran API key and destination group</H2>
@@ -215,33 +215,42 @@ export default function FivetranDocsPage() {
 
       <H2 id="self-hosting">Self-hosting</H2>
       <p className="text-slate-300 text-sm leading-relaxed mb-3">
-        Open-source self-host and auth-off mode have no org. Connect Fivetran
-        is allowed there, and the connector key works against{" "}
-        <code className="text-slate-200">GET /v1/contracts/{"{id}"}/passed</code>{" "}
-        on that instance. Hosted <code className="text-slate-200">free</code> and{" "}
+        Self-hosted orgs default to <code className="text-slate-200">free</code>.
+        Set <code className="text-slate-200">CONTRACTGATE_SELF_HOSTED=true</code>{" "}
+        on the gateway. Passed-event export, Connect Fivetran, and payload
+        storage then treat that org as paid. The connector key is a normal API
+        key for the org, so it works against{" "}
+        <code className="text-slate-200">GET /v1/contracts/{"{id}"}/passed</code>.
+        Hosted <code className="text-slate-200">free</code> and{" "}
         <code className="text-slate-200">aisg_free</code> still receive 403.
+        Leave the variable unset on hosted production and staging.
       </p>
       <p className="text-slate-300 text-sm leading-relaxed mb-3">
-        Fivetran&apos;s cloud must be able to reach your API over public HTTPS.
-        Set <code className="text-slate-200">CANONICAL_API_ORIGIN</code> to that
+        Keep auth on for any instance Fivetran can reach. Fivetran&apos;s cloud
+        must call the API over public HTTPS. An auth-off gateway on that URL
+        would expose your data to anyone who can reach it. Set{" "}
+        <code className="text-slate-200">CANONICAL_API_ORIGIN</code> to that
         public URL. Connect returns 500 and mints no key when it is unset.
       </p>
       <p className="text-slate-300 text-sm leading-relaxed mb-3">
-        If the instance is not reachable from the internet, skip the button.
-        Deploy the connector yourself from{" "}
+        <code className="text-slate-200">CONTRACTGATE_DEV_NO_AUTH</code> is only
+        for local or private use. Fivetran cloud cannot call that process. Use
+        the manual connector path from{" "}
         <a
           className="text-green-400 hover:underline"
           href="https://github.com/nightmoose/nmb-contractgate-fivetran"
         >
           github.com/nightmoose/nmb-contractgate-fivetran
-        </a>
-        . The commands are in the next section.
+        </a>{" "}
+        when the gateway stays private. The commands are in the next section.
       </p>
       <p className="text-slate-400 text-sm leading-relaxed">
-        docker-compose publishes the gateway on localhost. Fivetran cannot call
-        that address. Put a tunnel or a reverse proxy with TLS in front of the
-        gateway, and set <code className="text-slate-200">CANONICAL_API_ORIGIN</code>{" "}
-        to the proxy&apos;s https URL.
+        docker-compose publishes the gateway on localhost and runs with auth
+        off. That is the local stack. To let Fivetran reach it, put a tunnel or
+        a reverse proxy with TLS in front, turn auth on, set{" "}
+        <code className="text-slate-200">CONTRACTGATE_SELF_HOSTED=true</code>,
+        and set <code className="text-slate-200">CANONICAL_API_ORIGIN</code> to
+        the proxy&apos;s https URL.
       </p>
 
       <H2 id="manual">Deploy the connector yourself</H2>

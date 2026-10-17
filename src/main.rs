@@ -124,6 +124,10 @@ pub struct AppState {
     /// defaults to `false` so production can never silently run open. There is
     /// no longer any env-var master key — auth is JWT or a DB-backed key.
     pub dev_no_auth: bool,
+    /// Explicit `CONTRACTGATE_SELF_HOSTED` opt-in. Passed-event export,
+    /// Connect Fivetran, and payload storage treat the org as paid. Hosted
+    /// production and staging leave this false.
+    pub self_hosted: bool,
     /// DB-backed API key cache with 60-second TTL.
     pub key_cache: Arc<api_key_auth::ApiKeyCache>,
     /// Per-API-key token-bucket rate limiter (RFC-021).
@@ -157,6 +161,9 @@ impl AppState {
             db,
             contract_cache: RwLock::new(HashMap::new()),
             dev_no_auth,
+            self_hosted: crate::plan::self_hosted_flag(
+                std::env::var(crate::plan::SELF_HOSTED_ENV).ok().as_deref(),
+            ),
             key_cache: Arc::new(api_key_auth::ApiKeyCache::default()),
             rate_limiter: Arc::new(rate_limit::RateLimitState::default()),
             stream_demo: std::sync::Arc::new(stream_demo::StreamDemoState::new()),
@@ -345,11 +352,15 @@ async fn payload_decision(db: &PgPool, org_id: Option<Uuid>) -> AppResult<Option
 }
 
 /// Apply [`plan::effective_store_event_payloads`] to one stored override.
-fn effective_payload_flag(decision: Option<&(String, bool)>, stored: bool) -> bool {
+fn effective_payload_flag(
+    self_hosted: bool,
+    decision: Option<&(String, bool)>,
+    stored: bool,
+) -> bool {
     match decision {
-        None => plan::effective_store_event_payloads(None, false, stored),
+        None => plan::effective_store_event_payloads_for(self_hosted, None, false, stored),
         Some((plan, org_switch)) => {
-            plan::effective_store_event_payloads(Some(plan), *org_switch, stored)
+            plan::effective_store_event_payloads_for(self_hosted, Some(plan), *org_switch, stored)
         }
     }
 }
@@ -470,7 +481,7 @@ async fn create_contract_handler(
     let resp = identity_to_response(
         &state.db,
         identity,
-        effective_payload_flag(decision.as_ref(), stored),
+        effective_payload_flag(state.self_hosted, decision.as_ref(), stored),
     )
     .await?;
     Ok((StatusCode::CREATED, Json(resp)))
@@ -495,7 +506,7 @@ async fn get_contract_handler(
         identity_to_response(
             &state.db,
             identity,
-            effective_payload_flag(decision.as_ref(), stored),
+            effective_payload_flag(state.self_hosted, decision.as_ref(), stored),
         )
         .await?,
     ))
@@ -567,8 +578,11 @@ async fn list_contracts_handler(
     // `GET /contracts/{id}` uses the same `payload_decision` + helper.
     let decision = payload_decision(&state.db, org_id).await?;
     for contract in &mut contracts {
-        contract.store_event_payloads =
-            effective_payload_flag(decision.as_ref(), contract.store_event_payloads);
+        contract.store_event_payloads = effective_payload_flag(
+            state.self_hosted,
+            decision.as_ref(),
+            contract.store_event_payloads,
+        );
     }
     Ok(Json(contracts))
 }
@@ -599,7 +613,7 @@ async fn patch_contract_handler(
         identity_to_response(
             &state.db,
             identity,
-            effective_payload_flag(decision.as_ref(), stored),
+            effective_payload_flag(state.self_hosted, decision.as_ref(), stored),
         )
         .await?,
     ))
@@ -2053,6 +2067,11 @@ async fn main() -> anyhow::Result<()> {
     };
 
     let state = Arc::new(AppState::new(pool, dev_no_auth, supabase_jwks, jwks_url));
+    if state.self_hosted {
+        tracing::info!(
+            "CONTRACTGATE_SELF_HOSTED is set — passed-event export, Connect Fivetran, and payload storage treat every org as paid"
+        );
+    }
 
     // Warm the compiled-contract cache with every stable + deprecated
     // version.  Failure here is logged but does not block boot.
