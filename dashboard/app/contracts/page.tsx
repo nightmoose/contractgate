@@ -115,14 +115,18 @@ function EditContractModal({
   const [ghSyncError, setGhSyncError] = useState<string | null>(null);
 
   // RFC-045: plan gating inside modal
-  const { org: modalOrg } = useOrg();
+  const { org: modalOrg, loading: modalOrgLoading } = useOrg();
   const modalPaid = usePaidFeatures();
   const modalSelfHosted = useSelfHosted();
   const isGrowth = modalOrg
     ? tierOpen(modalSelfHosted === true, modalPaid, planAtLeast(modalOrg.plan, "growth"), false)
     : false;
   // Kafka/Kinesis streaming is Enterprise-only on hosted plans.
-  const isEnterprise = modalOrg
+  // Stay on a loading marker until /v1/me resolves. Treating a missing
+  // self_hosted as false flashes the lock on a self-hosted free org.
+  const streamingPending =
+    modalOrgLoading || (modalOrg != null && (modalSelfHosted === null || modalPaid === null));
+  const isEnterprise = !streamingPending && modalOrg
     ? tierOpen(modalSelfHosted === true, modalPaid, planAtLeast(modalOrg.plan, "enterprise"), true)
     : false;
   // AISchemaGate validates LLM output; Kafka/Kinesis ingress doesn't apply.
@@ -417,31 +421,39 @@ function EditContractModal({
             {!aisgModal && (<>
             <button
               onClick={() => setModalTab("kafka")}
-              disabled={!isEnterprise}
-              title={!isEnterprise ? "Kafka streaming — Enterprise, available on request" : undefined}
+              disabled={streamingPending || !isEnterprise}
+              title={streamingPending ? "Loading plan" : !isEnterprise ? "Kafka streaming — Enterprise, available on request" : undefined}
               className={clsx(
                 "px-4 py-2 text-sm font-medium rounded-t-lg transition-colors border-b-2 -mb-px flex items-center gap-1",
                 modalTab === "kafka"
                   ? "text-slate-100 border-emerald-500"
                   : "text-slate-500 hover:text-slate-300 border-transparent",
-                !isEnterprise && "opacity-50 cursor-not-allowed"
+                (streamingPending || !isEnterprise) && "opacity-50 cursor-not-allowed"
               )}
             >
-              Kafka {!isEnterprise && <span className="text-[10px] text-amber-500">🔒</span>}
+              Kafka {streamingPending ? (
+                <span className="text-[10px] text-slate-500" aria-label="Loading plan">…</span>
+              ) : (
+                !isEnterprise && <span className="text-[10px] text-amber-500">🔒</span>
+              )}
             </button>
             <button
               onClick={() => setModalTab("kinesis")}
-              disabled={!isEnterprise}
-              title={!isEnterprise ? "Kinesis streaming — Enterprise, available on request" : undefined}
+              disabled={streamingPending || !isEnterprise}
+              title={streamingPending ? "Loading plan" : !isEnterprise ? "Kinesis streaming — Enterprise, available on request" : undefined}
               className={clsx(
                 "px-4 py-2 text-sm font-medium rounded-t-lg transition-colors border-b-2 -mb-px flex items-center gap-1",
                 modalTab === "kinesis"
                   ? "text-slate-100 border-emerald-500"
                   : "text-slate-500 hover:text-slate-300 border-transparent",
-                !isEnterprise && "opacity-50 cursor-not-allowed"
+                (streamingPending || !isEnterprise) && "opacity-50 cursor-not-allowed"
               )}
             >
-              Kinesis {!isEnterprise && <span className="text-[10px] text-amber-500">🔒</span>}
+              Kinesis {streamingPending ? (
+                <span className="text-[10px] text-slate-500" aria-label="Loading plan">…</span>
+              ) : (
+                !isEnterprise && <span className="text-[10px] text-amber-500">🔒</span>
+              )}
             </button>
             </>)}
             {/* RFC-033: Collaborate tab */}

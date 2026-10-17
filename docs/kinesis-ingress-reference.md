@@ -115,6 +115,8 @@ immediately — it cannot be retrieved again without rotating credentials.
 
 **Response `200 OK`** (already enabled): same shape, `iam_secret_access_key` absent.
 
+**Response `400 Bad Request`:** a self-hosted gateway (`CONTRACTGATE_SELF_HOSTED`) with no AWS credentials configured. The error text includes `Kinesis ingress is currently unavailable on this deployment (AWS credentials are not configured). Use POST /v1/ingest instead.` Credentials count as configured when `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY` are set, or `AWS_PROFILE`, or `AWS_WEB_IDENTITY_TOKEN_FILE` together with `AWS_ROLE_ARN`, or `AWS_CONTAINER_CREDENTIALS_RELATIVE_URI` / `AWS_CONTAINER_CREDENTIALS_FULL_URI`. A hosted gateway does not take this path.
+
 **Response `401 Unauthorized`:** no org context (org ID cannot be determined from the request).
 
 ---

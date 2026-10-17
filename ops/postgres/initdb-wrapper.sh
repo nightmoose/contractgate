@@ -43,7 +43,7 @@ run_dir() {
 case "${CONTRACTGATE_SELF_HOST:-}" in
     1|true|TRUE)
         echo "DataContractGate initdb-wrapper: self-host roles only"
-        psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" -f /selfhost/roles.sql
+        psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" -f /tmp/selfhost-roles.sql
         echo "DataContractGate initdb-wrapper: complete"
         exit 0
         ;;
