@@ -77,15 +77,17 @@ The name is fixed from the contract name and id, so it is known before the first
 sync. It is `<slug>_` plus the first 8 hex characters of the contract id: the
 eight characters before the first hyphen, lowercased.
 
-The slug is the contract name lowercased. Each run of characters that are not
-letters or digits becomes one underscore. Leading digits and underscores are
+The slug keeps ASCII letters and digits only, lowercased. Each run of other
+characters becomes one underscore. Leading digits and underscores are
 dropped. The slug stops at 54 characters so the full name stays within 63.
-A name with no letters left uses `passed_` plus those same 8 hex characters.
+A name with no ASCII letters left uses `passed_` plus those same 8 hex characters.
+`Café` becomes `caf_<8hex>`.
 
 | Contract name | Contract id | Table |
 |---|---|---|
 | User Events | `427c3304-ead1-4ba7-b7e0-123456789abc` | `user_events_427c3304` |
 | 123 Orders | `427c3304-ead1-4ba7-b7e0-123456789abc` | `orders_427c3304` |
+| Café | `427c3304-ead1-4ba7-b7e0-123456789abc` | `caf_427c3304` |
 | !!! | `427c3304-ead1-4ba7-b7e0-123456789abc` | `passed_427c3304` |
 
 An explicit `table_names` entry replaces the default for that contract only.
@@ -109,10 +111,11 @@ Errors are `{"error","status"}`.
 
 | Status | When | Key minted |
 |---|---|---|
-| 400 | Body is not a JSON object, a field fails the table above, or the group does not exist (`Fivetran group <id> was not found`) | no |
+| 400 | Body is not a JSON object, a field fails the table above, or the group does not exist. The `error` text starts with `Invalid request: `. An unknown group is `Invalid request: Fivetran group <id> was not found`. A bad schema is `Invalid request: destination_schema must start with a lowercase letter and contain only lowercase letters, digits, and underscores, at most 63 characters`. A bad table name is `Invalid request: table name must start with a letter or underscore and use only lowercase letters, numbers, and underscores`. | no |
 | 401 | `Unauthorized: missing or invalid API key` when the ContractGate key is missing and auth is on. `Fivetran rejected the API key` when Fivetran rejects the key or secret. The Fivetran check runs before a key is minted. | no |
 | 403 | `Forbidden: Connect Fivetran is a paid-plan feature; upgrade to growth, aisg_pro, or enterprise` on `free` or `aisg_free` when `CONTRACTGATE_SELF_HOSTED` is unset | no |
 | 404 | A contract id is not in the caller's org | no |
+| 413 | Body over 64 KiB (`Payload too large: Connect Fivetran body exceeds 65536 bytes`) | no |
 | 500 | `CANONICAL_API_ORIGIN` is unset, blank, or not an https origin with no path, query, or credentials. Unset text: `CANONICAL_API_ORIGIN is unset. Set it to this deployment's public https API origin before connecting Fivetran.` | no |
 | 502 | `Fivetran request failed (<status>)` after the group check | the key for that attempt is revoked; an uploaded package that never became a connection is deleted |
 
