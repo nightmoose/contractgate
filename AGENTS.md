@@ -119,8 +119,12 @@ Hosted production and staging leave the flag unset. Connect returns 500 and
 mints no key when `CANONICAL_API_ORIGIN` is unset or not an https origin.
 The dashboard button is on Contracts and follows `paid_features`. Guide:
 `dashboard/app/docs/fivetran/page.tsx`. Reference:
-`docs/fivetran-connect-reference.md`. Local self-host is `docker-compose.yml`
-/ `make demo`. `CONTRACTGATE_DEV_NO_AUTH=1` is local only.
+`docs/fivetran-connect-reference.md`. `make demo` and the stock
+`docker-compose.yml` are the auth-off local demo (`CONTRACTGATE_DEV_NO_AUTH=1`,
+`CONTRACTGATE_SELF_HOSTED` left unset). A self-host server that Fivetran can
+reach keeps auth on, sets `CONTRACTGATE_SELF_HOSTED=true`, and sets
+`CANONICAL_API_ORIGIN` to a public https origin. That setup is on the
+Fivetran guide: `dashboard/app/docs/fivetran/page.tsx`.
 
 **Database migrations.** Add `supabase/migrations/NNN_description.sql`
 (contiguous numbering — CI enforces it; next number is `044`) and a CI sentinel in
@@ -199,10 +203,10 @@ Test reports live outside the repo on the owner's machine
 - Marketing site talks only about Kafka; add AISchemaGate.
 - www and app send only HSTS: add CSP, `X-Content-Type-Options`,
   `X-Frame-Options` (the API already sends them).
-- App soft-404 (unknown routes return 200); www missing `robots.txt`/`sitemap.xml`.
+- www missing `robots.txt`/`sitemap.xml`.
 - 3 orgs have two live contracts with the same name; clean up, then add a
   partial unique index on `(org_id, name) where deleted_at is null`.
-- Pinned versions on `/v1/ingest` use `?version=`; `/v1/ingest/{id}@1.0` → 400.
+- Pinned versions on `/v1/ingest` use `?version=` (the documented pin). `{id}@version` also works.
 - `@nightmoose/aischemagate` exports map omits `package.json`.
 - Kafka/Kinesis wording still appears in a few DataContractGate-only places
   (fine for DCG, hidden for AISG).
