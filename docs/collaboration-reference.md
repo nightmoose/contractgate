@@ -21,7 +21,41 @@ A collaborator role scopes to the contract definition and its review surface onl
 Collaborators **cannot** access the owner org's `audit_log`, `quarantine_events`,
 or `contracts.pii_salt` — these remain owner-org-scoped by Postgres RLS.
 
+## Reading the contract as a collaborator (2026-10-14, C3)
+
+Any active collaborator (viewer and up) can read the owner's contract by id:
+
+- `GET /contracts/{id}`
+- `GET /contracts/{id}/versions`
+- `GET /contracts/{id}/versions/{version}` (includes `yaml_content`)
+- `GET /contracts/{id}/versions/latest-stable`
+
+These are read-only. Orgs without an active grant (never granted, or revoked)
+get the same `404` as for a missing contract. Writes and owner-only data
+(audit, quarantine, payloads, `pii_salt`) stay owner-scoped.
+
 ---
+
+## Editors writing by contract id (2026-10-14, N2)
+
+By-id routes check the caller's own contract first, then its grant on that
+exact contract id:
+
+| Route | Minimum role |
+|---|---|
+| `GET /contracts/{id}`, `/versions`, `/versions/{v}`, `/versions/latest-stable` | viewer |
+| `POST /contracts/{id}/versions` (new draft) | editor |
+| `PATCH /contracts/{id}/versions/{v}` (edit a draft) | editor |
+| `PATCH`/`DELETE /contracts/{id}`, `promote`, `deprecate`, `DELETE` a version | owner |
+
+No grant → `404`; a grant below the minimum → `403 requires … role`. Drafts
+never validate events until the owner promotes them.
+
+**Name vs id.** In the collaboration routes (`/contracts/{name}/collaborators`,
+`/comments`, `/proposals`) a name resolves to **your own** contract of that
+name first, then to one shared with you. If you own a contract with the same
+name as one shared with you, pass the shared contract's **UUID** in the
+`{name}` slot; it is resolved by id against your grant.
 
 ## Authentication
 
@@ -167,9 +201,25 @@ Mark a comment as resolved.
 
 **Response** `200 OK` — the updated `CommentRow` with `"resolved": true`.
 
+#### `DELETE /contracts/{name}/comments/{id}`
+
+Delete a comment.
+
+**Allowed:** the org that wrote the comment, or the contract owner. Other
+collaborators get `403`.
+
+**Response** `204 No Content`. Unknown id → `404`.
+
 ---
 
 ### Change Proposals
+
+#### `DELETE /contracts/{name}/proposals/{id}`
+
+Delete a proposal. Allowed for the proposing org while the proposal is
+`open` (otherwise `409`), and for the contract owner at any time. Others get
+`403`. Unknown id → `404`. Response `204`.
+
 
 Editors propose YAML changes; reviewers or the owner approve or reject; the owner applies.
 A collaborator's edit **never** lands on a stable version directly.
@@ -273,6 +323,33 @@ All errors follow the standard DataContractGate error envelope:
 
 | Status | When |
 |--------|------|
-| `401 Unauthorized` | Missing API key, or caller has no role on this contract. |
+| `401 Unauthorized` | Missing or invalid credentials only (no API key / bad JWT). |
+| `403 Forbidden`    | Authenticated, but the caller's role is too low or it has no grant (including a revoked one). The message names the role needed, e.g. `requires owner role on contract 'orders'` or `requires viewer role or higher on contract 'orders'`. Deleting someone else's comment: `requires owner role on contract 'orders' or the comment's author org`. |
 | `400 Bad Request`  | Invalid role string, empty body, attempting to decide a non-open proposal, etc. |
-| `404 Not Found`    | Contract name not found (reported as 401 to avoid enumeration). |
+| `409 Conflict`     | The name matches more than one live contract for you. |
+| `404 Not Found`    | No live contract with that name, or the comment/proposal id doesn't belong to it. |
+
+Changed 2026-10-14 (C2): role denials used to return `401 missing or invalid API key`.
+
+## Contract identity (migration 042)
+
+Grants, comments and proposals belong to one contract **id**, not a name.
+`{name}` in the URL resolves to your org's live contract with that name, or,
+if you have none, the contract shared with you under that name. Two orgs with
+contracts of the same name no longer share grants, comments or proposals.
+Deleting a contract removes its grants, comments and proposals.
+If the name matches more than one live contract (two in your org, or two
+shared with you), the API returns `409` asking you to rename or delete the
+extras. `org`-visibility imports grant `viewer` on the published contract's
+id, granted by its owner org. Comment resolve/delete and proposal decide/apply are
+scoped to the contract in the path; an id from another contract is 404 (400
+for proposals not in the expected state).
+
+## Finding your org ID (2026-10-14)
+
+Grants are by org ID. Each org's ID is shown with a copy button on
+**Account → Organization ID** and at the top of a contract's Collaborate tab.
+The invite field rejects anything that isn't a UUID with a hint to ask the
+other team for theirs. Inviting by email is not supported yet (see PR notes:
+it would reveal whether an email has an account unless done as a pending,
+recipient-accepted invite).

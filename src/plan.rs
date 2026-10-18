@@ -35,10 +35,102 @@ pub fn default_rate_limit(plan: &str) -> (u32, u32) {
     }
 }
 
+/// Plans for which [`is_paid`] is true. Payload-storage upgrade copy is built
+/// from this list so it cannot name a different set than the gate.
+///
+/// `growth` is DataContractGate Pro, `aisg_pro` is AISchemaGate Pro, and
+/// `enterprise` is shared. `free` and `aisg_free` are absent on purpose.
+pub const PAID_PLANS: &[&str] = &["growth", "aisg_pro", "enterprise"];
+
 /// Whether a plan is a paid plan. Paid plans unlock payload storage (RFC-086)
 /// and the org settings that depend on it.
 pub fn is_paid(plan: &str) -> bool {
-    matches!(plan, "growth" | "enterprise" | "aisg_pro")
+    PAID_PLANS.contains(&plan)
+}
+
+/// Explicit opt-in that marks this process as a self-hosted deployment.
+/// Hosted production and staging leave it unset. A missing Stripe key is not
+/// this signal.
+pub const SELF_HOSTED_ENV: &str = "CONTRACTGATE_SELF_HOSTED";
+
+/// `true` only for `1`, `true`, or `TRUE`. Unset, blank, and every other
+/// value stay hosted.
+pub fn self_hosted_flag(raw: Option<&str>) -> bool {
+    matches!(raw.map(str::trim), Some("1" | "true" | "TRUE"))
+}
+
+/// Paid for passed-event export, Connect Fivetran, and payload storage.
+///
+/// `self_hosted` is [`SELF_HOSTED_ENV`]. Hosted (`false`) uses [`is_paid`].
+pub fn gate_paid(self_hosted: bool, plan: &str) -> bool {
+    self_hosted || is_paid(plan)
+}
+
+/// Cursor retention for a passed-event export that [`gate_paid`] allowed.
+/// A self-hosted org whose plan is not already paid uses the Pro window.
+pub fn gate_retention_days(self_hosted: bool, plan: &str) -> i32 {
+    if self_hosted && !is_paid(plan) {
+        log_retention_days("growth")
+    } else {
+        log_retention_days(plan)
+    }
+}
+
+/// English list of [`PAID_PLANS`], e.g. `growth, aisg_pro, or enterprise`.
+pub fn paid_plans_phrase() -> String {
+    english_or(PAID_PLANS)
+}
+
+/// 400 body when a non-paid plan tries to turn payload storage on.
+///
+/// The plan names are [`PAID_PLANS`] (the same slice [`is_paid`] checks).
+pub fn payload_storage_upgrade_message() -> String {
+    format!(
+        "event payload storage is a paid-plan feature; upgrade to {}",
+        paid_plans_phrase()
+    )
+}
+
+/// 403 body when a free plan calls `GET /v1/contracts/{id}/passed`.
+///
+/// The plan names are [`PAID_PLANS`] (the same slice [`is_paid`] checks).
+pub fn passed_events_upgrade_message() -> String {
+    format!(
+        "passed-event export is a paid-plan feature; upgrade to {}",
+        paid_plans_phrase()
+    )
+}
+
+/// 403 body when a free plan calls `POST /v1/integrations/fivetran/connect`.
+///
+/// The plan names are [`PAID_PLANS`] (the same slice [`is_paid`] checks).
+pub fn fivetran_connect_upgrade_message() -> String {
+    format!(
+        "Connect Fivetran is a paid-plan feature; upgrade to {}",
+        paid_plans_phrase()
+    )
+}
+
+/// Audit, quarantine, and passed-event cursor retention, in days.
+///
+/// Matches `log_retention_days` in migration 037. `growth` and `aisg_pro`
+/// are Pro on the two products (90). `enterprise` is 365. Every other plan,
+/// including `free` and `aisg_free`, is 7.
+pub fn log_retention_days(plan: &str) -> i32 {
+    match plan {
+        "growth" | "aisg_pro" => 90,
+        "enterprise" => 365,
+        _ => 7,
+    }
+}
+
+fn english_or(items: &[&str]) -> String {
+    match items.split_last() {
+        None => String::new(),
+        Some((only, [])) => (*only).to_string(),
+        Some((last, [only])) => format!("{only} or {last}"),
+        Some((last, rest)) => format!("{}, or {last}", rest.join(", ")),
+    }
 }
 
 /// Whether an event body should be durably stored for this org/contract.
@@ -47,13 +139,170 @@ pub fn is_paid(plan: &str) -> bool {
 /// the org master switch on and the per-contract override on. Free/unknown
 /// plans never store, regardless of the flags. Self-host/dev (no org row) is
 /// handled by the caller before this is reached.
+#[cfg(test)]
 pub fn payloads_stored(plan: &str, org_switch: bool, contract_switch: bool) -> bool {
-    is_paid(plan) && org_switch && contract_switch
+    payloads_stored_for(false, plan, org_switch, contract_switch)
+}
+
+/// Same rule as [`payloads_stored`]. `self_hosted` is [`SELF_HOSTED_ENV`].
+pub fn payloads_stored_for(
+    self_hosted: bool,
+    plan: &str,
+    org_switch: bool,
+    contract_switch: bool,
+) -> bool {
+    gate_paid(self_hosted, plan) && org_switch && contract_switch
+}
+
+/// Effective `store_event_payloads` for contract list / GET responses.
+///
+/// This is the same decision ingest, egress, and the Kafka/Kinesis consumers
+/// make in [`payloads_stored`]: a body is stored only on a paid plan
+/// ([`is_paid`]) with the org master switch on and the per-contract override
+/// on. `free`, `aisg_free`, and unknown plans report `false` even when both
+/// columns are on. A paid plan whose org switch is still off (the column
+/// default) also reports `false` — reporting the per-contract column alone
+/// told the API the body would be stored while quarantine inserts redacted it.
+///
+/// The columns are not rewritten. `plan == None` is self-host / dev (no org
+/// on the request). Ingest stores in that case regardless of the org switch,
+/// so the per-contract column is reported as stored.
+#[cfg(test)]
+pub fn effective_store_event_payloads(plan: Option<&str>, org_switch: bool, stored: bool) -> bool {
+    effective_store_event_payloads_for(false, plan, org_switch, stored)
+}
+
+/// Same report as [`effective_store_event_payloads`]. `self_hosted` is
+/// [`SELF_HOSTED_ENV`].
+pub fn effective_store_event_payloads_for(
+    self_hosted: bool,
+    plan: Option<&str>,
+    org_switch: bool,
+    stored: bool,
+) -> bool {
+    match plan {
+        None => stored,
+        Some(plan) => payloads_stored_for(self_hosted, plan, org_switch, stored),
+    }
+}
+
+/// Message returned (403) when a below-Enterprise org tries to turn on
+/// Kafka/Kinesis streaming ingress.
+pub const STREAMING_REQUIRES_ENTERPRISE: &str =
+    "Kafka/Kinesis streaming ingress requires the Enterprise plan (available on request). \
+     Use POST /v1/ingest instead, or contact datacontractgate@nightmoose.com.";
+
+/// Whether a plan may enable Kafka/Kinesis streaming ingress. Enterprise only:
+/// streaming is not part of any self-serve plan.
+pub fn streaming_allowed(plan: &str) -> bool {
+    plan == "enterprise"
+}
+
+/// Pure gate: `Ok` for Enterprise, 403 [`crate::error::AppError::Forbidden`]
+/// otherwise. `None` (org row missing) is treated as below Enterprise.
+pub fn check_streaming_plan(plan: Option<&str>) -> Result<(), crate::error::AppError> {
+    match plan {
+        Some(p) if streaming_allowed(p) => Ok(()),
+        _ => Err(crate::error::AppError::Forbidden(
+            STREAMING_REQUIRES_ENTERPRISE.to_string(),
+        )),
+    }
+}
+
+/// Server-side gate for routes that turn streaming ingress on.
+///
+/// - Auth configured and no org on the request → 401.
+/// - No org and auth off (self-host / dev, no tenancy) → allowed; there is no
+///   plan to check.
+/// - Org present → its plan must be Enterprise, else 403.
+pub async fn require_streaming_plan(
+    state: &crate::AppState,
+    org_id: Option<uuid::Uuid>,
+) -> Result<(), crate::error::AppError> {
+    let Some(oid) = org_id else {
+        if state.auth_configured() {
+            return Err(crate::error::AppError::Unauthorized);
+        }
+        return Ok(());
+    };
+    let plan = crate::storage::get_org_plan(&state.db, oid).await?;
+    check_streaming_plan(plan.as_deref())
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn streaming_gate_status_codes() {
+        use axum::{http::StatusCode, response::IntoResponse};
+        assert!(check_streaming_plan(Some("enterprise")).is_ok());
+        for p in [
+            Some("free"),
+            Some("growth"),
+            Some("aisg_free"),
+            Some("aisg_pro"),
+            Some("bogus"),
+            None,
+        ] {
+            let err = check_streaming_plan(p).expect_err("below enterprise must be denied");
+            assert!(err.to_string().contains("requires the Enterprise plan"));
+            assert_eq!(err.into_response().status(), StatusCode::FORBIDDEN, "{p:?}");
+        }
+    }
+
+    #[test]
+    fn effective_store_event_payloads_matches_ingest() {
+        // Free / AISchemaGate Free / unknown: columns may both be on, response is false.
+        for plan in ["free", "aisg_free", "bogus", ""] {
+            assert!(
+                !effective_store_event_payloads(Some(plan), true, true),
+                "{plan} must report false"
+            );
+            assert!(
+                !effective_store_event_payloads(Some(plan), true, false),
+                "{plan}"
+            );
+            assert!(
+                !effective_store_event_payloads(Some(plan), false, true),
+                "{plan}"
+            );
+            assert_eq!(
+                effective_store_event_payloads(Some(plan), true, true),
+                payloads_stored(plan, true, true),
+                "{plan}"
+            );
+        }
+        // Paid + org switch on reports the per-contract override.
+        // Paid + org switch off (column default) reports false — ingest redacts.
+        for plan in ["growth", "aisg_pro", "enterprise"] {
+            assert!(
+                effective_store_event_payloads(Some(plan), true, true),
+                "{plan} paid+on"
+            );
+            assert!(
+                !effective_store_event_payloads(Some(plan), true, false),
+                "{plan} paid + contract off"
+            );
+            assert!(
+                !effective_store_event_payloads(Some(plan), false, true),
+                "{plan} paid + org switch off must not claim storage"
+            );
+            assert_eq!(
+                effective_store_event_payloads(Some(plan), true, true),
+                payloads_stored(plan, true, true),
+                "{plan}"
+            );
+            assert_eq!(
+                effective_store_event_payloads(Some(plan), false, true),
+                payloads_stored(plan, false, true),
+                "{plan} org switch"
+            );
+        }
+        // Self-host / no org: report the column. Ingest stores (org switch unused).
+        assert!(effective_store_event_payloads(None, false, true));
+        assert!(!effective_store_event_payloads(None, true, false));
+    }
 
     #[test]
     fn payloads_stored_truth_table() {
@@ -93,5 +342,91 @@ mod tests {
         assert_eq!(default_rate_limit("aisg_pro"), (100, 200));
         assert_eq!(default_rate_limit("enterprise"), (100, 200));
         assert_eq!(default_rate_limit("bogus"), (10, 20));
+    }
+
+    #[test]
+    fn upgrade_message_names_exactly_the_paid_plans() {
+        let msg = payload_storage_upgrade_message();
+        assert!(msg.starts_with("event payload storage is a paid-plan feature; upgrade to "));
+        let named: Vec<&str> = msg
+            .rsplit_once("upgrade to ")
+            .unwrap()
+            .1
+            .split(|c: char| !c.is_ascii_alphanumeric() && c != '_')
+            .filter(|w| !w.is_empty() && *w != "or")
+            .collect();
+        assert_eq!(named, PAID_PLANS);
+        for plan in PAID_PLANS {
+            assert!(is_paid(plan), "{plan}");
+        }
+        for plan in ["free", "aisg_free", "pro", "Growth", "Enterprise"] {
+            assert!(!is_paid(plan), "{plan} must not qualify");
+            assert!(
+                !named.contains(&plan),
+                "{msg} must not name {plan} separately from the paid-plan list"
+            );
+        }
+    }
+
+    #[test]
+    fn passed_events_upgrade_message_names_exactly_the_paid_plans() {
+        let msg = passed_events_upgrade_message();
+        assert!(msg.starts_with("passed-event export is a paid-plan feature; upgrade to "));
+        let named: Vec<&str> = msg
+            .rsplit_once("upgrade to ")
+            .unwrap()
+            .1
+            .split(|c: char| !c.is_ascii_alphanumeric() && c != '_')
+            .filter(|w| !w.is_empty() && *w != "or")
+            .collect();
+        assert_eq!(named, PAID_PLANS);
+    }
+
+    #[test]
+    fn self_hosted_flag_is_explicit_and_free_is_gated_as_paid() {
+        assert!(!self_hosted_flag(None));
+        assert!(!self_hosted_flag(Some("")));
+        assert!(!self_hosted_flag(Some("   ")));
+        assert!(!self_hosted_flag(Some("false")));
+        assert!(!self_hosted_flag(Some("0")));
+        assert!(!self_hosted_flag(Some("yes")));
+        assert!(self_hosted_flag(Some("true")));
+        assert!(self_hosted_flag(Some("TRUE")));
+        assert!(self_hosted_flag(Some("1")));
+        assert!(self_hosted_flag(Some("  true  ")));
+
+        for plan in ["free", "aisg_free"] {
+            assert!(gate_paid(true, plan), "{plan}");
+            assert!(!gate_paid(false, plan), "{plan}");
+            assert_eq!(gate_retention_days(true, plan), 90, "{plan}");
+            assert!(payloads_stored_for(true, plan, true, true), "{plan}");
+            assert!(!payloads_stored_for(false, plan, true, true), "{plan}");
+            assert!(!payloads_stored_for(true, plan, false, true), "{plan}");
+            assert!(effective_store_event_payloads_for(
+                true,
+                Some(plan),
+                true,
+                true
+            ));
+            assert!(!effective_store_event_payloads_for(
+                false,
+                Some(plan),
+                true,
+                true
+            ));
+        }
+        assert!(gate_paid(false, "growth"));
+        assert_eq!(gate_retention_days(true, "enterprise"), 365);
+        assert!(!is_paid("free"));
+    }
+
+    #[test]
+    fn log_retention_matches_migration_037() {
+        assert_eq!(log_retention_days("free"), 7);
+        assert_eq!(log_retention_days("aisg_free"), 7);
+        assert_eq!(log_retention_days("growth"), 90);
+        assert_eq!(log_retention_days("aisg_pro"), 90);
+        assert_eq!(log_retention_days("enterprise"), 365);
+        assert_eq!(log_retention_days("bogus"), 7);
     }
 }

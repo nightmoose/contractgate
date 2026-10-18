@@ -1,5 +1,9 @@
 # Kafka Ingress Reference
 
+> **Disabled (2026-10-14).** Hosted Kafka ingress is turned off (`KAFKA_ENABLED=false`); enabling returns 400. Use `POST /v1/ingest`.
+>
+> **Enterprise only, available on request.** Below Enterprise, `POST …/kafka-ingress/enable` returns `403` (checked before the `KAFKA_ENABLED` 400). `GET` and `DELETE …/disable` stay open on every plan.
+
 **Status:** Available (RFC-025)
 
 DataContractGate can consume events directly from Confluent Cloud on your behalf.
@@ -98,8 +102,8 @@ that produced the validation decision (audit honesty rule).
 
 Kafka (and Kinesis) ingress is **not plan-capped and not counter-incremented in
 v1** — rejecting a consumer poll with 429 is impractical. Audit rows currently
-omit `org_id`, so they also do not seed `GET /usage`. **Prefer Enterprise** for
-production streaming so the Free/Growth monthly cap is not the billing story.
+omit `org_id`, so they also do not seed `GET /usage`. Kafka/Kinesis streaming is
+offered on **Enterprise only, available on request**; it is not a Free/Growth feature.
 HTTP envelope/batch ingest remains the metered path for Free/Growth.
 
 ---

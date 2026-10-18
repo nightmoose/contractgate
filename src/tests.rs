@@ -48,6 +48,7 @@ mod fixtures {
             properties: None,
             items: None,
             transform: None,
+            format: None,
         }
     }
 
@@ -769,7 +770,7 @@ mod odcs_tests {
     use serde_json::json;
     use uuid::Uuid;
 
-    fn make_identity(name: &str) -> ContractIdentity {
+    pub(super) fn make_identity(name: &str) -> ContractIdentity {
         ContractIdentity {
             id: Uuid::new_v4(),
             name: name.to_string(),
@@ -782,7 +783,7 @@ mod odcs_tests {
         }
     }
 
-    fn make_version(contract_id: Uuid, ver: &str, yaml: &str) -> ContractVersion {
+    pub(super) fn make_version(contract_id: Uuid, ver: &str, yaml: &str) -> ContractVersion {
         ContractVersion {
             id: Uuid::new_v4(),
             contract_id,
@@ -881,20 +882,26 @@ mod odcs_tests {
         let doc: serde_yaml::Value = serde_yaml::from_str(&odcs_yaml).unwrap();
         let m = doc.as_mapping().unwrap();
 
+        // Strict ODCS: no unknown root keys; extensions live in customProperties[].
         assert!(
-            m.contains_key("x-contractgate-version"),
+            !m.keys()
+                .any(|k| k.as_str().is_some_and(|s| s.starts_with("x-"))),
+            "no bare x-* root keys: {odcs_yaml}"
+        );
+        assert!(
+            odcs::root_extension(m, "x-contractgate-version").is_some(),
             "must write x-contractgate-version (D-003)"
         );
         assert!(
-            m.contains_key("x-contractgate-ontology"),
+            odcs::root_extension(m, "x-contractgate-ontology").is_some(),
             "must write x-contractgate-ontology (D-003)"
         );
         assert!(
-            m.contains_key("x-contractgate-glossary"),
+            odcs::root_extension(m, "x-contractgate-glossary").is_some(),
             "must write x-contractgate-glossary when non-empty"
         );
         assert!(
-            m.contains_key("x-contractgate-metrics"),
+            odcs::root_extension(m, "x-contractgate-metrics").is_some(),
             "must write x-contractgate-metrics when non-empty"
         );
     }
@@ -961,6 +968,200 @@ mod odcs_tests {
         );
     }
 
+    // ---- nested objects / arrays (Mode A + Mode B) ---------------------------
+
+    const NESTED_CONTRACT: &str = r#"
+version: "1.0.0"
+name: orders
+ontology:
+  entities:
+    - name: order_id
+      type: string
+      required: true
+    - name: customer
+      type: object
+      required: true
+      properties:
+        - name: email
+          type: string
+          required: true
+          pattern: "^.+@.+$"
+        - name: address
+          type: object
+          required: false
+          properties:
+            - name: city
+              type: string
+              required: true
+    - name: lines
+      type: array
+      required: true
+      items:
+        name: line
+        type: object
+        required: true
+        properties:
+          - name: sku
+            type: string
+            required: true
+          - name: qty
+            type: integer
+            required: true
+            min: 1
+          - name: tags
+            type: array
+            required: false
+            items:
+              name: tag
+              type: string
+              required: true
+"#;
+
+    fn field<'a>(
+        fs: &'a [crate::contract::FieldDefinition],
+        n: &str,
+    ) -> &'a crate::contract::FieldDefinition {
+        fs.iter()
+            .find(|f| f.name == n)
+            .unwrap_or_else(|| panic!("field {n} missing"))
+    }
+
+    fn assert_nested_preserved(c: &crate::contract::Contract) {
+        let es = &c.ontology.entities;
+        let customer = field(es, "customer");
+        assert_eq!(customer.field_type, FieldType::Object);
+        let cp = customer.properties.as_ref().expect("customer.properties");
+        let email = field(cp, "email");
+        assert_eq!(email.field_type, FieldType::String);
+        assert!(email.required);
+        assert_eq!(email.pattern.as_deref(), Some("^.+@.+$"));
+        let addr = field(cp, "address");
+        let city = field(
+            addr.properties.as_ref().expect("address.properties"),
+            "city",
+        );
+        assert_eq!(city.field_type, FieldType::String);
+
+        let lines = field(es, "lines");
+        assert_eq!(lines.field_type, FieldType::Array);
+        let item = lines.items.as_ref().expect("lines.items");
+        assert_eq!(item.field_type, FieldType::Object);
+        let ip = item.properties.as_ref().expect("lines.items.properties");
+        assert_eq!(field(ip, "sku").field_type, FieldType::String);
+        let qty = field(ip, "qty");
+        assert_eq!(qty.field_type, FieldType::Integer);
+        assert_eq!(qty.min, Some(1.0));
+        let tags = field(ip, "tags");
+        assert_eq!(tags.field_type, FieldType::Array);
+        assert_eq!(
+            tags.items.as_ref().expect("tags.items").field_type,
+            FieldType::String
+        );
+    }
+
+    fn nested_export() -> String {
+        let original: crate::contract::Contract = serde_yaml::from_str(NESTED_CONTRACT).unwrap();
+        let identity = make_identity("orders");
+        let cv = make_version(identity.id, "1.0.0", NESTED_CONTRACT);
+        odcs::export_odcs(odcs::OdcsExportInput {
+            identity: &identity,
+            version: &cv,
+            contract: &original,
+        })
+        .unwrap()
+    }
+
+    #[test]
+    fn nested_roundtrip_mode_a() {
+        let r = odcs::import_odcs(&nested_export()).unwrap();
+        assert_eq!(r.import_source, ImportSource::Odcs);
+        assert_nested_preserved(&serde_yaml::from_str(&r.yaml_content).unwrap());
+    }
+
+    #[test]
+    fn nested_roundtrip_mode_b_stripped_export() {
+        // Strip the x-contractgate-* extensions so only the ODCS-native
+        // schema section is left.
+        let mut doc: serde_yaml::Value = serde_yaml::from_str(&nested_export()).unwrap();
+        let m = doc.as_mapping_mut().unwrap();
+        m.remove("customProperties");
+        let stripped = serde_yaml::to_string(&doc).unwrap();
+        // Export writes array element schemas as ODCS `items`.
+        assert!(stripped.contains("items:"), "{stripped}");
+        let r = odcs::import_odcs(&stripped).unwrap();
+        assert_eq!(r.import_source, ImportSource::OdcsStripped);
+        let c: crate::contract::Contract = serde_yaml::from_str(&r.yaml_content).unwrap();
+        assert_nested_preserved(&c);
+        // Re-export of the imported contract is stable (same field tree).
+        let identity = make_identity("orders");
+        let cv = make_version(identity.id, "1.0.0", &r.yaml_content);
+        let again = odcs::export_odcs(odcs::OdcsExportInput {
+            identity: &identity,
+            version: &cv,
+            contract: &c,
+        })
+        .unwrap();
+        let r2 = odcs::import_odcs(&again).unwrap();
+        assert_nested_preserved(&serde_yaml::from_str(&r2.yaml_content).unwrap());
+    }
+
+    #[test]
+    fn foreign_odcs_native_nested_properties_and_items() {
+        // Hand-written ODCS v3 with natively nested properties (the nested-properties case).
+        let odcs_yaml = r#"
+apiVersion: v3.1.0
+kind: DataContract
+id: 7f0c1e2a-0000-0000-0000-000000000001
+version: 1.0.0
+status: active
+dataProduct: orders
+schema:
+  - name: orders
+    properties:
+      - name: order_id
+        logicalType: string
+        required: true
+      - name: customer
+        logicalType: object
+        required: true
+        properties:
+          - name: email
+            logicalType: string
+            required: true
+            customProperties:
+              - property: x-cg-pattern
+                value: "^.+@.+$"
+          - name: address
+            logicalType: object
+            properties:
+              - name: city
+                logicalType: string
+                required: true
+      - name: lines
+        logicalType: array
+        required: true
+        items:
+          logicalType: object
+          properties:
+            - name: sku
+              logicalType: string
+              required: true
+            - name: qty
+              logicalType: integer
+              required: true
+              customProperties:
+                - property: x-cg-min
+                  value: 1
+            - name: tags
+              logicalType: array
+              items:
+                logicalType: string
+"#;
+        let r = odcs::import_odcs(odcs_yaml).unwrap();
+        let c: crate::contract::Contract = serde_yaml::from_str(&r.yaml_content).unwrap();
+        assert_nested_preserved(&c);
+    }
+
     // ---- import Mode A (lossless) -------------------------------------------
 
     #[test]
@@ -989,6 +1190,9 @@ mod odcs_tests {
             serde_yaml::from_str(&result.yaml_content).expect("yaml must be valid");
 
         assert_eq!(recovered.name, original.name);
+        // The embedded contract's version is rewritten to the row's (ODCS
+        // `version`), even when the original YAML said something else.
+        assert_eq!(recovered.version, "1.0.0");
         assert_eq!(
             recovered.ontology.entities.len(),
             original.ontology.entities.len()
@@ -1034,6 +1238,9 @@ schema:
 
         assert_eq!(result.import_source, ImportSource::OdcsStripped);
         assert_eq!(result.version, "2.0.0");
+        // Stored YAML agrees with the version row (was hardcoded "1.0").
+        let c: crate::contract::Contract = serde_yaml::from_str(&result.yaml_content).unwrap();
+        assert_eq!(c.version, "2.0.0");
 
         // Recovered contract must parse
         let contract: crate::contract::Contract =
@@ -1182,12 +1389,14 @@ schema:
             .and_then(|v| v.as_sequence())
             .unwrap();
         assert_eq!(uid_quality.len(), 1, "user_id should have 1 quality rule");
+        let uq0 = uid_quality[0].as_mapping().unwrap();
+        assert_eq!(uq0.get("type").and_then(|v| v.as_str()), Some("library"));
         assert_eq!(
-            uid_quality[0]
-                .as_mapping()
-                .unwrap()
-                .get("type")
-                .and_then(|v| v.as_str()),
+            uq0.get("metric").and_then(|v| v.as_str()),
+            Some("missingValues")
+        );
+        assert_eq!(
+            uq0.get("dimension").and_then(|v| v.as_str()),
             Some("completeness")
         );
 
@@ -1208,16 +1417,15 @@ schema:
             .unwrap();
         assert_eq!(ts_quality.len(), 1);
         let ts_q0 = ts_quality[0].as_mapping().unwrap();
+        assert_eq!(ts_q0.get("type").and_then(|v| v.as_str()), Some("custom"));
         assert_eq!(
-            ts_q0.get("type").and_then(|v| v.as_str()),
-            Some("freshness")
+            ts_q0.get("engine").and_then(|v| v.as_str()),
+            Some("contractgate")
         );
-        let max_age = ts_q0
-            .get("attributes")
-            .and_then(|v| v.as_mapping())
-            .and_then(|m| m.get("maxAgeSeconds"))
-            .and_then(|v| v.as_u64());
-        assert_eq!(max_age, Some(3600));
+        assert_eq!(
+            ts_q0.get("implementation").and_then(|v| v.as_str()),
+            Some("freshness maxAgeSeconds=3600")
+        );
     }
 
     #[test]
@@ -1865,6 +2073,7 @@ mod rfc028_tests {
                         properties: None,
                         items: None,
                         transform: None,
+                        format: None,
                     },
                     FieldDefinition {
                         name: "tenant_id".into(),
@@ -1879,6 +2088,7 @@ mod rfc028_tests {
                         properties: None,
                         items: None,
                         transform: None,
+                        format: None,
                     },
                 ],
             },
@@ -2122,6 +2332,7 @@ mod rfc029_tests {
             disposition: "block",
             egress_leakage_mode: "off",
             resolved_version: "1.0.0".into(),
+            requested_version: None,
             payload: vec![json!({"user_id":"alice"}), json!({"user_id":"bob"})],
             outcomes: vec![
                 EgressOutcome {
@@ -2164,6 +2375,7 @@ mod rfc029_tests {
             disposition: "tag",
             egress_leakage_mode: "strip",
             resolved_version: "2.0.0".into(),
+            requested_version: None,
             payload: vec![],
             outcomes: vec![],
         };
@@ -3382,7 +3594,9 @@ mod rfc086_payload_storage {
     use serde_json::json;
     use uuid::Uuid;
 
-    use super::super::storage::{self, AuditEntryInsert, QuarantineEventInsert};
+    use super::super::storage::{
+        self, AuditEntryInsert, ForwardEventInsert, QuarantineEventInsert,
+    };
     use super::super::transform::TransformedPayload;
 
     const YAML: &str = r#"
@@ -3572,6 +3786,24 @@ metrics: []
         storage::log_audit_entries_batch(&pool, &audits, true)
             .await
             .unwrap();
+        storage::forward_events_batch(
+            &pool,
+            &[
+                ForwardEventInsert {
+                    contract_id: cid,
+                    contract_version: "1.0.0".into(),
+                    payload: TransformedPayload::from_stored(json!({"id": "secret-body"})),
+                },
+                ForwardEventInsert {
+                    contract_id: cid,
+                    contract_version: "1.0.0".into(),
+                    payload: TransformedPayload::from_stored(json!({"id": "secret-body-2"})),
+                },
+            ],
+            true,
+        )
+        .await
+        .unwrap();
 
         let q_before: i64 =
             sqlx::query_scalar("SELECT count(*) FROM quarantine_events WHERE contract_id = $1")
@@ -3588,11 +3820,13 @@ metrics: []
         assert_eq!((q_before, a_before), (3, 3));
 
         // Purge this contract.
-        let (q_redacted, a_redacted) = storage::purge_bodies(&pool, Some(org), Some(cid))
-            .await
-            .unwrap();
+        let (q_redacted, a_redacted, f_redacted) =
+            storage::purge_bodies(&pool, Some(org), Some(cid))
+                .await
+                .unwrap();
         assert_eq!(q_redacted, 3, "all 3 quarantine bodies redacted");
         assert_eq!(a_redacted, 3, "all 3 audit bodies redacted");
+        assert_eq!(f_redacted, 2, "both forwarded bodies redacted");
 
         // Row counts UNCHANGED — nothing deleted.
         let q_after: i64 =
@@ -3631,12 +3865,31 @@ metrics: []
         .await
         .unwrap();
         assert_eq!(a_unredacted, 0, "no audit body survives purge");
+        let f_bodies: i64 = sqlx::query_scalar(
+            "SELECT count(*) FROM forwarded_events \
+             WHERE contract_id = $1 AND jsonb_typeof(payload) <> 'null'",
+        )
+        .bind(cid)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(f_bodies, 0, "no forwarded body survives purge");
+        let f_rows: i64 =
+            sqlx::query_scalar("SELECT count(*) FROM forwarded_events WHERE contract_id = $1")
+                .bind(cid)
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        assert_eq!(
+            f_rows, 2,
+            "purge nulls forwarded payloads and keeps the rows"
+        );
 
         // Idempotent: nothing left to redact.
-        let (q2, a2) = storage::purge_bodies(&pool, Some(org), Some(cid))
+        let (q2, a2, f2) = storage::purge_bodies(&pool, Some(org), Some(cid))
             .await
             .unwrap();
-        assert_eq!((q2, a2), (0, 0), "second purge is a no-op");
+        assert_eq!((q2, a2, f2), (0, 0, 0), "second purge is a no-op");
 
         cleanup(&pool, cid, org).await;
     }
@@ -3666,7 +3919,9 @@ metrics: []
             .await
             .unwrap();
         assert!(
-            !storage::contract_stores_payloads(&pool, cid).await.unwrap(),
+            !storage::contract_stores_payloads(&pool, cid, false)
+                .await
+                .unwrap(),
             "free plan never stores"
         );
 
@@ -3678,7 +3933,9 @@ metrics: []
             .unwrap();
 
         // Paid + org switch on + contract default (true) → stores.
-        assert!(storage::contract_stores_payloads(&pool, cid).await.unwrap());
+        assert!(storage::contract_stores_payloads(&pool, cid, false)
+            .await
+            .unwrap());
         // get_org_payload_policy reflects (plan, switch).
         let (plan, switch) = storage::get_org_payload_policy(&pool, org)
             .await
@@ -3692,7 +3949,9 @@ metrics: []
                 .await
                 .unwrap()
         );
-        assert!(!storage::contract_stores_payloads(&pool, cid).await.unwrap());
+        assert!(!storage::contract_stores_payloads(&pool, cid, false)
+            .await
+            .unwrap());
 
         // Contract back on, org master off → does not store.
         storage::set_contract_store_payloads(&pool, cid, Some(org), true)
@@ -3701,7 +3960,118 @@ metrics: []
         storage::set_org_store_payloads(&pool, org, false)
             .await
             .unwrap();
-        assert!(!storage::contract_stores_payloads(&pool, cid).await.unwrap());
+        assert!(!storage::contract_stores_payloads(&pool, cid, false)
+            .await
+            .unwrap());
+
+        cleanup(&pool, cid, org).await;
+    }
+
+    /// Paid + org switch on must persist the quarantine body. Free, and paid
+    /// with the switch off, stay redacted. Covers aisg_pro (the plan QA hit).
+    #[tokio::test]
+    #[ignore = "requires DATABASE_URL and a live Postgres migrated through 036"]
+    async fn quarantine_write_respects_paid_payload_setting() {
+        let pool = connect().await;
+        let org = Uuid::new_v4();
+        seed_org(&pool, org, "rfc086-write").await;
+        let (identity, _) = storage::create_contract(
+            &pool,
+            "rfc086_write",
+            Some("t"),
+            YAML,
+            Default::default(),
+            Some(org),
+        )
+        .await
+        .expect("create contract");
+        let cid = identity.id;
+        assert!(
+            identity.store_event_payloads,
+            "new contract column defaults to storing (inherit org switch)"
+        );
+
+        let state = crate::AppState::new(pool.clone(), true, None, None);
+
+        async fn decide(state: &crate::AppState, org: Uuid, contract_switch: bool) -> bool {
+            crate::ingest::resolve_store_payloads(state, Some(org), contract_switch).await
+        }
+
+        async fn write_and_read(pool: &sqlx::PgPool, cid: Uuid, store: bool) -> (bool, bool) {
+            storage::quarantine_events_batch(pool, &[quar_insert(cid)], store)
+                .await
+                .unwrap();
+            let (redacted, payload_null): (bool, bool) = sqlx::query_as(
+                "SELECT payload_redacted, payload IS NULL FROM quarantine_events \
+                 WHERE contract_id = $1 ORDER BY created_at DESC LIMIT 1",
+            )
+            .bind(cid)
+            .fetch_one(pool)
+            .await
+            .unwrap();
+            (redacted, payload_null)
+        }
+
+        // Free + org switch on + contract on → redacted. The list flag agrees.
+        storage::set_org_store_payloads(&pool, org, true)
+            .await
+            .unwrap();
+        let store = decide(&state, org, identity.store_event_payloads).await;
+        assert!(!store, "free must not store");
+        assert!(
+            !crate::plan::effective_store_event_payloads(Some("free"), true, true),
+            "free reports store_event_payloads false"
+        );
+        let (redacted, payload_null) = write_and_read(&pool, cid, store).await;
+        assert!(redacted && payload_null, "free quarantine row is redacted");
+
+        // Paid (aisg_pro) + on → store body, payload_redacted false.
+        sqlx::query("UPDATE orgs SET plan = 'aisg_pro', store_event_payloads = true WHERE id = $1")
+            .bind(org)
+            .execute(&pool)
+            .await
+            .unwrap();
+        let (plan, enabled) = storage::get_org_payload_policy(&pool, org)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(plan, "aisg_pro");
+        assert!(enabled, "settings endpoint reads the org switch as true");
+        let reloaded = storage::get_contract_identity(&pool, cid, Some(org))
+            .await
+            .unwrap();
+        assert!(reloaded.store_event_payloads);
+        let store = decide(&state, org, reloaded.store_event_payloads).await;
+        assert!(store, "aisg_pro + enabled must store");
+        assert!(
+            crate::plan::effective_store_event_payloads(Some("aisg_pro"), true, true),
+            "paid+on reports store_event_payloads true"
+        );
+        let (redacted, payload_null) = write_and_read(&pool, cid, store).await;
+        assert!(
+            !redacted && !payload_null,
+            "paid+on quarantine row keeps the body"
+        );
+
+        // Paid + off → redacted.
+        storage::set_org_store_payloads(&pool, org, false)
+            .await
+            .unwrap();
+        let store = decide(&state, org, reloaded.store_event_payloads).await;
+        assert!(!store, "paid + org switch off must redact");
+        assert!(
+            !crate::plan::effective_store_event_payloads(
+                Some("aisg_pro"),
+                false,
+                reloaded.store_event_payloads
+            ),
+            "paid+off reports store_event_payloads false"
+        );
+        let (redacted, payload_null) = write_and_read(&pool, cid, store).await;
+        assert!(
+            redacted && payload_null,
+            "paid+off quarantine row is redacted"
+        );
 
         cleanup(&pool, cid, org).await;
     }
@@ -3729,5 +4099,1913 @@ mod schema_guard {
         assert!(msg.contains("orgs.store_event_payloads"));
         assert!(msg.contains("audit_log.raw_event_redacted"));
         assert!(msg.contains("Refusing to boot"));
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Migration 042: collaboration keyed by contract id.  Needs a migrated DB:
+//   DATABASE_URL=... cargo test collab_by_id -- --ignored
+// ---------------------------------------------------------------------------
+#[cfg(test)]
+mod collab_by_id {
+    use crate::storage;
+    use uuid::Uuid;
+
+    async fn org(pool: &sqlx::PgPool) -> Uuid {
+        let id = Uuid::new_v4();
+        sqlx::query("INSERT INTO orgs (id, name, slug) VALUES ($1, 'o', $2)")
+            .bind(id)
+            .bind(format!("t-{id}"))
+            .execute(pool)
+            .await
+            .unwrap();
+        id
+    }
+
+    async fn contract(pool: &sqlx::PgPool, org: Uuid, name: &str) -> Uuid {
+        sqlx::query_scalar("INSERT INTO contracts (name, org_id) VALUES ($1, $2) RETURNING id")
+            .bind(name)
+            .bind(org)
+            .fetch_one(pool)
+            .await
+            .unwrap()
+    }
+
+    #[tokio::test]
+    #[ignore = "requires DATABASE_URL with migrations through 042"]
+    async fn same_name_contracts_do_not_share_grants_or_comments() {
+        let pool = sqlx::PgPool::connect(&std::env::var("DATABASE_URL").unwrap())
+            .await
+            .unwrap();
+        let (a, b, c) = (org(&pool).await, org(&pool).await, org(&pool).await);
+        let name = format!("orders-{}", Uuid::new_v4());
+        let ca = contract(&pool, a, &name).await;
+        let cb = contract(&pool, b, &name).await;
+
+        let g = storage::grant_collaborator(&pool, ca, c, "viewer")
+            .await
+            .unwrap();
+        assert_eq!(g.granted_by, a);
+        assert_eq!(g.contract_name, name);
+
+        // C is a collaborator on A's contract only.
+        let granted = storage::granted_contracts_by_name(&pool, &name, c)
+            .await
+            .unwrap();
+        assert_eq!(granted, vec![(ca, "viewer".to_string())]);
+        assert_eq!(
+            storage::collaborator_grant_by_id(&pool, ca, c)
+                .await
+                .unwrap(),
+            Some((a, "viewer".to_string()))
+        );
+        assert!(storage::org_owns_contract_id(&pool, ca, a).await.unwrap());
+        assert!(!storage::org_owns_contract_id(&pool, ca, c).await.unwrap());
+        assert_eq!(
+            storage::collaborator_grant_by_id(&pool, cb, c)
+                .await
+                .unwrap(),
+            None
+        );
+        assert!(storage::list_collaborators(&pool, cb)
+            .await
+            .unwrap()
+            .is_empty());
+
+        let cm = storage::add_comment(&pool, ca, None, c, "c", "hi")
+            .await
+            .unwrap();
+        assert!(storage::list_comments(&pool, cb).await.unwrap().is_empty());
+        assert_eq!(storage::list_comments(&pool, ca).await.unwrap().len(), 1);
+        // Comment id under the other contract is not found.
+        assert!(storage::resolve_comment(&pool, cb, cm.id).await.is_err());
+        assert!(
+            storage::resolve_comment(&pool, ca, cm.id)
+                .await
+                .unwrap()
+                .resolved
+        );
+        assert_eq!(
+            storage::get_comment_org(&pool, ca, cm.id).await.unwrap(),
+            Some(c)
+        );
+        storage::delete_comment(&pool, ca, cm.id).await.unwrap();
+
+        let p = storage::create_proposal(&pool, ca, c, "x: 1")
+            .await
+            .unwrap();
+        assert!(storage::decide_proposal(&pool, cb, p.id, "approved", a)
+            .await
+            .is_err());
+        storage::decide_proposal(&pool, ca, p.id, "approved", a)
+            .await
+            .unwrap();
+        assert_eq!(
+            storage::apply_proposal(&pool, ca, p.id)
+                .await
+                .unwrap()
+                .status,
+            "applied"
+        );
+        assert!(storage::list_proposals(&pool, cb).await.unwrap().is_empty());
+        let p2 = storage::create_proposal(&pool, ca, c, "x: 2")
+            .await
+            .unwrap();
+        assert_eq!(
+            storage::get_proposal_meta(&pool, ca, p2.id).await.unwrap(),
+            Some((c, "open".to_string()))
+        );
+        assert_eq!(
+            storage::get_proposal_meta(&pool, cb, p2.id).await.unwrap(),
+            None
+        );
+        assert!(storage::delete_proposal(&pool, cb, p2.id).await.is_err());
+        storage::delete_proposal(&pool, ca, p2.id).await.unwrap();
+
+        // Org-visibility import grant: granted_by is the owner, never the importer.
+        storage::ensure_viewer_collaborator(&pool, cb, c)
+            .await
+            .unwrap();
+        let rows = storage::list_collaborators(&pool, cb).await.unwrap();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].granted_by, b);
+        // Owner can't be granted on its own contract via import.
+        storage::ensure_viewer_collaborator(&pool, cb, b)
+            .await
+            .unwrap();
+        assert_eq!(
+            storage::list_collaborators(&pool, cb).await.unwrap().len(),
+            1
+        );
+
+        storage::update_collaborator_role(&pool, ca, c, "editor")
+            .await
+            .unwrap();
+        storage::revoke_collaborator(&pool, ca, c).await.unwrap();
+        assert_eq!(
+            storage::collaborator_grant_by_id(&pool, ca, c)
+                .await
+                .unwrap(),
+            None
+        );
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Kafka/Kinesis streaming ingress is Enterprise-only (server-side gate).
+// ---------------------------------------------------------------------------
+
+#[cfg(test)]
+mod streaming_gate {
+    use axum::http::StatusCode;
+    use axum::routing::{delete, get, post};
+    use axum_test::TestServer;
+    use std::sync::Arc;
+    use uuid::Uuid;
+
+    use super::super::{api_key_auth::ValidatedKey, kafka_ingress, kinesis_ingress, AppState};
+
+    fn router(state: Arc<AppState>, org: Option<Uuid>) -> TestServer {
+        let app = axum::Router::new()
+            .route(
+                "/contracts/{id}/kafka-ingress",
+                get(kafka_ingress::get_kafka_ingress_handler),
+            )
+            .route(
+                "/contracts/{id}/kafka-ingress/enable",
+                post(kafka_ingress::enable_kafka_ingress_handler),
+            )
+            .route(
+                "/contracts/{id}/kafka-ingress/disable",
+                delete(kafka_ingress::disable_kafka_ingress_handler),
+            )
+            .route(
+                "/contracts/{id}/kinesis-ingress",
+                get(kinesis_ingress::get_kinesis_ingress_handler),
+            )
+            .route(
+                "/contracts/{id}/kinesis-ingress/disable",
+                delete(kinesis_ingress::disable_kinesis_ingress_handler),
+            )
+            .route(
+                "/contracts/{id}/kinesis-ingress/enable",
+                post(kinesis_ingress::enable_kinesis_ingress_handler),
+            )
+            .route(
+                "/contracts/{id}/kinesis-ingress/rotate-credentials",
+                post(kinesis_ingress::rotate_kinesis_credentials_handler),
+            )
+            .layer(axum::middleware::from_fn(
+                move |mut req: axum::extract::Request, next: axum::middleware::Next| async move {
+                    if let Some(org_id) = org {
+                        req.extensions_mut().insert(ValidatedKey {
+                            api_key_id: Uuid::new_v4(),
+                            user_id: Uuid::new_v4(),
+                            org_id,
+                            allowed_contract_ids: None,
+                            rate_limit_rps: None,
+                            rate_limit_burst: None,
+                        });
+                    }
+                    next.run(req).await
+                },
+            ))
+            .with_state(state);
+        TestServer::new(app)
+    }
+
+    const TURN_ON: [&str; 3] = [
+        "kafka-ingress/enable",
+        "kinesis-ingress/enable",
+        "kinesis-ingress/rotate-credentials",
+    ];
+
+    /// Auth on, no org on the request → 401 before any provisioning.
+    #[tokio::test]
+    async fn turn_on_routes_401_without_org() {
+        let pool = sqlx::PgPool::connect_lazy("postgres://invalid:5432/none").unwrap();
+        let server = router(Arc::new(AppState::new(pool, false, None, None)), None);
+        for path in TURN_ON {
+            let resp = server
+                .post(&format!("/contracts/{}/{path}", Uuid::new_v4()))
+                .await;
+            assert_eq!(resp.status_code(), StatusCode::UNAUTHORIZED, "{path}");
+        }
+    }
+
+    /// Free / Growth / aisg orgs get 403 on every route that turns streaming
+    /// on; Enterprise passes the gate. Requires DATABASE_URL.
+    #[tokio::test]
+    #[ignore = "requires DATABASE_URL and a live Supabase/Postgres instance"]
+    async fn turn_on_routes_require_enterprise() {
+        let db_url = std::env::var("DATABASE_URL").expect("DATABASE_URL must be set");
+        let pool = sqlx::PgPool::connect(&db_url).await.unwrap();
+        let state = Arc::new(AppState::new(pool.clone(), false, None, None));
+
+        for plan in ["free", "growth", "aisg_free", "aisg_pro", "enterprise"] {
+            let org = Uuid::new_v4();
+            sqlx::query("INSERT INTO orgs (id, name, slug, plan) VALUES ($1, $2, $3, $4)")
+                .bind(org)
+                .bind(format!("streaming gate {plan}"))
+                .bind(format!("streaming-gate-{}", org.simple()))
+                .bind(plan)
+                .execute(&pool)
+                .await
+                .expect("seed org");
+
+            let server = router(state.clone(), Some(org));
+            // The org must own the contract: ownership is checked before the
+            // plan, so a missing/foreign contract would be 404, not 403.
+            let (identity, _) = super::super::storage::create_contract(
+                &pool,
+                "streaming_gate",
+                None,
+                "version: \"1.0.0\"\nname: \"streaming_gate\"\nontology:\n  entities:\n    - name: id\n      type: string\n      required: true\nglossary: []\nmetrics: []\n",
+                Default::default(),
+                Some(org),
+            )
+            .await
+            .expect("org creates contract");
+            let cid = identity.id;
+            for path in TURN_ON {
+                let resp = server.post(&format!("/contracts/{cid}/{path}")).await;
+                if plan == "enterprise" {
+                    assert_ne!(resp.status_code(), StatusCode::FORBIDDEN, "{plan} {path}");
+                    assert_ne!(
+                        resp.status_code(),
+                        StatusCode::UNAUTHORIZED,
+                        "{plan} {path}"
+                    );
+                } else {
+                    assert_eq!(resp.status_code(), StatusCode::FORBIDDEN, "{plan} {path}");
+                    assert!(
+                        resp.text().contains("requires the Enterprise plan"),
+                        "{plan} {path}: {}",
+                        resp.text()
+                    );
+                }
+            }
+            // Read and disable stay open below Enterprise (no 403).
+            let read = server.get(&format!("/contracts/{cid}/kafka-ingress")).await;
+            assert_ne!(read.status_code(), StatusCode::FORBIDDEN, "{plan} read");
+            let off = server
+                .delete(&format!("/contracts/{cid}/kafka-ingress/disable"))
+                .await;
+            assert_ne!(off.status_code(), StatusCode::FORBIDDEN, "{plan} disable");
+
+            sqlx::query("DELETE FROM contracts WHERE id = $1")
+                .bind(cid)
+                .execute(&pool)
+                .await
+                .unwrap();
+            sqlx::query("DELETE FROM orgs WHERE id = $1")
+                .bind(org)
+                .execute(&pool)
+                .await
+                .unwrap();
+        }
+    }
+
+    /// Cross-org: org B (Enterprise, so the plan gate passes) gets 404 on every
+    /// Kafka/Kinesis route for a contract org A owns; A's rows are untouched
+    /// and A can still read them. Requires DATABASE_URL.
+    #[tokio::test]
+    #[ignore = "requires DATABASE_URL and a live Supabase/Postgres instance"]
+    async fn streaming_routes_404_for_non_owner() {
+        let db_url = std::env::var("DATABASE_URL").expect("DATABASE_URL must be set");
+        let pool = sqlx::PgPool::connect(&db_url).await.unwrap();
+        let state = Arc::new(AppState::new(pool.clone(), false, None, None));
+
+        let (org_a, org_b, org_c) = (Uuid::new_v4(), Uuid::new_v4(), Uuid::new_v4());
+        // A owns the contract; B is a foreign Enterprise org, C a foreign Free org.
+        for (org, plan) in [
+            (org_a, "enterprise"),
+            (org_b, "enterprise"),
+            (org_c, "free"),
+        ] {
+            sqlx::query("INSERT INTO orgs (id, name, slug, plan) VALUES ($1, $2, $3, $4)")
+                .bind(org)
+                .bind("streaming ownership")
+                .bind(format!("streaming-own-{}", org.simple()))
+                .bind(plan)
+                .execute(&pool)
+                .await
+                .expect("seed org");
+        }
+        let yaml = "version: \"1.0.0\"\nname: \"streaming_own\"\nontology:\n  entities:\n    - name: id\n      type: string\n      required: true\nglossary: []\nmetrics: []\n";
+        let (identity, _) = super::super::storage::create_contract(
+            &pool,
+            "streaming_own",
+            None,
+            yaml,
+            Default::default(),
+            Some(org_a),
+        )
+        .await
+        .expect("org A creates contract");
+        let cid = identity.id;
+        sqlx::query(
+            "INSERT INTO kafka_ingress (contract_id, org_id, enabled, confluent_bootstrap,
+                                        confluent_api_key, confluent_api_secret_enc)
+             VALUES ($1, $2, true, 'b:9092', 'k', 'enc')",
+        )
+        .bind(cid)
+        .bind(org_a)
+        .execute(&pool)
+        .await
+        .expect("seed kafka row");
+        sqlx::query(
+            "INSERT INTO kinesis_ingress (contract_id, org_id, enabled, iam_access_key_id, iam_secret_enc)
+             VALUES ($1, $2, true, 'AKIA', 'enc')",
+        )
+        .bind(cid)
+        .bind(org_a)
+        .execute(&pool)
+        .await
+        .expect("seed kinesis row");
+
+        // Foreign orgs get 404 on all 7 routes whatever their plan: ownership
+        // is checked before the Enterprise gate.
+        for (who, foreign) in [("enterprise", org_b), ("free", org_c)] {
+            let b = router(state.clone(), Some(foreign));
+            for kind in ["kafka", "kinesis"] {
+                let base = format!("/contracts/{cid}/{kind}-ingress");
+                let r = b.get(&base).await;
+                assert_eq!(r.status_code(), StatusCode::NOT_FOUND, "{who} GET {kind}");
+                let r = b.post(&format!("{base}/enable")).await;
+                assert_eq!(
+                    r.status_code(),
+                    StatusCode::NOT_FOUND,
+                    "{who} enable {kind}"
+                );
+                let r = b.delete(&format!("{base}/disable")).await;
+                assert_eq!(
+                    r.status_code(),
+                    StatusCode::NOT_FOUND,
+                    "{who} disable {kind}"
+                );
+            }
+            let r = b
+                .post(&format!(
+                    "/contracts/{cid}/kinesis-ingress/rotate-credentials"
+                ))
+                .await;
+            assert_eq!(r.status_code(), StatusCode::NOT_FOUND, "{who} rotate");
+        }
+
+        // Owner still sees both configs, unchanged.
+        let a = router(state.clone(), Some(org_a));
+        for kind in ["kafka", "kinesis"] {
+            let r = a.get(&format!("/contracts/{cid}/{kind}-ingress")).await;
+            assert_eq!(
+                r.status_code(),
+                StatusCode::OK,
+                "owner GET {kind}: {}",
+                r.text()
+            );
+        }
+        let key: (String,) =
+            sqlx::query_as("SELECT iam_access_key_id FROM kinesis_ingress WHERE contract_id = $1")
+                .bind(cid)
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        assert_eq!(key.0, "AKIA", "non-owner must not rotate credentials");
+
+        sqlx::query("DELETE FROM contracts WHERE id = $1")
+            .bind(cid)
+            .execute(&pool)
+            .await
+            .unwrap();
+        for org in [org_a, org_b, org_c] {
+            sqlx::query("DELETE FROM orgs WHERE id = $1")
+                .bind(org)
+                .execute(&pool)
+                .await
+                .unwrap();
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Equivalent versions (`1`, `1.0`, `1.0.0`) cannot coexist on one contract.
+// ---------------------------------------------------------------------------
+
+#[cfg(test)]
+mod equivalent_versions {
+    use super::super::{error::AppError, storage};
+    use uuid::Uuid;
+
+    fn yaml(version: &str) -> String {
+        format!(
+            "version: \"{version}\"\nname: \"equiv_versions\"\nontology:\n  entities:\n    - name: id\n      type: string\n      required: true\nglossary: []\nmetrics: []\n"
+        )
+    }
+
+    /// Requires DATABASE_URL.
+    #[tokio::test]
+    #[ignore = "requires DATABASE_URL and a live Supabase/Postgres instance"]
+    async fn deploy_and_create_version_reject_equivalents() {
+        let db_url = std::env::var("DATABASE_URL").expect("DATABASE_URL must be set");
+        let pool = sqlx::PgPool::connect(&db_url).await.unwrap();
+        let org = Uuid::new_v4();
+        sqlx::query("INSERT INTO orgs (id, name, slug) VALUES ($1, $2, $3)")
+            .bind(org)
+            .bind("equiv versions")
+            .bind(format!("equiv-{}", org.simple()))
+            .execute(&pool)
+            .await
+            .expect("seed org");
+
+        let (v, _) = storage::deploy_contract_version(
+            &pool,
+            "equiv_versions",
+            &yaml("1.0"),
+            None,
+            None,
+            Some(org),
+        )
+        .await
+        .expect("deploy 1.0");
+        let cid = v.contract_id;
+
+        // Deploy of an equivalent version → 409 naming the existing one.
+        let err = storage::deploy_contract_version(
+            &pool,
+            "equiv_versions",
+            &yaml("1.0.0"),
+            None,
+            None,
+            Some(org),
+        )
+        .await
+        .expect_err("1.0.0 must be rejected");
+        match &err {
+            AppError::Conflict(m) => assert!(m.contains("existing version 1.0 "), "{m}"),
+            other => panic!("expected Conflict, got {other:?}"),
+        }
+
+        // Draft creation of an equivalent version → 409.
+        for dup in ["1", "1.0.0", "01.0"] {
+            let err = storage::create_version(&pool, cid, dup, &yaml(dup), Some(org))
+                .await
+                .expect_err("equivalent draft must be rejected");
+            assert!(
+                matches!(&err, AppError::Conflict(m) if m.contains("existing version 1.0 ")),
+                "{dup}: {err:?}"
+            );
+        }
+        // Exact duplicate still uses the existing VersionConflict.
+        let err = storage::create_version(&pool, cid, "1.0", &yaml("1.0"), Some(org))
+            .await
+            .expect_err("exact duplicate");
+        assert!(matches!(err, AppError::VersionConflict { .. }), "{err:?}");
+        // A genuinely new version is fine.
+        storage::create_version(&pool, cid, "1.1", &yaml("1.1"), Some(org))
+            .await
+            .expect("1.1 is new");
+        // Body version wins over a stale `version:` in the YAML; the stored
+        // YAML is rewritten to agree with the row.
+        let v = storage::create_version(&pool, cid, "1.2", &yaml("1.0"), Some(org))
+            .await
+            .expect("1.2 with stale yaml version");
+        assert_eq!(v.version, "1.2");
+        let c: super::super::contract::Contract = serde_yaml::from_str(&v.yaml_content).unwrap();
+        assert_eq!(c.version, "1.2");
+
+        // Pin @1 resolves to the stored 1.0.
+        let row = storage::get_version_for_pin(&pool, cid, "1", Some(org))
+            .await
+            .expect("pin 1");
+        assert_eq!(row.version, "1.0");
+
+        // Stable versions can't be deleted (contract_versions_delete_guard), so
+        // a hard delete of the contract or org would fail; soft-delete instead.
+        sqlx::query("UPDATE contracts SET deleted_at = NOW() WHERE id = $1")
+            .bind(cid)
+            .execute(&pool)
+            .await
+            .unwrap();
+    }
+}
+
+// ---------------------------------------------------------------------------
+// POST /contracts/import: target_contract_id / contract_id and duplicate names.
+// ---------------------------------------------------------------------------
+
+#[cfg(test)]
+mod odcs_import_target {
+    use axum::http::StatusCode;
+    use axum_test::TestServer;
+    use serde_json::json;
+    use std::sync::Arc;
+    use uuid::Uuid;
+
+    use super::super::{api_key_auth::ValidatedKey, import_odcs_handler, AppState};
+
+    fn server(state: Arc<AppState>, org: Uuid) -> TestServer {
+        let app = axum::Router::new()
+            .route(
+                "/contracts/import",
+                axum::routing::post(import_odcs_handler),
+            )
+            .layer(axum::middleware::from_fn(
+                move |mut req: axum::extract::Request, next: axum::middleware::Next| async move {
+                    req.extensions_mut().insert(ValidatedKey {
+                        api_key_id: Uuid::new_v4(),
+                        user_id: Uuid::new_v4(),
+                        org_id: org,
+                        allowed_contract_ids: None,
+                        rate_limit_rps: None,
+                        rate_limit_burst: None,
+                    });
+                    next.run(req).await
+                },
+            ))
+            .with_state(state);
+        TestServer::new(app)
+    }
+
+    fn odcs(name: &str, version: &str) -> String {
+        format!(
+            "apiVersion: v3.1.0\nkind: DataContract\nid: \"x\"\nversion: \"{version}\"\nstatus: active\ndataProduct: {name}\nschema:\n  - name: {name}\n    properties:\n      - name: event_id\n        logicalType: string\n        required: true\n"
+        )
+    }
+
+    /// Requires DATABASE_URL.
+    #[tokio::test]
+    #[ignore = "requires DATABASE_URL and a live Supabase/Postgres instance"]
+    async fn import_targets_existing_contract_and_refuses_duplicate_names() {
+        let db_url = std::env::var("DATABASE_URL").expect("DATABASE_URL must be set");
+        let pool = sqlx::PgPool::connect(&db_url).await.unwrap();
+        let state = Arc::new(AppState::new(pool.clone(), false, None, None));
+        let (org_a, org_b) = (Uuid::new_v4(), Uuid::new_v4());
+        for org in [org_a, org_b] {
+            sqlx::query("INSERT INTO orgs (id, name, slug) VALUES ($1, $2, $3)")
+                .bind(org)
+                .bind("odcs import")
+                .bind(format!("odcs-import-{}", org.simple()))
+                .execute(&pool)
+                .await
+                .expect("seed org");
+        }
+        let name = format!("odcs_imp_{}", org_a.simple());
+        let a = server(state.clone(), org_a);
+
+        // First import creates the contract.
+        let r = a
+            .post("/contracts/import")
+            .json(&json!({ "odcs_yaml": odcs(&name, "2.0.0") }))
+            .await;
+        assert_eq!(r.status_code(), StatusCode::CREATED, "{}", r.text());
+        let cid: Uuid = r.json::<serde_json::Value>()["contract_id"]
+            .as_str()
+            .unwrap()
+            .parse()
+            .unwrap();
+
+        // Same name, no target → 409 pointing at target_contract_id.
+        let r = a
+            .post("/contracts/import")
+            .json(&json!({ "odcs_yaml": odcs(&name, "2.1.0") }))
+            .await;
+        assert_eq!(r.status_code(), StatusCode::CONFLICT);
+        assert!(r.text().contains("target_contract_id"), "{}", r.text());
+
+        // Target: exact and equivalent versions → 409; a new version → 201 on cid.
+        for dup in ["2.0.0", "2.0"] {
+            let r = a
+                .post("/contracts/import")
+                .json(&json!({ "odcs_yaml": odcs(&name, dup), "target_contract_id": cid }))
+                .await;
+            assert_eq!(r.status_code(), StatusCode::CONFLICT, "{dup}: {}", r.text());
+        }
+        let r = a
+            .post("/contracts/import")
+            .json(&json!({ "odcs_yaml": odcs(&name, "2.1.0"), "target_contract_id": cid }))
+            .await;
+        assert_eq!(r.status_code(), StatusCode::CREATED, "{}", r.text());
+        let v = r.json::<serde_json::Value>();
+        assert_eq!(v["contract_id"], json!(cid));
+        assert_eq!(v["version"], "2.1.0");
+        let stored: serde_yaml::Value =
+            serde_yaml::from_str(v["yaml_content"].as_str().unwrap()).unwrap();
+        assert_eq!(
+            stored["version"].as_str(),
+            Some("2.1.0"),
+            "yaml agrees with row"
+        );
+        // `contract_id` alias works too. The ODCS table is named `orders`, but
+        // the stored YAML takes the target contract's name.
+        let r = a
+            .post("/contracts/import")
+            .json(&json!({ "odcs_yaml": odcs("orders", "2.2.0"), "contract_id": cid }))
+            .await;
+        assert_eq!(r.status_code(), StatusCode::CREATED, "{}", r.text());
+        let stored: serde_yaml::Value = serde_yaml::from_str(
+            r.json::<serde_json::Value>()["yaml_content"]
+                .as_str()
+                .unwrap(),
+        )
+        .unwrap();
+        assert_eq!(
+            stored["name"].as_str(),
+            Some(name.as_str()),
+            "target's name"
+        );
+        assert_eq!(stored["version"].as_str(), Some("2.2.0"));
+        // Disagreeing ids → 400.
+        let r = a
+            .post("/contracts/import")
+            .json(&json!({ "odcs_yaml": odcs(&name, "2.3.0"), "contract_id": cid, "target_contract_id": Uuid::new_v4() }))
+            .await;
+        assert_eq!(r.status_code(), StatusCode::BAD_REQUEST);
+        // Unknown target → 404.
+        let r = a
+            .post("/contracts/import")
+            .json(
+                &json!({ "odcs_yaml": odcs(&name, "2.3.0"), "target_contract_id": Uuid::new_v4() }),
+            )
+            .await;
+        assert_eq!(r.status_code(), StatusCode::NOT_FOUND);
+
+        // Another org targeting A's contract → 404, nothing written.
+        let b = server(state.clone(), org_b);
+        let r = b
+            .post("/contracts/import")
+            .json(&json!({ "odcs_yaml": odcs(&name, "9.0.0"), "target_contract_id": cid }))
+            .await;
+        assert_eq!(r.status_code(), StatusCode::NOT_FOUND, "{}", r.text());
+        let n: (i64,) =
+            sqlx::query_as("SELECT COUNT(*) FROM contract_versions WHERE contract_id = $1")
+                .bind(cid)
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        assert_eq!(n.0, 3, "2.0.0, 2.1.0, 2.2.0 only");
+        let live: (i64,) =
+            sqlx::query_as("SELECT COUNT(*) FROM contracts WHERE name = $1 AND deleted_at IS NULL")
+                .bind(&name)
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        assert_eq!(live.0, 1, "no duplicate-named contracts");
+
+        // Imported versions are drafts, so a hard delete is allowed.
+        sqlx::query("DELETE FROM contracts WHERE id = $1")
+            .bind(cid)
+            .execute(&pool)
+            .await
+            .unwrap();
+        for org in [org_a, org_b] {
+            sqlx::query("DELETE FROM orgs WHERE id = $1")
+                .bind(org)
+                .execute(&pool)
+                .await
+                .unwrap();
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// feat/odcs-strict: exports validate against the official ODCS v3.1.0 JSON
+// Schema (vendored, Apache-2.0), DCG→DCG stays lossless, and foreign ODCS
+// (CsvPath how-to) imports with its constraints.
+// ---------------------------------------------------------------------------
+#[cfg(test)]
+mod odcs_strict_tests {
+    use super::odcs_tests::{make_identity, make_version};
+    use crate::contract::{Contract, FieldDefinition, FieldType, ImportSource, QualityRuleType};
+    use crate::odcs;
+    use serde_json::json;
+
+    const PROBE: &str = include_str!("../tests/fixtures/odcs/dcg-strict-probe.yaml");
+    const CSVPATH_HOWTO: &str =
+        include_str!("../tests/fixtures/odcs/csvpath-orders-howto.odcs.yaml");
+    const SCHEMA_V310: &str =
+        include_str!("../tests/fixtures/odcs-schema/odcs-json-schema-v3.1.0.json");
+
+    fn probe() -> Contract {
+        serde_yaml::from_str(PROBE).unwrap()
+    }
+
+    fn export(c: &Contract) -> String {
+        let identity = make_identity(&c.name);
+        let cv = make_version(identity.id, &c.version, PROBE);
+        odcs::export_odcs(odcs::OdcsExportInput {
+            identity: &identity,
+            version: &cv,
+            contract: c,
+        })
+        .unwrap()
+    }
+
+    fn schema_errors(odcs_yaml: &str) -> Vec<String> {
+        let schema: serde_json::Value = serde_json::from_str(SCHEMA_V310).unwrap();
+        let validator = jsonschema::draft201909::new(&schema).expect("schema compiles");
+        let instance: serde_json::Value = serde_yaml::from_str(odcs_yaml).unwrap();
+        let errors: Vec<String> = match validator.validate(&instance) {
+            Ok(()) => vec![],
+            Err(errs) => errs
+                .map(|e| format!("{} at {}", e, e.instance_path))
+                .collect(),
+        };
+        errors
+    }
+
+    fn field<'a>(fields: &'a [FieldDefinition], name: &str) -> &'a FieldDefinition {
+        fields
+            .iter()
+            .find(|f| f.name == name)
+            .unwrap_or_else(|| panic!("field {name} missing"))
+    }
+
+    fn canon(c: &Contract) -> serde_json::Value {
+        serde_json::to_value(c).unwrap()
+    }
+
+    #[test]
+    fn export_validates_against_official_odcs_v310_schema() {
+        let y = export(&probe());
+        let errs = schema_errors(&y);
+        assert!(errs.is_empty(), "schema errors: {errs:#?}\n{y}");
+    }
+
+    #[test]
+    fn legacy_export_shape_fails_official_schema() {
+        // Guard that the validator is really strict: a bare root x-* key
+        // (the pre-strict export shape) must be rejected.
+        let mut doc: serde_yaml::Value = serde_yaml::from_str(&export(&probe())).unwrap();
+        doc.as_mapping_mut()
+            .unwrap()
+            .insert("x-contractgate-version".into(), "1.0".into());
+        let y = serde_yaml::to_string(&doc).unwrap();
+        assert!(!schema_errors(&y).is_empty());
+    }
+
+    #[test]
+    fn export_writes_native_odcs_constraints() {
+        let doc: serde_json::Value = serde_yaml::from_str(&export(&probe())).unwrap();
+        assert_eq!(doc["description"], json!({"purpose": "test contract"}));
+        let props = doc["schema"][0]["properties"].as_array().unwrap();
+        let p = |n: &str| {
+            props
+                .iter()
+                .find(|p| p["name"] == n)
+                .unwrap_or_else(|| panic!("{n}"))
+        };
+        assert_eq!(
+            p("order_id")["logicalTypeOptions"]["pattern"],
+            "^ORD-[0-9]{6}$"
+        );
+        assert_eq!(p("order_id")["unique"], true);
+        assert_eq!(p("quantity")["logicalTypeOptions"]["minimum"], 1.0);
+        assert_eq!(p("quantity")["logicalTypeOptions"]["maximum"], 999.0);
+        assert_eq!(p("amount")["logicalType"], "number");
+        assert_eq!(p("email")["logicalTypeOptions"]["minLength"], 5);
+        assert_eq!(p("email")["logicalTypeOptions"]["maxLength"], 120);
+        assert_eq!(p("email")["logicalTypeOptions"]["format"], "email");
+        assert_eq!(
+            p("order_date")["logicalTypeOptions"]["format"],
+            "yyyy-MM-dd"
+        );
+        assert!(p("payload").get("logicalType").is_none());
+        // enum → invalidValues validValues (ODCS v3.1.0 has no property enum)
+        let country = p("customer.address.country");
+        let q = &country["quality"][0];
+        assert_eq!(q["metric"], "invalidValues");
+        assert_eq!(q["arguments"]["validValues"], json!(["US", "CA"]));
+        // validity rule on status carries the enum itself (no duplicate entry)
+        let sq = p("status")["quality"].as_array().unwrap();
+        assert_eq!(sq.len(), 1);
+        assert_eq!(
+            sq[0]["arguments"]["validValues"],
+            json!(["open", "shipped", "cancelled"])
+        );
+    }
+
+    #[test]
+    fn dcg_roundtrip_mode_a_is_lossless() {
+        let c = probe();
+        let r = odcs::import_odcs(&export(&c)).unwrap();
+        assert_eq!(r.import_source, ImportSource::Odcs);
+        let back: Contract = serde_yaml::from_str(&r.yaml_content).unwrap();
+        assert_eq!(canon(&back), canon(&c));
+    }
+
+    #[test]
+    fn legacy_root_extension_export_still_imports_mode_a() {
+        // Pre-strict exports put x-contractgate-* as bare root keys.
+        let c = probe();
+        let mut doc: serde_yaml::Value = serde_yaml::from_str(&export(&c)).unwrap();
+        let m = doc.as_mapping_mut().unwrap();
+        let cps = m.remove("customProperties").unwrap();
+        for cp in cps.as_sequence().unwrap() {
+            let cp = cp.as_mapping().unwrap();
+            m.insert(cp["property"].clone(), cp["value"].clone());
+        }
+        m.insert("description".into(), "test contract".into());
+        let r = odcs::import_odcs(&serde_yaml::to_string(&doc).unwrap()).unwrap();
+        assert_eq!(r.import_source, ImportSource::Odcs);
+        let back: Contract = serde_yaml::from_str(&r.yaml_content).unwrap();
+        assert_eq!(canon(&back), canon(&c));
+    }
+
+    #[test]
+    fn dcg_roundtrip_mode_b_keeps_constraints_and_quality() {
+        // Strip every DCG extension (root and per-property): only ODCS-native
+        // fields remain, as a strict third-party tool would emit them.
+        let c = probe();
+        let mut doc: serde_json::Value = serde_yaml::from_str(&export(&c)).unwrap();
+        doc.as_object_mut().unwrap().remove("customProperties");
+        fn strip(v: &mut serde_json::Value) {
+            match v {
+                serde_json::Value::Object(o) => {
+                    o.remove("customProperties");
+                    o.values_mut().for_each(strip);
+                }
+                serde_json::Value::Array(a) => a.iter_mut().for_each(strip),
+                _ => {}
+            }
+        }
+        strip(&mut doc);
+        let y = serde_yaml::to_string(&doc).unwrap();
+        assert!(schema_errors(&y).is_empty());
+        let r = odcs::import_odcs(&y).unwrap();
+        assert_eq!(r.import_source, ImportSource::OdcsStripped);
+        let back: Contract = serde_yaml::from_str(&r.yaml_content).unwrap();
+
+        let mut expect = c.clone();
+        // Not representable without extensions: transforms, `any`, glossary,
+        // metrics, compliance_mode.
+        for f in expect.ontology.entities.iter_mut() {
+            f.transform = None;
+            if f.field_type == FieldType::Any {
+                f.field_type = FieldType::String;
+            }
+        }
+        expect.glossary.clear();
+        expect.metrics.clear();
+        expect.compliance_mode = false;
+        let e = &expect.ontology.entities;
+        let b = &back.ontology.entities;
+        for name in [
+            "order_id",
+            "status",
+            "quantity",
+            "amount",
+            "email",
+            "order_date",
+            "lines",
+        ] {
+            assert_eq!(
+                serde_json::to_value(field(b, name)).unwrap(),
+                serde_json::to_value(field(e, name)).unwrap(),
+                "field {name}"
+            );
+        }
+        let cust = field(b, "customer").properties.as_ref().unwrap();
+        assert_eq!(field(cust, "id").pattern.as_deref(), Some("^C[0-9]+$"));
+        let addr = field(cust, "address").properties.as_ref().unwrap();
+        assert_eq!(
+            field(addr, "country").allowed_values,
+            Some(vec![json!("US"), json!("CA")])
+        );
+        // Quality rules survive via library metrics / custom engine.
+        let mut kinds: Vec<_> = back
+            .quality
+            .iter()
+            .map(|r| (r.field.clone(), r.rule_type, r.threshold, r.max_age_seconds))
+            .collect();
+        kinds.sort_by(|a, b| a.0.cmp(&b.0));
+        assert_eq!(
+            kinds,
+            vec![
+                (
+                    "amount".into(),
+                    QualityRuleType::Completeness,
+                    Some(0.95),
+                    None
+                ),
+                (
+                    "created_at".into(),
+                    QualityRuleType::Freshness,
+                    None,
+                    Some(3600)
+                ),
+                // Without its x-cg-derived marker the enum restatement reads
+                // as an explicit validity overlay (same enforcement).
+                (
+                    "customer.address.country".into(),
+                    QualityRuleType::Validity,
+                    None,
+                    None
+                ),
+                ("order_id".into(), QualityRuleType::Uniqueness, None, None),
+                ("status".into(), QualityRuleType::Validity, None, None),
+            ]
+        );
+    }
+
+    #[test]
+    fn x_cg_extension_wins_over_native_field() {
+        let y = r#"
+apiVersion: v3.1.0
+kind: DataContract
+id: conflict
+version: "1.0.0"
+status: active
+schema:
+  - name: t
+    properties:
+      - name: code
+        logicalType: string
+        logicalTypeOptions: { pattern: "^native$", maxLength: 9 }
+        customProperties:
+          - { property: x-cg-pattern, value: "^cg$" }
+"#;
+        let r = odcs::import_odcs(y).unwrap();
+        let c: Contract = serde_yaml::from_str(&r.yaml_content).unwrap();
+        let f = field(&c.ontology.entities, "code");
+        assert_eq!(f.pattern.as_deref(), Some("^cg$"));
+        assert_eq!(f.max_length, Some(9));
+    }
+
+    #[test]
+    fn csvpath_howto_example_imports_with_constraints() {
+        let r = odcs::import_odcs(CSVPATH_HOWTO).unwrap();
+        assert_eq!(r.import_source, ImportSource::OdcsStripped);
+        let c: Contract = serde_yaml::from_str(&r.yaml_content).unwrap();
+        assert_eq!(c.name, "orders");
+        let e = &c.ontology.entities;
+
+        let id = field(e, "order_id");
+        assert!(id.required);
+        assert_eq!(id.pattern.as_deref(), Some("^ORD-[0-9]{6}$"));
+        assert!(c
+            .quality
+            .iter()
+            .any(|q| q.field == "order_id" && q.rule_type == QualityRuleType::Uniqueness));
+
+        let email = field(e, "customer_email");
+        assert!(!email.required);
+        assert_eq!(email.format.as_deref(), Some("email"));
+
+        let qty = field(e, "quantity");
+        assert_eq!(qty.field_type, FieldType::Integer);
+        assert!(qty.required);
+        assert_eq!((qty.min, qty.max), (Some(1.0), Some(999.0)));
+
+        let status = field(e, "status");
+        assert_eq!(
+            status.allowed_values,
+            Some(vec![json!("open"), json!("shipped"), json!("cancelled")])
+        );
+
+        let date = field(e, "order_date");
+        assert_eq!(date.field_type, FieldType::Date);
+        assert!(date.required);
+        assert_eq!(date.format, None, "yyyy-MM-dd is CG's built-in date format");
+
+        // Schema-level `rowCount` has no per-event CG equivalent: dropped.
+        assert_eq!(c.quality.len(), 1);
+
+        // The imported contract compiles and enforces the constraints.
+        let cc = crate::validation::CompiledContract::compile(c).unwrap();
+        let ok = json!({"order_id": "ORD-000001", "customer_email": "a@b.co",
+            "quantity": 2, "status": "open", "order_date": "2026-10-15"});
+        assert!(crate::validation::validate(&cc, &ok).passed);
+        let bad = json!({"order_id": "X1", "customer_email": "nope",
+            "quantity": 0, "status": "lost", "order_date": "2026-13-01"});
+        let res = crate::validation::validate(&cc, &bad);
+        assert!(!res.passed);
+        assert!(res.violations.len() >= 5, "{:?}", res.violations);
+    }
+
+    #[test]
+    fn foreign_v32_lengths_and_object_description() {
+        let y = r#"
+apiVersion: v3.2.0
+kind: DataContract
+id: lens
+version: "1.0.0"
+status: active
+description: { purpose: "Partner feed", usage: "ingest" }
+schema:
+  - name: lens
+    logicalType: object
+    properties:
+      - name: code
+        logicalType: string
+        required: true
+        logicalTypeOptions: { minLength: 2, maxLength: 8, format: uuid }
+      - name: price
+        logicalType: number
+        logicalTypeOptions: { minimum: 0.5 }
+        quality:
+          - { metric: missingValues, mustBeLessOrEqualTo: 10, unit: percent }
+"#;
+        let r = odcs::import_odcs(y).unwrap();
+        let c: Contract = serde_yaml::from_str(&r.yaml_content).unwrap();
+        assert_eq!(c.description.as_deref(), Some("Partner feed"));
+        let code = field(&c.ontology.entities, "code");
+        assert_eq!((code.min_length, code.max_length), (Some(2), Some(8)));
+        assert_eq!(code.format.as_deref(), Some("uuid"));
+        let price = field(&c.ontology.entities, "price");
+        assert_eq!(price.min, Some(0.5));
+        let q = &c.quality[0];
+        assert_eq!(q.rule_type, QualityRuleType::Completeness);
+        assert!((q.threshold.unwrap() - 0.9).abs() < 1e-9);
+    }
+
+    #[test]
+    fn string_format_checks() {
+        use crate::validation::string_format_ok as ok;
+        assert!(ok("email", "a@b.co"));
+        assert!(!ok("email", "a@b"));
+        assert!(!ok("email", "a b@c.d"));
+        assert!(ok("uuid", "123e4567-e89b-12d3-a456-426614174000"));
+        assert!(!ok("uuid", "123e4567e89b12d3a456426614174000"));
+        assert!(ok("uri", "https://x.y/z"));
+        assert!(!ok("uri", "not a uri"));
+        assert!(ok("hostname", "anything")); // unknown formats are metadata
+    }
+
+    #[test]
+    fn stringified_root_extension_still_imports_mode_a() {
+        let c = probe();
+        let mut doc: serde_json::Value = serde_yaml::from_str(&export(&c)).unwrap();
+        for cp in doc["customProperties"].as_array_mut().unwrap() {
+            if !cp["value"].is_string() {
+                cp["value"] = json!(cp["value"].to_string());
+            }
+        }
+        let r = odcs::import_odcs(&serde_yaml::to_string(&doc).unwrap()).unwrap();
+        assert_eq!(r.import_source, ImportSource::Odcs);
+        let back: Contract = serde_yaml::from_str(&r.yaml_content).unwrap();
+        assert_eq!(canon(&back), canon(&c));
+    }
+
+    #[test]
+    fn openmetadata_export_keeps_description_and_enum() {
+        let y = include_str!("../tests/fixtures/odcs/om-2.0.5-export.odcs.yaml");
+        let r = odcs::import_odcs(y).unwrap();
+        assert_eq!(r.import_source, ImportSource::OdcsStripped);
+        let c: Contract = serde_yaml::from_str(&r.yaml_content).unwrap();
+        assert!(c
+            .description
+            .as_deref()
+            .unwrap()
+            .starts_with("TEST - OpenMetadata"));
+        let cur = field(&c.ontology.entities, "currency");
+        assert_eq!(
+            cur.allowed_values,
+            Some(vec![json!("USD"), json!("EUR"), json!("GBP")])
+        );
+        assert_eq!(
+            field(&c.ontology.entities, "amount").field_type,
+            FieldType::Float
+        );
+    }
+
+    #[test]
+    fn joint_standard_odcs_orders_imports_with_constraints() {
+        // Pure ODCS v3.1.0 (no x-, no customProperties) shared with CsvPath.
+        let y = include_str!("../tests/fixtures/odcs/joint-orders.odcs.yaml");
+        assert!(schema_errors(y).is_empty(), "{:?}", schema_errors(y));
+        let r = odcs::import_odcs(y).unwrap();
+        assert_eq!(r.import_source, ImportSource::OdcsStripped);
+        let c: Contract = serde_yaml::from_str(&r.yaml_content).unwrap();
+        assert_eq!(c.name, "orders");
+        assert!(c
+            .description
+            .as_deref()
+            .unwrap()
+            .starts_with("Canonical order records"));
+        let e = &c.ontology.entities;
+        assert_eq!(e.len(), 11);
+
+        let id = field(e, "order_id");
+        assert!(id.required);
+        assert_eq!(id.pattern.as_deref(), Some("^ORD-[0-9]{8}$"));
+        assert_eq!(
+            field(e, "customer_id").pattern.as_deref(),
+            Some("^CUST-[0-9]{6}$")
+        );
+        let ts = field(e, "order_ts");
+        assert_eq!(ts.field_type, FieldType::Timestamp);
+        assert_eq!(ts.format.as_deref(), Some("yyyy-MM-dd'T'HH:mm:ss'Z'"));
+        assert_eq!(
+            field(e, "status").allowed_values,
+            Some(
+                ["pending", "paid", "shipped", "delivered", "cancelled"]
+                    .map(|v| json!(v))
+                    .to_vec()
+            )
+        );
+        assert_eq!(
+            field(e, "currency").allowed_values,
+            Some(vec![json!("USD"), json!("EUR"), json!("GBP")])
+        );
+        assert_eq!(
+            field(e, "sales_channel").allowed_values,
+            Some(vec![json!("web"), json!("mobile"), json!("store")])
+        );
+        assert!(!field(e, "sales_channel").required);
+        let amount = field(e, "amount");
+        assert_eq!(
+            (amount.field_type.clone(), amount.min, amount.max),
+            (FieldType::Float, Some(0.0), None)
+        );
+        let qty = field(e, "quantity");
+        assert_eq!(
+            (qty.field_type.clone(), qty.min, qty.max),
+            (FieldType::Integer, Some(1.0), Some(100.0))
+        );
+        let email = field(e, "email");
+        assert_eq!(email.format.as_deref(), Some("email"));
+        assert!(email.pattern.is_some());
+        let sc = field(e, "ship_country");
+        assert_eq!(sc.pattern.as_deref(), Some("^[A-Z]{2}$"));
+        assert_eq!((sc.min_length, sc.max_length), (Some(2), Some(2)));
+        let d = field(e, "discount_pct");
+        assert_eq!((d.min, d.max, d.required), (Some(0.0), Some(100.0), false));
+
+        let rule = |f: &str, t: QualityRuleType| {
+            c.quality.iter().any(|q| q.field == f && q.rule_type == t)
+        };
+        // duplicateValues + unique: true → exactly one uniqueness rule
+        assert_eq!(
+            c.quality
+                .iter()
+                .filter(|q| q.field == "order_id" && q.rule_type == QualityRuleType::Uniqueness)
+                .count(),
+            1
+        );
+        assert!(rule("customer_id", QualityRuleType::Completeness)); // nullValues
+        assert!(rule("status", QualityRuleType::Validity));
+        // Schema-level rowCount has no per-event equivalent (dropped).
+        assert_eq!(c.quality.len(), 5);
+
+        // Constraints are enforced on events.
+        let cc = crate::validation::CompiledContract::compile(c.clone()).unwrap();
+        let good = json!({"order_id": "ORD-00000001", "customer_id": "CUST-000001",
+            "order_ts": "2026-10-15T12:00:00Z", "status": "paid", "currency": "USD",
+            "amount": 10.5, "quantity": 2, "email": "a@example.com", "ship_country": "US"});
+        let res = crate::validation::validate(&cc, &good);
+        assert!(res.passed, "{:?}", res.violations);
+        let bad = json!({"order_id": "ORD-1", "customer_id": "C1",
+            "order_ts": "yesterday", "status": "lost", "currency": "JPY",
+            "amount": -1, "quantity": 101, "email": "nope", "ship_country": "usa",
+            "discount_pct": 120, "sales_channel": "fax"});
+        let res = crate::validation::validate(&cc, &bad);
+        let bad_fields: std::collections::BTreeSet<_> =
+            res.violations.iter().map(|v| v.field.as_str()).collect();
+        for f in [
+            "order_id",
+            "customer_id",
+            "order_ts",
+            "status",
+            "currency",
+            "amount",
+            "quantity",
+            "email",
+            "ship_country",
+            "discount_pct",
+            "sales_channel",
+        ] {
+            assert!(
+                bad_fields.contains(f),
+                "{f} not flagged: {:?}",
+                res.violations
+            );
+        }
+
+        // DCG re-export of the imported contract is schema-valid and keeps timestamp.
+        let again = export(&c);
+        assert!(
+            schema_errors(&again).is_empty(),
+            "{:?}",
+            schema_errors(&again)
+        );
+        assert!(again.contains("logicalType: timestamp"));
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Org-wide replay redacted flag + effective store_event_payloads on GET /contracts.
+//
+// Requires DATABASE_URL and migrations through 034 (payload_redacted) / 036
+// (aisg plans). Run with:
+//   cargo test --bin contractgate-server api_bugfixes -- --ignored
+// ---------------------------------------------------------------------------
+#[cfg(test)]
+mod api_bugfixes {
+    use axum::http::StatusCode;
+    use axum::routing::{get, post};
+    use axum_test::TestServer;
+    use serde_json::{json, Value};
+    use std::sync::Arc;
+    use uuid::Uuid;
+
+    use super::super::storage::{self, QuarantineEventInsert};
+    use super::super::transform::TransformedPayload;
+    use super::super::{
+        api_key_auth::ValidatedKey, get_contract_handler, list_contracts_handler, quarantine,
+        replay, AppState,
+    };
+
+    const YAML: &str = r#"
+version: "1.0"
+name: "api_bugfix_contract"
+description: "replay redacted + effective payload flag"
+ontology:
+  entities:
+    - name: id
+      type: string
+      required: true
+glossary: []
+metrics: []
+"#;
+
+    fn server(state: Arc<AppState>, org: Uuid) -> TestServer {
+        let app = axum::Router::new()
+            .route("/contracts", get(list_contracts_handler))
+            .route("/contracts/{id}", get(get_contract_handler))
+            .route("/quarantine/replay", post(quarantine::replay_all_handler))
+            .route(
+                "/contracts/{id}/quarantine/replay",
+                post(replay::replay_handler),
+            )
+            .layer(axum::middleware::from_fn(
+                move |mut req: axum::extract::Request, next: axum::middleware::Next| async move {
+                    req.extensions_mut().insert(ValidatedKey {
+                        api_key_id: Uuid::new_v4(),
+                        user_id: Uuid::new_v4(),
+                        org_id: org,
+                        allowed_contract_ids: None,
+                        rate_limit_rps: None,
+                        rate_limit_burst: None,
+                    });
+                    next.run(req).await
+                },
+            ))
+            .with_state(state);
+        TestServer::new(app)
+    }
+
+    async fn seed_org(pool: &sqlx::PgPool, org: Uuid, plan: &str) {
+        sqlx::query("INSERT INTO orgs (id, name, slug, plan) VALUES ($1, $2, $3, $4)")
+            .bind(org)
+            .bind("api bugfix org")
+            .bind(format!("api-bugfix-{}", org.simple()))
+            .bind(plan)
+            .execute(pool)
+            .await
+            .expect("seed org");
+    }
+
+    /// Org-wide `POST /quarantine/replay` flags a row whose body was not stored
+    /// the same way the per-contract route does (`outcome: "redacted"`),
+    /// instead of `passed: false` with an empty violations list.
+    #[tokio::test]
+    #[ignore = "requires DATABASE_URL and a live Postgres migrated through 034"]
+    async fn org_wide_replay_redacted_matches_per_contract() {
+        let db_url = std::env::var("DATABASE_URL").expect("DATABASE_URL must be set");
+        let pool = sqlx::PgPool::connect(&db_url).await.unwrap();
+        let org = Uuid::new_v4();
+        seed_org(&pool, org, "free").await;
+        let (identity, version) = storage::create_contract(
+            &pool,
+            "api_bugfix_replay",
+            Some("t"),
+            YAML,
+            Default::default(),
+            Some(org),
+        )
+        .await
+        .expect("create contract");
+        let cid = identity.id;
+        let qid = Uuid::new_v4();
+        storage::quarantine_events_batch(
+            &pool,
+            &[QuarantineEventInsert {
+                contract_id: cid,
+                contract_version: version.version.clone(),
+                payload: TransformedPayload::from_stored(json!({"id": "not-stored"})),
+                violation_count: 1,
+                violation_details: json!([{"field":"id","kind":"x","message":"m"}]),
+                validation_us: 5,
+                source_ip: None,
+                replay_of_quarantine_id: None,
+                pre_assigned_id: Some(qid),
+                direction: "ingress".to_string(),
+            }],
+            false, // payload NULL + payload_redacted, same as Free ingest
+        )
+        .await
+        .unwrap();
+
+        let state = Arc::new(AppState::new(pool.clone(), false, None, None));
+        let http = server(state, org);
+        let body = json!({
+            "ids": [qid],
+            "target_version": version.version,
+        });
+        let per = http
+            .post(&format!("/contracts/{cid}/quarantine/replay"))
+            .json(&body)
+            .await;
+        assert_eq!(per.status_code(), StatusCode::OK, "{}", per.text());
+        let per_json: Value = per.json();
+        assert_eq!(
+            per_json["redacted"],
+            json!(1),
+            "per-contract redacted count: {per_json}"
+        );
+        assert_eq!(per_json["results"][0]["quarantine_id"], qid.to_string());
+        assert_eq!(
+            per_json["results"][0]["outcome"], "redacted",
+            "per-contract outcome tag: {per_json}"
+        );
+
+        let org_body = json!({
+            "event_ids": [qid],
+            "version": version.version,
+        });
+        let org_resp = http.post("/quarantine/replay").json(&org_body).await;
+        assert_eq!(
+            org_resp.status_code(),
+            StatusCode::OK,
+            "{}",
+            org_resp.text()
+        );
+        let org_json: Value = org_resp.json();
+        assert_eq!(org_json["replayed"], json!(0));
+        let outcome = &org_json["outcomes"][0];
+        assert_eq!(outcome["event_id"], qid.to_string());
+        assert_eq!(
+            outcome["redacted"],
+            json!(true),
+            "org-wide route must flag the redacted row: {org_json}"
+        );
+        assert_eq!(outcome["passed"], json!(false));
+        assert_eq!(outcome["violations"], json!([]));
+        // Org-wide `redacted: true` is the same classification the per-contract
+        // route tags `outcome: "redacted"`.
+        assert_eq!(per_json["results"][0]["outcome"], "redacted");
+
+        sqlx::query("DELETE FROM contracts WHERE id = $1")
+            .bind(cid)
+            .execute(&pool)
+            .await
+            .unwrap();
+        sqlx::query("DELETE FROM orgs WHERE id = $1")
+            .bind(org)
+            .execute(&pool)
+            .await
+            .unwrap();
+    }
+
+    /// `GET /contracts` reports `store_event_payloads` with the same decision
+    /// ingest uses. Free stays false. A paid plan with the org master switch
+    /// still off (column default) reports false — that used to report true
+    /// while new quarantine rows were redacted. Paid + org switch on reports
+    /// the per-contract override. Columns are not rewritten.
+    #[tokio::test]
+    #[ignore = "requires DATABASE_URL and a live Postgres migrated through 036"]
+    async fn contract_list_effective_store_event_payloads() {
+        let db_url = std::env::var("DATABASE_URL").expect("DATABASE_URL must be set");
+        let pool = sqlx::PgPool::connect(&db_url).await.unwrap();
+        let org = Uuid::new_v4();
+        seed_org(&pool, org, "free").await;
+        let (identity, _) = storage::create_contract(
+            &pool,
+            "api_bugfix_list",
+            Some("t"),
+            YAML,
+            Default::default(),
+            Some(org),
+        )
+        .await
+        .expect("create contract");
+        let cid = identity.id;
+        // Column default is true. The response must not depend on rewriting it.
+        let stored: bool =
+            sqlx::query_scalar("SELECT store_event_payloads FROM contracts WHERE id = $1")
+                .bind(cid)
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        assert!(stored, "column default is true; the bug is the response");
+
+        let state = Arc::new(AppState::new(pool.clone(), false, None, None));
+        let http = server(state, org);
+
+        async fn listed(http: &TestServer, cid: Uuid) -> bool {
+            let resp = http.get("/contracts").await;
+            assert_eq!(resp.status_code(), StatusCode::OK, "{}", resp.text());
+            let rows: Vec<Value> = resp.json();
+            let row = rows
+                .iter()
+                .find(|r| r["id"] == cid.to_string())
+                .expect("contract in list");
+            row["store_event_payloads"]
+                .as_bool()
+                .expect("store_event_payloads bool")
+        }
+
+        assert!(
+            !listed(&http, cid).await,
+            "free org must report store_event_payloads false"
+        );
+
+        sqlx::query("UPDATE orgs SET plan = 'aisg_free' WHERE id = $1")
+            .bind(org)
+            .execute(&pool)
+            .await
+            .unwrap();
+        assert!(
+            !listed(&http, cid).await,
+            "aisg_free must report store_event_payloads false"
+        );
+
+        // Paid + org switch still off (default) must not claim storage.
+        // Ingest redacts in this state; the list used to report true.
+        for plan in ["growth", "aisg_pro", "enterprise"] {
+            sqlx::query("UPDATE orgs SET plan = $2, store_event_payloads = false WHERE id = $1")
+                .bind(org)
+                .bind(plan)
+                .execute(&pool)
+                .await
+                .unwrap();
+            assert!(
+                !listed(&http, cid).await,
+                "{plan} with the org switch off must report false"
+            );
+        }
+
+        // Paid + org switch on reports the stored per-contract override (true).
+        for plan in ["growth", "aisg_pro", "enterprise"] {
+            sqlx::query("UPDATE orgs SET plan = $2, store_event_payloads = true WHERE id = $1")
+                .bind(org)
+                .bind(plan)
+                .execute(&pool)
+                .await
+                .unwrap();
+            assert!(
+                listed(&http, cid).await,
+                "{plan} with the org switch and column on must report true"
+            );
+        }
+
+        // Paid + stored override off stays off, even with the org switch on.
+        sqlx::query("UPDATE contracts SET store_event_payloads = false WHERE id = $1")
+            .bind(cid)
+            .execute(&pool)
+            .await
+            .unwrap();
+        sqlx::query("UPDATE orgs SET plan = 'growth', store_event_payloads = true WHERE id = $1")
+            .bind(org)
+            .execute(&pool)
+            .await
+            .unwrap();
+        assert!(
+            !listed(&http, cid).await,
+            "paid plan reports the stored false override"
+        );
+
+        // Free response did not rewrite the column (it was still true until
+        // the explicit UPDATE above).
+        let now_stored: bool =
+            sqlx::query_scalar("SELECT store_event_payloads FROM contracts WHERE id = $1")
+                .bind(cid)
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        assert!(!now_stored);
+
+        sqlx::query("DELETE FROM contracts WHERE id = $1")
+            .bind(cid)
+            .execute(&pool)
+            .await
+            .unwrap();
+        sqlx::query("DELETE FROM orgs WHERE id = $1")
+            .bind(org)
+            .execute(&pool)
+            .await
+            .unwrap();
+    }
+
+    /// `GET /contracts/{id}` reports `store_event_payloads` with the same
+    /// decision as the list: paid plan AND org switch AND per-contract override.
+    #[tokio::test]
+    #[ignore = "requires DATABASE_URL and a live Postgres migrated through 036"]
+    async fn contract_get_effective_store_event_payloads() {
+        let db_url = std::env::var("DATABASE_URL").expect("DATABASE_URL must be set");
+        let pool = sqlx::PgPool::connect(&db_url).await.unwrap();
+        let org = Uuid::new_v4();
+        seed_org(&pool, org, "free").await;
+        let (identity, _) = storage::create_contract(
+            &pool,
+            "api_bugfix_get",
+            Some("t"),
+            YAML,
+            Default::default(),
+            Some(org),
+        )
+        .await
+        .expect("create contract");
+        let cid = identity.id;
+        let state = Arc::new(AppState::new(pool.clone(), false, None, None));
+        let http = server(state, org);
+
+        async fn fetched(http: &TestServer, cid: Uuid) -> bool {
+            let resp = http.get(&format!("/contracts/{cid}")).await;
+            assert_eq!(resp.status_code(), StatusCode::OK, "{}", resp.text());
+            let row: Value = resp.json();
+            row["store_event_payloads"]
+                .as_bool()
+                .expect("store_event_payloads bool")
+        }
+
+        assert!(
+            !fetched(&http, cid).await,
+            "free org must report store_event_payloads false"
+        );
+        sqlx::query("UPDATE orgs SET plan = 'aisg_free' WHERE id = $1")
+            .bind(org)
+            .execute(&pool)
+            .await
+            .unwrap();
+        assert!(
+            !fetched(&http, cid).await,
+            "aisg_free must report store_event_payloads false"
+        );
+        for plan in ["growth", "aisg_pro", "enterprise"] {
+            sqlx::query("UPDATE orgs SET plan = $2, store_event_payloads = false WHERE id = $1")
+                .bind(org)
+                .bind(plan)
+                .execute(&pool)
+                .await
+                .unwrap();
+            assert!(
+                !fetched(&http, cid).await,
+                "{plan} with the org switch off must report false"
+            );
+        }
+        for plan in ["growth", "aisg_pro", "enterprise"] {
+            sqlx::query("UPDATE orgs SET plan = $2, store_event_payloads = true WHERE id = $1")
+                .bind(org)
+                .bind(plan)
+                .execute(&pool)
+                .await
+                .unwrap();
+            assert!(
+                fetched(&http, cid).await,
+                "{plan} with the org switch and column on must report true"
+            );
+        }
+        sqlx::query("UPDATE contracts SET store_event_payloads = false WHERE id = $1")
+            .bind(cid)
+            .execute(&pool)
+            .await
+            .unwrap();
+        assert!(
+            !fetched(&http, cid).await,
+            "paid plan reports the stored false override"
+        );
+        let now_stored: bool =
+            sqlx::query_scalar("SELECT store_event_payloads FROM contracts WHERE id = $1")
+                .bind(cid)
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        assert!(
+            !now_stored,
+            "response must not be the only place the column changed"
+        );
+
+        sqlx::query("DELETE FROM contracts WHERE id = $1")
+            .bind(cid)
+            .execute(&pool)
+            .await
+            .unwrap();
+        sqlx::query("DELETE FROM orgs WHERE id = $1")
+            .bind(org)
+            .execute(&pool)
+            .await
+            .unwrap();
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Soft-deleting a contract removes its quarantine rows in the same
+// transaction and leaves audit rows + published versions in place.
+//
+//   DATABASE_URL=... cargo test delete_contract_removes_quarantine -- --ignored
+// ---------------------------------------------------------------------------
+#[cfg(test)]
+mod contract_delete_quarantine {
+    use serde_json::json;
+    use uuid::Uuid;
+
+    use super::super::error::AppError;
+    use super::super::storage::{
+        self, AuditEntryInsert, ForwardEventInsert, QuarantineEventInsert,
+    };
+    use super::super::transform::TransformedPayload;
+
+    const YAML: &str = r#"
+version: "1.0"
+name: "delete_quar_contract"
+description: "delete removes quarantine"
+ontology:
+  entities:
+    - name: id
+      type: string
+      required: true
+glossary: []
+metrics: []
+"#;
+
+    #[tokio::test]
+    #[ignore = "requires DATABASE_URL and a live Postgres migrated through 004"]
+    async fn delete_contract_removes_quarantine_keeps_audit_and_version() {
+        let db_url = std::env::var("DATABASE_URL").expect("DATABASE_URL must be set");
+        let pool = sqlx::PgPool::connect(&db_url).await.unwrap();
+        let org = Uuid::new_v4();
+        sqlx::query("INSERT INTO orgs (id, name, slug) VALUES ($1, 'o', $2)")
+            .bind(org)
+            .bind(format!("del-quar-{}", org.simple()))
+            .execute(&pool)
+            .await
+            .unwrap();
+
+        let (identity, version) = storage::create_contract(
+            &pool,
+            "delete_quar",
+            Some("t"),
+            YAML,
+            Default::default(),
+            Some(org),
+        )
+        .await
+        .unwrap();
+        let cid = identity.id;
+        storage::promote_version(&pool, cid, &version.version, Some(org))
+            .await
+            .expect("promote draft to stable");
+
+        let parent = Uuid::new_v4();
+        let child = Uuid::new_v4();
+        storage::quarantine_events_batch(
+            &pool,
+            &[
+                QuarantineEventInsert {
+                    contract_id: cid,
+                    contract_version: version.version.clone(),
+                    payload: TransformedPayload::from_stored(json!({"id": "body"})),
+                    violation_count: 1,
+                    violation_details: json!([{"field":"id","kind":"x","message":"m"}]),
+                    validation_us: 4,
+                    source_ip: None,
+                    replay_of_quarantine_id: None,
+                    pre_assigned_id: Some(parent),
+                    direction: "ingress".to_string(),
+                },
+                QuarantineEventInsert {
+                    contract_id: cid,
+                    contract_version: version.version.clone(),
+                    payload: TransformedPayload::from_stored(json!({"id": "replay-fail"})),
+                    violation_count: 1,
+                    violation_details: json!([{"field":"id","kind":"x","message":"m"}]),
+                    validation_us: 4,
+                    source_ip: None,
+                    replay_of_quarantine_id: Some(parent),
+                    pre_assigned_id: Some(child),
+                    direction: "ingress".to_string(),
+                },
+            ],
+            true,
+        )
+        .await
+        .unwrap();
+
+        storage::log_audit_entries_batch(
+            &pool,
+            &[AuditEntryInsert {
+                contract_id: cid,
+                org_id: Some(org),
+                contract_version: version.version.clone(),
+                passed: true,
+                violation_count: 0,
+                violation_details: json!([]),
+                raw_event: TransformedPayload::from_stored(json!({"id": "kept"})),
+                validation_us: 3,
+                source_ip: None,
+                source: "http".into(),
+                pre_assigned_id: None,
+                replay_of_quarantine_id: Some(parent),
+                direction: "ingress".into(),
+            }],
+            true,
+        )
+        .await
+        .unwrap();
+        storage::forward_events_batch(
+            &pool,
+            &[ForwardEventInsert {
+                contract_id: cid,
+                contract_version: version.version.clone(),
+                payload: TransformedPayload::from_stored(json!({"id": "passed-body"})),
+            }],
+            true,
+        )
+        .await
+        .unwrap();
+
+        // Wrong org must not delete the contract or its quarantine rows.
+        let err = storage::delete_contract(&pool, cid, Some(Uuid::new_v4()))
+            .await
+            .unwrap_err();
+        assert!(matches!(err, AppError::ContractNotFound(_)));
+        let still: i64 =
+            sqlx::query_scalar("SELECT count(*) FROM quarantine_events WHERE contract_id = $1")
+                .bind(cid)
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        assert_eq!(still, 2, "wrong-org delete leaves quarantine rows");
+        let forwarded_still: i64 =
+            sqlx::query_scalar("SELECT count(*) FROM forwarded_events WHERE contract_id = $1")
+                .bind(cid)
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        assert_eq!(forwarded_still, 1, "wrong-org delete leaves forwarded rows");
+
+        storage::delete_contract(&pool, cid, Some(org))
+            .await
+            .expect("owner delete");
+
+        let missing = storage::get_contract_identity(&pool, cid, Some(org)).await;
+        assert!(matches!(missing, Err(AppError::ContractNotFound(_))));
+
+        let listed = storage::list_quarantine_events(&pool, Some(org), Some(cid), 50, 0)
+            .await
+            .unwrap();
+        assert!(
+            listed.is_empty(),
+            "GET /quarantine must not return deleted contract rows"
+        );
+
+        let left: i64 =
+            sqlx::query_scalar("SELECT count(*) FROM quarantine_events WHERE contract_id = $1")
+                .bind(cid)
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        assert_eq!(left, 0, "quarantine rows removed with the contract");
+        let forwarded_left: i64 =
+            sqlx::query_scalar("SELECT count(*) FROM forwarded_events WHERE contract_id = $1")
+                .bind(cid)
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        assert_eq!(
+            forwarded_left, 0,
+            "forwarded rows removed with the contract"
+        );
+
+        let (audit_n, replay_cleared): (i64, bool) = sqlx::query_as(
+            "SELECT count(*), bool_and(replay_of_quarantine_id IS NULL) \
+             FROM audit_log WHERE contract_id = $1",
+        )
+        .bind(cid)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(audit_n, 1, "audit history is kept");
+        assert!(
+            replay_cleared,
+            "replay link cleared so the quarantine delete can proceed"
+        );
+
+        let state: String = sqlx::query_scalar(
+            "SELECT state FROM contract_versions WHERE contract_id = $1 AND version = $2",
+        )
+        .bind(cid)
+        .bind(&version.version)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(state, "stable", "published version stays published");
+
+        // A contract soft-deleted without this helper (rows already left
+        // behind) is excluded from the list without a schema change.
+        let (other, _) = storage::create_contract(
+            &pool,
+            "delete_quar_orphan",
+            Some("t"),
+            YAML,
+            Default::default(),
+            Some(org),
+        )
+        .await
+        .unwrap();
+        storage::quarantine_events_batch(
+            &pool,
+            &[QuarantineEventInsert {
+                contract_id: other.id,
+                contract_version: "1.0.0".into(),
+                payload: TransformedPayload::from_stored(json!({"id": "orphan"})),
+                violation_count: 1,
+                violation_details: json!([]),
+                validation_us: 1,
+                source_ip: None,
+                replay_of_quarantine_id: None,
+                pre_assigned_id: None,
+                direction: "ingress".into(),
+            }],
+            false,
+        )
+        .await
+        .unwrap();
+        sqlx::query("UPDATE contracts SET deleted_at = NOW() WHERE id = $1")
+            .bind(other.id)
+            .execute(&pool)
+            .await
+            .unwrap();
+        let orphan_list = storage::list_quarantine_events(&pool, Some(org), Some(other.id), 50, 0)
+            .await
+            .unwrap();
+        assert!(
+            orphan_list.is_empty(),
+            "soft-deleted contract is excluded from the list"
+        );
+
+        // Fixture cleanup. Stable versions cannot be hard-deleted (trigger).
+        // session_replication_role is per connection, so hold one checkout.
+        // This role is superuser on the local test database only.
+        let mut conn = pool.acquire().await.unwrap();
+        sqlx::query("SET session_replication_role = 'replica'")
+            .execute(&mut *conn)
+            .await
+            .unwrap();
+        sqlx::query("DELETE FROM contracts WHERE id = ANY($1)")
+            .bind(vec![cid, other.id])
+            .execute(&mut *conn)
+            .await
+            .unwrap();
+        sqlx::query("DELETE FROM orgs WHERE id = $1")
+            .bind(org)
+            .execute(&mut *conn)
+            .await
+            .unwrap();
+        sqlx::query("SET session_replication_role = 'origin'")
+            .execute(&mut *conn)
+            .await
+            .unwrap();
     }
 }

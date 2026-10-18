@@ -162,6 +162,15 @@ tolerate their absence.
 
 Plan limits: **Free 10 req/sec sustained, bursts up to 20; Pro 100 req/sec, bursts up to 200.** Contact us for design-partner overrides.
 
+The window is **per second, not per minute**: a token bucket refilling
+continuously at the plan rate. An empty Free bucket is full again after 2 s,
+so `X-RateLimit-Reset` is at most `burst / rate` (2 s) ahead and `Retry-After`
+on a 429 is usually `1`. Bursts of ≤20 spaced ≥2 s apart never see a 429.
+Because refill is continuous, a parallel burst that takes `t` seconds to
+arrive admits `20 + floor(10·t)` on Free (e.g. 21 of 30 when the requests
+span 100–200 ms). The same bucket applies to every authenticated route
+(`/v1/ingest`, `/egress`, …), one per API key.
+
 ---
 
 ## Idempotency
@@ -205,13 +214,37 @@ contract. Pin a specific version with the `?version=` query parameter:
 
 ```
 POST /v1/ingest/{contract_id}?version=1.0.0
+POST /v1/ingest/{contract_id}@1.0.0        # same thing (D1, 2026-10-14)
 ```
 
-Pinning a `deprecated` version quarantines the entire batch with a
-`deprecated_contract_version` violation.
+`?version=` wins if both are given. The same `{id}@{version}` form works on
+`/ingest` and `/egress`.
+
+### Deprecated pin — same 422 on every route
+
+Pinning a `deprecated` version on `/v1/ingest`, `/ingest` or `/egress`
+returns **422** with `"code": "contract_version_deprecated"`, the pinned
+version, the latest stable version (where known) and a message saying what to
+do. Ingest quarantines the whole batch (nothing on `dry_run`); egress forwards
+nothing. Each per-event result carries one violation with
+`kind: "contract_version_deprecated"`:
+
+```json
+{
+  "error": "Version 1.0 of contract … is deprecated and no longer accepts events (every event was quarantined). Remove the version pin to use the latest stable version, or pin a stable version (e.g. …@X.Y or ?version=X.Y).",
+  "code": "contract_version_deprecated",
+  "deprecated_version": "1.0",
+  "version_pin_source": "pinned_deprecated",
+  "total": 1, "passed": 0, "failed": 1, "dry_run": false,
+  "results": [ … ]
+}
+```
 
 ---
 
 ## OpenAPI spec
 
 The machine-readable spec is available at `/openapi.json` (no auth required).
+
+Passing events written to `forwarded_events` are read back with
+[`GET /v1/contracts/{id}/passed`](passed-events-reference.md).

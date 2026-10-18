@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { createClient } from "@/lib/supabase/client";
-import { useOrg, planDisplayName, isFreePlan } from "@/lib/org";
+import { useOrg, planDisplayName, isFreePlan, paidPlansPhrase } from "@/lib/org";
 import { useBrand } from "@/components/BrandProvider";
 import { useRouter } from "next/navigation";
 import type { User } from "@supabase/supabase-js";
@@ -11,6 +11,8 @@ import { HelpTarget } from "@/components/help/HelpTarget";
 import { DEMO_MODE } from "@/lib/demo";
 import DemoFeatureUnavailable from "@/components/DemoFeatureUnavailable";
 import UsageWidget from "@/components/UsageWidget";
+import ProfileSecurity from "@/components/account/ProfileSecurity";
+import OrgIdCard from "@/components/account/OrgIdCard";
 import { getPayloadStorage, setPayloadStorage } from "@/lib/api";
 import type { PayloadStorageStatus } from "@/lib/api";
 
@@ -370,7 +372,9 @@ function AccountContent() {
 
   async function handleSignOut() {
     await supabase.auth.signOut();
-    router.push("/auth/login");
+    // Hard navigation: a client push left the signed-out tab on /account
+    // rendering the AuthGate sample (tester polish round).
+    window.location.assign("/auth/login");
   }
 
   if (loading) {
@@ -403,6 +407,16 @@ function AccountContent() {
               <span className="font-mono text-slate-500">{org.org_name}</span>
               <span className="text-slate-700">·</span>
               <span className="text-slate-600 capitalize">{org.role}</span>
+              <span className="text-slate-700">·</span>
+              <code className="font-mono text-slate-500 select-all" title="Organization ID">{org.org_id}</code>
+              <button
+                type="button"
+                onClick={() => navigator.clipboard.writeText(org.org_id).catch(() => undefined)}
+                className="text-[10px] px-1.5 py-0.5 rounded bg-[#1f2937] hover:bg-[#374151] text-slate-400"
+                title="Copy organization ID"
+              >
+                Copy ID
+              </button>
             </p>
           )}
         </div>
@@ -424,7 +438,9 @@ function AccountContent() {
               </HelpTarget>
               <div className="text-xs text-slate-500">
                 Plan: <span className="font-medium text-slate-300">{planDisplayName(org.plan)}</span>
-                {org.plan_status && <span className="ml-1 text-slate-400">({org.plan_status})</span>}
+                {planStatusLabel(org.plan, org.plan_status) && (
+                  <span className="ml-1 text-slate-400">({planStatusLabel(org.plan, org.plan_status)})</span>
+                )}
               </div>
             </div>
             {isFreePlan(org.plan) ? (
@@ -457,11 +473,16 @@ function AccountContent() {
               </button>
             )}
           </div>
+          {!isFreePlan(org.plan) && !isComplimentary(org.plan, org.plan_status) && <SubscriptionDetails />}
           <p className="text-[11px] text-slate-500">
             Self-serve upgrades use Stripe Checkout (in-app from the pricing page).
           </p>
         </div>
       )}
+
+      <OrgIdCard orgId={org?.org_id} />
+
+      <ProfileSecurity user={user} />
 
       {/* Per-org monthly usage (RFC-083) */}
       {org && <UsageWidget />}
@@ -1014,6 +1035,58 @@ transforms.contractgate.contractgate.contract.id=<your contract UUID>`}
 }
 
 // ── Event payload storage (RFC-086) ────────────────────────────────────────────
+/** Stripe statuses meaning "no live subscription". */
+const ENDED_STATUSES = new Set(["canceled", "incomplete_expired"]);
+
+/**
+ * A paid plan whose Stripe subscription has ended (or never existed) was set
+ * by hand — e.g. a comped org. Don't show the stale "(canceled)".
+ */
+function isComplimentary(plan: Parameters<typeof isFreePlan>[0], status?: string | null): boolean {
+  return !isFreePlan(plan) && plan !== "enterprise" && (!status || ENDED_STATUSES.has(status));
+}
+
+function planStatusLabel(plan: Parameters<typeof isFreePlan>[0], status?: string | null): string | null {
+  if (isFreePlan(plan)) return null;
+  if (isComplimentary(plan, status)) return "complimentary";
+  return status ?? null;
+}
+
+interface SubInfo {
+  status: string;
+  trial_end: number | null;
+  cancel_at_period_end: boolean;
+  cancel_at: number | null;
+  current_period_end: number | null;
+}
+
+/** Trial end and pending cancellation, read live from Stripe. */
+function SubscriptionDetails() {
+  const [sub, setSub] = useState<SubInfo | null>(null);
+  useEffect(() => {
+    fetch("/api/stripe/subscription")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => setSub(d?.subscription ?? null))
+      .catch(() => setSub(null));
+  }, []);
+  if (!sub) return null;
+  const day = (t: number) =>
+    new Date(t * 1000).toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
+  const endsAt = sub.cancel_at ?? (sub.cancel_at_period_end ? sub.current_period_end : null);
+  return (
+    <div className="text-xs text-slate-400 mb-3 space-y-1">
+      {sub.status === "trialing" && sub.trial_end && <p>Trial ends {day(sub.trial_end)}.</p>}
+      {endsAt ? (
+        <p className="text-amber-400">
+          Cancellation scheduled: Pro ends {day(endsAt)}, then the account moves to Free.
+        </p>
+      ) : (
+        sub.status !== "trialing" && sub.current_period_end && <p>Renews {day(sub.current_period_end)}.</p>
+      )}
+    </div>
+  );
+}
+
 function EventPayloadStorageSection() {
   const [status, setStatus] = useState<PayloadStorageStatus | null>(null);
   const [loading, setLoading] = useState(true);
@@ -1032,7 +1105,7 @@ function EventPayloadStorageSection() {
   async function toggle(next: boolean) {
     if (!next) {
       const ok = confirm(
-        "Turn off event payload storage?\n\nThis immediately PURGES every stored event body for your org (audit + quarantine). " +
+        "Turn off event payload storage?\n\nThis immediately PURGES every stored event body for your org (audit, quarantine, and passed-event export). " +
           "Audit records and violation history are kept — only the source data is removed. " +
           "Quarantined events without a stored body can no longer be replayed. This cannot be undone."
       );
@@ -1058,7 +1131,8 @@ function EventPayloadStorageSection() {
           <div className="text-sm font-semibold text-slate-200">Event Payload Storage</div>
           <p className="text-xs text-slate-500 mt-1 max-w-md">
             When on, {brandName} retains the (post-transform) body of each event
-            in the audit log and quarantine store. Required for quarantine replay.
+            in the audit log, quarantine store, and passed-event export. Required
+            for quarantine replay.
             When off, only metadata is kept — what failed and why, never the source
             data.
           </p>
@@ -1095,7 +1169,7 @@ function EventPayloadStorageSection() {
           ? status.enabled
             ? "On — event bodies are stored. Turning this off purges all stored bodies org-wide."
             : "Off — only metadata is stored. Quarantined events can't be replayed until this is on."
-          : "Event payload storage is a paid-plan feature (Pro or Enterprise)."}
+          : `Event payload storage is a paid-plan feature (${paidPlansPhrase()}).`}
       </p>
 
       {error && (

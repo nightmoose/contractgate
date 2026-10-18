@@ -227,8 +227,8 @@ fn confluent_create_topics(contract_id: Uuid, partition_count: i32) -> anyhow::R
         .set("bootstrap.servers", &bootstrap)
         .set("security.protocol", "SASL_SSL")
         .set("sasl.mechanisms", "PLAIN")
-        .set("sasl.username", &confluent_api_key())
-        .set("sasl.password", &confluent_api_secret());
+        .set("sasl.username", confluent_api_key())
+        .set("sasl.password", confluent_api_secret());
 
     let admin: AdminClient<DefaultClientContext> = config
         .create()
@@ -252,8 +252,8 @@ fn confluent_create_topics(contract_id: Uuid, partition_count: i32) -> anyhow::R
         ),
     ];
 
-    // 10 s — well under the router's 30 s TimeoutLayer so we return a clean
-    // error instead of racing to a 408 Request Timeout.
+    // 10 s — well under the router's 30 s request timeout so we return a clean
+    // error instead of racing to a 504.
     let opts = AdminOptions::new().request_timeout(Some(std::time::Duration::from_secs(10)));
 
     let results = Handle::current()
@@ -430,8 +430,11 @@ async fn soft_delete_kafka_ingress_row(pool: &PgPool, contract_id: Uuid) -> AppR
 
 pub async fn get_kafka_ingress_handler(
     State(state): State<Arc<AppState>>,
+    crate::OrgId(org_id): crate::OrgId,
     Path(contract_id): Path<Uuid>,
 ) -> AppResult<Json<KafkaIngressResponse>> {
+    // Owner-only: a caller whose org does not own the contract gets 404.
+    crate::require_owner(&state, contract_id, org_id).await?;
     let row = get_kafka_ingress_row(&state.db, contract_id)
         .await?
         .ok_or_else(|| {
@@ -444,12 +447,35 @@ pub async fn get_kafka_ingress_handler(
     Ok(Json(row_to_response(row, None)))
 }
 
+/// Kafka/Confluent ingress is off unless `KAFKA_ENABLED=true` (or `1`).
+/// The Confluent Cloud account is closed (2026-10-14); with it on, every
+/// restored consumer sat in a reconnect loop.
+pub fn kafka_enabled() -> bool {
+    kafka_enabled_from(std::env::var("KAFKA_ENABLED").ok().as_deref())
+}
+
+fn kafka_enabled_from(v: Option<&str>) -> bool {
+    matches!(v.map(str::trim), Some(s) if s == "1" || s.eq_ignore_ascii_case("true"))
+}
+
 pub async fn enable_kafka_ingress_handler(
     State(state): State<Arc<AppState>>,
     Path(contract_id): Path<Uuid>,
     req: axum::extract::Request,
 ) -> AppResult<(StatusCode, Json<KafkaIngressResponse>)> {
     let org_id = crate::org_id_from_req(&req);
+    // Owner-only: a caller whose org does not own the contract gets 404 (checked before the plan, so a
+    // foreign org never learns more than "not found").
+    crate::require_owner(&state, contract_id, org_id).await?;
+    // Streaming is Enterprise-only (available on request). Read/disable stay open.
+    crate::plan::require_streaming_plan(&state, org_id).await?;
+
+    if !kafka_enabled() {
+        return Err(AppError::BadRequest(
+            "Kafka ingress is currently unavailable on this deployment. Use POST /v1/ingest instead."
+                .to_string(),
+        ));
+    }
 
     if let Some(row) = get_kafka_ingress_row(&state.db, contract_id).await? {
         return Ok((StatusCode::OK, Json(row_to_response(row, None))));
@@ -502,8 +528,11 @@ pub async fn enable_kafka_ingress_handler(
 
 pub async fn disable_kafka_ingress_handler(
     State(state): State<Arc<AppState>>,
+    crate::OrgId(org_id): crate::OrgId,
     Path(contract_id): Path<Uuid>,
 ) -> AppResult<StatusCode> {
+    // Owner-only: a caller whose org does not own the contract gets 404.
+    crate::require_owner(&state, contract_id, org_id).await?;
     let row = get_kafka_ingress_row(&state.db, contract_id)
         .await?
         .ok_or_else(|| {
@@ -552,5 +581,21 @@ fn row_to_response(row: KafkaIngressRow, plaintext_secret: Option<String>) -> Ka
         topic_quarantine: topic_quarantine(contract_id),
         partition_count: row.partition_count,
         created_at: row.created_at,
+    }
+}
+
+#[cfg(test)]
+mod kafka_enabled_tests {
+    use super::kafka_enabled_from;
+
+    #[test]
+    fn kafka_is_off_unless_explicitly_enabled() {
+        assert!(!kafka_enabled_from(None));
+        assert!(!kafka_enabled_from(Some("")));
+        assert!(!kafka_enabled_from(Some("false")));
+        assert!(!kafka_enabled_from(Some("0")));
+        assert!(kafka_enabled_from(Some("true")));
+        assert!(kafka_enabled_from(Some("TRUE")));
+        assert!(kafka_enabled_from(Some("1")));
     }
 }

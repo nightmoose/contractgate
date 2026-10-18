@@ -204,7 +204,7 @@ With `DASHBOARD_ORIGIN` extended on **staging** Fly to include
 `https://aischemagate.com,https://aischemagate.dev`:
 
 ```bash
-curl -i -X OPTIONS "https://staging-contractgate-api.fly.dev/egress/<cid>" \
+curl -i -X OPTIONS "https://contractgate-api-staging.fly.dev/egress/<cid>" \
      -H "Origin: https://aischemagate.com" \
      -H "Access-Control-Request-Method: POST" \
      -H "Access-Control-Request-Headers: x-api-key,content-type"

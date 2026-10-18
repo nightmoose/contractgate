@@ -24,7 +24,7 @@
 //! | All strings match UUID shape       | `pattern: ^[0-9a-f]{8}-…$`     |
 //! | All strings match ISO-8601 date    | `type: date` (RFC-044)          |
 //! | All strings match ISO-8601 dt      | `pattern: ^\d{4}-…T\d{2}:…$`   |
-//! | ≤8 distinct strings, each seen ~2× | `enum: [...]` (needs ≥ 5 values)|
+//! | 2–8 distinct strings, each seen ~2× | `enum: [...]` (needs ≥ 5 values)|
 //!
 //! Bounds are kept loose on purpose: a draft inferred from a handful of
 //! samples must accept the next real event, so no exact min/max, no exact
@@ -177,6 +177,7 @@ fn infer_field(name: &str, values: &[&Value], total_samples: usize) -> FieldDefi
         properties: None,
         items: None,
         transform: None,
+        format: None,
     };
 
     match &field_type {
@@ -360,7 +361,10 @@ fn refine_string(def: &mut FieldDefinition, strings: &[&str]) {
     // twice on average; otherwise ids, emails and names seen once each
     // became one-value enums (2026-10-14 E2E: S3).
     let distinct: HashSet<&&str> = strings.iter().collect();
+    // A field whose samples all share one value is a constant, not an enum
+    // (R-X2): a one-value enum rejects every other value the field may take.
     if strings.len() >= ENUM_MIN_OBSERVATIONS
+        && distinct.len() >= 2
         && distinct.len() <= ENUM_MAX_DISTINCT
         && distinct.len() * 2 <= strings.len()
     {
@@ -582,6 +586,31 @@ mod tests {
         assert!(run_infer("t", ids).ontology.entities[0]
             .allowed_values
             .is_none());
+    }
+
+    /// R-X2: ten identical values are a constant, not a one-value enum, and
+    /// the inferred contract still accepts its own samples.
+    #[test]
+    fn single_distinct_value_is_not_an_enum() {
+        let samples: Vec<Value> = (0..10)
+            .map(|i| json!({"id": i, "region": "us-east-1"}))
+            .collect();
+        let c = run_infer("t", samples.clone());
+        let f = c
+            .ontology
+            .entities
+            .iter()
+            .find(|f| f.name == "region")
+            .unwrap();
+        assert!(f.allowed_values.is_none(), "constant became an enum");
+        assert_accepts_own_samples(samples);
+        // Two repeated values still infer an enum.
+        let two: Vec<Value> = (0..10)
+            .map(|i| json!({"s": if i % 2 == 0 { "a" } else { "b" }}))
+            .collect();
+        assert!(run_infer("t", two).ontology.entities[0]
+            .allowed_values
+            .is_some());
     }
 
     #[test]

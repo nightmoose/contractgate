@@ -109,6 +109,27 @@ pub async fn revoke_publication(
     publication_ref: &str,
     org_id: Option<Uuid>,
 ) -> AppResult<PublicationRow> {
+    // Distinguish unknown (404), another org's (403) and already revoked (409).
+    let existing = get_publication(pool, publication_ref).await?;
+    if let Some(caller) = org_id {
+        if existing.org_id != Some(caller) {
+            return Err(AppError::Forbidden(format!(
+                "publication '{publication_ref}' belongs to another organization"
+            )));
+        }
+    }
+    if existing.revoked_at.is_some() {
+        return Err(AppError::NotFound(format!(
+            "publication '{publication_ref}' is already revoked"
+        )));
+    }
+    // S-U1: a publication that has been used can't be unpublished. "Used" =
+    // imported at least once (soft-deleted imports count). Previews aren't
+    // recorded anywhere today, so they don't count yet.
+    let imports = count_imports(pool, publication_ref).await?;
+    if let Some(reason) = unpublish_block_reason(imports) {
+        return Err(AppError::Conflict(reason));
+    }
     let row = sqlx::query_as::<_, PublicationRow>(
         r#"
         UPDATE contract_publications
@@ -137,8 +158,9 @@ pub async fn revoke_publication(
     .await
     .db_op("revoke_publication")?
     .ok_or_else(|| {
-        AppError::BadRequest(format!(
-            "publication '{}' not found, already revoked, or not owned by this org",
+        // Lost a race with a concurrent revoke.
+        AppError::NotFound(format!(
+            "publication '{}' is already revoked",
             publication_ref
         ))
     })?;
@@ -171,9 +193,63 @@ pub async fn get_publication(pool: &PgPool, publication_ref: &str) -> AppResult<
     .fetch_optional(pool)
     .await
     .db_op("get_publication")?
-    .ok_or_else(|| AppError::BadRequest(format!("publication '{}' not found", publication_ref)))?;
+    .ok_or_else(|| AppError::NotFound(format!("publication '{}' not found", publication_ref)))?;
 
     Ok(row)
+}
+
+/// Imports of a publication, including soft-deleted importing contracts.
+pub async fn count_imports(pool: &PgPool, publication_ref: &str) -> AppResult<i64> {
+    sqlx::query_scalar::<_, i64>("SELECT count(*) FROM contracts WHERE imported_from_ref = $1")
+        .bind(publication_ref)
+        .fetch_one(pool)
+        .await
+        .db_op("count_publication_imports")
+}
+
+/// Why a publication with `imports` imports can't be unpublished, if it can't.
+pub fn unpublish_block_reason(imports: i64) -> Option<String> {
+    (imports > 0).then(|| {
+        format!(
+            "this publication has been imported ({imports} time{}); publish a new version instead \
+             (promote a new version and publish it)",
+            if imports == 1 { "" } else { "s" }
+        )
+    })
+}
+
+/// One of the caller org's live publications (no link token, no YAML).
+#[derive(Debug, Clone, serde::Serialize, sqlx::FromRow)]
+pub struct MyPublicationRow {
+    pub publication_ref: String,
+    pub contract_id: Uuid,
+    pub contract_name: String,
+    pub contract_version: String,
+    pub visibility: String,
+    pub published_at: chrono::DateTime<chrono::Utc>,
+    /// Imports so far (soft-deleted included). > 0 → can't unpublish.
+    pub import_count: i64,
+}
+
+pub async fn list_org_publications(
+    pool: &PgPool,
+    org_id: Uuid,
+) -> AppResult<Vec<MyPublicationRow>> {
+    sqlx::query_as::<_, MyPublicationRow>(
+        r#"
+        SELECT p.ref AS publication_ref, p.contract_id, p.contract_name, p.contract_version,
+               p.visibility, p.published_at,
+               (SELECT count(*) FROM contracts c WHERE c.imported_from_ref = p.ref) AS import_count
+        FROM contract_publications p
+        WHERE p.org_id = $1 AND p.revoked_at IS NULL
+        ORDER BY published_at DESC
+        LIMIT 200
+        "#,
+    )
+    .bind(org_id)
+    .fetch_all(pool)
+    .await
+    .db_op("list_org_publications")
 }
 
 /// Lightweight row for public catalog listings — omits yaml_content for efficiency.
@@ -225,6 +301,20 @@ pub async fn import_published_contract(
     let parsed: Contract = serde_yaml::from_str(&pub_row.yaml_content)
         .map_err(|e| AppError::InvalidContractYaml(e.to_string()))?;
 
+    // S-I3: keep the source version's lifecycle. A published stable version
+    // imports as stable (same number); anything else stays a draft.
+    let source_state: Option<String> =
+        sqlx::query_scalar("SELECT state FROM contract_versions WHERE id = $1")
+            .bind(pub_row.version_id)
+            .fetch_optional(pool)
+            .await
+            .db_op("import_published:source_state")?;
+    let import_state = if source_state.as_deref() == Some("stable") {
+        "stable"
+    } else {
+        "draft"
+    };
+
     let compliance_mode = parsed.compliance_mode;
     let egress_leakage_mode = parsed.egress_leakage_mode.as_str();
 
@@ -258,9 +348,11 @@ pub async fn import_published_contract(
     let version_row = sqlx::query_as::<_, ContractVersionRow>(
         r#"
         INSERT INTO contract_versions
-            (id, contract_id, version, state, yaml_content, created_at,
+            (id, contract_id, version, state, yaml_content, created_at, promoted_at,
              compliance_mode, egress_leakage_mode, import_source, requires_review)
-        VALUES ($1, $2, $3, 'draft', $4, NOW(), $5, $6, 'publication', FALSE)
+        VALUES ($1, $2, $3, $7, $4, NOW(),
+                CASE WHEN $7 = 'stable' THEN NOW() END,
+                $5, $6, 'publication', FALSE)
         RETURNING id, contract_id, version, state, yaml_content,
                   created_at, promoted_at, deprecated_at, compliance_mode,
                   egress_leakage_mode, import_source, requires_review
@@ -272,6 +364,7 @@ pub async fn import_published_contract(
     .bind(&pub_row.yaml_content)
     .bind(compliance_mode)
     .bind(egress_leakage_mode)
+    .bind(import_state)
     .fetch_one(&mut *tx)
     .await
     .db_op("import_published:insert_version")?;
@@ -283,16 +376,10 @@ pub async fn import_published_contract(
     // collaboration surface without a separate invite.
     if pub_row.visibility == "org" {
         if let Some(importer_org) = org_id {
-            // granted_by = the publication's owning org (or the importer if unknown).
-            let granting_org = pub_row.org_id.unwrap_or(importer_org);
+            // Grant on the published contract id; granted_by is that
+            // contract's owner org (no fallback to the importer).
             // Best-effort — don't fail the import if this insert errors.
-            let _ = ensure_viewer_collaborator(
-                pool,
-                &pub_row.contract_name,
-                importer_org,
-                granting_org,
-            )
-            .await;
+            let _ = ensure_viewer_collaborator(pool, pub_row.contract_id, importer_org).await;
         }
     }
 
@@ -434,6 +521,15 @@ mod tests {
     #[test]
     fn is_revoked_true_when_revoked_at_set() {
         assert!(publication_row(true).is_revoked());
+    }
+
+    #[test]
+    fn unpublish_allowed_only_when_never_imported() {
+        assert!(unpublish_block_reason(0).is_none());
+        let one = unpublish_block_reason(1).unwrap();
+        assert!(one.contains("has been imported (1 time)"));
+        assert!(one.contains("publish a new version instead"));
+        assert!(unpublish_block_reason(3).unwrap().contains("3 times"));
     }
 
     #[test]

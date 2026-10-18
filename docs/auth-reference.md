@@ -275,3 +275,56 @@ browser or has expired"). Other failures land on
    primary org membership (authoritative).
 3. **Dev mode** (`CONTRACTGATE_DEV_NO_AUTH=1`, local only) — no auth; `x-org-id`
    header trusted for org context. Never enabled in production.
+
+## Account self-service (2026-10-14)
+
+- `/account` → **Profile & security**: change name (`user_metadata.full_name`),
+  change password (`supabase.auth.updateUser`), delete account.
+- **Delete account**: `POST /api/account/delete` with `{"confirm": "<your email>"}`.
+  Calls `delete_user_account(uuid)` (migration 040, service role only): 409 if
+  you are the last owner of an org that has other members; otherwise purges
+  orgs where you are the only member, clears `invited_by`-style references,
+  cancels those orgs' Stripe subscriptions, then deletes the auth user.
+- Signed-out `/account` redirects to `/auth/login?next=/account`; sign-out
+  hard-navigates to `/auth/login`.
+- `/auth/reset?error=link_invalid|otp_expired|…` always shows "This reset link
+  has expired or was already used", even if a session exists.
+- Unknown top-level paths return a real 404 (not a 307 to sign-in).
+- Response headers: `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`,
+  enforced CSP `frame-ancestors 'none'; object-src 'none'; base-uri 'self'`,
+  plus a full `Content-Security-Policy-Report-Only` allow-list (see
+  `dashboard/next.config.ts`).
+
+## `GET /me` (2026-10-14)
+
+Who am I. Also served at `GET /v1/me`. Works with an API key (`x-api-key`)
+or a dashboard session (`Authorization: Bearer <jwt>`).
+
+```json
+{
+  "org_id": "7d0c…",
+  "org_name": "acme",
+  "plan": "growth",
+  "plan_display": "Pro",
+  "paid_features": true,
+  "auth": "api_key",
+  "api_key_id": "b41e…",
+  "monthly_event_limit": 25000000,
+  "rate_limit_rps": 100,
+  "rate_limit_burst": 200
+}
+```
+
+- `plan` is the org's stored plan, which sets the key's limits; `rate_limit_*` are
+  the key's own override when set, else the plan default.
+- `paid_features` is true when passed-event export, Connect Fivetran, and
+  payload storage are allowed. A paid plan (`growth`, `aisg_pro`, `enterprise`)
+  is true. `CONTRACTGATE_SELF_HOSTED` set to `1`, `true`, or `TRUE` makes it
+  true for every plan, including `free` and `aisg_free`. The stored `plan`,
+  `plan_display`, monthly limit, and default rate limit stay on the org row.
+  A self-hosted free org still reports `"plan": "free"` and
+  `"paid_features": true`.
+- `auth` is `api_key` or `session`; `api_key_id` is `null` for sessions.
+- No emails or user ids are returned. `org_name` is `null` if the stored name
+  looks like an email.
+- `401` on missing or invalid credentials.

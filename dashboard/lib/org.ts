@@ -54,9 +54,15 @@ export function isFreePlan(plan: PlanTier): boolean {
   return plan === "free" || plan === "aisg_free";
 }
 
+/**
+ * Plans for which `isPaidPlan` is true. `paidPlansPhrase` is built from this
+ * same list (DataContractGate Pro, AISchemaGate Pro, Enterprise).
+ */
+const PAID_PLANS: readonly PlanTier[] = ["growth", "aisg_pro", "enterprise"];
+
 /** True for plans billed through Stripe or managed (enterprise). */
 export function isPaidPlan(plan: PlanTier): boolean {
-  return plan === "growth" || plan === "aisg_pro" || plan === "enterprise";
+  return PAID_PLANS.includes(plan);
 }
 
 /** Name shown to the customer. */
@@ -65,7 +71,7 @@ export function planDisplayName(plan: PlanTier): string {
     case "free": return "Free";
     case "growth": return "Pro";
     case "enterprise": return "Enterprise";
-    case "aisg_free": return "AISchemaGate Developer";
+    case "aisg_free": return "Free";
     case "aisg_pro": return "AISchemaGate Pro";
   }
 }
@@ -73,6 +79,15 @@ export function planDisplayName(plan: PlanTier): string {
 /** Name of the self-serve paid plan a free org upgrades to (same for both products). */
 export function upgradePlanName(_plan: PlanTier): string {
   return "Pro";
+}
+
+/** Display names of every plan `isPaidPlan` accepts, e.g. "Pro, AISchemaGate Pro, or Enterprise". */
+export function paidPlansPhrase(): string {
+  const names = PAID_PLANS.map(planDisplayName);
+  if (names.length === 0) return "";
+  if (names.length === 1) return names[0];
+  if (names.length === 2) return `${names[0]} or ${names[1]}`;
+  return `${names.slice(0, -1).join(", ")}, or ${names[names.length - 1]}`;
 }
 
 export interface OrgInfo {

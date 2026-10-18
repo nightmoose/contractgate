@@ -1,6 +1,6 @@
 # REVIEW 2026-07-09 — Maintenance Sweep
 
-Scope: full repo scan (src/, dashboard/, docs/, supabase/) + live Supabase advisors + prod migration table. No code changed. Branch at time of review: `RFC-080_GrokPass`.
+Scope: full repo scan (src/, dashboard/, docs/, supabase/) + live Supabase advisors + prod migration table. No code changed. Branch at time of review: the RFC-080 review branch.
 
 ---
 
@@ -17,7 +17,7 @@ Repo has files `001–026`. Two-way drift:
 This is the exact failure mode behind the 2026-06-05 silent Stripe webhook 23514. Action: dump prod schema, diff against concatenated migration files, commit missing 027–029 files, backfill the migration table so CI file-count checks mean something.
 
 > **CORRECTION (same day):** the review above ran against a stale checkout
-> (`RFC-080_GrokPass` / stale local main). origin/main already had files
+> (the RFC-080 review branch / stale local main). origin/main already had files
 > 027–029 (027 = RFC-056 api_keys server-side issuance, 028 = Stripe billing
 > incl. `orgs.plan_status`, 029 = stripe_failed_events). Only `early_access`
 > truly lacked a file (now `030_early_access.sql`).
@@ -65,11 +65,11 @@ Mechanical refactors, zero behavior change, each one PR-sized.
 ## P2 — hygiene
 
 ### 7. RFC bookkeeping is stale
-- `docs/rfcs/` stops at **058**, but RFCs through 075 shipped and the branch is `RFC-080_GrokPass`. Files 059+ were never committed (or live on other branches).
+- `docs/rfcs/` stops at **058**, but RFCs through 075 shipped and the branch is the RFC-080 review branch. Files 059+ were never committed (or live on other branches).
 - 15+ RFC files still say **Draft** for work that shipped (049–055 closed in the launch-readiness pass; 034/035/046 shipped per maintenance log). Batch status update.
 
 ### 8. Root clutter
-`REVIEW-*.md`, `BROWSER_TEST_REPORT-*.md`, `Grok_Suggestions.txt` (→ `docs/`), `mri_*.yaml` (→ `contracts/`), and a client-specific benefits PDF (since removed).
+`REVIEW-*.md`, `BROWSER_TEST_REPORT-*.md`, `agent-suggestions.txt` (→ `docs/`), `mri_*.yaml` (→ `contracts/`), and a client-specific benefits PDF (since removed).
 
 ---
 

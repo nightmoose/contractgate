@@ -150,6 +150,10 @@ pub struct EgressResponse {
     /// RFC-030: the egress leakage mode in effect for this request.
     pub egress_leakage_mode: &'static str,
     pub resolved_version: String,
+    /// The pin exactly as the caller sent it, present only when it resolved
+    /// to a differently written stored version (e.g. `@1` → `1.0`).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub requested_version: Option<String>,
     /// RFC-030: cleaned payload — post-transform (RFC-004) and post-leakage
     /// (RFC-030) — returned to the caller.  Raw PII never appears here.
     ///
@@ -396,7 +400,12 @@ pub async fn egress_handler(
 
     // --- Fetch version row (check deprecated) --------------------------------
     let version_row =
-        storage::get_version(&state.db, contract_id, &resolved_version, org_id).await?;
+        storage::get_version_for_pin(&state.db, contract_id, &resolved_version, org_id).await?;
+    // A normalised pin (`1.0.0` for a stored `1.0`) continues as the stored string;
+    // the caller's spelling is echoed back as `requested_version`.
+    let requested_version =
+        (resolved_version != version_row.version).then(|| resolved_version.clone());
+    let resolved_version = version_row.version.clone();
 
     tracing::debug!(
         contract_id = %contract_id,
@@ -424,10 +433,15 @@ pub async fn egress_handler(
     // Egress does not support deprecated-version traffic (it makes no sense
     // to certify outbound data against a deprecated contract).
     if version_row.state == crate::contract::VersionState::Deprecated {
-        return Err(AppError::BadRequest(format!(
-            "Version {} on contract {} is deprecated; pin a stable version for egress",
-            resolved_version, contract_id,
-        )));
+        // D1: same 422 + code as ingest; nothing is forwarded.
+        let latest = storage::get_latest_stable_version(&state.db, contract_id)
+            .await?
+            .map(|v| v.version);
+        return Ok(deprecated_pin_response(
+            &resolved_version,
+            contract_id,
+            latest,
+        ));
     }
 
     // --- Source IP ----------------------------------------------------------
@@ -563,6 +577,7 @@ pub async fn egress_handler(
         disposition: query.disposition.as_str(),
         egress_leakage_mode: compiled.contract.egress_leakage_mode.as_str(),
         resolved_version,
+        requested_version,
         payload,
         outcomes,
     };
@@ -582,14 +597,7 @@ pub async fn egress_handler(
 // ---------------------------------------------------------------------------
 
 fn parse_egress_path(raw: &str) -> AppResult<(Uuid, Option<String>)> {
-    let (uuid_part, path_version) = match raw.split_once('@') {
-        Some((id, v)) if !v.is_empty() => (id, Some(v.to_string())),
-        Some((id, _)) => (id, None),
-        None => (raw, None),
-    };
-    let uuid = Uuid::parse_str(uuid_part)
-        .map_err(|_| AppError::BadRequest(format!("invalid contract_id: {uuid_part}")))?;
-    Ok((uuid, path_version))
+    crate::version_pin::parse_pinned_id(raw)
 }
 
 // ---------------------------------------------------------------------------
@@ -650,6 +658,7 @@ mod tests {
             properties: None,
             items: None,
             transform: None,
+            format: None,
         }
     }
 
@@ -1044,5 +1053,37 @@ mod tests {
         // Verify the &'static str values used in AuditEntryInsert / QuarantineEventInsert.
         assert_eq!("egress", "egress");
         assert_eq!("ingress", "ingress");
+    }
+}
+
+/// D1: deprecated pin on egress — same status, code and message as ingest.
+fn deprecated_pin_response(
+    version: &str,
+    contract_id: Uuid,
+    latest: Option<String>,
+) -> axum::response::Response {
+    let body = serde_json::json!({
+        "error": crate::version_pin::deprecated_message(version, contract_id, "nothing was forwarded"),
+        "status": StatusCode::UNPROCESSABLE_ENTITY.as_u16(),
+        "code": crate::version_pin::DEPRECATED_CODE,
+        "deprecated_version": version,
+        "latest_stable": latest,
+    });
+    (StatusCode::UNPROCESSABLE_ENTITY, Json(body)).into_response()
+}
+
+#[cfg(test)]
+mod deprecated_pin_tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn egress_deprecated_pin_is_422_with_code() {
+        let r = deprecated_pin_response("1.0", Uuid::nil(), Some("2.0".into()));
+        assert_eq!(r.status(), StatusCode::UNPROCESSABLE_ENTITY);
+        let b = axum::body::to_bytes(r.into_body(), 4096).await.unwrap();
+        let v: serde_json::Value = serde_json::from_slice(&b).unwrap();
+        assert_eq!(v["code"], "contract_version_deprecated");
+        assert_eq!(v["deprecated_version"], "1.0");
+        assert!(v["error"].as_str().unwrap().contains("deprecated"));
     }
 }

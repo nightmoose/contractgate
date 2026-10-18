@@ -189,6 +189,7 @@ fn avro_field_to_definition(field: &Value) -> Result<FieldDefinition, String> {
         properties,
         items,
         transform: None,
+        format: None,
     })
 }
 
@@ -236,6 +237,7 @@ fn resolve_avro_type(type_val: &Value) -> AvroTypeResolution {
                         properties: item_props,
                         items: item_items,
                         transform: None,
+                        format: None,
                     };
                     Ok((
                         FieldType::Array,

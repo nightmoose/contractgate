@@ -585,9 +585,9 @@ function PerContractStorageControls({
   async function purge() {
     const ok = confirm(
       `Purge stored event bodies for "${contract.name}"?\n\n` +
-        "This removes the source body from every audit and quarantine row for this " +
-        "contract. Audit history and violations are kept; affected events can no " +
-        "longer be replayed. This cannot be undone."
+        "This removes the source body from every audit, quarantine, and passed-event " +
+        "row for this contract. Rows, audit history, and violations are kept; " +
+        "affected events can no longer be replayed. This cannot be undone."
     );
     if (!ok) return;
     setPurging(true);
@@ -596,7 +596,7 @@ function PerContractStorageControls({
     try {
       const r = await purgeContractBodies(contract.id);
       setMsg(
-        `Purged ${r.quarantine_bodies_redacted} quarantine + ${r.audit_bodies_redacted} audit bodies.`
+        `Purged ${r.quarantine_bodies_redacted} quarantine + ${r.audit_bodies_redacted} audit + ${r.forwarded_bodies_redacted} forwarded bodies.`
       );
       onPurged();
     } catch (e) {

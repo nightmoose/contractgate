@@ -107,3 +107,11 @@ key rotation near-instant rather than waiting for the next 10-minute tick.
 
 If neither variable produces a valid URL, JWT auth is disabled and only
 `API_KEY` / DB-backed API keys are accepted.
+
+## Retired host
+
+When `LEGACY_API_HOSTS` is set (prod: `contractgate-api.fly.dev`), every
+request whose `Host` is a legacy name — including `/health` and `/ready` —
+gets a 308 to `https://api.datacontractgate.com` (R-S3). Fly's own checks
+(`[checks.ready]` in `fly.toml`) call the machine's internal address, whose
+`Host` is not a legacy name, so they keep getting 200.

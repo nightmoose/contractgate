@@ -131,6 +131,34 @@ pub enum AppError {
     #[error("Not found: {0}")]
     NotFound(String),
 
+    /// Request conflicts with the resource's current state.  409.
+    #[error("{0}")]
+    Conflict(String),
+
+    /// Authenticated, but not allowed to act on this resource.  403.
+    #[error("Forbidden: {0}")]
+    Forbidden(String),
+
+    /// Fivetran rejected the API key or secret. 401. The message is fixed
+    /// and never includes the key, the secret, or the minted ContractGate key.
+    #[error("Fivetran rejected the API key")]
+    FivetranUnauthorized,
+
+    /// Fivetran returned another error. 502. The message is already redacted.
+    #[error("{0}")]
+    FivetranUpstream(String),
+
+    /// The resource existed but is no longer valid to resume from.  410.
+    /// Used when a passed-event cursor is older than plan retention; the
+    /// message tells the caller to drop the cursor and re-sync.
+    #[error("{0}")]
+    Gone(String),
+
+    /// Link/org-visibility publication fetched or imported without the right
+    /// `link_token` (S-P2). 403, distinct from the API-key 401.
+    #[error("{0}")]
+    LinkToken(String),
+
     #[error("Database error: {0}")]
     Database(#[from] sqlx::Error),
 
@@ -138,6 +166,11 @@ pub enum AppError {
     /// parsing, bad enum values read back from the DB, etc.
     #[error("Internal error: {0}")]
     Internal(String),
+
+    /// Deployment configuration is missing or invalid. 500. The message is
+    /// safe to return: it names a setting, never a secret or a request value.
+    #[error("{0}")]
+    Misconfigured(String),
 
     /// Upstream HTTP fetch timed out (infer/url, public-catalog export).  504.
     #[error("Gateway timeout: {0}")]
@@ -220,11 +253,25 @@ impl IntoResponse for AppError {
             }
             AppError::OdcsReviewRequired { .. } => (StatusCode::CONFLICT, self.to_string()),
             AppError::NotFound(_) => (StatusCode::NOT_FOUND, self.to_string()),
+            AppError::Forbidden(_) => (StatusCode::FORBIDDEN, self.to_string()),
+            AppError::FivetranUnauthorized => (StatusCode::UNAUTHORIZED, self.to_string()),
+            AppError::FivetranUpstream(_) => (StatusCode::BAD_GATEWAY, self.to_string()),
+            AppError::Gone(_) => (StatusCode::GONE, self.to_string()),
+            AppError::Conflict(_) => (StatusCode::CONFLICT, self.to_string()),
+            AppError::LinkToken(_) => (StatusCode::FORBIDDEN, self.to_string()),
 
-            AppError::Database(e) => {
-                tracing::error!("Database error: {:?}", e);
-                (StatusCode::INTERNAL_SERVER_ERROR, "Database error".into())
+            // An unknown org id (only reachable via the dev/no-auth
+            // `x-org-id` header) is a client error, not a 500.
+            AppError::Database(e)
+                if e.as_database_error().and_then(|d| d.constraint())
+                    == Some("contracts_org_id_fkey") =>
+            {
+                (
+                    StatusCode::BAD_REQUEST,
+                    "unknown org: the `x-org-id` org does not exist".into(),
+                )
             }
+            AppError::Database(e) => database_failure(e),
             AppError::Internal(msg) => {
                 tracing::error!("Internal error: {}", msg);
                 (
@@ -232,16 +279,28 @@ impl IntoResponse for AppError {
                     "Internal server error".into(),
                 )
             }
+            AppError::Misconfigured(msg) => {
+                tracing::error!("configuration error: {msg}");
+                (StatusCode::INTERNAL_SERVER_ERROR, msg.clone())
+            }
             AppError::GatewayTimeout(_) => (StatusCode::GATEWAY_TIMEOUT, self.to_string()),
             AppError::UnprocessableEntity(_) => {
                 (StatusCode::UNPROCESSABLE_ENTITY, self.to_string())
             }
         };
 
-        let body = Json(json!({
-            "error": message,
-            "status": status.as_u16(),
-        }));
+        let body = if matches!(self, AppError::DeprecatedVersionPinned { .. }) {
+            Json(json!({
+                "error": message,
+                "status": status.as_u16(),
+                "code": "contract_version_deprecated",
+            }))
+        } else {
+            Json(json!({
+                "error": message,
+                "status": status.as_u16(),
+            }))
+        };
 
         (status, body).into_response()
     }
@@ -253,14 +312,47 @@ pub type AppResult<T> = Result<T, AppError>;
 // DB error context helper
 // ---------------------------------------------------------------------------
 
-/// Extension trait to attach an operation label to a `sqlx::Error` before it
-/// is propagated as `AppError::Database`.  Bare `?` on a `sqlx::Result`
-/// preserves the underlying SQL detail (constraint, query, etc.) but loses
-/// the application context — operators reading prod logs see "Database
-/// error" without knowing whether it came from a contract create, an ingest
-/// read, or an audit write.
-///
-/// Use:
+/// Pool, lock, and statement timeouts are 504 and log the route plus the
+/// stage. Every other database error stays a 500.
+fn database_failure(e: &sqlx::Error) -> (StatusCode, String) {
+    if let Some(wait) = crate::request_limits::db_timeout(e) {
+        tracing::error!(
+            route = %crate::request_limits::current_route(),
+            stage = wait.stage,
+            error = %e,
+            "database wait timed out"
+        );
+        return (StatusCode::GATEWAY_TIMEOUT, wait.message.to_string());
+    }
+    tracing::error!(
+        route = %crate::request_limits::current_route(),
+        stage = %crate::request_limits::current_stage(),
+        "Database error: {:?}",
+        e
+    );
+    (StatusCode::INTERNAL_SERVER_ERROR, database_error_message(e))
+}
+
+fn database_error_message(e: &sqlx::Error) -> String {
+    let Some(db) = e.as_database_error() else {
+        return "Database error".into();
+    };
+    let kind = match db.code().as_deref() {
+        Some("23503") => "a referenced record is missing (foreign key violation)",
+        Some("23505") => "a record with the same key already exists (unique violation)",
+        Some("23514") => "a value failed a database check (check violation)",
+        Some("23502") => "a required value is missing (not-null violation)",
+        _ => return "Database error".into(),
+    };
+    match db.constraint() {
+        Some(c) => format!("Database error: {kind} on constraint {c}"),
+        None => format!("Database error: {kind}"),
+    }
+}
+
+/// Attach an operation label to a `sqlx::Error` before it becomes
+/// `AppError::Database`. The error line includes the operation, the route,
+/// and the stage (`pool_acquire`, `lock_wait`, `db_statement`, or `handler`).
 ///
 /// ```ignore
 /// let row = sqlx::query_as::<_, Row>("...")
@@ -268,9 +360,6 @@ pub type AppResult<T> = Result<T, AppError>;
 ///     .await
 ///     .db_op("get_contract_identity")?;
 /// ```
-///
-/// The HTTP status mapping is unchanged (still `AppError::Database` → 500);
-/// only the `tracing::error!` line in the logs gains the operation label.
 pub trait DbOpContext<T> {
     fn db_op(self, op: &'static str) -> AppResult<T>;
 }
@@ -278,7 +367,14 @@ pub trait DbOpContext<T> {
 impl<T> DbOpContext<T> for Result<T, sqlx::Error> {
     fn db_op(self, op: &'static str) -> AppResult<T> {
         self.map_err(|e| {
-            tracing::error!("Database error during {}: {:?}", op, e);
+            let stage = crate::request_limits::db_timeout(&e)
+                .map(|wait| wait.stage)
+                .unwrap_or_else(crate::request_limits::current_stage);
+            tracing::error!(
+                route = %crate::request_limits::current_route(),
+                stage,
+                "Database error during {op}: {e:?}"
+            );
             AppError::Database(e)
         })
     }
@@ -318,6 +414,16 @@ mod tests {
         let parsed: serde_json::Value = serde_json::from_slice(&body).unwrap();
         assert_eq!(parsed["status"], 429);
         assert_eq!(parsed["retry_after_ms"], 1_250);
+    }
+
+    #[tokio::test]
+    async fn pool_acquire_timeout_is_504() {
+        let resp = AppError::Database(sqlx::Error::PoolTimedOut).into_response();
+        assert_eq!(resp.status(), StatusCode::GATEWAY_TIMEOUT);
+        let body = to_bytes(resp.into_body(), 1024).await.unwrap();
+        let parsed: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(parsed["status"], 504);
+        assert_eq!(parsed["error"], "timed out acquiring a database connection");
     }
 }
 
@@ -478,8 +584,22 @@ mod json_error_body_tests {
 /// Unset (the default) disables the redirect, so it can be switched on with a
 /// Fly secret once every client has moved off the old host.
 pub const LEGACY_API_HOSTS_ENV: &str = "LEGACY_API_HOSTS";
-/// Where legacy-host requests go. Defaults to the public API origin.
+/// Where legacy-host requests go. A blank value is treated as unset.
+/// Unset still redirects to the public production origin, because this
+/// middleware only runs for a retired host. Connect Fivetran does not use
+/// that fallback: it fails until this variable is set for the deployment.
 pub const CANONICAL_API_ORIGIN_ENV: &str = "CANONICAL_API_ORIGIN";
+
+/// Production origin used only by the retired-host redirect.
+const LEGACY_REDIRECT_ORIGIN: &str = "https://api.datacontractgate.com";
+
+fn legacy_redirect_origin() -> String {
+    std::env::var(CANONICAL_API_ORIGIN_ENV)
+        .ok()
+        .map(|value| value.trim().trim_end_matches('/').to_string())
+        .filter(|value| !value.is_empty())
+        .unwrap_or_else(|| LEGACY_REDIRECT_ORIGIN.to_string())
+}
 
 /// Middleware: 308 requests that arrive on a legacy host to the same path and
 /// query on the canonical origin. 308 keeps the method and body, so old POST
@@ -497,21 +617,22 @@ pub async fn redirect_legacy_hosts(
         .get(axum::http::header::HOST)
         .and_then(|v| v.to_str().ok())
         .map(|h| h.split(':').next().unwrap_or(h).to_ascii_lowercase());
-    let path = req.uri().path();
     let is_legacy = host.is_some_and(|h| {
         hosts
             .split(',')
             .map(str::trim)
             .any(|l| !l.is_empty() && l.eq_ignore_ascii_case(&h))
     });
-    if !is_legacy || path == "/health" || path == "/ready" {
+    // R-S3: /health and /ready redirect too on the legacy *public* host (they
+    // returned 200 + ACAO * there). Fly's checks (fly.toml `[checks.ready]`)
+    // hit the machine's internal address, whose Host is never the legacy
+    // name, so they are unaffected.
+    if !is_legacy {
         return next.run(req).await;
     }
-    let origin = std::env::var(CANONICAL_API_ORIGIN_ENV)
-        .unwrap_or_else(|_| "https://api.datacontractgate.com".to_string());
+    let origin = legacy_redirect_origin();
     let target = format!(
-        "{}{}",
-        origin.trim_end_matches('/'),
+        "{origin}{}",
         req.uri()
             .path_and_query()
             .map(|p| p.as_str())
@@ -570,11 +691,47 @@ mod legacy_host_tests {
             "https://api.datacontractgate.com/contracts?limit=5"
         );
 
+        // A blank secret is the same as unset for this redirect only.
+        std::env::set_var(CANONICAL_API_ORIGIN_ENV, "  ");
+        let r = app()
+            .oneshot(req("contractgate-api.fly.dev", "/contracts?limit=5"))
+            .await
+            .unwrap();
+        assert_eq!(
+            r.headers()["location"],
+            "https://api.datacontractgate.com/contracts?limit=5"
+        );
+
+        std::env::set_var(
+            CANONICAL_API_ORIGIN_ENV,
+            "https://contractgate-api-staging.fly.dev/",
+        );
+        let r = app()
+            .oneshot(req("contractgate-api.fly.dev", "/contracts?limit=5"))
+            .await
+            .unwrap();
+        assert_eq!(
+            r.headers()["location"],
+            "https://contractgate-api-staging.fly.dev/contracts?limit=5"
+        );
+        std::env::remove_var(CANONICAL_API_ORIGIN_ENV);
+
         let r = app()
             .oneshot(req("contractgate-api.fly.dev", "/health"))
             .await
             .unwrap();
-        assert_eq!(r.status(), StatusCode::OK, "probes stay served");
+        assert_eq!(
+            r.status(),
+            StatusCode::PERMANENT_REDIRECT,
+            "legacy public host redirects probes too (R-S3)"
+        );
+
+        // Fly's internal health check: Host is the machine address.
+        let r = app()
+            .oneshot(req("172.19.0.2:3001", "/health"))
+            .await
+            .unwrap();
+        assert_eq!(r.status(), StatusCode::OK, "internal checks stay served");
 
         let r = app()
             .oneshot(req("api.datacontractgate.com", "/contracts"))

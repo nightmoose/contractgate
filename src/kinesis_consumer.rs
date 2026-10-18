@@ -300,6 +300,7 @@ mod inner {
                 let transformed = apply_transforms(&compiled, event.clone());
 
                 if result.passed {
+                    // In-memory publish. This consumer does not insert `forwarded_events`.
                     route_clean(kinesis, clean_stream, &transformed.as_value().clone()).await;
                 } else {
                     let reason = result
@@ -341,10 +342,13 @@ mod inner {
             if !audit_entries.is_empty() {
                 // RFC-086: gate event-body storage for this contract (single-
                 // contract batch → one indexed read per poll).
-                let store_payloads =
-                    crate::storage::contract_stores_payloads(&state.db, contract_id)
-                        .await
-                        .unwrap_or(false);
+                let store_payloads = crate::storage::contract_stores_payloads(
+                    &state.db,
+                    contract_id,
+                    state.self_hosted,
+                )
+                .await
+                .unwrap_or(false);
                 if let Err(e) =
                     log_audit_entries_batch(&state.db, &audit_entries, store_payloads).await
                 {

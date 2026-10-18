@@ -1,6 +1,6 @@
 # Quarantine + Replay API Reference
 
-**Last updated:** 2026-07-14 (RFC-081)
+**Last updated:** 2026-10-16
 
 Events that fail contract validation at ingest are written to the **quarantine**
 store instead of being forwarded. This API lists them, replays them against a
@@ -22,7 +22,13 @@ the same replay engine.
 
 ## `GET /quarantine`
 
-List source quarantine rows for the caller's org, newest first.
+List source quarantine rows for the caller's org, newest first. Rows whose
+contract has been soft-deleted are not listed. `DELETE /contracts/{id}`
+removes that contract's quarantine rows and `forwarded_events` rows in the
+same transaction as the soft delete (audit rows and contract versions are
+kept; a published version is not unpublished). `forwarded_events` is the
+passed-event export copy, not the audit record. Soft delete does not cascade,
+so those rows are deleted explicitly.
 
 Query parameters:
 
@@ -74,7 +80,11 @@ Request body:
 
 - `event_ids` (required): 1–1000 quarantine row ids. May span multiple contracts;
   they are grouped by contract and each group is replayed against its own
-  resolved target version.
+  resolved target version. An empty list is **400**
+  `Invalid request: replay request must include at least one id`. More than
+  1000 ids is **400**
+  `Invalid request: replay request exceeds cap of 1000 ids (got N)`.
+  `POST /contracts/{id}/quarantine/replay` uses the same two messages for `ids`.
 - `version` (optional): pin a target version. If omitted, each contract's latest
   stable is used. Draft targets are allowed.
 - `contract_id` (optional): assertion — if present, every `event_id` must belong
@@ -86,8 +96,9 @@ Response:
 {
   "replayed": 1,
   "outcomes": [
-    { "event_id": "uuid", "version": "2.0.0", "passed": true,  "violations": [],       "replayed_at": "..." },
-    { "event_id": "uuid", "version": "2.0.0", "passed": false, "violations": [ ... ],  "replayed_at": "..." }
+    { "event_id": "uuid", "version": "2.0.0", "passed": true,  "violations": [],       "replayed_at": "...", "redacted": false },
+    { "event_id": "uuid", "version": "2.0.0", "passed": false, "violations": [ ... ],  "replayed_at": "...", "redacted": false },
+    { "event_id": "uuid", "version": "2.0.0", "passed": false, "violations": [],       "replayed_at": "...", "redacted": true }
   ]
 }
 ```
@@ -97,7 +108,46 @@ entry per input `event_id`, in input order. A passing event lands in the audit
 log and fires the contract's forward destination (same as fresh ingest); a
 failing event writes a new quarantine row linked to the source, and the source is
 left untouched. Ids that are not found, already replayed, purged, or belong to
-another org come back with `passed: false` and no violations.
+another org come back with `passed: false`, `redacted: false`, and no violations.
+
+`redacted: true` means the source body was never stored or was purged, so the
+row was not re-validated. `passed` is false and `violations` is empty; this is
+not a validation failure. It is the same classification the per-contract route
+reports as `"outcome": "redacted"`. Both routes use one helper
+(`replay_item_view`) over the shared replay engine. DataContractGate and
+AISchemaGate share these routes.
+
+`contract_id` set to a contract that does not own every id is **400**
+`Invalid request: event_ids span multiple contracts or a contract other than contract_id`.
+
+### `POST /contracts/{id}/quarantine/replay`
+
+Same engine. Body is `{ids, target_version?}`. **200** is one object, not the
+org-wide `{replayed, outcomes}` shape:
+
+```json
+{
+  "total": 1,
+  "replayed": 0,
+  "still_quarantined": 0,
+  "already_replayed": 0,
+  "not_found": 0,
+  "wrong_contract": 0,
+  "purged": 0,
+  "redacted": 1,
+  "target_version": "1.0.0",
+  "target_version_source": "default_stable",
+  "target_is_draft": false,
+  "results": [{ "quarantine_id": "uuid", "outcome": "redacted" }]
+}
+```
+
+`results[].outcome` is `replayed`, `still_quarantined`, `already_replayed`,
+`not_found`, `wrong_contract`, `purged`, or `redacted`. `replayed` adds
+`replayed_into_audit_id` and `contract_version_matched`. `still_quarantined`
+adds `new_quarantine_id`, `contract_version_attempted`, `violation_count`, and
+`violations`. The id-list **400** messages are the same as the org-wide route.
+**404** when the contract or an explicit target version does not exist.
 
 ---
 
@@ -130,3 +180,11 @@ replay attempt (passes and fails), newest first. An unknown or cross-org
   null`, and replay reports it as `redacted` (non-replayable) rather than
   re-validating an empty body. See
   [event-payload-storage-reference.md](event-payload-storage-reference.md).
+  A passing replay's audit body follows that same storage rule. A failed
+  replay's new quarantine row keeps the source body so it can be replayed
+  again.
+- The passing `audit_log` row is inserted before the replay response returns,
+  with `org_id` set to the caller's org. `GET /audit` lists
+  `WHERE org_id = $caller`, so that stamp is what makes the new passing row
+  appear. `forwarded_events` is inserted on a background task after the
+  response (a sink error must not fail the replay); the insert is not skipped.

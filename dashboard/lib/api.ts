@@ -18,7 +18,6 @@
  */
 
 import * as yaml from "js-yaml";
-import { DEMO_MODE, DEMO_ORG_UUID } from "@/lib/demo";
 import { createClient } from "@/lib/supabase/client";
 
 const BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001";
@@ -143,7 +142,9 @@ export interface ContractSummary {
   multi_stable_resolution: MultiStableResolution;
   latest_stable_version: string | null;
   version_count: number;
-  /** RFC-086: per-contract event-body storage override. */
+  /** RFC-086: effective event-body storage. False when the org plan cannot
+   * store payloads (Free / AISchemaGate Free), even if the stored per-contract
+   * override is on. Paid plans report that override. */
   store_event_payloads: boolean;
 }
 
@@ -161,6 +162,8 @@ export interface ContractResponse {
   updated_at: string;
   version_count: number;
   latest_stable_version: string | null;
+  /** Effective event-body storage. Same decision as `ContractSummary.store_event_payloads`. */
+  store_event_payloads: boolean;
 }
 
 /** Source of a contract version's YAML content. */
@@ -329,6 +332,10 @@ export interface ReplayOutcome {
   passed: boolean;
   violations: Violation[];
   replayed_at: string;
+  /** True when the source body was not stored. Same classification as the
+   * per-contract replay route's `outcome: "redacted"`. `passed` is false and
+   * `violations` is empty; this is not a validation failure. */
+  redacted: boolean;
 }
 
 /** Response body for `POST /quarantine/replay`. */
@@ -354,6 +361,22 @@ export interface UsageResponse {
 }
 
 export const getUsage = () => apiFetch<UsageResponse>("/usage");
+
+/** `GET /v1/me`. `paid_features` is absent on older gateways. */
+export interface MeResponse {
+  org_id: string;
+  org_name: string | null;
+  plan: string;
+  plan_display: string;
+  paid_features?: boolean;
+  auth: string;
+  api_key_id: string | null;
+  monthly_event_limit: number | null;
+  rate_limit_rps: number;
+  rate_limit_burst: number;
+}
+
+export const getMe = () => apiFetch<MeResponse>("/v1/me");
 
 export const listContracts = () => apiFetch<ContractSummary[]>("/contracts");
 
@@ -592,6 +615,8 @@ export interface PayloadStorageStatus {
 export interface PurgeResult {
   quarantine_bodies_redacted: number;
   audit_bodies_redacted: number;
+  /** `forwarded_events` rows whose payload was set to JSON null. */
+  forwarded_bodies_redacted: number;
 }
 
 export const getPayloadStorage = () =>
@@ -611,7 +636,7 @@ export const setContractPayloadStorage = (contractId: string, enabled: boolean) 
     body: JSON.stringify({ enabled }),
   });
 
-/** Redact stored bodies for one contract, retaining all audit history. */
+/** Redact stored bodies for one contract, retaining audit, quarantine, and forwarded rows. */
 export const purgeContractBodies = (contractId: string) =>
   apiFetch<PurgeResult>(`/contracts/${contractId}/purge-bodies`, {
     method: "POST",
@@ -1086,6 +1111,10 @@ export interface RevokeResponse {
 export interface ImportPublishedResponse {
   contract_id: string;
   version: string;
+  /** "stable" when the published version was stable, else "draft". */
+  state: "stable" | "draft";
+  /** Human-readable summary of what was created. */
+  message: string;
   import_mode: ImportMode;
   imported_from_ref: string;
 }
@@ -1125,6 +1154,20 @@ export const revokePublication = (publicationRef: string) =>
   apiFetch<RevokeResponse>(`/contracts/publications/${publicationRef}`, {
     method: "DELETE",
   });
+
+/** One of the caller org's live publications (`GET /contracts/publications`). */
+export interface MyPublication {
+  publication_ref: string;
+  contract_id: string;
+  contract_name: string;
+  contract_version: string;
+  visibility: PublicationVisibility;
+  published_at: string;
+  /** Imports so far; > 0 means it can't be unpublished (409). */
+  import_count: number;
+}
+
+export const listMyPublications = () => apiFetch<MyPublication[]>("/contracts/publications");
 
 /** A single entry in the public contract catalog (no yaml_content). */
 export interface CatalogEntry {
@@ -1411,6 +1454,32 @@ export const getScorecardDrift = (source: string) =>
 /** Returns the URL for a CSV export of the scorecard — use as an <a href>. */
 export const getScorecardExportUrl = (source: string): string =>
   `${BASE}/scorecard/${encodeURIComponent(source)}/export?format=csv`;
+
+export interface FivetranConnectRequest {
+  fivetran_api_key: string;
+  fivetran_api_secret: string;
+  group_id: string;
+  contract_ids: string[];
+  table_names?: string;
+  /** Lowercase identifier, at most 63 characters. Omitted uses a random schema. */
+  destination_schema?: string;
+}
+
+export interface FivetranConnectResponse {
+  connection_id: string;
+  setup_url?: string | null;
+  status: string;
+}
+
+/**
+ * Deploy the ContractGate connector into the caller's Fivetran account.
+ * The Fivetran key and secret are sent once and are not stored.
+ */
+export const connectFivetran = (body: FivetranConnectRequest) =>
+  apiFetch<FivetranConnectResponse>("/v1/integrations/fivetran/connect", {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
 
 // ---------------------------------------------------------------------------
 // Helpers

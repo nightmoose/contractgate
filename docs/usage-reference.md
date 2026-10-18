@@ -18,7 +18,7 @@ up-only usage reconcile (audit_log is the source of truth) rolls those into
 `org_monthly_usage`, so `/usage` reflects stream traffic — eventually consistent
 within the reconcile interval, not instantly. There is **no real-time 429 on
 streams** (a mid-stream cap is impractical on a consumer loop), so streaming does
-not hard-block at the cap; Enterprise is still recommended for heavy streaming.
+not hard-block at the cap. Kafka/Kinesis streaming is offered on Enterprise only, available on request.
 Run `contractgate usage-reconcile` to force an immediate refresh.
 
 ---
@@ -85,8 +85,8 @@ curl -H "x-api-key: $KEY" https://api.datacontractgate.com/usage
   the live `audit_log` count for the UTC month (`GREATEST` — never decreases).
   One-shot: `cargo run --bin contractgate-server -- usage-reconcile`.
 - Not billable / not metered in v1: `dry_run`, self-hosted (no org),
-  **Kafka/Kinesis streaming** (prefer Enterprise; Growth stream traffic will
-  under-report `/usage` until org-stamped stream audit lands).
+  **Kafka/Kinesis streaming** (Enterprise only, available on request; stream
+  traffic will under-report `/usage` until org-stamped stream audit lands).
 
 ### Plan-limit 429 body (Phase 2)
 

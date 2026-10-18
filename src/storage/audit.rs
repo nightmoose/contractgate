@@ -471,13 +471,32 @@ pub struct QuarantineEventInsert {
 ///
 /// `contract_version` is the version that accepted the event.
 ///
-/// `payload` is [`TransformedPayload`] so the forward destination also
-/// only ever sees the post-transform form (RFC-004 §6).
+/// `payload` is [`TransformedPayload`] so a stored body is the post-transform
+/// form (RFC-004 §6). The value stays in memory for the insert. It is written
+/// only when [`forward_events_batch`] is called with `store_payloads = true`.
 #[derive(Debug, Clone)]
 pub struct ForwardEventInsert {
     pub contract_id: Uuid,
     pub contract_version: String,
     pub payload: TransformedPayload,
+}
+
+/// JSON written to `forwarded_events.payload`.
+///
+/// The column is `JSONB NOT NULL` (migration 001) with no default, so SQL
+/// `NULL` cannot be inserted without `DROP NOT NULL`. When storage is off the
+/// event body is omitted as JSON `null`. `contract_id`, `contract_version`,
+/// and `created_at` are still written. A passing event is always a JSON
+/// object, so JSON `null` means "body not stored".
+pub(crate) fn persisted_forward_payload(
+    store_payloads: bool,
+    payload: &TransformedPayload,
+) -> serde_json::Value {
+    if store_payloads {
+        payload.as_value().clone()
+    } else {
+        serde_json::Value::Null
+    }
 }
 
 /// Batch-insert audit log entries in a single round-trip.
@@ -691,59 +710,100 @@ pub async fn quarantine_events_batch(
     Ok(())
 }
 
+/// Quarantine bodies. `quarantine_events` has no `org_id`; scope via the contract.
+pub(crate) const PURGE_QUARANTINE_BODIES_SQL: &str = r#"
+UPDATE quarantine_events qe
+SET payload = NULL, payload_redacted = true
+FROM contracts c
+WHERE qe.contract_id = c.id
+  AND ($1::uuid IS NULL OR c.org_id = $1)
+  AND ($2::uuid IS NULL OR qe.contract_id = $2)
+  AND qe.payload IS NOT NULL
+"#;
+
+/// Audit bodies. `'{}'` because `raw_event` is NOT NULL.
+pub(crate) const PURGE_AUDIT_BODIES_SQL: &str = r#"
+UPDATE audit_log
+SET raw_event = '{}'::jsonb, raw_event_redacted = true
+WHERE ($1::uuid IS NULL OR org_id = $1)
+  AND ($2::uuid IS NULL OR contract_id = $2)
+  AND raw_event_redacted = false
+"#;
+
+/// Passed-event bodies. `forwarded_events.payload` is JSONB NOT NULL, so the
+/// redacted value is JSON `null`, not SQL NULL. `forwarded_events` has no
+/// `org_id`; scope via the owning contract, same binds as quarantine.
+/// Already-null payloads are skipped.
+pub(crate) const PURGE_FORWARDED_BODIES_SQL: &str = r#"
+UPDATE forwarded_events fe
+SET payload = 'null'::jsonb
+FROM contracts c
+WHERE fe.contract_id = c.id
+  AND ($1::uuid IS NULL OR c.org_id = $1)
+  AND ($2::uuid IS NULL OR fe.contract_id = $2)
+  AND jsonb_typeof(fe.payload) <> 'null'
+"#;
+
+/// Statements [`purge_bodies`] runs, in order, in one transaction.
+pub(crate) fn purge_body_statements() -> [&'static str; 3] {
+    [
+        PURGE_QUARANTINE_BODIES_SQL,
+        PURGE_AUDIT_BODIES_SQL,
+        PURGE_FORWARDED_BODIES_SQL,
+    ]
+}
+
+const PURGE_BODY_OPS: [&str; 3] = [
+    "purge_bodies.quarantine",
+    "purge_bodies.audit",
+    "purge_bodies.forwarded",
+];
+
 /// RFC-086: redact stored event bodies **in place** — org-wide when
 /// `contract_id` is `None`, or for a single contract when `Some`. Every
-/// `audit_log` and `quarantine_events` row and all its metadata is retained;
-/// only the body column is nulled and the `*_redacted` marker set. This never
-/// deletes a row. Idempotent: already-redacted rows are skipped.
+/// `audit_log`, `quarantine_events`, and `forwarded_events` row and its
+/// metadata is retained; only the body column is nulled. This never deletes
+/// a row. Idempotent: already-redacted rows are skipped.
 ///
-/// Returns `(quarantine_rows_redacted, audit_rows_redacted)`.
+/// The three updates share one transaction so a failure cannot leave a
+/// forwarded body after the audit and quarantine bodies are gone.
+///
+/// Returns `(quarantine_rows_redacted, audit_rows_redacted, forwarded_rows_redacted)`.
 pub async fn purge_bodies(
     pool: &PgPool,
     org_id: Option<Uuid>,
     contract_id: Option<Uuid>,
-) -> AppResult<(u64, u64)> {
-    // quarantine_events has no org_id column — scope via the owning contract.
-    let q = sqlx::query(
-        r#"
-        UPDATE quarantine_events qe
-        SET payload = NULL, payload_redacted = true
-        FROM contracts c
-        WHERE qe.contract_id = c.id
-          AND ($1::uuid IS NULL OR c.org_id = $1)
-          AND ($2::uuid IS NULL OR qe.contract_id = $2)
-          AND qe.payload IS NOT NULL
-        "#,
-    )
-    .bind(org_id)
-    .bind(contract_id)
-    .execute(pool)
-    .await
-    .db_op("purge_bodies.quarantine")?;
-
-    let a = sqlx::query(
-        r#"
-        UPDATE audit_log
-        SET raw_event = '{}'::jsonb, raw_event_redacted = true
-        WHERE ($1::uuid IS NULL OR org_id = $1)
-          AND ($2::uuid IS NULL OR contract_id = $2)
-          AND raw_event_redacted = false
-        "#,
-    )
-    .bind(org_id)
-    .bind(contract_id)
-    .execute(pool)
-    .await
-    .db_op("purge_bodies.audit")?;
-
-    Ok((q.rows_affected(), a.rows_affected()))
+) -> AppResult<(u64, u64, u64)> {
+    let mut tx = pool.begin().await.db_op("purge_bodies:begin")?;
+    let mut redacted = [0u64; 3];
+    for (i, sql) in purge_body_statements().into_iter().enumerate() {
+        let result = sqlx::query(sql)
+            .bind(org_id)
+            .bind(contract_id)
+            .execute(&mut *tx)
+            .await
+            .db_op(PURGE_BODY_OPS[i])?;
+        redacted[i] = result.rows_affected();
+    }
+    tx.commit().await.db_op("purge_bodies:commit")?;
+    Ok((redacted[0], redacted[1], redacted[2]))
 }
 
 /// Batch-insert forwarded events in a single round-trip.
 ///
 /// Unlike the other two helpers this one is awaited inline from the ingest
 /// handler so the response can mark individual events as `forwarded: true`.
-pub async fn forward_events_batch(pool: &PgPool, entries: &[ForwardEventInsert]) -> AppResult<()> {
+///
+/// RFC-086: `store_payloads` is the same gate as audit and quarantine
+/// ([`crate::plan::payloads_stored`]). When `false`, each row's `payload` is
+/// JSON `null` — the event body is not copied into the bind buffer. Metadata
+/// (`contract_id`, `contract_version`, `created_at`) is still inserted.
+/// Existing rows are not updated.
+pub async fn forward_events_batch(
+    pool: &PgPool,
+    entries: &[ForwardEventInsert],
+    store_payloads: bool,
+) -> AppResult<()> {
     if entries.is_empty() {
         return Ok(());
     }
@@ -751,10 +811,10 @@ pub async fn forward_events_batch(pool: &PgPool, entries: &[ForwardEventInsert])
     let contract_ids: Vec<Uuid> = entries.iter().map(|e| e.contract_id).collect();
     let contract_versions: Vec<String> =
         entries.iter().map(|e| e.contract_version.clone()).collect();
-    // RFC-004 §6: forward destination only ever sees post-transform payloads.
+    // RFC-004 §6: a stored body is post-transform. RFC-086: omit it otherwise.
     let payloads: Vec<serde_json::Value> = entries
         .iter()
-        .map(|e| e.payload.as_value().clone())
+        .map(|e| persisted_forward_payload(store_payloads, &e.payload))
         .collect();
 
     sqlx::query(
@@ -774,4 +834,132 @@ pub async fn forward_events_batch(pool: &PgPool, entries: &[ForwardEventInsert])
     .db_op("forward_events_batch")?;
 
     Ok(())
+}
+
+/// One `forwarded_events` row for `GET /v1/contracts/{id}/passed`.
+///
+/// `payload` is JSON `null` when the body was not stored (RFC-086). The
+/// column is `NOT NULL`; the null is a JSON value, not SQL NULL.
+#[derive(Debug, Clone, sqlx::FromRow)]
+pub struct ForwardedEventRow {
+    pub id: Uuid,
+    pub contract_version: Option<String>,
+    pub created_at: chrono::DateTime<chrono::Utc>,
+    pub payload: serde_json::Value,
+}
+
+/// Keyset page of passed events for one contract.
+///
+/// Rows are ordered by `(created_at, id)` ascending. `$2, $3` is the
+/// exclusive lower bound (Unix epoch + nil UUID when the caller sent no
+/// cursor). Rows newer than `NOW() - 5 seconds` are held back so an insert
+/// that commits after this read cannot be skipped. `fetch_n` is a bound
+/// parameter (page size + 1) and is never used as an allocation size.
+///
+/// The index for this scan is migration 043
+/// `(contract_id, created_at, id)`.
+pub const LIST_FORWARDED_EVENTS_PAGE_SQL: &str = r#"
+SELECT id, contract_version, created_at, payload
+FROM forwarded_events
+WHERE contract_id = $1
+  AND created_at <= NOW() - INTERVAL '5 seconds'
+  AND (created_at, id) > ($2, $3)
+ORDER BY created_at ASC, id ASC
+LIMIT $4
+"#;
+
+pub async fn list_forwarded_events_page(
+    pool: &PgPool,
+    contract_id: Uuid,
+    after_created_at: chrono::DateTime<chrono::Utc>,
+    after_id: Uuid,
+    fetch_n: i64,
+) -> AppResult<Vec<ForwardedEventRow>> {
+    sqlx::query_as(LIST_FORWARDED_EVENTS_PAGE_SQL)
+        .bind(contract_id)
+        .bind(after_created_at)
+        .bind(after_id)
+        .bind(fetch_n)
+        .fetch_all(pool)
+        .await
+        .db_op("list_forwarded_events_page")
+}
+
+#[cfg(test)]
+mod forwarded_payload_tests {
+    use super::persisted_forward_payload;
+    use crate::plan::payloads_stored;
+    use crate::transform::TransformedPayload;
+    use serde_json::json;
+
+    fn secret() -> TransformedPayload {
+        TransformedPayload::from_stored(json!({"user_id": "u_1", "amount": 10}))
+    }
+
+    fn written(plan: &str, org_switch: bool, contract_switch: bool) -> serde_json::Value {
+        persisted_forward_payload(
+            payloads_stored(plan, org_switch, contract_switch),
+            &secret(),
+        )
+    }
+
+    #[test]
+    fn free_plan_omits_forwarded_payload() {
+        let body = written("free", true, true);
+        assert!(body.is_null(), "free plan must not store the event body");
+        assert!(written("aisg_free", true, true).is_null());
+        assert!(written("bogus", true, true).is_null());
+    }
+
+    #[test]
+    fn org_switch_off_omits_forwarded_payload() {
+        assert!(written("growth", false, true).is_null());
+        assert!(written("aisg_pro", false, true).is_null());
+        assert!(written("enterprise", false, true).is_null());
+    }
+
+    #[test]
+    fn contract_override_off_omits_forwarded_payload() {
+        assert!(written("growth", true, false).is_null());
+        assert!(written("aisg_pro", true, false).is_null());
+        assert!(written("enterprise", true, false).is_null());
+    }
+
+    #[test]
+    fn purge_nulls_forwarded_payload_with_audit_and_quarantine() {
+        let sql = super::purge_body_statements();
+        let forwarded = sql[2];
+        assert!(forwarded.contains("UPDATE forwarded_events"), "{forwarded}");
+        assert!(
+            forwarded.contains("SET payload = 'null'::jsonb"),
+            "{forwarded}"
+        );
+        assert!(
+            forwarded.contains("jsonb_typeof(fe.payload) <> 'null'"),
+            "{forwarded}"
+        );
+        assert!(forwarded.contains("FROM contracts c"), "{forwarded}");
+        assert!(forwarded.contains("c.org_id = $1"), "{forwarded}");
+        assert!(forwarded.contains("fe.contract_id = $2"), "{forwarded}");
+        assert!(
+            !forwarded.to_ascii_lowercase().contains("delete"),
+            "{forwarded}"
+        );
+        assert!(sql[0].contains("payload = NULL"));
+        assert!(sql[0].contains("c.org_id = $1"));
+        assert!(sql[1].contains("raw_event = '{}'::jsonb"));
+        assert!(sql[1].contains("org_id = $1"));
+        for statement in sql {
+            assert!(statement.contains("$1"), "{statement}");
+            assert!(statement.contains("$2"), "{statement}");
+        }
+    }
+
+    #[test]
+    fn all_switches_on_stores_forwarded_payload() {
+        let expected = json!({"user_id": "u_1", "amount": 10});
+        assert_eq!(written("growth", true, true), expected);
+        assert_eq!(written("aisg_pro", true, true), expected);
+        assert_eq!(written("enterprise", true, true), expected);
+    }
 }

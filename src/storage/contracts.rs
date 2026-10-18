@@ -168,6 +168,9 @@ pub async fn create_contract(
     // extract `compliance_mode` so the column stays in sync with the YAML
     // (RFC-004: YAML is authoritative; column is a denormalization for
     // SQL-level filtering).
+    // The first version row is always 1.0.0; the stored YAML says the same.
+    let yaml_owned = crate::version_pin::set_yaml_version(yaml_content, "1.0.0");
+    let yaml_content = yaml_owned.as_str();
     let parsed: Contract = serde_yaml::from_str(yaml_content)
         .map_err(|e| AppError::InvalidContractYaml(e.to_string()))?;
     let compliance_mode = parsed.compliance_mode;
@@ -284,7 +287,11 @@ pub async fn set_contract_store_payloads(
 /// Only reached from the Kafka/Kinesis consumers (feature-gated), so it reads
 /// as dead code in the default build.
 #[allow(dead_code)]
-pub async fn contract_stores_payloads(pool: &PgPool, contract_id: Uuid) -> AppResult<bool> {
+pub async fn contract_stores_payloads(
+    pool: &PgPool,
+    contract_id: Uuid,
+    self_hosted: bool,
+) -> AppResult<bool> {
     // (plan, org_switch, contract_switch, contract.org_id) — org fields are
     // NULL when the contract has no owning org (self-host).
     type PayloadPolicyRow = (Option<String>, Option<bool>, bool, Option<Uuid>);
@@ -305,7 +312,7 @@ pub async fn contract_stores_payloads(pool: &PgPool, contract_id: Uuid) -> AppRe
         // No owning org → self-host / dev: store.
         Some((_, _, _, None)) => true,
         Some((Some(plan), Some(org_switch), contract_switch, Some(_org))) => {
-            crate::plan::payloads_stored(&plan, org_switch, contract_switch)
+            crate::plan::payloads_stored_for(self_hosted, &plan, org_switch, contract_switch)
         }
         // Org id present but the org row/flags didn't resolve → fail-closed.
         _ => false,
@@ -422,24 +429,80 @@ pub async fn patch_contract_identity(
     row.into_identity()
 }
 
+/// `forwarded_events` rows for a deleted contract.
+///
+/// Soft delete does not fire `ON DELETE CASCADE`, so these rows would keep
+/// their payloads. They are an export copy, not the audit record, and are
+/// removed in the same transaction as the quarantine rows. `audit_log` stays.
+pub(crate) const DELETE_CONTRACT_FORWARDED_EVENTS_SQL: &str =
+    "DELETE FROM forwarded_events WHERE contract_id = $1";
+
 /// Soft-delete a contract (RFC-001 §6).  `org_id` scope guard (RFC-047):
 /// returns `ContractNotFound` when no row matches id + org, so UUID
 /// existence is never leaked to the wrong tenant.
+///
+/// Quarantine rows and `forwarded_events` rows for that contract are removed
+/// in the same transaction. Soft delete does not fire `ON DELETE CASCADE`.
+/// `audit_log` rows stay (validation history); only `replay_of_quarantine_id`
+/// is cleared so the quarantine delete is not blocked by that foreign key.
+/// Contract versions are left as they are — a published version is not unpublished.
 pub async fn delete_contract(pool: &PgPool, id: Uuid, org_id: Option<Uuid>) -> AppResult<()> {
+    let mut tx = pool.begin().await.db_op("delete_contract:begin")?;
+
     let result = sqlx::query(
         "UPDATE contracts SET deleted_at = NOW() \
          WHERE id = $1 AND deleted_at IS NULL AND ($2 IS NULL OR org_id = $2)",
     )
     .bind(id)
     .bind(org_id)
-    .execute(pool)
-    .await?;
+    .execute(&mut *tx)
+    .await
+    .db_op("delete_contract")?;
 
     // 0 rows: either doesn't exist, already deleted, or belongs to another
     // org.  All map to 404 so we never reveal UUID existence (RFC-047).
+    // Roll back before any quarantine change so a wrong-org delete is a no-op.
     if result.rows_affected() == 0 {
+        tx.rollback().await.db_op("delete_contract:rollback")?;
         return Err(AppError::ContractNotFound(id));
     }
+
+    // audit_log.replay_of_quarantine_id → quarantine_events is NO ACTION.
+    // Clear the pointer; keep the audit row.
+    sqlx::query(
+        "UPDATE audit_log SET replay_of_quarantine_id = NULL \
+         WHERE contract_id = $1 AND replay_of_quarantine_id IS NOT NULL",
+    )
+    .bind(id)
+    .execute(&mut *tx)
+    .await
+    .db_op("delete_contract:clear_audit_replay_fk")?;
+
+    // Self-FK on failed-replay children. Null it in this transaction, then
+    // delete every quarantine row for the contract in one statement.
+    sqlx::query(
+        "UPDATE quarantine_events SET replay_of_quarantine_id = NULL \
+         WHERE contract_id = $1 AND replay_of_quarantine_id IS NOT NULL",
+    )
+    .bind(id)
+    .execute(&mut *tx)
+    .await
+    .db_op("delete_contract:clear_quarantine_replay_fk")?;
+
+    sqlx::query("DELETE FROM quarantine_events WHERE contract_id = $1")
+        .bind(id)
+        .execute(&mut *tx)
+        .await
+        .db_op("delete_contract:quarantine")?;
+
+    // Export copy of passing events. Not the retained audit history.
+    sqlx::query(DELETE_CONTRACT_FORWARDED_EVENTS_SQL)
+        .bind(id)
+        .execute(&mut *tx)
+        .await
+        .db_op("delete_contract:forwarded")?;
+
+    tx.commit().await.db_op("delete_contract:commit")?;
     Ok(())
 }
 
@@ -458,6 +521,9 @@ pub async fn create_version(
     yaml_content: &str,
     org_id: Option<Uuid>,
 ) -> AppResult<ContractVersion> {
+    // The stored YAML's `version:` always matches the version row.
+    let yaml_owned = crate::version_pin::set_yaml_version(yaml_content, version);
+    let yaml_content = yaml_owned.as_str();
     let parsed: Contract = serde_yaml::from_str(yaml_content)
         .map_err(|e| AppError::InvalidContractYaml(e.to_string()))?;
     let compliance_mode = parsed.compliance_mode;
@@ -465,6 +531,8 @@ pub async fn create_version(
 
     // Ensure the contract exists and belongs to the caller's org (RFC-047).
     let _ = get_contract_identity(pool, contract_id, org_id).await?;
+
+    ensure_no_equivalent_version(pool, contract_id, version).await?;
 
     let id = Uuid::new_v4();
 
@@ -732,6 +800,7 @@ pub async fn deploy_contract_version(
     }
 
     // ── 3. Insert the new version as stable ───────────────────────────────────
+    ensure_no_equivalent_version(&mut *tx, contract_id, &version).await?;
     let version_id = Uuid::new_v4();
     let now = chrono::Utc::now();
 
@@ -820,6 +889,80 @@ pub async fn delete_version(
     Ok(())
 }
 
+/// Reject a new version equivalent to one already on the contract (`1`,
+/// `1.0`, `1.0.0`), 409 naming the existing one. Checks every
+/// `contract_versions` row for the contract, the same set the
+/// `(contract_id, version)` unique constraint covers.
+async fn ensure_no_equivalent_version<'e, E>(
+    executor: E,
+    contract_id: Uuid,
+    version: &str,
+) -> AppResult<()>
+where
+    E: sqlx::Executor<'e, Database = sqlx::Postgres>,
+{
+    if crate::version_pin::normalize_version(version).is_none() {
+        return Ok(());
+    }
+    let stored: Vec<String> =
+        sqlx::query_scalar("SELECT version FROM contract_versions WHERE contract_id = $1")
+            .bind(contract_id)
+            .fetch_all(executor)
+            .await
+            .db_op("ensure_no_equivalent_version")?;
+    if let Some(existing) = crate::version_pin::find_equivalent(version, &stored) {
+        return Err(AppError::Conflict(format!(
+            "Version {version} is equivalent to existing version {existing} on contract \
+             {contract_id}; use a different version number"
+        )));
+    }
+    Ok(())
+}
+
+/// [`get_version`] for a version *pin* (`@1.0.0`, `?version=`, header):
+/// exact match first, then the one stored version with the same normalised
+/// numeric form (`1.0.0` ↔ `1.0`), via [`crate::version_pin::match_pin`].
+/// Same org scoping and 404 as `get_version`; an ambiguous normalised match
+/// is a 409 naming the candidates. The returned row carries the stored
+/// version string, which callers should use from then on.
+pub async fn get_version_for_pin(
+    pool: &PgPool,
+    contract_id: Uuid,
+    pin: &str,
+    org_id: Option<Uuid>,
+) -> AppResult<ContractVersion> {
+    match get_version(pool, contract_id, pin, org_id).await {
+        Err(AppError::VersionNotFound { .. }) => {}
+        other => return other,
+    }
+    let stored: Vec<String> = sqlx::query_scalar(
+        r#"
+        SELECT version FROM contract_versions
+        WHERE contract_id = $1
+          AND contract_id IN (
+              SELECT id FROM contracts
+              WHERE id = $1 AND deleted_at IS NULL AND ($2 IS NULL OR org_id = $2)
+          )
+        "#,
+    )
+    .bind(contract_id)
+    .bind(org_id)
+    .fetch_all(pool)
+    .await
+    .db_op("get_version_for_pin")?;
+    match crate::version_pin::match_pin(pin, &stored) {
+        Ok(Some(v)) => get_version(pool, contract_id, v, org_id).await,
+        Ok(None) => Err(AppError::VersionNotFound {
+            contract_id,
+            version: pin.to_string(),
+        }),
+        Err(candidates) => Err(AppError::Conflict(format!(
+            "version pin {pin} is ambiguous on contract {contract_id}: matches {}; pin one exactly",
+            candidates.join(", ")
+        ))),
+    }
+}
+
 /// Fetch a specific contract version.
 ///
 /// `org_id` — when `Some`, scopes through the parent contract row so a
@@ -842,7 +985,7 @@ pub async fn get_version(
         WHERE contract_id = $1 AND version = $2
           AND contract_id IN (
               SELECT id FROM contracts
-              WHERE id = $1 AND ($3 IS NULL OR org_id = $3)
+              WHERE id = $1 AND deleted_at IS NULL AND ($3 IS NULL OR org_id = $3)
           )
         "#,
     )
@@ -994,6 +1137,9 @@ pub async fn create_version_from_import(
     import_source: ImportSource,
     org_id: Option<Uuid>,
 ) -> AppResult<ContractVersion> {
+    // The stored YAML's `version:` always matches the version row.
+    let yaml_owned = crate::version_pin::set_yaml_version(yaml_content, version);
+    let yaml_content = yaml_owned.as_str();
     let parsed: Contract = serde_yaml::from_str(yaml_content)
         .map_err(|e| AppError::InvalidContractYaml(e.to_string()))?;
     let compliance_mode = parsed.compliance_mode;
@@ -1001,6 +1147,8 @@ pub async fn create_version_from_import(
     let requires_review = import_source == ImportSource::OdcsStripped;
 
     let _ = get_contract_identity(pool, contract_id, org_id).await?;
+
+    ensure_no_equivalent_version(pool, contract_id, version).await?;
 
     let id = Uuid::new_v4();
 
@@ -1103,4 +1251,20 @@ pub async fn list_name_history(
     .await?;
 
     Ok(rows)
+}
+
+#[cfg(test)]
+mod delete_forwarded_tests {
+    use super::DELETE_CONTRACT_FORWARDED_EVENTS_SQL;
+
+    #[test]
+    fn delete_contract_removes_forwarded_rows() {
+        let sql = DELETE_CONTRACT_FORWARDED_EVENTS_SQL;
+        assert!(sql.starts_with("DELETE FROM forwarded_events"), "{sql}");
+        assert!(sql.contains("WHERE contract_id = $1"), "{sql}");
+        assert!(
+            !sql.to_ascii_lowercase().contains("payload"),
+            "delete removes the export copy; it does not leave a nulled row"
+        );
+    }
 }

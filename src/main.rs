@@ -35,7 +35,6 @@ use std::{
 };
 use tower_http::{
     cors::{AllowOrigin, Any, CorsLayer},
-    timeout::TimeoutLayer,
     trace::TraceLayer,
 };
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
@@ -52,6 +51,7 @@ mod collaboration;
 mod conformance;
 mod egress;
 mod error;
+mod fivetran;
 mod fork_filter;
 mod idempotency;
 mod infer;
@@ -67,9 +67,11 @@ mod kafka_consumer;
 mod kafka_ingress;
 mod kinesis_consumer;
 mod kinesis_ingress;
+mod me;
 mod metering;
 pub mod observability;
 mod odcs;
+mod passed_events;
 mod plan;
 mod public_catalog;
 mod publication;
@@ -77,8 +79,10 @@ mod quarantine;
 #[cfg(test)]
 mod rag_contract_tests;
 use contractgate::rate_limit;
+mod openapi_schemas;
 mod replay;
 mod report;
+mod request_limits;
 mod scaffold_handler;
 mod scorecard;
 mod security_headers;
@@ -89,6 +93,7 @@ mod stream_demo;
 mod tests;
 mod usage;
 mod v1_ingest;
+mod version_pin;
 
 use contract::{
     Contract, ContractIdentity, ContractResponse, ContractSummary, ContractVersion,
@@ -119,6 +124,10 @@ pub struct AppState {
     /// defaults to `false` so production can never silently run open. There is
     /// no longer any env-var master key — auth is JWT or a DB-backed key.
     pub dev_no_auth: bool,
+    /// Explicit `CONTRACTGATE_SELF_HOSTED` opt-in. Passed-event export,
+    /// Connect Fivetran, and payload storage treat the org as paid. Hosted
+    /// production and staging leave this false.
+    pub self_hosted: bool,
     /// DB-backed API key cache with 60-second TTL.
     pub key_cache: Arc<api_key_auth::ApiKeyCache>,
     /// Per-API-key token-bucket rate limiter (RFC-021).
@@ -152,6 +161,9 @@ impl AppState {
             db,
             contract_cache: RwLock::new(HashMap::new()),
             dev_no_auth,
+            self_hosted: crate::plan::self_hosted_flag(
+                std::env::var(crate::plan::SELF_HOSTED_ENV).ok().as_deref(),
+            ),
             key_cache: Arc::new(api_key_auth::ApiKeyCache::default()),
             rate_limiter: Arc::new(rate_limit::RateLimitState::default()),
             stream_demo: std::sync::Arc::new(stream_demo::StreamDemoState::new()),
@@ -300,7 +312,11 @@ fn compile_version(v: &ContractVersion, salt: Vec<u8>) -> Result<CompiledContrac
 // ---------------------------------------------------------------------------
 
 /// Merge an identity row with aggregated version info into a response.
-async fn identity_to_response(db: &PgPool, id: ContractIdentity) -> AppResult<ContractResponse> {
+async fn identity_to_response(
+    db: &PgPool,
+    id: ContractIdentity,
+    store_event_payloads: bool,
+) -> AppResult<ContractResponse> {
     // identity was already org-verified before this helper is called — pass None.
     let summaries = storage::list_versions(db, id.id, None).await?;
     let version_count = summaries.len() as i64;
@@ -316,7 +332,37 @@ async fn identity_to_response(db: &PgPool, id: ContractIdentity) -> AppResult<Co
         updated_at: id.updated_at,
         version_count,
         latest_stable_version,
+        store_event_payloads,
     })
+}
+
+/// `(plan, org master switch)` for an org, or `None` when the request has no
+/// org (self-host / dev). A present org with no row fail-closes to an empty
+/// plan and the switch off — the same lookup [`list_contracts_handler`] and
+/// `GET /contracts/{id}` share before [`plan::effective_store_event_payloads`].
+async fn payload_decision(db: &PgPool, org_id: Option<Uuid>) -> AppResult<Option<(String, bool)>> {
+    let Some(oid) = org_id else {
+        return Ok(None);
+    };
+    Ok(Some(
+        storage::get_org_payload_policy(db, oid)
+            .await?
+            .unwrap_or_else(|| (String::new(), false)),
+    ))
+}
+
+/// Apply [`plan::effective_store_event_payloads`] to one stored override.
+fn effective_payload_flag(
+    self_hosted: bool,
+    decision: Option<&(String, bool)>,
+    stored: bool,
+) -> bool {
+    match decision {
+        None => plan::effective_store_event_payloads_for(self_hosted, None, false, stored),
+        Some((plan, org_switch)) => {
+            plan::effective_store_event_payloads_for(self_hosted, Some(plan), *org_switch, stored)
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -336,6 +382,35 @@ fn org_id_from_req(req: &axum::extract::Request) -> Option<uuid::Uuid> {
     req.extensions()
         .get::<api_key_auth::ValidatedKey>()
         .map(|k| k.org_id)
+}
+
+/// Dev/no-auth only: trust `x-org-id` when no `ValidatedKey` is present.
+///
+/// `contracts.org_id` is NOT NULL, so creating a contract identity with no
+/// org fails at the DB.  When auth is not configured (compose smoke, local
+/// dev) the `x-org-id` header is accepted as a convenience; without it the
+/// request is rejected with a 400 naming the header instead of a 500.
+/// Never runs when auth is configured, so RFC-048's spoofing protection holds.
+fn dev_org_fallback(
+    state: &AppState,
+    req: &axum::extract::Request,
+    org_id: Option<Uuid>,
+) -> AppResult<Option<Uuid>> {
+    if org_id.is_some() || state.auth_configured() {
+        return Ok(org_id);
+    }
+    req.headers()
+        .get("x-org-id")
+        .and_then(|v| v.to_str().ok())
+        .and_then(|s| Uuid::parse_str(s.trim()).ok())
+        .map(Some)
+        .ok_or_else(|| {
+            AppError::BadRequest(
+                "no org context: auth is disabled (CONTRACTGATE_DEV_NO_AUTH), so send an \
+                 `x-org-id` header with an existing org id"
+                    .into(),
+            )
+        })
 }
 
 // ---------------------------------------------------------------------------
@@ -383,14 +458,7 @@ async fn create_contract_handler(
     // operate without a full auth setup.  This branch is gated on
     // !auth_configured() — it never executes in production, so RFC-048's
     // spoofability protection is fully preserved for all real deployments.
-    let org_id = if org_id.is_none() && !state.auth_configured() {
-        req.headers()
-            .get("x-org-id")
-            .and_then(|v| v.to_str().ok())
-            .and_then(|s| Uuid::parse_str(s).ok())
-    } else {
-        org_id
-    };
+    let org_id = dev_org_fallback(&state, &req, org_id)?;
 
     // Extract JSON body after reading extensions (req move must come after
     // the header read above, which is a borrow — order is safe).
@@ -408,7 +476,14 @@ async fn create_contract_handler(
     )
     .await?;
 
-    let resp = identity_to_response(&state.db, identity).await?;
+    let stored = identity.store_event_payloads;
+    let decision = payload_decision(&state.db, org_id).await?;
+    let resp = identity_to_response(
+        &state.db,
+        identity,
+        effective_payload_flag(state.self_hosted, decision.as_ref(), stored),
+    )
+    .await?;
     Ok((StatusCode::CREATED, Json(resp)))
 }
 
@@ -420,8 +495,72 @@ async fn get_contract_handler(
     if state.auth_configured() && org_id.is_none() {
         return Err(error::AppError::Unauthorized);
     }
-    let identity = storage::get_contract_identity(&state.db, id, org_id).await?;
-    Ok(Json(identity_to_response(&state.db, identity).await?))
+    let scope = read_scope(&state, id, org_id).await?;
+    let identity = storage::get_contract_identity(&state.db, id, scope).await?;
+    // Same effective flag as the list: the owning org's plan, its master
+    // switch, and this contract's override. `scope` is that owning org
+    // (the caller when they own it, the owner when they hold a grant).
+    let stored = identity.store_event_payloads;
+    let decision = payload_decision(&state.db, scope).await?;
+    Ok(Json(
+        identity_to_response(
+            &state.db,
+            identity,
+            effective_payload_flag(state.self_hosted, decision.as_ref(), stored),
+        )
+        .await?,
+    ))
+}
+
+/// Org scope for a by-id request needing `min_role` (C3 reads, N2 writes).
+///
+/// The caller's own org if it owns the live contract; otherwise the owner's
+/// org when the caller holds an active grant on this contract id with at
+/// least `min_role`.  No access → 404 (same as a missing contract); a grant
+/// below `min_role` → 403 naming the role.  `None` in dev mode.
+async fn scope_for(
+    state: &AppState,
+    contract_id: Uuid,
+    org_id: Option<Uuid>,
+    min_role: collaboration::CallerRole,
+) -> AppResult<Option<Uuid>> {
+    let Some(org) = org_id else {
+        return Ok(None);
+    };
+    if storage::org_owns_contract_id(&state.db, contract_id, org).await? {
+        return Ok(Some(org));
+    }
+    let grant = storage::collaborator_grant_by_id(&state.db, contract_id, org).await?;
+    let role = grant
+        .as_ref()
+        .and_then(|(_, r)| collaboration::CallerRole::from_str(r));
+    collaboration::decide_id_access(role, min_role, contract_id)?;
+    Ok(grant.map(|(owner, _)| owner))
+}
+
+async fn read_scope(
+    state: &AppState,
+    contract_id: Uuid,
+    org_id: Option<Uuid>,
+) -> AppResult<Option<Uuid>> {
+    scope_for(
+        state,
+        contract_id,
+        org_id,
+        collaboration::CallerRole::Viewer,
+    )
+    .await
+}
+
+/// Owner-only by-id routes: grantees get 403, strangers keep the 404.
+pub(crate) async fn require_owner(
+    state: &AppState,
+    contract_id: Uuid,
+    org_id: Option<Uuid>,
+) -> AppResult<()> {
+    scope_for(state, contract_id, org_id, collaboration::CallerRole::Owner)
+        .await
+        .map(|_| ())
 }
 
 async fn list_contracts_handler(
@@ -429,7 +568,22 @@ async fn list_contracts_handler(
     req: axum::extract::Request,
 ) -> AppResult<Json<Vec<ContractSummary>>> {
     let org_id = org_id_from_req(&req);
-    let contracts = storage::list_contracts(&state.db, org_id).await?;
+    let mut contracts = storage::list_contracts(&state.db, org_id).await?;
+    // Report the effective flag: the same `payloads_stored` decision ingest
+    // uses (paid plan AND org master switch AND per-contract override). Free
+    // and aisg_free never store. A paid plan with the org switch still off
+    // reports false — the column defaults to true and must not claim a body
+    // ingest will redact. No org on the request is self-host: leave the
+    // column. A present org with no row fail-closes to false.
+    // `GET /contracts/{id}` uses the same `payload_decision` + helper.
+    let decision = payload_decision(&state.db, org_id).await?;
+    for contract in &mut contracts {
+        contract.store_event_payloads = effective_payload_flag(
+            state.self_hosted,
+            decision.as_ref(),
+            contract.store_event_payloads,
+        );
+    }
     Ok(Json(contracts))
 }
 
@@ -442,6 +596,7 @@ async fn patch_contract_handler(
     if state.auth_configured() && org_id.is_none() {
         return Err(error::AppError::Unauthorized);
     }
+    require_owner(&state, id, org_id).await?;
     let identity = storage::patch_contract_identity(
         &state.db,
         id,
@@ -452,7 +607,16 @@ async fn patch_contract_handler(
     )
     .await?;
     // Identity-only patch doesn't touch yaml; no cache eviction needed.
-    Ok(Json(identity_to_response(&state.db, identity).await?))
+    let stored = identity.store_event_payloads;
+    let decision = payload_decision(&state.db, org_id).await?;
+    Ok(Json(
+        identity_to_response(
+            &state.db,
+            identity,
+            effective_payload_flag(state.self_hosted, decision.as_ref(), stored),
+        )
+        .await?,
+    ))
 }
 
 async fn delete_contract_handler(
@@ -463,6 +627,7 @@ async fn delete_contract_handler(
     if state.auth_configured() && org_id.is_none() {
         return Err(error::AppError::Unauthorized);
     }
+    require_owner(&state, id, org_id).await?;
     storage::delete_contract(&state.db, id, org_id).await?;
     state.invalidate_contract_all(id);
     Ok(StatusCode::NO_CONTENT)
@@ -481,12 +646,20 @@ async fn create_version_handler(
     if state.auth_configured() && org_id.is_none() {
         return Err(error::AppError::Unauthorized);
     }
+    // N2: editors (and above) may add draft versions via the contract id.
+    let scope = scope_for(
+        &state,
+        contract_id,
+        org_id,
+        collaboration::CallerRole::Editor,
+    )
+    .await?;
     let v = storage::create_version(
         &state.db,
         contract_id,
         &req.version,
         &req.yaml_content,
-        org_id,
+        scope,
     )
     .await?;
     // Drafts are cached lazily on first pin — no eager insert.
@@ -501,7 +674,8 @@ async fn list_versions_handler(
     if state.auth_configured() && org_id.is_none() {
         return Err(error::AppError::Unauthorized);
     }
-    let versions = storage::list_versions(&state.db, contract_id, org_id).await?;
+    let scope = read_scope(&state, contract_id, org_id).await?;
+    let versions = storage::list_versions(&state.db, contract_id, scope).await?;
     Ok(Json(versions))
 }
 
@@ -513,7 +687,8 @@ async fn get_version_handler(
     if state.auth_configured() && org_id.is_none() {
         return Err(error::AppError::Unauthorized);
     }
-    let v = storage::get_version(&state.db, contract_id, &version, org_id).await?;
+    let scope = read_scope(&state, contract_id, org_id).await?;
+    let v = storage::get_version(&state.db, contract_id, &version, scope).await?;
     Ok(Json(VersionResponse::from(&v)))
 }
 
@@ -526,7 +701,7 @@ async fn get_latest_stable_handler(
         return Err(error::AppError::Unauthorized);
     }
     // Org-scoped existence check (RFC-047); stable lookup unscoped — same contract_id.
-    let _ = storage::get_contract_identity(&state.db, contract_id, org_id).await?;
+    let _ = read_scope(&state, contract_id, org_id).await?;
     let v = storage::get_latest_stable_version(&state.db, contract_id)
         .await?
         .ok_or(AppError::NoStableVersion { contract_id })?;
@@ -542,9 +717,20 @@ async fn patch_version_handler(
     if state.auth_configured() && org_id.is_none() {
         return Err(error::AppError::Unauthorized);
     }
-    let v =
-        storage::patch_version_yaml(&state.db, contract_id, &version, &req.yaml_content, org_id)
-            .await?;
+    let v = storage::patch_version_yaml(
+        &state.db,
+        contract_id,
+        &version,
+        &req.yaml_content,
+        scope_for(
+            &state,
+            contract_id,
+            org_id,
+            collaboration::CallerRole::Editor,
+        )
+        .await?,
+    )
+    .await?;
     // Evict: a draft edit changes its compiled form.
     state.invalidate_version(contract_id, &version);
     Ok(Json(VersionResponse::from(&v)))
@@ -558,6 +744,7 @@ async fn promote_version_handler(
     if state.auth_configured() && org_id.is_none() {
         return Err(error::AppError::Unauthorized);
     }
+    require_owner(&state, contract_id, org_id).await?;
     let v = storage::promote_version(&state.db, contract_id, &version, org_id).await?;
     // Version is now stable and frozen.  Pre-warm the cache so the first
     // ingest request doesn't take the slow path.
@@ -573,6 +760,7 @@ async fn deprecate_version_handler(
     if state.auth_configured() && org_id.is_none() {
         return Err(error::AppError::Unauthorized);
     }
+    require_owner(&state, contract_id, org_id).await?;
     let v = storage::deprecate_version(&state.db, contract_id, &version, org_id).await?;
     // Cached compiled form is still correct (YAML didn't change); the
     // deprecated-pin short-circuit in ingest.rs looks at the DB row's state,
@@ -588,6 +776,7 @@ async fn delete_version_handler(
     if state.auth_configured() && org_id.is_none() {
         return Err(error::AppError::Unauthorized);
     }
+    require_owner(&state, contract_id, org_id).await?;
     storage::delete_version(&state.db, contract_id, &version, org_id).await?;
     state.invalidate_version(contract_id, &version);
     Ok(StatusCode::NO_CONTENT)
@@ -691,7 +880,11 @@ async fn import_odcs_handler(
     State(state): State<Arc<AppState>>,
     req: axum::extract::Request,
 ) -> AppResult<(StatusCode, Json<VersionResponse>)> {
-    let org_id = org_id_from_req(&req);
+    let raw_org = org_id_from_req(&req);
+    // Dev/no-auth: a header org (if any) scopes the import; a new identity
+    // still needs one (contracts.org_id is NOT NULL), checked below.
+    let dev_org = dev_org_fallback(&state, &req, raw_org);
+    let org_id = dev_org.as_ref().ok().copied().flatten();
     let Json(body): Json<odcs::ImportOdcsRequest> = axum::Json::from_request(req, &state)
         .await
         .map_err(|e| AppError::BadRequest(e.to_string()))?;
@@ -707,12 +900,61 @@ async fn import_odcs_handler(
         .unwrap_or(&name_in_yaml.name)
         .to_string();
 
+    // Explicit target: import as a new version on that contract (owner only).
+    let target = match (body.target_contract_id, body.contract_id) {
+        (Some(a), Some(b)) if a != b => {
+            return Err(AppError::BadRequest(
+                "target_contract_id and contract_id disagree; pass one".into(),
+            ))
+        }
+        (a, b) => a.or(b),
+    };
+    if let Some(contract_id) = target {
+        if state.auth_configured() && org_id.is_none() {
+            return Err(AppError::Unauthorized);
+        }
+        // 404 if missing or another org's; 403 for a collaborator grant.
+        require_owner(&state, contract_id, org_id).await?;
+        // Dev/no-auth has no org to scope by: still 404 a missing contract.
+        let target = storage::get_contract_identity(&state.db, contract_id, org_id).await?;
+        // The stored YAML names the target contract, not the ODCS table name.
+        let yaml = crate::version_pin::set_yaml_name(&result.yaml_content, &target.name);
+        // Equivalent-version 409 is enforced inside create_version_from_import.
+        let cv = storage::create_version_from_import(
+            &state.db,
+            contract_id,
+            &result.version,
+            &yaml,
+            result.import_source,
+            org_id,
+        )
+        .await?;
+        return Ok((StatusCode::CREATED, Json(VersionResponse::from(&cv))));
+    }
+
+    // No target: a new identity needs an org (NOT NULL column).
+    let org_id = dev_org?;
+
+    // No target: refuse to pile up a second live contract with this name.
+    if let Some(org) = org_id {
+        let existing = storage::owned_contract_ids_by_name(&state.db, &name, org).await?;
+        if let Some(id) = existing.first() {
+            return Err(AppError::Conflict(format!(
+                "a contract named '{name}' already exists in your org (id {id}); \
+                 pass target_contract_id to import as a new version"
+            )));
+        }
+    }
+
+    // The stored YAML's `name:` matches the contract identity (name_override).
+    let yaml_named = crate::version_pin::set_yaml_name(&result.yaml_content, &name);
+
     // Step 2: create identity + throwaway v1.0.0 draft.
     let (identity, _) = storage::create_contract(
         &state.db,
         &name,
         name_in_yaml.description.as_deref(),
-        &result.yaml_content,
+        &yaml_named,
         Default::default(),
         org_id,
     )
@@ -727,7 +969,7 @@ async fn import_odcs_handler(
         &state.db,
         identity.id,
         &result.version,
-        &result.yaml_content,
+        &yaml_named,
         result.import_source,
         org_id,
     )
@@ -1463,6 +1705,13 @@ fn build_router(state: Arc<AppState>) -> Router {
         .route("/contracts/{id}/report", get(report::report_handler))
         // Per-org event usage vs plan limit (RFC-083 Phase 1).
         .route("/usage", get(usage::usage_handler))
+        // Caller identity: org id/name + plan (no emails).
+        .route("/me", get(me::me_handler))
+        .route("/v1/me", get(me::me_handler))
+        .route(
+            "/v1/integrations/fivetran/connect",
+            post(fivetran::connect_fivetran_handler),
+        )
         // Org-scoped top-level quarantine API (RFC-081) — backs the dashboard
         // Quarantine tab: list, replay-by-event-id, and per-event history.
         .route("/quarantine", get(quarantine::list_quarantine_handler))
@@ -1520,6 +1769,10 @@ fn build_router(state: Arc<AppState>) -> Router {
             post(publication::publish_handler),
         )
         .route(
+            "/contracts/publications",
+            get(publication::list_my_publications_handler),
+        )
+        .route(
             "/contracts/publications/{publication_ref}",
             axum::routing::delete(publication::revoke_handler),
         )
@@ -1558,6 +1811,10 @@ fn build_router(state: Arc<AppState>) -> Router {
             get(collaboration::list_comments_handler).post(collaboration::add_comment_handler),
         )
         .route(
+            "/contracts/{name}/comments/{id}",
+            axum::routing::delete(collaboration::delete_comment_handler),
+        )
+        .route(
             "/contracts/{name}/comments/{id}/resolve",
             post(collaboration::resolve_comment_handler),
         )
@@ -1565,6 +1822,10 @@ fn build_router(state: Arc<AppState>) -> Router {
         .route(
             "/contracts/{name}/proposals",
             get(collaboration::list_proposals_handler).post(collaboration::create_proposal_handler),
+        )
+        .route(
+            "/contracts/{name}/proposals/{id}",
+            axum::routing::delete(collaboration::delete_proposal_handler),
         )
         .route(
             "/contracts/{name}/proposals/{id}/decide",
@@ -1638,6 +1899,10 @@ fn build_router(state: Arc<AppState>) -> Router {
             "/v1/contracts/{contract_id}/version",
             get(v1_contract_version_handler),
         )
+        .route(
+            "/v1/contracts/{id}/passed",
+            get(passed_events::list_passed_events),
+        )
         .layer(tower_http::limit::RequestBodyLimitLayer::new(
             10 * 1024 * 1024, // 10 MB — RFC-021
         ))
@@ -1666,10 +1931,11 @@ fn build_router(state: Arc<AppState>) -> Router {
         .layer(middleware::from_fn(error::json_error_bodies))
         .layer(middleware::from_fn(observability::track_requests))
         .layer(TraceLayer::new_for_http())
-        .layer(TimeoutLayer::with_status_code(
-            StatusCode::REQUEST_TIMEOUT,
-            std::time::Duration::from_secs(30),
-        ))
+        // 30s budget. Logs the route and the stage that was in progress
+        // (`handler`, `pool_acquire`, `db_statement`) and returns 504.
+        // Demo SSE streams are excluded; a wedged worker is still logged by
+        // the deadline thread because that wait does not yield.
+        .layer(middleware::from_fn(request_limits::request_timeout))
         // Retire the old contractgate-api.fly.dev host (opt-in via the
         // LEGACY_API_HOSTS secret). Outside CORS/auth so a legacy request is
         // redirected before anything else runs.
@@ -1700,7 +1966,7 @@ async fn main() -> anyhow::Result<()> {
             .with(tracing_subscriber::fmt::layer())
             .init();
         let database_url = std::env::var("DATABASE_URL").expect("DATABASE_URL must be set");
-        let pool = sqlx::PgPool::connect(&database_url).await?;
+        let pool = request_limits::connect_pool(&database_url).await?;
         scorecard::run_baseline_rollup(&pool).await?;
         tracing::info!("scorecard-rollup complete");
         return Ok(());
@@ -1718,7 +1984,7 @@ async fn main() -> anyhow::Result<()> {
             .with(tracing_subscriber::fmt::layer())
             .init();
         let database_url = std::env::var("DATABASE_URL").expect("DATABASE_URL must be set");
-        let pool = sqlx::PgPool::connect(&database_url).await?;
+        let pool = request_limits::connect_pool(&database_url).await?;
         let n = metering::reconcile_current_period(&pool).await?;
         tracing::info!(rows_raised = n, "usage-reconcile complete");
         return Ok(());
@@ -1743,7 +2009,7 @@ async fn main() -> anyhow::Result<()> {
 
     let database_url = std::env::var("DATABASE_URL").expect("DATABASE_URL must be set");
 
-    let pool = PgPool::connect(&database_url).await?;
+    let pool = request_limits::connect_pool(&database_url).await?;
     tracing::info!("Connected to database");
 
     // Fail fast if the DB is missing columns this binary depends on (deploy
@@ -1801,6 +2067,11 @@ async fn main() -> anyhow::Result<()> {
     };
 
     let state = Arc::new(AppState::new(pool, dev_no_auth, supabase_jwks, jwks_url));
+    if state.self_hosted {
+        tracing::info!(
+            "CONTRACTGATE_SELF_HOSTED is set — passed-event export, Connect Fivetran, and payload storage treat every org as paid"
+        );
+    }
 
     // Warm the compiled-contract cache with every stable + deprecated
     // version.  Failure here is logged but does not block boot.
@@ -1811,8 +2082,14 @@ async fn main() -> anyhow::Result<()> {
 
     // RFC-025: restore Kafka consumers for all currently-enabled contracts.
     // Runs in the background; boot is not blocked if Confluent is unavailable.
-    state.kafka_consumers.restore_all(Arc::clone(&state)).await;
-    tracing::info!("kafka consumer pool restored");
+    // Off by default (KAFKA_ENABLED): the Confluent account is closed and
+    // restored consumers only spun in reconnect loops.
+    if kafka_ingress::kafka_enabled() {
+        state.kafka_consumers.restore_all(Arc::clone(&state)).await;
+        tracing::info!("kafka consumer pool restored");
+    } else {
+        tracing::info!("kafka ingress disabled (KAFKA_ENABLED not true); consumers not started");
+    }
     state
         .kinesis_consumers
         .restore_all(Arc::clone(&state))

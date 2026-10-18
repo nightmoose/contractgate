@@ -192,7 +192,7 @@ branch state and STATUS.md.
 ## Run: 2026-07-15 — RFC-083 Phase 2 (plan-limit enforcement)
 
 **Scope:** dual-sell #6 — hard monthly event caps on ingest. Hot-path aware.
-**Branch / PR:** `nightly-maintenance-2026-07-15-rfc083-phase2` / #150 (Claude review)
+**Branch / PR:** `nightly-maintenance-2026-07-15-rfc083-phase2` / #150 (AI assistant review)
 
 ### What shipped
 1. Migration **032** — `org_monthly_usage(org_id, period, events)`.
@@ -211,7 +211,7 @@ branch state and STATUS.md.
 
 ## Run: 2026-07-15 — Diligence follow-ups (licenses CI, npm inventory, polish)
 
-**Scope:** Five safe items while Phase 2 metering stays with Claude. No hot path.
+**Scope:** Five safe items while Phase 2 metering stays with an AI assistant. No hot path.
 **Branch:** `nightly-maintenance-2026-07-15-data-room-runbook-licenses`
 
 ### What shipped
@@ -228,10 +228,10 @@ Website resources section is a separate PR on `datacontractgate_website`.
 
 ## Run: 2026-07-15 — Data-room package + ops runbook + cargo-about
 
-**Scope:** diligence packaging (Claude's architecture/data-room + Grok's ops
-runbook + cargo-about inventory). **Does not** touch RFC-083 Phase 2 (hot path).
+**Scope:** diligence packaging (an AI assistant's architecture/data-room + another
+AI assistant's ops runbook + cargo-about inventory). **Does not** touch RFC-083 Phase 2 (hot path).
 **Branch:** `nightly-maintenance-2026-07-15-data-room-runbook-licenses` (merged with
-Claude's concurrent data-room push on main).
+an AI assistant's concurrent data-room push on main).
 
 ### What shipped (combined)
 1. **`docs/architecture-overview.md`** — one-pager + mermaid request-flow diagram.
@@ -568,7 +568,7 @@ I cannot run `cargo check`/`cargo test`/`cargo clippy`/`cargo sqlx prepare --che
 
 > **REMOVED 2026-07-10 (same day):** workflow, script, and reference doc
 > deleted; `drift_check` prod role dropped. Decision: migrations are now
-> applied exclusively by Claude via the Supabase MCP immediately after the
+> applied exclusively by an AI assistant via the Supabase MCP immediately after the
 > file is committed, so ledger drift can't recur; a scheduled prod-DB check
 > wasn't worth the secret/role upkeep. Entry kept for history.
 
@@ -1881,7 +1881,7 @@ Load test to confirm p99 budget held with metrics middleware in place
 
 ## 2026-05-01 – Repo Security Sprint (Phase 1 Complete)
 
-**Owner**: Alex + Grok
+**Owner**: Alex + an AI assistant
 
 ### Changes
 - Added `SECURITY.md` with full vulnerability disclosure policy and current security controls

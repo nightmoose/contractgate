@@ -22,6 +22,9 @@
 //!   same way fresh ingest does.
 //! - **Q4**: 1 000-row cap per request, matching batch ingest.
 
+/// Maximum event ids accepted by a single replay request.
+pub const MAX_REPLAY_IDS: usize = 1_000;
+
 use axum::{
     extract::{Path, State},
     Json,
@@ -57,7 +60,7 @@ impl ReplayRequest {
     /// contracts-scoped and RFC-081 top-level replay paths (both work from a
     /// bare id list).
     pub fn validate_ids_bounds(ids: &[Uuid]) -> AppResult<()> {
-        const MAX: usize = 1_000;
+        const MAX: usize = MAX_REPLAY_IDS;
         if ids.is_empty() {
             return Err(AppError::BadRequest(
                 "replay request must include at least one id".into(),
@@ -209,7 +212,8 @@ pub async fn replay_for_contract(
                 slot[idx] = Some(ReplayItemOutcome::AlreadyReplayed);
             }
             // RFC-086: body not stored / purged → nothing to replay.
-            Some(r) if r.payload_redacted || r.payload.is_none() => {
+            // Same predicate the org-wide route reports via `replay_item_view`.
+            Some(r) if source_body_missing(r.payload_redacted, r.payload.is_none()) => {
                 slot[idx] = Some(ReplayItemOutcome::Redacted);
             }
             Some(r) => {
@@ -330,7 +334,8 @@ pub async fn replay_for_contract(
             let stored_payload = TransformedPayload::from_stored(event.clone());
             audit_inserts.push(storage::AuditEntryInsert {
                 contract_id,
-                org_id: None, // replay runs server-side; no API key context available
+                // GET /audit filters on the caller org. NULL hides the row.
+                org_id: replay_pass_audit_org(org_id),
                 contract_version: matched_ver.clone(),
                 passed: true,
                 violation_count: 0,
@@ -410,16 +415,25 @@ pub async fn replay_for_contract(
     }
 
     // ----- 5. Execute DB writes -------------------------------------------
-    // RFC-086: replay only runs on rows whose body was stored (paid + opted-in),
-    // so a re-quarantined failed replay stays storable for re-replay: store.
-    storage::log_audit_entries_batch(&state.db, &audit_inserts, true).await?;
-    storage::quarantine_events_batch(&state.db, &quar_inserts, true).await?;
-    // Fire-and-forget forwarding on replay-passes, mirroring ingest path.
+    // Audit body and forwarded_events follow ingest's store_payloads bit.
+    // The failed-replay quarantine row always keeps its body: see
+    // [`replay_write_plan`]. The audit insert is awaited, so the passing
+    // row exists before this function returns. forwarded_events is spawned
+    // so a sink failure does not fail the replay.
+    let store_payloads =
+        crate::ingest::resolve_store_payloads(state, org_id, identity.store_event_payloads).await;
+    let write_plan = replay_write_plan(store_payloads);
+    storage::log_audit_entries_batch(&state.db, &audit_inserts, write_plan.store_audit_body)
+        .await?;
+    storage::quarantine_events_batch(&state.db, &quar_inserts, write_plan.store_quarantine_body)
+        .await?;
     if !forward_inserts.is_empty() {
         let pool = state.db.clone();
         let to_forward = forward_inserts.clone();
+        let store_forwarded = write_plan.store_forwarded_body;
         tokio::spawn(async move {
-            if let Err(e) = storage::forward_events_batch(&pool, &to_forward).await {
+            if let Err(e) = storage::forward_events_batch(&pool, &to_forward, store_forwarded).await
+            {
                 tracing::warn!("replay forward insert failed: {e}");
             }
         });
@@ -525,6 +539,76 @@ pub async fn replay_history_handler(
 // Helpers
 // ---------------------------------------------------------------------------
 
+/// True when a quarantine row has no body to re-validate.
+///
+/// `payload_redacted` is the RFC-086 marker (never stored, or purged). A NULL
+/// payload without the marker is the same situation: there is nothing to
+/// replay. The per-contract engine classifies those rows as
+/// [`ReplayItemOutcome::Redacted`]; [`replay_item_view`] is what the org-wide
+/// route uses so both responses flag them.
+pub(crate) fn source_body_missing(payload_redacted: bool, payload_is_none: bool) -> bool {
+    payload_redacted || payload_is_none
+}
+
+/// Fields both replay routes agree on for one engine outcome.
+///
+/// Per-contract `POST /contracts/{id}/quarantine/replay` serializes
+/// [`ReplayItemOutcome::Redacted`] as `"outcome": "redacted"`. Org-wide
+/// `POST /quarantine/replay` sets [`Self::redacted`] from this view of the
+/// same outcome, instead of collapsing it into `passed: false` with an empty
+/// violations list.
+#[derive(Debug, Clone)]
+pub struct ReplayItemView {
+    pub passed: bool,
+    pub version: String,
+    pub violations: Vec<Violation>,
+    pub redacted: bool,
+}
+
+/// Map one engine outcome onto the shared replay view.
+///
+/// `target_version` is the version the engine resolved for the contract. Pass
+/// and still-quarantined outcomes carry their own version; every other
+/// outcome (including redacted) echoes `target_version`.
+pub fn replay_item_view(outcome: &ReplayItemOutcome, target_version: &str) -> ReplayItemView {
+    match outcome {
+        ReplayItemOutcome::Replayed {
+            contract_version_matched,
+            ..
+        } => ReplayItemView {
+            passed: true,
+            version: contract_version_matched.clone(),
+            violations: Vec::new(),
+            redacted: false,
+        },
+        ReplayItemOutcome::StillQuarantined {
+            contract_version_attempted,
+            violations,
+            ..
+        } => ReplayItemView {
+            passed: false,
+            version: contract_version_attempted.clone(),
+            violations: violations.clone(),
+            redacted: false,
+        },
+        ReplayItemOutcome::Redacted => ReplayItemView {
+            passed: false,
+            version: target_version.to_string(),
+            violations: Vec::new(),
+            redacted: true,
+        },
+        ReplayItemOutcome::AlreadyReplayed
+        | ReplayItemOutcome::NotFound
+        | ReplayItemOutcome::WrongContract
+        | ReplayItemOutcome::Purged => ReplayItemView {
+            passed: false,
+            version: target_version.to_string(),
+            violations: Vec::new(),
+            redacted: false,
+        },
+    }
+}
+
 /// Resolve the target version for a replay call.
 ///
 /// Returns `(version, source, is_draft)`:
@@ -586,6 +670,41 @@ pub(crate) fn tally(results: &[ReplayItemResult]) -> Tally {
         }
     }
     t
+}
+
+/// What a replay attempt writes for each body column.
+///
+/// `store_payloads` is the same bit v0/v1 ingest passes to
+/// [`storage::log_audit_entries_batch`]: paid plan and org switch and
+/// per-contract override. When it is false, the audit body is `{}` and
+/// `raw_event_redacted` is set.
+///
+/// Ingest quarantine uses that same bit (SQL `NULL` when off), and those
+/// rows are not replayable. A failed replay is different: it only runs
+/// because the source row already had a body, and the new quarantine row
+/// has to keep that body so a later replay can run. That write stays on.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct ReplayWritePlan {
+    pub store_audit_body: bool,
+    pub store_quarantine_body: bool,
+    pub store_forwarded_body: bool,
+}
+
+pub(crate) fn replay_write_plan(store_payloads: bool) -> ReplayWritePlan {
+    ReplayWritePlan {
+        store_audit_body: store_payloads,
+        store_quarantine_body: true,
+        store_forwarded_body: store_payloads,
+    }
+}
+
+/// Org written on a replay-pass `audit_log` row.
+///
+/// `GET /audit` selects `WHERE org_id = $caller`. The insert is awaited
+/// before the replay response returns. A NULL org does not match that
+/// filter, so the passing row never shows up on `/audit`.
+pub(crate) fn replay_pass_audit_org(caller_org: Option<Uuid>) -> Option<Uuid> {
+    caller_org
 }
 
 // ---------------------------------------------------------------------------
@@ -722,5 +841,72 @@ mod tests {
         let o = ReplayItemOutcome::NotFound;
         let s = serde_json::to_string(&o).unwrap();
         assert!(s.contains("\"outcome\":\"not_found\""));
+
+        // Per-contract flag for a row with no stored body.
+        let redacted = ReplayItemResult {
+            quarantine_id: Uuid::nil(),
+            outcome: ReplayItemOutcome::Redacted,
+        };
+        let wire = serde_json::to_value(&redacted).unwrap();
+        assert_eq!(wire["outcome"], "redacted");
+
+        // Org-wide view of that same outcome. `redacted: true`, not a bare
+        // `passed: false` with an empty violations list (that is what purged /
+        // not-found look like).
+        let view = replay_item_view(&redacted.outcome, "1.0.0");
+        assert!(view.redacted);
+        assert!(!view.passed);
+        assert!(view.violations.is_empty());
+        assert_eq!(view.version, "1.0.0");
+
+        let purged = replay_item_view(&ReplayItemOutcome::Purged, "1.0.0");
+        assert!(!purged.redacted);
+        assert!(!purged.passed);
+        assert!(source_body_missing(true, false));
+        assert!(source_body_missing(false, true));
+        assert!(!source_body_missing(false, false));
+    }
+
+    #[test]
+    fn replay_storage_follows_ingest_except_requarantine() {
+        use crate::plan::payloads_stored;
+
+        // Free, both switches on. Audit and forward omit the body.
+        // The new quarantine row still keeps it.
+        let free = replay_write_plan(payloads_stored("free", true, true));
+        assert!(!free.store_audit_body, "free audit body");
+        assert!(free.store_quarantine_body, "free re-quarantine keeps body");
+        assert!(!free.store_forwarded_body, "free forward body");
+        assert!(!replay_write_plan(payloads_stored("aisg_free", true, true)).store_audit_body);
+
+        // Paid, org master switch off.
+        let org_off = replay_write_plan(payloads_stored("growth", false, true));
+        assert!(!org_off.store_audit_body);
+        assert!(org_off.store_quarantine_body);
+        assert!(!org_off.store_forwarded_body);
+        assert!(!replay_write_plan(payloads_stored("aisg_pro", false, true)).store_audit_body);
+
+        // Paid, per-contract override off.
+        let contract_off = replay_write_plan(payloads_stored("enterprise", true, false));
+        assert!(!contract_off.store_audit_body);
+        assert!(contract_off.store_quarantine_body);
+        assert!(!contract_off.store_forwarded_body);
+
+        // Paid, both switches on. All three bodies stored.
+        let on = replay_write_plan(payloads_stored("growth", true, true));
+        assert!(on.store_audit_body);
+        assert!(on.store_quarantine_body);
+        assert!(on.store_forwarded_body);
+        assert!(replay_write_plan(payloads_stored("aisg_pro", true, true)).store_audit_body);
+        assert!(replay_write_plan(payloads_stored("enterprise", true, true)).store_forwarded_body);
+    }
+
+    #[test]
+    fn replay_pass_audit_org_matches_audit_list() {
+        let org = Uuid::new_v4();
+        let stamped = replay_pass_audit_org(Some(org));
+        // GET /audit: WHERE org_id = $caller. NULL does not match.
+        assert_eq!(stamped, Some(org));
+        assert_ne!(replay_pass_audit_org(None), Some(org));
     }
 }

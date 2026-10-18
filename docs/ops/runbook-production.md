@@ -26,8 +26,8 @@
 | `GET /ready` | DB `SELECT 1` with timeout (readiness). Fly check path. |
 
 ```bash
-curl -sS https://contractgate-api.fly.dev/health
-curl -sS https://contractgate-api.fly.dev/ready
+curl -sS https://api.datacontractgate.com/health
+curl -sS https://api.datacontractgate.com/ready
 ```
 
 **Gotcha:** `/health` 200 while JWT path panics → dashboard “CORS”/502. Always check **logs** for panics (see §6).
@@ -77,6 +77,7 @@ Set via `fly secrets set` (never commit).
 | Variable | Required | Purpose |
 |---|---|---|
 | `DATABASE_URL` | Yes | Supabase Postgres (service role for gateway) |
+| `CANONICAL_API_ORIGIN` | Yes | Public API origin. Production must set `https://api.datacontractgate.com`. Staging must set `https://contractgate-api-staging.fly.dev`. Connect Fivetran returns 500 and mints no key if this is unset. |
 | `DASHBOARD_ORIGIN` | Yes (prod) | CORS allowlist (comma-separated). Prod carries `https://app.datacontractgate.com,https://aischemagate.com,https://aischemagate.dev` (RFC-096: shared backend serves both DataContractGate and AISchemaGate). |
 | `PORT` | No | Default 3001 (matches `fly.toml`) |
 | `RUST_LOG` | No | e.g. `contractgate=info,tower_http=warn` |
@@ -204,3 +205,27 @@ Customer-facing targets: [Support SLA](../support-sla.md).
 - Set `CONTRACTGATE_DEV_NO_AUTH` in production
 - Trust “CORS misconfigured” without reading Fly logs on 502
 - Apply prod migrations from agent sessions without human approval
+
+## Staging (2026-10-14)
+
+- Branch **`staging`** (created from `main`). The dev team may merge PRs into
+  `staging` freely; **only Alex merges to `main`** (production).
+- Production must set `CANONICAL_API_ORIGIN=https://api.datacontractgate.com`. Staging must set `CANONICAL_API_ORIGIN=https://contractgate-api-staging.fly.dev`.
+- Fly app `contractgate-api-staging` via `fly.staging.toml`: `auto_stop_machines`,
+  `min_machines_running = 0`, `KAFKA_ENABLED=false`. Created 2026-10-14.
+- Staging **shares the production Supabase database** (Alex's decision while there
+  are no customers): same `DATABASE_URL`, `ENCRYPTION_KEY`, `SUPABASE_URL`. Treat
+  staging writes as real data. No Confluent or AWS secrets on staging.
+- CI: a push to `staging` builds the image, pushes it to
+  `registry.fly.io/contractgate-api-staging:<sha>` (token `FLY_API_TOKEN_STAGING`)
+  and `deploy-fly-staging` runs `flyctl deploy -c fly.staging.toml --image …`.
+  Prod registry push and `deploy-fly` are guarded to `refs/heads/main`.
+
+## Kafka / Confluent ingress — disabled (2026-10-14)
+
+The Confluent Cloud account is closed. `KAFKA_ENABLED` defaults to **false**
+(`fly.toml` sets it explicitly): boot does not restore Kafka consumers and
+`POST /contracts/{id}/kafka-ingress/enable` returns 400 pointing at `/v1/ingest`.
+Existing `kafka_ingress` rows are left as they are. To re-enable: provision a
+broker, set the `CONFLUENT_*` secrets, set `KAFKA_ENABLED=true`, redeploy.
+The `kafka-ingress` cargo feature stays compiled in (no code removal).

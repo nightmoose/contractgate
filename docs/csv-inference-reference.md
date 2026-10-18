@@ -92,7 +92,9 @@ inference runs:
 
 After coercion the inference engine applies the same pattern/enum detection
 used for JSON samples: UUID detection, ISO date format, and enum collapse when
-a string column has ≤ 10 distinct values across the sample.
+a string column has 2–8 distinct values across at least 5 non-null samples,
+each value seen about twice on average. A column where every sample has the
+same value is left as a plain string (no one-value enum).
 
 A column is marked `required: false` if any row in the sample has an empty
 (coerced-to-null) value for that column.

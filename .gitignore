@@ -76,7 +76,7 @@ supabase/.temp/
 docs/marketing/drafts/
 !docs/marketing/drafts/README.md
 
-# ClankerSpanker hunter outbox (drafts, never sent)
+# AI assistant hunter outbox (drafts, never sent)
 .bot-outbox/
 
 # Claude Code screenshot attachments (local scratch folder, never project files)

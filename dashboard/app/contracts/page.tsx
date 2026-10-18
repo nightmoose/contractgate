@@ -19,10 +19,13 @@
 
 import { useState, useEffect, useMemo } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import useSWR, { mutate } from "swr";
 import AuthGate from "@/components/AuthGate";
+import MyPublications from "@/components/contracts/MyPublications";
 import PlanGate, { FreeLimitBanner } from "@/components/PlanGate";
 import { useOrg, planAtLeast } from "@/lib/org";
+import { usePaidFeatures } from "@/lib/use-paid-features";
 import { useBrand } from "@/components/BrandProvider";
 import { createClient } from "@/lib/supabase/client";
 import {
@@ -77,6 +80,7 @@ import {
 import clsx from "clsx";
 import { HelpTarget } from "@/components/help/HelpTarget";
 import { FirstRunLoop } from "@/components/help/FirstRun";
+import ConnectFivetran from "@/components/contracts/ConnectFivetran";
 
 // ---------------------------------------------------------------------------
 // Edit Contract Modal
@@ -112,6 +116,8 @@ function EditContractModal({
   // RFC-045: plan gating inside modal
   const { org: modalOrg } = useOrg();
   const isGrowth = modalOrg ? planAtLeast(modalOrg.plan, "growth") : false;
+  // Kafka/Kinesis streaming is Enterprise-only (available on request).
+  const isEnterprise = modalOrg ? planAtLeast(modalOrg.plan, "enterprise") : false;
   // AISchemaGate validates LLM output; Kafka/Kinesis ingress doesn't apply.
   const aisgModal = useBrand() === "aisg";
 
@@ -404,31 +410,31 @@ function EditContractModal({
             {!aisgModal && (<>
             <button
               onClick={() => setModalTab("kafka")}
-              disabled={!isGrowth}
-              title={!isGrowth ? "Kafka integration — Pro plan required" : undefined}
+              disabled={!isEnterprise}
+              title={!isEnterprise ? "Kafka streaming — Enterprise, available on request" : undefined}
               className={clsx(
                 "px-4 py-2 text-sm font-medium rounded-t-lg transition-colors border-b-2 -mb-px flex items-center gap-1",
                 modalTab === "kafka"
                   ? "text-slate-100 border-emerald-500"
                   : "text-slate-500 hover:text-slate-300 border-transparent",
-                !isGrowth && "opacity-50 cursor-not-allowed"
+                !isEnterprise && "opacity-50 cursor-not-allowed"
               )}
             >
-              Kafka {!isGrowth && <span className="text-[10px] text-amber-500">🔒</span>}
+              Kafka {!isEnterprise && <span className="text-[10px] text-amber-500">🔒</span>}
             </button>
             <button
               onClick={() => setModalTab("kinesis")}
-              disabled={!isGrowth}
-              title={!isGrowth ? "Kinesis integration — Pro plan required" : undefined}
+              disabled={!isEnterprise}
+              title={!isEnterprise ? "Kinesis streaming — Enterprise, available on request" : undefined}
               className={clsx(
                 "px-4 py-2 text-sm font-medium rounded-t-lg transition-colors border-b-2 -mb-px flex items-center gap-1",
                 modalTab === "kinesis"
                   ? "text-slate-100 border-emerald-500"
                   : "text-slate-500 hover:text-slate-300 border-transparent",
-                !isGrowth && "opacity-50 cursor-not-allowed"
+                !isEnterprise && "opacity-50 cursor-not-allowed"
               )}
             >
-              Kinesis {!isGrowth && <span className="text-[10px] text-amber-500">🔒</span>}
+              Kinesis {!isEnterprise && <span className="text-[10px] text-amber-500">🔒</span>}
             </button>
             </>)}
             {/* RFC-033: Collaborate tab */}
@@ -673,12 +679,14 @@ function PublishModal({
   const [err, setErr] = useState<string | null>(null);
   const [tokenCopied, setTokenCopied] = useState(false);
   const [refCopied, setRefCopied] = useState(false);
+  const [pubsKey, setPubsKey] = useState(0);
 
   const handlePublish = async () => {
     setPublishing(true); setErr(null);
     try {
       const res = await publishVersion(contractId, version, { visibility });
       setResult(res);
+      setPubsKey((k) => k + 1);
     } catch (e) {
       setErr(e instanceof Error ? e.message : String(e));
     } finally { setPublishing(false); }
@@ -812,6 +820,9 @@ function PublishModal({
             </button>
           </>
         )}
+
+        {/* S-U1: this contract's publications; Unpublish only if never imported */}
+        <MyPublications contractId={contractId} refreshKey={pubsKey} title="Published versions of this contract" />
       </div>
     </div>
   );
@@ -1675,13 +1686,13 @@ function ImportFromRefModal({
     if (!ref.trim()) return;
     setImporting(true); setErr(null);
     try {
-      await importPublished({
+      const res = await importPublished({
         publication_ref: ref.trim(),
         ...(token.trim() ? { link_token: token.trim() } : {}),
         import_mode: mode,
       });
       await mutate("contracts");
-      setSuccess(`Imported as ${mode} — contract added to your list.`);
+      setSuccess(res.message || `Imported as ${mode} (${res.state}) — contract added to your list.`);
       setTimeout(() => { onImported(); }, 1800);
     } catch (e) {
       setErr(e instanceof Error ? e.message : String(e));
@@ -1871,6 +1882,7 @@ type Tab = "list" | "consumed" | "build" | "generate" | "csv" | "quarantine";
 function ContractsContent() {
   const router = useRouter();
   const { org } = useOrg();
+  const paidFeatures = usePaidFeatures();
   const aisg = useBrand() === "aisg";
   const { data: contracts, isLoading, error: contractsError } = useSWR<ContractSummary[]>(
     org ? "contracts" : null,
@@ -1881,6 +1893,7 @@ function ContractsContent() {
   const [showImport, setShowImport] = useState(false);
   const [showImportRef, setShowImportRef] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [fivetranOpen, setFivetranOpen] = useState(false);
 
   // RFC-028: search + source filter
   const [query, setQuery] = useState("");
@@ -1940,7 +1953,21 @@ function ContractsContent() {
             Create and manage versioned semantic contracts
           </p>
         </div>
-        {(tab === "list" || tab === "consumed") && (
+        <div className="flex gap-2 flex-wrap">
+            <Link
+              href="/docs/fivetran"
+              className="px-3 py-2 text-sm text-slate-400 hover:text-green-400 self-center"
+            >
+              Fivetran guide
+            </Link>
+            <button
+              type="button"
+              onClick={() => setFivetranOpen((open) => !open)}
+              className="px-4 py-2 bg-[#1f2937] hover:bg-[#374151] text-slate-100 text-sm font-medium rounded-lg transition-colors"
+            >
+              Connect Fivetran
+            </button>
+            {(tab === "list" || tab === "consumed") && (
           <div className="flex gap-2 flex-wrap">
             {/* RFC-032: import from publication ref (consumer flow) */}
             <HelpTarget id="contracts.import-ref">
@@ -1971,9 +1998,18 @@ function ContractsContent() {
                 </HelpTarget>
               </>
             )}
-          </div>
-        )}
+            </div>
+          )}
+        </div>
       </div>
+
+      {fivetranOpen && (
+        <ConnectFivetran
+          paid={paidFeatures}
+          contracts={(contracts ?? []).map((c) => ({ id: c.id, name: c.name }))}
+          onClose={() => setFivetranOpen(false)}
+        />
+      )}
 
       <div className="flex gap-1 mb-6 bg-[#111827] border border-[#1f2937] rounded-xl p-1 w-fit flex-wrap">
         {(aisg

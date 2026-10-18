@@ -158,6 +158,10 @@ pub struct BatchIngestResponse {
     /// Resolved version the request was dispatched against (before any
     /// fallback).  Mirrors what got logged to tracing.
     pub resolved_version: String,
+    /// The pin exactly as the caller sent it, present only when it resolved
+    /// to a differently written stored version (e.g. `@1` → `1.0`).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub requested_version: Option<String>,
     /// Where the resolved version came from: `"header"`, `"path"`,
     /// `"default_stable"`, or `"pinned_deprecated"`.  Always one of a
     /// closed set of `&'static str` constants — no per-request allocation.
@@ -172,16 +176,7 @@ pub struct BatchIngestResponse {
 /// Split the path parameter into `(uuid, optional_version)`.  The `@version`
 /// suffix is an RFC-002 fallback for clients that can't set headers.
 fn parse_ingest_path(raw: &str) -> AppResult<(Uuid, Option<String>)> {
-    let (uuid_part, path_version) = match raw.split_once('@') {
-        Some((id, v)) if !v.is_empty() => (id, Some(v.to_string())),
-        // Empty suffix (e.g. `<uuid>@`) is treated as "no pin" — but the
-        // UUID still lives before the `@`, so split on that boundary.
-        Some((id, _)) => (id, None),
-        None => (raw, None),
-    };
-    let uuid = Uuid::parse_str(uuid_part)
-        .map_err(|_| AppError::BadRequest(format!("invalid contract_id: {uuid_part}")))?;
-    Ok((uuid, path_version))
+    crate::version_pin::parse_pinned_id(raw)
 }
 
 /// Resolve the version this request should use and where it came from.
@@ -231,7 +226,7 @@ pub(crate) async fn resolve_store_payloads(
     };
     match storage::get_org_payload_policy(&state.db, org_id).await {
         Ok(Some((plan, org_switch))) => {
-            crate::plan::payloads_stored(&plan, org_switch, contract_switch)
+            crate::plan::payloads_stored_for(state.self_hosted, &plan, org_switch, contract_switch)
         }
         Ok(None) => false,
         Err(e) => {
@@ -286,7 +281,12 @@ pub async fn ingest_handler(
 
     // --- Fetch version row so we know its state (draft/stable/deprecated) --
     let version_row =
-        storage::get_version(&state.db, contract_id, &resolved_version, org_id).await?;
+        storage::get_version_for_pin(&state.db, contract_id, &resolved_version, org_id).await?;
+    // A normalised pin (`1.0.0` for a stored `1.0`) continues as the stored string;
+    // the caller's spelling is echoed back as `requested_version`.
+    let requested_version =
+        (resolved_version != version_row.version).then(|| resolved_version.clone());
+    let resolved_version = version_row.version.clone();
 
     tracing::debug!(
         contract_id = %contract_id,
@@ -725,7 +725,7 @@ pub async fn ingest_handler(
         if !forward_rows.is_empty() {
             let pool = state.db.clone();
             let row_count = forward_rows.len();
-            let forward_ok = storage::forward_events_batch(&pool, &forward_rows)
+            let forward_ok = storage::forward_events_batch(&pool, &forward_rows, store_payloads)
                 .await
                 .is_ok();
             if !forward_ok {
@@ -748,6 +748,7 @@ pub async fn ingest_handler(
         dry_run: query.dry_run,
         atomic: query.atomic,
         resolved_version: resolved_version.clone(),
+        requested_version: requested_version.clone(),
         version_pin_source: pin_source,
         results: per_event_results,
     };
@@ -821,7 +822,10 @@ async fn deprecated_pin_quarantine(
         .iter()
         .map(|tp| IngestEventResult {
             passed: false,
-            violations: vec![],
+            violations: vec![crate::version_pin::deprecated_violation(
+                pinned_version,
+                latest_stable.as_deref(),
+            )],
             validation_us: 0,
             forwarded: false,
             contract_version: pinned_version.to_string(),
@@ -912,16 +916,21 @@ async fn deprecated_pin_quarantine(
         dry_run: query.dry_run,
         atomic: query.atomic,
         resolved_version: pinned_version.to_string(),
+        requested_version: None,
         version_pin_source: "pinned_deprecated",
         results: per_event_results,
     };
 
     let body = json!({
-        "error": format!(
-            "Version {} on contract {} is deprecated; batch quarantined.",
-            pinned_version, contract_id,
+        "error": crate::version_pin::deprecated_message(
+            pinned_version,
+            contract_id,
+            if query.dry_run { "dry run: nothing was quarantined" } else { "every event was quarantined" },
         ),
         "status": StatusCode::UNPROCESSABLE_ENTITY.as_u16(),
+        "code": crate::version_pin::DEPRECATED_CODE,
+        "deprecated_version": pinned_version,
+        "latest_stable": latest_stable,
         "batch": response_body,
     });
 
@@ -1230,7 +1239,9 @@ fn persist_envelope_batch(
         let pool = state.db.clone();
         let row_count = forward_rows.len();
         tokio::spawn(async move {
-            if let Err(e) = storage::forward_events_batch(&pool, &forward_rows).await {
+            if let Err(e) =
+                storage::forward_events_batch(&pool, &forward_rows, store_payloads).await
+            {
                 tracing::warn!("envelope: failed to batch-forward {row_count} events: {e:?}");
             }
         });

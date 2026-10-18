@@ -265,8 +265,8 @@ fn score_document(odcs_yaml: &str) -> (MandatoryFieldsDetail, ExtensionsDetail) 
     };
 
     let extensions = ExtensionsDetail {
-        x_contractgate_version: m.contains_key("x-contractgate-version"),
-        x_contractgate_ontology: m.contains_key("x-contractgate-ontology"),
+        x_contractgate_version: odcs::root_extension(m, "x-contractgate-version").is_some(),
+        x_contractgate_ontology: odcs::root_extension(m, "x-contractgate-ontology").is_some(),
     };
 
     (mandatory, extensions)
@@ -390,6 +390,7 @@ mod tests {
                         properties: None,
                         items: None,
                         transform: None,
+                        format: None,
                     },
                     FieldDefinition {
                         name: "amount".into(),
@@ -404,6 +405,7 @@ mod tests {
                         properties: None,
                         items: None,
                         transform: None,
+                        format: None,
                     },
                 ],
             },
