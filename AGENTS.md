@@ -152,8 +152,8 @@ them in local test setups.
 - `src/rate_limit.rs` — per-key token bucket, **in memory per machine** (see §8).
 - `src/v1_ingest.rs` — `POST /v1/ingest/{id}` (preferred route; returns `index`
   + `quarantine_id`; quarantine ids only when a row is really written — never on
-  `dry_run` or atomic rejection; 415 for non-JSON content types) and the
-  OpenAPI doc (`/openapi.json`, lists `/v1/ingest` and `/egress`).
+  `dry_run` or atomic rejection; 415 for non-JSON content types). The documented
+  pin is `?version=`; `{id}@version` also works. OpenAPI is `/openapi.json`.
 - `src/egress.rs` — `POST /egress/{id}`, used by AISchemaGate's LLMGate. 422
   when every record fails, but the body is still a full egress response.
 - `src/ingest.rs` — legacy `POST /ingest/{id}`; SDKs ≥ 0.4.0 no longer use it.
@@ -200,13 +200,8 @@ Test reports live outside the repo on the owner's machine
   key — never tested end to end.
 
 **Polish round (after the announcement)**
-- Marketing site talks only about Kafka; add AISchemaGate.
-- www and app send only HSTS: add CSP, `X-Content-Type-Options`,
-  `X-Frame-Options` (the API already sends them).
-- www missing `robots.txt`/`sitemap.xml`.
 - 3 orgs have two live contracts with the same name; clean up, then add a
   partial unique index on `(org_id, name) where deleted_at is null`.
-- Pinned versions on `/v1/ingest` use `?version=` (the documented pin). `{id}@version` also works.
 - `@nightmoose/aischemagate` exports map omits `package.json`.
 - Kafka/Kinesis wording still appears in a few DataContractGate-only places
   (fine for DCG, hidden for AISG).
