@@ -1,10 +1,9 @@
 # AGENTS.md — DataContractGate / AISchemaGate handoff
 
-Operational handoff for any coding agent (Claude Code, Codex, Cursor, …) picking
-up this repo. `CLAUDE.md` holds the coding rules and the locked contract format;
+Operational handoff for any coding agent picking up this repo. `CLAUDE.md` holds the coding rules and the locked contract format;
 `PROJECT_STATUS.md` and `docs/STATUS.md` track RFCs. This file covers what those
 don't: how production is wired, how to ship, what is in flight, and the traps
-that already cost us time. Last updated **2026-10-14**.
+that already cost us time. Last updated **2026-10-18**.
 
 Public repo: no secrets, keys, customer data or personal emails in this file or
 anywhere in git. Accounts are named by role below.
@@ -26,10 +25,11 @@ anywhere in git. Accounts are named by role below.
 
 | Piece | Where | Notes |
 |---|---|---|
-| API (Rust/Axum, this repo `src/`) | Fly app `contractgate-api`, region iad, **2 machines** (shared-cpu, 256 MB) | Public host `https://api.datacontractgate.com` (GoDaddy DNS → Fly, Let's Encrypt cert via Fly). |
+| API (Rust/Axum, this repo `src/`) | Fly app `contractgate-api`, region iad, shared-cpu, 256 MB, `min_machines_running = 1` | Public host `https://api.datacontractgate.com`. `CANONICAL_API_ORIGIN` must be that host. `KAFKA_ENABLED=false` (Confluent account closed; enable only with a broker and `CONFLUENT_*` secrets). |
+| Staging API | Fly app `contractgate-api-staging`, `fly.staging.toml`, scale to zero | `https://contractgate-api-staging.fly.dev`. Shares the production Supabase database — staging writes are real data. `CANONICAL_API_ORIGIN` must be the staging host. No Confluent or AWS secrets. |
 | Old API host | `contractgate-api.fly.dev` | **Retired 2026-10-14**: Fly secret `LEGACY_API_HOSTS=contractgate-api.fly.dev` makes every request except `/health` and `/ready` return 308 to the api host (`error::redirect_legacy_hosts`). |
-| Dashboard (Next.js 16, `dashboard/`) | Vercel project `contractgate` | `https://app.datacontractgate.com`. Prod env `NEXT_PUBLIC_API_URL=https://api.datacontractgate.com` (inlined at build — see §7). `dashboard/proxy.ts` rewrites `/v1/*` and `X-Api-Key` requests to `CONTRACTGATE_API_ORIGIN` and sets the brand cookie. |
-| Database / auth | Supabase project `nmhoehpveqkkpfegkzpn` ("contract gate") | Migrations in `supabase/migrations/` (001–039 applied). `pg_cron` job `purge-expired-logs` hourly at :17. |
+| Dashboard (Next.js 16, `dashboard/`) | Vercel project `contractgate` | `https://app.datacontractgate.com`. Prod env `NEXT_PUBLIC_API_URL=https://api.datacontractgate.com` (inlined at build — see §8). `dashboard/proxy.ts` rewrites `/v1/*` and `X-Api-Key` requests to `CONTRACTGATE_API_ORIGIN` and sets the brand cookie. |
+| Database / auth | Supabase project `nmhoehpveqkkpfegkzpn` ("contract gate") | Migrations in `supabase/migrations/` (`001`–`043` in tree). `pg_cron` job `purge-expired-logs` hourly at :17. |
 | DataContractGate marketing | repo `nightmoose/datacontractgate_website`, Vercel | Static fragments `sa1/sa2/frag1-6.html`; `scripts/build.mjs` (Vercel buildCommand) inlines them into `index.html` so the served HTML has real content. `.vercelignore` keeps internal `marketing/` docs off the site. |
 | AISchemaGate site + docs | repo `nightmoose/aischemagate-www` (private), Vercel | aischemagate.com (landing/pricing) and aischemagate.dev (docs; `proxy.ts` rewrites `/` → `/docs`). Docs are copied from this repo by `DOCS_REF=vX.Y.Z npm run sync-docs` — **manual**, rerun after editing `docs/llm-*.md`. |
 | Status app | repo `nightmoose/contractgate-status-ios` | iOS status app. |
@@ -62,19 +62,28 @@ you need >20 requests inside ~1 s; slower traffic refills at 10/s.
 
 ## 4. Shipping
 
-**Branches/PRs.** Branch off `main`, open a PR. Repo ruleset requires 1
-approval + signed commits; the owner merges with bypass. Other agents run
-"nightly-maintenance-YYYY-MM-DD-<rfc>" branches — check
-`gh pr list` and `git branch -r` before editing the same files, and never push
-to someone else's branch.
+**Branches.** Feature work branches off an up-to-date `origin/staging` and
+opens a PR into `staging`. Squash-merge that PR to one `WORKING:` commit.
+Check `gh pr list` and `git branch -r` before editing the same files, and
+never push to someone else's branch.
 
-**CI (`.github/workflows/ci.yml`).** Docs-only changes skip the heavy jobs.
-The `docker` job builds the API image once (GHA layer cache) and, on pushes to
-main, pushes `registry.fly.io/contractgate-api:<sha>`; `deploy-fly` ships that
-exact image (`flyctl deploy --image`, ~0.5 min). Compose smokes reuse the cached
-image (`SKIP_BUILD=1`). `cancel-in-progress` is PR-only so every merge to main
-deploys. Merge → live ≈ 10 min. Confirm a deploy with
-`curl https://api.datacontractgate.com/health` → `build` = short SHA of main.
+**Promoting to production.** Open a PR from `staging` into `main` and merge it
+with a merge commit. The `main` ruleset allows only merge commits, requires
+one approval and signed commits, and blocks force-push and deletion. The owner merges that PR. `deploy-fly` runs only on
+`refs/heads/main`.
+
+**CI (`.github/workflows/ci.yml`).** Runs on `main` and `staging`. A change
+that is only `docs/**`, `examples/**`, or `**/*.md` skips the heavy jobs.
+A markdown file at the repo root (this file) still counts as heavy: the
+exclude pattern needs a slash. The `docker` job builds the API image once
+(GHA layer cache). On a push it tags `registry.fly.io/contractgate-api:<sha>`
+(main) or `registry.fly.io/contractgate-api-staging:<sha>` (staging).
+`deploy-fly` ships the prod image (`flyctl deploy --image`).
+`deploy-fly-staging` ships `flyctl deploy -c fly.staging.toml --image …`.
+Compose smokes reuse the cached image (`SKIP_BUILD=1`). `cancel-in-progress`
+is PR-only so every merge to main deploys. Merge → live ≈ 10 min. Confirm a
+deploy with `curl https://api.datacontractgate.com/health` → `build` = short
+SHA of main. Staging health is `https://contractgate-api-staging.fly.dev/health`.
 
 **Dockerfile dependency layer** stubs every Cargo target and builds with the
 same bins/features as the real build (`CARGO_BUILD_ARGS`). If you add a
@@ -97,8 +106,24 @@ Current version: **0.4.0** (crate, PyPI `contractgate` + `aischemagate`, npm
 `@nightmoose/contractgate-sdk`, `@nightmoose/aischemagate`,
 `@nightmoose/contractgate-mcp-server`, MCP Registry).
 
+**Connect Fivetran and self-host.** `POST /v1/integrations/fivetran/connect`
+(`src/fivetran.rs`) uploads `vendor/fivetran-connector/` into the caller's
+Fivetran account and creates a paused connection. Fivetran credentials are
+not stored. The gateway mints an org-scoped key named `Fivetran connector`.
+Paid hosted plans (`growth`, `aisg_pro`, `enterprise`) may connect. So may
+any process with `CONTRACTGATE_SELF_HOSTED` set to `1`, `true`, or `TRUE`.
+Hosted `free` and `aisg_free` get 403. The flag does not change the stored
+plan: `GET /v1/me` (`src/me.rs`) keeps `plan` and sets `paid_features: true`.
+The same flag unlocks `GET /v1/contracts/{id}/passed` and payload storage.
+Hosted production and staging leave the flag unset. Connect returns 500 and
+mints no key when `CANONICAL_API_ORIGIN` is unset or not an https origin.
+The dashboard button is on Contracts and follows `paid_features`. Guide:
+`dashboard/app/docs/fivetran/page.tsx`. Reference:
+`docs/fivetran-connect-reference.md`. Local self-host is `docker-compose.yml`
+/ `make demo`. `CONTRACTGATE_DEV_NO_AUTH=1` is local only.
+
 **Database migrations.** Add `supabase/migrations/NNN_description.sql`
-(contiguous numbering — CI enforces it) and a CI sentinel in
+(contiguous numbering — CI enforces it; next number is `044`) and a CI sentinel in
 `migrations-check`. Test against a throwaway `postgres:16` with all migrations
 applied. **Production migrations need the owner's explicit approval each time**;
 apply with the Supabase MCP `apply_migration` (that also records it in
@@ -134,6 +159,8 @@ them in local test setups.
   inferred like fields. Round-trip tests in `infer.rs`.
 - `src/storage/contracts.rs` — `deploy_contract_version` resolves the name
   **within the caller's org and live (non-deleted) rows only**.
+- `src/fivetran.rs`, `src/plan.rs` (`gate_paid`, `CONTRACTGATE_SELF_HOSTED`),
+  `src/me.rs` (`paid_features`), `src/passed_events.rs` — see §4.
 - `src/validation.rs` — `received` echoes over 1 KB are shortened; type-mismatch
   suggestions name real settings (`type: number`, `required: false` +
   `null_as_absent: true`).
@@ -146,15 +173,14 @@ them in local test setups.
   (`AISG_HIDDEN`), `components/help/FirstRun.tsx` (brand-aware empty states),
   `app/pricing/{page,AisgPricing}.tsx`, Stripe routes under `app/api/stripe/`.
 
-## 6. Current state (2026-10-14)
+## 6. Current state (2026-10-18)
 
-The tester's end-to-end passes cover sign-up for both brands, AISchemaGate
-plan assignment, checkout + Pro trial + cancel/downgrade, both SDKs, validation,
-versioning, quarantine, API keys, password reset and marketing links. The four
-pre-launch blockers from 2026-10-14 are fixed and deployed (PR #255 + the
-`LEGACY_API_HOSTS` secret): inference, deleted-contract ghost / cross-org
-deploy-by-name, rate-limit headers, retired fly.dev host. **Awaiting the
-tester's retest of those four**, then contract sharing/publishing.
+Production is `main`. Feature work lands on `staging` first; the owner promotes
+it with a merge commit. The latest promotion on main is PR #312: Connect
+Fivetran, the self-host paid-feature flag, and the dashboard gate on
+`paid_features`. Migrations in the tree run through 043. Collaboration rows
+are keyed by contract id (042). Package version is still **0.4.0**.
+`KAFKA_ENABLED` is false.
 
 Test reports live outside the repo on the owner's machine
 (`~/Desktop/ContractGate-E2E/`).
@@ -162,17 +188,14 @@ Test reports live outside the repo on the owner's machine
 ## 7. Open work
 
 **Next / launch-adjacent**
-- Retest of the four blockers; then sharing/publishing tests.
-- Rate limiting across 2 Fly machines (§8): move buckets to a shared store, or
-  divide per-machine limits by machine count, or pin to 1 machine.
+- Rate limiting is per machine (§8): move buckets to a shared store, or
+  divide per-machine limits by machine count.
 - SDK 0.4.1: add `passed` as an alias of `ok` on `LLMGateResult` (Py + TS);
-  bundle with the next fixes.
+  bundle with the next fixes. `LLMGateResult` still has `ok` only.
 - B5: `LLMGate.completion(auto_repair=True)` against a real OpenAI/Anthropic
   key — never tested end to end.
 
 **Polish round (after the announcement)**
-- Account page: change name/password, delete account.
-- Sign-out lands on a demo/sample page — should land on sign-in.
 - Marketing site talks only about Kafka; add AISchemaGate.
 - www and app send only HSTS: add CSP, `X-Content-Type-Options`,
   `X-Frame-Options` (the API already sends them).
@@ -199,8 +222,9 @@ Test reports live outside the repo on the owner's machine
 - **`NEXT_PUBLIC_*` is baked in at build time.** Changing it in Vercel does
   nothing until a fresh build that starts *after* the change (redeploy with
   "Use existing Build Cache" off). Verify by grepping the served JS chunks.
-- **In-memory rate limiter + 2 machines** = up to 2× the advertised limit when
-  traffic spreads across machines. The key cache (60 s TTL) is per machine too.
+- **In-memory rate limiter** (`DashMap` on `AppState`) is per machine. Extra
+  machines multiply the advertised limit. The key cache (60 s TTL) is per
+  machine too. `fly.toml` sets `min_machines_running = 1`.
 - **Test mocks must match the server.** SDK bugs shipped because mocks returned
   200 for failed batches and contract rows with fields the API doesn't send.
   Mock the real status codes and shapes (422 on all-failed, `ContractSummary`).
