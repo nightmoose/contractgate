@@ -19,11 +19,11 @@ export default function FivetranDocsPage() {
         <span className="mx-2">/</span>
         <span className="text-slate-300">Fivetran</span>
       </p>
-      <h1 className="text-3xl font-bold text-slate-100 mb-3">Use ContractGate with Fivetran</h1>
+      <h1 className="text-3xl font-bold text-slate-100 mb-3">Use DataContractGate with Fivetran</h1>
       <p className="text-slate-400 leading-relaxed mb-6">
         For DataContractGate and AISchemaGate users who want events that passed
-        their contract in their own warehouse. ContractGate is both products
-        sharing one engine. The connector reads only those passing records and
+        their contract in their own warehouse. Both products share one engine.
+        The connector reads only those passing records and
         writes one table per contract.
       </p>
 
@@ -60,7 +60,7 @@ export default function FivetranDocsPage() {
         <span className="text-slate-200">Fivetran API key</span> and{" "}
         <span className="text-slate-200">Fivetran API secret</span>. Paste them
         as Fivetran showed them. Do not Base64-encode them for the button.
-        ContractGate uses the pair once to upload the connector and create the
+        DataContractGate uses the pair once to upload the connector and create the
         connection, then drops them. They are not stored and are redacted from
         logs.
       </p>
@@ -79,7 +79,7 @@ export default function FivetranDocsPage() {
       </pre>
       <p className="text-slate-400 text-sm leading-relaxed">
         An unknown group returns 400: “Invalid request: Fivetran group &lt;id&gt; was not found”.
-        No ContractGate key is minted in that case.
+        No DataContractGate key is minted in that case.
       </p>
 
       <H2 id="connect">Connect Fivetran</H2>
@@ -106,7 +106,7 @@ export default function FivetranDocsPage() {
         </li>
       </ol>
       <p className="text-slate-400 text-sm leading-relaxed">
-        ContractGate mints a new API key named Fivetran connector, scoped to
+        DataContractGate mints a new API key named Fivetran connector, scoped to
         your org and the selected contracts, and sends it to Fivetran as a
         secret. Your dashboard key is not reused. The raw key is not shown in
         the browser. The same call is{" "}
@@ -117,7 +117,7 @@ export default function FivetranDocsPage() {
       <H2 id="request">Connect request</H2>
       <p className="text-slate-300 text-sm leading-relaxed mb-3">
         <code className="text-slate-200">POST /v1/integrations/fivetran/connect</code>{" "}
-        takes a JSON object. Send the ContractGate API key in{" "}
+        takes a JSON object. Send the DataContractGate API key in{" "}
         <code className="text-slate-200">x-api-key</code>. The body max is 64 KiB.
       </p>
       <ul className="list-disc pl-5 text-slate-300 text-sm space-y-2 mb-4">
@@ -204,17 +204,17 @@ export default function FivetranDocsPage() {
           <code className="text-slate-200">
             Invalid request: Fivetran group &lt;id&gt; was not found
           </code>
-          . No ContractGate key is minted.
+          . No DataContractGate key is minted.
         </li>
         <li>
           <span className="text-slate-100">401.</span>{" "}
           <code className="text-slate-200">
             Unauthorized: missing or invalid API key
           </code>{" "}
-          when the ContractGate key is missing and auth is on.{" "}
+          when the DataContractGate key is missing and auth is on.{" "}
           <code className="text-slate-200">Fivetran rejected the API key</code>{" "}
           when Fivetran rejects the key or secret. That check runs before a
-          ContractGate key is minted.
+          DataContractGate key is minted.
         </li>
         <li>
           <span className="text-slate-100">403.</span> The org plan is{" "}
@@ -263,7 +263,7 @@ export default function FivetranDocsPage() {
       <p className="text-slate-300 text-sm leading-relaxed mb-3">
         The Connect Fivetran form does not ask for a schema. When the request
         omits <code className="text-slate-200">destination_schema</code>,
-        ContractGate picks a new schema named{" "}
+        DataContractGate picks a new schema named{" "}
         <code className="text-slate-200">contractgate_</code> plus 8 hex digits,
         for example <code className="text-slate-200">contractgate_a1b2c3d4</code>.
         Fivetran creates that schema in the destination on setup. The warehouse
@@ -368,8 +368,8 @@ export default function FivetranDocsPage() {
         </li>
         <li>
           <span className="text-slate-100">401.</span> Fivetran rejected the API
-          key or secret. Connect returns 401 before a ContractGate key is
-          minted. During a later sync, 401 means the minted ContractGate key
+          key or secret. Connect returns 401 before a DataContractGate key is
+          minted. During a later sync, 401 means the minted DataContractGate key
           was rejected.
         </li>
         <li>
@@ -438,7 +438,7 @@ WHERE org_id = '<org uuid>'
       <p className="text-slate-400 text-sm leading-relaxed">
         <code className="text-slate-200">$CONNECTION_ID</code> is{" "}
         <code className="text-slate-200">connection_id</code> from the 200
-        response. ContractGate does not store it. A connect that fails before
+        response. DataContractGate does not store it. A connect that fails before
         the key is minted (400, 401, 403, 404, 413, 500) leaves nothing to revoke.
         A connect that fails after the key is minted revokes that key itself.
       </p>
@@ -547,7 +547,7 @@ docker compose -f docker-compose.yml -f docker-compose.selfhost.yml up --build`}
 source .venv/bin/activate
 pip install fivetran-connector-sdk
 
-# FIVETRAN_API_KEY is Base64 of key:secret, not the ContractGate key.
+# FIVETRAN_API_KEY is Base64 of key:secret, not the DataContractGate key.
 fivetran deploy \\
   --api-key "$FIVETRAN_API_KEY" \\
   --destination "$FIVETRAN_DESTINATION_NAME" \\
@@ -569,7 +569,7 @@ fivetran deploy \\
       <ul className="list-disc pl-5 text-slate-300 text-sm space-y-2 mb-4">
         <li>
           <code className="text-slate-200">api_key</code> — required string. A
-          ContractGate key from Account → API Keys, or the compose key above.
+          DataContractGate key from Account → API Keys, or the compose key above.
           The connector sends it as <code className="text-slate-200">x-api-key</code>.
         </li>
         <li>
