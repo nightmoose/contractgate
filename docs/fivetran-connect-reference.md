@@ -2,8 +2,8 @@
 
 **Status:** Connect Fivetran is available on paid hosted plans (`growth`, `aisg_pro`, `enterprise`) and on any self-hosted instance with `CONTRACTGATE_SELF_HOSTED=true`. Hosted free plans get 403. Auth stays on. `CONTRACTGATE_SELF_HOSTED` accepts `1`, `true`, or `TRUE`.
 
-Deploys the public ContractGate connector into the caller's own Fivetran account.
-ContractGate is DataContractGate and AISchemaGate sharing one engine. The connector
+Deploys the public DataContractGate connector into the caller's own Fivetran account.
+DataContractGate and AISchemaGate share one engine. The connector
 reads records that passed validation and writes one table per contract.
 
 The dashboard button is on **Contracts**. The form opens when `GET /v1/me`
@@ -17,7 +17,7 @@ The guide is [dashboard/app/docs/fivetran/page.tsx](../dashboard/app/docs/fivetr
 The Fivetran API key and secret are used for that one request and are not stored.
 They are redacted from logs and error text.
 
-On a hosted org, ContractGate mints a new API key named `Fivetran connector`,
+On a hosted org, DataContractGate mints a new API key named `Fivetran connector`,
 scoped to the org and the selected contracts, and sends it to Fivetran as a
 secret. The dashboard user's key is not reused. The raw key is not returned
 to the browser.
@@ -47,7 +47,7 @@ mint a key when that variable is unset or empty. It does not fall back to produc
 
 ```
 POST /v1/integrations/fivetran/connect
-x-api-key: <ContractGate API key>
+x-api-key: <DataContractGate API key>
 ```
 
 Body max 64 KiB. Required fields are `fivetran_api_key`, `fivetran_api_secret`,
@@ -119,7 +119,7 @@ Errors are `{"error","status"}`.
 | Status | When | Key minted |
 |---|---|---|
 | 400 | Body is not a JSON object, a field fails the table above, or the group does not exist. The `error` text starts with `Invalid request: `. An unknown group is `Invalid request: Fivetran group <id> was not found`. A bad schema is `Invalid request: destination_schema must start with a lowercase letter and contain only lowercase letters, digits, and underscores, at most 63 characters`. A bad table name is `Invalid request: table name must start with a letter or underscore and use only lowercase letters, numbers, and underscores`. | no |
-| 401 | `Unauthorized: missing or invalid API key` when the ContractGate key is missing and auth is on. `Fivetran rejected the API key` when Fivetran rejects the key or secret. The Fivetran check runs before a key is minted. | no |
+| 401 | `Unauthorized: missing or invalid API key` when the DataContractGate key is missing and auth is on. `Fivetran rejected the API key` when Fivetran rejects the key or secret. The Fivetran check runs before a key is minted. | no |
 | 403 | `Forbidden: Connect Fivetran is a paid-plan feature; upgrade to growth, aisg_pro, or enterprise` on `free` or `aisg_free` when `CONTRACTGATE_SELF_HOSTED` is unset | no |
 | 404 | A contract id is not in the caller's org | no |
 | 413 | Body over 64 KiB (`Payload too large: Connect Fivetran body exceeds 65536 bytes`) | no |
@@ -157,7 +157,7 @@ curl -sS -u "$FIVETRAN_KEY:$FIVETRAN_SECRET" -X DELETE \
   "https://api.fivetran.com/v1/connections/$CONNECTION_ID"
 ```
 
-`$CONNECTION_ID` is `connection_id` from the 200 body. ContractGate does not store it.
+`$CONNECTION_ID` is `connection_id` from the 200 body. DataContractGate does not store it.
 
 ## Manual configuration.json
 
@@ -181,7 +181,7 @@ you want the slug names. The setup test is named Configuration check.
 `https://api.datacontractgate.com`. `http://` is accepted only for `localhost`
 and `127.0.0.1`.
 
-The CLI `--api-key` is Base64 of the Fivetran `key:secret`, not the ContractGate key.
+The CLI `--api-key` is Base64 of the Fivetran `key:secret`, not the DataContractGate key.
 `--destination` is the Fivetran group name, not `group_id`.
 
 ## Self-host: org, user, and API key
