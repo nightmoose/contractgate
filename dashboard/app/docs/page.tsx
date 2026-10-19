@@ -56,7 +56,7 @@ const DOCS = [
     external: false,
     href: "/docs/fivetran",
     icon: "⟳",
-    title: "Use ContractGate with Fivetran",
+    title: "Use DataContractGate with Fivetran",
     badge: "paid or self-hosted",
     badgeColor: "text-amber-300 bg-amber-900/30 border-amber-700/40",
     description:

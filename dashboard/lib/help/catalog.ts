@@ -29,7 +29,7 @@ export const HELP_CATALOG: Record<string, HelpEntry> = {
   },
   "nav.fivetran": {
     title: "Fivetran",
-    what: "Guide: Use ContractGate with Fivetran.",
+    what: "Guide: Use DataContractGate with Fivetran.",
     does: "Walks through Connect Fivetran, the destination schema, table names, and a manual fivetran deploy.",
     href: "/docs/fivetran",
   },

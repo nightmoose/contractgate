@@ -113,7 +113,7 @@ export default function ConnectFivetran({
         <div>
           <h2 className="text-lg font-semibold text-slate-100">Connect Fivetran</h2>
           <p className="text-sm text-slate-400 mt-1 max-w-2xl">
-            Deploys the ContractGate connector into your Fivetran account. The API key and secret
+            Deploys the DataContractGate connector into your Fivetran account. The API key and secret
             are used once for this request and are not stored.
           </p>
         </div>
@@ -127,7 +127,7 @@ export default function ConnectFivetran({
       </div>
 
       <p className="text-sm text-amber-200 bg-amber-900/20 border border-amber-700/40 rounded-lg px-3 py-2 mb-4">
-        Paste a Fivetran API key and secret from your own account. ContractGate sends them to
+        Paste a Fivetran API key and secret from your own account. DataContractGate sends them to
         Fivetran for this deploy only, then drops them. They are not written to the database or logs.
       </p>
 
