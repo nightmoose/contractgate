@@ -18,11 +18,14 @@ From a fresh clone, with Docker Compose and no existing `.env` in the repo root:
 ```bash
 git clone https://github.com/nightmoose/contractgate.git
 cd contractgate
-cp .env.selfhost.example .env
 docker compose -f docker-compose.yml -f docker-compose.selfhost.yml up --build
 ```
 
 Do not add `--profile demo`. That profile starts a second dashboard on port 3000.
+
+First boot generates a JWT secret, an anon key, a service-role key, and a database password. They are written to the `selfhost_secrets` volume and reused on the next `up`. `docker compose down` keeps that volume and the Postgres volume, so the next `up` skips migrations that are already recorded, keeps the same keys, and brings the gateway and dashboard back up. `down -v` deletes both volumes.
+
+Published ports bind to `127.0.0.1` (3000 dashboard, 8000 API, 8080 gateway). Set `SELFHOST_BIND` to another address only after the keys are unique. A non-local bind refuses the old public placeholder keys.
 
 If this machine already ran `make demo` or `docker compose up`, the Postgres volume is the auth-off database. Wipe it first:
 
@@ -62,9 +65,9 @@ On a self-hosted process the flag grants the Enterprise entitlement without rewr
 - GoTrue (`auth`) on the compose network
 - PostgREST (`rest`)
 - nginx (`api`) on http://localhost:8000, routing `/auth/v1/` and `/rest/v1/`
-- a one-shot `selfhost-migrate` that applies `supabase/migrations` after GoTrue creates `auth.users`
+- a one-shot `selfhost-migrate` that applies `supabase/migrations` after GoTrue creates `auth.users`, and skips filenames already recorded in `selfhost.schema_migrations`
 - a gateway image built from this repo, auth on, flag on
-- a dashboard image (`web`) built with the local Supabase URL and anon key
+- a dashboard image (`web`) built with the local Supabase URL. The anon key is written into that image from the secrets volume when the container starts
 
 The browser uses http://localhost:8000. The Next.js server inside the dashboard container uses `SUPABASE_SERVER_URL=http://api:8000` for the same API. Hosted deploys leave `SUPABASE_SERVER_URL` unset and keep using `NEXT_PUBLIC_SUPABASE_URL`.
 
@@ -72,9 +75,32 @@ Postgres first boot with `CONTRACTGATE_SELF_HOST=1` creates the `anon`, `authent
 
 044 is new. An owner applies it on production, then removes its line from `supabase/unapplied-migrations.txt`. Until then the drift check treats it as intentionally unapplied. 006 is unchanged. A fresh hosted apply can still fail inside 006 with permission denied for schema `auth`.
 
-## Placeholders
+## Secrets and bind
 
-`.env.selfhost.example` holds a JWT secret and two HS256 keys (anon and service role) signed with that secret. They are public placeholders for a private machine. Before any other host can reach the stack, replace `SUPABASE_JWT_SECRET` (at least 32 characters) and regenerate both keys. The `authenticator` and `supabase_auth_admin` database passwords are the local placeholders in `ops/postgres/selfhost-roles.sql`.
+The stack does not ship usable keys. On first boot `ops/selfhost/ensure-secrets.mjs` generates:
+
+- `SUPABASE_JWT_SECRET` — 48 random bytes, base64url (longer than 32 characters)
+- `SUPABASE_ANON_KEY` — HS256 JWT signed with that secret, claim `role` = `anon`, issuer `contractgate-selfhost`, expiry about 10 years out
+- `SUPABASE_SERVICE_ROLE_KEY` — the same, with `role` = `service_role`
+- `SELFHOST_DB_PASSWORD` — 24 random bytes, hex. Used for the `cg`, `authenticator`, and `supabase_auth_admin` database roles
+
+Print a set without starting the stack:
+
+```bash
+node ops/selfhost/ensure-secrets.mjs --print
+```
+
+To supply your own, set all four variables before the first boot (shell exports, or a `.env` file next to the compose file). `SUPABASE_JWT_SECRET` must be at least 32 characters. Sign both keys with that secret. The same script is the signer: it uses HMAC-SHA256 over `base64url(header).base64url(payload)`. Leave all four unset to generate. Setting only some of them is an error.
+
+`.env.selfhost.example` lists the names and does not contain keys. Copying it to `.env` is optional.
+
+The values live in the `selfhost_secrets` volume at `/selfhost/secrets/secrets.env`. Read them with:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.selfhost.yml run --rm --no-deps --entrypoint cat selfhost-secrets /selfhost/secrets/secrets.env
+```
+
+`SELFHOST_BIND` defaults to `127.0.0.1` for ports 3000, 8000, and 8080. `0.0.0.0` or any other non-loopback address refuses to start when the JWT secret or either key is empty or equal to the old public placeholders. Loopback still starts if you deliberately set those old values.
 
 Signup does not send mail (`GOTRUE_MAILER_AUTOCONFIRM=true`). Put a real SMTP configuration on GoTrue if you need confirmation or reset email.
 
