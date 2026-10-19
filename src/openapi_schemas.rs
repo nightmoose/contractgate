@@ -306,6 +306,7 @@ fn me_response_schema() -> Value {
             "plan",
             "plan_display",
             "paid_features",
+            "self_hosted",
             "auth",
             "api_key_id",
             "monthly_event_limit",
@@ -320,11 +321,15 @@ fn me_response_schema() -> Value {
             },
             "plan": {
                 "type": "string",
-                "description": "Stored org plan. Monthly limit and default rate limit follow this value."
+                "description": "Stored org plan. On a hosted process the monthly limit and default rate limit follow this value. CONTRACTGATE_SELF_HOSTED leaves plan unchanged and reports the unlimited cap and the paid rate limit."
             },
             "paid_features": {
                 "type": "boolean",
-                "description": "True when passed-event export, Connect Fivetran, and payload storage are allowed. True for a paid plan, and for every plan when CONTRACTGATE_SELF_HOSTED is set. A self-hosted free org still reports plan free."
+                "description": "True when paid features are allowed. True for a paid plan, and for every plan when CONTRACTGATE_SELF_HOSTED is set. A self-hosted free org still reports plan free."
+            },
+            "self_hosted": {
+                "type": "boolean",
+                "description": "True when CONTRACTGATE_SELF_HOSTED is set on this process. Dashboard Enterprise gates follow this. Hosted responses are false."
             },
             "plan_display": {
                 "type": "string",

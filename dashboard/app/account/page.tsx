@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { useOrg, planDisplayName, isFreePlan, paidPlansPhrase } from "@/lib/org";
+import { useSelfHosted } from "@/lib/use-paid-features";
 import { useBrand } from "@/components/BrandProvider";
 import { useRouter } from "next/navigation";
 import type { User } from "@supabase/supabase-js";
@@ -72,6 +73,7 @@ function AccountContent() {
   const router = useRouter();
   const supabase = createClient();
   const { org } = useOrg();
+  const selfHosted = useSelfHosted();
   const brand = useBrand();
   const aisg = brand === "aisg";
 
@@ -443,7 +445,9 @@ function AccountContent() {
                 )}
               </div>
             </div>
-            {isFreePlan(org.plan) ? (
+            {selfHosted === true ? (
+              <span className="text-xs text-slate-400">Paid features included</span>
+            ) : isFreePlan(org.plan) ? (
               <a href="/pricing" className="text-xs px-3 py-1 rounded bg-green-600 hover:bg-green-500 text-white font-medium">Upgrade</a>
             ) : (
               <button

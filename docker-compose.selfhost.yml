@@ -1,0 +1,196 @@
+# Real login stack. Use with the base file:
+#
+#   docker compose -f docker-compose.yml -f docker-compose.selfhost.yml up --build
+#
+# Do not add --profile demo. That profile is the zero-auth dashboard and
+# binds the same host port. `make demo` does not load this file.
+#
+# First boot generates a JWT secret, anon key, service-role key, and database
+# password and stores them in the selfhost_secrets volume. Later boots reuse
+# that file. Published ports bind to 127.0.0.1 unless SELFHOST_BIND is set.
+# A non-local bind refuses the old public placeholder keys.
+
+services:
+  selfhost-secrets:
+    image: node:20-alpine
+    environment:
+      SECRETS_FILE: /selfhost/secrets/secrets.env
+      SUPABASE_JWT_SECRET: ${SUPABASE_JWT_SECRET:-}
+      SUPABASE_ANON_KEY: ${SUPABASE_ANON_KEY:-}
+      SUPABASE_SERVICE_ROLE_KEY: ${SUPABASE_SERVICE_ROLE_KEY:-}
+      SELFHOST_DB_PASSWORD: ${SELFHOST_DB_PASSWORD:-}
+      SELFHOST_BIND: ${SELFHOST_BIND:-127.0.0.1}
+    volumes:
+      - selfhost_secrets:/selfhost/secrets
+      - ./ops/selfhost/ensure-secrets.mjs:/ensure-secrets.mjs:ro
+    entrypoint: ["node", "/ensure-secrets.mjs"]
+    restart: "no"
+
+  selfhost-guard:
+    image: alpine:3.20
+    environment:
+      SECRETS_FILE: /selfhost/secrets/secrets.env
+      SELFHOST_BIND: ${SELFHOST_BIND:-127.0.0.1}
+    volumes:
+      - selfhost_secrets:/selfhost/secrets:ro
+      - ./ops/selfhost/guard.sh:/guard.sh:ro
+    entrypoint: ["/bin/sh", "/guard.sh"]
+    depends_on:
+      selfhost-secrets:
+        condition: service_completed_successfully
+    restart: "no"
+
+  postgres:
+    environment:
+      CONTRACTGATE_SELF_HOST: "1"
+    entrypoint: ["/bin/sh", "/selfhost/postgres-entrypoint.sh"]
+    command: ["postgres"]
+    volumes:
+      - ./ops/postgres/selfhost-roles.sql:/selfhost/roles.sql:ro
+      - selfhost_secrets:/selfhost/secrets:ro
+      - ./ops/selfhost/postgres-entrypoint.sh:/selfhost/postgres-entrypoint.sh:ro
+    depends_on:
+      selfhost-guard:
+        condition: service_completed_successfully
+
+  auth:
+    image: supabase/gotrue:v2.180.0
+    environment:
+      GOTRUE_API_HOST: 0.0.0.0
+      GOTRUE_API_PORT: "9999"
+      API_EXTERNAL_URL: http://localhost:8000
+      GOTRUE_DB_DRIVER: postgres
+      GOTRUE_SITE_URL: http://localhost:3000
+      GOTRUE_URI_ALLOW_LIST: http://localhost:3000
+      GOTRUE_DISABLE_SIGNUP: "false"
+      GOTRUE_EXTERNAL_EMAIL_ENABLED: "true"
+      GOTRUE_MAILER_AUTOCONFIRM: "true"
+      GOTRUE_MAILER_URLPATHS_CONFIRMATION: /auth/confirm
+      GOTRUE_MAILER_URLPATHS_RECOVERY: /auth/reset
+      GOTRUE_JWT_EXP: "3600"
+      GOTRUE_JWT_AUD: authenticated
+      GOTRUE_JWT_DEFAULT_GROUP_NAME: authenticated
+      GOTRUE_JWT_ADMIN_ROLES: service_role
+    volumes:
+      - selfhost_secrets:/selfhost/secrets:ro
+      - ./ops/selfhost/with-secrets.sh:/selfhost/with-secrets.sh:ro
+    entrypoint: ["/bin/sh", "/selfhost/with-secrets.sh"]
+    command: ["auth"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+      selfhost-guard:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
+  selfhost-migrate:
+    image: postgres:16-alpine
+    environment:
+      PGHOST: postgres
+      PGUSER: cg
+      PGDATABASE: contractgate
+      SECRETS_FILE: /selfhost/secrets/secrets.env
+    volumes:
+      - ./supabase/migrations:/migrations:ro
+      - ./ops/postgres/selfhost-grants.sql:/selfhost/grants.sql:ro
+      - ./ops/postgres/selfhost-apply.sh:/selfhost-apply.sh:ro
+      - selfhost_secrets:/selfhost/secrets:ro
+    entrypoint: ["/bin/sh", "/selfhost-apply.sh"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+      auth:
+        condition: service_started
+      selfhost-guard:
+        condition: service_completed_successfully
+    restart: "no"
+
+  rest:
+    image: contractgate-postgrest:selfhost
+    build:
+      context: ./ops/selfhost
+      dockerfile: postgrest.Dockerfile
+    environment:
+      PGRST_DB_SCHEMAS: public
+      PGRST_DB_ANON_ROLE: anon
+      PGRST_DB_EXTRA_SEARCH_PATH: public
+      PGRST_SERVER_PORT: "3000"
+    volumes:
+      - selfhost_secrets:/selfhost/secrets:ro
+      - ./ops/selfhost/with-secrets.sh:/selfhost/with-secrets.sh:ro
+    entrypoint: ["/bin/sh", "/selfhost/with-secrets.sh"]
+    command: ["/usr/local/bin/postgrest"]
+    depends_on:
+      selfhost-migrate:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
+  api:
+    image: nginx:1.27-alpine
+    ports:
+      - "${SELFHOST_BIND:-127.0.0.1}:8000:8000"
+    volumes:
+      - ./ops/api/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+    depends_on:
+      selfhost-guard:
+        condition: service_completed_successfully
+      auth:
+        condition: service_started
+      rest:
+        condition: service_started
+    restart: unless-stopped
+
+  gateway:
+    image: contractgate-gateway:selfhost
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports: !override
+      - "${SELFHOST_BIND:-127.0.0.1}:8080:8080"
+    environment:
+      CONTRACTGATE_DEV_NO_AUTH: "0"
+      CONTRACTGATE_SELF_HOSTED: "true"
+    volumes:
+      - selfhost_secrets:/selfhost/secrets:ro
+      - ./ops/selfhost/with-secrets.sh:/selfhost/with-secrets.sh:ro
+    entrypoint: ["/bin/sh", "/selfhost/with-secrets.sh"]
+    command: ["contractgate"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+      selfhost-migrate:
+        condition: service_completed_successfully
+      selfhost-guard:
+        condition: service_completed_successfully
+
+  web:
+    build:
+      context: ./dashboard
+      args:
+        NEXT_PUBLIC_DEMO_MODE: "0"
+        NEXT_PUBLIC_API_URL: http://localhost:8080
+        NEXT_PUBLIC_API_KEY: ""
+        NEXT_PUBLIC_SUPABASE_URL: http://localhost:8000
+        NEXT_PUBLIC_SUPABASE_ANON_KEY: "__CG_SELFHOST_ANON_KEY__"
+        NEXT_PUBLIC_APP_URL: http://localhost:3000
+    ports:
+      - "${SELFHOST_BIND:-127.0.0.1}:3000:3000"
+    environment:
+      HOSTNAME: 0.0.0.0
+      SUPABASE_SERVER_URL: http://api:8000
+    volumes:
+      - selfhost_secrets:/selfhost/secrets:ro
+      - ./ops/selfhost/web-entrypoint.sh:/selfhost/web-entrypoint.sh:ro
+    entrypoint: ["/bin/sh", "/selfhost/web-entrypoint.sh"]
+    command: ["node", "server.js"]
+    depends_on:
+      gateway:
+        condition: service_healthy
+      api:
+        condition: service_started
+      selfhost-guard:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
+volumes:
+  selfhost_secrets:

@@ -144,11 +144,25 @@ pub async fn fetch_jwks(jwks_url: &str) -> anyhow::Result<JwkSet> {
 pub async fn verify_supabase_jwt(
     token: &str,
     jwks: &JwkSet,
+    hs256_secret: Option<&[u8]>,
     db: &PgPool,
 ) -> Result<ValidatedKey, JwtAuthError> {
     // 1. Decode header (no verification) to get `kid` and algorithm hint.
     let header = decode_header(token)
         .map_err(|e: jsonwebtoken::errors::Error| JwtAuthError::InvalidToken(e.to_string()))?;
+
+    // Self-hosted GoTrue signs HS256 with SUPABASE_JWT_SECRET. Hosted tokens
+    // are RS256/ES256 and skip this branch, so an unset secret changes nothing.
+    if header.alg == Algorithm::HS256 {
+        if let Some(secret) = hs256_secret {
+            let mut validation = Validation::new(Algorithm::HS256);
+            validation.validate_aud = false;
+            let data =
+                decode::<SupabaseClaims>(token, &DecodingKey::from_secret(secret), &validation)
+                    .map_err(|e| JwtAuthError::InvalidToken(e.to_string()))?;
+            return finish_verified(data.claims, db).await;
+        }
+    }
 
     // 2. Find matching JWK(s): prefer kid match, fall back to trying all.
     let candidates: Vec<_> = if let Some(kid) = &header.kid {
@@ -223,6 +237,13 @@ pub async fn verify_supabase_jwt(
         JwtAuthError::InvalidToken(last_err)
     })?;
 
+    finish_verified(claims, db).await
+}
+
+async fn finish_verified(
+    claims: SupabaseClaims,
+    db: &PgPool,
+) -> Result<ValidatedKey, JwtAuthError> {
     // 4. Parse `sub` as UUID.
     let user_id: Uuid = claims.sub.parse().map_err(|_| JwtAuthError::InvalidSub)?;
 

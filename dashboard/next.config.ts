@@ -64,10 +64,9 @@ const nextConfig: NextConfig = {
     ];
   },
 
-  // Standalone output bundles server + node_modules for minimal Docker images.
-  // Only active when NEXT_PUBLIC_DEMO_MODE is set (build arg from Dockerfile);
-  // Vercel deploys ignore this because it detects the Vercel environment.
-  ...(process.env.NEXT_PUBLIC_DEMO_MODE === "1" ? { output: "standalone" } : {}),
+  // Standalone output bundles server + node_modules for the Docker image
+  // (demo and non-demo). Vercel sets VERCEL and uses its own output.
+  ...(process.env.VERCEL ? {} : { output: "standalone" as const }),
 };
 
 export default nextConfig;

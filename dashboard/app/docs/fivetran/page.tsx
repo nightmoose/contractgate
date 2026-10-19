@@ -378,7 +378,7 @@ export default function FivetranDocsPage() {
           <Link href="/pricing" className="text-green-400 hover:underline">
             Upgrade
           </Link>{" "}
-          and move to Pro or Enterprise, then connect again. On a self-hosted
+          and move to Pro, AISchemaGate Pro, or Enterprise, then connect again. On a self-hosted
           instance, set{" "}
           <code className="text-slate-200">CONTRACTGATE_SELF_HOSTED</code> to{" "}
           <code className="text-slate-200">1</code>,{" "}
@@ -447,9 +447,12 @@ WHERE org_id = '<org uuid>'
       <p className="text-slate-300 text-sm leading-relaxed mb-3">
         Self-hosted orgs default to <code className="text-slate-200">free</code>.
         Set <code className="text-slate-200">CONTRACTGATE_SELF_HOSTED=true</code>{" "}
-        on the gateway. Passed-event export, Connect Fivetran, and payload
-        storage then treat that org as paid. The connector key is a normal API
-        key for the org, so it works against{" "}
+        on the gateway. Every paid gate then opens, including Connect Fivetran,
+        passed-event export, and payload storage. The monthly event cap is
+        unlimited, the default rate limit is the paid limit unless the key
+        overrides it, and the passed-event window is 365 days. The stored plan
+        stays <code className="text-slate-200">free</code>. The connector key
+        is a normal API key for the org, so it works against{" "}
         <code className="text-slate-200">GET /v1/contracts/{"{id}"}/passed</code>.
         Hosted <code className="text-slate-200">free</code> and{" "}
         <code className="text-slate-200">aisg_free</code> still receive 403.
@@ -483,99 +486,48 @@ WHERE org_id = '<org uuid>'
         the proxy&apos;s https URL.
       </p>
       <p className="text-slate-300 text-sm leading-relaxed mb-3">
-        A fresh <code className="text-slate-200">docker compose up</code> applies{" "}
-        <code className="text-slate-200">supabase/migrations</code> once, then{" "}
-        <code className="text-slate-200">ops/postgres/seed/099_demo_org.sql</code>.
-        That seed inserts the demo org{" "}
-        <code className="text-slate-200">cccccccc-cccc-cccc-cccc-cccccccccccc</code>{" "}
-        on plan <code className="text-slate-200">free</code>. It does not insert
-        a user or an API key. The <code className="text-slate-200">contractgate</code>{" "}
-        CLI has no command that creates an org, a user, or a key.{" "}
-        <code className="text-slate-200">POST /api/keys</code> needs a dashboard
-        session, which this Postgres does not provide. Create the three rows in
-        the compose database (<code className="text-slate-200">cg</code> /{" "}
-        <code className="text-slate-200">cg</code>, database{" "}
-        <code className="text-slate-200">contractgate</code>).
+        A fresh clone with a real dashboard login, from a machine that has not
+        already created the compose volume:
+      </p>
+      <pre className="bg-[#0d1117] border border-[#1f2937] rounded-lg p-4 overflow-x-auto text-sm text-slate-300 font-mono leading-relaxed mb-4">
+{`cp .env.selfhost.example .env
+docker compose -f docker-compose.yml -f docker-compose.selfhost.yml up --build`}
+      </pre>
+      <p className="text-slate-300 text-sm leading-relaxed mb-3">
+        Sign up at <code className="text-slate-200">http://localhost:3000/auth/signup</code>,
+        then sign in at <code className="text-slate-200">http://localhost:3000/auth/login</code>.
+        Confirmation mail is not sent. The account is confirmed automatically.
+        Do not add <code className="text-slate-200">--profile demo</code>. That
+        profile is the zero-auth dashboard. If this machine already ran{" "}
+        <code className="text-slate-200">make demo</code>, run{" "}
+        <code className="text-slate-200">docker compose -f docker-compose.yml -f docker-compose.selfhost.yml down -v</code>{" "}
+        before the first <code className="text-slate-200">up</code>. The steps
+        and the placeholder keys are in{" "}
+        <code className="text-slate-200">docs/self-host-reference.md</code>.
       </p>
       <p className="text-slate-300 text-sm leading-relaxed mb-3">
-        Inserting <code className="text-slate-200">auth.users</code> fires{" "}
-        <code className="text-slate-200">handle_new_user()</code>. That function
-        inserts <code className="text-slate-200">user_profiles</code>, an{" "}
-        <code className="text-slate-200">orgs</code> row, and an owner{" "}
+        Signup inserts <code className="text-slate-200">auth.users</code>, which
+        fires <code className="text-slate-200">handle_new_user()</code>. That
+        function inserts <code className="text-slate-200">user_profiles</code>,
+        an <code className="text-slate-200">orgs</code> row, and an owner{" "}
         <code className="text-slate-200">org_memberships</code> row. The plan is{" "}
-        <code className="text-slate-200">free</code> unless{" "}
-        <code className="text-slate-200">raw_user_meta_data</code> has{" "}
+        <code className="text-slate-200">free</code> unless signup metadata has{" "}
         <code className="text-slate-200">{`product = aischemagate`}</code>, which
         starts the org on <code className="text-slate-200">aisg_free</code>.
-        This is a new org. It is not the demo org.
-      </p>
-      <pre className="bg-[#0d1117] border border-[#1f2937] rounded-lg p-4 overflow-x-auto text-sm text-slate-300 font-mono leading-relaxed mb-4">
-{`docker compose exec -T postgres psql -v ON_ERROR_STOP=1 -U cg -d contractgate <<'SQL'
-INSERT INTO auth.users (id, email, raw_user_meta_data)
-VALUES (
-  '11111111-1111-1111-1111-111111111111',
-  'owner@example.com',
-  '{"display_name":"Warehouse"}'::jsonb
-);
-SQL`}
-      </pre>
-      <p className="text-slate-300 text-sm leading-relaxed mb-3">
-        Then mint a key in the same shape as{" "}
-        <code className="text-slate-200">src/api_key_auth.rs</code>: raw{" "}
-        <code className="text-slate-200">cg_live_</code> plus 48 hex characters,
-        <code className="text-slate-200">key_prefix</code> the first 12
-        characters, <code className="text-slate-200">key_hash</code> standard
-        base64 of SHA-256 of the raw key (44 characters).{" "}
-        <code className="text-slate-200">pgcrypto</code> is already installed.
-        The statement prints the raw key once. Store it. It is not saved.
-      </p>
-      <pre className="bg-[#0d1117] border border-[#1f2937] rounded-lg p-4 overflow-x-auto text-sm text-slate-300 font-mono leading-relaxed mb-4">
-{`docker compose exec -T postgres psql -v ON_ERROR_STOP=1 -U cg -d contractgate <<'SQL'
-WITH minted AS (
-  SELECT 'cg_live_' || encode(gen_random_bytes(24), 'hex') AS raw_key
-),
-inserted AS (
-  INSERT INTO api_keys (user_id, org_id, name, key_prefix, key_hash)
-  SELECT
-    '11111111-1111-1111-1111-111111111111',
-    m.org_id,
-    'warehouse',
-    left(minted.raw_key, 12),
-    replace(encode(digest(minted.raw_key, 'sha256'), 'base64'), E'\\n', '')
-  FROM minted
-  JOIN org_memberships m
-    ON m.user_id = '11111111-1111-1111-1111-111111111111'
-   AND m.deleted_at IS NULL
-  RETURNING id, key_prefix
-)
-SELECT inserted.id, inserted.key_prefix, minted.raw_key
-FROM inserted CROSS JOIN minted;
-SQL`}
-      </pre>
-      <p className="text-slate-300 text-sm leading-relaxed mb-3">
-        On the gateway service, remove{" "}
-        <code className="text-slate-200">CONTRACTGATE_DEV_NO_AUTH</code> (only{" "}
-        <code className="text-slate-200">1</code>,{" "}
-        <code className="text-slate-200">true</code>, and{" "}
-        <code className="text-slate-200">TRUE</code> turn auth off). Set{" "}
-        <code className="text-slate-200">CONTRACTGATE_SELF_HOSTED</code> to{" "}
-        <code className="text-slate-200">1</code>,{" "}
-        <code className="text-slate-200">true</code>, or{" "}
-        <code className="text-slate-200">TRUE</code>. Any other value leaves the
-        process hosted. Set{" "}
-        <code className="text-slate-200">CANONICAL_API_ORIGIN</code> to the
-        public https origin, then recreate the gateway container.
       </p>
       <p className="text-slate-400 text-sm leading-relaxed">
-        <code className="text-slate-200">GET /v1/me</code> with that key still
-        reports <code className="text-slate-200">plan</code>{" "}
-        <code className="text-slate-200">free</code>, the free monthly limit,
-        and the free rate limit. <code className="text-slate-200">paid_features</code>{" "}
-        is true, which is the signal that passed-event export, Connect Fivetran,
-        and payload storage are on. Use this key as{" "}
-        <code className="text-slate-200">x-api-key</code> for connect, or as{" "}
-        <code className="text-slate-200">api_key</code> in a manual{" "}
-        <code className="text-slate-200">configuration.json</code>.
+        <code className="text-slate-200">GET /v1/me</code> still reports{" "}
+        <code className="text-slate-200">plan</code>{" "}
+        <code className="text-slate-200">free</code>.{" "}
+        <code className="text-slate-200">paid_features</code> and{" "}
+        <code className="text-slate-200">self_hosted</code> are true,{" "}
+        <code className="text-slate-200">monthly_event_limit</code> is null, and
+        the default rate limit is the paid limit. Issue a key from the dashboard
+        and use it as <code className="text-slate-200">x-api-key</code> for
+        connect, or as <code className="text-slate-200">api_key</code> in a
+        manual <code className="text-slate-200">configuration.json</code>. Set{" "}
+        <code className="text-slate-200">CANONICAL_API_ORIGIN</code> to the
+        public https origin before Fivetran cloud calls the gateway.
       </p>
 
       <H2 id="manual">Deploy the connector yourself</H2>

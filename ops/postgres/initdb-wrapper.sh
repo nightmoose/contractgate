@@ -37,6 +37,18 @@ run_dir() {
     done < <(ls -v "$dir"/*.sql)
 }
 
+# Self-host compose sets CONTRACTGATE_SELF_HOST. GoTrue must create the real
+# auth schema before migrations run, so this boot only creates roles.
+# ops/postgres/selfhost-apply.sh applies migrations after that.
+case "${CONTRACTGATE_SELF_HOST:-}" in
+    1|true|TRUE)
+        echo "DataContractGate initdb-wrapper: self-host roles only"
+        psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" -f /tmp/selfhost-roles.sql
+        echo "DataContractGate initdb-wrapper: complete"
+        exit 0
+        ;;
+esac
+
 echo "DataContractGate initdb-wrapper: applying migrations"
 run_dir /migrations "migration"
 

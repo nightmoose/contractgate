@@ -37,6 +37,8 @@ import type {
 } from "@/lib/api";
 import useSWR, { mutate } from "swr";
 import { useOrg, planAtLeast } from "@/lib/org";
+import { tierOpen } from "@/lib/paid-features";
+import { usePaidFeatures, useSelfHosted } from "@/lib/use-paid-features";
 import clsx from "clsx";
 import { HelpTarget } from "@/components/help/HelpTarget";
 
@@ -215,7 +217,11 @@ function ImportPanel() {
   const [token, setToken] = useState("");
   const [mode, setMode] = useState<ImportMode>("snapshot");
   const { org } = useOrg();
-  const canSubscribe = org ? planAtLeast(org.plan, "growth") : false;
+  const paidFeatures = usePaidFeatures();
+  const selfHosted = useSelfHosted();
+  const canSubscribe = org
+    ? tierOpen(selfHosted === true, paidFeatures, planAtLeast(org.plan, "growth"), false)
+    : false;
   const [preview, setPreview] = useState<FetchedPublication | null>(null);
   const [fetching, setFetching] = useState(false);
   const [importing, setImporting] = useState(false);

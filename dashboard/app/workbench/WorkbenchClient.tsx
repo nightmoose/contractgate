@@ -16,6 +16,8 @@ import clsx from "clsx";
 import * as jsYaml from "js-yaml";
 import { HelpTarget } from "@/components/help/HelpTarget";
 import { useOrg, planAtLeast } from "@/lib/org";
+import { tierOpen } from "@/lib/paid-features";
+import { usePaidFeatures, useSelfHosted } from "@/lib/use-paid-features";
 import { deployContract } from "@/lib/api";
 
 // ---------------------------------------------------------------------------
@@ -479,8 +481,12 @@ function DisabledTooltipBtn({ label, tooltip, className }: { label: string; tool
 
 export default function WorkbenchClient() {
   const { org, loading: orgLoading } = useOrg();
-  const isGrowth = !orgLoading && !!org && planAtLeast(org.plan, "growth");
-  const isFree   = !orgLoading && !!org && !isGrowth;
+  const paidFeatures = usePaidFeatures();
+  const selfHosted = useSelfHosted();
+  const entitlementsReady = paidFeatures !== null && selfHosted !== null;
+  const isGrowth = !orgLoading && !!org && entitlementsReady
+    && tierOpen(selfHosted, paidFeatures, planAtLeast(org.plan, "growth"), false);
+  const isFree = !orgLoading && !!org && entitlementsReady && !isGrowth;
 
   // ---- Session state (persisted to localStorage, no creds) ----
   const [baseUrl,    setBaseUrl]    = useState("");
