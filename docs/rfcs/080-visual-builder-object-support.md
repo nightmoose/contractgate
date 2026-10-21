@@ -87,7 +87,7 @@ RFC-079 fixed the actual reported bug (Generate-from-Sample emitting
 type-clean change. This builder rework is the opposite risk profile: it touches
 the field data model, three mutation helpers, the recursive render, and YAML
 emission in an 848-line UI component, and it needs visual + `npm run build`
-verification that can't be done blind. CLAUDE.md explicitly cautions against
+verification that can't be done blind. The contributor guide explicitly cautions against
 casual frontend overhauls, so it earns its own RFC and a focused session.
 
 ## Testing

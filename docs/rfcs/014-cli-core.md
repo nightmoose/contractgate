@@ -4,7 +4,6 @@
 |---------------|------------------------------------------------------------------------|
 | Author        | DataContractGate team                                                      |
 | Created       | 2026-04-27                                                             |
-| Target branch | `nightly-maintenance-YYYY-MM-DD` (set when work starts)                |
 | Chunk         | Punchlist v2 #1                                                        |
 | Supersedes    | RFC-007 (broader scope; trimmed to pre-customer essentials)            |
 

@@ -2,7 +2,6 @@
 
 **Status:** Accepted  
 **Date:** 2026-05-17  
-**Branch:** `nightly-maintenance-2026-05-17-rfc044-date-type`
 
 ---
 

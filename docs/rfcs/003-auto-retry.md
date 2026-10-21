@@ -4,8 +4,6 @@
 |---------------|------------------------------------------|
 | Author        | DataContractGate team                        |
 | Created       | 2026-04-18                               |
-| Accepted      | 2026-04-18 — Alex sign-off on Q1–Q4 (all defaults chosen) |
-| Target branch | `nightly-maintenance-2026-04-18`         |
 | Tracking      | Post-demo feedback item #3               |
 | Depends on    | RFC-002 (versioning) — landed            |
 
@@ -361,7 +359,7 @@ contract's forward destination (same as ingest does for fresh events)?
   `/ingest/...`. Safer default (no accidental double-writes if downstream
   already got a patched version via some other path).
 
-This one genuinely depends on how Alex thinks about downstream idempotency.
+This one genuinely depends on how the product owner thinks about downstream idempotency.
 
 ### Q4. Rate / concurrency limits on the replay endpoint
 
@@ -439,5 +437,5 @@ Replay can touch up to 1,000 rows per call. Do we need special limits?
 - Any new migration column additions (none expected beyond the three
   listed above).
 
-Once Alex greenlights, start with the migration and work top-down through
+Once the product owner greenlights, start with the migration and work top-down through
 the rollout list.

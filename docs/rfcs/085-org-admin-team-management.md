@@ -2,8 +2,7 @@
 
 **Status:** Implemented
 **Date:** 2026-07-16
-**Author:** an AI assistant (proposes) → Sonnet (executes)
-**Branch:** `nightly-maintenance-2026-07-16-rfc085-team-admin` (Alex creates/commits — no agent git)
+**Author:** the maintainer (proposes) → the implementer (executes)
 **Migration:** none (reuses existing `org_memberships` / `org_invites` schema)
 
 ---
@@ -119,7 +118,7 @@ Keep the file focused; if `route.ts` pushes past ~150 lines, factor the shared
 ## Docs
 
 - New: `docs/team-management-reference.md` — roles (owner/admin/member) and what each
-  can do, how to invite/change-role/remove, the last-owner rule. (Per CLAUDE.md:
+  can do, how to invite/change-role/remove, the last-owner rule. (Per the contributor guide:
   user-facing surface with no existing doc → add one.)
 - Link it from the account/team section if there's an obvious spot.
 

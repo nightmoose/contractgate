@@ -2,7 +2,6 @@
 
 **Status:** Implemented (2026-05-28)
 **Date:** 2026-05-28
-**Branch:** `nightly-maintenance-2026-05-28-rfc067-panic-hardening`
 **Follows:** RFC-066 (legacy master-key removal)
 **Addresses:** docs/reviews/cheap-findings-2026-05-28.md — Pattern 1, items #1 and the replay `unwrap` pair
 **Severity:** P2 — latent denial-of-service (worker panic on an authenticated request)

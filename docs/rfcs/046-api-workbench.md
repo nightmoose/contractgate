@@ -2,7 +2,6 @@
 
 **Status:** Draft  
 **Date:** 2026-05-18  
-**Branch:** `nightly-maintenance-2026-05-18-rfc046-api-workbench`  
 **Plan tier:** Growth+
 
 ---

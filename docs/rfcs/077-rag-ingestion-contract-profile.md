@@ -50,7 +50,7 @@ format** — only new *conventions* expressed in the existing fields.
   previews. Non-deterministic; stays in the customer pipeline.
 - No vector-DB / embedding-model awareness in the core. Connectors, if ever,
   are a separate RFC and live outside the validation engine.
-- No new contract-format fields (the format is locked, see CLAUDE.md). This RFC
+- No new contract-format fields (the format is locked, see the contributor guide). This RFC
   ships a **profile + example contracts + docs**, not a schema change.
 
 ## Design

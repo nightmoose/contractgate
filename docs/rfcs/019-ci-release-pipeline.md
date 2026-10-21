@@ -4,7 +4,6 @@
 |---------------|------------------------------------------------------------------------|
 | Author        | DataContractGate team                                                      |
 | Created       | 2026-04-27                                                             |
-| Target branch | `nightly-maintenance-YYYY-MM-DD` (set when work starts)                |
 | Chunk         | Punchlist v2 — infrastructure (not in v2 build list; unblocks all chunks) |
 | Supersedes    | —                                                                      |
 | Depends on    | RFC-014 (CLI binary + `cli-cross-compile` job, both landed)            |
@@ -360,7 +359,7 @@ env:
 
 ## Rollout
 
-1. ✅ Sign off this RFC (Q1–Q11 decisions). Alex sign-off 2026-04-27.
+1. ✅ Sign off this RFC (Q1–Q11 decisions).
 2. ✅ Run `cargo sqlx prepare --workspace` locally (all 9 migrations applied
    against a Postgres 16 instance). Commit `.sqlx/` metadata. Confirmed 2026-04-27.
 3. ✅ One-time ops: reserve `contractgate` on PyPI + TestPyPI; configure

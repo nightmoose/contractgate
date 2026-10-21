@@ -2,7 +2,7 @@
 
 **RFC:** 026  
 **Status:** Accepted  
-**Added:** nightly-maintenance-2026-05-15 (impl); reference doc added 2026-05-24  
+**Added:** 2026-05-15 (impl); reference doc added 2026-05-24  
 **Feature flag:** `--features kinesis-ingress` (compile-time opt-in)
 
 ---

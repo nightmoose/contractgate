@@ -1,7 +1,7 @@
 ---
 title: API-host security — fail-closed /metrics + global security headers
 status: Accepted
-author: Alex
+author: product owner
 date: 2026-10-12
 ---
 
@@ -107,7 +107,6 @@ a specific CSP (none currently) could override.
 
 ## Rollout
 
-- Branch: `nightly-maintenance-2026-10-12-rfc100-api-host-security`.
 - Files:
   - `src/observability.rs` — ~10 lines (new flag check, startup log).
   - `src/security_headers.rs` — ~40 lines (new file).

@@ -4,7 +4,6 @@
 |---------------|------------------------------------------------------------------------|
 | Author        | DataContractGate team                                                      |
 | Created       | 2026-04-27                                                             |
-| Target branch | `nightly-maintenance-YYYY-MM-DD` (set when work starts)                |
 | Chunk         | Punchlist 03 — Breaking-Change Story                                   |
 | Depends on    | RFC-002 (versioning) — landed; RFC-006 (`/contracts/diff`) — landed; RFC-007 (CLI) |
 

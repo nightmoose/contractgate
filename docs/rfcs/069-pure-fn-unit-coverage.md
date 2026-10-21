@@ -2,7 +2,6 @@
 
 **Status:** Implemented (2026-05-28)
 **Date:** 2026-05-28
-**Branch:** `nightly-maintenance-2026-05-28-rfc069-pure-fn-coverage`
 **Follows:** RFC-068 (org-isolation DB tests in CI)
 **Addresses:** docs/reviews/test-hardening-handoff-2026-05-28.md — Task 3 (partial; auth)
 **Severity:** P2 — correctness regressions in these functions fail silently

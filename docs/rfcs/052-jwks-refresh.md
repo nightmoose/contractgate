@@ -3,7 +3,6 @@
 **Status:** Accepted  
 **Date:** 2026-05-22  
 **Implemented:** 2026-05-24  
-**Branch:** nightly-maintenance-2026-05-24-rfc052-053  
 **Addresses:** REVIEW-2026-05-22-launch-readiness H2  
 **Severity:** P1 — high
 

@@ -2,7 +2,6 @@
 
 **Status:** Shipped — v0.2.0 (`@nightmoose/contractgate-mcp-server`)
 **Date:** 2026-08-23
-**Branch:** nightly-maintenance-2026-08-23-rfc090
 **Depends on:** RFC-089 (agent playbook), RFC-028 (deploy), RFC-076 (local test), RFC-081 (quarantine list)
 
 ---

@@ -2,7 +2,7 @@
 
 **Status:** Accepted
 **Date:** 2026-05-14
-**Author:** Alex Suarez
+**Author:** the product owner
 **Implemented:** 2026-05-15
 
 ---

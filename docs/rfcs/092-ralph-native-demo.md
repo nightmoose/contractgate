@@ -5,7 +5,6 @@
 | Status     | **Accepted — implementing** |
 | Author     | DataContractGate team |
 | Created    | 2026-09-11 |
-| Branch     | `nightly-maintenance-2026-09-11-rfc092-ralph-demo` |
 | Target     | Working compose demo for design-partner walkthrough (week of 2026-09-15) |
 | Depends on | Existing Kafka demo Redpanda compose; Python SDK validator; no engine change required |
 

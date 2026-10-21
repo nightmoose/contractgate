@@ -4,7 +4,6 @@
 |---------------|------------------------------------------------------------------------|
 | Author        | DataContractGate team                                                      |
 | Created       | 2026-04-27                                                             |
-| Target branch | `nightly-maintenance-2026-09-30-rfc018-typescript-sdk`                 |
 | Chunk         | Punchlist v2 #5                                                        |
 | Supersedes    | RFC-011 partially (TS only; Go + Java deferred)                        |
 | Depends on    | RFC-005 (Python SDK shape reference), RFC-014 (CLI freezes wire shape) |

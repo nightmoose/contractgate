@@ -3,7 +3,6 @@
 **Status:** Accepted  
 **Date:** 2026-05-22  
 **Accepted:** 2026-05-24  
-**Branch:** nightly-maintenance-2026-05-24-rfc057  
 **Addresses:** REVIEW-2026-05-22-launch-readiness M2  
 **Severity:** P2 — medium
 

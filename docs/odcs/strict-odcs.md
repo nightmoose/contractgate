@@ -1,7 +1,7 @@
 # Strict ODCS export / import (feat/odcs-strict)
 
 **Status:** current behaviour, 2026-10-15. Where this page conflicts with
-`extension-strategy.md`, `field-mapping.md`, or `gap-analysis.md`, this page wins.
+`field-mapping.md` or `gap-analysis.md`, this page wins.
 
 DCG exports (`GET /contracts/{id}/versions/{v}/export`) validate against the
 **official ODCS v3.1.0 JSON Schema** with no post-processing. The schema is

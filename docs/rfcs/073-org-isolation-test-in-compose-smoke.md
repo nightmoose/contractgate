@@ -2,7 +2,6 @@
 
 **Status:** Implemented (2026-05-28)
 **Date:** 2026-05-28
-**Branch:** `nightly-maintenance-2026-05-28-rfc069-pure-fn-coverage`
 **Follows:** RFC-072 (quarantine→replay race-guard test)
 **Addresses:** docs/reviews/test-hardening-handoff-2026-05-28.md — Task 1 (tail)
 **Severity:** P2 — closes the last "tenant isolation never runs in CI" gap

@@ -4,7 +4,6 @@
 |---------------|------------------------------------------------------------------------|
 | Author        | DataContractGate team                                                      |
 | Created       | 2026-04-27                                                             |
-| Target branch | `nightly-maintenance-YYYY-MM-DD` (set when work starts)                |
 | Chunk         | Punchlist 08 — Multi-Tenant SaaS                                       |
 | Depends on    | **RFC-001 (org-scoped tenancy) — must be signed before work begins**   |
 

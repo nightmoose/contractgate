@@ -2,7 +2,7 @@
 
 **RFC:** 083 — Per-org event metering  
 **Status:** Phase 1 (API) + Phase 2 (ingest 429) + Phase 3 (widget)  
-**Since:** nightly-2026-07-15 (Phase 2: `nightly-maintenance-2026-07-15-rfc083-phase2`)
+**Since:** 2026-07-15
 
 Per-org event usage for the current calendar month against the plan limit. Backs
 the **Usage this month** card on the account Billing page.

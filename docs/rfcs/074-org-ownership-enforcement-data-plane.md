@@ -2,7 +2,6 @@
 
 **Status:** Implemented (2026-05-29)
 **Date:** 2026-05-29
-**Branch:** `nightly-maintenance-2026-05-28-rfc069-pure-fn-coverage`
 **Severity:** **Latent P0-class bug (cross-tenant write, BOLA/IDOR) found by
 code inspection.** Under production auth this would let any unrestricted key
 write to another org's contract on ingest/egress/v1-ingest. **Not reproduced

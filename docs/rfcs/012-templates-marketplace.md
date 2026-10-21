@@ -4,7 +4,6 @@
 |---------------|------------------------------------------------------------------------|
 | Author        | DataContractGate team                                                      |
 | Created       | 2026-04-27                                                             |
-| Target branch | `nightly-maintenance-YYYY-MM-DD` (set when work starts)                |
 | Chunk         | Punchlist 07 — Templates + Marketplace                                 |
 | Depends on    | RFC-007 (CLI surface), RFC-011 (SDK pull path)                         |
 

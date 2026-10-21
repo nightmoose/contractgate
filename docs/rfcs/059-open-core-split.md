@@ -62,7 +62,7 @@ feature flags and (b) Maven multi-module structure inside the `connect/`
 subtree.** Two LicenseManager implementations (one Rust, one Java) share a
 single SaaS validation backend and signed-license format.
 
-The proposal Alex circulated assumed a Java-only codebase; this RFC
+The proposal the product owner circulated assumed a Java-only codebase; this RFC
 corrects that and applies the same open-core intent to the actual mixed
 Rust+Java repository.
 
@@ -240,7 +240,7 @@ chokepoint on community PRs).
 ## RFC sequence
 
 Implementation order (one nightly per RFC, or bundled into 2–3 nightlies
-depending on Sonnet's pace):
+depending on the implementer's pace):
 
 1. **RFC-060** — LicenseManager protocol + SaaS validation endpoint.
    (Pure design + backend service. Unblocks 061 + 063.)
@@ -295,8 +295,8 @@ cadence.
 
 This RFC is "accepted" when:
 
-1. Alex signs off on the open-core scope (what's free, what's paid).
-2. Alex signs off on the BSL choice (vs SSPL, Elastic License v2, or
+1. The product owner signs off on the open-core scope (what's free, what's paid).
+2. The product owner signs off on the BSL choice (vs SSPL, Elastic License v2, or
    pure commercial). Recommended: **BSL 1.1** for industry familiarity.
 3. RFCs 060–064 are reviewed against the invariants here and updated if
    they drift.

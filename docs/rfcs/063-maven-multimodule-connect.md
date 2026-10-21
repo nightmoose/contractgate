@@ -327,7 +327,7 @@ After the move, delete:
 Keep `confluent-connector/` as a symlink to `connect/` until 0.3.0
 release.
 
-**File deletes need confirmation per global rule** — Sonnet asks Alex
+**File deletes need confirmation per global rule** — the implementer asks the product owner
 before running `git rm` on anything in `confluent-connector/`.
 
 ---
@@ -382,5 +382,5 @@ before running `git rm` on anything in `confluent-connector/`.
    enterprise artifacts (new section, not a new file — the existing
    `confluent-connector/README.md` content gets moved + expanded).
 
-**Sonnet asks Alex before deleting any files** under
+**The implementer asks the product owner before deleting any files** under
 `confluent-connector/`.

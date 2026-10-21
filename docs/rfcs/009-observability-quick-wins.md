@@ -4,7 +4,6 @@
 |---------------|------------------------------------------------------------------------|
 | Author        | DataContractGate team                                                      |
 | Created       | 2026-04-27                                                             |
-| Target branch | `nightly-maintenance-YYYY-MM-DD` (set when work starts)                |
 | Chunk         | Punchlist 04 — Observability Quick Wins                                |
 | Depends on    | RFC-002 (versioning), RFC-008 (`severity` for alert rule conditions)   |
 

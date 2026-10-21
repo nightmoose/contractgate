@@ -132,7 +132,7 @@ today is hand-written YAML in Start Blank.
 Fixing this is a real builder rework: add `"object"` to the type union, give
 `FieldState` recursive child `properties`, render nested field editors, and
 make `buildYaml` recurse. That is a substantial, UI-heavy change — exactly the
-"frontend overhaul" CLAUDE.md cautions against doing casually, and it needs
+"frontend overhaul" the contributor guide cautions against doing casually, and it needs
 visual + `npm run build` verification that can't be done blind.
 
 **Decision:** deferred to its own focused follow-up (proposed RFC-080) so

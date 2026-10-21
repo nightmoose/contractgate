@@ -2,7 +2,7 @@
 
 **RFC:** 044  
 **Status:** Accepted  
-**Added:** nightly-maintenance-2026-05-17-rfc044-date-type; doc added 2026-05-24
+**Added:** 2026-05-17; doc added 2026-05-24
 
 ---
 

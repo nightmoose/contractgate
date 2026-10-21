@@ -4,7 +4,6 @@
 |---------------|------------------------------------------------------------------------|
 | Author        | DataContractGate team                                                      |
 | Created       | 2026-04-27                                                             |
-| Target branch | `nightly-maintenance-YYYY-MM-DD` (set when work starts)                |
 | Chunk         | Punchlist 05 — Self-Hosted Basics                                      |
 | Depends on    | RFC-001 (org-scoped tenancy) — read for RBAC scope; RFC-009 (`/metrics`) |
 

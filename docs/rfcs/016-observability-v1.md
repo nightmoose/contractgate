@@ -5,7 +5,6 @@
 | Author        | DataContractGate team                                                      |
 | Created       | 2026-04-27                                                             |
 | Revised       | 2026-04-27 — scope trimmed: alerts deferred until first pilot has real traffic |
-| Target branch | `nightly-maintenance-YYYY-MM-DD` (set when work starts)                |
 | Chunk         | Punchlist v2 #3                                                        |
 | Supersedes    | RFC-009 (broader scope; PD/email/generic webhooks + full rule engine deferred) |
 

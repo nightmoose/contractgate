@@ -2,7 +2,6 @@
 
 **Status:** Draft
 **Date:** 2026-06-01
-**Branch:** `nightly-maintenance-2026-06-01-rfc076-contract-test-dry-run`
 **Follows:** RFC-024 (Brownfield Scaffolder, `cg enforce`), RFC-006 (Multi-Format Inference)
 **Severity:** P1 — competitive evaluation blocker (see §Context)
 
@@ -178,14 +177,14 @@ assertions and the dashboard.
 
 ## Docs
 
-Per CLAUDE.md (user-facing CLI flag → doc): add
+Per the contributor guide (user-facing CLI flag → doc): add
 `docs/cg-test-reference.md` (flags, input formats, exit codes, the chained
 `infer | test` recipe) and add a row to the CLI section of the docs index.
 Update `docs/STATUS.md` with the RFC-076 row.
 
 ## Rollout
 
-Single nightly-maintenance branch. Additive only — no change to `validate`,
+Single feature branch. Additive only — no change to `validate`,
 `enforce`, the engine, schema, or config. Zero risk to the hot path or existing
 behavior.
 
