@@ -9,9 +9,9 @@
 
 ## Problem
 
-ContractGate validates data on **ingest**. The patent core is the
+DataContractGate validates data on **ingest**. The patent core is the
 inbound semantic validation engine. But the consumers who run
-ContractGate also expose *their own* APIs downstream — and today they
+DataContractGate also expose *their own* APIs downstream — and today they
 have no symmetric guarantee that what *leaves* their API conforms to a
 contract.
 
@@ -40,7 +40,7 @@ checks are identical to ingest. Only the *direction* and the
 
 Two deployment shapes, one mechanism:
 
-1. **Last step** — ContractGate sits in front of the response. The
+1. **Last step** — DataContractGate sits in front of the response. The
    caller hands the assembled payload to `POST /egress/{contract}`,
    gets back a cleaned payload plus per-record outcomes.
 2. **Pre-egress gate** — the same call made *before* the response is

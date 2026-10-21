@@ -2,7 +2,7 @@
 
 | Status        | **Superseded** by RFC-014 (2026-04-27) — kept for design context       |
 |---------------|------------------------------------------------------------------------|
-| Author        | ContractGate team                                                      |
+| Author        | DataContractGate team                                                      |
 | Created       | 2026-04-27                                                             |
 | Target branch | `nightly-maintenance-YYYY-MM-DD` (set when work starts)                |
 | Chunk         | Punchlist 02 — CLI + GitOps Core                                       |

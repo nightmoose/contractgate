@@ -3,7 +3,7 @@
 | Field         | Value                                              |
 |---------------|----------------------------------------------------|
 | Status        | **Implemented (2026-05-16)**                       |
-| Author        | ContractGate team                                  |
+| Author        | DataContractGate team                                  |
 | Created       | 2026-05-06                                         |
 | Target branch | `nightly-maintenance-2026-05-06`                   |
 | Tracking      | Post-demo roadmap (project_post_demo_roadmap.md)   |
@@ -14,7 +14,7 @@
 
 Add a `cg scaffold` command that introspects a live Kafka topic (Avro, Protobuf,
 or JSON), samples events, profiles field statistics, detects PII candidates, and
-emits a draft ContractGate YAML contract. A companion `cg enforce --mode shadow`
+emits a draft DataContractGate YAML contract. A companion `cg enforce --mode shadow`
 sub-command replays the scaffold output through the existing validation engine
 without touching the hot ingest path.
 

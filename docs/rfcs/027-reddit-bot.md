@@ -2,7 +2,7 @@
 
 **Status:** Accepted  
 **Date:** 2026-05-11  
-**Author:** ContractGate Engineering
+**Author:** DataContractGate Engineering
 
 ---
 
@@ -14,7 +14,7 @@ Build a Claude-powered Reddit bot (`u/ContractGateBot`) that monitors data engin
 
 ## Motivation
 
-ContractGate is technical software used by data engineers. The communities on Reddit (r/dataengineering, r/datascience, r/apachekafka, r/learnpython) regularly surface questions about data contracts, schema enforcement, ingestion validation, and quarantine patterns — exactly the problems ContractGate solves. A disclosed, technically accurate bot presence increases awareness, provides genuine value, and creates a feedback loop for product positioning.
+DataContractGate is technical software used by data engineers. The communities on Reddit (r/dataengineering, r/datascience, r/apachekafka, r/learnpython) regularly surface questions about data contracts, schema enforcement, ingestion validation, and quarantine patterns — exactly the problems DataContractGate solves. A disclosed, technically accurate bot presence increases awareness, provides genuine value, and creates a feedback loop for product positioning.
 
 ---
 
@@ -28,7 +28,7 @@ ContractGate is technical software used by data engineers. The communities on Re
 | `monitor.py` | PRAW streaming; keyword match; writes to SQLite queue |
 | `answer.py` | Anthropic API call, confidence scoring, routes High/Medium/Low |
 | `poster.py` | Reads queue; auto-posts after 2-min delay or routes to Slack |
-| `prompts/system.txt` | Full ContractGate technical system prompt |
+| `prompts/system.txt` | Full DataContractGate technical system prompt |
 | `db/schema.sql` | SQLite schema |
 | `.env.example` | Required environment variables |
 | `Dockerfile` | Single-process container (1 vCPU / 512 MB) |
@@ -54,7 +54,7 @@ ContractGate is technical software used by data engineers. The communities on Re
 Every reply opens with:
 
 ```
-^(I'm ContractGate's AI technical advisor — a bot, not a human. Happy to help with any data contract questions.)
+^(I'm DataContractGate's AI technical advisor — a bot, not a human. Happy to help with any data contract questions.)
 ```
 
 ### Constraints
@@ -77,7 +77,7 @@ Every reply opens with:
 ## Alternatives Considered
 
 - **Human moderator posting manually:** Too slow, doesn't scale.
-- **Undisclosed bot:** Rejected — violates Reddit policy and ContractGate values.
+- **Undisclosed bot:** Rejected — violates Reddit policy and DataContractGate values.
 - **Twitter/X engagement:** Out of scope for this RFC.
 
 ---

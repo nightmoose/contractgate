@@ -3,7 +3,7 @@
 | Field         | Value                                            |
 |---------------|--------------------------------------------------|
 | Status        | **Implemented**                                  |
-| Author        | ContractGate team                                |
+| Author        | DataContractGate team                                |
 | Created       | 2026-05-04                                       |
 | Target branch | `nightly-maintenance-2026-05-04-demo-mode`       |
 | Tracking      | Demo onboarding feedback (post-RFC-017)          |
@@ -116,7 +116,7 @@ the dashboard:
   the flag is set, so every API call carries the right `x-org-id` header
   even before any provider mounts.
 - **components/DemoBanner.tsx** (new) — small fixed banner: "Demo Mode •
-  single tenant • [Learn about ContractGate Cloud →]". Mounted in
+  single tenant • [Learn about DataContractGate Cloud →]". Mounted in
   `app/layout.tsx` conditionally.
 
 Pages that depend on real auth (GitHub config, member invites, account

@@ -140,7 +140,7 @@ pub enum AppError {
     Forbidden(String),
 
     /// Fivetran rejected the API key or secret. 401. The message is fixed
-    /// and never includes the key, the secret, or the minted ContractGate key.
+    /// and never includes the key, the secret, or the minted DataContractGate key.
     #[error("Fivetran rejected the API key")]
     FivetranUnauthorized,
 

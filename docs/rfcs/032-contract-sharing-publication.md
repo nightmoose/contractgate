@@ -139,7 +139,7 @@ machinery rather than inventing a parallel path.
   available update; it never applies one silently. Auto-apply is
   explicitly not in scope.
 - **Cross-instance federation** (publishing across separate
-  ContractGate deployments). v1 assumes one deployment; the `ref` is
+  DataContractGate deployments). v1 assumes one deployment; the `ref` is
   designed to not preclude federation later.
 
 ## Open Questions
@@ -153,7 +153,7 @@ machinery rather than inventing a parallel path.
    Recommendation: the ref is stable per (contract, visibility);
    publishing a new version updates what the ref resolves to, and
    `import-status` reports the delta.
-3. **Format on the wire.** Publish/fetch the locked ContractGate YAML,
+3. **Format on the wire.** Publish/fetch the locked DataContractGate YAML,
    or the ODCS export form (RFC-010 already has ODCS export)?
    Recommendation: locked YAML as the canonical form; offer ODCS as an
    alternate representation on `GET /published/{ref}?format=odcs`.

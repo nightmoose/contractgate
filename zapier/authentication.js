@@ -25,7 +25,7 @@ module.exports = {
       required: false,
       default: "https://app.datacontractgate.com",
       helpText:
-        "Leave blank for ContractGate Cloud. Set this only if you self-host the gateway. Must be an `https://` or `http://` URL. See [the setup doc](https://github.com/nightmoose/contractgate/blob/main/docs/zapier.md).",
+        "Leave blank for DataContractGate Cloud. Set this only if you self-host the gateway. Must be an `https://` or `http://` URL. See [the setup doc](https://github.com/nightmoose/contractgate/blob/main/docs/zapier.md).",
     },
   ],
 };

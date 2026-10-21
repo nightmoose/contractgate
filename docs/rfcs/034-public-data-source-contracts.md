@@ -11,7 +11,7 @@
 Customers who want to work with public data sources (government APIs, open data
 portals) today must download the full dataset, filter it locally, and then
 validate it against their own contract. This wastes bandwidth, adds pipeline
-complexity, and pushes filtering logic outside ContractGate where it cannot be
+complexity, and pushes filtering logic outside DataContractGate where it cannot be
 audited.
 
 There is no way to share a canonical schema for a well-known public source so
@@ -21,12 +21,12 @@ that multiple customers can build on it without reinventing it.
 
 ## Goals
 
-1. Ship a **Public Catalog** — a curated set of ContractGate-managed contracts
+1. Ship a **Public Catalog** — a curated set of DataContractGate-managed contracts
    describing government / open data APIs, starting with the ACS 5-Year Census
    estimates (2023). Second candidate: NYC Taxi trip data.
 2. Let any customer **fork** a public contract into their own org, customize it
    (field subset + row predicates), and **export** clean, policy-compliant data.
-   ContractGate applies all rules at export time — the published contract stays
+   DataContractGate applies all rules at export time — the published contract stays
    pristine.
 3. Keep the validation engine under the existing <15 ms p99 budget for
    fork-applied filtering (upstream fetch time excluded from this budget).
@@ -47,9 +47,9 @@ that multiple customers can build on it without reinventing it.
 
 | # | Question | Decision |
 |---|---|---|
-| Q1 | Who can publish public contracts? | ContractGate admins only (curated registry). Community publishing deferred. |
+| Q1 | Who can publish public contracts? | DataContractGate admins only (curated registry). Community publishing deferred. |
 | Q2 | Filter depth at fork time | Field subsetting + row-level equality/range predicates. No full SQL yet. |
-| Q3 | Where does filtering happen? | Gateway-side: ContractGate fetches upstream, applies fork filter, returns filtered payload to client. |
+| Q3 | Where does filtering happen? | Gateway-side: DataContractGate fetches upstream, applies fork filter, returns filtered payload to client. |
 | Q4 | Fork storage | Fork is a new contract row with `parent_contract_id` + `fork_filter` JSONB. Parent version pinned at fork time; consumer can opt in to track latest. |
 | Q5 | Upstream auth | Public sources only (no auth required). Authenticated upstream sources deferred. |
 | Q6 | Route namespace | `/public-contracts` for registry listing; `/contracts/:id/fork` for fork creation; `/contracts/:id/export` for filtered export. |
@@ -70,7 +70,7 @@ create table public_contracts (
   source_url  text not null,          -- upstream HTTP endpoint
   source_format text not null         -- "json" | "csv"
     check (source_format in ('json','csv')),
-  contract_yaml text not null,        -- canonical ContractGate YAML
+  contract_yaml text not null,        -- canonical DataContractGate YAML
   version     text not null default '1.0',
   created_at  timestamptz not null default now(),
   updated_at  timestamptz not null default now()
@@ -156,7 +156,7 @@ POST /contracts/:id/export?format=csv
 ```
 
 Supported formats: `csv` (default), `parquet`. `id` is the forked contract.
-ContractGate:
+DataContractGate:
 1. Fetches upstream `source_url` from the parent public contract.
 2. Parses JSON or CSV.
 3. Applies `fork_filter` (field subset + predicates) in Rust — no external

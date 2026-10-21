@@ -2,7 +2,7 @@
 
 | Status        | Accepted (2026-04-18)                    |
 |---------------|------------------------------------------|
-| Author        | ContractGate team                        |
+| Author        | DataContractGate team                        |
 | Created       | 2026-04-18                               |
 | Accepted      | 2026-04-18 — Alex sign-off on Q1–Q4 (all defaults chosen) |
 | Target branch | `nightly-maintenance-2026-04-18`         |
@@ -58,7 +58,7 @@ v1 is strictly operator-triggered (dashboard button + REST endpoint).
   cannot replay a `contract_A` quarantine row against `contract_B`.
 - **Payload editing at replay time.** The payload is replayed exactly as
   it arrived. If you need to fix the event, that's an out-of-band data
-  repair — not a ContractGate concern.
+  repair — not a DataContractGate concern.
 - **Bulk replay across arbitrary filters.** v1 takes a hand-picked ID list
   (up to 1,000). The dashboard builds the list from filter selections; the
   API itself stays simple. "Replay every `pending` row from 2026-04-15"

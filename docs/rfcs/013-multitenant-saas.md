@@ -2,7 +2,7 @@
 
 | Status        | **Deferred entirely** (2026-04-27) — no tenants, no signup flow needed pre-customer |
 |---------------|------------------------------------------------------------------------|
-| Author        | ContractGate team                                                      |
+| Author        | DataContractGate team                                                      |
 | Created       | 2026-04-27                                                             |
 | Target branch | `nightly-maintenance-YYYY-MM-DD` (set when work starts)                |
 | Chunk         | Punchlist 08 — Multi-Tenant SaaS                                       |

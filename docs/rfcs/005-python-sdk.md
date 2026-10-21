@@ -2,7 +2,7 @@
 
 | Status        | Accepted (2026-04-26)                                                   |
 |---------------|-------------------------------------------------------------------------|
-| Author        | ContractGate team                                                       |
+| Author        | DataContractGate team                                                       |
 | Created       | 2026-04-26                                                              |
 | Accepted      | 2026-04-26 — Alex sign-off on Q1, Q2, Q4, Q6 (recommendations); Q3, Q5 default |
 | Target branch | `nightly-maintenance-2026-04-26`                                        |

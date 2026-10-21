@@ -16,7 +16,7 @@ Contracts are currently visible and writable across all user accounts. There is 
 
 Adopt **Option B — org-scoped tenancy**. Every resource (contracts, API keys, audit log entries) belongs to an org, not to an individual user. Users join orgs and operate within them.
 
-Option C (per-contract ACLs for enterprise) is explicitly deferred. When an enterprise client is in the pipeline, ContractGate will likely ship as a standalone instance for that customer; the ACL layer and any other enterprise-specific concerns will be designed at that time.
+Option C (per-contract ACLs for enterprise) is explicitly deferred. When an enterprise client is in the pipeline, DataContractGate will likely ship as a standalone instance for that customer; the ACL layer and any other enterprise-specific concerns will be designed at that time.
 
 ---
 
@@ -134,7 +134,7 @@ A user can technically have rows in `org_memberships` for more than one org, but
 
 ## Enterprise (deferred)
 
-When an enterprise client arrives, the likely path is a dedicated ContractGate instance (own DB, own Rust service, own dashboard). Per-contract ACLs (Option C), SSO/SAML, audit export APIs, and custom SLAs are all deferred to that engagement. This RFC does not need to pre-solve any of those concerns.
+When an enterprise client arrives, the likely path is a dedicated DataContractGate instance (own DB, own Rust service, own dashboard). Per-contract ACLs (Option C), SSO/SAML, audit export APIs, and custom SLAs are all deferred to that engagement. This RFC does not need to pre-solve any of those concerns.
 
 ---
 

@@ -12,7 +12,7 @@ async function listContracts(z, bundle) {
   });
   if (response.status === 401 || response.status === 403) {
     throw new z.errors.ExpiredAuthError(
-      "ContractGate rejected this API key. Create a key at https://app.datacontractgate.com/account and reconnect.",
+      "DataContractGate rejected this API key. Create a key at https://app.datacontractgate.com/account and reconnect.",
     );
   }
   let rows = response.data;
@@ -25,7 +25,7 @@ async function listContracts(z, bundle) {
   }
   if (response.status !== 200 || !Array.isArray(rows)) {
     throw new z.errors.Error(
-      `The Gateway URL did not answer like the ContractGate API (HTTP ${response.status}). Leave Gateway URL blank for ContractGate Cloud.`,
+      `The Gateway URL did not answer like the DataContractGate API (HTTP ${response.status}). Leave Gateway URL blank for DataContractGate Cloud.`,
       "NotContractGate",
       response.status,
     );

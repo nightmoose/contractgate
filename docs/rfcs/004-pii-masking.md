@@ -2,7 +2,7 @@
 
 | Status        | Accepted (2026-04-19)                                                   |
 |---------------|-------------------------------------------------------------------------|
-| Author        | ContractGate team                                                       |
+| Author        | DataContractGate team                                                       |
 | Created       | 2026-04-19                                                              |
 | Accepted      | 2026-04-19 — Alex sign-off on Q1–Q7 (all recommendations chosen)        |
 | Target branch | `nightly-maintenance-2026-04-19`                                        |
@@ -65,7 +65,7 @@ durable storage."
   own design (probably "retire old contract, start new one").
 - **Tokenization / reversible transforms.** No vault, no "detokenize"
   endpoint. If you want reversibility, hash + keep the source of truth
-  upstream. This is deliberate — ContractGate is not a PII vault.
+  upstream. This is deliberate — DataContractGate is not a PII vault.
 - **Regime-specific compliance modes.** No GDPR / HIPAA / SOC2 presets
   in v1. `compliance_mode: true` is a single boolean — undeclared
   fields are rejected. Regime-specific tooling (e.g., pre-built

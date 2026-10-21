@@ -11,7 +11,7 @@
 Users who want to contract-gate an existing API today must manually transcribe
 the API's schema into YAML. This is error-prone and slows adoption. With CSV
 inference (RFC-035) already shipping, the natural next step is live-endpoint
-inference: paste a URL, let ContractGate fetch a sample, and auto-draft the
+inference: paste a URL, let DataContractGate fetch a sample, and auto-draft the
 contract.
 
 This also closes the gap in the RFC-036 wizard — the "Connect an API" path
@@ -143,7 +143,7 @@ Wired in `main.rs`:
 **Tile:**
 ```
 🔌 Connect an API
-Paste an endpoint URL. ContractGate fetches a
+Paste an endpoint URL. DataContractGate fetches a
 sample and infers the contract schema.
 ```
 

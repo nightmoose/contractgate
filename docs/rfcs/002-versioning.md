@@ -2,7 +2,7 @@
 
 | Status        | Accepted (2026-04-18)                    |
 |---------------|------------------------------------------|
-| Author        | ContractGate team                        |
+| Author        | DataContractGate team                        |
 | Created       | 2026-04-18                               |
 | Accepted      | 2026-04-18 — Alex sign-off on all three open questions |
 | Target branch | `nightly-maintenance-2026-04-17`         |
