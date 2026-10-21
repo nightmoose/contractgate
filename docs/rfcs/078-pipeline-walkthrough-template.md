@@ -10,7 +10,7 @@
 
 ## Problem
 
-A data engineer evaluating ContractGate for one ingestion surface (say CSV)
+A data engineer evaluating DataContractGate for one ingestion surface (say CSV)
 should not have to re-learn the mental model when they later wire up another
 (say RAG or Kafka). Today every supported surface has a **reference doc**
 (`v1-ingest-reference.md`, `csv-inference-reference.md`,

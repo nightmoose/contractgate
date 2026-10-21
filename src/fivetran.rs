@@ -1,9 +1,9 @@
 //! `POST /v1/integrations/fivetran/connect`
 //!
-//! Uploads the vendored ContractGate connector into the caller's own Fivetran
+//! Uploads the vendored DataContractGate connector into the caller's own Fivetran
 //! account and creates a paused Connector SDK connection. The Fivetran API key
 //! and secret are used for that one request and are not stored. A new
-//! ContractGate API key, named `Fivetran connector`, is minted for the
+//! DataContractGate API key, named `Fivetran connector`, is minted for the
 //! connection and sent as a Fivetran secret.
 
 use axum::{extract::State, Json};
@@ -742,7 +742,7 @@ pub(crate) fn public_base_url() -> AppResult<String> {
 }
 
 // ---------------------------------------------------------------------------
-// ContractGate API key (same shape as dashboard/app/api/keys/route.ts)
+// DataContractGate API key (same shape as dashboard/app/api/keys/route.ts)
 // ---------------------------------------------------------------------------
 
 fn mint_raw_key() -> String {
@@ -1062,7 +1062,7 @@ fn group_path(group_id: &str) -> String {
     format!("/v1/groups/{group_id}")
 }
 
-/// Confirms the Fivetran key and `group_id` before a ContractGate key is minted.
+/// Confirms the Fivetran key and `group_id` before a DataContractGate key is minted.
 async fn verify_group<H: ConnectHttp + ?Sized>(http: &H, input: &ConnectInput) -> AppResult<()> {
     let path = group_path(&input.group_id);
     let reply = http
@@ -1316,9 +1316,9 @@ pub(crate) fn openapi_operation() -> Value {
     let upgrade = plan::fivetran_connect_upgrade_message();
     json!({
         "operationId": "connect_fivetran",
-        "summary": "Deploy the ContractGate Fivetran connector into the caller's Fivetran account",
+        "summary": "Deploy the DataContractGate Fivetran connector into the caller's Fivetran account",
         "description": format!(
-            "Paid plans only ({upgrade}). CONTRACTGATE_SELF_HOSTED=true treats the org as paid, including a free plan, and keeps auth on. The Fivetran API key and secret are used once to upload the connector package and create a paused connection, and are not stored. On a hosted org, ContractGate mints a new API key named \"{KEY_NAME}\" for the connection and sends it as a Fivetran secret. base_url is CANONICAL_API_ORIGIN and the call fails with 500 when that variable is unset. Default table names are a slug of the contract name plus the first 8 hex digits of its id. The slug keeps ASCII letters and digits only, so Café becomes caf_<8hex>. destination_schema_names is SOURCE_NAMING so Fivetran keeps those names. An explicit table_names entry replaces the default for that contract."
+            "Paid plans only ({upgrade}). CONTRACTGATE_SELF_HOSTED=true treats the org as paid, including a free plan, and keeps auth on. The Fivetran API key and secret are used once to upload the connector package and create a paused connection, and are not stored. On a hosted org, DataContractGate mints a new API key named \"{KEY_NAME}\" for the connection and sends it as a Fivetran secret. base_url is CANONICAL_API_ORIGIN and the call fails with 500 when that variable is unset. Default table names are a slug of the contract name plus the first 8 hex digits of its id. The slug keeps ASCII letters and digits only, so Café becomes caf_<8hex>. destination_schema_names is SOURCE_NAMING so Fivetran keeps those names. An explicit table_names entry replaces the default for that contract."
         ),
         "requestBody": {
             "required": true,
@@ -1368,9 +1368,9 @@ pub(crate) fn openapi_operation() -> Value {
                 }
             },
             "400": {"description": "Invalid body, contract id, table name, or destination_schema. The error text starts with \"Invalid request: \". An unknown group is \"Invalid request: Fivetran group <id> was not found\"."},
-            "413": {"description": "Body exceeds 65536 bytes (64 KiB): \"Payload too large: Connect Fivetran body exceeds 65536 bytes\". No ContractGate key is minted."},
-            "500": {"description": "CANONICAL_API_ORIGIN is unset or is not an https origin. No ContractGate key is minted."},
-            "401": {"description": "Missing ContractGate credentials, or Fivetran rejected the API key"},
+            "413": {"description": "Body exceeds 65536 bytes (64 KiB): \"Payload too large: Connect Fivetran body exceeds 65536 bytes\". No DataContractGate key is minted."},
+            "500": {"description": "CANONICAL_API_ORIGIN is unset or is not an https origin. No DataContractGate key is minted."},
+            "401": {"description": "Missing DataContractGate credentials, or Fivetran rejected the API key"},
             "403": {"description": upgrade},
             "404": {"description": "A contract id is not in the caller's org"},
             "502": {"description": "Fivetran returned an error. The body does not include API keys."}

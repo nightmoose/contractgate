@@ -10,7 +10,7 @@
 
 ## Context
 
-Prospective customers evaluating ContractGate against the incumbent
+Prospective customers evaluating DataContractGate against the incumbent
 schema-registry tools often weigh one criterion most heavily: the
 **rule-authoring iteration loop** — how fast can an engineer write or infer a
 contract, throw representative JSON at it, read the violations, fix the rule,
@@ -18,7 +18,7 @@ and repeat — entirely locally, with no running server, no Kafka, no network.
 
 This is the one place where the incumbents are weak (their loop is
 edit → deploy to registry → produce to a topic → consume failures), and it is
-the one place ContractGate currently has **no CLI surface**, despite the engine
+the one place DataContractGate currently has **no CLI surface**, despite the engine
 being able to do it in microseconds.
 
 ## Problem

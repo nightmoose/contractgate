@@ -14,7 +14,7 @@
 ## ⚠️ Build trigger — do not implement yet
 
 This RFC is a **shelf design**. The open-core direction is sound but
-premature: ContractGate has no paying enterprise customers, no inbound
+premature: DataContractGate has no paying enterprise customers, no inbound
 asks for SSO/SAML or audit-log export, and the public launch (RFC-058
 Q3 2026) hasn't shipped. Building paid features before the free product
 is in the market is inventory risk.
@@ -25,7 +25,7 @@ is in the market is inventory risk.
    feature they will pay for, OR
 2. ≥3 unsolicited inbound asks for the same paid feature (SSO/SAML,
    audit export, fleet management, etc.), OR
-3. ContractGate has ≥10 active self-hosted production deployments and
+3. DataContractGate has ≥10 active self-hosted production deployments and
    we've validated which features they'd actually pay to add.
 
 Until one of those fires: don't implement. Don't write the SaaS license
@@ -37,7 +37,7 @@ now.
 
 ## Problem
 
-ContractGate has two distribution surfaces:
+DataContractGate has two distribution surfaces:
 
 1. **Rust crate** (repo root) — CLI binary, server binary, dashboard backend
    API, validation engine. All Apache 2.0 today.
@@ -167,7 +167,7 @@ in RFC-063 migration steps).
 BSL is the same license MariaDB, Sentry, CockroachDB, and HashiCorp
 (pre-IBM) used for this exact pattern. Acquirers understand it. Customers
 can read the source, modify it for their own use, and self-host with a
-valid license. The only restriction is "don't sell ContractGate as a
+valid license. The only restriction is "don't sell DataContractGate as a
 managed service" until the change-date.
 
 `LICENSE-BSL` file at repo root contains the BSL 1.1 text. Each

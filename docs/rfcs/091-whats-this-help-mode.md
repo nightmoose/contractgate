@@ -46,7 +46,7 @@ Done means:
 
 ## Non-goals
 
-- A blocking “Welcome to ContractGate” spotlight tour (Pendo / Shepherd / Appcues).
+- A blocking “Welcome to DataContractGate” spotlight tour (Pendo / Shepherd / Appcues).
 - Literally documenting every DOM node. The promise is “click a highlighted
   control,” not “click anything.”
 - A third-party product-tour SDK.

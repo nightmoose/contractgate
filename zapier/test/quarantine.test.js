@@ -62,7 +62,7 @@ test("connection test fails when the Gateway URL serves a web page", async () =>
 
   await assert.rejects(
     () => appTester(App.authentication.test, { authData: { api_key: "cg_live_test" } }),
-    /did not answer like the ContractGate API/,
+    /did not answer like the DataContractGate API/,
   );
 });
 

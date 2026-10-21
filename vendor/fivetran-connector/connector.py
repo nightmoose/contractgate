@@ -1,6 +1,6 @@
-"""Fivetran Connector SDK source for ContractGate passed events.
+"""Fivetran Connector SDK source for DataContractGate passed events.
 
-ContractGate is DataContractGate and AISchemaGate sharing one engine. This
+DataContractGate and AISchemaGate share one engine. This
 connector reads only records that passed validation, from
 ``GET /v1/contracts/{id}/passed``, and upserts one table per contract.
 """
@@ -132,7 +132,7 @@ def configuration_form():
             form_field.TextField.password,
             required=True,
             description=(
-                "ContractGate API key. Sent as the x-api-key header. A paid plan is required."
+                "DataContractGate API key. Sent as the x-api-key header. A paid plan is required."
             ),
         )
     )
@@ -381,7 +381,7 @@ def _sync_contract(session: requests.Session, config: dict, state: dict, contrac
             if not cursor or restarted:
                 when = "after a full re-sync" if restarted else "without a cursor"
                 raise ContractGateSyncError(
-                    f"ContractGate rejected the passed-events request for contract "
+                    f"DataContractGate rejected the passed-events request for contract "
                     f"{contract_id} (HTTP {exc.status_code}) {when}"
                 ) from exc
             log.warning(
@@ -407,7 +407,7 @@ def _sync_pages(
         events = page.get("events")
         if not isinstance(events, list):
             raise ContractGateSyncError(
-                f"ContractGate passed-events page for contract {contract_id} has no events list"
+                f"DataContractGate passed-events page for contract {contract_id} has no events list"
             )
         for event in events:
             op.upsert(table=table, data=_event_row(event))
@@ -428,12 +428,12 @@ def _sync_pages(
             return
         if not next_cursor:
             raise ContractGateSyncError(
-                f"ContractGate reported more passed events for contract {contract_id} "
+                f"DataContractGate reported more passed events for contract {contract_id} "
                 "without a new cursor"
             )
         if next_cursor in seen or next_cursor == cursor:
             raise ContractGateSyncError(
-                f"ContractGate repeated a passed-event cursor for contract {contract_id}"
+                f"DataContractGate repeated a passed-event cursor for contract {contract_id}"
             )
         if cursor:
             seen.add(cursor)
@@ -459,7 +459,7 @@ def _fetch_page(
         except _RETRYABLE_REQUEST_ERRORS:
             if attempt + 1 >= MAX_ATTEMPTS:
                 raise ContractGateSyncError(
-                    f"ContractGate request failed for contract {contract_id}"
+                    f"DataContractGate request failed for contract {contract_id}"
                 ) from None
             delay = _backoff_seconds(attempt, None)
             log.warning(f"Retrying passed-events request for contract {contract_id}")
@@ -471,7 +471,7 @@ def _fetch_page(
             raise CursorRejected(status)
         if status == 400:
             raise ContractGateSyncError(
-                "ContractGate rejected the passed-events request for contract "
+                "DataContractGate rejected the passed-events request for contract "
                 f"{contract_id}: {_error_text(response, config['api_key'])}"
             )
         if status == 403:
@@ -481,7 +481,7 @@ def _fetch_page(
         if status == 429 or status >= 500:
             if attempt + 1 >= MAX_ATTEMPTS:
                 raise ContractGateSyncError(
-                    f"ContractGate returned HTTP {status} for contract {contract_id} after retries"
+                    f"DataContractGate returned HTTP {status} for contract {contract_id} after retries"
                 )
             retry_after = response.headers.get("Retry-After") if response.headers else None
             delay = _backoff_seconds(attempt, retry_after)
@@ -492,25 +492,25 @@ def _fetch_page(
             continue
         if status == 401:
             raise ContractGateSyncError(
-                f"ContractGate rejected the API key for contract {contract_id}"
+                f"DataContractGate rejected the API key for contract {contract_id}"
             )
         if status != 200:
             raise ContractGateSyncError(
-                f"ContractGate returned HTTP {status} for contract {contract_id}"
+                f"DataContractGate returned HTTP {status} for contract {contract_id}"
             )
         try:
             body = response.json()
         except ValueError as exc:
             raise ContractGateSyncError(
-                f"ContractGate returned a non-JSON passed-events page for contract {contract_id}"
+                f"DataContractGate returned a non-JSON passed-events page for contract {contract_id}"
             ) from exc
         if not isinstance(body, dict):
             raise ContractGateSyncError(
-                f"ContractGate returned an unexpected passed-events page for contract {contract_id}"
+                f"DataContractGate returned an unexpected passed-events page for contract {contract_id}"
             )
         return body
 
-    raise ContractGateSyncError(f"ContractGate request failed for contract {contract_id}")
+    raise ContractGateSyncError(f"DataContractGate request failed for contract {contract_id}")
 
 
 def _response_error(response: requests.Response) -> str | None:

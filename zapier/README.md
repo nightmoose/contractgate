@@ -1,10 +1,10 @@
-# ContractGate for Zapier
+# DataContractGate for Zapier
 
 The step that checks a record Zapier just pulled, before the next step writes it.
 
 **Validate Record** posts that one object to `POST /v1/ingest/{contract_id}`.
 
-- A failure is quarantined. The Zap stops. Replay happens in ContractGate, not in Zapier's task history. A halted task is not replayed by Zapier, on purpose: replaying it would send the same bad record again.
+- A failure is quarantined. The Zap stops. Replay happens in DataContractGate, not in Zapier's task history. A halted task is not replayed by Zapier, on purpose: replaying it would send the same bad record again.
 - A pass continues. The next step writes **Payload**, which is the record after the contract's PII transforms. On a failure, Payload is null.
 - **New Quarantined Record** polls `GET /quarantine` (newest 100) for Zaps that should hear about rejects from other producers too.
 

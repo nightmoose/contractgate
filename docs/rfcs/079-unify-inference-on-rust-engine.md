@@ -99,7 +99,7 @@ send data at all.
    `inferSamples({ name, samples: records })` call; set `generatedYaml` from the
    response. Parse the pasted JSON locally first (so JSON errors stay
    instant/local), then send the parsed `samples` array. Add a one-line notice:
-   *"Sample data is sent to ContractGate to generate the contract. To keep data
+   *"Sample data is sent to DataContractGate to generate the contract. To keep data
    fully local, use Start Blank (YAML editor) or `cg test` locally."*
 
 3. **`dashboard/app/contracts/_lib.tsx`** — delete `inferFields`, `buildYaml`,

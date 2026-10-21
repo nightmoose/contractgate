@@ -34,7 +34,7 @@ are a future RFC).
 
 ## ODCS Mapping
 
-| ContractGate | ODCS `logicalType` |
+| DataContractGate | ODCS `logicalType` |
 |---|---|
 | `date` | `date` |
 

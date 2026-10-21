@@ -16,7 +16,7 @@ const SAMPLE = {
 function errorMessage(body, status) {
   if (body && typeof body.detail === "string" && body.detail) return body.detail;
   if (body && typeof body.error === "string" && body.error) return body.error;
-  return `ContractGate returned HTTP ${status}.`;
+  return `DataContractGate returned HTTP ${status}.`;
 }
 
 function asJson(response) {
@@ -71,16 +71,16 @@ const perform = async (z, bundle) => {
 
   if (response.status === 401 || response.status === 403) {
     throw new z.errors.ExpiredAuthError(
-      "ContractGate rejected this API key. Create a key at https://app.datacontractgate.com/account and reconnect.",
+      "DataContractGate rejected this API key. Create a key at https://app.datacontractgate.com/account and reconnect.",
     );
   }
   if (response.status === 429) {
     const Retry = z.errors.ThrottledError;
     if (typeof Retry === "function") {
-      throw new Retry("ContractGate rate limit hit. Zapier will retry this task.", 2);
+      throw new Retry("DataContractGate rate limit hit. Zapier will retry this task.", 2);
     }
     throw new z.errors.Error(
-      "ContractGate rate limit hit. Zapier will retry this task.",
+      "DataContractGate rate limit hit. Zapier will retry this task.",
       "RateLimit",
       429,
     );
@@ -89,7 +89,7 @@ const perform = async (z, bundle) => {
   const body = asJson(response);
   if (response.status === 409) {
     throw new z.errors.Error(
-      "This contract has no stable version yet. In ContractGate, open the contract and deploy a version to stable, or put a draft version number in Contract Version.",
+      "This contract has no stable version yet. In DataContractGate, open the contract and deploy a version to stable, or put a draft version number in Contract Version.",
       "NoStableVersion",
       409,
     );
@@ -125,7 +125,7 @@ const perform = async (z, bundle) => {
     // Replay needs a stored body, which only paid plans with storage on keep
     // (RFC-086), so do not promise it here.
     const replay = shaped.quarantine_id
-      ? " See it under Quarantine in ContractGate. Zapier will not retry this task."
+      ? " See it under Quarantine in DataContractGate. Zapier will not retry this task."
       : "";
     // HaltedError stops the Zap without counting as an error that turns the Zap off.
     throw new z.errors.HaltedError(
@@ -142,7 +142,7 @@ module.exports = {
   display: {
     label: "Validate Record",
     description:
-      "Checks one record against a ContractGate contract. A failure is quarantined and the Zap stops. A pass continues with the payload the next step should write.",
+      "Checks one record against a DataContractGate contract. A failure is quarantined and the Zap stops. A pass continues with the payload the next step should write.",
   },
   operation: {
     cleanInputData: false,
@@ -154,7 +154,7 @@ module.exports = {
         required: true,
         dynamic: "contract.id.name",
         helpText:
-          "The contract this record has to satisfy, listed from the API key. A contract needs a stable version: deploy one in ContractGate first.",
+          "The contract this record has to satisfy, listed from the API key. A contract needs a stable version: deploy one in DataContractGate first.",
       },
       {
         key: "record",
