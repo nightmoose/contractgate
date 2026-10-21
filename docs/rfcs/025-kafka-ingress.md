@@ -5,7 +5,6 @@
 | Status   | **Implemented**        |
 | Author   | DataContractGate team      |
 | Created  | 2026-05-07             |
-| Branch   | `nightly-maintenance-2026-05-07` |
 
 ---
 

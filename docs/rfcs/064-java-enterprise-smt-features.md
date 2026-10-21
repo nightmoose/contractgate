@@ -2,7 +2,6 @@
 
 **Status:** Draft
 **Date:** 2026-05-27 (rewritten 2026-05-27 from earlier enterprise-gated draft)
-**Branch:** `nightly-maintenance-<date>-rfc064-smt-reload-dlq`
 **Addresses:** Frequent feedback that the SMT requires a task restart on contract change and only supports a single DLQ.
 **Depends on:** none (ships in the existing single-module `confluent-connector/`)
 
@@ -225,7 +224,7 @@ there for now):
 - "Per-violation DLQ routing" — config schema, rule evaluation order,
   available match fields, examples.
 
-Per CLAUDE.md: any new user-facing config key needs a doc entry.
+Per the contributor guide: any new user-facing config key needs a doc entry.
 
 ---
 
@@ -260,6 +259,6 @@ Per CLAUDE.md: any new user-facing config key needs a doc entry.
 6. `docs/connect-reference.md` (or `confluent-connector/README.md`)
    updated with both feature sections.
 
-**Cannot test locally:** Alex (or CI) runs the Maven build and the
-embedded-Kafka integration tests; Alex runs cargo for any server-side
+**Cannot test locally:** the product owner (or CI) runs the Maven build and the
+embedded-Kafka integration tests; the product owner runs cargo for any server-side
 version-probe endpoint addition.

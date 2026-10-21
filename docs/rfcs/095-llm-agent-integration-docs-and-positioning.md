@@ -1,7 +1,6 @@
 # RFC-095 — AISchemaGate Documentation Portal (`aischemagate.dev`)
 
 **Status:** Draft
-**Branch:** `nightly-maintenance-2026-10-11-rfc094-096-aischemagate`
 **Date:** 2026-10-11
 **Depends on:** RFC-089 (LLM-pasteable onboarding — `llm-integration.md` + `llms.txt`), RFC-090 (MCP server), RFC-093 (egress as first-class door), RFC-094 (LLMGate SDK + aischemagate alias package)
 **Companion RFCs:** RFC-094 (SDK), RFC-096 (frontend + DNS + CORS)

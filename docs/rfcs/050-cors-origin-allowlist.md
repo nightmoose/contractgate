@@ -2,7 +2,6 @@
 
 **Status:** Accepted  
 **Date:** 2026-05-22  
-**Branch:** nightly-maintenance-2026-05-22-rfc050  
 **Addresses:** REVIEW-2026-05-22-launch-readiness B4  
 **Severity:** P0 — launch blocker
 

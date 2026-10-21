@@ -5,7 +5,6 @@
 | Status        | **Implemented (2026-05-16)**                       |
 | Author        | DataContractGate team                                  |
 | Created       | 2026-05-06                                         |
-| Target branch | `nightly-maintenance-2026-05-06`                   |
 | Tracking      | Post-demo roadmap (project_post_demo_roadmap.md)   |
 
 ---
@@ -31,12 +30,12 @@ the topic, and never auto-applies PII transforms.
 
 Rationale:
 
-- CLAUDE.md locks the canonical format: `version`, `ontology.entities`, `glossary`,
+- The contributor guide locks the canonical format: `version`, `ontology.entities`, `glossary`,
   `metrics`. This is what the validation engine in `src/validation.rs` compiles
   against (`pub fn validate` at line 247). Emitting anything else as the primary
   output would require the user to round-trip through import before the contract
   is usable.
-- The ODCS extension layer (`docs/odcs/extension-strategy.md`,
+- The ODCS extension layer (an internal extension-strategy note and
   `docs/odcs/field-mapping.md`) is already designed and partially implemented in
   `src/odcs.rs`. The scaffolder can reuse it via `POST /contracts/:id/versions/:version/export`
   after the contract is created — no new serialisation code needed.
@@ -625,5 +624,5 @@ the patent-core validation engine`. No scaffold code should be imported by
 
 ## Sign-off
 
-- [ ] Alex — approve scope, format decision, OQ resolutions
-- [ ] Alex — confirm MVP boundary (mid-June target realistic?)
+- [ ] Product owner — approve scope, format decision, OQ resolutions
+- [ ] Product owner — confirm MVP boundary (mid-June target realistic?)

@@ -5,7 +5,6 @@
 | Status        | **Implemented**                                  |
 | Author        | DataContractGate team                                |
 | Created       | 2026-05-04                                       |
-| Target branch | `nightly-maintenance-2026-05-04-demo-mode`       |
 | Tracking      | Demo onboarding feedback (post-RFC-017)          |
 
 ---
@@ -211,7 +210,7 @@ invite members, API key management, account settings.
 1. **Phase 1 — Unblock (this RFC):** middleware + AuthGate + OrgProvider
    short-circuit. Compose dashboard build. Makefile target. README
    quickstart. Compose-smoke assertion. Land in
-   `nightly-maintenance-2026-05-04-demo-mode`.
+   the feature branch.
 2. **Phase 2 — Polish (follow-up):** demo banner with upgrade CTA.
    `DemoFeatureUnavailable` component for gated pages. Screenshot-test
    the demo flow in CI.

@@ -1,7 +1,6 @@
 # RFC-096 — AISchemaGate Frontend Repo + DNS + CORS Allowlist
 
 **Status:** Draft
-**Branch:** `nightly-maintenance-2026-10-11-rfc094-096-aischemagate`
 **Date:** 2026-10-11
 **Depends on:** RFC-039 (Supabase-JWT dashboard auth), RFC-050 (CORS origin allowlist), RFC-056 (server-side API key issuance), RFC-093 (egress as first-class door), RFC-094 (LLMGate SDK + aischemagate alias package), RFC-095 (aischemagate.dev docs portal)
 **Companion RFCs:** RFC-094 (SDK), RFC-095 (docs)

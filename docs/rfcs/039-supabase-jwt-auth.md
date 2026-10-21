@@ -13,7 +13,7 @@ call. `NEXT_PUBLIC_API_KEY` is a build-time env var inlined by `next build`.
 
 Two failure modes:
 
-1. **Current bug (Alex's screenshot):** `NEXT_PUBLIC_API_KEY` is empty → header
+1. **Current bug (the product owner's screenshot):** `NEXT_PUBLIC_API_KEY` is empty → header
    omitted → backend returns 401 → SWR fails silently → contracts list and
    audit log appear empty despite a successful Supabase login.
 

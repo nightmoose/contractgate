@@ -5,7 +5,6 @@
 | Status     | **Accepted — implementing** |
 | Author     | DataContractGate team |
 | Created    | 2026-09-11 |
-| Branch     | `nightly-maintenance-2026-09-11-rfc092-ralph-demo` |
 | Target     | Working compose demo for design-partner walkthrough (week of 2026-09-15) |
 | Depends on | Existing Kafka demo Redpanda compose; Python SDK validator; no engine change required |
 
@@ -134,7 +133,7 @@ Both modes must produce the same clean/quarantine routing behavior.
 - [x] `scripts/run_demo.sh` one-shot (`make demo-ralph-run` / `demo-ralph-run-mcp`)
 - [x] MCP path returns real query results (retries + port reclaim)
 - [x] Smoke / e2e / run_demo checklist in README
-- [x] DM-ready blurb (`DM_BLURB.txt`)
+- [x] DM-ready blurb (kept in the internal repo)
 
 ### Stage D — Optional stretch (post-partner if useful)
 

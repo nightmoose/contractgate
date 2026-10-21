@@ -1,8 +1,8 @@
 # RFC-001 — Org-Scoped Tenancy
 
-**Status:** Accepted (2026-05-03) — finishing gaps in `nightly-maintenance-2026-05-03-rfc-001-finish`
+**Status:** Accepted (2026-05-03) — finishing gaps in the feature branch
 **Date:** 2026-04-24 (drafted) / 2026-05-03 (accepted)
-**Author:** Alex Suarez  
+**Author:** the product owner  
 
 ---
 
@@ -62,7 +62,7 @@ ALTER TABLE audit_log ADD COLUMN org_id uuid REFERENCES orgs(id);
 
 ### Auto-provisioning rule
 
-When a user signs up, a personal org is created automatically (slug derived from their email prefix, e.g. `alexsuarez`) and the user is inserted as `owner`. This keeps the zero-friction solo use case intact — a new user lands in the dashboard and everything just works, with no "create an org first" friction.
+When a user signs up, a personal org is created automatically (slug derived from their email prefix, e.g. `janedoe`) and the user is inserted as `owner`. This keeps the zero-friction solo use case intact — a new user lands in the dashboard and everything just works, with no "create an org first" friction.
 
 ---
 
@@ -151,7 +151,7 @@ When an enterprise client arrives, the likely path is a dedicated DataContractGa
 ## Sign-off Decisions (2026-05-03)
 
 Resolved before finishing implementation. Migration 007 + 008 already shipped;
-gaps below land in migration 012 and the `nightly-maintenance-2026-05-03-rfc-001-finish`
+gaps below land in migration 012 and the feature branch
 branch.
 
 | # | Question | Decision |

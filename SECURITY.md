@@ -7,7 +7,7 @@ DataContractGate is rapidly evolving. We support security updates for the latest
 We take security seriously. Please report vulnerabilities privately.
 
 **Preferred**: Use GitHub's private vulnerability reporting (recommended).
-**Alternative**: Email security@datacontractgate.com (or alex.suarez@nightmoose.com) with:
+**Alternative**: Email security@datacontractgate.com with:
 - Description of the vulnerability
 - Steps to reproduce
 - Potential impact

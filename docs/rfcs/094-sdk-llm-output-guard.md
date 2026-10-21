@@ -1,7 +1,6 @@
 # RFC-094 — `LLMGate` SDK Class + `aischemagate` Alias Package
 
 **Status:** Draft
-**Branch:** `nightly-maintenance-2026-10-11-rfc094-096-aischemagate`
 **Date:** 2026-10-11
 **Depends on:** RFC-029 (egress validation), RFC-030 (egress PII and leakage), RFC-093 (egress as first-class door), RFC-004 (PII masking at ingest), RFC-005 (Python SDK), RFC-018 (TypeScript SDK), RFC-089 (LLM integration playbook), RFC-090 (MCP server)
 **Companion RFCs:** RFC-095 (AISchemaGate docs portal), RFC-096 (AISchemaGate frontend repo + CORS)

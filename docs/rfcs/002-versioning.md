@@ -4,8 +4,6 @@
 |---------------|------------------------------------------|
 | Author        | DataContractGate team                        |
 | Created       | 2026-04-18                               |
-| Accepted      | 2026-04-18 — Alex sign-off on all three open questions |
-| Target branch | `nightly-maintenance-2026-04-17`         |
 | Tracking      | Post-demo feedback item #2               |
 | Supersedes    | The nominal `contracts.version` column (single-value, unused by routing) |
 
@@ -81,7 +79,7 @@ compiled contract to re-validate against.
 `dashboard/`:
 - Contracts page shows a single YAML per contract. No version UI.
 
-Alex confirmed (2026-04-18) that **wiping existing data is fine** — this is still a dev/test environment, so the migration does not need to backfill.
+The product owner confirmed (2026-04-18) that **wiping existing data is fine** — this is still a dev/test environment, so the migration does not need to backfill.
 
 ## Design
 
@@ -383,7 +381,7 @@ pattern and extends it to the versioning domain. The pinned version being
 on the audit row means replay/debug tooling later can answer "why was this
 batch rejected?" without guessing.
 
-Per Alex (2026-04-18 Q#4): the pinned version is recorded precisely because
+Per the product owner (2026-04-18 Q#4): the pinned version is recorded precisely because
 that is the version that drove the quarantine decision. Recording `null`
 would erase the "why".
 
@@ -506,7 +504,7 @@ Integration smoke:
 
 ## Rollout
 
-Single PR to `nightly-maintenance-2026-04-17`:
+Single PR to the feature branch:
 
 1. Migration `003_contract_versioning.sql` — destructive (truncates dev data), adds `contract_versions`, `contract_name_history`, `multi_stable_resolution` column on `contracts`, `contract_version` columns on audit/quarantine/forwarded_events, and the two immutability + name-history triggers.
 2. Rust: new `storage::contract_versions` module, ingest handler rewrite for resolution + optional fallback fan-out, state-transition endpoints, identity-metadata PATCH endpoint, audit writes tagged with the version that actually validated.
@@ -518,14 +516,14 @@ Breaking API changes for anyone hitting the existing `/contracts/{id}` PATCH wit
 
 - The payload shape changes (yaml_content now lives on a version, not the contract). The dashboard is the only known caller, and it'll be updated in-PR.
 
-## Decisions (2026-04-18 Alex sign-off)
+## Decisions (2026-04-18)
 
 1. **Multiple stables allowed — no auto-deprecate on promote.** Contracts
    with genuinely distinct valid shapes should be able to hold multiple
    stable versions concurrently. Promoting v1.1.0 leaves v1.0.0 in
    `stable`; deprecation is always an explicit decision.
 
-2. **Per-contract `multi_stable_resolution` flag.** Alex's initial
+2. **Per-contract `multi_stable_resolution` flag.** The product owner's initial
    thought was "on unpinned failure, try all stables." On reflection
    (with pushback from this author), he endorsed making it a **per-contract
    opt-in** rather than global default. Rationale:
@@ -541,7 +539,7 @@ Breaking API changes for anyone hitting the existing `/contracts/{id}` PATCH wit
      versions are never tried, so deprecation still applies migration
      pressure.
    - Audit honesty: under fallback, the `contract_version` column always
-     records the version that *actually accepted* the event — Alex's
+     records the version that *actually accepted* the event — the product owner's
      correction ("the contract used in the actual validation was stored
      with each record") is exactly what we implement.
 
@@ -556,7 +554,7 @@ Breaking API changes for anyone hitting the existing `/contracts/{id}` PATCH wit
 
 5. **Pinned deprecated version → quarantine whole batch, record the
    pinned version** (carried over from RFC-002 initial draft and confirmed
-   by Alex).
+   by the product owner).
 
 ## Open questions
 

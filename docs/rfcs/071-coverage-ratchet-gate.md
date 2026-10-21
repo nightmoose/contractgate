@@ -2,7 +2,6 @@
 
 **Status:** Implemented (2026-05-28)
 **Date:** 2026-05-28
-**Branch:** `nightly-maintenance-2026-05-28-rfc069-pure-fn-coverage`
 **Follows:** RFC-070 (version-mutation org-scope tests)
 **Addresses:** an internal review (test-hardening-handoff-2026-05-28) — Task 2
 **Severity:** P3 — process/quality; no runtime impact

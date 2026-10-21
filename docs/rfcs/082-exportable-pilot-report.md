@@ -2,7 +2,6 @@
 
 **Status:** Draft (implementation landed 2026-07-15, pending merge)
 **Date:** 2026-07-15
-**Branch:** nightly-maintenance-2026-07-15-rfc082
 **Depends on:** RFC-047 (org scoping), RFC-028 (queryability)
 
 ---

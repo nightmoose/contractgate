@@ -585,7 +585,7 @@ pub fn export_odcs(input: OdcsExportInput<'_>) -> Result<String, String> {
 
     // ── x-contractgate-* extensions (root customProperties[]) ────────────────
     let mut ext: Vec<Value> = Vec::new();
-    // Extension *format* version (docs/odcs/extension-strategy.md §6).
+    // Extension *format* version (internal ODCS extension strategy §6).
     ext.push(custom_prop(
         "x-contractgate-version",
         v_str(EXT_FORMAT_VERSION),

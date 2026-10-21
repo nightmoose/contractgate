@@ -147,7 +147,7 @@ From [`SECURITY.md`](../SECURITY.md):
 - **Retention:** idempotency keys expire via TTL sweep. Audit and quarantine data
   are operator-controlled today — **no automated blanket TTL/purge job exists
   yet**. A documented retention policy is a recommended pre-enterprise-sale item
-  (owner: Alex).
+  (product owner).
 
 ---
 

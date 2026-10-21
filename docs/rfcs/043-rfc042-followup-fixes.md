@@ -1,7 +1,6 @@
 # RFC-043: RFC-042 Follow-up Fixes + P0-3 Loose Ends
 
 **Status:** Accepted
-**Branch:** `nightly-maintenance-2026-05-17-rfc043`
 **Fixes:** Findings from 2026-05-17 review of RFC-039 / RFC-040 / RFC-041 / RFC-042 on `main`.
 
 ## Context
@@ -243,7 +242,7 @@ Before merging this RFC: run `cargo check` and `cargo test` on a clean tree.  Fi
 
 ## Rollout order
 
-The fixes are independent.  Suggested commit order on `nightly-maintenance-2026-05-17-rfc043`:
+The fixes are independent.  Suggested commit order on the feature branch:
 
 1. Fix 5 (migration 025) — DB change, deploy independently first.
 2. Fix 1 (JWT bucket) — single-line bug.

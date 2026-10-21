@@ -2,7 +2,7 @@
 
 **RFC:** 082 — Exportable pilot report  
 **Status:** Shipped  
-**Since:** nightly-2026-07-15
+**Since:** 2026-07-15
 
 An org-scoped, windowed **"here's what DataContractGate caught for you"** report for a
 single contract: pass rate, per-version breakdown, and the top violations. JSON

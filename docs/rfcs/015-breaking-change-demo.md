@@ -4,7 +4,6 @@
 |---------------|------------------------------------------------------------------------|
 | Author        | DataContractGate team                                                      |
 | Created       | 2026-04-27                                                             |
-| Target branch | `nightly-maintenance-YYYY-MM-DD` (set when work starts)                |
 | Chunk         | Punchlist v2 #2                                                        |
 | Supersedes    | RFC-008 (broader scope; impact estimator deferred until audit volume)  |
 | Depends on    | RFC-002 (versioning), RFC-006 (`/contracts/diff`), RFC-014 (CLI)       |

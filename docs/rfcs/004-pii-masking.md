@@ -4,8 +4,6 @@
 |---------------|-------------------------------------------------------------------------|
 | Author        | DataContractGate team                                                       |
 | Created       | 2026-04-19                                                              |
-| Accepted      | 2026-04-19 — Alex sign-off on Q1–Q7 (all recommendations chosen)        |
-| Target branch | `nightly-maintenance-2026-04-19`                                        |
 | Tracking      | Post-demo feedback item #4                                              |
 | Depends on    | RFC-002 (versioning) — landed; RFC-003 (replay) — landed                |
 
@@ -512,4 +510,4 @@ Original option lists retained in the AskUserQuestion rounds from
 - Q1–Q7 — all signed off 2026-04-19. No open questions remain.
 
 Work top-down through the rollout list on
-`nightly-maintenance-2026-04-19`.
+the feature branch.

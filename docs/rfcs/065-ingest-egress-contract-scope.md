@@ -2,7 +2,6 @@
 
 **Status:** Accepted
 **Date:** 2026-05-28
-**Branch:** nightly-maintenance-2026-05-28-rfc065-ingest-egress-scope
 **Addresses:** an internal review (sale-readiness-review-2026-05-28) (new high-severity finding)
 **Severity:** P0 — cross-tenant authorization gap
 

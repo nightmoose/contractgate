@@ -1,7 +1,7 @@
 ---
 title: AISchemaGate launch bugfixes — product param through email, callback cookie, migration-036 drift check
 status: Accepted
-author: Alex
+author: product owner
 date: 2026-10-12
 ---
 
@@ -120,7 +120,6 @@ its most recent run and act on any divergence.
 
 ## Rollout
 
-- Branch: `nightly-maintenance-2026-10-12-rfc097-aischemagate-bugfixes`.
 - Files changed:
   - `dashboard/app/auth/signup/page.tsx` — ~4 lines.
   - `dashboard/app/auth/callback/route.ts` — ~6 lines.

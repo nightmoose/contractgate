@@ -86,3 +86,7 @@ docs/marketing/drafts/
 # npm auth tokens
 .npmrc
 *.mcpb
+
+# Local-only output (kept out of the public repo)
+ops/dogfood/findings/runs/
+docs/marketing/

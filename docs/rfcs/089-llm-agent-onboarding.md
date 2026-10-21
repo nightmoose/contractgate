@@ -2,7 +2,6 @@
 
 **Status:** Draft
 **Date:** 2026-08-06
-**Branch:** nightly-maintenance-2026-08-06-rfc089
 **Depends on:** RFC-005 (Python SDK), RFC-006/035/037 (inference), RFC-028 (deploy-contract), RFC-039 (auth), RFC-078 (walkthrough spine)
 
 ---

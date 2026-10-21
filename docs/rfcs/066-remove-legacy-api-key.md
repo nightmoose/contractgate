@@ -2,12 +2,11 @@
 
 **Status:** Implemented (2026-05-28)
 **Date:** 2026-05-28
-**Branch:** `nightly-maintenance-2026-05-28-rfc065-ingest-egress-scope` (bundled with RFC-065)
 **Follows:** RFC-065 (ingest/egress contract-scope enforcement)
 **Addresses:** an internal review (sale-readiness-review-2026-05-28) — legacy master-key risk
 **Severity:** P0 — cross-tenant authorization (the last broad-impersonation path)
 
-> **Scope decision (Alex, 2026-05-28):** "Master key only." Remove the env-var
+> **Scope decision (the product owner, 2026-05-28):** "Master key only." Remove the env-var
 > master key + its `x-api-key` acceptance branch (the prod impersonation risk).
 > Keep dev-mode no-auth — which the demo/compose/CI-smoke stack depends on — but
 > re-key it on an **explicit** `CONTRACTGATE_DEV_NO_AUTH=1` flag (defaults off)

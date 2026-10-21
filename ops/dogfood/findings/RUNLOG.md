@@ -77,7 +77,7 @@ Password + API key were shared in chat — **rotate both** when dogfood is done.
 ## 2026-07-20 — Local suite green (iteration 1)
 
 **Result:** `5/5` scenarios PASS on local Python SDK validator  
-**Log:** `findings/runs/20260720T201419Z`
+**Log:** internal run record (2026-07-20)
 
 | Scenario | Pass | Fail caught | Mixed |
 |----------|------|-------------|-------|

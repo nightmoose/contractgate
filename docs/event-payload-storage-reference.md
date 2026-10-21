@@ -2,7 +2,7 @@
 
 **RFC:** 086
 **Status:** Backend implemented (dashboard + consumer-path gating are follow-ups)
-**Added:** nightly-maintenance-2026-07-20-rfc086-gated-payload-storage
+**Added:** 2026-07-20
 
 ---
 

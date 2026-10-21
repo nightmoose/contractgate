@@ -4,7 +4,6 @@
 |---------------|------------------------------------------------------------------------|
 | Author        | DataContractGate team                                                      |
 | Created       | 2026-04-27                                                             |
-| Target branch | `nightly-maintenance-YYYY-MM-DD` (set when work starts)                |
 | Chunk         | Punchlist 06 — SDK Rollout                                             |
 | Depends on    | RFC-005 (Python SDK shape), RFC-007 (CLI / wire-shape freeze)          |
 

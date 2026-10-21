@@ -2,7 +2,7 @@
 
 **Status:** Draft
 **Date:** 2026-05-15
-**Author:** Alex Suarez
+**Author:** the product owner
 
 ---
 

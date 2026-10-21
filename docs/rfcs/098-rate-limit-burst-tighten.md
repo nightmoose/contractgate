@@ -1,7 +1,7 @@
 ---
 title: Tighten rate-limit burst to match documented per-key rps
 status: Accepted
-author: Alex
+author: product owner
 date: 2026-10-12
 ---
 
@@ -100,7 +100,6 @@ new 2× ratio.
 
 ## Rollout
 
-- Branch: `nightly-maintenance-2026-10-12-rfc098-rate-limit-burst-tighten`.
 - Files:
   - `src/plan.rs` — one function edit, one test update.
   - `src/rate_limit.rs` — two constant edits, one `remaining` clamp,

@@ -5,7 +5,6 @@
 | Status        | **Accepted — 2026-05-01**                    |
 | Author        | DataContractGate team                            |
 | Created       | 2026-05-01                                   |
-| Target branch | `nightly-maintenance-2026-05-01`             |
 | Tracking      | Phase 1 #4 — public self-serve demo backbone |
 
 ---
@@ -509,7 +508,7 @@ rate-limit checks. No `RwLock` wrapping needed.
 
 1. **Migration** — apply before deploying new binary (additive only; existing
    rows unaffected).
-2. **Binary** — single PR to `nightly-maintenance-2026-05-01`. No existing
+2. **Binary** — single PR to the feature branch. No existing
    route changes.
 3. **Backward compat** — `/ingest/:raw_id` untouched. No client changes needed.
 4. **Feature flag** — not required (new path, no conflict).

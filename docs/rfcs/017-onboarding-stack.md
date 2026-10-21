@@ -5,7 +5,6 @@
 | Author        | DataContractGate team                                                      |
 | Created       | 2026-04-27                                                             |
 | Revised       | 2026-04-27 — added demo seeder so RFC-016 metrics + RFC-015 audit search look real on a fresh boot |
-| Target branch | `nightly-maintenance-YYYY-MM-DD` (set when work starts)                |
 | Chunk         | Punchlist v2 #4                                                        |
 | Supersedes    | RFC-010 partially (Compose only); RFC-012 partially (3 starters only)  |
 

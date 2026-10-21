@@ -4,7 +4,6 @@
 |---------------|-------------------------------------------------------|
 | Author        | DataContractGate team                                     |
 | Created       | 2026-04-28                                            |
-| Target branch | `nightly-maintenance-2026-04-28`                      |
 | Chunk         | Pre-customer pilot polish (supports v2 punchlist)     |
 | Depends-on    | RFC-002 (versioning), RFC-003 (replay), RFC-006 (diff)|
 
@@ -322,7 +321,7 @@ Playwright component-level tests (`dashboard/e2e/` or `dashboard/tests/`):
 
 ## Rollout
 
-All steps on branch `nightly-maintenance-<date>`:
+All steps on the feature branch:
 
 - [x] 1. Install `@radix-ui/react-tooltip`; added to package.json — `npm install` required.
 - [x] 2. Create `_lib.tsx` — helpers + `TooltipWrap` + `ConfirmActionModal` + `ConfirmReplayModal` + `ReplaySummaryModal`.
@@ -332,7 +331,7 @@ All steps on branch `nightly-maintenance-<date>`:
 - [x] 6. Replay UI: four outcome colors + `ReplaySummaryModal` + transform diff placeholder.
 - [x] 7. Tooltip layer: `TooltipWrap` applied to all jargon terms listed in §Design E.
 - [x] 8. Playwright tests for all 6 test-plan items; `playwright.config.ts` created.
-- [ ] 9. `cd dashboard && npm install && npm run build` — zero TS errors, zero ESLint errors. ⚠️ PENDING — bash workspace unavailable; Alex to run.
+- [ ] 9. `cd dashboard && npm install && npm run build` — zero TS errors, zero ESLint errors. ⚠️ PENDING — bash workspace unavailable; the product owner to run.
 - [x] 10. Append the maintenance log entry.
 - [x] 11. Update this RFC: steps marked complete.
 

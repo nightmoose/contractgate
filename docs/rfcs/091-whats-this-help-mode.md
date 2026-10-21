@@ -2,7 +2,6 @@
 
 **Status:** Accepted
 **Date:** 2026-09-11
-**Branch:** `nightly-maintenance-2026-09-11-rfc091-whats-this-help-mode`
 **Depends on:** RFC-020 (TooltipWrap + jargon glossary)
 
 ---
