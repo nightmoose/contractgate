@@ -213,9 +213,7 @@ Customer-facing targets: [Support SLA](../support-sla.md).
 - Production must set `CANONICAL_API_ORIGIN=https://api.datacontractgate.com`. Staging must set `CANONICAL_API_ORIGIN=<staging-api-origin>`.
 - Fly app `<staging-fly-app>` via `fly.staging.toml`: `auto_stop_machines`,
   `min_machines_running = 0`, `KAFKA_ENABLED=false`. Created 2026-10-14.
-- Staging **shares the production Supabase database** (product-owner decision while there
-  are no customers): same `DATABASE_URL`, `ENCRYPTION_KEY`, `SUPABASE_URL`. Treat
-  staging writes as real data. No Confluent or AWS secrets on staging.
+- No Stripe live keys, Confluent or AWS secrets on staging.
 - CI: a push to `staging` builds the image, pushes it to
   `registry.fly.io/<staging-fly-app>:<sha>` (token `FLY_API_TOKEN_STAGING`)
   and `deploy-fly-staging` runs `flyctl deploy -c fly.staging.toml --image …`.

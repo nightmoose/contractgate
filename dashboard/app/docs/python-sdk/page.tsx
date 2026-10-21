@@ -368,8 +368,7 @@ function RFCContent() {
             {[
               ["Status", "Accepted (2026-04-26)"],
               ["Author", "DataContractGate team"],
-              ["Accepted", "2026-04-26 — Alex sign-off on Q1, Q2, Q4, Q6 (recommendations); Q3, Q5 default"],
-              ["Target branch", "nightly-maintenance-2026-04-26"],
+              ["Accepted", "2026-04-26 — product-owner sign-off on Q1, Q2, Q4, Q6 (recommendations); Q3, Q5 default"],
               ["Depends on", "Versioning + PII transforms — both landed"],
             ].map(([k, v]) => (
               <tr key={k} className="border-b border-[#1f2937]">
@@ -577,7 +576,7 @@ assert vr.passed, vr.violations`}</Code>
       <H2 id="rollout">Rollout</H2>
       <ol className="list-decimal list-inside space-y-2 text-slate-400 text-sm">
         {[
-          "Land the Python SDK on nightly-maintenance-2026-04-26 once Q1–Q6 are signed off.",
+          "Land the Python SDK once Q1–Q6 are signed off.",
           "Scaffold sdks/python/ with pyproject.toml, package skeleton, README, __init__.py re-exports.",
           "Implement contract.py + validator.py (the canonical-spec port). Unit tests §I + §II.",
           "Implement _transport.py, models.py, exceptions.py, client.py. Unit tests §III + §V (sync side).",
