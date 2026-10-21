@@ -58,7 +58,7 @@ the returned `payload` is forwarded.
 
 - **A client for any decision model, including Jev.** Jev (TypeSafe AI,
   September 2026) is the motivating example: a hosted model that judges a
-  posted state and returns a typed answer with a confidence. ContractGate
+  posted state and returns a typed answer with a confidence. DataContractGate
   does not call it. The caller posts the egress `payload` themselves.
   Putting a remote model call on the ingest or egress path would throw away
   the latency budget and send customer payloads to a third party. Do not

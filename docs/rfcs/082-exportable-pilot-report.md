@@ -9,7 +9,7 @@
 
 ## Problem
 
-A design partner (and their boss) needs a one-shot "here's what ContractGate
+A design partner (and their boss) needs a one-shot "here's what DataContractGate
 caught for you" artifact: pass rate and the violations that were blocked, for one
 contract over a time window, as JSON or CSV. Today the only surfaces are `/stats`
 (point-in-time aggregate, no window, no violation breakdown) and `/audit` (raw

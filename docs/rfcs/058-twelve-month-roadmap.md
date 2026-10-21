@@ -1,4 +1,4 @@
-# RFC-058 — ContractGate 12-Month Product Roadmap (2026 H2 – 2027 H1)
+# RFC-058 — DataContractGate 12-Month Product Roadmap (2026 H2 – 2027 H1)
 
 **Status:** Draft  
 **Date:** 2026-05-22  
@@ -80,7 +80,7 @@ billed — with no manual operator step.
 - **Impact estimator** — `/contracts/{id}/impact` and the materialized
   producer-count view, now that audit volume makes the numbers meaningful.
 
-**Exit criterion:** a new team can adopt ContractGate in their own language
+**Exit criterion:** a new team can adopt DataContractGate in their own language
 and CI without hand-written HTTP calls.
 
 ---
@@ -102,7 +102,7 @@ and CI without hand-written HTTP calls.
 - **Audit-log retention tiers** — wire the 7/90/custom-day retention from the
   pricing table to real lifecycle jobs.
 
-**Exit criterion:** ContractGate can be sold to a security-conscious
+**Exit criterion:** DataContractGate can be sold to a security-conscious
 enterprise — SSO, RBAC, self-hostable, with a published performance number.
 
 ---

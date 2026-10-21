@@ -2,7 +2,7 @@
 
 | Status        | Accepted (2026-04-27) — Q1–Q11 signed off; all rollout steps complete  |
 |---------------|------------------------------------------------------------------------|
-| Author        | ContractGate team                                                      |
+| Author        | DataContractGate team                                                      |
 | Created       | 2026-04-27                                                             |
 | Target branch | `nightly-maintenance-YYYY-MM-DD` (set when work starts)                |
 | Chunk         | Punchlist v2 — infrastructure (not in v2 build list; unblocks all chunks) |
@@ -14,7 +14,7 @@
 
 ## Summary
 
-Three workstreams that make ContractGate releasable end-to-end:
+Three workstreams that make DataContractGate releasable end-to-end:
 
 **A. Release workflow** — `.github/workflows/release.yml` builds the
 `contractgate` CLI binary (RFC-014) for four targets, tarballs each,
@@ -141,7 +141,7 @@ Each matrix leg:
 1. `actions/checkout@v4`
 2. `actions/download-artifact@v4` (all `tarball-*` artifacts → `./dist/`)
 3. `sha256sum ./dist/*.tar.gz > ./dist/SHA256SUMS`
-4. `gh release create ${{ github.ref_name }} ./dist/*.tar.gz ./dist/SHA256SUMS --generate-notes --title "ContractGate ${{ github.ref_name }}"` (uses `GITHUB_TOKEN`)
+4. `gh release create ${{ github.ref_name }} ./dist/*.tar.gz ./dist/SHA256SUMS --generate-notes --title "DataContractGate ${{ github.ref_name }}"` (uses `GITHUB_TOKEN`)
 
 **Note on `contractgate.yml` reference workflow:** The hardcoded `contractgate-linux-x86_64.tar.gz` URL must be updated to the versioned filename (see Rollout step 7). The reference workflow will use `releases/latest/download/contractgate-<VERSION>-x86_64-unknown-linux-gnu.tar.gz` for pinned consumers, or a separate `latest`-tagged symlink approach. For v0.1 simplicity, update the reference workflow to use `releases/latest/download/contractgate-<VERSION>-x86_64-unknown-linux-gnu.tar.gz` and document the version in a comment.
 

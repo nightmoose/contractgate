@@ -15,7 +15,7 @@ the conversation today is an email — *"your data is bad"* — with no
 shared evidence, and the small PMS vendor (who hates these emails)
 has nothing concrete to act on.
 
-ContractGate already holds the evidence. Every quarantined event, every
+DataContractGate already holds the evidence. Every quarantined event, every
 violation code, every failing field is in `quarantine_events` and
 `audit_log`. But that evidence is not shaped into anything a consumer
 can hand a provider. There is:
@@ -30,7 +30,7 @@ can hand a provider. There is:
 
 ## Proposed Solution
 
-Aggregate the audit + quarantine data ContractGate already stores into a
+Aggregate the audit + quarantine data DataContractGate already stores into a
 **per-provider scorecard**: a queryable, exportable, objective
 data-quality report. It turns *"your data is bad"* into *"here is the
 contract, here is the rule, here is the 8% failure rate since
@@ -100,7 +100,7 @@ warning a slow quarantine-volume creep never gives you.
   ranked violations, field health, active drift signals.
 - `GET /scorecard/{source}/drift` — just the active drift signals.
 - `GET /scorecard/{source}/export?format=csv` — a flat export a
-  provider can open without a ContractGate account.
+  provider can open without a DataContractGate account.
 
 ### What this unlocks
 

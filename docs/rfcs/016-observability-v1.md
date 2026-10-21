@@ -2,7 +2,7 @@
 
 | Status        | Implemented (2026-05-03)                                               |
 |---------------|------------------------------------------------------------------------|
-| Author        | ContractGate team                                                      |
+| Author        | DataContractGate team                                                      |
 | Created       | 2026-04-27                                                             |
 | Revised       | 2026-04-27 — scope trimmed: alerts deferred until first pilot has real traffic |
 | Target branch | `nightly-maintenance-YYYY-MM-DD` (set when work starts)                |

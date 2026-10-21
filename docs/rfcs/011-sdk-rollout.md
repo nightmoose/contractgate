@@ -2,7 +2,7 @@
 
 | Status        | **Superseded** by RFC-018 (TS only); Go + Java deferred (2026-04-27)   |
 |---------------|------------------------------------------------------------------------|
-| Author        | ContractGate team                                                      |
+| Author        | DataContractGate team                                                      |
 | Created       | 2026-04-27                                                             |
 | Target branch | `nightly-maintenance-YYYY-MM-DD` (set when work starts)                |
 | Chunk         | Punchlist 06 — SDK Rollout                                             |

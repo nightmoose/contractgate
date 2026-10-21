@@ -3,7 +3,7 @@
 | Field         | Value                                        |
 |---------------|----------------------------------------------|
 | Status        | **Accepted — 2026-05-01**                    |
-| Author        | ContractGate team                            |
+| Author        | DataContractGate team                            |
 | Created       | 2026-05-01                                   |
 | Target branch | `nightly-maintenance-2026-05-01`             |
 | Tracking      | Phase 1 #4 — public self-serve demo backbone |
@@ -13,7 +13,7 @@
 ## Summary
 
 Add a public, versioned bulk-ingest HTTP API at `POST /v1/ingest/{contract_id}`.
-This is ContractGate's universal connector: anything that can make an HTTP
+This is DataContractGate's universal connector: anything that can make an HTTP
 request can validate events against a contract. It is also the backbone of the
 planned "5-minute self-serve demo".
 

@@ -115,8 +115,8 @@ enterprise zip, included via Maven assembly plugin.
   <version>0.2.0</version>
   <packaging>pom</packaging>
 
-  <name>ContractGate Kafka Connect — Parent</name>
-  <description>Parent POM for the ContractGate Kafka Connect modules.</description>
+  <name>DataContractGate Kafka Connect — Parent</name>
+  <description>Parent POM for the DataContractGate Kafka Connect modules.</description>
   <url>https://datacontractgate.com/docs/kafka-connect</url>
 
   <properties>

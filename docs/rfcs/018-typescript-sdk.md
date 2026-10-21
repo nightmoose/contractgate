@@ -2,7 +2,7 @@
 
 | Status        | Shipped — v0.2.0 (`@nightmoose/contractgate-sdk`)                      |
 |---------------|------------------------------------------------------------------------|
-| Author        | ContractGate team                                                      |
+| Author        | DataContractGate team                                                      |
 | Created       | 2026-04-27                                                             |
 | Target branch | `nightly-maintenance-2026-09-30-rfc018-typescript-sdk`                 |
 | Chunk         | Punchlist v2 #5                                                        |

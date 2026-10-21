@@ -2,7 +2,7 @@
 
 | Status        | **Superseded** by RFC-017 (3 starters only); rest deferred (2026-04-27)|
 |---------------|------------------------------------------------------------------------|
-| Author        | ContractGate team                                                      |
+| Author        | DataContractGate team                                                      |
 | Created       | 2026-04-27                                                             |
 | Target branch | `nightly-maintenance-YYYY-MM-DD` (set when work starts)                |
 | Chunk         | Punchlist 07 — Templates + Marketplace                                 |

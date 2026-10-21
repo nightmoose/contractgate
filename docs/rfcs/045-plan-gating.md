@@ -8,7 +8,7 @@
 
 ## Problem
 
-ContractGate has four published pricing tiers (Self-Hosted Free, Cloud Free, Growth, Enterprise) with a clear feature matrix on `/pricing`. However, the application currently gates features only by authentication — any logged-in user on any tier can access every feature, including Growth-only capabilities like the Visual Builder, Quarantine replay, GitHub sync, Scorecard, Scaffold, Egress Validator, and the Collaborate tab.
+DataContractGate has four published pricing tiers (Self-Hosted Free, Cloud Free, Growth, Enterprise) with a clear feature matrix on `/pricing`. However, the application currently gates features only by authentication — any logged-in user on any tier can access every feature, including Growth-only capabilities like the Visual Builder, Quarantine replay, GitHub sync, Scorecard, Scaffold, Egress Validator, and the Collaborate tab.
 
 Additionally, several features shipped since the pricing page was written (Scaffold, Scorecard, Egress Validator, Collaborate tab, CSV inference, Kafka/Kinesis tabs, subscribe-mode import, open-data fork) have no tier placement at all.
 

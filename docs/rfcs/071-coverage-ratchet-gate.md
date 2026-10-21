@@ -40,7 +40,7 @@ fixed high bar.
 
 The seeded baseline is **low on purpose** — expect roughly 40% line coverage,
 not 80%. This gate measures **only the deterministic, DB-free unit suite**, and
-ContractGate's largest modules are DB-bound (`storage.rs`, `ingest.rs`,
+DataContractGate's largest modules are DB-bound (`storage.rs`, `ingest.rs`,
 `main.rs`, the CLI and scaffold trees) — their real coverage comes from the
 `#[ignore]`d integration tests that need a live Postgres (RFC-068), which this
 job deliberately does **not** run so the number stays stable across CI runs. So

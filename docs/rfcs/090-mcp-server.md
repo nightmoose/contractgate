@@ -9,7 +9,7 @@
 
 ## Problem
 
-RFC-089 made ContractGate paste-installable: an agent that fetches
+RFC-089 made DataContractGate paste-installable: an agent that fetches
 `/llm-integration.md` can infer, deploy, and wire ingest over HTTP. That still
 asks the agent to construct `curl`/`jq` pipelines. Hosts that speak MCP
 (Cursor, Claude Desktop, Windsurf, VS Code Copilot, Codex) prefer typed tools.

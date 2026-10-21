@@ -2,7 +2,7 @@
 
 | Status        | Accepted (2026-04-28) — sign-off on Q1..Q10 (recommendations)         |
 |---------------|------------------------------------------------------------------------|
-| Author        | ContractGate team                                                      |
+| Author        | DataContractGate team                                                      |
 | Created       | 2026-04-27                                                             |
 | Revised       | 2026-04-27 — added demo seeder so RFC-016 metrics + RFC-015 audit search look real on a fresh boot |
 | Target branch | `nightly-maintenance-YYYY-MM-DD` (set when work starts)                |

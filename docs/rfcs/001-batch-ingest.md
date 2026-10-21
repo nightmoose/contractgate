@@ -2,7 +2,7 @@
 
 | Status        | Accepted (2026-04-17)                    |
 |---------------|------------------------------------------|
-| Author        | ContractGate team                        |
+| Author        | DataContractGate team                        |
 | Created       | 2026-04-17                               |
 | Target branch | `nightly-maintenance-2026-04-17`         |
 | Tracking      | Post-demo feedback item #1               |

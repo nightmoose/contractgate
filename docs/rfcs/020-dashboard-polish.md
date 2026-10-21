@@ -2,7 +2,7 @@
 
 | Status        | Accepted (2026-04-28)                                 |
 |---------------|-------------------------------------------------------|
-| Author        | ContractGate team                                     |
+| Author        | DataContractGate team                                     |
 | Created       | 2026-04-28                                            |
 | Target branch | `nightly-maintenance-2026-04-28`                      |
 | Chunk         | Pre-customer pilot polish (supports v2 punchlist)     |

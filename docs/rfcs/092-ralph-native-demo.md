@@ -1,9 +1,9 @@
-# RFC-092: Ralph-native demo stack (Kafi / Driftless / ContractGate)
+# RFC-092: Ralph-native demo stack (Kafi / Driftless / DataContractGate)
 
 | Field      | Value |
 |------------|--------|
 | Status     | **Accepted — implementing** |
-| Author     | ContractGate team |
+| Author     | DataContractGate team |
 | Created    | 2026-09-11 |
 | Branch     | `nightly-maintenance-2026-09-11-rfc092-ralph-demo` |
 | Target     | Working compose demo for design-partner walkthrough (week of 2026-09-15) |
@@ -13,13 +13,13 @@
 
 ## Problem
 
-A design partner (Ralph M. Debusmann — author of **Kafi Streams**, **kash.py**, and the **driftless** PoC) offered to try ContractGate. His public work already forms a coherent pipeline:
+A design partner (Ralph M. Debusmann — author of **Kafi Streams**, **kash.py**, and the **driftless** PoC) offered to try DataContractGate. His public work already forms a coherent pipeline:
 
 ```
 CDC-style producers → Kafka → Kafi Streams joins → LanceDB → MCP (agent memory)
 ```
 
-ContractGate’s value in that story is the missing middle: **semantic enforcement at ingest** so bad events never poison joins or agent memory. We do not yet have a runnable demo that speaks *his* stack (his topic shapes, his libs, his “zero-drift” punchline). A generic speed demo or hosted signup link is weaker than a fork he can run that wires **his** babies together with the gate.
+DataContractGate’s value in that story is the missing middle: **semantic enforcement at ingest** so bad events never poison joins or agent memory. We do not yet have a runnable demo that speaks *his* stack (his topic shapes, his libs, his “zero-drift” punchline). A generic speed demo or hosted signup link is weaker than a fork he can run that wires **his** babies together with the gate.
 
 ---
 
@@ -28,7 +28,7 @@ ContractGate’s value in that story is the missing middle: **semantic enforceme
 Ship `demo/ralph/` — a self-contained, one-command (or short README) stack that:
 
 1. Produces Debezium-style shoe CDC (orders / customers / products) — from his driftless datagen.
-2. Validates **after-images** with ContractGate contracts (pass → clean topics, fail → quarantine).
+2. Validates **after-images** with DataContractGate contracts (pass → clean topics, fail → quarantine).
 3. Runs his Kafi Streams join → LanceDB → MCP path **only on clean topics**.
 4. Makes the punchline obvious: inject a bad event → quarantine → MCP/agent memory stays clean.
 5. Optionally uses kafi/kash-style inspection (`cat` / topic list) so the demo feels native to him.
@@ -39,7 +39,7 @@ Ship `demo/ralph/` — a self-contained, one-command (or short README) stack tha
 
 ## Non-goals
 
-- No ContractGate engine / API / SaaS changes required for v1 of this demo.
+- No DataContractGate engine / API / SaaS changes required for v1 of this demo.
 - Not a replacement for `make demo` or the Kafka speed demo (`demo/` cargo binary).
 - Not a reseller / partnership legal framework.
 - Not Confluent Cloud kafka-ingress (RFC-025) — this is **local Redpanda**.
@@ -61,7 +61,7 @@ Ship `demo/ralph/` — a self-contained, one-command (or short README) stack tha
           │
           ▼
 ┌─────────────────────┐
-│  gate_bridge.py     │  unwrap after → ContractGate validate
+│  gate_bridge.py     │  unwrap after → DataContractGate validate
 │  (Python SDK local  │  re-wrap → produce
 │   and/or HTTP gw)   │
 └─────────┬───────────┘
