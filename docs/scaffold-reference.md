@@ -259,7 +259,7 @@ sasl_username = "cg-reader"
 sasl_password = "secret"
 
 [schema_registry]
-url = "http://sr.internal:8081"
+url = "http://schema-registry.example.com:8081"
 basic_auth_user_info = "cg-reader:secret"
 ```
 

@@ -511,7 +511,7 @@ Single PR to `nightly-maintenance-2026-04-17`:
 1. Migration `003_contract_versioning.sql` — destructive (truncates dev data), adds `contract_versions`, `contract_name_history`, `multi_stable_resolution` column on `contracts`, `contract_version` columns on audit/quarantine/forwarded_events, and the two immutability + name-history triggers.
 2. Rust: new `storage::contract_versions` module, ingest handler rewrite for resolution + optional fallback fan-out, state-transition endpoints, identity-metadata PATCH endpoint, audit writes tagged with the version that actually validated.
 3. Dashboard: versions tab with promote/deprecate/delete controls, playground version dropdown, rename-with-history UI on the contract detail page.
-4. `MAINTENANCE_LOG.md` entry.
+4. the maintenance log entry.
 5. No compat shim needed — dev/test env.
 
 Breaking API changes for anyone hitting the existing `/contracts/{id}` PATCH with yaml_content:

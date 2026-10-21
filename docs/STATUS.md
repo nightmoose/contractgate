@@ -1,9 +1,12 @@
 # RFC Status Index
 
-All RFCs in `docs/rfcs/`. Status derived from each RFC's frontmatter and
-`MAINTENANCE_LOG.md`. **Shipped** = code merged to main; **Accepted** = design
+All RFCs in `docs/rfcs/`. Status derived from each RFC's frontmatter. **Shipped** = code merged to main; **Accepted** = design
 signed off (may be planning docs or UI-only); **Draft** = under review;
 **Superseded** = replaced by a later RFC.
+
+Internal tooling (the admin app and its RFC-088), maintenance logs and review
+worklists are kept outside this public repository; RFCs that cite them refer to
+them by name only.
 
 > RFC-001 was used for two separate topics; see rows 001a–001c.
 

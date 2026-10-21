@@ -4,7 +4,7 @@
 **Date:** 2026-05-28
 **Branch:** `nightly-maintenance-2026-05-28-rfc065-ingest-egress-scope` (bundled with RFC-065)
 **Follows:** RFC-065 (ingest/egress contract-scope enforcement)
-**Addresses:** docs/reviews/sale-readiness-review-2026-05-28.md — legacy master-key risk
+**Addresses:** an internal review (sale-readiness-review-2026-05-28) — legacy master-key risk
 **Severity:** P0 — cross-tenant authorization (the last broad-impersonation path)
 
 > **Scope decision (Alex, 2026-05-28):** "Master key only." Remove the env-var

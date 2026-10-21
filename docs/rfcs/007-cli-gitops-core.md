@@ -229,7 +229,7 @@ requested subcommand.
 9. Reference `.github/workflows/contractgate.yml` checked into this repo
    as both example and dogfood.
 10. `cargo check && cargo test` (workspace-wide).
-11. Update `MAINTENANCE_LOG.md`.
+11. Update the maintenance log.
 
 ## Deferred
 

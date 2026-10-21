@@ -303,7 +303,7 @@ a single env change.
 8. Smoke test: Vercel preview deploy + CORS success against staging.
 9. DNS: purchase (if needed) and configure both domains.
 10. Launch: production `DASHBOARD_ORIGIN` flip + DNS cutover.
-11. STATUS.md and MAINTENANCE_LOG updates.
+11. STATUS.md and the maintenance log updates.
 12. Optional follow-up (not in v1): `signup_source` column + Slack bot
     tag (RFC-084). Owned by the dashboard-schema team; flag in Q4.
 

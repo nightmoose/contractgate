@@ -38,8 +38,8 @@ reviewer. Every link below is a file in this repo. Last updated 2026-07-15.
 ## Ops & reliability
 - [Production runbook](../ops/runbook-production.md) — deploy, health, secrets, incidents
 - [Pilot / hero demo](../../demo/hero/README.md) — 15-min quarantine→replay walkthrough
-- [Incident postmortem — 2026-07-14 JWT CryptoProvider](../reviews/incident-2026-07-14-jwt-crypto-provider.md) — P0 root cause + fix + prevention
-- Prior readiness reviews: [sale-readiness 2026-05-28](../reviews/sale-readiness-review-2026-05-28.md)
+- Incident postmortem — 2026-07-14 JWT CryptoProvider (internal record, available on request) — P0 root cause + fix + prevention
+- Prior readiness reviews: sale-readiness 2026-05-28 (internal record, available on request)
 
 ## Feature references (selected)
 - [Quarantine + replay](../quarantine-replay-reference.md)

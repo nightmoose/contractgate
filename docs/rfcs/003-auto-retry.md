@@ -430,7 +430,7 @@ Replay can touch up to 1,000 rows per call. Do we need special limits?
 6. Ship unit tests (§1-4 of test plan).
 7. Dashboard: checkbox column + bulk replay button + version picker +
    replay-history drawer.
-8. Update MAINTENANCE_LOG.
+8. Update the maintenance log.
 9. DB integration tests ride in with the RFC-002 harness effort.
 
 ## Decisions locked in before implementation

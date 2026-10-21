@@ -225,7 +225,7 @@ Full RFCs and design docs live in [`docs/rfcs/`](docs/rfcs/). For a quick shippe
 
 ## Contributing
 
-PRs welcome. See [`CONTRIBUTING.md`](CONTRIBUTING.md) and the active punchlist in [`docs/`](docs/).
+PRs welcome. See [`CONTRIBUTING.md`](CONTRIBUTING.md) and the reference docs in [`docs/`](docs/).
 
 Active RFCs: [`docs/rfcs/`](docs/rfcs/) · RFC status index: [`docs/STATUS.md`](docs/STATUS.md)
 
