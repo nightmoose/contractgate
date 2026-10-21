@@ -28,7 +28,7 @@ Items 5 and 6 are the largest. They depend on 1–4 stabilizing first.
 
 - **RFC-001 must be signed.** Per `project_tenancy_model.md`, org-scoped
   (Option B) is decided but not signed. **No work starts until signed.**
-- **sqlx 0.7 → 0.8 upgrade likely triggered.** Per `MAINTENANCE_LOG.md`'s
+- **sqlx 0.7 → 0.8 upgrade likely triggered.** Per the maintenance log's
   deferred item, multi-tenant migrations touch every call site in
   `src/storage.rs`. RFC the upgrade as part of step 1 if not already done.
 
@@ -251,7 +251,7 @@ and pushes contracts via the gateway API for `ContractPolicy`.
 10. Terraform provider (separate repo, depends on Go SDK from RFC-011).
 11. K8s Operator (separate repo, depends on Helm chart from RFC-010).
 12. `cargo check && cargo test`; full integration soak.
-13. Update `MAINTENANCE_LOG.md`.
+13. Update the maintenance log.
 
 ## Deferred
 

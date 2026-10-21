@@ -503,7 +503,7 @@ Original option lists retained in the AskUserQuestion rounds from
     compliance-mode toggle + warning.
 12. DB integration tests §14–21.
 13. Dashboard tests §22–24.
-14. Update MAINTENANCE_LOG with the RFC-004 rollout entry.
+14. Update the maintenance log with the RFC-004 rollout entry.
 
 ## Decisions locked in before implementation
 

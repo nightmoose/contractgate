@@ -10,8 +10,8 @@
 //!
 //! Per the RFC-014 test plan (step §7), a full in-process axum server variant
 //! (tokio::test + axum::serve) is tracked under a follow-up task once the
-//! shared DB integration harness (see RFC-002/RFC-003 deferred items in
-//! MAINTENANCE_LOG.md) is available.
+//! shared DB integration harness (see RFC-002/RFC-003 deferred items) is
+//! available.
 
 use contractgate::cli::{
     commands::{

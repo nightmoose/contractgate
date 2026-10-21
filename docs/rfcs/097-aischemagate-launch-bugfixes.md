@@ -10,7 +10,7 @@ date: 2026-10-12
 ## Problem
 
 The 2026-10-12 E2E test against production (see
-`docs/ops/e2e-test-brief-2026-10-12.md`) found four cascading failures for new
+an internal end-to-end test brief (2026-10-12)) found four cascading failures for new
 AISchemaGate sign-ups coming from `aischemagate.com`:
 
 - **A5/A6** — after clicking the email-confirmation link, the user lands in

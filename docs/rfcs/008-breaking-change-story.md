@@ -222,7 +222,7 @@ Reuses Quarantine tab's `<DataTable>` component.
    on `breaking`, `--strict` for `unknown`.
 8. Audit search UI on dashboard.
 9. `cargo check && cargo test`; dashboard build.
-10. Update `MAINTENANCE_LOG.md`.
+10. Update the maintenance log.
 
 ## Deferred
 

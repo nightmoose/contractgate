@@ -374,7 +374,7 @@ env:
 7. ✅ Trigger `workflow_dispatch` on a branch to smoke-test the full
    release.yml without pushing a real tag. Tarballs, SHA256SUMS, and
    TestPyPI publish verified. Confirmed 2026-04-27.
-8. ✅ Append run entry to `MAINTENANCE_LOG.md`.
+8. ✅ Append run entry to the maintenance log.
 9. ✅ Update this RFC's Rollout with checkmarks on completed steps.
 
 ---

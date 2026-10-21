@@ -15,7 +15,7 @@ ignore = [
     # `rust_crypto` is retained deliberately. Do NOT "fix" this by switching
     # jsonwebtoken to `aws_lc_rs`: that reintroduces the 2026-07-14 prod
     # CryptoProvider panic (two rustls providers, no install_default in-tree →
-    # SIGABRT → 502). See docs/reviews/incident-2026-07-14-jwt-crypto-provider.md.
+    # SIGABRT → 502; 2026-07-14 incident).
     "RUSTSEC-2023-0071",
     # RUSTSEC-2024-0449 — `unsafe-libyaml` is unmaintained (not a known
     # vulnerability). Pulled only by `serde_yaml` 0.9 (itself deprecated),

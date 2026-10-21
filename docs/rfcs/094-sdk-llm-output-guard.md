@@ -432,7 +432,7 @@ No change to `Client`, `AsyncClient`, `Contract`, or any shipped method.
 7. RFC-095 docs portal consumes this reference.
 8. Release notes: `contractgate` minor bump (new submodule),
    `aischemagate` 0.1.0 initial release.
-9. MAINTENANCE_LOG + STATUS.md updates.
+9. the maintenance log + STATUS.md updates.
 
 ## Decisions (signed off 2026-10-11)
 

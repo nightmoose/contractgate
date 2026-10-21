@@ -3,7 +3,7 @@
 **Status:** Implemented (2026-05-28)
 **Date:** 2026-05-28
 **Follows:** RFC-070 (version-mutation org-scope tests)
-**Addresses:** docs/reviews/test-hardening-handoff-2026-05-28.md — Task 2
+**Addresses:** an internal review (test-hardening-handoff-2026-05-28) — Task 2
 **Severity:** P3 — process/quality; no runtime impact
 
 ---

@@ -192,7 +192,7 @@ Until RFC-001 lands, `org` is approximated by the API key's `owner_id`.
 6. Dashboard Templates tab.
 7. Ratings + imports counters.
 8. `cargo check && cargo test`; dashboard build.
-9. Update `MAINTENANCE_LOG.md`.
+9. Update the maintenance log.
 
 ## Deferred
 

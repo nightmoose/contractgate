@@ -233,7 +233,7 @@ ValidationResult vr = compiled.validate(event);
    Publish `@contractgate/sdk@0.4.0`.
 5. **Go SDK** — same shape.
 6. **Java SDK** — same shape, plus Sonatype publishing dance.
-7. Update `MAINTENANCE_LOG.md`.
+7. Update the maintenance log.
 
 ## Deferred
 

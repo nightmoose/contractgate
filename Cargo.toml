@@ -103,7 +103,7 @@ chrono = { version = "0.4", features = ["serde"] }
 # dependency at build time, which makes CI + sandbox builds portable and
 # removes the "need libssl-dev before `cargo check` will run" paper cut.
 # rustls is a pure-Rust TLS implementation and is fully compatible with
-# Postgres over TLS.  See MAINTENANCE_LOG.md for the 2026-04-17 rationale.
+# Postgres over TLS.
 sqlx = { version = "0.8", features = [
     "runtime-tokio-rustls",
     "postgres",

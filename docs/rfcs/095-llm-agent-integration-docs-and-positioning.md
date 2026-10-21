@@ -281,7 +281,7 @@ line. Appendix A will be regenerated after Q1 is signed off.
    RFC-094 — the two RFCs can share the file).
 7. Appendix A stays in this RFC. The AISchemaGate frontend repo (RFC-096)
    mirrors it as `MARKETING_COPY.md` and reads it as the source of truth.
-8. STATUS.md and MAINTENANCE_LOG updates after merge.
+8. STATUS.md and the maintenance log updates after merge.
 9. No Rust / dashboard / migration changes.
 
 ## Test plan
@@ -310,7 +310,7 @@ line. Appendix A will be regenerated after Q1 is signed off.
 3. RFC-095 docs land next on this branch.
 4. RFC-096 ships the frontend and wires the renderer; the doc is live on
    `aischemagate.dev` after its deploy.
-5. STATUS.md gains three new rows (094 / 095 / 096). MAINTENANCE_LOG
+5. STATUS.md gains three new rows (094 / 095 / 096). the maintenance log
    captures the launch.
 
 ## Decisions (signed off 2026-10-11)

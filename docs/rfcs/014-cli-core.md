@@ -161,7 +161,7 @@ This is what users copy into their own repos.
 8. ✅ Cross-compile job in `.github/workflows/ci.yml` (`cli-cross-compile` matrix job).
 9. ✅ Reference workflow `.github/workflows/contractgate.yml`.
 10. ⏳ `cargo check && cargo test` — cargo not available in sandbox; CI will verify.
-11. ✅ Update `MAINTENANCE_LOG.md`.
+11. ✅ Update the maintenance log.
 
 ## Deferred
 

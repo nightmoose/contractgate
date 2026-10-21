@@ -72,7 +72,7 @@ CSV: three labeled sections (`# TOTALS`, `# BY VERSION`, `# TOP VIOLATIONS`),
   Totals are summed from (1) in the handler.
 - `src/report.rs` (new): `report_handler` + JSON DTO + CSV builder.
 - `src/main.rs`: `GET /contracts/{id}/report` on the protected router.
-- `docs/pilot-report-reference.md`; STATUS + MAINTENANCE_LOG.
+- `docs/pilot-report-reference.md`; STATUS + the maintenance log.
 
 Uses the existing `idx_audit_contract_time (contract_id, created_at)` and the
 partial violations index, so windowed reads stay cheap. Validation hot path

@@ -377,7 +377,7 @@ Only whole-batch rejects (422) raise.
    authoritative "what got stored" view.
 9. Reserve PyPI name in a separate ops task; first publish ships
    when the package name is confirmed.
-10. Update `MAINTENANCE_LOG.md` with the rollout entry.
+10. Update the maintenance log with the rollout entry.
 
 ## Decisions locked in before implementation
 

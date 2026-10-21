@@ -290,7 +290,7 @@ ontology:
 7. ✅ CI smoke lanes (both default and demo profiles).
 8. ⬜ README snapshots: dashboard with seeded data, audit search with rows.
 9. ⬜ `cargo check && cargo test`.
-10. ✅ Update `MAINTENANCE_LOG.md`.
+10. ✅ Update the maintenance log.
 
 ## Deferred
 

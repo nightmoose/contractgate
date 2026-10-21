@@ -3,7 +3,7 @@
 **Status:** Implemented (2026-05-28)
 **Date:** 2026-05-28
 **Follows:** RFC-072 (quarantine→replay race-guard test)
-**Addresses:** docs/reviews/test-hardening-handoff-2026-05-28.md — Task 1 (tail)
+**Addresses:** an internal review (test-hardening-handoff-2026-05-28) — Task 1 (tail)
 **Severity:** P2 — closes the last "tenant isolation never runs in CI" gap
 
 ---
@@ -89,8 +89,8 @@ explicitly so the maintainer checks the first run's psql output.
 |---|---|
 | `ops/postgres/seed/098_isolation_test.sql` | New. Orgs A+B, one contract+stable version for A, two api_keys with precomputed SHA-256 hashes. `ON CONFLICT DO NOTHING`. |
 | `tests/compose_demo_smoke.sh` | After the existing assertions, `export TEST_BASE_URL/TEST_API_KEY_A/TEST_API_KEY_B/TEST_CONTRACT_ID_A` and run `cargo test --test rfc_001_isolation -- --ignored --exact integration::cross_org_ingest_is_rejected`, with the same false-green grep guard used in `migrations-check` (`1 passed; 0 failed`). |
-| docs/STATUS.md, MAINTENANCE_LOG.md | Bookkeeping rows. |
-| docs/reviews/test-hardening-handoff-2026-05-28.md | Mark Task 1 tail item `cross_org_ingest_is_rejected` done; list remaining three as deferred. |
+| docs/STATUS.md, the maintenance log | Bookkeeping rows. |
+| an internal review (test-hardening-handoff-2026-05-28) | Mark Task 1 tail item `cross_org_ingest_is_rejected` done; list remaining three as deferred. |
 
 No product code, schema migration, or runtime change. The new SQL is
 compose-only seed, not a Supabase migration.
