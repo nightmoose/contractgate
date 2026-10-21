@@ -196,7 +196,7 @@ Extend it to:
 Add after the RFC-093 "Validate what leaves" paragraph:
 
 > **AISchemaGate.** The same engine powers AISchemaGate
-> (`aischemagate.com`), the LLM-and-agent surface for DataContractGate.
+> (`aischemagate.com`), the LLM-and-agent surface of the engine DataContractGate and AISchemaGate share.
 > `pip install aischemagate` or `npm i aischemagate` to get the `LLMGate`
 > wrapper over OpenAI / Anthropic / Ollama / vLLM. Validates structured
 > output against your contract via the shipped `/egress/{contract_id}`
