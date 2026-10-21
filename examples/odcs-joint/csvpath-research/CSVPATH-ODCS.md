@@ -14,7 +14,7 @@ Pattern: `OdcsContractLoader` → `OdcsConverter` → `CsvPath().collect(...)`
 
 ---
 
-## Executive summary (Alex / blog / LinkedIn)
+## Executive summary
 
 DataContractGate and CsvPath both speak ODCS, but they do not yet speak the *same dialect*. A raw DCG export fails CsvPath’s official ODCS JSON Schema gate before any row is checked: root `x-contractgate-*` extensions, string `description`, `logicalType: double`, and DCG quality `type` values (`uniqueness` / `completeness`) are all rejected. After a thin shim (drop root extensions, wrap description, map `double`→`number`, and rewrite constraints from `x-cg-*` customProperties into native `logicalTypeOptions` / `enum`), CsvPath converts the contract and enforces pattern, enum, bounds, and length on flat CSV — proving the *semantics* travel if the *shape* is standardized. Nested DCG fields exported as dotted names (`customer.id`) also confuse CsvPath’s header matcher; flatten to underscores (or set `physicalName`) for tabular runs. The reverse path is worse for partners: Mode B import into DCG only restores constraints from `x-cg-*` customProperties, so a CsvPath-idiomatic ODCS (native `logicalTypeOptions` + `enum`) arrives as types-and-required-only, with `requires_review=true`. Same class of gap as OpenMetadata: DCG parks validation power in extensions that strict ODCS consumers ignore or strip. The highest-leverage DCG fixes are emit `number` not `double`, emit constraints in `logicalTypeOptions` *in addition to* customProperties, and accept those native fields on Mode B import — not a one-liner PR today.
 

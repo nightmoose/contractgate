@@ -31,10 +31,10 @@ Branch from an up-to-date `origin/main` (local `main` can be stale — always
 `git fetch` first). Name branches:
 
 ```
-nightly-maintenance-YYYY-MM-DD-rfcNNN-short-slug
+feature/<short-desc>
 ```
 
-e.g. `nightly-maintenance-2026-05-28-rfc065-ingest-egress-scope`.
+Use a short, lowercase, hyphenated description of the change.
 
 ## Local development
 

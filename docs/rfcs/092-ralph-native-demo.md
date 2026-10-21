@@ -133,7 +133,7 @@ Both modes must produce the same clean/quarantine routing behavior.
 - [x] `scripts/run_demo.sh` one-shot (`make demo-ralph-run` / `demo-ralph-run-mcp`)
 - [x] MCP path returns real query results (retries + port reclaim)
 - [x] Smoke / e2e / run_demo checklist in README
-- [x] DM-ready blurb (`DM_BLURB.txt`)
+- [x] DM-ready blurb (kept in the internal repo)
 
 ### Stage D — Optional stretch (post-partner if useful)
 

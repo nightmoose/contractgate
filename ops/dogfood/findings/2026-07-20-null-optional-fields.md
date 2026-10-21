@@ -30,7 +30,7 @@ omitting keys.
 
 - `src/validation.rs` `validate_fields`: `None` skips optional; `Some(value)`
   always type-checks (including `Value::Null`).
-- Local dogfood run `findings/runs/20260720T201248Z` — 100% pass-batch failures
+- Local dogfood run (internal run record, 2026-07-20) — 100% pass-batch failures
   until fixtures stripped nulls.
 
 ## Next experiment
