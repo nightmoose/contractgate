@@ -2,7 +2,7 @@
 
 **Audience:** operators of the hosted gateway (`contractgate-api` on Fly).  
 **Last updated:** 2026-07-15  
-**Related:** [architecture overview](../architecture-overview.md), [incident 2026-07-14 JWT](../reviews/incident-2026-07-14-jwt-crypto-provider.md)
+**Related:** [architecture overview](../architecture-overview.md), incident 2026-07-14 JWT (internal record, available on request)
 
 ---
 
@@ -77,7 +77,7 @@ Set via `fly secrets set` (never commit).
 | Variable | Required | Purpose |
 |---|---|---|
 | `DATABASE_URL` | Yes | Supabase Postgres (service role for gateway) |
-| `CANONICAL_API_ORIGIN` | Yes | Public API origin. Production must set `https://api.datacontractgate.com`. Staging must set `https://contractgate-api-staging.fly.dev`. Connect Fivetran returns 500 and mints no key if this is unset. |
+| `CANONICAL_API_ORIGIN` | Yes | Public API origin. Production must set `https://api.datacontractgate.com`. Staging must set `<staging-api-origin>`. Connect Fivetran returns 500 and mints no key if this is unset. |
 | `DASHBOARD_ORIGIN` | Yes (prod) | CORS allowlist (comma-separated). Prod carries `https://app.datacontractgate.com,https://aischemagate.com,https://aischemagate.dev` (RFC-096: shared backend serves both DataContractGate and AISchemaGate). |
 | `PORT` | No | Default 3001 (matches `fly.toml`) |
 | `RUST_LOG` | No | e.g. `contractgate=info,tower_http=warn` |
@@ -116,7 +116,7 @@ After max restart count, machines stay **stopped** → edge **502** with **no CO
 1. `fly logs` — look for `panic`, `CryptoProvider`, `SIGABRT`
 2. `fly status` — machines stopped?
 3. Do **not** start by changing CORS. Fix crash or bring machines up.
-4. See [JWT CryptoProvider incident](../reviews/incident-2026-07-14-jwt-crypto-provider.md)
+4. See JWT CryptoProvider incident (internal record, available on request)
 
 ### B. JWT auth broken (“JWKS not loaded”)
 
@@ -140,7 +140,7 @@ After max restart count, machines stay **stopped** → edge **502** with **no CO
 
 1. Repo files: `supabase/migrations/*.sql`
 2. Prod ledger: `supabase_migrations.schema_migrations`
-3. Apply missing files **manually** (Alex); agents do not apply to prod
+3. Apply missing files **manually** (product owner); agents do not apply to prod
 4. CI migration count must match when adding files
 
 ---
@@ -156,8 +156,8 @@ When adding a migration:
 
 1. Add `supabase/migrations/NNN_*.sql`
 2. Bump `EXPECTED_MIGRATION_COUNT` + sentinel in `.github/workflows/ci.yml`
-3. Document in `MAINTENANCE_LOG.md`
-4. Alex applies to prod Supabase **before** (or with) the binary that depends on it
+3. Note the migration in the PR description
+4. The product owner applies to prod Supabase **before** (or with) the binary that depends on it
 
 **RFC-083 / migration 032:** `org_monthly_usage` must exist for plan caps to
 enforce. Metering **fails open** if the table is missing (ingest continues,
@@ -209,15 +209,15 @@ Customer-facing targets: [Support SLA](../support-sla.md).
 ## Staging (2026-10-14)
 
 - Branch **`staging`** (created from `main`). The dev team may merge PRs into
-  `staging` freely; **only Alex merges to `main`** (production).
-- Production must set `CANONICAL_API_ORIGIN=https://api.datacontractgate.com`. Staging must set `CANONICAL_API_ORIGIN=https://contractgate-api-staging.fly.dev`.
-- Fly app `contractgate-api-staging` via `fly.staging.toml`: `auto_stop_machines`,
+  `staging` freely; **only the product owner merges to `main`** (production).
+- Production must set `CANONICAL_API_ORIGIN=https://api.datacontractgate.com`. Staging must set `CANONICAL_API_ORIGIN=<staging-api-origin>`.
+- Fly app `<staging-fly-app>` via `fly.staging.toml`: `auto_stop_machines`,
   `min_machines_running = 0`, `KAFKA_ENABLED=false`. Created 2026-10-14.
-- Staging **shares the production Supabase database** (Alex's decision while there
+- Staging **shares the production Supabase database** (product-owner decision while there
   are no customers): same `DATABASE_URL`, `ENCRYPTION_KEY`, `SUPABASE_URL`. Treat
   staging writes as real data. No Confluent or AWS secrets on staging.
 - CI: a push to `staging` builds the image, pushes it to
-  `registry.fly.io/contractgate-api-staging:<sha>` (token `FLY_API_TOKEN_STAGING`)
+  `registry.fly.io/<staging-fly-app>:<sha>` (token `FLY_API_TOKEN_STAGING`)
   and `deploy-fly-staging` runs `flyctl deploy -c fly.staging.toml --image …`.
   Prod registry push and `deploy-fly` are guarded to `refs/heads/main`.
 

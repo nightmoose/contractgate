@@ -586,7 +586,6 @@ assert vr.passed, vr.violations`}</Code>
           "Document the audit-honesty invariant in the SDK README.",
           "Document the PII-transform caveat: the local validator does not run transforms.",
           "Reserve PyPI name in a separate ops task.",
-          "Update MAINTENANCE_LOG.md with the rollout entry.",
         ].map((step, i) => (
           <li key={i}>{step}</li>
         ))}

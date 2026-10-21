@@ -246,7 +246,7 @@ Validated at gateway startup; mounts in `LICENSE_KEY` env or
 7. License-key parser + startup validator.
 8. Air-gap bundle assembly script in `ops/airgap/build.sh` + INSTALL.md.
 9. `cargo check && cargo test`; dashboard build; chart lint.
-10. Update `MAINTENANCE_LOG.md`.
+10. Update the maintenance log.
 
 ## Deferred
 

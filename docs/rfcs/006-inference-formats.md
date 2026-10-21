@@ -244,5 +244,5 @@ Each module carries inline unit tests:
 5. `src/infer_diff.rs` + route
 6. Wire all routes in `main.rs`
 7. `cargo check && cargo test`
-8. Update `MAINTENANCE_LOG.md`
+8. Update the maintenance log
 9. Parity fixture corpus (`tests/fixtures/infer/`) — deferred to next session

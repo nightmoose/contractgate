@@ -4,11 +4,11 @@
 **Date:** 2026-05-28
 **Branch:** `nightly-maintenance-2026-05-28-rfc067-panic-hardening`
 **Follows:** RFC-066 (legacy master-key removal)
-**Addresses:** docs/reviews/cheap-findings-2026-05-28.md — Pattern 1, items #1 and the replay `unwrap` pair
+**Addresses:** an internal review (cheap-findings-2026-05-28) — Pattern 1, items #1 and the replay `unwrap` pair
 **Severity:** P2 — latent denial-of-service (worker panic on an authenticated request)
 
 > **Source of this work:** an external read-only "cheap findings" scan
-> (`docs/reviews/cheap-findings-2026-05-28.md`). Of ~48 flagged items, only the
+> (an internal review (cheap-findings-2026-05-28)). Of ~48 flagged items, only the
 > request-path panics below were judged worth acting on now; the HMAC/UTF-8
 > `expect`s in `transform.rs` and the `len() as i32` casts are provably safe
 > under current input bounds and were intentionally left in place.
@@ -95,4 +95,4 @@ tests exercise the success paths unchanged. No new test is added because the
 changed branches are unreachable under current invariants — adding a test would
 require deliberately breaking `require_role` or the ordinal map, which is out of
 scope. (Tracked alongside the broader test-hardening handoff,
-docs/reviews/test-hardening-handoff-2026-05-28.md.)
+an internal review (test-hardening-handoff-2026-05-28).)

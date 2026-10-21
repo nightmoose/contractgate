@@ -104,7 +104,7 @@ so RFC-017's Compose stack auto-imports the dashboard on boot.
 6. Grafana JSON + provisioning files in `ops/grafana/`.
 7. README snapshot of dashboard (rendered with RFC-017 seeder running).
 8. `cargo check && cargo test`.
-9. Update `MAINTENANCE_LOG.md`.
+9. Update the maintenance log.
 
 ## Deferred
 

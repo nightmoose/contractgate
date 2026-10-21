@@ -333,7 +333,7 @@ All steps on branch `nightly-maintenance-<date>`:
 - [x] 7. Tooltip layer: `TooltipWrap` applied to all jargon terms listed in §Design E.
 - [x] 8. Playwright tests for all 6 test-plan items; `playwright.config.ts` created.
 - [ ] 9. `cd dashboard && npm install && npm run build` — zero TS errors, zero ESLint errors. ⚠️ PENDING — bash workspace unavailable; Alex to run.
-- [x] 10. Append `MAINTENANCE_LOG.md` entry.
+- [x] 10. Append the maintenance log entry.
 - [x] 11. Update this RFC: steps marked complete.
 
 ---

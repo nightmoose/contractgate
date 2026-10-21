@@ -23,7 +23,7 @@ are stale:
    - The `date` contract type (RFC-044)
    - Plan gating / tiers (RFC-045)
 2. **No RFC status index.** `docs/rfcs/` holds 46 RFCs with no single
-   shipped-vs-draft-vs-superseded view. `MAINTENANCE_LOG.md` helps but is
+   shipped-vs-draft-vs-superseded view. the maintenance log helps but is
    chronological. A new contributor cannot tell what is live.
 3. **Stale CLAUDE.md MCP section.** CLAUDE.md documents a `code-review-graph`
    MCP with tools (`detect_changes`, `query_graph`, `get_impact_radius`) that

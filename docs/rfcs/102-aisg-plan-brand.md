@@ -46,7 +46,7 @@ Filters on **both** metadata and current `plan='free'`. DCG free users are untou
 
 ### Admin-ops SQL for the tester's existing account
 
-The backfill correctly skips `cgtest-aisg-1012@agentmail.to` because that account's `raw_user_meta_data` has no `product` field — it was created on the pre-RFC-097 signup page. For retest purposes, run this one-off after 038 has applied in prod:
+The backfill correctly skips `<test-account-email>` because that account's `raw_user_meta_data` has no `product` field — it was created on the pre-RFC-097 signup page. For retest purposes, run this one-off after 038 has applied in prod:
 
 ```sql
 update public.orgs
@@ -55,7 +55,7 @@ where id in (
     select m.org_id
     from public.org_memberships m
     join auth.users u on u.id = m.user_id
-    where u.email = 'cgtest-aisg-1012@agentmail.to'
+    where u.email = '<test-account-email>'
       and m.role = 'owner'
 );
 ```
@@ -83,7 +83,7 @@ This makes the URL param sticky across the whole session (the tester's explicit 
 
 1. Merge this PR to `main`.
 2. CI applies migrations 036 (idempotent — already applied) and 038 to prod via the existing migration pipeline.
-3. Run the admin-ops SQL above against `cgtest-aisg-1012@agentmail.to` from the Supabase SQL editor.
+3. Run the admin-ops SQL above against `<test-account-email>` from the Supabase SQL editor.
 4. Vercel auto-deploys the dashboard; the brand fix is live.
 
 ## Verification

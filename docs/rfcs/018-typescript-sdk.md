@@ -160,7 +160,7 @@ export class AuthError extends ContractGateError {}
 8. `tests/conformance.test.ts` runner.
 9. Publish `@contractgate/sdk@0.5.0` to npm.
 10. `cargo check && cargo test`; `cd sdks/typescript && npm test`.
-11. Update `MAINTENANCE_LOG.md`.
+11. Update the maintenance log.
 
 ## Deferred
 

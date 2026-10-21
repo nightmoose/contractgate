@@ -173,7 +173,7 @@ with the new query params; no new route.
 6. `/audit` query params + filter pushdown.
 7. Audit search UI on dashboard.
 8. `cargo check && cargo test`; dashboard build.
-9. Update `MAINTENANCE_LOG.md`.
+9. Update the maintenance log.
 
 ## Deferred
 
