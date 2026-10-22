@@ -30,8 +30,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy dependency manifests first so the dependency layer below is cached
-# until Cargo.toml / Cargo.lock change.
+# until Cargo.toml / Cargo.lock change. crates/yamlcompat is a path crate
+# (contractgate-yaml), so cargo resolves it during this layer too.
 COPY Cargo.toml Cargo.lock ./
+COPY crates/yamlcompat ./crates/yamlcompat
 
 # Compile every dependency once, against stub sources. Every target declared
 # in Cargo.toml needs a stub or cargo refuses the manifest, and the build
