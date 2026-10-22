@@ -33,5 +33,11 @@ COPY --from=builder /app/public ./public
 COPY --from=builder /app/.next/standalone ./
 COPY --from=builder /app/.next/static ./.next/static
 
+# Non-root. The self-host entrypoint rewrites the anon-key placeholder
+# under /app (sed -i needs a writable tree) and the server binds to 3000,
+# which does not require root. `node` is the unprivileged user in the base image.
+RUN chown -R node:node /app
+USER node
+
 EXPOSE 3000
 CMD ["node", "server.js"]

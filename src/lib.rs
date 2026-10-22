@@ -21,3 +21,6 @@ pub mod request_limits;
 pub mod scaffold;
 pub mod transform;
 pub mod validation;
+
+#[cfg(test)]
+mod yaml_parser;
