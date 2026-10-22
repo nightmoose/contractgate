@@ -2,9 +2,8 @@
 
 | Status        | **Superseded** by RFC-017 (Compose only); rest deferred (2026-04-27)   |
 |---------------|------------------------------------------------------------------------|
-| Author        | ContractGate team                                                      |
+| Author        | DataContractGate team                                                      |
 | Created       | 2026-04-27                                                             |
-| Target branch | `nightly-maintenance-YYYY-MM-DD` (set when work starts)                |
 | Chunk         | Punchlist 05 — Self-Hosted Basics                                      |
 | Depends on    | RFC-001 (org-scoped tenancy) — read for RBAC scope; RFC-009 (`/metrics`) |
 
@@ -246,7 +245,7 @@ Validated at gateway startup; mounts in `LICENSE_KEY` env or
 7. License-key parser + startup validator.
 8. Air-gap bundle assembly script in `ops/airgap/build.sh` + INSTALL.md.
 9. `cargo check && cargo test`; dashboard build; chart lint.
-10. Update `MAINTENANCE_LOG.md`.
+10. Update the maintenance log.
 
 ## Deferred
 

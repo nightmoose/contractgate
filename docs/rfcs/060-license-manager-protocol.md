@@ -169,12 +169,12 @@ old tokens keep verifying until they expire.
 ## SaaS validation service
 
 **Where it runs:** Fly.io, Rust (Axum), Postgres on Supabase. Same
-infrastructure as the rest of ContractGate; no new ops surface. Domain:
+infrastructure as the rest of DataContractGate; no new ops surface. Domain:
 `license.datacontractgate.com`.
 
 **Why not just embed in the existing Rust server:** the validation
 service must be reachable from customer Kafka clusters that have *no*
-access to the customer's own ContractGate gateway. It is a public,
+access to the customer's own DataContractGate gateway. It is a public,
 multi-tenant service with a different threat model than the
 customer-deployed server.
 

@@ -2,7 +2,6 @@
 
 **Status:** Implemented (Phase 1 + 2 + 3; Phase 2 on branch for review)
 **Date:** 2026-07-15
-**Branch:** nightly-maintenance-2026-07-15-rfc083-phase2
 **Depends on:** RFC-045 (plan gating), RFC-047 (org scoping)
 **Dual-sell:** #5 (counter), #6 (enforcement), #7 (dashboard widget)
 
@@ -60,7 +59,7 @@ Response:
 
 `limit`/`remaining`/`pct` are null and `unlimited: true` for Enterprise.
 
-### Phase 2 — enforcement (landed on `nightly-maintenance-2026-07-15-rfc083-phase2`)
+### Phase 2 — enforcement (landed on the feature branch)
 
 - Cached counter table `org_monthly_usage(org_id, period, events)` (migration 032).
 - **Check:** `ensure_monthly_usage` (PK read; one-time audit bootstrap if missing)

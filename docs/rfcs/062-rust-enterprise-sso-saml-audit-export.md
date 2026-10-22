@@ -301,7 +301,7 @@ Two new files in `docs/`:
   verification example, S3 directory layout, retry semantics.
 
 Both must exist before this RFC is "Accepted" — adds the user-facing
-documentation requirement spelled out in CLAUDE.md.
+documentation requirement spelled out in the contributor guide.
 
 ---
 
@@ -360,5 +360,5 @@ between this RFC and implementation, bump.
 8. `cargo test --features enterprise` passes.
 9. Migrations 028 and 029 apply cleanly to a fresh DB.
 
-**Cannot test locally:** Alex runs `cargo build --features enterprise`,
+**Cannot test locally:** the product owner runs `cargo build --features enterprise`,
 `cargo test --features enterprise`, and the manual SAML + S3 QA passes.

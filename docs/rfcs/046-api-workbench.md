@@ -2,7 +2,6 @@
 
 **Status:** Draft  
 **Date:** 2026-05-18  
-**Branch:** `nightly-maintenance-2026-05-18-rfc046-api-workbench`  
 **Plan tier:** Growth+
 
 ---
@@ -27,7 +26,7 @@ The result: the gateway is underutilized at exactly the boundaries where it prov
 4. Score inferred fields by confidence; surface low-confidence fields for human review.
 5. Refine the contract live: required flags, patterns, enums, temporal types, PII tags, business rules.
 6. Build multi-endpoint "contract suites" in one session.
-7. Export as ContractGate YAML and/or ODCS-compatible YAML.
+7. Export as DataContractGate YAML and/or ODCS-compatible YAML.
 8. One-click deploy via the existing `POST /contracts/deploy` endpoint.
 9. Detect contract drift: re-probe an endpoint and diff against the saved contract.
 10. Provide a Postman/Bruno collection export as an enterprise escape hatch for teams that cannot use browser fetch (VPN-gated internal APIs).
@@ -36,8 +35,8 @@ The result: the gateway is underutilized at exactly the boundaries where it prov
 
 ## Non-Goals
 
-- Server-side API proxying. ContractGate servers will never touch user credentials or response payloads. All API calls originate from the user's browser.
-- Auth credential storage in ContractGate's database. Credentials live in `sessionStorage` only and are cleared on tab close.
+- Server-side API proxying. DataContractGate servers will never touch user credentials or response payloads. All API calls originate from the user's browser.
+- Auth credential storage in DataContractGate's database. Credentials live in `sessionStorage` only and are cleared on tab close.
 - Automatic enforcement wiring. Users initiate deployment explicitly.
 - Mocking or traffic replay beyond what the browser fetches live.
 
@@ -49,12 +48,12 @@ The result: the gateway is underutilized at exactly the boundaries where it prov
 
 | Concern | Mitigation |
 |---|---|
-| Credential theft | API keys/tokens stored in `sessionStorage` only; never sent to ContractGate servers; cleared on tab close |
+| Credential theft | API keys/tokens stored in `sessionStorage` only; never sent to DataContractGate servers; cleared on tab close |
 | PII in response bodies | Responses inspected client-side; only the derived contract schema (no raw payload) is uploaded |
-| SSRF | Impossible — requests originate from the user's browser, not ContractGate infrastructure |
+| SSRF | Impossible — requests originate from the user's browser, not DataContractGate infrastructure |
 | CORS-blocked endpoints | Documented limitation; Postman/Bruno export provided as the escape hatch |
 
-For teams whose APIs are behind a VPN or corporate proxy (where browser fetch is blocked by CORS or network policy), the Postman/Bruno export path is the recommended alternative. ContractGate remains out of the data path in both cases.
+For teams whose APIs are behind a VPN or corporate proxy (where browser fetch is blocked by CORS or network policy), the Postman/Bruno export path is the recommended alternative. DataContractGate remains out of the data path in both cases.
 
 ---
 
@@ -64,7 +63,7 @@ For teams whose APIs are behind a VPN or corporate proxy (where browser fetch is
 
 The Workbench accepts any of:
 
-- **Base URL** — e.g. `https://api.example.com/v2`. ContractGate attempts to discover `openapi.json` / `swagger.json` at common paths.
+- **Base URL** — e.g. `https://api.example.com/v2`. DataContractGate attempts to discover `openapi.json` / `swagger.json` at common paths.
 - **OpenAPI/Swagger spec URL** — fetched directly from the browser; parsed client-side.
 - **Uploaded spec file** — `.json` or `.yaml` dropped onto the page.
 - **curl command** — pasted; parsed into method + URL + headers.
@@ -83,7 +82,7 @@ Discovered endpoints are listed with method badges (GET, POST, etc.). Users clic
 
 ### 3. Schema Inference
 
-After a response is received, ContractGate infers a schema from the JSON body:
+After a response is received, DataContractGate infers a schema from the JSON body:
 
 - Each field gets a **confidence score** (0–100) based on:
   - Present in spec (`+40`)
@@ -108,7 +107,7 @@ For each field users can set:
 
 ### 5. Multi-Endpoint Suite
 
-Users build a **suite** — a named collection of endpoint contracts that logically belong together (e.g. "Stripe Webhooks", "Partner Feed v3"). The suite is saved as a group of ContractGate contracts sharing a common name prefix.
+Users build a **suite** — a named collection of endpoint contracts that logically belong together (e.g. "Stripe Webhooks", "Partner Feed v3"). The suite is saved as a group of DataContractGate contracts sharing a common name prefix.
 
 ### 6. Export & Deploy
 
@@ -116,7 +115,7 @@ Two export targets:
 
 | Target | Format | Use |
 |---|---|---|
-| ContractGate YAML | `docs/contracts/<name>.yaml` | Direct enforcement via ingest pipeline |
+| DataContractGate YAML | `docs/contracts/<name>.yaml` | Direct enforcement via ingest pipeline |
 | ODCS-compatible YAML | `docs/contracts/<name>.odcs.yaml` | Interop with external contract registries |
 
 **ODCS Export:** targets the latest published ODCS schema version by default. A version selector dropdown is shown in the export dialog; if the target ODCS version is known at build time it is pre-selected, otherwise "Latest" is the default. The `contractgate infer` CLI exposes this as `--odcs-version <version>` (default: `latest`).
@@ -125,7 +124,7 @@ Two export targets:
 
 ### 7. Drift Detection
 
-Users can re-run a saved Workbench session against a live endpoint. ContractGate diffs the newly observed schema against the deployed contract and shows:
+Users can re-run a saved Workbench session against a live endpoint. DataContractGate diffs the newly observed schema against the deployed contract and shows:
 
 - **Fields added** (green) — candidates to add to the contract
 - **Fields removed** (red) — may indicate breaking change
@@ -141,11 +140,11 @@ For teams whose endpoints are not reachable from a browser (VPN, mTLS, corporate
 - **Postman Collection v2.1** JSON — pre-configured requests matching the explored session.
 - **Bruno Collection** — same, in Bruno's native format.
 
-Both include a post-response test script that formats the response JSON for piping into `contractgate infer` (see Newman CLI Pipe below). ContractGate never enters the data path.
+Both include a post-response test script that formats the response JSON for piping into `contractgate infer` (see Newman CLI Pipe below). DataContractGate never enters the data path.
 
 ### 9. Newman CLI Pipe
 
-For teams running Postman collections in CI or locally via Newman, ContractGate supports a pipe-friendly output mode:
+For teams running Postman collections in CI or locally via Newman, DataContractGate supports a pipe-friendly output mode:
 
 ```bash
 newman run collection.json --reporters cli,json --reporter-json-export response.json \
@@ -156,11 +155,11 @@ The `contractgate infer` subcommand (added to the existing CLI):
 
 - Reads Newman's JSON reporter output.
 - Applies the same client-side inference logic (field types, confidence scoring, semantic patterns).
-- Writes a ContractGate YAML contract to `--out`.
+- Writes a DataContractGate YAML contract to `--out`.
 - Optionally writes an ODCS-compatible YAML with `--odcs`.
 - Accepts `--odcs-version <version>` to pin the ODCS schema version (defaults to latest; see ODCS Export below).
 
-This path keeps ContractGate entirely out of the network path while supporting VPN-gated or mTLS-protected internal APIs.
+This path keeps DataContractGate entirely out of the network path while supporting VPN-gated or mTLS-protected internal APIs.
 
 ---
 
@@ -208,7 +207,7 @@ Add row to the feature table (RFC-045 introduced the table):
 3. Live contract refinement UI
 4. Free-tier Try It teaser mode (single endpoint, Save/Deploy disabled)
 5. Multi-endpoint suite builder (Growth+)
-6. ContractGate YAML export + `POST /contracts/deploy` integration
+6. DataContractGate YAML export + `POST /contracts/deploy` integration
 7. ODCS export with version selector dropdown
 8. Drift detection
 9. Postman / Bruno collection export

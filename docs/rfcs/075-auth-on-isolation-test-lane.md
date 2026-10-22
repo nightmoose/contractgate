@@ -2,7 +2,6 @@
 
 **Status:** Draft (implementation landed 2026-07-14, pending merge)
 **Date:** 2026-05-29
-**Branch:** nightly-maintenance-2026-07-14-rfc075
 **Depends on:** RFC-074 (org-ownership enforcement on the data plane)
 **Supersedes the verification claim in:** RFC-073
 

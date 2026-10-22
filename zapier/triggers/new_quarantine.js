@@ -28,7 +28,7 @@ module.exports = {
   display: {
     label: "New Quarantined Record",
     description:
-      "Triggers when ContractGate holds a record that failed its contract. Polls the newest 100.",
+      "Triggers when DataContractGate holds a record that failed its contract. Polls the newest 100.",
   },
   operation: {
     cleanInputData: false,

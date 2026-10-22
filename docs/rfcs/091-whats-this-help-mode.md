@@ -2,7 +2,6 @@
 
 **Status:** Accepted
 **Date:** 2026-09-11
-**Branch:** `nightly-maintenance-2026-09-11-rfc091-whats-this-help-mode`
 **Depends on:** RFC-020 (TooltipWrap + jargon glossary)
 
 ---
@@ -46,7 +45,7 @@ Done means:
 
 ## Non-goals
 
-- A blocking “Welcome to ContractGate” spotlight tour (Pendo / Shepherd / Appcues).
+- A blocking “Welcome to DataContractGate” spotlight tour (Pendo / Shepherd / Appcues).
 - Literally documenting every DOM node. The promise is “click a highlighted
   control,” not “click anything.”
 - A third-party product-tour SDK.

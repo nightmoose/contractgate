@@ -2,9 +2,8 @@
 
 | Status        | Draft — awaiting sign-off                                              |
 |---------------|------------------------------------------------------------------------|
-| Author        | ContractGate team                                                      |
+| Author        | DataContractGate team                                                      |
 | Created       | 2026-04-27                                                             |
-| Target branch | `nightly-maintenance-YYYY-MM-DD` (set when work starts)                |
 | Chunk         | Punchlist v2 #2                                                        |
 | Supersedes    | RFC-008 (broader scope; impact estimator deferred until audit volume)  |
 | Depends on    | RFC-002 (versioning), RFC-006 (`/contracts/diff`), RFC-014 (CLI)       |
@@ -173,7 +172,7 @@ with the new query params; no new route.
 6. `/audit` query params + filter pushdown.
 7. Audit search UI on dashboard.
 8. `cargo check && cargo test`; dashboard build.
-9. Update `MAINTENANCE_LOG.md`.
+9. Update the maintenance log.
 
 ## Deferred
 

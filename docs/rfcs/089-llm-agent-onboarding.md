@@ -2,7 +2,6 @@
 
 **Status:** Draft
 **Date:** 2026-08-06
-**Branch:** nightly-maintenance-2026-08-06-rfc089
 **Depends on:** RFC-005 (Python SDK), RFC-006/035/037 (inference), RFC-028 (deploy-contract), RFC-039 (auth), RFC-078 (walkthrough spine)
 
 ---
@@ -17,7 +16,7 @@ User feedback, verbatim:
 >
 > Example of what they actually paste: two URLs + `and implement ty`.
 
-ContractGate has no artifact that survives that workflow. Every current entry
+DataContractGate has no artifact that survives that workflow. Every current entry
 point is human-shaped:
 
 | Surface | What an agent gets when it fetches this |
@@ -33,7 +32,7 @@ the agent. That is exactly the friction the feedback names.
 ## Goal
 
 **One URL.** Pasted into Claude / Cursor / Codex with nothing but "implement
-this", the agent wires ContractGate cloud validation into the user's repo
+this", the agent wires DataContractGate cloud validation into the user's repo
 without further human input beyond supplying an API key.
 
 **Done means:** starting from a repo the agent has never seen, with
@@ -61,7 +60,7 @@ without further human input beyond supplying an API key.
 
 | File (canonical, in repo) | Served at | Purpose |
 |---|---|---|
-| `docs/llms.txt` | `https://app.datacontractgate.com/llms.txt` | ~30-line index: what ContractGate is, the repo URL, and links to the playbook + reference docs. Follows the llmstxt.org convention. |
+| `docs/llms.txt` | `https://app.datacontractgate.com/llms.txt` | ~30-line index: what DataContractGate is, the repo URL, and links to the playbook + reference docs. Follows the llmstxt.org convention. |
 | `docs/llm-integration.md` | `https://app.datacontractgate.com/llm-integration.md` | The self-contained playbook. This is the URL that gets pasted. |
 
 Serving mechanism: a prebuild step copies both into `dashboard/public/`, so
@@ -165,7 +164,7 @@ Both run in the existing test lane; neither touches the hot path.
 - Public, unauthenticated, cacheable, contains **no tenant data**.
 - No secrets anywhere in the doc; key only via env var; explicit don't-commit rule.
 - The doc is a set of instructions a coding agent will execute with tool access,
-  so it stays scoped to ContractGate endpoints and the user's own repo: no
+  so it stays scoped to DataContractGate endpoints and the user's own repo: no
   third-party fetches, no `curl | sh`, no credential-reading steps beyond one
   named env var.
 

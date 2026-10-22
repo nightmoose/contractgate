@@ -7,8 +7,7 @@ import { useSelfHosted } from "@/lib/use-paid-features";
 // AISchemaGate tiers: the same plan ladder and prices as DataContractGate
 // (decided 2026-10-12), in LLM wording. Limits are enforced
 // by the gateway (src/plan.rs); keep these numbers in sync with it and with
-// aischemagate-www/app/pricing. List only what ships today; see
-// PROJECT_STATUS.md "AISchemaGate near-term TODO" for what is not built yet.
+// aischemagate-www/app/pricing. List only what ships today.
 const TIERS = [
   {
     key: "developer",

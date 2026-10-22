@@ -1,4 +1,4 @@
-# RFC-058 — ContractGate 12-Month Product Roadmap (2026 H2 – 2027 H1)
+# RFC-058 — DataContractGate 12-Month Product Roadmap (2026 H2 – 2027 H1)
 
 **Status:** Draft  
 **Date:** 2026-05-22  
@@ -11,7 +11,7 @@
 
 A sequenced 12-month plan from the public launch onward. It folds in the
 launch blockers from the 2026-05-22 review, the deferred items from
-`docs/punchlist/`, and the natural product progression of a contract-
+the internal punchlist, and the natural product progression of a contract-
 enforcement gateway. Each quarter has a theme, a short list of deliverables,
 and an exit criterion. Dates are quarters, not commitments — re-plan each
 quarter against real pilot signal.
@@ -48,7 +48,7 @@ reference docs.
 **Theme:** make the SaaS economically real now that tenants are isolated.
 
 - **Usage metering service** — count API calls, contracts stored, connector
-  events per org; hourly rollup table. (`docs/punchlist/08`.)
+  events per org; hourly rollup table. (internal punchlist item 08.)
 - **Plan-tier enforcement** — wire RFC-045 plan gating to live quotas
   (events/month per Free/Growth/Enterprise from the README pricing table).
 - **Billing integration** — Stripe; self-serve upgrade/downgrade.
@@ -80,7 +80,7 @@ billed — with no manual operator step.
 - **Impact estimator** — `/contracts/{id}/impact` and the materialized
   producer-count view, now that audit volume makes the numbers meaningful.
 
-**Exit criterion:** a new team can adopt ContractGate in their own language
+**Exit criterion:** a new team can adopt DataContractGate in their own language
 and CI without hand-written HTTP calls.
 
 ---
@@ -102,7 +102,7 @@ and CI without hand-written HTTP calls.
 - **Audit-log retention tiers** — wire the 7/90/custom-day retention from the
   pricing table to real lifecycle jobs.
 
-**Exit criterion:** ContractGate can be sold to a security-conscious
+**Exit criterion:** DataContractGate can be sold to a security-conscious
 enterprise — SSO, RBAC, self-hostable, with a published performance number.
 
 ---

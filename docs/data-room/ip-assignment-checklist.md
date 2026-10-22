@@ -1,6 +1,6 @@
 # IP Assignment & Ownership Checklist
 
-**Owner:** Alex (founder). Purpose: give an acquirer a clean, unambiguous chain of
+**Owner:** the founder. Purpose: give an acquirer a clean, unambiguous chain of
 title to the DataContractGate IP. These are **non-code** items; engineering can't
 close them, but diligence will ask for every one. Fill in and attach the
 supporting documents to the data room.
@@ -10,7 +10,7 @@ Status legend: ✅ done · ⬜ open · ❔ confirm
 ## Chain of title
 
 - ⬜ **Founder IP assignment** — a signed agreement assigning all DataContractGate IP
-  (code, designs, docs, the patent application) from Alex Suarez personally to
+  (code, designs, docs, the patent application) from the founder personally to
   the owning entity (nightmoose / the legal entity being sold). Attach.
 - ⬜ **Contractor / contributor assignments** — for anyone (paid or unpaid) who
   contributed code, designs, or content: a signed IP-assignment or work-for-hire.

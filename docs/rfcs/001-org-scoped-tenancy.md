@@ -1,8 +1,8 @@
 # RFC-001 — Org-Scoped Tenancy
 
-**Status:** Accepted (2026-05-03) — finishing gaps in `nightly-maintenance-2026-05-03-rfc-001-finish`
+**Status:** Accepted (2026-05-03) — finishing gaps in the feature branch
 **Date:** 2026-04-24 (drafted) / 2026-05-03 (accepted)
-**Author:** Alex Suarez  
+**Author:** the product owner  
 
 ---
 
@@ -16,7 +16,7 @@ Contracts are currently visible and writable across all user accounts. There is 
 
 Adopt **Option B — org-scoped tenancy**. Every resource (contracts, API keys, audit log entries) belongs to an org, not to an individual user. Users join orgs and operate within them.
 
-Option C (per-contract ACLs for enterprise) is explicitly deferred. When an enterprise client is in the pipeline, ContractGate will likely ship as a standalone instance for that customer; the ACL layer and any other enterprise-specific concerns will be designed at that time.
+Option C (per-contract ACLs for enterprise) is explicitly deferred. When an enterprise client is in the pipeline, DataContractGate will likely ship as a standalone instance for that customer; the ACL layer and any other enterprise-specific concerns will be designed at that time.
 
 ---
 
@@ -62,7 +62,7 @@ ALTER TABLE audit_log ADD COLUMN org_id uuid REFERENCES orgs(id);
 
 ### Auto-provisioning rule
 
-When a user signs up, a personal org is created automatically (slug derived from their email prefix, e.g. `alexsuarez`) and the user is inserted as `owner`. This keeps the zero-friction solo use case intact — a new user lands in the dashboard and everything just works, with no "create an org first" friction.
+When a user signs up, a personal org is created automatically (slug derived from their email prefix, e.g. `janedoe`) and the user is inserted as `owner`. This keeps the zero-friction solo use case intact — a new user lands in the dashboard and everything just works, with no "create an org first" friction.
 
 ---
 
@@ -134,7 +134,7 @@ A user can technically have rows in `org_memberships` for more than one org, but
 
 ## Enterprise (deferred)
 
-When an enterprise client arrives, the likely path is a dedicated ContractGate instance (own DB, own Rust service, own dashboard). Per-contract ACLs (Option C), SSO/SAML, audit export APIs, and custom SLAs are all deferred to that engagement. This RFC does not need to pre-solve any of those concerns.
+When an enterprise client arrives, the likely path is a dedicated DataContractGate instance (own DB, own Rust service, own dashboard). Per-contract ACLs (Option C), SSO/SAML, audit export APIs, and custom SLAs are all deferred to that engagement. This RFC does not need to pre-solve any of those concerns.
 
 ---
 
@@ -151,7 +151,7 @@ When an enterprise client arrives, the likely path is a dedicated ContractGate i
 ## Sign-off Decisions (2026-05-03)
 
 Resolved before finishing implementation. Migration 007 + 008 already shipped;
-gaps below land in migration 012 and the `nightly-maintenance-2026-05-03-rfc-001-finish`
+gaps below land in migration 012 and the feature branch
 branch.
 
 | # | Question | Decision |

@@ -2,7 +2,6 @@
 
 **Status:** Draft
 **Date:** 2026-06-01
-**Branch:** `nightly-maintenance-2026-06-01-rfc076-contract-test-dry-run`
 **Follows:** RFC-024 (Brownfield Scaffolder, `cg enforce`), RFC-006 (Multi-Format Inference)
 **Severity:** P1 — competitive evaluation blocker (see §Context)
 
@@ -10,7 +9,7 @@
 
 ## Context
 
-Prospective customers evaluating ContractGate against the incumbent
+Prospective customers evaluating DataContractGate against the incumbent
 schema-registry tools often weigh one criterion most heavily: the
 **rule-authoring iteration loop** — how fast can an engineer write or infer a
 contract, throw representative JSON at it, read the violations, fix the rule,
@@ -18,7 +17,7 @@ and repeat — entirely locally, with no running server, no Kafka, no network.
 
 This is the one place where the incumbents are weak (their loop is
 edit → deploy to registry → produce to a topic → consume failures), and it is
-the one place ContractGate currently has **no CLI surface**, despite the engine
+the one place DataContractGate currently has **no CLI surface**, despite the engine
 being able to do it in microseconds.
 
 ## Problem
@@ -178,14 +177,14 @@ assertions and the dashboard.
 
 ## Docs
 
-Per CLAUDE.md (user-facing CLI flag → doc): add
+Per the contributor guide (user-facing CLI flag → doc): add
 `docs/cg-test-reference.md` (flags, input formats, exit codes, the chained
 `infer | test` recipe) and add a row to the CLI section of the docs index.
 Update `docs/STATUS.md` with the RFC-076 row.
 
 ## Rollout
 
-Single nightly-maintenance branch. Additive only — no change to `validate`,
+Single feature branch. Additive only — no change to `validate`,
 `enforce`, the engine, schema, or config. Zero risk to the hot path or existing
 behavior.
 

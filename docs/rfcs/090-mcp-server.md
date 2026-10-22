@@ -2,14 +2,13 @@
 
 **Status:** Shipped — v0.2.0 (`@nightmoose/contractgate-mcp-server`)
 **Date:** 2026-08-23
-**Branch:** nightly-maintenance-2026-08-23-rfc090
 **Depends on:** RFC-089 (agent playbook), RFC-028 (deploy), RFC-076 (local test), RFC-081 (quarantine list)
 
 ---
 
 ## Problem
 
-RFC-089 made ContractGate paste-installable: an agent that fetches
+RFC-089 made DataContractGate paste-installable: an agent that fetches
 `/llm-integration.md` can infer, deploy, and wire ingest over HTTP. That still
 asks the agent to construct `curl`/`jq` pipelines. Hosts that speak MCP
 (Cursor, Claude Desktop, Windsurf, VS Code Copilot, Codex) prefer typed tools.

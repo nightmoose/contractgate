@@ -1,7 +1,6 @@
 # RFC-094 — `LLMGate` SDK Class + `aischemagate` Alias Package
 
 **Status:** Draft
-**Branch:** `nightly-maintenance-2026-10-11-rfc094-096-aischemagate`
 **Date:** 2026-10-11
 **Depends on:** RFC-029 (egress validation), RFC-030 (egress PII and leakage), RFC-093 (egress as first-class door), RFC-004 (PII masking at ingest), RFC-005 (Python SDK), RFC-018 (TypeScript SDK), RFC-089 (LLM integration playbook), RFC-090 (MCP server)
 **Companion RFCs:** RFC-095 (AISchemaGate docs portal), RFC-096 (AISchemaGate frontend repo + CORS)
@@ -433,7 +432,7 @@ No change to `Client`, `AsyncClient`, `Contract`, or any shipped method.
 7. RFC-095 docs portal consumes this reference.
 8. Release notes: `contractgate` minor bump (new submodule),
    `aischemagate` 0.1.0 initial release.
-9. MAINTENANCE_LOG + STATUS.md updates.
+9. the maintenance log + STATUS.md updates.
 
 ## Decisions (signed off 2026-10-11)
 

@@ -2,9 +2,8 @@
 
 | Status        | Shipped — v0.2.0 (`@nightmoose/contractgate-sdk`)                      |
 |---------------|------------------------------------------------------------------------|
-| Author        | ContractGate team                                                      |
+| Author        | DataContractGate team                                                      |
 | Created       | 2026-04-27                                                             |
-| Target branch | `nightly-maintenance-2026-09-30-rfc018-typescript-sdk`                 |
 | Chunk         | Punchlist v2 #5                                                        |
 | Supersedes    | RFC-011 partially (TS only; Go + Java deferred)                        |
 | Depends on    | RFC-005 (Python SDK shape reference), RFC-014 (CLI freezes wire shape) |
@@ -160,7 +159,7 @@ export class AuthError extends ContractGateError {}
 8. `tests/conformance.test.ts` runner.
 9. Publish `@contractgate/sdk@0.5.0` to npm.
 10. `cargo check && cargo test`; `cd sdks/typescript && npm test`.
-11. Update `MAINTENANCE_LOG.md`.
+11. Update the maintenance log.
 
 ## Deferred
 

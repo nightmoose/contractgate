@@ -1,7 +1,7 @@
 ---
 title: Open the Quarantine listing to Free; keep bodies/replay content-gated
 status: Accepted
-author: Alex
+author: product owner
 date: 2026-10-12
 ---
 
@@ -74,7 +74,6 @@ change.
 
 ## Rollout
 
-- Branch: `nightly-maintenance-2026-10-12-rfc099-quarantine-open-on-free`.
 - Files: `dashboard/app/contracts/page.tsx` only. ~15 lines changed.
 - Verification: `npm run build` under `dashboard/`.
 - Manual: sign in to a Free account, visit `/contracts/<id>` → Quarantine

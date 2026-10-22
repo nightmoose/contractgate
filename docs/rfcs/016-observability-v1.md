@@ -2,10 +2,9 @@
 
 | Status        | Implemented (2026-05-03)                                               |
 |---------------|------------------------------------------------------------------------|
-| Author        | ContractGate team                                                      |
+| Author        | DataContractGate team                                                      |
 | Created       | 2026-04-27                                                             |
 | Revised       | 2026-04-27 — scope trimmed: alerts deferred until first pilot has real traffic |
-| Target branch | `nightly-maintenance-YYYY-MM-DD` (set when work starts)                |
 | Chunk         | Punchlist v2 #3                                                        |
 | Supersedes    | RFC-009 (broader scope; PD/email/generic webhooks + full rule engine deferred) |
 
@@ -104,7 +103,7 @@ so RFC-017's Compose stack auto-imports the dashboard on boot.
 6. Grafana JSON + provisioning files in `ops/grafana/`.
 7. README snapshot of dashboard (rendered with RFC-017 seeder running).
 8. `cargo check && cargo test`.
-9. Update `MAINTENANCE_LOG.md`.
+9. Update the maintenance log.
 
 ## Deferred
 

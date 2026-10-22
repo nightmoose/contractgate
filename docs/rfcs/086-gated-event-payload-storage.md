@@ -2,7 +2,6 @@
 
 **Status:** Implemented (backend + all ingest/egress/consumer paths + dashboard + docs) on branch; not yet shipped
 **Date:** 2026-07-20
-**Branch:** nightly-maintenance-2026-07-20-rfc086-gated-payload-storage
 **Depends on:** RFC-004 (PII transforms), RFC-045 (plan gating), RFC-083 (metering / `get_org_plan_and_usage`), RFC-003/RFC-081 (quarantine + replay)
 
 ---
@@ -277,7 +276,7 @@ audit immutability, which is about the *decision record*, not the source body).
 
 ## Implementation notes (as built, 2026-07-20)
 
-Branch `nightly-maintenance-2026-07-20-rfc086-gated-payload-storage`. `cargo
+On the feature branch, `cargo
 check` clean; 312 `contractgate-server` unit tests pass.
 
 - **Migration `034_gated_payload_storage.sql`** — `orgs.store_event_payloads`

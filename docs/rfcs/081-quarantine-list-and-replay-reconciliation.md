@@ -2,7 +2,6 @@
 
 **Status:** Draft (implementation landed 2026-07-14, pending merge)
 **Date:** 2026-07-14
-**Branch:** nightly-maintenance-2026-07-14-rfc081
 **Depends on:** RFC-003 (manual replay), RFC-047 (org scoping), RFC-074 (data-plane org ownership)
 
 ---

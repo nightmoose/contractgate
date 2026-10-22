@@ -2,9 +2,8 @@
 
 | Status        | **Superseded** by RFC-016 (2026-04-27) — kept for design context       |
 |---------------|------------------------------------------------------------------------|
-| Author        | ContractGate team                                                      |
+| Author        | DataContractGate team                                                      |
 | Created       | 2026-04-27                                                             |
-| Target branch | `nightly-maintenance-YYYY-MM-DD` (set when work starts)                |
 | Chunk         | Punchlist 04 — Observability Quick Wins                                |
 | Depends on    | RFC-002 (versioning), RFC-008 (`severity` for alert rule conditions)   |
 
@@ -200,7 +199,7 @@ publish per `(contract_id, version)` pair.
 6. `alert_rules` schema migration + eval loop + condition kinds.
 7. Dashboard "Alerts" tab — list rules, toggle enabled, view last fire.
 8. `cargo check && cargo test`.
-9. Update `MAINTENANCE_LOG.md`.
+9. Update the maintenance log.
 
 ## Deferred
 

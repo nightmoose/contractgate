@@ -14,7 +14,7 @@
 ## ⚠️ Build trigger — do not implement yet
 
 This RFC is a **shelf design**. The open-core direction is sound but
-premature: ContractGate has no paying enterprise customers, no inbound
+premature: DataContractGate has no paying enterprise customers, no inbound
 asks for SSO/SAML or audit-log export, and the public launch (RFC-058
 Q3 2026) hasn't shipped. Building paid features before the free product
 is in the market is inventory risk.
@@ -25,7 +25,7 @@ is in the market is inventory risk.
    feature they will pay for, OR
 2. ≥3 unsolicited inbound asks for the same paid feature (SSO/SAML,
    audit export, fleet management, etc.), OR
-3. ContractGate has ≥10 active self-hosted production deployments and
+3. DataContractGate has ≥10 active self-hosted production deployments and
    we've validated which features they'd actually pay to add.
 
 Until one of those fires: don't implement. Don't write the SaaS license
@@ -37,7 +37,7 @@ now.
 
 ## Problem
 
-ContractGate has two distribution surfaces:
+DataContractGate has two distribution surfaces:
 
 1. **Rust crate** (repo root) — CLI binary, server binary, dashboard backend
    API, validation engine. All Apache 2.0 today.
@@ -62,7 +62,7 @@ feature flags and (b) Maven multi-module structure inside the `connect/`
 subtree.** Two LicenseManager implementations (one Rust, one Java) share a
 single SaaS validation backend and signed-license format.
 
-The proposal Alex circulated assumed a Java-only codebase; this RFC
+The proposal the product owner circulated assumed a Java-only codebase; this RFC
 corrects that and applies the same open-core intent to the actual mixed
 Rust+Java repository.
 
@@ -167,7 +167,7 @@ in RFC-063 migration steps).
 BSL is the same license MariaDB, Sentry, CockroachDB, and HashiCorp
 (pre-IBM) used for this exact pattern. Acquirers understand it. Customers
 can read the source, modify it for their own use, and self-host with a
-valid license. The only restriction is "don't sell ContractGate as a
+valid license. The only restriction is "don't sell DataContractGate as a
 managed service" until the change-date.
 
 `LICENSE-BSL` file at repo root contains the BSL 1.1 text. Each
@@ -240,7 +240,7 @@ chokepoint on community PRs).
 ## RFC sequence
 
 Implementation order (one nightly per RFC, or bundled into 2–3 nightlies
-depending on Sonnet's pace):
+depending on the implementer's pace):
 
 1. **RFC-060** — LicenseManager protocol + SaaS validation endpoint.
    (Pure design + backend service. Unblocks 061 + 063.)
@@ -295,8 +295,8 @@ cadence.
 
 This RFC is "accepted" when:
 
-1. Alex signs off on the open-core scope (what's free, what's paid).
-2. Alex signs off on the BSL choice (vs SSPL, Elastic License v2, or
+1. The product owner signs off on the open-core scope (what's free, what's paid).
+2. The product owner signs off on the BSL choice (vs SSPL, Elastic License v2, or
    pure commercial). Recommended: **BSL 1.1** for industry familiarity.
 3. RFCs 060–064 are reviewed against the invariants here and updated if
    they drift.

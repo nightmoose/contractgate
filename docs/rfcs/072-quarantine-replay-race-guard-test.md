@@ -2,9 +2,8 @@
 
 **Status:** Implemented (2026-05-28)
 **Date:** 2026-05-28
-**Branch:** `nightly-maintenance-2026-05-28-rfc069-pure-fn-coverage`
 **Follows:** RFC-071 (coverage ratchet gate)
-**Addresses:** docs/reviews/test-hardening-handoff-2026-05-28.md — Task 3 (quarantine/replay coverage)
+**Addresses:** an internal review (test-hardening-handoff-2026-05-28) — Task 3 (quarantine/replay coverage)
 **Severity:** P3 — test hardening; no runtime impact
 
 ---

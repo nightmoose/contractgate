@@ -5,7 +5,7 @@
 //! - First request with key K → process normally, store result.
 //! - Repeat: same key + same body → return cached (status, response).
 //! - Repeat: same key + different body → 422 conflict.
-//! - `dry_run=true` → never stored (confirmed by Alex 2026-05-01).
+//! - `dry_run=true` → never stored (confirmed by the product owner 2026-05-01).
 //! - TTL sweep is handled by a Supabase scheduled function; no in-process
 //!   background task.
 //!

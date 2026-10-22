@@ -338,6 +338,6 @@ their key yet.
 6. CI job for the CLI symbol-leak check is wired and green.
 7. `cargo check` and `cargo test` (no features) remain unaffected.
 
-**Cannot test locally:** Alex needs to run `cargo build`, `cargo build
+**Cannot test locally:** the product owner needs to run `cargo build`, `cargo build
 --features enterprise`, `cargo test`, and `cargo test --features
 enterprise`. Per project rules, I won't run cargo.

@@ -2,9 +2,8 @@
 
 | Status        | Accepted (2026-04-27) — sign-off on Q1..Q6 (recommendations)          |
 |---------------|------------------------------------------------------------------------|
-| Author        | ContractGate team                                                      |
+| Author        | DataContractGate team                                                      |
 | Created       | 2026-04-27                                                             |
-| Target branch | `nightly-maintenance-YYYY-MM-DD` (set when work starts)                |
 | Chunk         | Punchlist v2 #1                                                        |
 | Supersedes    | RFC-007 (broader scope; trimmed to pre-customer essentials)            |
 
@@ -162,7 +161,7 @@ This is what users copy into their own repos.
 8. ✅ Cross-compile job in `.github/workflows/ci.yml` (`cli-cross-compile` matrix job).
 9. ✅ Reference workflow `.github/workflows/contractgate.yml`.
 10. ⏳ `cargo check && cargo test` — cargo not available in sandbox; CI will verify.
-11. ✅ Update `MAINTENANCE_LOG.md`.
+11. ✅ Update the maintenance log.
 
 ## Deferred
 

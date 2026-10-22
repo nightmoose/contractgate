@@ -2,7 +2,7 @@
 
 **Status:** Accepted
 **Date:** 2026-05-14
-**Author:** Alex Suarez
+**Author:** the product owner
 
 ---
 
@@ -14,7 +14,7 @@ fields. The invariant RFC-004 guarantees is *"raw PII never lands in
 durable storage."*
 
 Egress has the mirror-image problem with a sharper edge: **raw PII /
-internal fields never leave the API.** When ContractGate runs as a
+internal fields never leave the API.** When DataContractGate runs as a
 last-step gate (RFC-029), the outbound payload is assembled by the
 caller's own code — joins, derived fields, internal bookkeeping
 columns. That is exactly where leakage happens:

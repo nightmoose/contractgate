@@ -99,7 +99,7 @@ send data at all.
    `inferSamples({ name, samples: records })` call; set `generatedYaml` from the
    response. Parse the pasted JSON locally first (so JSON errors stay
    instant/local), then send the parsed `samples` array. Add a one-line notice:
-   *"Sample data is sent to ContractGate to generate the contract. To keep data
+   *"Sample data is sent to DataContractGate to generate the contract. To keep data
    fully local, use Start Blank (YAML editor) or `cg test` locally."*
 
 3. **`dashboard/app/contracts/_lib.tsx`** — delete `inferFields`, `buildYaml`,
@@ -132,7 +132,7 @@ today is hand-written YAML in Start Blank.
 Fixing this is a real builder rework: add `"object"` to the type union, give
 `FieldState` recursive child `properties`, render nested field editors, and
 make `buildYaml` recurse. That is a substantial, UI-heavy change — exactly the
-"frontend overhaul" CLAUDE.md cautions against doing casually, and it needs
+"frontend overhaul" the contributor guide cautions against doing casually, and it needs
 visual + `npm run build` verification that can't be done blind.
 
 **Decision:** deferred to its own focused follow-up (proposed RFC-080) so

@@ -2,9 +2,8 @@
 
 | Status        | **Superseded** by RFC-015 (2026-04-27) — kept for design context       |
 |---------------|------------------------------------------------------------------------|
-| Author        | ContractGate team                                                      |
+| Author        | DataContractGate team                                                      |
 | Created       | 2026-04-27                                                             |
-| Target branch | `nightly-maintenance-YYYY-MM-DD` (set when work starts)                |
 | Chunk         | Punchlist 03 — Breaking-Change Story                                   |
 | Depends on    | RFC-002 (versioning) — landed; RFC-006 (`/contracts/diff`) — landed; RFC-007 (CLI) |
 
@@ -223,7 +222,7 @@ Reuses Quarantine tab's `<DataTable>` component.
    on `breaking`, `--strict` for `unknown`.
 8. Audit search UI on dashboard.
 9. `cargo check && cargo test`; dashboard build.
-10. Update `MAINTENANCE_LOG.md`.
+10. Update the maintenance log.
 
 ## Deferred
 

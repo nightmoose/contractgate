@@ -3,9 +3,8 @@
 | Field         | Value                                        |
 |---------------|----------------------------------------------|
 | Status        | **Accepted — 2026-05-01**                    |
-| Author        | ContractGate team                            |
+| Author        | DataContractGate team                            |
 | Created       | 2026-05-01                                   |
-| Target branch | `nightly-maintenance-2026-05-01`             |
 | Tracking      | Phase 1 #4 — public self-serve demo backbone |
 
 ---
@@ -13,7 +12,7 @@
 ## Summary
 
 Add a public, versioned bulk-ingest HTTP API at `POST /v1/ingest/{contract_id}`.
-This is ContractGate's universal connector: anything that can make an HTTP
+This is DataContractGate's universal connector: anything that can make an HTTP
 request can validate events against a contract. It is also the backbone of the
 planned "5-minute self-serve demo".
 
@@ -509,7 +508,7 @@ rate-limit checks. No `RwLock` wrapping needed.
 
 1. **Migration** — apply before deploying new binary (additive only; existing
    rows unaffected).
-2. **Binary** — single PR to `nightly-maintenance-2026-05-01`. No existing
+2. **Binary** — single PR to the feature branch. No existing
    route changes.
 3. **Backward compat** — `/ingest/:raw_id` untouched. No client changes needed.
 4. **Feature flag** — not required (new path, no conflict).

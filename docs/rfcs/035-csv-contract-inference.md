@@ -2,7 +2,7 @@
 
 **Status:** Draft
 **Date:** 2026-05-15
-**Author:** Alex Suarez
+**Author:** the product owner
 
 ---
 
@@ -131,7 +131,7 @@ type-heuristic logic.
 
 ## Integration with RFC-034
 
-When ContractGate fetches a public data source with `source_format = "csv"`,
+When DataContractGate fetches a public data source with `source_format = "csv"`,
 the fork fetch handler (`POST /contracts/:id/fetch`) will use the same CSV
 parser from `infer_csv.rs` to deserialize upstream rows into
 `serde_json::Value` objects before applying the fork filter. No separate

@@ -2,14 +2,13 @@
 
 **Status:** Draft (implementation landed 2026-07-15, pending merge)
 **Date:** 2026-07-15
-**Branch:** nightly-maintenance-2026-07-15-rfc082
 **Depends on:** RFC-047 (org scoping), RFC-028 (queryability)
 
 ---
 
 ## Problem
 
-A design partner (and their boss) needs a one-shot "here's what ContractGate
+A design partner (and their boss) needs a one-shot "here's what DataContractGate
 caught for you" artifact: pass rate and the violations that were blocked, for one
 contract over a time window, as JSON or CSV. Today the only surfaces are `/stats`
 (point-in-time aggregate, no window, no violation breakdown) and `/audit` (raw
@@ -73,7 +72,7 @@ CSV: three labeled sections (`# TOTALS`, `# BY VERSION`, `# TOP VIOLATIONS`),
   Totals are summed from (1) in the handler.
 - `src/report.rs` (new): `report_handler` + JSON DTO + CSV builder.
 - `src/main.rs`: `GET /contracts/{id}/report` on the protected router.
-- `docs/pilot-report-reference.md`; STATUS + MAINTENANCE_LOG.
+- `docs/pilot-report-reference.md`; STATUS + the maintenance log.
 
 Uses the existing `idx_audit_contract_time (contract_id, created_at)` and the
 partial violations index, so windowed reads stay cheap. Validation hot path

@@ -1,7 +1,7 @@
 # deploy-contract Reference
 
 **RFC:** 028 — Contract Queryability  
-**Since:** nightly-2026-05-14
+**Since:** 2026-05-14
 
 ---
 

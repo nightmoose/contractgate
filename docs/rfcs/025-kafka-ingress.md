@@ -1,17 +1,16 @@
-# RFC-025: Kafka Ingress for Hosted ContractGate
+# RFC-025: Kafka Ingress for Hosted DataContractGate
 
 | Field    | Value                  |
 |----------|------------------------|
 | Status   | **Implemented**        |
-| Author   | ContractGate team      |
+| Author   | DataContractGate team      |
 | Created  | 2026-05-07             |
-| Branch   | `nightly-maintenance-2026-05-07` |
 
 ---
 
 ## Problem
 
-Users with Kafka-based pipelines cannot route events through ContractGate
+Users with Kafka-based pipelines cannot route events through DataContractGate
 without building their own consumer bridge. The current HTTP ingest path
 works, but it forces teams to retool producers or insert a sidecar. Native
 Kafka ingress removes that friction.
@@ -20,8 +19,8 @@ Kafka ingress removes that friction.
 
 ## Proposal
 
-Hosted ContractGate provisions per-contract Kafka topics and runs consumers
-on the platform side. Users produce to a well-known input topic; ContractGate
+Hosted DataContractGate provisions per-contract Kafka topics and runs consumers
+on the platform side. Users produce to a well-known input topic; DataContractGate
 validates each event and routes it to either a clean output topic or a
 quarantine topic — exactly the existing HTTP validation semantics, surfaced
 over Kafka.
@@ -81,7 +80,7 @@ Producer (user)
 cg-{contract_id}-raw   (Confluent Cloud)
     │
     ▼
-ContractGate Consumer pool (rdkafka / Tokio workers)
+DataContractGate Consumer pool (rdkafka / Tokio workers)
     │
     ├─ valid   ──▶  cg-{contract_id}-clean
     └─ invalid ──▶  cg-{contract_id}-quarantine

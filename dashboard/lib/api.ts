@@ -1473,7 +1473,7 @@ export interface FivetranConnectResponse {
 }
 
 /**
- * Deploy the ContractGate connector into the caller's Fivetran account.
+ * Deploy the DataContractGate connector into the caller's Fivetran account.
  * The Fivetran key and secret are sent once and are not stored.
  */
 export const connectFivetran = (body: FivetranConnectRequest) =>

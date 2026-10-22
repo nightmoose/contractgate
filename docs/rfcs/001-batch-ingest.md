@@ -2,9 +2,8 @@
 
 | Status        | Accepted (2026-04-17)                    |
 |---------------|------------------------------------------|
-| Author        | ContractGate team                        |
+| Author        | DataContractGate team                        |
 | Created       | 2026-04-17                               |
-| Target branch | `nightly-maintenance-2026-04-17`         |
 | Tracking      | Post-demo feedback item #1               |
 
 ## Summary
@@ -245,7 +244,7 @@ Integration / benchmark (manual + optional CI step):
 
 ## Rollout / migration
 
-- **Code:** single PR to `nightly-maintenance-2026-04-17`. No schema changes.
+- **Code:** single PR to the feature branch. No schema changes.
 - **Frontend:** `dashboard/lib/api.ts::BatchIngestResponse` needs the new
   `atomic` field (optional on the type so older responses still parse). Add
   an "atomic" checkbox to the Playground page if there's time in the PR —

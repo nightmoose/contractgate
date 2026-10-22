@@ -2,10 +2,8 @@
 
 | Status        | Accepted (2026-04-26)                                                   |
 |---------------|-------------------------------------------------------------------------|
-| Author        | ContractGate team                                                       |
+| Author        | DataContractGate team                                                       |
 | Created       | 2026-04-26                                                              |
-| Accepted      | 2026-04-26 — Alex sign-off on Q1, Q2, Q4, Q6 (recommendations); Q3, Q5 default |
-| Target branch | `nightly-maintenance-2026-04-26`                                        |
 | Tracking      | Adoption / DX surface                                                   |
 | Depends on    | RFC-002 (versioning), RFC-004 (PII transforms) — both landed            |
 
@@ -307,7 +305,7 @@ Only whole-batch rejects (422) raise.
 ## Test plan
 
 ### I. Contract parse (no network)
-1. Parse the canonical CLAUDE.md YAML example. All fields populated.
+1. Parse the contributor guide's canonical YAML example. All fields populated.
 2. `compliance_mode: true` parses; default is `false` when omitted.
 3. `transform: { kind: mask, style: opaque }` parses.
 4. Bad regex → `ContractCompileError`.
@@ -359,7 +357,7 @@ Only whole-batch rejects (422) raise.
 
 ## Rollout
 
-1. Land RFC-005 (this doc) on `nightly-maintenance-2026-04-26` once
+1. Land RFC-005 (this doc) on the feature branch once
    Q1–Q6 are signed off.
 2. Scaffold `sdks/python/` with `pyproject.toml`, package skeleton,
    README, `__init__.py` re-exports.
@@ -379,11 +377,11 @@ Only whole-batch rejects (422) raise.
    authoritative "what got stored" view.
 9. Reserve PyPI name in a separate ops task; first publish ships
    when the package name is confirmed.
-10. Update `MAINTENANCE_LOG.md` with the rollout entry.
+10. Update the maintenance log with the rollout entry.
 
 ## Decisions locked in before implementation
 
 - Q1–Q6 — all signed off 2026-04-26. No open questions remain.
 
 Work top-down through the rollout list on
-`nightly-maintenance-2026-04-26`.
+the feature branch.

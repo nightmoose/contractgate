@@ -2,9 +2,8 @@
 
 **Status:** Implemented (2026-05-28)
 **Date:** 2026-05-28
-**Branch:** `nightly-maintenance-2026-05-28-rfc068-isolation-ci`
 **Follows:** RFC-067 (request-path panic hardening)
-**Addresses:** docs/reviews/test-hardening-handoff-2026-05-28.md — Task 1
+**Addresses:** an internal review (test-hardening-handoff-2026-05-28) — Task 1
 **Severity:** P1 — the multi-tenant isolation guarantee is asserted in code but
 never executed in CI
 

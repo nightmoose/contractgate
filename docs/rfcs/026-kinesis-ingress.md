@@ -1,20 +1,19 @@
-# RFC-026: AWS Kinesis Ingress for Hosted ContractGate
+# RFC-026: AWS Kinesis Ingress for Hosted DataContractGate
 
 | Field    | Value                  |
 |----------|------------------------|
 | Status   | **Implemented**        |
-| Author   | ContractGate team      |
+| Author   | DataContractGate team      |
 | Created  | 2026-05-07             |
-| Branch   | `nightly-maintenance-2026-05-07` |
 
 ---
 
 ## Problem
 
 Teams running AWS-native data pipelines use Kinesis Data Streams as their
-primary event bus. ContractGate's HTTP ingest path works, but requires
+primary event bus. DataContractGate's HTTP ingest path works, but requires
 producers to speak HTTP or a sidecar bridge. Native Kinesis ingress removes
-that friction — users produce to a ContractGate-managed stream and receive
+that friction — users produce to a DataContractGate-managed stream and receive
 validated events on a clean output stream, with no changes to their existing
 Kinesis producers.
 
@@ -22,9 +21,9 @@ Kinesis producers.
 
 ## Proposal
 
-Hosted ContractGate provisions per-contract Kinesis streams in a shared
-ContractGate AWS account and runs consumers platform-side. The user produces
-to a well-known input stream; ContractGate validates each record and routes
+Hosted DataContractGate provisions per-contract Kinesis streams in a shared
+DataContractGate AWS account and runs consumers platform-side. The user produces
+to a well-known input stream; DataContractGate validates each record and routes
 it to a clean output stream or a quarantine stream — same validation
 semantics as the HTTP and Kafka paths.
 
@@ -59,7 +58,7 @@ are soft-deleted after a configurable drain window (default 24 h).
 
 ### 3. AWS Account Model
 
-ContractGate provisions all streams in a **shared ContractGate AWS account**,
+DataContractGate provisions all streams in a **shared DataContractGate AWS account**,
 one IAM user per contract. Users need no AWS account of their own — they
 receive static access key credentials scoped to their streams only.
 
@@ -89,10 +88,10 @@ on the next incoming record via a lightweight wakeup ping endpoint.
 Producer (user, any AWS SDK)
     │
     ▼
-cg-{contract_id}-raw   (Kinesis, ContractGate AWS account)
+cg-{contract_id}-raw   (Kinesis, DataContractGate AWS account)
     │
     ▼
-ContractGate Consumer loop (aws-sdk-kinesis / Tokio)
+DataContractGate Consumer loop (aws-sdk-kinesis / Tokio)
     │
     ├─ valid   ──▶  cg-{contract_id}-clean
     └─ invalid ──▶  cg-{contract_id}-quarantine

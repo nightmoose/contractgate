@@ -2,9 +2,8 @@
 
 | Status        | **Superseded** by RFC-017 (3 starters only); rest deferred (2026-04-27)|
 |---------------|------------------------------------------------------------------------|
-| Author        | ContractGate team                                                      |
+| Author        | DataContractGate team                                                      |
 | Created       | 2026-04-27                                                             |
-| Target branch | `nightly-maintenance-YYYY-MM-DD` (set when work starts)                |
 | Chunk         | Punchlist 07 — Templates + Marketplace                                 |
 | Depends on    | RFC-007 (CLI surface), RFC-011 (SDK pull path)                         |
 
@@ -193,7 +192,7 @@ Until RFC-001 lands, `org` is approximated by the API key's `owner_id`.
 6. Dashboard Templates tab.
 7. Ratings + imports counters.
 8. `cargo check && cargo test`; dashboard build.
-9. Update `MAINTENANCE_LOG.md`.
+9. Update the maintenance log.
 
 ## Deferred
 

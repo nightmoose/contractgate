@@ -1,7 +1,6 @@
 # RFC-095 — AISchemaGate Documentation Portal (`aischemagate.dev`)
 
 **Status:** Draft
-**Branch:** `nightly-maintenance-2026-10-11-rfc094-096-aischemagate`
 **Date:** 2026-10-11
 **Depends on:** RFC-089 (LLM-pasteable onboarding — `llm-integration.md` + `llms.txt`), RFC-090 (MCP server), RFC-093 (egress as first-class door), RFC-094 (LLMGate SDK + aischemagate alias package)
 **Companion RFCs:** RFC-094 (SDK), RFC-096 (frontend + DNS + CORS)
@@ -196,7 +195,7 @@ Extend it to:
 Add after the RFC-093 "Validate what leaves" paragraph:
 
 > **AISchemaGate.** The same engine powers AISchemaGate
-> (`aischemagate.com`), the LLM-and-agent surface for ContractGate.
+> (`aischemagate.com`), the LLM-and-agent surface of the engine DataContractGate and AISchemaGate share.
 > `pip install aischemagate` or `npm i aischemagate` to get the `LLMGate`
 > wrapper over OpenAI / Anthropic / Ollama / vLLM. Validates structured
 > output against your contract via the shipped `/egress/{contract_id}`
@@ -282,7 +281,7 @@ line. Appendix A will be regenerated after Q1 is signed off.
    RFC-094 — the two RFCs can share the file).
 7. Appendix A stays in this RFC. The AISchemaGate frontend repo (RFC-096)
    mirrors it as `MARKETING_COPY.md` and reads it as the source of truth.
-8. STATUS.md and MAINTENANCE_LOG updates after merge.
+8. STATUS.md and the maintenance log updates after merge.
 9. No Rust / dashboard / migration changes.
 
 ## Test plan
@@ -311,7 +310,7 @@ line. Appendix A will be regenerated after Q1 is signed off.
 3. RFC-095 docs land next on this branch.
 4. RFC-096 ships the frontend and wires the renderer; the doc is live on
    `aischemagate.dev` after its deploy.
-5. STATUS.md gains three new rows (094 / 095 / 096). MAINTENANCE_LOG
+5. STATUS.md gains three new rows (094 / 095 / 096). the maintenance log
    captures the launch.
 
 ## Decisions (signed off 2026-10-11)

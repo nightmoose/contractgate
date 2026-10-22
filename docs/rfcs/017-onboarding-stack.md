@@ -2,10 +2,9 @@
 
 | Status        | Accepted (2026-04-28) — sign-off on Q1..Q10 (recommendations)         |
 |---------------|------------------------------------------------------------------------|
-| Author        | ContractGate team                                                      |
+| Author        | DataContractGate team                                                      |
 | Created       | 2026-04-27                                                             |
 | Revised       | 2026-04-27 — added demo seeder so RFC-016 metrics + RFC-015 audit search look real on a fresh boot |
-| Target branch | `nightly-maintenance-YYYY-MM-DD` (set when work starts)                |
 | Chunk         | Punchlist v2 #4                                                        |
 | Supersedes    | RFC-010 partially (Compose only); RFC-012 partially (3 starters only)  |
 
@@ -291,7 +290,7 @@ ontology:
 7. ✅ CI smoke lanes (both default and demo profiles).
 8. ⬜ README snapshots: dashboard with seeded data, audit search with rows.
 9. ⬜ `cargo check && cargo test`.
-10. ✅ Update `MAINTENANCE_LOG.md`.
+10. ✅ Update the maintenance log.
 
 ## Deferred
 

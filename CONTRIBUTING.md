@@ -21,7 +21,7 @@ Anything beyond a small bug fix starts with an RFC.
    current index).
 2. Use the existing RFCs as a template: `Status`, `Date`, `Branch`, `Problem`,
    `Fix`, `Testing`, `Rollout`.
-3. Land the code, then update `docs/STATUS.md` and `MAINTENANCE_LOG.md`.
+3. Land the code, then update `docs/STATUS.md`.
 
 Trivial fixes (typos, comment fixes, obvious one-liners) can skip the RFC.
 
@@ -31,10 +31,10 @@ Branch from an up-to-date `origin/main` (local `main` can be stale — always
 `git fetch` first). Name branches:
 
 ```
-nightly-maintenance-YYYY-MM-DD-rfcNNN-short-slug
+feature/<short-desc>
 ```
 
-e.g. `nightly-maintenance-2026-05-28-rfc065-ingest-egress-scope`.
+Use a short, lowercase, hyphenated description of the change.
 
 ## Local development
 
@@ -85,7 +85,7 @@ quarantine paths. Don't mark a test `#[ignore]` to make CI pass; gate it on
 - [ ] Existing behavior preserved.
 - [ ] User-facing changes (CLI flag, API endpoint, contract field, config key):
       update the relevant `docs/` page, or add `docs/<feature>-reference.md`.
-- [ ] RFC added/updated and `docs/STATUS.md` + `MAINTENANCE_LOG.md` reflect the change.
+- [ ] RFC added/updated and `docs/STATUS.md` reflects the change.
 
 ## Security
 

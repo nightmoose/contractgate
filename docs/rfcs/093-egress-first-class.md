@@ -1,7 +1,6 @@
 # RFC-093 — Egress as a first-class door
 
 **Status:** Shipped
-**Branch:** nightly-maintenance-2026-09-29-rfc093-egress-first-class
 **Date:** 2026-09-30
 **Depends on:** RFC-029 (egress validation), RFC-030 (egress PII and leakage), RFC-065 (contract scope on egress), RFC-006/035/079 (inference), RFC-089 (agent playbook), RFC-090 (MCP server)
 
@@ -58,7 +57,7 @@ the returned `payload` is forwarded.
 
 - **A client for any decision model, including Jev.** Jev (TypeSafe AI,
   September 2026) is the motivating example: a hosted model that judges a
-  posted state and returns a typed answer with a confidence. ContractGate
+  posted state and returns a typed answer with a confidence. DataContractGate
   does not call it. The caller posts the egress `payload` themselves.
   Putting a remote model call on the ingest or egress path would throw away
   the latency budget and send customer payloads to a third party. Do not

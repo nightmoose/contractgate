@@ -2,9 +2,8 @@
 
 | Status        | **Superseded** by RFC-014 (2026-04-27) — kept for design context       |
 |---------------|------------------------------------------------------------------------|
-| Author        | ContractGate team                                                      |
+| Author        | DataContractGate team                                                      |
 | Created       | 2026-04-27                                                             |
-| Target branch | `nightly-maintenance-YYYY-MM-DD` (set when work starts)                |
 | Chunk         | Punchlist 02 — CLI + GitOps Core                                       |
 | Depends on    | RFC-005 (Python SDK) — pattern reference for HTTP client surface       |
 
@@ -229,7 +228,7 @@ requested subcommand.
 9. Reference `.github/workflows/contractgate.yml` checked into this repo
    as both example and dogfood.
 10. `cargo check && cargo test` (workspace-wide).
-11. Update `MAINTENANCE_LOG.md`.
+11. Update the maintenance log.
 
 ## Deferred
 

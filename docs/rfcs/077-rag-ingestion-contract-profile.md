@@ -3,7 +3,7 @@
 **Status:** Accepted — contract + examples + reference doc shipped and engine-validated; GA promotion deferred until a RAG prospect is active (do not feature in the primary walkthrough index / pitch until then)
 **Date:** 2026-06-08
 **Branch:** TBD
-**Addresses:** Positioning ContractGate as the data-contract layer upstream of
+**Addresses:** Positioning DataContractGate as the data-contract layer upstream of
 RAG / LLM training pipelines (see "Data Engineering for the LLM Age",
 KDnuggets 2026-03).
 **Severity:** P3 — net-new feature, no existing-behavior risk
@@ -16,7 +16,7 @@ LLM/RAG pipelines (ingestion → chunking → embedding → vector store) are
 garbage-in-garbage-out: unredacted PII, unattributed sources, and stale
 documents poison vector stores and training corpora with no gate in front of
 them. The industry framing ("AI-ready data needs the same rigor as tables")
-is a real positioning opening for ContractGate.
+is a real positioning opening for DataContractGate.
 
 The tempting-but-wrong response is to make the engine *understand* unstructured
 content — PDF/Confluence parsers, chunking-strategy suggestions, toxicity /
@@ -50,7 +50,7 @@ format** — only new *conventions* expressed in the existing fields.
   previews. Non-deterministic; stays in the customer pipeline.
 - No vector-DB / embedding-model awareness in the core. Connectors, if ever,
   are a separate RFC and live outside the validation engine.
-- No new contract-format fields (the format is locked, see CLAUDE.md). This RFC
+- No new contract-format fields (the format is locked, see the contributor guide). This RFC
   ships a **profile + example contracts + docs**, not a schema change.
 
 ## Design
@@ -146,7 +146,7 @@ attestation and required-field checks inside `_cg` still hold.
    profile" if it declares the `_cg.pii_redacted` + `_cg.source` envelope.
    Pure read-side heuristic; **does not touch the validation hot path.**
 3. **Docs:** `docs/rag-ingestion-reference.md` — the envelope convention, the
-   example contracts, and an explicit "what ContractGate does / does not do"
+   example contracts, and an explicit "what DataContractGate does / does not do"
    boundary (governance, not scoring) so the positioning doesn't overpromise.
 
 ### Hot path

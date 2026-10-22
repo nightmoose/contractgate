@@ -4,7 +4,7 @@ rfc_to_content.py — Turn a shipped DataContractGate RFC into publishable draft
 
 Reads docs/rfcs/<N>-*.md, looks up its ship status in docs/STATUS.md, and asks
 Claude to produce four drafts (blog post, Show HN post, X thread, Reddit post)
-in DataContractGate's voice per docs/marketing/marketing-plan.md §7.
+in DataContractGate's voice per the internal marketing plan §7.
 
 Never publishes anything. Writes to docs/marketing/drafts/rfc-<N>/ for human
 review before posting.
@@ -35,7 +35,7 @@ DEFAULT_MODEL = "claude-opus-4-7"
 
 ARTIFACTS = ("blog", "hn", "x-thread", "reddit-dataengineering")
 
-# ── Voice rules (mirrors docs/marketing/marketing-plan.md §7) ─────────────────
+# ── Voice rules (mirrors the internal marketing plan §7) ─────────────────
 # Kept inline so the script is self-contained; if you change the plan, update
 # this too. The doc is the source of truth; this is the machine copy.
 SYSTEM_PROMPT = """\
