@@ -38,6 +38,14 @@ ignore = [
     # We use rand for format-preserving masking (RFC-004) — non-cryptographic.
     # Suppressed: 2026-05-02. Revisit: migrate to rand 0.9 (breaking API).
     "RUSTSEC-2026-0097",
+
+    # unsafe-libyaml via serde_yaml 0.9 — unmaintained, not a known
+    # vulnerability, no patched release. Contract parsing depends on
+    # Value-keyed mappings and the current error text. A 0.0.x
+    # replacement stringified non-string keys and rewrote those errors.
+    # Suppressed: 2026-10-22. Revisit: when a maintained parser matches
+    # that behavior.
+    "RUSTSEC-2024-0449",
 ]
 
 [output]

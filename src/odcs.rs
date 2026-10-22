@@ -134,33 +134,33 @@ fn native_type_options(f: &FieldDefinition) -> Mapping {
     match f.field_type {
         FieldType::String => {
             if let Some(p) = &f.pattern {
-                o.insert("pattern", v_str(p));
+                o.insert(v_str("pattern"), v_str(p));
             }
             if let Some(n) = f.min_length {
-                o.insert("minLength", Value::Number((n as u64).into()));
+                o.insert(v_str("minLength"), Value::Number((n as u64).into()));
             }
             if let Some(n) = f.max_length {
-                o.insert("maxLength", Value::Number((n as u64).into()));
+                o.insert(v_str("maxLength"), Value::Number((n as u64).into()));
             }
             if let Some(fmt) = &f.format {
-                o.insert("format", v_str(fmt));
+                o.insert(v_str("format"), v_str(fmt));
             }
         }
         FieldType::Integer | FieldType::Float => {
             if let Some(v) = f.min {
-                o.insert("minimum", num(v));
+                o.insert(v_str("minimum"), num(v));
             }
             if let Some(v) = f.max {
-                o.insert("maximum", num(v));
+                o.insert(v_str("maximum"), num(v));
             }
         }
         FieldType::Date => {
             let fmt = f.format.as_deref().unwrap_or(CG_DATE_FORMAT);
-            o.insert("format", v_str(fmt));
+            o.insert(v_str("format"), v_str(fmt));
         }
         FieldType::Timestamp => {
             if let Some(fmt) = &f.format {
-                o.insert("format", v_str(fmt));
+                o.insert(v_str("format"), v_str(fmt));
             }
         }
         _ => {}
@@ -172,25 +172,25 @@ fn native_type_options(f: &FieldDefinition) -> Mapping {
 /// `prop_quality` contains only the quality rules that target this property.
 fn build_odcs_property(name: &str, f: &FieldDefinition, prop_quality: &[&QualityRule]) -> Value {
     let mut prop = Mapping::new();
-    prop.insert("name", v_str(name));
+    prop.insert(v_str("name"), v_str(name));
     if let Some(lt) = field_type_to_logical(&f.field_type) {
-        prop.insert("logicalType", v_str(lt));
+        prop.insert(v_str("logicalType"), v_str(lt));
     }
     let opts = native_type_options(f);
     if !opts.is_empty() {
-        prop.insert("logicalTypeOptions", Value::Mapping(opts));
+        prop.insert(v_str("logicalTypeOptions"), Value::Mapping(opts));
     }
-    prop.insert("required", Value::Bool(f.required));
+    prop.insert(v_str("required"), Value::Bool(f.required));
     if prop_quality
         .iter()
         .any(|r| r.rule_type == QualityRuleType::Uniqueness)
     {
-        prop.insert("unique", Value::Bool(true));
+        prop.insert(v_str("unique"), Value::Bool(true));
     }
 
     // classification: "pii" when a PII transform is declared
     if f.transform.is_some() {
-        prop.insert("classification", v_str("pii"));
+        prop.insert(v_str("classification"), v_str("pii"));
     }
 
     // quality[]: schema-valid ODCS entries (library metrics or type: custom).
@@ -205,20 +205,20 @@ fn build_odcs_property(name: &str, f: &FieldDefinition, prop_quality: &[&Quality
         .any(|r| r.rule_type == QualityRuleType::Validity);
     if let (Some(vals), false) = (&f.allowed_values, has_validity) {
         let mut q = Mapping::new();
-        q.insert("type", v_str("library"));
-        q.insert("metric", v_str("invalidValues"));
-        q.insert("dimension", v_str("conformity"));
-        q.insert("mustBe", Value::Number(0.into()));
+        q.insert(v_str("type"), v_str("library"));
+        q.insert(v_str("metric"), v_str("invalidValues"));
+        q.insert(v_str("dimension"), v_str("conformity"));
+        q.insert(v_str("mustBe"), Value::Number(0.into()));
         let mut args = Mapping::new();
-        args.insert("validValues", json_seq(vals));
-        q.insert("arguments", Value::Mapping(args));
+        args.insert(v_str("validValues"), json_seq(vals));
+        q.insert(v_str("arguments"), Value::Mapping(args));
         q.insert(
-            "customProperties",
+            v_str("customProperties"),
             Value::Sequence(vec![custom_prop(X_CG_DERIVED, v_str("enum"))]),
         );
         quality_entries.push(Value::Mapping(q));
     }
-    prop.insert("quality", Value::Sequence(quality_entries));
+    prop.insert(v_str("quality"), Value::Sequence(quality_entries));
 
     // customProperties: CG constraints (authoritative on re-import)
     let mut custom: Vec<Value> = Vec::new();
@@ -259,14 +259,14 @@ fn build_odcs_property(name: &str, f: &FieldDefinition, prop_quality: &[&Quality
         }
     }
     if !custom.is_empty() {
-        prop.insert("customProperties", Value::Sequence(custom));
+        prop.insert(v_str("customProperties"), Value::Sequence(custom));
     }
 
     // An object leaf here has no nested fields (those are flattened by the
     // caller); arrays carry their element schema as ODCS `items`, with an
     // object element's fields nested natively under `items.properties`.
     if let (FieldType::Array, Some(item)) = (&f.field_type, &f.items) {
-        prop.insert("items", build_odcs_item(item));
+        prop.insert(v_str("items"), build_odcs_item(item));
     }
 
     Value::Mapping(prop)
@@ -286,7 +286,7 @@ fn build_odcs_item(item: &FieldDefinition) -> Value {
         (&item.field_type, &item.properties, &mut v)
     {
         let children: Vec<Value> = nested.iter().map(build_odcs_nested_property).collect();
-        m.insert("properties", Value::Sequence(children));
+        m.insert(v_str("properties"), Value::Sequence(children));
     }
     v
 }
@@ -298,7 +298,7 @@ fn build_odcs_nested_property(f: &FieldDefinition) -> Value {
         (&f.field_type, &f.properties, &mut v)
     {
         let children: Vec<Value> = nested.iter().map(build_odcs_nested_property).collect();
-        m.insert("properties", Value::Sequence(children));
+        m.insert(v_str("properties"), Value::Sequence(children));
     }
     v
 }
@@ -314,11 +314,11 @@ fn insert_threshold(m: &mut Mapping, threshold: Option<f64>) {
     match threshold {
         Some(t) if t < 1.0 => {
             let pct = ((1.0 - t) * 100.0 * 1e6).round() / 1e6;
-            m.insert("mustBeLessOrEqualTo", num(pct));
-            m.insert("unit", v_str("percent"));
+            m.insert(v_str("mustBeLessOrEqualTo"), num(pct));
+            m.insert(v_str("unit"), v_str("percent"));
         }
         _ => {
-            m.insert("mustBe", Value::Number(0.into()));
+            m.insert(v_str("mustBe"), Value::Number(0.into()));
         }
     }
 }
@@ -338,52 +338,52 @@ fn quality_rule_to_odcs(rule: &QualityRule, f: &FieldDefinition) -> Value {
     let mut m = Mapping::new();
     match rule.rule_type {
         QualityRuleType::Completeness => {
-            m.insert("type", v_str("library"));
-            m.insert("metric", v_str("missingValues"));
-            m.insert("dimension", v_str("completeness"));
+            m.insert(v_str("type"), v_str("library"));
+            m.insert(v_str("metric"), v_str("missingValues"));
+            m.insert(v_str("dimension"), v_str("completeness"));
             insert_threshold(&mut m, rule.threshold);
         }
         QualityRuleType::Uniqueness => {
-            m.insert("type", v_str("library"));
-            m.insert("metric", v_str("duplicateValues"));
-            m.insert("dimension", v_str("uniqueness"));
+            m.insert(v_str("type"), v_str("library"));
+            m.insert(v_str("metric"), v_str("duplicateValues"));
+            m.insert(v_str("dimension"), v_str("uniqueness"));
             insert_threshold(&mut m, rule.threshold);
         }
         QualityRuleType::Validity => {
-            m.insert("type", v_str("library"));
-            m.insert("metric", v_str("invalidValues"));
-            m.insert("dimension", v_str("conformity"));
+            m.insert(v_str("type"), v_str("library"));
+            m.insert(v_str("metric"), v_str("invalidValues"));
+            m.insert(v_str("dimension"), v_str("conformity"));
             insert_threshold(&mut m, rule.threshold);
             let mut args = Mapping::new();
             if let Some(vals) = &f.allowed_values {
-                args.insert("validValues", json_seq(vals));
+                args.insert(v_str("validValues"), json_seq(vals));
             }
             if let Some(p) = &f.pattern {
-                args.insert("pattern", v_str(p));
+                args.insert(v_str("pattern"), v_str(p));
             }
             if !args.is_empty() {
-                m.insert("arguments", Value::Mapping(args));
+                m.insert(v_str("arguments"), Value::Mapping(args));
             }
         }
         QualityRuleType::Freshness => {
-            m.insert("type", v_str("custom"));
-            m.insert("engine", v_str(CG_ENGINE));
-            m.insert("dimension", v_str("timeliness"));
+            m.insert(v_str("type"), v_str("custom"));
+            m.insert(v_str("engine"), v_str(CG_ENGINE));
+            m.insert(v_str("dimension"), v_str("timeliness"));
             // String form (the schema allows string or object; OpenMetadata
             // 2.0.x only deserializes strings).
             let imp = match rule.max_age_seconds {
                 Some(n) => format!("freshness maxAgeSeconds={n}"),
                 None => "freshness".to_string(),
             };
-            m.insert("implementation", v_str(imp));
+            m.insert(v_str("implementation"), v_str(imp));
         }
     }
     if let Some(desc) = &rule.description {
-        m.insert("description", v_str(desc));
+        m.insert(v_str("description"), v_str(desc));
     }
     if let Ok(raw) = serde_yaml::to_value(rule) {
         m.insert(
-            "customProperties",
+            v_str("customProperties"),
             Value::Sequence(vec![custom_prop(X_CG_QUALITY, raw)]),
         );
     }
@@ -549,34 +549,37 @@ pub fn export_odcs(input: OdcsExportInput<'_>) -> Result<String, String> {
     let mut doc = Mapping::new();
 
     // ── Mandatory ODCS fields ────────────────────────────────────────────────
-    doc.insert("apiVersion", v_str(ODCS_API_VERSION));
-    doc.insert("kind", v_str("DataContract"));
-    doc.insert("id", v_str(identity.id.to_string()));
-    doc.insert("name", v_str(&identity.name));
-    doc.insert("version", v_str(&version.version));
-    doc.insert("status", v_str(version_state_to_odcs_status(version.state)));
+    doc.insert(v_str("apiVersion"), v_str(ODCS_API_VERSION));
+    doc.insert(v_str("kind"), v_str("DataContract"));
+    doc.insert(v_str("id"), v_str(identity.id.to_string()));
+    doc.insert(v_str("name"), v_str(&identity.name));
+    doc.insert(v_str("version"), v_str(&version.version));
+    doc.insert(
+        v_str("status"),
+        v_str(version_state_to_odcs_status(version.state)),
+    );
 
     // ── Recommended ODCS fields ──────────────────────────────────────────────
     // D-004: name populates both dataProduct and schema[0].name
-    doc.insert("dataProduct", v_str(&identity.name));
+    doc.insert(v_str("dataProduct"), v_str(&identity.name));
     // ODCS `description` is an object; the plain text goes in `purpose`.
     if let Some(desc) = &identity.description {
         let mut d = Mapping::new();
-        d.insert("purpose", v_str(desc));
-        doc.insert("description", Value::Mapping(d));
+        d.insert(v_str("purpose"), v_str(desc));
+        doc.insert(v_str("description"), Value::Mapping(d));
     }
 
     // ── schema[] section ─────────────────────────────────────────────────────
     let mut schema_entry = Mapping::new();
-    schema_entry.insert("name", v_str(&identity.name)); // D-004
-    schema_entry.insert("logicalType", v_str("object"));
+    schema_entry.insert(v_str("name"), v_str(&identity.name)); // D-004
+    schema_entry.insert(v_str("logicalType"), v_str("object"));
     if let Some(desc) = &contract.description {
-        schema_entry.insert("description", v_str(desc));
+        schema_entry.insert(v_str("description"), v_str(desc));
     }
     let properties = flatten_to_odcs_properties("", &contract.ontology.entities, &contract.quality);
-    schema_entry.insert("properties", Value::Sequence(properties));
+    schema_entry.insert(v_str("properties"), Value::Sequence(properties));
     doc.insert(
-        "schema",
+        v_str("schema"),
         Value::Sequence(vec![Value::Mapping(schema_entry)]),
     );
 
@@ -608,7 +611,7 @@ pub fn export_odcs(input: OdcsExportInput<'_>) -> Result<String, String> {
             Value::Bool(true),
         ));
     }
-    doc.insert("customProperties", Value::Sequence(ext));
+    doc.insert(v_str("customProperties"), Value::Sequence(ext));
 
     serde_yaml::to_string(&Value::Mapping(doc))
         .map_err(|e| format!("failed to serialize ODCS document: {e}"))
@@ -642,7 +645,7 @@ fn description_text(v: Option<&Value>) -> Option<String> {
         Value::String(s) => Some(s.clone()),
         Value::Mapping(m) => ["purpose", "usage", "limitations"]
             .iter()
-            .find_map(|k| m.get(k).and_then(|v| v.as_str()))
+            .find_map(|k| m.get(*k).and_then(|v| v.as_str()))
             .map(String::from),
         _ => None,
     }
@@ -1063,8 +1066,8 @@ fn v_str(s: impl Into<String>) -> Value {
 
 fn custom_prop(key: &str, value: Value) -> Value {
     let mut m = Mapping::new();
-    m.insert("property", v_str(key));
-    m.insert("value", value);
+    m.insert(v_str("property"), v_str(key));
+    m.insert(v_str("value"), value);
     Value::Mapping(m)
 }
 
