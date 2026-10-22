@@ -17,13 +17,6 @@ ignore = [
     # CryptoProvider panic (two rustls providers, no install_default in-tree →
     # SIGABRT → 502; 2026-07-14 incident).
     "RUSTSEC-2023-0071",
-    # RUSTSEC-2024-0449 — `unsafe-libyaml` is unmaintained (not a known
-    # vulnerability). Pulled only by `serde_yaml` 0.9 (itself deprecated),
-    # which parses contract YAML, including YAML submitted through the API.
-    # No upgrade exists; the fix is replacing serde_yaml with a maintained
-    # parser. Ignored here only so deploys are not blocked while that
-    # migration happens. Remove this entry when serde_yaml is gone.
-    "RUSTSEC-2024-0449",
 ]
 
 [bans]

@@ -1,0 +1,13 @@
+[package]
+name = "contractgate-yaml"
+version = "0.0.0"
+edition = "2021"
+publish = false
+license = "MIT"
+description = "serde_yaml-compatible YAML facade for DataContractGate"
+
+[dependencies]
+# serde_yaml 0.9 pulls unmaintained unsafe-libyaml (RUSTSEC-2024-0449),
+# which has no patched release. noyalib's compat shim keeps the
+# from_str / to_string / Value / Mapping calls and parses in safe Rust.
+noyalib = { version = "0.0.58", features = ["compat-serde-yaml"] }

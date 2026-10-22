@@ -884,8 +884,7 @@ mod odcs_tests {
 
         // Strict ODCS: no unknown root keys; extensions live in customProperties[].
         assert!(
-            !m.keys()
-                .any(|k| k.as_str().is_some_and(|s| s.starts_with("x-"))),
+            !m.keys().any(|k| k.starts_with("x-")),
             "no bare x-* root keys: {odcs_yaml}"
         );
         assert!(
@@ -4878,7 +4877,7 @@ mod odcs_strict_tests {
         let mut doc: serde_yaml::Value = serde_yaml::from_str(&export(&probe())).unwrap();
         doc.as_mapping_mut()
             .unwrap()
-            .insert("x-contractgate-version".into(), "1.0".into());
+            .insert("x-contractgate-version", "1.0".into());
         let y = serde_yaml::to_string(&doc).unwrap();
         assert!(!schema_errors(&y).is_empty());
     }
@@ -4942,9 +4941,12 @@ mod odcs_strict_tests {
         let cps = m.remove("customProperties").unwrap();
         for cp in cps.as_sequence().unwrap() {
             let cp = cp.as_mapping().unwrap();
-            m.insert(cp["property"].clone(), cp["value"].clone());
+            m.insert(
+                cp["property"].as_str().expect("property name"),
+                cp["value"].clone(),
+            );
         }
-        m.insert("description".into(), "test contract".into());
+        m.insert("description", "test contract".into());
         let r = odcs::import_odcs(&serde_yaml::to_string(&doc).unwrap()).unwrap();
         assert_eq!(r.import_source, ImportSource::Odcs);
         let back: Contract = serde_yaml::from_str(&r.yaml_content).unwrap();
