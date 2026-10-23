@@ -1,4 +1,6 @@
-# Smithery discovery. The official registry listing is mcp/server.json.
+# Smithery discovery for the DataContractGate and AISchemaGate MCP server.
+# The official registry listing is mcp/server.json.
+# contractgateBaseUrl is the API gateway, not the dashboard host.
 startCommand:
   type: stdio
   configSchema:
@@ -12,7 +14,7 @@ startCommand:
       contractgateBaseUrl:
         type: string
         description: Gateway base URL
-        default: https://app.datacontractgate.com
+        default: https://api.datacontractgate.com
   commandFunction: |-
     (config) => ({
       command: "npx",
