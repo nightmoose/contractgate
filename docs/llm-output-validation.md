@@ -14,6 +14,7 @@ for the **AI output** use case.
 - **Docs:** <https://aischemagate.dev>
 - **API base URL:** `https://api.datacontractgate.com`
 - **SDK design:** [RFC-094](rfcs/094-sdk-llm-output-guard.md)
+- **Integrations:** [Vercel AI SDK](integrations/vercel-ai-sdk.md), [OpenAI / Anthropic / Pydantic / Instructor](integrations/openai-anthropic-structured-output.md), [LangGraph tool gate](integrations/langgraph-tool-gate.md)
 
 ---
 

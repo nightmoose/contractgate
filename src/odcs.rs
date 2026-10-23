@@ -661,9 +661,10 @@ fn description_text(v: Option<&Value>) -> Option<String> {
 /// **Mode B — stripped / foreign:** a best-effort `Contract` is rebuilt from
 /// `schema[0].properties[]`: ODCS-native fields (`logicalTypeOptions`,
 /// `enum`, `unique`, `required`, library quality metrics) are read first and
-/// `x-cg-*` customProperties win where both exist.  PII transforms,
-/// glossary, metrics, and dataset-level rules (`rowCount`) are not
-/// recoverable — the caller sets `requires_review = true` (D-002).
+/// `x-cg-*` customProperties win where both exist. Property `enum` accepts
+/// the ODCS v3.2.0 `{value: ...}` item list and a scalar list. PII
+/// transforms, glossary, metrics, and dataset-level rules (`rowCount`) are
+/// not recoverable — the caller sets `requires_review = true` (D-002).
 pub fn import_odcs(yaml: &str) -> Result<ImportResult, String> {
     let doc: Value = serde_yaml::from_str(yaml).map_err(|e| format!("invalid ODCS YAML: {e}"))?;
 
@@ -901,6 +902,56 @@ fn yaml_to_json_values(seq: &[Value]) -> Vec<serde_json::Value> {
         .collect()
 }
 
+/// One ODCS v3.2 enum entry: a scalar, or an `EnumValue` object
+/// (`value` plus optional `label` / `description`). Metadata is not part of
+/// the allowed value. Nested objects and arrays are not allowed values.
+fn odcs_enum_item(v: &Value) -> Option<serde_json::Value> {
+    let raw = match v {
+        Value::Mapping(m) => m.get("value")?.clone(),
+        Value::Sequence(_) => return None,
+        other => other.clone(),
+    };
+    let json = match raw {
+        Value::Null => serde_json::Value::Null,
+        Value::Bool(b) => serde_json::Value::Bool(b),
+        Value::String(s) => serde_json::Value::String(s),
+        Value::Number(n) => {
+            if let Some(i) = n.as_i64() {
+                serde_json::Value::Number(i.into())
+            } else if let Some(u) = n.as_u64() {
+                serde_json::Value::Number(u.into())
+            } else {
+                serde_json::to_value(n).ok()?
+            }
+        }
+        other => {
+            let json = serde_json::to_value(other).ok()?;
+            if json.is_object() || json.is_array() {
+                return None;
+            }
+            json
+        }
+    };
+    Some(json)
+}
+
+/// Property-level `enum` from ODCS v3.2.0 (and the same list when a producer
+/// still puts it on `logicalTypeOptions` or a custom property named `enum`).
+///
+/// Official items are `{ value: ... }`. Scalar lists are accepted as well:
+/// string, number, and boolean entries, which `datacontract` import/export
+/// still writes. An empty list is treated as absent so a later
+/// `invalidValues` / `validValues` rule can still fill the constraint.
+fn parse_odcs_enum(v: Option<&Value>) -> Option<Vec<serde_json::Value>> {
+    let seq = v.and_then(|v| v.as_sequence())?;
+    let values: Vec<serde_json::Value> = seq.iter().filter_map(odcs_enum_item).collect();
+    if values.is_empty() {
+        None
+    } else {
+        Some(values)
+    }
+}
+
 /// Parse a single ODCS property mapping into a CG `FieldDefinition`.
 /// ODCS-native fields are read first; `x-cg-*` customProperties override.
 fn odcs_prop_to_field(m: &Mapping, full_name: &str) -> Result<FieldDefinition, String> {
@@ -935,10 +986,13 @@ fn odcs_prop_to_field(m: &Mapping, full_name: &str) -> Result<FieldDefinition, S
     if field_type == FieldType::Date && format.as_deref() == Some(CG_DATE_FORMAT) {
         format = None; // CG's built-in date format
     }
-    let mut allowed_values = m
-        .get("enum")
-        .and_then(|v| v.as_sequence())
-        .map(|s| yaml_to_json_values(s));
+    // Precedence matches datacontract-cli v1.2.0: property `enum`, then
+    // `logicalTypeOptions.enum`, then a custom property named `enum`, then
+    // the ODCS v3.1 `invalidValues` / `validValues` rule. `x-cg-enum` still
+    // wins below, so a DataContractGate export re-imports losslessly.
+    let mut allowed_values = parse_odcs_enum(m.get("enum"))
+        .or_else(|| parse_odcs_enum(opt("enum")))
+        .or_else(|| parse_odcs_enum(custom_prop_value(m, "enum")));
     // invalidValues library rules carry validValues / pattern (ODCS v3.1 has
     // no property-level enum).
     if let Some(qs) = m.get("quality").and_then(|v| v.as_sequence()) {

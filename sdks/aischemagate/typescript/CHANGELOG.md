@@ -2,6 +2,10 @@
 
 All notable changes to `@nightmoose/aischemagate`.
 
+## Unreleased
+
+- `aischemagateGuardrail` is a Vercel AI SDK `LanguageModelV4Middleware` (`wrapGenerate`) that validates structured JSON with `POST /egress/{id}` and, when `autoRepair` is set, re-prompts on semantic violations (`min`, `max`, `pattern`, `enum`, `compliance_mode`). `validateStructuredOutput` is the same check without a model. No new runtime dependency.
+
 ## 0.4.0 — 2026-10-13
 
 Requires `@nightmoose/contractgate-sdk >= 0.4.0`: `ingest` uses `/v1/ingest` and returns failed batches as results. `LLMGate` is unchanged.

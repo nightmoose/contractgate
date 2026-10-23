@@ -43,8 +43,16 @@ Nested objects keep the D-001 shape: flattened to dot-notation leaf names
   produced for OpenMetadata) is parsed too.
 * **Mode B (foreign / stripped):** native fields are read first:
   `logicalTypeOptions` (pattern, minLength, maxLength, minimum, maximum, format),
-  ODCS v3.2 `enum` (`- value: x` or scalars), `invalidValues` `validValues` /
-  `pattern`, `unique`, `required`, library metrics (`missingValues` /
+  ODCS v3.2.0 property `enum` (`- value: x`, including `label` /
+  `description` which are not part of the allowed value, or a scalar list of
+  strings, numbers, and booleans), then `logicalTypeOptions.enum` and a
+  custom property named `enum` when the property itself has no `enum`, then
+  `invalidValues` `validValues` / `pattern`. A property `enum` wins over a
+  conflicting `validValues` list. `x-cg-enum` still wins over all of those.
+  Export stays ODCS v3.1.0 and does not write a property `enum` key (the
+  v3.1.0 schema rejects it); the constraint round-trips through
+  `invalidValues` / `validValues` and `x-cg-enum`. `unique`, `required`,
+  library metrics (`missingValues` /
   `nullValues` → completeness, `duplicateValues` → uniqueness, `invalidValues`
   → validity, percent bounds → threshold), and `engine: contractgate` freshness.
   **`x-cg-*` wins** when both exist; `x-cg-quality` wins over the mapped metric.

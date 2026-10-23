@@ -5330,6 +5330,278 @@ schema:
         );
         assert!(again.contains("logicalType: timestamp"));
     }
+
+    fn assert_no_property_enum(v: &serde_json::Value) {
+        match v {
+            serde_json::Value::Object(o) => {
+                if o.contains_key("logicalType") {
+                    assert!(
+                        o.get("enum").is_none(),
+                        "ODCS v3.1.0 export must not write property enum: {o:?}"
+                    );
+                }
+                for child in o.values() {
+                    assert_no_property_enum(child);
+                }
+            }
+            serde_json::Value::Array(items) => {
+                for child in items {
+                    assert_no_property_enum(child);
+                }
+            }
+            _ => {}
+        }
+    }
+
+    fn allowed(entities: &[FieldDefinition], name: &str) -> Option<Vec<serde_json::Value>> {
+        field(entities, name).allowed_values.clone()
+    }
+
+    #[test]
+    fn v32_property_enum_imports_and_roundtrips_without_v31_export_change() {
+        // ODCS v3.2.0 property enum (scalar list and `{value: ...}` items)
+        // plus the fallbacks datacontract-cli v1.2.0 still reads. No
+        // x-contractgate-version, so this is a foreign import.
+        let y = r#"
+apiVersion: v3.2.0
+kind: DataContract
+id: orders-v32
+version: "1.2.0"
+status: active
+dataProduct: orders_v32
+description: { purpose: "Order status feed" }
+schema:
+  - name: orders_v32
+    logicalType: object
+    properties:
+      - name: status
+        logicalType: string
+        required: true
+        enum: [pending, shipped, cancelled]
+      - name: currency
+        logicalType: string
+        enum:
+          - value: USD
+            label: US Dollar
+          - value: EUR
+            description: Euro
+      - name: priority
+        logicalType: integer
+        enum:
+          - value: 1
+          - value: 2
+          - value: 3
+      - name: active
+        logicalType: boolean
+        enum: [true, false]
+      - name: mixed
+        logicalType: string
+        enum:
+          - pending
+          - value: shipped
+            label: Shipped
+      - name: channel
+        logicalType: string
+        logicalTypeOptions:
+          enum: [web, mobile]
+      - name: region
+        logicalType: string
+        customProperties:
+          - property: enum
+            value: [us, eu]
+      - name: legacy_status
+        logicalType: string
+        quality:
+          - type: library
+            metric: invalidValues
+            mustBe: 0
+            dimension: conformity
+            arguments:
+              validValues: [open, closed]
+      - name: winner
+        logicalType: string
+        enum:
+          - value: a
+          - value: b
+        quality:
+          - type: library
+            metric: invalidValues
+            mustBe: 0
+            arguments:
+              validValues: [nope]
+      - name: both
+        logicalType: string
+        enum: [property]
+        logicalTypeOptions:
+          enum: [options]
+      - name: override
+        logicalType: string
+        enum: [native]
+        customProperties:
+          - property: x-cg-enum
+            value: [from-extension]
+      - name: customer
+        logicalType: object
+        properties:
+          - name: tier
+            logicalType: string
+            enum:
+              - value: gold
+              - value: silver
+      - name: tags
+        logicalType: array
+        items:
+          name: tag
+          logicalType: string
+          enum: [alpha, beta]
+"#;
+        let imported = odcs::import_odcs(y).unwrap();
+        assert_eq!(imported.import_source, ImportSource::OdcsStripped);
+        let c: Contract = serde_yaml::from_str(&imported.yaml_content).unwrap();
+        assert_eq!(c.name, "orders_v32");
+        assert_eq!(c.version, "1.2.0");
+        let e = &c.ontology.entities;
+
+        assert_eq!(
+            allowed(e, "status"),
+            Some(vec![json!("pending"), json!("shipped"), json!("cancelled")])
+        );
+        assert!(
+            c.quality.iter().all(|q| q.field != "status"),
+            "property enum is a field constraint, not a quality rule: {:?}",
+            c.quality
+        );
+        assert_eq!(
+            allowed(e, "currency"),
+            Some(vec![json!("USD"), json!("EUR")])
+        );
+        assert_eq!(
+            allowed(e, "priority"),
+            Some(vec![json!(1), json!(2), json!(3)])
+        );
+        assert_eq!(field(e, "priority").field_type, FieldType::Integer);
+        assert_eq!(allowed(e, "active"), Some(vec![json!(true), json!(false)]));
+        assert_eq!(
+            allowed(e, "mixed"),
+            Some(vec![json!("pending"), json!("shipped")])
+        );
+        assert_eq!(allowed(e, "channel"), Some(vec![json!("web"), json!("mobile")]));
+        assert_eq!(allowed(e, "region"), Some(vec![json!("us"), json!("eu")]));
+        assert_eq!(
+            allowed(e, "legacy_status"),
+            Some(vec![json!("open"), json!("closed")])
+        );
+        assert!(c.quality.iter().any(|q| {
+            q.field == "legacy_status" && q.rule_type == QualityRuleType::Validity
+        }));
+        assert_eq!(allowed(e, "winner"), Some(vec![json!("a"), json!("b")]));
+        assert_eq!(allowed(e, "both"), Some(vec![json!("property")]));
+        assert_eq!(allowed(e, "override"), Some(vec![json!("from-extension")]));
+        let customer = field(e, "customer").properties.as_ref().unwrap();
+        assert_eq!(
+            allowed(customer, "tier"),
+            Some(vec![json!("gold"), json!("silver")])
+        );
+        let tag = field(e, "tags").items.as_ref().unwrap();
+        assert_eq!(
+            tag.allowed_values,
+            Some(vec![json!("alpha"), json!("beta")])
+        );
+
+        let cc = crate::validation::CompiledContract::compile(c.clone()).unwrap();
+        let good = json!({
+            "status": "pending",
+            "currency": "USD",
+            "priority": 1,
+            "active": true,
+            "mixed": "shipped",
+            "channel": "web",
+            "region": "us",
+            "legacy_status": "open",
+            "winner": "a",
+            "both": "property",
+            "override": "from-extension",
+            "customer": { "tier": "gold" },
+            "tags": ["alpha", "beta"]
+        });
+        let res = crate::validation::validate(&cc, &good);
+        assert!(res.passed, "{:?}", res.violations);
+        let bad = json!({
+            "status": "Pending",
+            "currency": "usd",
+            "priority": 9,
+            "winner": "nope",
+            "tags": ["gamma"]
+        });
+        let res = crate::validation::validate(&cc, &bad);
+        assert!(!res.passed);
+        let bad_fields: std::collections::BTreeSet<_> =
+            res.violations.iter().map(|v| v.field.as_str()).collect();
+        for name in ["status", "currency", "priority", "winner", "tags[0]"] {
+            assert!(bad_fields.contains(name), "{name} missing: {:?}", res.violations);
+        }
+
+        // Export stays v3.1.0 (no property `enum` key) and mode A is lossless.
+        let exported = export(&c);
+        assert!(
+            schema_errors(&exported).is_empty(),
+            "{:#?}",
+            schema_errors(&exported)
+        );
+        let exported_json: serde_json::Value = serde_yaml::from_str(&exported).unwrap();
+        assert_no_property_enum(&exported_json);
+        let mode_a = odcs::import_odcs(&exported).unwrap();
+        assert_eq!(mode_a.import_source, ImportSource::Odcs);
+        let back: Contract = serde_yaml::from_str(&mode_a.yaml_content).unwrap();
+        assert_eq!(canon(&back), canon(&c));
+
+        // Strip DataContractGate extensions. The v3.1 invalidValues encoding
+        // still restores every enum, including ones that arrived as v3.2
+        // property enums.
+        let mut stripped = exported_json;
+        fn strip(v: &mut serde_json::Value) {
+            match v {
+                serde_json::Value::Object(o) => {
+                    o.remove("customProperties");
+                    o.values_mut().for_each(strip);
+                }
+                serde_json::Value::Array(a) => a.iter_mut().for_each(strip),
+                _ => {}
+            }
+        }
+        strip(&mut stripped);
+        let stripped_yaml = serde_yaml::to_string(&stripped).unwrap();
+        assert!(
+            schema_errors(&stripped_yaml).is_empty(),
+            "{:#?}",
+            schema_errors(&stripped_yaml)
+        );
+        let mode_b = odcs::import_odcs(&stripped_yaml).unwrap();
+        assert_eq!(mode_b.import_source, ImportSource::OdcsStripped);
+        let foreign: Contract = serde_yaml::from_str(&mode_b.yaml_content).unwrap();
+        let f = &foreign.ontology.entities;
+        for name in [
+            "status",
+            "currency",
+            "priority",
+            "active",
+            "mixed",
+            "channel",
+            "region",
+            "legacy_status",
+            "winner",
+            "both",
+            "override",
+        ] {
+            assert_eq!(allowed(f, name), allowed(e, name), "{name}");
+        }
+        let foreign_customer = field(f, "customer").properties.as_ref().unwrap();
+        assert_eq!(allowed(foreign_customer, "tier"), allowed(customer, "tier"));
+        assert_eq!(
+            field(f, "tags").items.as_ref().unwrap().allowed_values,
+            tag.allowed_values
+        );
+    }
 }
 
 // ---------------------------------------------------------------------------

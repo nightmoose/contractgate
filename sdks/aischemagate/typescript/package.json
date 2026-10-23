@@ -44,7 +44,10 @@
     "ai",
     "agent",
     "guardrails",
-    "contractgate"
+    "contractgate",
+    "aischemagate",
+    "vercel-ai-sdk",
+    "structured-output"
   ],
   "dependencies": {
     "@nightmoose/contractgate-sdk": "^0.4.0"

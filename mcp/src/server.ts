@@ -172,7 +172,7 @@ export function createServer(opts: ServerOpts = {}): McpServer {
     {
       title: "Validate an outbound payload",
       description:
-        "POST /egress/{contract_id}. Validates an outbound payload against a deployed contract. dry_run defaults true — no audit row or quarantine. Returns the full response body (200/207/422) so you can read violations and repair the payload. Forward response.payload only — never the original body after a block or fail.",
+        "AISchemaGate structured-output check. POST /egress/{contract_id}. dry_run defaults true — no audit row or quarantine. Returns 200/207/422 so you can read min, max, pattern, enum, and compliance_mode violations and run a bounded auto-repair. Forward response.payload only — never the original body after a block or fail.",
       inputSchema: z.object({
         contract_id: z.string().uuid().describe("Deployed contract UUID"),
         events: z.array(sample).min(1).describe("Outbound payload objects to validate"),
