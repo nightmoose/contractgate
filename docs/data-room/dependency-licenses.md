@@ -13,7 +13,7 @@ Config: `about.toml` at repo root.
 
 ## Overview
 
-- **MIT**: 303
+- **MIT**: 302
 - **Unicode-3.0**: 19
 - **Apache-2.0**: 6
 - **BSD-3-Clause**: 4
@@ -729,11 +729,10 @@ See `about.toml` `accepted` list (MIT, Apache-2.0, BSD variants, ISC, MPL-2.0, e
 - `adler2` 2.0.1
 - `anyhow` 1.0.103
 - `atomic-waker` 1.1.2
-- `concurrent-queue` 2.5.0
 - `curve25519-dalek-derive` 0.1.1
 - `displaydoc` 0.2.6
 - `erased-serde` 0.4.10
-- `event-listener` 5.4.1
+- `event-listener` 5.4.2
 - `fastrand` 2.4.1
 - `group` 0.13.0
 - `home` 0.5.12

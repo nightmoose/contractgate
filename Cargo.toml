@@ -70,6 +70,11 @@ futures-util = "0.3"
 # Serialization
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+# Contract YAML, including documents submitted through the API.
+# Pulls unmaintained unsafe-libyaml (RUSTSEC-2024-0449). There is no
+# patched release and the advisory is not a vulnerability. Ignored in
+# deny.toml and .cargo/audit.toml until a maintained parser matches
+# this crate's mapping keys and error text.
 serde_yaml = "0.9"
 
 # Validation

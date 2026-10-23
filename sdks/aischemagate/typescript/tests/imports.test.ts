@@ -3,10 +3,12 @@ import assert from 'node:assert/strict';
 
 import {
   AISCHEMAGATE_VERSION,
+  AiSchemaGateRejectedError,
   Client,
   LLMGate,
   LLMResponseError,
   MAX_RETRIES_CAP,
+  aischemagateGuardrail,
   extractJson,
   type LLMGateResult,
   type Violation,
@@ -39,6 +41,14 @@ describe('@nightmoose/aischemagate', () => {
 
   it('re-exports MAX_RETRIES_CAP constant', () => {
     assert.equal(MAX_RETRIES_CAP, 5);
+  });
+
+  it('re-exports the AI SDK guardrail', () => {
+    assert.equal(typeof aischemagateGuardrail, 'function');
+    assert.equal(aischemagateGuardrail.name, 'aischemagateGuardrail');
+    const mw = aischemagateGuardrail({ apiKey: 'k', contractId: 'c' });
+    assert.equal(mw.specificationVersion, 'v4');
+    assert.equal(typeof AiSchemaGateRejectedError, 'function');
   });
 
   it('LLMGateResult / Violation types compile through the alias', () => {

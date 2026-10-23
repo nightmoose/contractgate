@@ -49,6 +49,36 @@ if (result.ok) forwardDownstream(result.payload);  // egress-sanitized
 For Anthropic, call `gate.message({ model: 'claude-sonnet-4-5', ... })`.
 For vLLM / Ollama OpenAI-compat, call `gate.completion(...)` unchanged.
 
+## Vercel AI SDK guardrail
+
+`aischemagateGuardrail` is a `LanguageModelV4Middleware`. It does not depend on the `ai` package. `wrapGenerate` reads the JSON object from text content (or a tool-call `input`) and posts it to `POST /egress/{id}`. On success the model text is replaced with the egress payload. Set `autoRepair: true` to re-prompt, up to `maxRetries` extra calls (hard cap 5), when `min`, `max`, `pattern`, `enum`, or `compliance_mode` fails.
+
+```ts
+import { generateText, Output, wrapLanguageModel } from 'ai';
+import { aischemagateGuardrail } from '@nightmoose/aischemagate';
+import { z } from 'zod';
+
+const model = wrapLanguageModel({
+  model: yourModel,
+  middleware: aischemagateGuardrail({
+    apiKey: process.env.CONTRACTGATE_API_KEY!,
+    contractId: process.env.CONTRACTGATE_CONTRACT_ID!,
+    autoRepair: true,
+    maxRetries: 2,
+  }),
+});
+
+const result = await generateText({
+  model,
+  output: Output.object({
+    schema: z.object({ total: z.number(), currency: z.string() }),
+  }),
+  prompt: 'Extract the invoice as JSON.',
+});
+```
+
+`validateStructuredOutput(options, payload)` is the same egress check for a JSON object you already have. Copy-paste guides: [`docs/integrations/`](../../../docs/integrations/).
+
 ## Running tests locally
 
 Tests resolve the `@nightmoose/contractgate-sdk` dependency through

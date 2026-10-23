@@ -1,10 +1,26 @@
 {
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
   "name": "io.github.nightmoose/contractgate",
-  "title": "DataContractGate",
-  "description": "Infer, dry-run, deploy, and inspect DataContractGate semantic data contracts.",
+  "title": "DataContractGate and AISchemaGate",
+  "description": "DataContractGate ingest, ODCS, quarantine. AISchemaGate egress validation and repair.",
   "version": "0.4.0",
   "websiteUrl": "https://app.datacontractgate.com/mcp-reference.md",
+  "_meta": {
+    "io.modelcontextprotocol.registry/publisher-provided": {
+      "keywords": [
+        "datacontractgate",
+        "aischemagate",
+        "odcs",
+        "data-contracts",
+        "quarantine",
+        "replay",
+        "egress_validate",
+        "structured-output",
+        "llm"
+      ],
+      "summary": "DataContractGate: ingest data contracts, ODCS v3.1 and v3.2 validation, quarantine and replay. AISchemaGate: runtime LLM structured-output validation via egress_validate and violation-fed auto-repair."
+    }
+  },
   "repository": {
     "url": "https://github.com/nightmoose/contractgate",
     "source": "github",

@@ -23,7 +23,7 @@ runs:
   using: composite
   steps:
     - name: Set up Python
-      uses: actions/setup-python@v6
+      uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
       with:
         python-version: ${{ inputs.python-version }}
 
@@ -33,12 +33,15 @@ runs:
 
     - name: Compile contracts
       shell: bash
+      env:
+        ALLOW_EMPTY: ${{ inputs.allow-empty }}
+        CONTRACT_PATH: ${{ inputs.path }}
       run: |
         set -euo pipefail
         extra=()
-        if [ "${{ inputs.allow-empty }}" = "true" ]; then
+        if [ "$ALLOW_EMPTY" = "true" ]; then
           extra+=(--allow-empty)
         fi
         python "${{ github.action_path }}/../../contractgate_hooks/validate.py" \
-          --dir "${{ inputs.path }}" \
+          --dir "$CONTRACT_PATH" \
           "${extra[@]}"

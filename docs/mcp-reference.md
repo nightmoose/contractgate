@@ -6,6 +6,13 @@ Windsurf, VS Code Copilot, Codex, and any other MCP host.
 The server is a thin stdio client of the existing gateway. It does not run
 validation itself. Auth is the same API key the CLI and playbook already use.
 
+The same server is the directory listing for both products. DataContractGate
+tools infer, validate, deploy, and list quarantine (ODCS v3.1 and v3.2
+contracts included). AISchemaGate uses `egress_validate`
+(`POST /egress/{contract_id}`) for runtime structured-output checks and the
+violation list those checks return. `CONTRACTGATE_BASE_URL` defaults to
+`https://api.datacontractgate.com`.
+
 ## Install
 
 Add this to the host's MCP config (`~/.cursor/mcp.json`, Claude Desktop
