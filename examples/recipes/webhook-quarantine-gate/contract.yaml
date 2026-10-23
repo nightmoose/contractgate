@@ -1,0 +1,21 @@
+version: "1.0.0"
+name: billing_webhook
+description: Inbound billing webhook (Stripe, HubSpot, Svix, Hookdeck, or similar)
+compliance_mode: true
+ontology:
+  entities:
+    - name: id
+      type: string
+      required: true
+      pattern: "^evt_"
+    - name: type
+      type: string
+      required: true
+      enum: ["invoice.paid", "customer.updated"]
+    - name: customer_email
+      type: string
+      required: false
+      format: email
+      transform:
+        kind: mask
+        style: opaque

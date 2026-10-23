@@ -49,6 +49,22 @@ if (result.ok) forwardDownstream(result.payload);  // egress-sanitized
 For Anthropic, call `gate.message({ model: 'claude-sonnet-4-5', ... })`.
 For vLLM / Ollama OpenAI-compat, call `gate.completion(...)` unchanged.
 
+## Vercel AI SDK
+
+`createAISchemaGateMiddleware` is structurally a `LanguageModelV4Middleware`
+(`wrapGenerate`). `validateOrRepairObject` wraps `generateObject`,
+`generateText({ output: Output.object(...) })`, or any async JSON function.
+Neither imports the `ai` package. Both validate with `client.egress`
+(`POST /egress/{contract_id}`) and, on a semantic failure (`min`, `max`,
+`pattern`, `enum`, `compliance_mode`), send the violations back to the
+model up to `maxRetries` (default 2, hard cap 5).
+
+```ts
+import { createAISchemaGateMiddleware, validateOrRepairObject } from '@nightmoose/aischemagate';
+```
+
+See [docs/integrations/vercel-ai-sdk.md](../../../docs/integrations/vercel-ai-sdk.md).
+
 ## Running tests locally
 
 Tests resolve the `@nightmoose/contractgate-sdk` dependency through

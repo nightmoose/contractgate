@@ -104,6 +104,7 @@ them by name only.
 | 091 | [Help Catalog + “What’s this?” Inspect Mode](rfcs/091-whats-this-help-mode.md) | Accepted |
 | 092 | [Ralph-native demo stack (Kafi / Driftless / DataContractGate)](rfcs/092-ralph-native-demo.md) | Accepted — partner-ready |
 | 093 | [Egress as a first-class door](rfcs/093-egress-first-class.md) | Shipped |
+| 105 | [ODCS v3.2 enums, MCP dual-brand metadata, AISchemaGate guardrails](rfcs/105-odcs-v32-and-guardrail-recipes.md) | Shipped |
 
 ---
 
@@ -120,6 +121,8 @@ them by name only.
 | **Superseded** | Replaced by a later RFC listed in the notes column; kept for design context. |
 
 ---
+
+*2026-10-23 — RFC-105: ODCS import accepts `apiVersion` v3.2.0 and maps property-level `enum` (scalar list or `{value}` objects) onto the field enum when a quality rule has not already set it. The MCP registry listing names DataContractGate and AISchemaGate. `@nightmoose/aischemagate` gains a Vercel AI SDK `wrapGenerate` middleware and `validateOrRepairObject`. Integration notes and runnable recipes cover that middleware, Pydantic / Instructor / LangGraph, webhook quarantine, and a batch gate in front of DuckDB or MotherDuck.*
 
 *2026-10-07 — v0.2.0 released (2026-10-01) to every channel: GitHub Release (CLI for 4 targets), PyPI `contractgate`, npm `@nightmoose/contractgate-sdk` (RFC-018) and `@nightmoose/contractgate-mcp-server` (RFC-090; the old `@contractgate/mcp-server` is deprecated), and the MCP Registry as `io.github.nightmoose/contractgate`. RFC-093 (egress as a first-class door) is on main. Release pipeline is idempotent and retryable — see the header of `.github/workflows/release.yml`.*
 

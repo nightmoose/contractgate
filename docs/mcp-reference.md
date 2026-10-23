@@ -1,7 +1,9 @@
 # DataContractGate MCP Server
 
 **RFC-090.** Official Model Context Protocol server for Cursor, Claude Desktop,
-Windsurf, VS Code Copilot, Codex, and any other MCP host.
+Windsurf, VS Code Copilot, Codex, and any other MCP host. The same server
+covers **DataContractGate** (ingest-time contracts, ODCS, quarantine) and
+**AISchemaGate** (`egress_validate` for LLM structured output).
 
 The server is a thin stdio client of the existing gateway. It does not run
 validation itself. Auth is the same API key the CLI and playbook already use.

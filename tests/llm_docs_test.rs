@@ -114,6 +114,17 @@ fn output_validation_playbook_only_cites_routes_that_exist() {
 }
 
 #[test]
+fn integration_docs_only_cite_routes_that_exist() {
+    assert_doc_only_cites_existing_routes("docs/integrations/vercel-ai-sdk.md", 1);
+    assert_doc_only_cites_existing_routes("docs/integrations/pydantic-instructor-langgraph.md", 1);
+    assert_doc_only_cites_existing_routes("examples/recipes/webhook-quarantine-gate/README.md", 1);
+    assert_doc_only_cites_existing_routes(
+        "examples/recipes/dagster-prefect-guardrail/README.md",
+        1,
+    );
+}
+
+#[test]
 fn playbook_example_contract_compiles() {
     let doc = fs::read_to_string(repo_path("docs/llm-integration.md"))
         .expect("read docs/llm-integration.md");

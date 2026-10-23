@@ -8,6 +8,10 @@
     ".": {
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
+    },
+    "./vercel-ai": {
+      "types": "./dist/vercel-ai.d.ts",
+      "default": "./dist/vercel-ai.js"
     }
   },
   "main": "./dist/index.js",

@@ -1,4 +1,11 @@
-//! ODCS v3.1.0 import / export for DataContractGate.
+//! ODCS import / export for DataContractGate.
+//!
+//! Export writes ODCS v3.1.0 (`apiVersion: v3.1.0`) so the document still
+//! validates against the vendored v3.1.0 JSON Schema. Import accepts
+//! `apiVersion: v3.1.0` and `v3.2.0` (and any other `v3.*` string). A
+//! property-level `enum` — a list of scalars or a list of `{value, title}`
+//! objects — maps onto the field `enum` when an `invalidValues` quality
+//! rule has not already set `validValues`.
 //!
 //! # Round-trip guarantee
 //!
@@ -38,8 +45,12 @@ fn version_state_to_odcs_status(state: VersionState) -> &'static str {
 // Constants
 // ---------------------------------------------------------------------------
 
-/// ODCS spec release written on export.
+/// ODCS spec release written on export. Stays v3.1.0 so exports validate
+/// against the vendored v3.1.0 JSON Schema (v3.1 has no property `enum`).
 pub const ODCS_API_VERSION: &str = "v3.1.0";
+/// ODCS `apiVersion` values this importer is tested against. Other `v3.*`
+/// strings are still accepted; see `check_api_version`.
+pub const SUPPORTED_ODCS_API_VERSIONS: &[&str] = &["v3.1.0", "v3.2.0"];
 /// `x-contractgate-*` extension *format* version (not the contract version).
 const EXT_FORMAT_VERSION: &str = "1.0";
 /// Per-quality-entry custom property carrying the verbatim CG `QualityRule`.
@@ -678,11 +689,38 @@ pub fn import_odcs(yaml: &str) -> Result<ImportResult, String> {
         .ok_or_else(|| "ODCS document missing required 'version' field".to_string())?
         .to_string();
 
+    check_api_version(mapping)?;
+
     if root_extension(mapping, "x-contractgate-version").is_some() {
         import_mode_a(mapping, version)
     } else {
         import_mode_b(mapping, version)
     }
+}
+
+/// Accept `v3.1.0` and `v3.2.0`, plus any other `v3.*` string so documents
+/// that imported before property-level enums landed keep working. A missing
+/// `apiVersion` is allowed (extension-only documents). A non-string value is
+/// rejected. Non-3.x versions are rejected.
+fn check_api_version(doc: &Mapping) -> Result<(), String> {
+    let Some(api) = doc.get("apiVersion") else {
+        return Ok(());
+    };
+    let Some(version) = api.as_str() else {
+        return Err("ODCS apiVersion must be a string".to_string());
+    };
+    if supported_odcs_api_version(version) || version.starts_with("v3.") {
+        return Ok(());
+    }
+    Err(format!(
+        "unsupported ODCS apiVersion {version:?}; supported: {}",
+        SUPPORTED_ODCS_API_VERSIONS.join(", ")
+    ))
+}
+
+/// `true` for the ODCS releases this importer explicitly supports.
+pub fn supported_odcs_api_version(version: &str) -> bool {
+    SUPPORTED_ODCS_API_VERSIONS.contains(&version)
 }
 
 // ── Mode A (lossless) ────────────────────────────────────────────────────────
@@ -890,15 +928,31 @@ fn build_field_tree(pairs: Vec<(String, FieldDefinition)>) -> Result<Vec<FieldDe
 
 fn yaml_to_json_values(seq: &[Value]) -> Vec<serde_json::Value> {
     seq.iter()
-        .map(|v| match v {
-            // ODCS v3.2 enum form: `- value: x`
-            Value::Mapping(m) if m.contains_key("value") => {
-                m.get("value").cloned().unwrap_or(Value::Null)
+        .filter_map(|v| {
+            let raw = match v {
+                // ODCS v3.2 enum form: `- {value: USD, title: US Dollar}`.
+                Value::Mapping(m) if m.contains_key("value") => m.get("value").cloned()?,
+                other => other.clone(),
+            };
+            let json = serde_json::to_value(raw).ok()?;
+            if json.is_null() {
+                None
+            } else {
+                Some(json)
             }
-            other => other.clone(),
         })
-        .filter_map(|v| serde_json::to_value(v).ok())
         .collect()
+}
+
+/// A non-empty scalar list. An empty `validValues` or `enum` does not count
+/// as populating the field constraint.
+fn nonempty_json_values(seq: &[Value]) -> Option<Vec<serde_json::Value>> {
+    let vals = yaml_to_json_values(seq);
+    if vals.is_empty() {
+        None
+    } else {
+        Some(vals)
+    }
 }
 
 /// Parse a single ODCS property mapping into a CG `FieldDefinition`.
@@ -935,12 +989,11 @@ fn odcs_prop_to_field(m: &Mapping, full_name: &str) -> Result<FieldDefinition, S
     if field_type == FieldType::Date && format.as_deref() == Some(CG_DATE_FORMAT) {
         format = None; // CG's built-in date format
     }
-    let mut allowed_values = m
-        .get("enum")
-        .and_then(|v| v.as_sequence())
-        .map(|s| yaml_to_json_values(s));
-    // invalidValues library rules carry validValues / pattern (ODCS v3.1 has
-    // no property-level enum).
+    // Quality `invalidValues` / `arguments.validValues` is the ODCS v3.1
+    // enum. Property-level `enum` (v3.2 scalars or `{value}` objects, also
+    // read on v3.1 documents) fills the field only when that rule did not
+    // already populate it. `x-cg-enum` below still wins over both.
+    let mut allowed_values: Option<Vec<serde_json::Value>> = None;
     if let Some(qs) = m.get("quality").and_then(|v| v.as_sequence()) {
         for q in qs.iter().filter_map(|q| q.as_mapping()) {
             if q.get("metric").and_then(|v| v.as_str()) != Some("invalidValues") {
@@ -953,7 +1006,7 @@ fn odcs_prop_to_field(m: &Mapping, full_name: &str) -> Result<FieldDefinition, S
                 allowed_values = args
                     .get("validValues")
                     .and_then(|v| v.as_sequence())
-                    .map(|s| yaml_to_json_values(s));
+                    .and_then(|seq| nonempty_json_values(seq));
             }
             if pattern.is_none() {
                 pattern = args
@@ -962,6 +1015,12 @@ fn odcs_prop_to_field(m: &Mapping, full_name: &str) -> Result<FieldDefinition, S
                     .map(String::from);
             }
         }
+    }
+    if allowed_values.is_none() {
+        allowed_values = m
+            .get("enum")
+            .and_then(|v| v.as_sequence())
+            .and_then(|seq| nonempty_json_values(seq));
     }
 
     // ── x-cg-* customProperties win ──────────────────────────────────────────
@@ -1081,4 +1140,159 @@ fn json_seq(vals: &[serde_json::Value]) -> Value {
             .map(|v| serde_yaml::to_value(v).unwrap_or(Value::Null))
             .collect(),
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::contract::{Contract, FieldDefinition, QualityRuleType};
+    use serde_json::json;
+
+    fn imported(yaml: &str) -> Contract {
+        let result = import_odcs(yaml).unwrap();
+        serde_yaml::from_str(&result.yaml_content).unwrap()
+    }
+
+    fn field<'a>(entities: &'a [FieldDefinition], name: &str) -> &'a FieldDefinition {
+        entities.iter().find(|f| f.name == name).expect(name)
+    }
+
+    const HEADER: &str = "\
+kind: DataContract
+id: fx
+version: \"1.0.0\"
+status: active
+schema:
+  - name: fx
+    properties:
+";
+
+    #[test]
+    fn supported_api_versions_include_v31_and_v32() {
+        assert!(supported_odcs_api_version("v3.1.0"));
+        assert!(supported_odcs_api_version("v3.2.0"));
+        assert!(!supported_odcs_api_version("v2.2.2"));
+    }
+
+    #[test]
+    fn v32_string_array_enum_maps_to_field_enum() {
+        let yaml = format!(
+            "apiVersion: v3.2.0\n{HEADER}      - name: currency\n        logicalType: string\n        enum: [\"USD\", \"EUR\", \"GBP\"]\n"
+        );
+        let c = imported(&yaml);
+        assert_eq!(
+            field(&c.ontology.entities, "currency").allowed_values,
+            Some(vec![json!("USD"), json!("EUR"), json!("GBP")])
+        );
+        assert!(c.quality.is_empty());
+        let yaml = serde_yaml::to_string(&c).unwrap();
+        assert!(yaml.contains("enum:"), "{yaml}");
+        assert!(yaml.contains("USD") && yaml.contains("EUR") && yaml.contains("GBP"));
+    }
+
+    #[test]
+    fn v32_value_object_enum_maps_to_field_enum() {
+        let yaml = "\
+apiVersion: v3.2.0
+kind: DataContract
+id: fx
+version: \"1.0.0\"
+status: active
+schema:
+  - name: fx
+    properties:
+      - name: currency
+        logicalType: string
+        enum:
+          - value: USD
+            title: US Dollar
+          - value: EUR
+            title: Euro
+          - value: GBP
+            title: Pound
+";
+        let c = imported(yaml);
+        assert_eq!(
+            field(&c.ontology.entities, "currency").allowed_values,
+            Some(vec![json!("USD"), json!("EUR"), json!("GBP")])
+        );
+    }
+
+    #[test]
+    fn v31_property_enum_is_accepted() {
+        let yaml = format!(
+            "apiVersion: v3.1.0\n{HEADER}      - name: currency\n        logicalType: string\n        enum:\n          - USD\n          - EUR\n"
+        );
+        let c = imported(&yaml);
+        assert_eq!(
+            field(&c.ontology.entities, "currency").allowed_values,
+            Some(vec![json!("USD"), json!("EUR")])
+        );
+    }
+
+    #[test]
+    fn quality_valid_values_win_over_property_enum() {
+        let yaml = format!(
+            "apiVersion: v3.2.0\n{HEADER}      - name: currency\n        logicalType: string\n        enum: [\"AAA\", \"BBB\"]\n        quality:\n          - metric: invalidValues\n            arguments:\n              validValues: [\"USD\", \"EUR\"]\n"
+        );
+        let c = imported(&yaml);
+        assert_eq!(
+            field(&c.ontology.entities, "currency").allowed_values,
+            Some(vec![json!("USD"), json!("EUR")])
+        );
+        assert!(c
+            .quality
+            .iter()
+            .any(|q| q.field == "currency" && q.rule_type == QualityRuleType::Validity));
+    }
+
+    #[test]
+    fn property_enum_fills_when_quality_rule_has_no_valid_values() {
+        let yaml = format!(
+            "apiVersion: v3.2.0\n{HEADER}      - name: code\n        logicalType: string\n        enum: [\"A\", \"B\"]\n        quality:\n          - metric: invalidValues\n            arguments:\n              pattern: \"^[A-Z]$\"\n"
+        );
+        let c = imported(&yaml);
+        let code = field(&c.ontology.entities, "code");
+        assert_eq!(code.allowed_values, Some(vec![json!("A"), json!("B")]));
+        assert_eq!(code.pattern.as_deref(), Some("^[A-Z]$"));
+    }
+
+    #[test]
+    fn v31_quality_enum_still_round_trips_without_property_enum() {
+        let yaml = format!(
+            "apiVersion: v3.1.0\n{HEADER}      - name: status\n        logicalType: string\n        quality:\n          - metric: invalidValues\n            arguments:\n              validValues: [open, shipped]\n"
+        );
+        let c = imported(&yaml);
+        assert_eq!(
+            field(&c.ontology.entities, "status").allowed_values,
+            Some(vec![json!("open"), json!("shipped")])
+        );
+    }
+
+    #[test]
+    fn nested_property_enum_is_imported() {
+        let yaml = format!(
+            "apiVersion: v3.2.0\n{HEADER}      - name: price\n        logicalType: object\n        properties:\n          - name: currency\n            logicalType: string\n            enum:\n              - value: USD\n              - value: EUR\n"
+        );
+        let c = imported(&yaml);
+        let price = field(&c.ontology.entities, "price");
+        let nested = price.properties.as_ref().expect("nested");
+        assert_eq!(
+            field(nested, "currency").allowed_values,
+            Some(vec![json!("USD"), json!("EUR")])
+        );
+    }
+
+    #[test]
+    fn non_v3_api_version_is_rejected() {
+        let yaml = format!(
+            "apiVersion: \"2.2.2\"\n{HEADER}      - name: id\n        logicalType: string\n"
+        );
+        let err = match import_odcs(&yaml) {
+            Err(err) => err,
+            Ok(_) => panic!("v2.2.2 must be rejected"),
+        };
+        assert!(err.contains("v3.2.0"), "{err}");
+        assert!(err.contains("unsupported ODCS apiVersion"), "{err}");
+    }
 }

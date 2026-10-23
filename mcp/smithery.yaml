@@ -8,11 +8,11 @@ startCommand:
     properties:
       contractgateApiKey:
         type: string
-        description: DataContractGate API key (cg_live_...)
+        description: DataContractGate or AISchemaGate API key (cg_live_...)
       contractgateBaseUrl:
         type: string
         description: Gateway base URL
-        default: https://app.datacontractgate.com
+        default: https://api.datacontractgate.com
   commandFunction: |-
     (config) => ({
       command: "npx",

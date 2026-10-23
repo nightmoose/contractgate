@@ -1,0 +1,5 @@
+contractgate>=0.4.0
+duckdb>=1.1
+# Optional orchestrators. gate.py does not import them.
+# dagster>=1.9
+# prefect>=3

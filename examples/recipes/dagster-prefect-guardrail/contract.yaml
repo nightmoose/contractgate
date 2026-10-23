@@ -1,0 +1,19 @@
+version: "1.0.0"
+name: orders_batch
+description: Order rows gated before the warehouse table
+compliance_mode: true
+ontology:
+  entities:
+    - name: order_id
+      type: string
+      required: true
+      pattern: "^ORD-[0-9]{6}$"
+    - name: amount
+      type: float
+      required: true
+      min: 0
+      max: 100000
+    - name: currency
+      type: string
+      required: true
+      enum: ["USD", "EUR", "GBP"]

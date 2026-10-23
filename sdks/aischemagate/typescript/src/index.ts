@@ -23,3 +23,19 @@ export type {
 } from '@nightmoose/contractgate-sdk/llm';
 
 export const AISCHEMAGATE_VERSION = '0.4.0';
+
+export {
+  AISCHEMAGATE_MAX_RETRIES,
+  AISchemaGateRepairError,
+  buildRepairPrompt,
+  createAISchemaGateMiddleware,
+  validateOrRepairObject,
+} from './vercel-ai.js';
+export type {
+  AISchemaGateMiddlewareOptions,
+  EgressClient,
+  RepairContext,
+  StructuredViolation,
+  ValidateOrRepairOptions,
+  ValidateOrRepairResult,
+} from './vercel-ai.js';

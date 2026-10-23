@@ -2,6 +2,10 @@
 
 All notable changes to `@nightmoose/aischemagate`.
 
+## Unreleased
+
+- `createAISchemaGateMiddleware` and `validateOrRepairObject` for Vercel AI SDK structured output. Both call `POST /egress/{contract_id}` and retry with the structured violations. No dependency on the `ai` package.
+
 ## 0.4.0 — 2026-10-13
 
 Requires `@nightmoose/contractgate-sdk >= 0.4.0`: `ingest` uses `/v1/ingest` and returns failed batches as results. `LLMGate` is unchanged.

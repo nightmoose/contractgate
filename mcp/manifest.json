@@ -1,10 +1,10 @@
 {
   "manifest_version": "0.3",
   "name": "contractgate",
-  "display_name": "DataContractGate",
+  "display_name": "DataContractGate and AISchemaGate",
   "version": "0.1.2",
-  "description": "Infer, dry-run, deploy, and inspect DataContractGate semantic data contracts.",
-  "long_description": "Reject schema-valid but wrong events before they hit your topic. Infer a contract from real events, dry-run it, deploy it, and inspect quarantined events.",
+  "description": "MCP server for DataContractGate and AISchemaGate. DataContractGate validates events at ingest (ODCS v3.1 and v3.2), masks PII, and quarantines failures for replay. AISchemaGate validates LLM structured output at runtime through egress_validate, with violation-fed auto-repair.",
+  "long_description": "DataContractGate rejects schema-valid but wrong events before they hit a topic: infer a contract, dry-run it, deploy it, and inspect quarantine. AISchemaGate uses the same gateway to validate LLM structured output (egress_validate) and return violations for a bounded repair prompt.",
   "author": {
     "name": "DataContractGate",
     "url": "https://github.com/nightmoose"
@@ -16,7 +16,7 @@
     "url": "https://github.com/nightmoose/contractgate"
   },
   "license": "MIT",
-  "keywords": ["data-contracts", "kafka", "schema", "validation", "quarantine"],
+  "keywords": ["datacontractgate", "aischemagate", "data-contracts", "odcs", "llm-validation", "structured-outputs", "guardrails", "mcp", "json-schema"],
   "server": {
     "type": "node",
     "entry_point": "dist/index.js",

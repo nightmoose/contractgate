@@ -1,7 +1,13 @@
 # @nightmoose/contractgate-mcp-server
 
 Official [Model Context Protocol](https://modelcontextprotocol.io) server for
-DataContractGate. Thin stdio wrapper over the existing HTTP API.
+**DataContractGate** and **AISchemaGate**. Thin stdio wrapper over the existing
+HTTP API.
+
+DataContractGate tools cover ingest-time data contract validation (ODCS v3.1
+and v3.2), PII masking, quarantine, and replay. AISchemaGate uses the same
+server: `egress_validate` checks LLM structured output at runtime and returns
+violation details an agent can feed into a repair prompt.
 
 See [`docs/mcp-reference.md`](../docs/mcp-reference.md) for tools, auth, and
 the host config snippet. Official registry metadata: [`server.json`](server.json).

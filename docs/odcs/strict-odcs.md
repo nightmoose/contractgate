@@ -43,11 +43,18 @@ Nested objects keep the D-001 shape: flattened to dot-notation leaf names
   produced for OpenMetadata) is parsed too.
 * **Mode B (foreign / stripped):** native fields are read first:
   `logicalTypeOptions` (pattern, minLength, maxLength, minimum, maximum, format),
-  ODCS v3.2 `enum` (`- value: x` or scalars), `invalidValues` `validValues` /
-  `pattern`, `unique`, `required`, library metrics (`missingValues` /
-  `nullValues` → completeness, `duplicateValues` → uniqueness, `invalidValues`
-  → validity, percent bounds → threshold), and `engine: contractgate` freshness.
-  **`x-cg-*` wins** when both exist; `x-cg-quality` wins over the mapped metric.
+  ODCS v3.2 `enum` (`- value: x`, `{value, title}` objects, or scalar
+  strings such as `enum: ["USD", "EUR", "GBP"]`), `invalidValues`
+  `validValues` / `pattern`, `unique`, `required`, library metrics
+  (`missingValues` / `nullValues` → completeness, `duplicateValues` →
+  uniqueness, `invalidValues` → validity, percent bounds → threshold), and
+  `engine: contractgate` freshness.
+  **`invalidValues` `validValues` wins over a property-level `enum`** when
+  both are present; the property `enum` is used only when that quality rule
+  did not already set the field enum. **`x-cg-*` wins** when both a native
+  field and an extension exist; `x-cg-quality` wins over the mapped metric.
+  Import accepts `apiVersion: v3.1.0` and `v3.2.0` (any other `v3.*` string
+  still imports). Export keeps writing `v3.1.0`.
   `description` may be a string or the object form (`purpose` › `usage` ›
   `limitations`).
 * **Not mapped:** schema-level `rowCount` (DCG validates per event and has no

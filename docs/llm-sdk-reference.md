@@ -335,3 +335,7 @@ your other `contractgate` HTTP errors.
   ingest (for `mask_prompt`) and egress.
 - [egress-validation-reference.md](egress-validation-reference.md) —
   dispositions, audit writes, PII masking semantics.
+- [Vercel AI SDK](integrations/vercel-ai-sdk.md) — `createAISchemaGateMiddleware`
+  and `validateOrRepairObject` for structured output.
+- [Pydantic, Instructor, and LangGraph](integrations/pydantic-instructor-langgraph.md) —
+  the Python equivalents, including `compliance_mode: true`.

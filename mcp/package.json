@@ -2,7 +2,7 @@
   "name": "@nightmoose/contractgate-mcp-server",
   "version": "0.4.0",
   "mcpName": "io.github.nightmoose/contractgate",
-  "description": "Official Model Context Protocol server for DataContractGate — infer, dry-run, deploy, and inspect quarantine.",
+  "description": "Official MCP server for DataContractGate and AISchemaGate. DataContractGate: ingest-time data contract validation (ODCS v3.1/v3.2), PII masking, quarantine and replay. AISchemaGate: runtime LLM structured output validation via egress_validate, with violation-fed auto-repair.",
   "license": "MIT",
   "type": "module",
   "bin": {
@@ -31,10 +31,15 @@
     "directory": "mcp"
   },
   "keywords": [
-    "mcp",
-    "contractgate",
+    "datacontractgate",
+    "aischemagate",
     "data-contracts",
-    "validation"
+    "odcs",
+    "llm-validation",
+    "structured-outputs",
+    "guardrails",
+    "mcp",
+    "json-schema"
   ],
   "dependencies": {
     "@modelcontextprotocol/server": "^2.0.0",
