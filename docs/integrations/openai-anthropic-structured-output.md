@@ -1,6 +1,6 @@
 # OpenAI, Anthropic, Pydantic, Instructor + AISchemaGate
 
-Provider structured outputs and Pydantic models guarantee a JSON shape. They do not guarantee the values your contract names. A negative total, an enum in the wrong case, and an extra key all parse cleanly. AISchemaGate checks those rules on `POST /egress/{id}` and can re-prompt with the violations.
+Provider structured outputs and Pydantic models guarantee a JSON shape. They do not guarantee the values your contract names. A negative total, an enum in the wrong case, and an extra key all parse cleanly. AISchemaGate checks those rules on `POST /egress/{contract_id}` and can re-prompt with the violations.
 
 ```bash
 pip install aischemagate openai anthropic pydantic instructor

@@ -114,6 +114,21 @@ fn output_validation_playbook_only_cites_routes_that_exist() {
 }
 
 #[test]
+fn integration_docs_and_recipes_only_cite_routes_that_exist() {
+    assert_doc_only_cites_existing_routes("docs/integrations/README.md", 2);
+    assert_doc_only_cites_existing_routes("docs/integrations/vercel-ai-sdk.md", 1);
+    assert_doc_only_cites_existing_routes(
+        "docs/integrations/openai-anthropic-structured-output.md",
+        1,
+    );
+    assert_doc_only_cites_existing_routes("docs/integrations/langgraph-tool-gate.md", 1);
+    assert_doc_only_cites_existing_routes("examples/recipes/README.md", 2);
+    assert_doc_only_cites_existing_routes("examples/recipes/webhook_quarantine_firewall.py", 1);
+    assert_doc_only_cites_existing_routes("examples/recipes/pipeline_guardrail.py", 1);
+    assert_doc_only_cites_existing_routes("examples/recipes/quarantine_replay.py", 2);
+}
+
+#[test]
 fn playbook_example_contract_compiles() {
     let doc = fs::read_to_string(repo_path("docs/llm-integration.md"))
         .expect("read docs/llm-integration.md");

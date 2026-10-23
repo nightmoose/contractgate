@@ -3,7 +3,7 @@
 Copy-paste guides for the two products that share this gateway:
 
 - **DataContractGate** validates events on the way in (`POST /v1/ingest/{contract_id}`), quarantines failures, and replays them after a fix. Recipes: [`examples/recipes/`](../../examples/recipes/).
-- **AISchemaGate** validates structured model output on the way out (`POST /egress/{id}`), including `min`, `max`, `pattern`, `enum`, and `compliance_mode`.
+- **AISchemaGate** validates structured model output on the way out (`POST /egress/{contract_id}`), including `min`, `max`, `pattern`, `enum`, and `compliance_mode`.
 
 | Guide | What it wires |
 |---|---|

@@ -48,7 +48,11 @@ Nested objects keep the D-001 shape: flattened to dot-notation leaf names
   strings, numbers, and booleans), then `logicalTypeOptions.enum` and a
   custom property named `enum` when the property itself has no `enum`, then
   `invalidValues` `validValues` / `pattern`. A property `enum` wins over a
-  conflicting `validValues` list. `x-cg-enum` still wins over all of those.
+  conflicting `validValues` list. An empty `enum` array does not count, so
+  `validValues` can still fill the constraint. `x-cg-enum` still wins over
+  all of those. Import accepts `apiVersion: v3.1.0` and `v3.2.0` (any other
+  `v3.*` string still imports; a non-3.x value is rejected; a missing
+  `apiVersion` is still accepted).
   Export stays ODCS v3.1.0 and does not write a property `enum` key (the
   v3.1.0 schema rejects it); the constraint round-trips through
   `invalidValues` / `validValues` and `x-cg-enum`. `unique`, `required`,

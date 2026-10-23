@@ -1,4 +1,11 @@
-//! ODCS v3.1.0 import / export for DataContractGate.
+//! ODCS import / export for DataContractGate.
+//!
+//! Export writes ODCS v3.1.0 (`apiVersion: v3.1.0`) so the document still
+//! validates against the vendored v3.1.0 JSON Schema. Import accepts
+//! `apiVersion: v3.1.0` and `v3.2.0`, plus any other `v3.*` string. A missing
+//! `apiVersion` still imports. A property-level `enum` — a scalar list or
+//! `{ value: ... }` objects — is applied before the v3.1 `invalidValues` /
+//! `validValues` rule. `x-cg-enum` still wins over both.
 //!
 //! # Round-trip guarantee
 //!
@@ -38,7 +45,8 @@ fn version_state_to_odcs_status(state: VersionState) -> &'static str {
 // Constants
 // ---------------------------------------------------------------------------
 
-/// ODCS spec release written on export.
+/// ODCS spec release written on export. Stays v3.1.0 so exports validate
+/// against the vendored v3.1.0 JSON Schema (that schema has no property `enum`).
 pub const ODCS_API_VERSION: &str = "v3.1.0";
 /// `x-contractgate-*` extension *format* version (not the contract version).
 const EXT_FORMAT_VERSION: &str = "1.0";
@@ -679,11 +687,32 @@ pub fn import_odcs(yaml: &str) -> Result<ImportResult, String> {
         .ok_or_else(|| "ODCS document missing required 'version' field".to_string())?
         .to_string();
 
+    check_api_version(mapping)?;
+
     if root_extension(mapping, "x-contractgate-version").is_some() {
         import_mode_a(mapping, version)
     } else {
         import_mode_b(mapping, version)
     }
+}
+
+/// Accept `v3.1.0` and `v3.2.0`, and any other `v3.*` string, so a document
+/// that imported before property-level enums landed still imports. A missing
+/// `apiVersion` is allowed. A non-string value is rejected. Non-3.x versions
+/// are rejected.
+fn check_api_version(doc: &Mapping) -> Result<(), String> {
+    let Some(api) = doc.get("apiVersion") else {
+        return Ok(());
+    };
+    let Some(version) = api.as_str() else {
+        return Err("ODCS apiVersion must be a string".to_string());
+    };
+    if version.starts_with("v3.") {
+        return Ok(());
+    }
+    Err(format!(
+        "unsupported ODCS apiVersion {version:?}; supported: v3.1.0, v3.2.0"
+    ))
 }
 
 // ── Mode A (lossless) ────────────────────────────────────────────────────────
@@ -1135,4 +1164,229 @@ fn json_seq(vals: &[serde_json::Value]) -> Value {
             .map(|v| serde_yaml::to_value(v).unwrap_or(Value::Null))
             .collect(),
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    const HEADER: &str = "\
+kind: DataContract
+id: fx
+version: \"1.0.0\"
+status: active
+schema:
+  - name: fx
+    properties:
+";
+
+    fn imported(yaml: &str) -> Contract {
+        let result = import_odcs(yaml).unwrap_or_else(|err| panic!("import: {err}"));
+        serde_yaml::from_str(&result.yaml_content).unwrap_or_else(|err| panic!("contract: {err}"))
+    }
+
+    fn field_named(yaml_body: &str) -> FieldDefinition {
+        let contract = imported(&format!("apiVersion: v3.2.0\n{HEADER}{yaml_body}"));
+        contract
+            .ontology
+            .entities
+            .into_iter()
+            .next()
+            .expect("one field")
+    }
+
+    fn allowed(body: &str) -> Option<Vec<serde_json::Value>> {
+        field_named(body).allowed_values
+    }
+
+    #[test]
+    fn v31_and_v32_api_versions_import() {
+        for api in ["v3.1.0", "v3.2.0", "v3.0.2"] {
+            let yaml = format!(
+                "apiVersion: {api}\n{HEADER}      - name: id\n        logicalType: string\n"
+            );
+            let contract = imported(&yaml);
+            assert_eq!(contract.ontology.entities[0].name, "id", "{api}");
+        }
+    }
+
+    #[test]
+    fn missing_api_version_still_imports() {
+        let yaml = format!("{HEADER}      - name: id\n        logicalType: string\n");
+        let contract = imported(&yaml);
+        assert_eq!(contract.ontology.entities[0].name, "id");
+    }
+
+    #[test]
+    fn non_string_and_non_v3_api_versions_are_rejected() {
+        let bad_type =
+            format!("apiVersion: true\n{HEADER}      - name: id\n        logicalType: string\n");
+        let type_err = match import_odcs(&bad_type) {
+            Err(err) => err,
+            Ok(_) => panic!("bool apiVersion must be rejected"),
+        };
+        assert!(type_err.contains("must be a string"), "{type_err}");
+
+        let bad_major = format!(
+            "apiVersion: \"2.2.2\"\n{HEADER}      - name: id\n        logicalType: string\n"
+        );
+        let major_err = match import_odcs(&bad_major) {
+            Err(err) => err,
+            Ok(_) => panic!("v2.2.2 must be rejected"),
+        };
+        assert!(
+            major_err.contains("unsupported ODCS apiVersion"),
+            "{major_err}"
+        );
+        assert!(major_err.contains("v3.1.0"), "{major_err}");
+        assert!(major_err.contains("v3.2.0"), "{major_err}");
+    }
+
+    #[test]
+    fn scalar_string_enum_and_value_objects_map_to_field_enum() {
+        assert_eq!(
+            allowed("      - name: currency\n        logicalType: string\n        enum: [\"USD\", \"EUR\", \"GBP\"]\n"),
+            Some(vec![json!("USD"), json!("EUR"), json!("GBP")])
+        );
+        assert_eq!(
+            allowed(
+                "      - name: currency\n        logicalType: string\n        enum:\n          - value: USD\n            label: US Dollar\n          - value: EUR\n            description: Euro\n"
+            ),
+            Some(vec![json!("USD"), json!("EUR")])
+        );
+    }
+
+    #[test]
+    fn v31_property_enum_is_accepted() {
+        let yaml = format!(
+            "apiVersion: v3.1.0\n{HEADER}      - name: currency\n        logicalType: string\n        enum:\n          - USD\n          - EUR\n"
+        );
+        let contract = imported(&yaml);
+        assert_eq!(
+            contract.ontology.entities[0].allowed_values,
+            Some(vec![json!("USD"), json!("EUR")])
+        );
+    }
+
+    #[test]
+    fn empty_enum_array_is_absent_and_falls_through_to_valid_values() {
+        assert_eq!(
+            allowed("      - name: status\n        logicalType: string\n        enum: []\n"),
+            None
+        );
+        assert_eq!(
+            allowed(
+                "      - name: status\n        logicalType: string\n        enum: []\n        quality:\n          - metric: invalidValues\n            arguments:\n              validValues: [open, closed]\n"
+            ),
+            Some(vec![json!("open"), json!("closed")])
+        );
+        assert_eq!(
+            allowed(
+                "      - name: status\n        logicalType: string\n        enum:\n          - label: ignored\n          - value:\n              nested: true\n        quality:\n          - metric: invalidValues\n            arguments:\n              validValues: [kept]\n"
+            ),
+            Some(vec![json!("kept")])
+        );
+    }
+
+    #[test]
+    fn mixed_and_duplicate_enum_values_keep_order() {
+        assert_eq!(
+            allowed(
+                "      - name: status\n        logicalType: string\n        enum:\n          - pending\n          - value: pending\n            label: Pending\n          - value: shipped\n          - value:\n              nested: drop\n          - cancelled\n          - cancelled\n"
+            ),
+            Some(vec![
+                json!("pending"),
+                json!("pending"),
+                json!("shipped"),
+                json!("cancelled"),
+                json!("cancelled"),
+            ])
+        );
+    }
+
+    #[test]
+    fn integer_and_boolean_enum_values_keep_their_types() {
+        assert_eq!(
+            allowed(
+                "      - name: priority\n        logicalType: integer\n        enum:\n          - value: 1\n          - value: 2\n"
+            ),
+            Some(vec![json!(1), json!(2)])
+        );
+        assert_eq!(
+            allowed(
+                "      - name: active\n        logicalType: boolean\n        enum: [true, false]\n"
+            ),
+            Some(vec![json!(true), json!(false)])
+        );
+    }
+
+    #[test]
+    fn property_enum_beats_quality_valid_values_and_option_fallbacks() {
+        assert_eq!(
+            allowed(
+                "      - name: currency\n        logicalType: string\n        enum: [\"USD\"]\n        logicalTypeOptions:\n          enum: [\"EUR\"]\n        quality:\n          - metric: invalidValues\n            arguments:\n              validValues: [\"GBP\"]\n        customProperties:\n          - property: enum\n            value: [\"JPY\"]\n"
+            ),
+            Some(vec![json!("USD")])
+        );
+        assert_eq!(
+            allowed(
+                "      - name: channel\n        logicalType: string\n        logicalTypeOptions:\n          enum: [web, mobile]\n        quality:\n          - metric: invalidValues\n            arguments:\n              validValues: [store]\n"
+            ),
+            Some(vec![json!("web"), json!("mobile")])
+        );
+        assert_eq!(
+            allowed(
+                "      - name: region\n        logicalType: string\n        customProperties:\n          - property: enum\n            value: [us, eu]\n"
+            ),
+            Some(vec![json!("us"), json!("eu")])
+        );
+    }
+
+    #[test]
+    fn x_cg_enum_beats_property_enum_and_valid_values() {
+        assert_eq!(
+            allowed(
+                "      - name: winner\n        logicalType: string\n        enum: [property]\n        quality:\n          - metric: invalidValues\n            arguments:\n              validValues: [quality]\n        customProperties:\n          - property: x-cg-enum\n            value: [extension]\n"
+            ),
+            Some(vec![json!("extension")])
+        );
+    }
+
+    #[test]
+    fn property_enum_fills_when_quality_rule_has_pattern_only() {
+        let field = field_named(
+            "      - name: code\n        logicalType: string\n        enum: [\"A\", \"B\"]\n        quality:\n          - metric: invalidValues\n            arguments:\n              pattern: \"^[A-Z]$\"\n",
+        );
+        assert_eq!(field.allowed_values, Some(vec![json!("A"), json!("B")]));
+        assert_eq!(field.pattern.as_deref(), Some("^[A-Z]$"));
+    }
+
+    #[test]
+    fn quality_valid_values_apply_when_no_property_enum_is_present() {
+        let yaml = format!(
+            "apiVersion: v3.1.0\n{HEADER}      - name: status\n        logicalType: string\n        quality:\n          - metric: invalidValues\n            arguments:\n              validValues: [open, shipped]\n"
+        );
+        let contract = imported(&yaml);
+        assert_eq!(
+            contract.ontology.entities[0].allowed_values,
+            Some(vec![json!("open"), json!("shipped")])
+        );
+    }
+
+    #[test]
+    fn nested_property_enum_is_imported() {
+        let yaml = format!(
+            "apiVersion: v3.2.0\n{HEADER}      - name: price\n        logicalType: object\n        properties:\n          - name: currency\n            logicalType: string\n            enum:\n              - value: USD\n              - value: EUR\n"
+        );
+        let contract = imported(&yaml);
+        let nested = contract.ontology.entities[0]
+            .properties
+            .as_ref()
+            .expect("nested");
+        assert_eq!(
+            nested[0].allowed_values,
+            Some(vec![json!("USD"), json!("EUR")])
+        );
+    }
 }

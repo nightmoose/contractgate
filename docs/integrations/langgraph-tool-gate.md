@@ -1,6 +1,6 @@
 # LangGraph tool-call gate + AISchemaGate
 
-A tool schema tells the model which keys exist. It does not stop the model from adding a key, flipping an enum's case, or moving the agent into a state your contract does not name. Put `compliance_mode: true` on the contract and run every tool-argument object and every state patch through `POST /egress/{id}` before the tool or the transition runs.
+A tool schema tells the model which keys exist. It does not stop the model from adding a key, flipping an enum's case, or moving the agent into a state your contract does not name. Put `compliance_mode: true` on the contract and run every tool-argument object and every state patch through `POST /egress/{contract_id}` before the tool or the transition runs.
 
 ```bash
 pip install aischemagate langgraph

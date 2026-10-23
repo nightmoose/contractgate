@@ -41,7 +41,7 @@ console.log(result.output);
 ## What the middleware does
 
 1. `wrapGenerate` reads a JSON object from text content. A markdown fence is stripped. If the text is not JSON, a tool-call `input` or `args` object is used.
-2. It `POST`s that object to `/egress/{contract_id}` as a one-event batch.
+2. It calls `POST /egress/{contract_id}` with that object as a one-event batch.
 3. A passing call rewrites the text (or tool-call input) to `JSON.stringify` of `response.payload[0]`. Forward that value. Declared transforms such as email masking have already been applied.
 4. `autoRepair` re-prompts only when a violation kind is semantic:
 

@@ -5485,15 +5485,19 @@ schema:
             allowed(e, "mixed"),
             Some(vec![json!("pending"), json!("shipped")])
         );
-        assert_eq!(allowed(e, "channel"), Some(vec![json!("web"), json!("mobile")]));
+        assert_eq!(
+            allowed(e, "channel"),
+            Some(vec![json!("web"), json!("mobile")])
+        );
         assert_eq!(allowed(e, "region"), Some(vec![json!("us"), json!("eu")]));
         assert_eq!(
             allowed(e, "legacy_status"),
             Some(vec![json!("open"), json!("closed")])
         );
-        assert!(c.quality.iter().any(|q| {
-            q.field == "legacy_status" && q.rule_type == QualityRuleType::Validity
-        }));
+        assert!(c
+            .quality
+            .iter()
+            .any(|q| { q.field == "legacy_status" && q.rule_type == QualityRuleType::Validity }));
         assert_eq!(allowed(e, "winner"), Some(vec![json!("a"), json!("b")]));
         assert_eq!(allowed(e, "both"), Some(vec![json!("property")]));
         assert_eq!(allowed(e, "override"), Some(vec![json!("from-extension")]));
@@ -5538,7 +5542,11 @@ schema:
         let bad_fields: std::collections::BTreeSet<_> =
             res.violations.iter().map(|v| v.field.as_str()).collect();
         for name in ["status", "currency", "priority", "winner", "tags[0]"] {
-            assert!(bad_fields.contains(name), "{name} missing: {:?}", res.violations);
+            assert!(
+                bad_fields.contains(name),
+                "{name} missing: {:?}",
+                res.violations
+            );
         }
 
         // Export stays v3.1.0 (no property `enum` key) and mode A is lossless.

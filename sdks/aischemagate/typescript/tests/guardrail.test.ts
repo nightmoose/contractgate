@@ -235,6 +235,107 @@ describe('aischemagateGuardrail', () => {
     assert.equal(modelCalls, AISG_MAX_REPAIR_ATTEMPTS);
   });
 
+  it('rejects malformed JSON without calling egress or starting a repair', async () => {
+    let egressCalls = 0;
+    const client = clientWith(() => {
+      egressCalls += 1;
+      return jsonResponse(500, { error: 'egress must not run' });
+    });
+    let modelCalls = 0;
+    const mw = aischemagateGuardrail({
+      apiKey: 'cg_live_test',
+      contractId: CONTRACT,
+      client,
+      autoRepair: true,
+      maxRetries: 2,
+    });
+    await assert.rejects(
+      () =>
+        mw.wrapGenerate({
+          doGenerate: async () => textResult('{not json'),
+          doStream: async () => {
+            throw new Error('stream unused');
+          },
+          params: { prompt: [{ role: 'user', content: [{ type: 'text', text: 'extract' }] }] },
+          model: {
+            async doGenerate() {
+              modelCalls += 1;
+              return textResult('{"currency":"USD"}');
+            },
+          },
+        }),
+      (err: unknown) => {
+        assert.ok(err instanceof AiSchemaGateRejectedError);
+        assert.match(err.message, /JSON object/);
+        assert.equal(err.attempts, 1);
+        assert.deepEqual(err.violations, []);
+        return true;
+      },
+    );
+    assert.equal(egressCalls, 0);
+    assert.equal(modelCalls, 0);
+  });
+
+  it('rejects a JSON array and a malformed repair response', async () => {
+    let egressCalls = 0;
+    const client = clientWith(() => {
+      egressCalls += 1;
+      return jsonResponse(
+        422,
+        failBody([{ field: 'currency', kind: 'enum_violation', message: 'not in enum' }]),
+      );
+    });
+    const mw = aischemagateGuardrail({
+      apiKey: 'cg_live_test',
+      contractId: CONTRACT,
+      client,
+      autoRepair: true,
+      maxRetries: 2,
+    });
+    await assert.rejects(
+      () =>
+        mw.wrapGenerate({
+          doGenerate: async () => textResult('["USD"]'),
+          doStream: async () => {
+            throw new Error('stream unused');
+          },
+          params: { prompt: [] },
+          model: { doGenerate: () => Promise.reject(new Error('unused')) },
+        }),
+      (err: unknown) => err instanceof AiSchemaGateRejectedError && /JSON object/.test(err.message),
+    );
+    assert.equal(egressCalls, 0);
+
+    let repairs = 0;
+    const repairing = aischemagateGuardrail({
+      apiKey: 'cg_live_test',
+      contractId: CONTRACT,
+      client,
+      autoRepair: true,
+      maxRetries: 2,
+    });
+    await assert.rejects(
+      () =>
+        repairing.wrapGenerate({
+          doGenerate: async () => textResult('{"currency":"usd"}'),
+          doStream: async () => {
+            throw new Error('stream unused');
+          },
+          params: { prompt: [{ role: 'user', content: [{ type: 'text', text: 'extract' }] }] },
+          model: {
+            async doGenerate() {
+              repairs += 1;
+              return textResult('still not json');
+            },
+          },
+        }),
+      (err: unknown) =>
+        err instanceof AiSchemaGateRejectedError && /repair response was not a JSON object/.test(err.message),
+    );
+    assert.equal(egressCalls, 1);
+    assert.equal(repairs, 1);
+  });
+
   it('validates tool-call input when the text is not JSON', async () => {
     const client = clientWith(async (req) => {
       assert.deepEqual(await req.json(), [{ city: 'Paris' }]);
