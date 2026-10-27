@@ -7,6 +7,8 @@
 
 This document is design only. It does not change the engine, the SDKs, or the dashboard. Implementation stays blocked until the UI mockup in [Rollout](#rollout) exists and the owner approves this RFC. Approval moves the status from Draft to Accepted. A later PR lands the code.
 
+Owner review of the first draft asked for three additions, which this revision adopts: a stateful stream context on the gate and/or a local WASM/FFI parser; an `AISchemaGate.wrapStream` interceptor; and a progressive repair budget with a speculative JSON snapshot. Latency stays a list of goals, with no timing numbers.
+
 ---
 
 ## Problem
@@ -29,6 +31,8 @@ Verified in the tree this RFC was written against.
 
 **The Vercel AI SDK guardrail implements `wrapGenerate` only.** In `sdks/aischemagate/typescript/src/ai.ts`, `AiSchemaGateMiddleware` is a structural `LanguageModelV4Middleware` with `specificationVersion: 'v4'` and a single method, `wrapGenerate`. `aischemagateGuardrail` returns that method. Its options object includes `doStream`, and the function never calls it. The comment on `aischemagateGuardrail` states that streaming is unchanged and that callers use a non-streaming generate call. `sdks/aischemagate/typescript/tests/guardrail.test.ts` asserts `wrapGenerate` is present. There is no `wrapStream`.
 
+**Published package names.** The TypeScript package is `@nightmoose/aischemagate` (`sdks/aischemagate/typescript/package.json`). The Python package is `aischemagate` (`sdks/aischemagate/python/pyproject.toml`). `sdks/aischemagate/typescript/src/index.ts` re-exports `LLMGate` and `aischemagateGuardrail`. `sdks/aischemagate/python/src/aischemagate/__init__.py` re-exports `LLMGate`. Neither module exports `AISchemaGate.wrapStream` today.
+
 **The engine validates a complete JSON value.** Egress is the shared DataContractGate and AISchemaGate route. `validate` in `src/validation.rs` walks a finished object: required fields, types, pattern, enum, range, length, format, `date` / `timestamp`, nested properties, array items, then metrics and per-event quality rules. `compliance_mode` reports `undeclared_field` for keys of the root object that are not in `declared_top_level_fields`. Nested extra keys are not an `undeclared_field` violation. Egress (`src/egress.rs`) runs that check, then `apply_egress_pii_pipeline`: RFC-004 transforms, then the leakage guard (`off` / `strip` / `fail`) on root keys. Failing records are quarantined when `dry_run` is false. Transforms in `src/transform.rs` run on complete top-level string fields (`mask`, `hash`, `drop`, `redact`). `hash` uses the per-contract `pii_salt`, which API responses do not return.
 
 **Repair is a second full generation.** Python `LLMGate._run_loop` re-prompts on an egress failure or on non-JSON text. The default is two extra attempts (`_DEFAULT_MAX_RETRIES`) and the hard cap is five (`MAX_RETRIES_CAP`). The TypeScript guardrail uses the same numbers (`maxRetries` default 2, `AISG_MAX_REPAIR_ATTEMPTS`). `aischemagateGuardrail` re-prompts only for semantic kinds: `range_violation`, `pattern_mismatch`, `enum_violation`, `undeclared_field` (`SEMANTIC_VIOLATION_KINDS` in `sdks/aischemagate/typescript/src/ai.ts`). Malformed JSON does not start that loop. This RFC keeps those two policies.
@@ -37,19 +41,20 @@ RFC-094 listed streaming as a non-goal and pointed at a follow-up RFC. This is t
 
 ## Goal
 
-A caller who sets `stream=True`, or who wraps a Vercel AI SDK model and calls `streamText`, gets incremental checks while tokens arrive, and one authoritative server check when the generation attempt ends.
+A caller passes an OpenAI `stream=True` iterator or an Anthropic `messages.stream()` handle to `AISchemaGate.wrapStream` and gets checks as each value closes, plus a JSON snapshot of the partial object a UI can parse before the model emits the final brackets.
 
 **Done means:**
 
-1. Closed values are checked locally for type, enum, range, length, pattern, format, `date`, and `timestamp`. Required fields are checked when their object closes. Undeclared root keys are checked when the key closes, under the same flags the engine uses today.
-2. A definitive local violation stops the provider stream when disposition is `block` or `fail` (the gateway default is `block`). Disposition `tag` keeps reading and reports violations on the terminal result.
-3. `aischemagateGuardrail` gains `wrapStream` beside the existing `wrapGenerate`.
-4. Python `LLMGate` and `AsyncLLMGate` accept `stream=True` on `completion` and `message` and return a sync iterator or an async iterator.
-5. Every generation attempt that produces a complete JSON object still calls `POST /egress/{contract_id}`. That response is authoritative for pass/fail, transforms, audit, and quarantine.
-6. An attempt aborted before the object closes writes one partial quarantine row, through the route in [Quarantine, repair, and PII](#7-quarantine-repair-and-pii). A chunk writes no row of its own.
-7. Fields that declare a transform are withheld from yielded text. The caller sees the sanitized value from the egress payload.
-8. Repair, when the surface already repairs that violation kind, cancels the current stream, tells the caller to discard the partial text, and starts a new generation within the existing attempt cap.
-9. Non-streaming `completion`, `message`, `wrapGenerate`, and `validateStructuredOutput` keep their current results.
+1. The Rust gate keeps a stream context per session. Each request carries the new chunk only. The gate appends that chunk to its parser. It does not receive the accumulated payload again.
+2. The same parser is available as WASM and as an FFI library for edge and SDK execution. [Server session and local WASM/FFI](#4-server-session-and-local-wasmffi) records the tradeoff. Which of the two ships in the first implementation is an open question; the design covers both.
+3. The parser tracks incomplete tokens (an unclosed string, an unclosed array or object, a number or literal still in progress) and builds a transient working AST. That AST is a side structure. The upstream provider stream is not rewritten.
+4. Schema traversal runs when a value boundary closes, and it does not re-walk fields that have already closed. An enum or type violation fails the stream before the provider finishes the generation, subject to `onValidationError`.
+5. `@nightmoose/aischemagate` exports `AISchemaGate.wrapStream(stream, { schema, onValidationError })`. PyPI `aischemagate` exports the Python equivalent `AISchemaGate.wrap_stream`. `onValidationError` is `'drop'`, `'throw'`, or `'repair'`. The wrapper is a drop-in around an OpenAI chat stream and around Anthropic `messages.stream()`.
+6. After N unrepairable chunks the wrapper cancels the provider read and stops yielding, so later tokens are not consumed and downstream code does not keep running. N is `maxUnrepairableChunks`. This draft does not pick a default.
+7. `partialJson()` (Python `partial_json()`) returns a string with trailing brackets and quotes closed on a copy of the working AST. `JSON.parse` / `json.loads` of that string succeeds. The copy is not the payload sent to egress, and closing it does not fire `missing_required_field`.
+8. A complete object still ends at `POST /egress/{contract_id}`. That response is authoritative for pass/fail, transforms, audit, and quarantine. An incomplete abort writes one quarantine row. A chunk writes none.
+9. Fields that declare a transform are withheld from yielded text. The caller sees the sanitized value from the egress payload.
+10. Non-streaming `completion`, `message`, `wrapGenerate`, and `validateStructuredOutput` keep their current results.
 
 ## Non-goals
 
@@ -63,15 +68,22 @@ A caller who sets `stream=True`, or who wraps a Vercel AI SDK model and calls `s
 
 ## Design
 
-### 1. Two buffers, one decision
+### 1. Working AST, incomplete tokens
 
-The SDK keeps a parser buffer and a yield buffer.
+Each stream has one context. The context holds:
 
-The parser buffer is the decoded JSON text of the current attempt (response text, or tool-call arguments — see [Open questions](#open-questions) when both grow). It feeds an incremental JSON parser. The parser's state (stack, current key, in-string, escape, number token) survives arbitrary chunk splits, including a split inside a `\u` escape.
+- The parser stack and the current incomplete token (a string whose closing quote has not arrived, a number or literal still being spelled, or nothing).
+- A transient working AST: objects and arrays that may still be open, strings that may still be open, and scalars that have closed.
+- The set of paths whose value boundary has already been checked.
+- The yield policy (transforms withheld, leakage fields withheld).
 
-The yield buffer is what the caller is allowed to see. It is a view of the parser buffer with transformed fields and not-yet-closed leakage fields removed. The SDK retains the full parser buffer until the attempt ends so the terminal egress call can send the object. That retention is internal. The caller receives deltas as the yield rules below allow. RFC-094's rule stands: `stream=True` does not mean "buffer the whole reply and return it as a normal `LLMGateResult`."
+A chunk is appended to that context. The parser accepts a split inside a token, including inside a `\u` escape. Unclosed strings and unclosed arrays (and unclosed objects) stay open nodes. They are not errors.
 
-`stream` omitted or false keeps today's non-streaming methods. Passing `stream=True` is the opt-in.
+The AST is built beside the provider stream. The wrapper does not write into the provider iterator, does not insert speculative brackets into the provider bytes, and does not replace a chunk the provider already emitted. Speculative completion, below, copies the AST and closes that copy.
+
+The context lives in one of two places, [compared below](#4-server-session-and-local-wasmffi): in the gate process, keyed by a session id, or in the SDK/edge process inside the WASM/FFI parser. Either way the chunk that crosses the boundary is the new delta. The accumulated text is not sent again.
+
+`stream` omitted or false keeps today's non-streaming methods. `AISchemaGate.wrapStream` is the opt-in.
 
 ### 2. What partial JSON can decide
 
@@ -97,9 +109,11 @@ The local checker is a port of those closed-value branches. It loads the deploye
 
 ### 3. Fail fast versus buffer
 
-**Fail fast** means: the attempt's outcome is already a violation, so the SDK cancels the provider iterator (`close` on a sync iterator, `aclose` on an async iterator, or the equivalent abort on the AI SDK stream) and stops yielding data deltas.
+Schema traversal is non-blocking in the sense that matters for a stream: when a value boundary closes, that field is checked before the next chunk is required, and fields that have already closed are not walked again. The traversal does not wait for the root `}` and does not call `validate()` on a reconstructed full document per chunk.
 
-Fail fast applies when disposition is `block` or `fail` and any row in the table above has fired, or the parser has seen illegal JSON (a token that cannot be a prefix of a valid value, such as `tx` where a literal was starting). An unclosed string at a chunk boundary is a prefix, not illegal JSON.
+An enum violation or a type violation on that closed boundary fails the stream before generation finishes. The wrapper then follows `onValidationError` ([SDK interceptor](#5-sdk-interceptor)). Under `'throw'`, and under `'drop'` or `'repair'` once the unrepairable-chunk budget is spent, the wrapper cancels the provider iterator (`close`, `aclose`, or the AI SDK abort) so the model is not asked for the rest of the object and downstream code receives no further chunks.
+
+Fail fast also applies when disposition is `block` or `fail` and any other row in the table has fired, or the parser has seen illegal JSON (a token that cannot be a prefix of a valid value, such as `tx`). An unclosed string, array, or object at a chunk boundary is a prefix, not illegal JSON, and not a reason to fail.
 
 **Buffer** means: keep reading. Nothing is a violation yet.
 
@@ -109,150 +123,228 @@ Buffer applies to:
 - Enum, range, `min_length`, pattern, format, `date`, and `timestamp` before the value closes.
 - `max_length` until the decoded length exceeds the bound.
 - Quality rules and metrics, until the terminal `POST /egress/{contract_id}`.
-- The end of the provider stream. If the stream ends inside a value, the attempt is malformed JSON, which is the streaming form of today's `extract_json` failure. Required-field checks run only for objects that actually closed. The SDK does not invent a closing `}` to force those checks.
+- The end of the provider stream. If the stream ends inside a value, the attempt is malformed JSON, which is the streaming form of today's `extract_json` failure. Required-field checks run only for objects the model actually closed. The speculative snapshot in [Progressive budget and speculative completion](#7-progressive-budget-and-speculative-completion) closes brackets on a copy for the UI. That copy is not the document those checks see.
 - Disposition `tag`. Violations are collected and the stream runs to completion. The terminal egress result is the one the caller sees, including `tag`'s pass-through behavior from RFC-029.
 
 A local failure on a **complete** object still performs the egress call. The server writes the same audit and quarantine row a non-streaming call would have written. The client does not skip that call because it already knows the answer.
 
-A local failure on an **incomplete** object uses the partial route below instead of `POST /egress/{contract_id}`, because egress validates a JSON object and this buffer is not one.
+A failure on an **incomplete** object uses session close (or the same close handler from a WASM/FFI context) instead of `POST /egress/{contract_id}`, because egress validates a JSON object and this buffer is not one.
 
-### 4. Vercel AI SDK `wrapStream`
+### 4. Server session and local WASM/FFI
 
-`AiSchemaGateMiddleware` in `sdks/aischemagate/typescript/src/ai.ts` gains `wrapStream` next to `wrapGenerate`. The helper stays free of a runtime `ai` dependency: the method is structural, as `wrapGenerate` is today.
+Both shapes run the same Rust stream context: append a delta, update the working AST, check paths whose value boundary just closed, return violations and a speculative snapshot. They differ in where that context lives.
 
-`wrapStream` calls `doStream()`, reads text deltas and tool-call argument deltas, and returns a stream of the same part shape the AI SDK gave it. `wrapGenerate` stays the path for `generateText` and is unchanged, including its repair loop.
+**Server session.** One session per stream on the gate.
 
-Yield rules inside `wrapStream`:
+```
+POST /egress/{contract_id}/sessions
+{ "version": "optional pin", "disposition": "block" }
+→ { "session_id": "..." }
 
-- Deltas for a field with no transform are forwarded as they arrive.
-- Deltas that fall inside a field with `mask`, `hash`, `drop`, or `redact` are not forwarded. Those transforms apply to top-level strings only (`src/transform.rs`). After the terminal egress call, the middleware emits the sanitized field from the egress payload (or omits it, for `drop`) as a single replacement delta before the finish part.
-- On fail fast, the middleware errors the stream with `AiSchemaGateRejectedError` (the same error `wrapGenerate` throws) carrying the violations, unless a repair is starting.
-- Repair follows `SEMANTIC_VIOLATION_KINDS` and `maxRetries` exactly as `wrapGenerate`. The middleware cancels `doStream`, appends the repair hint with the existing `appendRepairMessage` path, and opens another stream. The caller sees a reset part before the next attempt's deltas so the UI drops the partial text. The attempt counter counts generations, not chunks. The hard cap remains five extra attempts.
-- A type mismatch or malformed JSON does not repair. That matches `wrapGenerate`, which does not treat those as semantic violations.
-- When the attempt's text parses as a complete object and local checks pass, `wrapStream` calls `POST /egress/{contract_id}` before it emits the finish part. A server-side failure (including a quality rule the client did not run) is a terminal error, or a repair, under the same rules. The egress payload replaces the assembled text the downstream `Output.object` parser will see, which is the same substitution `wrapGenerate` performs with `write`.
+POST /egress/{contract_id}/sessions/{session_id}/chunks
+{ "delta": "<only the new bytes>" }
+→ { "status": "continue" | "violation" | "closed", "violations": [], "partial_json": "{...}" }
 
-`streamText` users pass the same `aischemagateGuardrail({...})` object they pass for `generateText`. No second helper.
+POST /egress/{contract_id}/sessions/{session_id}/close
+```
 
-### 5. Python sync and async iterators
+`delta` is appended to the session's parser. The body is not the concatenation of every chunk so far, and the handler does not re-parse from the start of the document. State held for the session is the stack, the incomplete token, the working AST, the paths already checked, and the unrepairable-chunk count. `close`, or a terminal `violation` under `'throw'`, writes at most one quarantine row and drops the context. `dry_run=true` skips the write. A complete object still goes through `validate` and `apply_egress_pii_pipeline` in `src/egress.rs` on close, which is the authoritative pass/fail, transform, audit, and quarantine result. `pii_salt` stays on the server.
 
-`LLMGate.completion` and `LLMGate.message` in `sdks/python/src/contractgate/llm.py` grow an explicit branch. `stream=True` returns an `LLMStream` instead of raising. `stream` false or absent returns `LLMGateResult` as today.
+**Local WASM/FFI.** The same context is a crate the SDK and the edge compile twice: `wasm32` for JavaScript hosts, and a C ABI for other languages. `session.push(delta)` returns the same status, violations, and `partial_json` the chunk route returns. The module does not contain `pii_salt` and does not write quarantine. When the object is complete, the SDK calls `POST /egress/{contract_id}` once. When the stream aborts incomplete, the SDK calls the same close handler the session uses, once, with the closed fields from the local context. Audit and transforms still happen once. Chunks are not uploaded.
 
-`AsyncLLMGate.completion` and `AsyncLLMGate.message` return an `AsyncLLMStream` when `stream=True`.
+A deployment may use either shape, or WASM/FFI for the per-chunk check and the gate only for the terminal write. The first implementation picks one or both; that choice is [open question 1](#open-questions).
+
+| | Server session | Local WASM/FFI |
+|---|---|---|
+| Where the context lives | Gate process, one session per stream | SDK or edge process |
+| What crosses the network per chunk | The new delta and the session id | Nothing for the check |
+| Accumulated payload re-sent | No | No |
+| Parser | The Rust stream context | The same Rust stream context, compiled |
+| Enum or type failure before generation ends | The chunk response carries the violation. The wrapper cancels the provider. | `push` returns the violation. The wrapper cancels the provider. |
+| `pii_salt`, hash, format-preserving mask | Applied on the terminal write. The salt never leaves the gate. | The module cannot hash. Transformed fields stay withheld until the terminal egress payload. |
+| Quarantine | One row on session close or on early fail. Chunks write nothing. | One row on the terminal egress or partial write. Chunks write nothing. |
+| Host with no WASM runtime | Works over HTTP. | Needs the WASM or FFI build. |
+| Multi-instance gate | Session memory is local to the process that opened it. A later chunk has to reach that process, or the context has to move. | No gate session to pin. |
+| Drift from `validate_value` | One binary. | Same crate, so the closed-value rules match the gate if the artifact is built from it. |
+| Abandoned streams | The gate has to reap sessions that never `close`. | The SDK drops the context with the wrapper. |
+
+### 5. SDK interceptor
+
+The public interceptor is new on the packages that already ship. TypeScript: `@nightmoose/aischemagate` (`sdks/aischemagate/typescript/package.json`). Python: `aischemagate` (`sdks/aischemagate/python/pyproject.toml`).
+
+```ts
+import { AISchemaGate } from '@nightmoose/aischemagate';
+
+const raw = await openai.chat.completions.create({
+  model: 'gpt-4o',
+  messages,
+  stream: true,
+});
+
+const gated = AISchemaGate.wrapStream(raw, {
+  schema: contractId, // deployed contract id or name
+  onValidationError: 'throw', // 'drop' | 'throw' | 'repair'
+});
+
+for await (const chunk of gated) {
+  // provider chunk shape, after transform holdback
+}
+JSON.parse(gated.partialJson());
+```
+
+```ts
+const raw = anthropic.messages.stream({
+  model: 'claude-sonnet-4-5',
+  max_tokens: 1024,
+  messages,
+});
+const gated = AISchemaGate.wrapStream(raw, {
+  schema: contractId,
+  onValidationError: 'repair',
+});
+```
+
+`wrapStream` accepts the async iterable OpenAI returns for `stream: true` and the async iterable Anthropic returns from `messages.stream()`. It yields chunks in that same shape. It is a generator wrapper: the caller keeps the loop they already wrote.
+
+Python equivalent, sync iterator or async iterator, on the PyPI package:
 
 ```python
-class LLMStream:
-    def __iter__(self) -> Iterator[StreamEvent]: ...
-    # Set when the iterator finishes or raises.
-    result: LLMGateResult | None
+from aischemagate import AISchemaGate
 
-class AsyncLLMStream:
-    def __aiter__(self) -> AsyncIterator[StreamEvent]: ...
-    result: LLMGateResult | None
-
-@dataclass
-class StreamDelta:
-    text: str
-
-@dataclass
-class StreamReset:
-    violations: list[Violation]
-    attempt: int  # 1-based count of the attempt that just failed
+raw = client.chat.completions.create(model="gpt-4o", messages=messages, stream=True)
+gated = AISchemaGate.wrap_stream(
+    raw,
+    schema=contract_id,
+    on_validation_error="drop",  # "throw" | "repair"
+)
+for chunk in gated:
+    ...
+json.loads(gated.partial_json())
 ```
 
-The sync iterator wraps the provider's sync iterator. The async iterator wraps the provider's async iterator. Both run the same parser and the same yield rules as `wrapStream`. OpenAI-protocol streams (`chat.completions.create(..., stream=True)`) and Anthropic-protocol streams (`messages.create(..., stream=True)`) both go through these wrappers. Chunk boundaries are the provider's chunks; the parser reassembles tokens.
-
-`auto_repair=True` uses the Python policy: an egress failure or malformed JSON may re-prompt, within `max_retries` (default 2, hard cap 5). The iterator yields `StreamReset`, cancels the provider iterator, appends `repair_prompt(violations)` as a user message (the existing `_default_repair_prompt` when the caller did not pass one), and continues with the next attempt's `StreamDelta`s. The repair prompt is not inserted into the byte stream.
-
-On a terminal failure with repair exhausted or `auto_repair` false, the iterator raises `LLMResponseError` with the violations attached, after cancelling the provider. `result` holds the last `LLMGateResult` when the attempt produced one (complete object, egress already called). An incomplete abort sets `result` from the partial-route response.
-
-`validate_only` stays non-streaming. Passing an iterator to `extract_json` continues to raise, so a caller who wants streaming goes through `completion` / `message` with `stream=True`.
-
-The TypeScript `LLMGate` in `sdks/typescript/src/llm.ts` follows the same contract with an async iterator only. This RFC does not add a second design for it.
-
-### 6. Rust gate API
-
-**Adopted shape: client-side closed-value checks, one server check per attempt.**
-
-The tokens are already in the SDK process. Re-uploading each chunk to the gateway would put a network round trip on the path this RFC is trying to shorten. `pii_salt` stays on the server, so the client cannot apply `hash` or format-preserving `mask` and get the digest RFC-004 stores. Quarantine and audit are writes; they belong on one terminal request per attempt.
-
-The authoritative check is the existing handler: `POST /egress/{contract_id}` in `src/egress.rs`, which runs `validate`, `apply_egress_pii_pipeline`, audit, and quarantine. No flag on that route changes meaning. `dry_run=true` still skips writes. `disposition` still means `block`, `fail`, or `tag`.
-
-The one new route covers an attempt that fail-fasts before a complete object exists:
-
-```
-POST /egress/{contract_id}/partial
+```python
+raw = client.messages.stream(model="claude-sonnet-4-5", max_tokens=1024, messages=messages)
+gated = AISchemaGate.wrap_stream(raw, schema=contract_id, on_validation_error="repair")
 ```
 
-```json
-{
-  "closed": { "currency": "XYZ" },
-  "violations": [
-    { "field": "currency", "kind": "enum_violation", "message": "..." }
-  ],
-  "excerpt": "{ \"currency\": \"XYZ\", \"vendor\": \"A",
-  "excerpt_spans": [{ "field": "vendor", "start": 28, "end": 31 }]
+`wrap_stream` is the Python spelling of `wrapStream`. Both accept a sync generator and an async generator. `LLMGate.completion(..., stream=True)` and `LLMGate.message(..., stream=True)` become thin callers of `wrap_stream` after they open the provider stream. `stream` omitted still returns `LLMGateResult`. `extract_json` on a bare iterator still raises, so streaming goes through the wrapper.
+
+`schema` is the deployed AISchemaGate contract (UUID or name), the same handle `aischemagateGuardrail` takes as `contractId`. An inline contract document is [open question 3](#open-questions).
+
+`onValidationError` / `on_validation_error`:
+
+| Mode | On a closed enum or type violation | After N unrepairable chunks |
+|---|---|---|
+| `throw` | Raise `AiSchemaGateRejectedError` (TypeScript) or `LLMResponseError` (Python), cancel the provider, stop the iterator. | Not used. The first such violation already stopped the stream. |
+| `drop` | Do not yield the offending chunk. Keep reading. | Cancel the provider and end the iterator without raising. Downstream stops. `partialJson()` still reads. |
+| `repair` | If the surface already repairs that kind, cancel, emit a reset, and start another generation within the existing generation cap (default two extra, hard cap five). If it does not repair that kind, treat the chunk as unrepairable. | Same as `drop`: cancel the provider, stop yielding. |
+
+Yield rules for every mode:
+
+- Deltas for a field with no transform are forwarded as they arrive.
+- Deltas inside `mask`, `hash`, `drop`, or `redact` are not forwarded. Those transforms apply to top-level strings only (`src/transform.rs`). The sanitized value arrives with the terminal egress payload.
+- The wrapper never writes speculative brackets into the yielded provider chunks.
+
+**Vercel AI SDK.** `aischemagateGuardrail` in `sdks/aischemagate/typescript/src/ai.ts` gains a middleware `wrapStream` beside `wrapGenerate`. That method is an adapter: it reads text deltas and tool-call argument deltas from `doStream()` and feeds them to the same stream context as `AISchemaGate.wrapStream`. `wrapGenerate` stays the `generateText` path, including its repair loop. `streamText` callers pass the same `aischemagateGuardrail({...})` object. The helper stays free of a runtime `ai` dependency.
+
+Repair on the middleware follows `SEMANTIC_VIOLATION_KINDS` and `maxRetries`, as `wrapGenerate` does today. A type mismatch or malformed JSON does not start a repair generation. Python `repair` follows `LLMGate._run_loop`: an egress failure or malformed JSON may re-prompt. The repair prompt is the existing `repair_prompt` / `repairHint`, sent as a user message on the next provider request. It is not inserted into the failed byte stream. The caller sees a reset, then deltas from the next attempt, and drops the partial text first.
+
+### 6. Rust stream context
+
+The context is a type in the gateway crate, used by the session handler and compiled into the WASM/FFI artifact. Sketch, not a frozen API:
+
+```rust
+struct StreamContext {
+    stack: Vec<Frame>,
+    pending: PendingToken, // none, string, number, or literal
+    ast: Node,             // transient; not the provider buffer
+    checked: HashSet<String>,
+    unrepairable_chunks: u32,
+}
+
+enum Node {
+    Object { fields: Vec<(String, Node)>, open: bool },
+    Array { items: Vec<Node>, open: bool },
+    String { value: String, open: bool },
+    Number { raw: String, closed: bool },
+    Bool(bool),
+    Null,
 }
 ```
 
-Server behavior:
+`push(delta)` folds bytes. When a node transitions to closed, the walker checks that path against the compiled contract and records it in `checked`. Later chunks do not re-check it. Sibling fields that are still open are left alone. That is the non-blocking traversal: work is proportional to the new closure, and the read of the next chunk is not waiting on a full-document `validate()`.
 
-1. Re-check each entry of `closed` with the same rules as `validate_value`. Drop any client violation the server does not reproduce. The server is authoritative.
-2. Run `apply_transforms` on those closed fields. Transforms stay limited to declared top-level strings.
-3. Store one quarantine row whose payload is the transformed closed object. Copy `excerpt` only after every `excerpt_spans` range that names a transformed field has been replaced with the transformed text. If a span does not line up with the excerpt, omit the excerpt.
-4. Do not evaluate required fields for objects that were not closed, and do not run freshness.
-5. `dry_run=true` returns the server violations and writes nothing.
-6. The row uses `direction = 'egress'`, the same audit direction as a normal egress failure.
+The authoritative full `validate()` still runs once, when the root has actually closed: on session close, or on the terminal `POST /egress/{contract_id}` when the per-chunk checks ran in WASM/FFI. Disagreement between the incremental kinds and `validate()` for those kinds is a bug in the context.
 
-A complete object does not use this route. It uses `POST /egress/{contract_id}`.
+The incomplete-abort write stores one quarantine row. The payload is `apply_transforms` of the closed fields only. An excerpt is stored only after spans that name a transformed field have been replaced with the transformed text. Required fields are not evaluated for objects the model left open. `direction` is `egress`. `dry_run=true` returns violations and writes nothing. A retried close uses `Idempotency-Key` and stores one row per key.
 
-**Session endpoint, not adopted.** A streaming session (`POST /egress/{contract_id}/stream`, chunked request, SSE of per-field verdicts) would move the parser into the gateway. That helps a host that cannot run the SDK. It also holds gateway memory for the life of a generation, and it either skips PII until the end (the client design, with extra hops) or sanitizes per field (a round trip per closed field). This RFC does not add that route. Hosts without the SDK keep today's option: assemble the object, then call egress. The session route is recorded under [Alternatives](#alternatives-considered).
+### 7. Progressive budget and speculative completion
 
-### 7. Quarantine, repair, and PII
+**Unrepairable chunks.** A chunk is unrepairable when it closes a value into a violation this surface will not spend another generation on. On the TypeScript guardrail that includes `type_mismatch` and malformed JSON, which sit outside `SEMANTIC_VIOLATION_KINDS`. On Python `LLMGate` a type or enum failure can still start a repair generation until `MAX_RETRIES_CAP` (five) is exhausted; after that, further chunks are unrepairable. An incomplete token is not unrepairable.
 
-**Quarantine.** No chunk writes a row. A complete attempt writes through the existing egress path, including intermediate repair attempts that produced a complete object — that is what a non-streaming repair loop already does, because each attempt calls `client.egress`. An incomplete fail-fast writes one row through `POST /egress/{contract_id}/partial`. A retried client uses an `Idempotency-Key` on that partial call; the server stores one row per key. `dry_run=true` writes neither kind of row.
+`maxUnrepairableChunks` is N. This draft sets no default. The counter lives on the stream context.
 
-**Repair prompts.** The prompt is built with the surface's existing function (`repair_prompt` in Python, `repairHint` in `sdks/aischemagate/typescript/src/ai.ts`) and sent as a user message on the next provider request. It is not streamed into the failed attempt. The caller observes `StreamReset` (Python) or a reset part (`wrapStream`) and drops text from the failed attempt before painting the next one. Repair does not start until the failed provider stream is cancelled, so two provider streams are not open for one gate. The cap is unchanged: default two extra generations, hard cap five, counting attempts rather than chunks.
+- `'throw'` cancels the provider on the first enum or type violation and does not wait for N.
+- `'drop'` withholds the offending chunk and keeps reading. At N it cancels the provider and ends the iterator without raising. Downstream execution stops. Tokens after that point are not read.
+- `'repair'` spends a generation, within the existing cap (default two extra attempts, hard cap five), when the kind is repairable. The prompt is `repair_prompt` / `repairHint`, sent as a user message on the next provider call, not spliced into the failed stream. The caller sees a reset and drops the partial text. Unrepairable chunks count toward N. At N the wrapper cancels the provider and stops yielding, the same as `'drop'`.
 
-**PII.** `apply_transforms` runs on a finished string. A prefix of an email is a different HMAC input than the full email, and a partial format-preserving mask is a different string than the mask of the finished value. The SDK therefore withholds a transformed field's deltas for the whole attempt. The yielded value is the one egress (or the partial route) returns after `apply_transforms`. `drop` yields nothing for that field. The client never computes `hash`.
+Repair does not start until the failed provider stream is cancelled, so two provider streams are not open for one gate.
+
+**Speculative completion.** `partialJson()` / `partial_json()` copies the working AST and serializes the copy:
+
+1. An open string on the copy is closed with a quote.
+2. Open arrays and objects on the copy are closed with `]` and `}`, from the inside out.
+3. A trailing number or literal that is not yet valid JSON (`1.`, `-`, `tru`) is omitted from the copy. A number token that is already valid JSON (`12`) is included, and it stays unchecked until the real token closes.
+4. The copy is not written back onto the parser AST, the provider stream, or the egress body.
+
+`JSON.parse` / `json.loads` of that string succeeds, including while the model still has brackets open. Required-field checks do not run on the copy. They run when the model emits the real closer. The session chunk response carries the same string as `partial_json` so a server-session client and a WASM client expose one snapshot.
+
+**Quarantine.** No chunk writes a row. A complete attempt writes through `POST /egress/{contract_id}`, including intermediate repair attempts that produced a complete object, because each such attempt already calls egress today. An incomplete abort writes one row on session close, as [the stream context](#6-rust-stream-context) specifies. `dry_run=true` writes neither.
+
+**PII.** `apply_transforms` runs on a finished string. A prefix of an email is a different HMAC input than the full email, and a partial format-preserving mask is a different string than the mask of the finished value. The SDK therefore withholds a transformed field's deltas for the whole attempt. The yielded value is the one the terminal egress payload returns. `drop` yields nothing for that field. The client, including the WASM module, never computes `hash`.
 
 Undeclared root fields under leakage `strip` or `fail` are withheld from the moment the key closes. `fail` also fail-fasts when disposition is `block` or `fail`.
 
-The stored quarantine payload follows RFC-004: transformed fields, and under `compliance_mode` the undeclared keys removed, as `apply_transforms` already does before `audit_log` and `quarantine_events`. The partial route uses that same function on `closed`.
+The stored quarantine payload follows RFC-004: transformed fields, and under `compliance_mode` the undeclared keys removed, as `apply_transforms` already does before `audit_log` and `quarantine_events`.
 
 Provider retention of the raw generation is outside the gate. The gate's guarantee is the one RFC-004 and RFC-030 already state for stored and forwarded payloads.
 
 ### 8. Latency goals
 
-These are goals for the implementation to hit once a streaming path exists. They are goals only.
+These are goals for the implementation once a streaming path exists. They are goals only. This draft states no timing number.
 
-- Goal: closed-value checks run in the SDK process, with no network round trip on the per-chunk path, so a definitive violation is visible to the caller before the provider finishes the rest of the object.
-- Goal: a generation attempt sends one gateway request (the existing egress call, or one partial call), plus one further request per repair attempt, and not one request per chunk.
-- Goal: the authoritative `validate()` on a complete object stays inside the gateway budget the contributor guide already sets for the engine, p99 well under 15 ms. That budget is a goal for this work. Chunk handling has its own goals above, and no figure is attached to it here.
-- Goal: withholding a transformed field does not wait on a per-field sanitize RPC. The sanitized bytes arrive with the single terminal response.
+- Goal: a session chunk carries the new delta, not the bytes the context has already accepted.
+- Goal: an enum or type violation is signaled on the chunk that closed the value, before the provider finishes the generation.
+- Goal: the WASM/FFI path folds that same delta in-process, with no per-chunk gateway hop.
+- Goal: when the unrepairable-chunk budget is spent, the wrapper stops reading the provider, so later tokens are not consumed and downstream code stops.
+- Goal: the speculative snapshot is produced from the AST copy on that same chunk, so a UI can parse it before the model emits the closing brackets.
+- Goal: salt-backed transforms and the quarantine write still happen on one terminal request per attempt, not on every chunk.
 
 ## Rollout
 
 Status stays **Draft** until both of the following are true:
 
-1. A UI mockup, reviewed by the owner, shows all five moments below.
-2. The owner approves this RFC. The status line then changes to Accepted, in a docs follow-up or at the top of the implementation PR.
+1. A UI mockup, reviewed by the owner, shows all seven moments below.
+2. The owner approves this RFC, including whether the first implementation is the server session, the WASM/FFI parser, or both. The status line then changes to Accepted, in a docs follow-up or at the top of the implementation PR.
 
 The mockup frames:
 
 1. Deltas for a field with no transform appearing while the object is still open.
-2. The stream stopping on a closed-value failure (enum or range), with the field, kind, and message visible.
+2. The stream stopping on a closed enum or type violation before the provider finishes, with the field, kind, and message visible.
 3. Repair: the partial text is discarded, then a later attempt's deltas appear.
 4. A field declared `redact` or `hash` stays hidden, then shows the sanitized egress value.
 5. One quarantine row for the failed attempt, including an incomplete abort, and no row per chunk.
+6. `partialJson()` parsing while the model has not yet emitted the closing brackets.
+7. After N unrepairable chunks, the provider read stops and the downstream loop receives nothing further.
 
 Until that approval, no engine, SDK, or dashboard change ships from this design.
 
 After approval, the implementation order is:
 
-1. Shared JSON fixtures of partial inputs and the violation kind expected at each prefix. The Rust tests and the SDK tests consume the same files.
-2. Python iterators, then the TypeScript `LLMGate` async iterator, then `wrapStream`.
-3. `POST /egress/{contract_id}/partial` and its quarantine write.
-4. A reference page, `docs/streaming-validation-reference.md`, linked from `docs/llm-output-validation.md` and `docs/integrations/vercel-ai-sdk.md`, in the same PR as the user-facing API. That page is user-facing surface (new method behavior and a new route) and waits for the implementation PR, per the contributor guide.
+1. The Rust `StreamContext` and shared fixtures of partial inputs. The gate tests and the SDK tests consume the same files.
+2. The server session, the WASM/FFI artifact, or both, per the approval.
+3. `AISchemaGate.wrapStream` in `@nightmoose/aischemagate` and `AISchemaGate.wrap_stream` in `aischemagate`, then the Vercel middleware adapter.
+4. A reference page, `docs/streaming-validation-reference.md`, linked from `docs/llm-output-validation.md` and `docs/integrations/vercel-ai-sdk.md`, in the same PR as the user-facing API. That page is user-facing surface (new method and new routes) and waits for the implementation PR, per the contributor guide.
 
 No migration. Existing callers that omit `stream` see no change. Callers that pass `stream=True` today already receive `LLMResponseError`; the implementation replaces that error with an iterator. That is a behavior change on a path that has no successful caller. The SDK minor version notes it. Tests that assert the v1 error are updated in the implementation PR: `sdks/python/tests/test_llm_gate.py`, `sdks/typescript/tests/llm.test.ts`, and `sdks/aischemagate/typescript/tests/guardrail.test.ts`.
 
@@ -276,34 +368,48 @@ The implementation PR is expected to cover the following. This RFC adds none of 
 
 **Parity.** For every fixture that is a complete object, the local checker and `validate()` return the same kinds for the checks in the table. A deliberate mismatch fails the test. Freshness and metrics are asserted only on the server result.
 
-**Python.** Sync iterator and async iterator. `stream=True` yields `StreamDelta` before the provider finishes. Fail-fast cancels the underlying iterator (a test double that records `close` / `aclose`). `auto_repair` yields `StreamReset`, starts a second provider call, and stops at the hard cap. `stream` omitted still returns `LLMGateResult`. `extract_json` on an iterator still raises.
+**Stream context.** Two deltas that together form one string are one token. The second request's body is only the new bytes. Pushing the concatenation a second time is a test that must fail the fixture, so a client cannot "work" by resending the accumulated payload. An unclosed string and an unclosed array survive a chunk boundary as open nodes. The provider buffer in the test double is unchanged after `push`.
 
-**`wrapStream`.** Forwards a non-transformed text delta. Withholds a `redact` field until the egress payload is spliced in. Semantic failure with `autoRepair` resets and re-calls `doStream` within the cap. Type mismatch does not re-prompt. `wrapGenerate` tests in `guardrail.test.ts` stay green without a stream.
+**Speculative snapshot.** An AST with an open object and an open array serializes to a string `JSON.parse` accepts. The parser AST's open flags stay open after `partialJson()`. A missing required field is not reported from the snapshot. It is reported when the real `}` arrives.
 
-**Quarantine and PII.** A complete failure produces one egress quarantine write and zero partial writes. An incomplete enum failure produces one partial write and zero egress event writes. Two chunks produce the same single write. `dry_run=true` produces none. The stored payload for a `hash` field is the transformed form; the yielded text never contains the raw field. An idempotent retry of the partial call stores one row.
+**Progressive budget.** With `onValidationError: 'drop'` and N set by the test, the Nth unrepairable chunk cancels the provider double and the wrapper yields nothing further. With `'throw'`, the first enum or type violation cancels and raises. With `'repair'`, a semantic kind starts one new generation and a type mismatch on the TypeScript surface counts toward N.
+
+**Interceptor.** `AISchemaGate.wrapStream` around an async iterable of OpenAI chat chunks, and around an async iterable shaped like Anthropic `messages.stream()`, yields the provider chunk type. `AISchemaGate.wrap_stream` does the same for a sync generator and an async generator. `stream` omitted on `LLMGate.completion` still returns `LLMGateResult`. `extract_json` on a bare iterator still raises.
+
+**Vercel adapter.** Forwards a non-transformed text delta. Withholds a `redact` field until the egress payload is spliced in. Semantic failure with repair resets and re-enters the stream within the generation cap. Type mismatch does not re-prompt. `wrapGenerate` tests in `guardrail.test.ts` stay green.
+
+**Quarantine and PII.** A complete failure produces one egress quarantine write. An incomplete enum failure produces one close-time write. Two chunks produce that single write, and neither chunk body is the full text. `dry_run=true` produces none. The stored payload for a `hash` field is the transformed form. The yielded text and the WASM module's output do not contain the raw field. An idempotent retry of close stores one row.
 
 **Disposition `tag`.** A closed enum failure does not cancel the provider. The terminal result carries the violations.
 
-**Latency.** A later benchmark may be read against the goals in [Latency goals](#8-latency-goals). The reference page is where that run is recorded, if the implementation adds one.
+**Latency.** A later benchmark may be read against the goals in [Latency goals](#8-latency-goals). The reference page is where that run is recorded, if the implementation adds one. This RFC records no timing result.
 
 ## Alternatives considered
 
-**Streaming session on the gateway.** `POST /egress/{contract_id}/stream` would accept text chunks and emit per-field verdicts. The parser would live in one place, which removes the risk of the SDK port drifting from `validate_value`. The cost is a network hop per chunk on the path whose goal is to decide before the provider finishes, plus session state held for the whole generation. PII would still wait for a finished string, so the session would not sanitize any earlier than the client design. Deferred to a later RFC if a host that cannot run the SDK needs fail-fast. The partial route in this RFC is the only new HTTP surface, and it runs once per incomplete attempt.
+**Resend the accumulated payload on every chunk.** The gate would parse the whole text so far on each call and keep no session. That avoids pinned session memory. It repeats work the context already did, and it makes "the new chunk" ambiguous. Set aside. Both the session and the WASM/FFI parser append a delta.
 
-**Silent full buffer, then today's egress.** `stream=True` would collect every chunk and return `LLMGateResult`. RFC-094 rejected that as the v1 default because callers pass `stream=True` in order to render partial text. This RFC keeps incremental yield, with internal retention only so the terminal request has an object to send.
+**A hand-ported parser in TypeScript and Python.** The SDK would reimplement `validate_value` for closed nodes. That ships with no WASM toolchain. It will drift from the Rust walker. Set aside in favor of compiling the same `StreamContext`. The comparison of running that crate on the gate versus in-process is [section 4](#4-server-session-and-local-wasmffi), not a rejection of either.
 
-**Client checks only, no terminal egress.** The SDK would be the authority. That skips quarantine, audit, and transforms that need `pii_salt`, and it lets the port drift from `validate` with no server result to compare. Rejected. A local pass still calls egress. A local failure on a complete object still calls egress.
+**Silent full buffer, then today's egress.** `stream=True` would collect every chunk and return `LLMGateResult`. RFC-094 rejected that as the v1 default because callers pass `stream=True` in order to render partial text. This RFC keeps incremental yield. The working AST is retained so the terminal request and the snapshot have a structure to read. The caller still receives deltas.
 
-**Server check only, no incremental parser.** `stream=True` would be allowed, the SDK would forward every raw delta, and egress would run at the end. That is the buffer workaround this RFC exists to replace: a bad enum stays on screen until the model stops, and transformed fields are painted raw. Rejected as the default. It remains the behavior of a caller who assembles the object themselves and calls egress, which is unchanged.
+**Client checks only, no terminal egress.** The SDK would be the authority. That skips quarantine, audit, and transforms that need `pii_salt`. Set aside. A finished object still calls egress. An incomplete abort still writes one server row.
+
+**Server check only, no incremental parser.** `stream=True` would forward every raw delta and call egress at the end. A bad enum would stay on screen until the model stops, and transformed fields would be painted raw. Set aside as the default. A caller who assembles the object and calls egress directly is unchanged.
 
 **Regex-prefix rejection.** A pattern that cannot match any continuation of the open string could fail before the closing quote. It is easy to reject a prefix that a later character would have saved, and the engine does not do this on complete values. Out of scope. Patterns run when the string closes.
 
-**Per-field sanitize RPC.** A closed transformed field would be sent to the gateway immediately so the UI can paint the mask before the object finishes. That spends a round trip per sensitive field and complicates attempt accounting. The yield rule withholds the field until the single terminal payload instead.
+**Per-field sanitize RPC.** A closed transformed field would be sent to the gateway immediately so the UI can paint the mask before the object finishes. That spends a round trip per sensitive field. The yield rule withholds the field until the single terminal payload instead.
+
+**Treat the speculative snapshot as the egress body.** Auto-closed brackets would make every partial object look complete, and required fields would fail for keys the model has not emitted yet. The snapshot is a UI view. Egress sees the model's bytes.
 
 ## Open questions
 
-1. **Text and tool-call buffers together.** `extract_json` prefers an OpenAI content string, then tool-call arguments, then an Anthropic tool input. If a stream emits both text deltas and argument deltas, which buffer is the contract object while both are still growing? Proposal to confirm at approval: follow the finished-response precedence, and parse only the preferred buffer once it has started receiving deltas. The other buffer is ignored for validation.
-2. **Repair transport for `wrapStream`.** The design re-enters `doStream` so the retry stays streaming. Falling back to `doGenerate` for the retry is simpler and drops incremental checks on the attempt most likely to be the one the user sees. Owner confirmation belongs on the mockup (frame 3).
-3. **Contract cache lifetime.** The local checker caches the contract document for the gate instance. A deploy of a new version during a long-lived process would leave the client on the old ontology until restart, while egress would use the new one and could fail a stream the client passed. Proposal: cache key `(contract_id, version)` with a short TTL when `version` is omitted, and no TTL when `version` is pinned. The number for that TTL is unset.
-4. **Idempotency window for `POST /egress/{contract_id}/partial`.** The design requires `Idempotency-Key` and stores one row per key. How long the server remembers the key, and what a reused key with a different body returns, is unset. It should match whatever idempotency egress already has, or be explicit if egress has none.
-5. **Python event type.** `StreamEvent` (`StreamDelta` | `StreamReset`) is the shape in this RFC. An alternative is to yield provider text and expose `reset` as a callback. The event type is what the mockup's repair frame binds to; if the mockup needs a different hook, this question is the one to change.
+1. **Session, WASM/FFI, or both first.** The design covers both, and [section 4](#4-server-session-and-local-wasmffi) is the tradeoff. Approval of the mockup includes this choice. A host with no WASM runtime needs the session. A hot path that cannot spend a hop per delta needs the local parser. Using both (local check, gate only on close) is the third option.
+2. **Default of `maxUnrepairableChunks`.** N is part of the API. This draft does not choose a number. `'throw'` does not consult N.
+3. **`schema` argument.** The sketches pass a deployed contract id or name. Whether an inline contract document is also accepted is unset.
+4. **Session placement.** In-memory state is local to the gate process that opened the session. What happens to a chunk that arrives on another instance, and how an abandoned session is reaped, is unset. No interval is chosen here.
+5. **Trailing number in the snapshot.** A token that is already valid JSON (`12`) is included and not range-checked. Confirm that a UI prefers seeing `12` over omitting it until the token closes.
+6. **Text and tool-call buffers together.** `extract_json` prefers an OpenAI content string, then tool-call arguments, then an Anthropic tool input. If a stream emits both, which buffer is the contract object while both are still growing? Proposal: follow that precedence, and parse only the preferred buffer once it has started receiving deltas.
+7. **`'drop'` and quarantine.** `'drop'` ends the iterator at N without raising. The session still writes one quarantine row on close. Confirm the mockup's quarantine frame shows that row for a dropped stream.
+8. **Idempotency window for session close.** The design requires `Idempotency-Key` and stores one row per key. How long the server remembers the key, and what a reused key with a different body returns, is unset.
+9. **Repair transport for the Vercel adapter.** The adapter re-enters `doStream` so the retry stays streaming. Falling back to `doGenerate` for the retry is simpler and drops incremental checks on the attempt the user is most likely to see. Owner confirmation belongs on mockup frame 3.
