@@ -105,6 +105,7 @@ them by name only.
 | 092 | [Ralph-native demo stack (Kafi / Driftless / DataContractGate)](rfcs/092-ralph-native-demo.md) | Accepted — partner-ready |
 | 093 | [Egress as a first-class door](rfcs/093-egress-first-class.md) | Shipped |
 | 105 | [ODCS v3.2 property enums, dual-brand MCP metadata, AISchemaGate guardrails](rfcs/105-odcs-v32-and-guardrail-recipes.md) | Shipped |
+| 106 | [Streaming chunk validation](rfcs/106-streaming-chunk-validation.md) | Draft |
 
 ---
 
@@ -121,6 +122,8 @@ them by name only.
 | **Superseded** | Replaced by a later RFC listed in the notes column; kept for design context. |
 
 ---
+
+*2026-10-27 — RFC-106 (Draft): streaming chunk validation for AISchemaGate. A gate session appends each chunk (not the accumulated payload) and/or the same parser ships as WASM/FFI. `AISchemaGate.wrapStream` on `@nightmoose/aischemagate`, and `AISchemaGate.wrap_stream` on PyPI `aischemagate`, wrap an OpenAI `stream=True` iterator or Anthropic `messages.stream()` with `onValidationError` of `drop`, `throw`, or `repair`. Unrepairable chunks stop the provider after a caller-set budget. A speculative snapshot auto-closes brackets so a UI can parse the partial object. No code. Implementation waits on a UI mockup and owner approval.*
 
 *2026-10-23 — RFC-105: ODCS import accepts `apiVersion` v3.1.0 and v3.2.0 and maps a property-level `enum` (scalar list or `{value}` objects, including an empty list and mixed or duplicate entries) onto the field constraint. `x-cg-enum` still wins over the property `enum` and over `invalidValues` / `validValues`. Export stays v3.1.0. The MCP registry listing names DataContractGate and AISchemaGate, and Smithery's default gateway is `https://api.datacontractgate.com`. `@nightmoose/aischemagate` gains `aischemagateGuardrail` (`wrapGenerate`) and `validateStructuredOutput`. Guides cover the Vercel AI SDK, Pydantic / Instructor, and LangGraph. Recipes cover a webhook quarantine firewall, a Dagster / Prefect gate, and quarantine replay.*
 
