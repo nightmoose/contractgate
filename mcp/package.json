@@ -1,6 +1,6 @@
 {
   "name": "@nightmoose/contractgate-mcp-server",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "mcpName": "io.github.nightmoose/contractgate",
   "description": "Official MCP server for DataContractGate (ingest data contracts, ODCS v3.1/v3.2 validation, quarantine and replay) and AISchemaGate (runtime LLM structured-output validation via egress_validate and violation-fed auto-repair).",
   "homepage": "https://github.com/nightmoose/contractgate/tree/staging/mcp#readme",

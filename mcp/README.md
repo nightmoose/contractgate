@@ -16,9 +16,11 @@ One server, two products, same API key:
   `pattern`, `enum`, `compliance_mode`) are what a caller uses for bounded
   auto-repair. Forward `payload` from the tool result, not the original body.
 
-Registry metadata for the Official MCP Registry is [`server.json`](server.json)
-(`description` is the 100-character registry field; keywords and the longer
-summary are under `_meta`). Smithery config is [`smithery.yaml`](smithery.yaml);
+Registry metadata for the Official MCP Registry is [`server.json`](server.json).
+The `title` and `description` lead with AISchemaGate (`description` is the
+100-character registry field). The server `name` stays
+`io.github.nightmoose/contractgate`. Keywords and the longer summary are under
+`_meta`. Smithery config is [`smithery.yaml`](smithery.yaml);
 its default `contractgateBaseUrl` is the API gateway. npm keywords and this
 README are the directory listing.
 
