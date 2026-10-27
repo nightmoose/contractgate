@@ -26,6 +26,14 @@ ignore = [
     # stringifies those keys and changes the error text. Ignored until a
     # maintained replacement matches that behavior.
     "RUSTSEC-2024-0449",
+    # RUSTSEC-2026-0387 — `crypto-bigint` 0.5.5 timing variability.
+    # Fixed only in >=0.7.6; 0.5.5 is the last 0.5 release. Pulled only
+    # through jsonwebtoken's `rust_crypto` feature (p256/p384 0.13 →
+    # elliptic-curve 0.13). jsonwebtoken 11 still requires p256 ^0.13.2.
+    # Keep `rust_crypto`: the alternative backend panics on CryptoProvider
+    # (see the jsonwebtoken note in Cargo.toml). Revisit when jsonwebtoken
+    # moves to elliptic-curve 0.14.
+    "RUSTSEC-2026-0387",
 ]
 
 [bans]
