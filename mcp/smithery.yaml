@@ -1,19 +1,23 @@
-# Smithery discovery for the DataContractGate and AISchemaGate MCP server.
-# The official registry listing is mcp/server.json.
+# AISchemaGate validates and repairs structured LLM output against a contract,
+# plus DataContractGate data contracts. Repair uses the violation fields from
+# that check. The contract checks values a JSON Schema or Pydantic validation
+# can leave open.
+# Install manifest for Smithery. The registry listing is mcp/server.json.
 # contractgateBaseUrl is the API gateway, not the dashboard host.
 startCommand:
   type: stdio
   configSchema:
     type: object
+    description: AISchemaGate validates and repairs structured LLM output against a contract, plus DataContractGate data contracts. Repair uses the violation fields from that check.
     required:
       - contractgateApiKey
     properties:
       contractgateApiKey:
         type: string
-        description: DataContractGate API key (cg_live_...)
+        description: API key for AISchemaGate and DataContractGate (cg_live_...)
       contractgateBaseUrl:
         type: string
-        description: Gateway base URL
+        description: Gateway base URL for AISchemaGate and DataContractGate
         default: https://api.datacontractgate.com
   commandFunction: |-
     (config) => ({

@@ -39,4 +39,4 @@ export type {
   SemanticViolationKind,
 } from './ai.js';
 
-export const AISCHEMAGATE_VERSION = '0.4.0';
+export const AISCHEMAGATE_VERSION = '0.4.1';

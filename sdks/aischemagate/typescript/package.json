@@ -1,6 +1,6 @@
 {
   "name": "@nightmoose/aischemagate",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "description": "AISchemaGate — thin alias over @nightmoose/contractgate-sdk for LLM structured-output validation. Same engine as DataContractGate.",
   "license": "MIT",
   "type": "module",
@@ -50,7 +50,7 @@
     "structured-output"
   ],
   "dependencies": {
-    "@nightmoose/contractgate-sdk": "^0.4.0"
+    "@nightmoose/contractgate-sdk": "^0.4.1"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",
