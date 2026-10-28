@@ -2,27 +2,29 @@
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
   "name": "io.github.nightmoose/contractgate",
   "title": "AISchemaGate and DataContractGate",
-  "description": "AISchemaGate egress validation and repair. DataContractGate ingest, ODCS, quarantine.",
+  "description": "AISchemaGate validates and repairs structured LLM output against a contract, plus DataContractGate.",
   "version": "0.4.1",
   "websiteUrl": "https://app.datacontractgate.com/mcp-reference.md",
   "_meta": {
     "io.modelcontextprotocol.registry/publisher-provided": {
       "keywords": [
         "aischemagate",
-        "json-schema",
-        "pydantic-validation",
-        "llm-guardrails",
-        "structured-outputs",
+        "llm",
+        "structured output",
         "structured-output",
+        "json schema",
+        "json-schema",
+        "pydantic validation",
+        "pydantic",
+        "llm guardrails",
+        "llm-guardrails",
         "datacontractgate",
-        "odcs",
         "data-contracts",
+        "odcs",
         "quarantine",
-        "replay",
-        "egress_validate",
-        "llm"
+        "egress_validate"
       ],
-      "summary": "AISchemaGate: runtime LLM structured-output validation via egress_validate and violation-fed auto-repair. DataContractGate: ingest data contracts, ODCS v3.1 and v3.2 validation, quarantine and replay."
+      "summary": "AISchemaGate validates and repairs structured LLM output against a contract, plus DataContractGate data contracts. Repair uses the violation fields from that check (min, max, pattern, enum, compliance_mode). The contract checks values a JSON Schema or Pydantic validation can leave open. DataContractGate infers and deploys contracts, validates ingest, including ODCS v3.1.0 and v3.2.0, and lists quarantine."
     }
   },
   "repository": {

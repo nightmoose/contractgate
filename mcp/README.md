@@ -1,28 +1,34 @@
 # @nightmoose/contractgate-mcp-server
 
-Official [Model Context Protocol](https://modelcontextprotocol.io) server for
-**DataContractGate** and **AISchemaGate**. Thin stdio wrapper over the HTTP
-API at `https://api.datacontractgate.com` (override with `CONTRACTGATE_BASE_URL`).
-The dashboard host `https://app.datacontractgate.com` is not the gateway.
+**AISchemaGate** validates and repairs structured LLM output against a contract,
+plus **DataContractGate** data contracts. Repair uses the violation fields from
+that check. The contract checks values a JSON Schema or Pydantic validation can
+leave open.
+
+Official [Model Context Protocol](https://modelcontextprotocol.io) server. Thin
+stdio wrapper over the HTTP API at `https://api.datacontractgate.com` (override
+with `CONTRACTGATE_BASE_URL`). The dashboard host
+`https://app.datacontractgate.com` is not the gateway.
 
 One server, two products, same API key:
 
+- **AISchemaGate** — validates structured LLM output
+  (`egress_validate` → `POST /egress/{id}`). Repair uses the violation fields
+  from that check (`min`, `max`, `pattern`, `enum`, `compliance_mode`). Forward
+  `payload` from the tool result, not the original body.
 - **DataContractGate** — infer and deploy data contracts, validate ingest
-  (`validate_events` → `POST /v1/ingest/{id}`), including ODCS v3.1 and v3.2
+  (`validate_events` → `POST /v1/ingest/{id}`), including ODCS v3.1.0 and v3.2.0
   contracts, and inspect quarantine (`get_quarantine`). Replay stays on the
   HTTP API (`POST /contracts/{id}/quarantine/replay`).
-- **AISchemaGate** — runtime validation of LLM structured output
-  (`egress_validate` → `POST /egress/{id}`). Violation fields (`min`, `max`,
-  `pattern`, `enum`, `compliance_mode`) are what a caller uses for bounded
-  auto-repair. Forward `payload` from the tool result, not the original body.
 
 Registry metadata for the Official MCP Registry is [`server.json`](server.json).
 The `title` and `description` lead with AISchemaGate (`description` is the
 100-character registry field). The server `name` stays
 `io.github.nightmoose/contractgate`. Keywords and the longer summary are under
 `_meta`. Smithery config is [`smithery.yaml`](smithery.yaml);
-its default `contractgateBaseUrl` is the API gateway. npm keywords and this
-README are the directory listing.
+its default `contractgateBaseUrl` is the API gateway. npm keywords, this
+README, and [`DIRECTORY_LISTINGS.md`](DIRECTORY_LISTINGS.md) are the directory
+listing.
 
 See [`docs/mcp-reference.md`](../docs/mcp-reference.md) for tools and auth.
 AISchemaGate app integrations: [`docs/integrations/`](../docs/integrations/).
