@@ -46,6 +46,16 @@ ignore = [
     # Suppressed: 2026-10-22. Revisit: when a maintained parser matches
     # that behavior.
     "RUSTSEC-2024-0449",
+
+    # crypto-bigint 0.5.5 — timing variability (RUSTSEC-2026-0387).
+    # The patched line is >=0.7.6. There is no 0.5.x fix. jsonwebtoken
+    # 10 and 11 both require p256 ^0.13.2, which requires
+    # elliptic-curve ^0.13 and crypto-bigint ^0.5. `rust_crypto` stays
+    # on: dropping it brings back the process-level CryptoProvider panic
+    # documented on the jsonwebtoken dependency.
+    # Suppressed: 2026-10-27. Revisit: when jsonwebtoken depends on
+    # elliptic-curve 0.14 (crypto-bigint >=0.7.6).
+    "RUSTSEC-2026-0387",
 ]
 
 [output]

@@ -122,6 +122,7 @@ fn integration_docs_and_recipes_only_cite_routes_that_exist() {
         1,
     );
     assert_doc_only_cites_existing_routes("docs/integrations/langgraph-tool-gate.md", 1);
+    assert_doc_only_cites_existing_routes("docs/integrations/python-framework-adapters.md", 2);
     assert_doc_only_cites_existing_routes("examples/recipes/README.md", 2);
     assert_doc_only_cites_existing_routes("examples/recipes/webhook_quarantine_firewall.py", 1);
     assert_doc_only_cites_existing_routes("examples/recipes/pipeline_guardrail.py", 1);

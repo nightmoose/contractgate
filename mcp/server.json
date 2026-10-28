@@ -1,24 +1,28 @@
 {
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
   "name": "io.github.nightmoose/contractgate",
-  "title": "DataContractGate and AISchemaGate",
-  "description": "DataContractGate ingest, ODCS, quarantine. AISchemaGate egress validation and repair.",
-  "version": "0.4.0",
+  "title": "AISchemaGate and DataContractGate",
+  "description": "AISchemaGate egress validation and repair. DataContractGate ingest, ODCS, quarantine.",
+  "version": "0.4.1",
   "websiteUrl": "https://app.datacontractgate.com/mcp-reference.md",
   "_meta": {
     "io.modelcontextprotocol.registry/publisher-provided": {
       "keywords": [
-        "datacontractgate",
         "aischemagate",
+        "json-schema",
+        "pydantic-validation",
+        "llm-guardrails",
+        "structured-outputs",
+        "structured-output",
+        "datacontractgate",
         "odcs",
         "data-contracts",
         "quarantine",
         "replay",
         "egress_validate",
-        "structured-output",
         "llm"
       ],
-      "summary": "DataContractGate: ingest data contracts, ODCS v3.1 and v3.2 validation, quarantine and replay. AISchemaGate: runtime LLM structured-output validation via egress_validate and violation-fed auto-repair."
+      "summary": "AISchemaGate: runtime LLM structured-output validation via egress_validate and violation-fed auto-repair. DataContractGate: ingest data contracts, ODCS v3.1 and v3.2 validation, quarantine and replay."
     }
   },
   "repository": {
@@ -32,7 +36,7 @@
       "registryType": "npm",
       "registryBaseUrl": "https://registry.npmjs.org",
       "identifier": "@nightmoose/contractgate-mcp-server",
-      "version": "0.4.0",
+      "version": "0.4.1",
       "runtimeHint": "npx",
       "transport": {
         "type": "stdio"

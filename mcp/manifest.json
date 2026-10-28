@@ -2,7 +2,7 @@
   "manifest_version": "0.3",
   "name": "contractgate",
   "display_name": "DataContractGate and AISchemaGate",
-  "version": "0.1.2",
+  "version": "0.4.1",
   "description": "DataContractGate ingest, ODCS validation, quarantine, and replay. AISchemaGate LLM structured-output validation via egress_validate and violation-fed auto-repair.",
   "long_description": "DataContractGate rejects schema-valid but wrong events before they hit a topic: infer a contract, validate ODCS v3.1 and v3.2 imports, dry-run ingest, and inspect or replay quarantine. AISchemaGate uses the same gateway to validate LLM structured output with egress_validate and feed min, max, pattern, enum, and compliance_mode violations into a bounded auto-repair loop.",
   "author": {

@@ -123,4 +123,10 @@ if checked.ok:
 
 Use `gate.completion(..., auto_repair=True)` when you do not need the Pydantic instance and want the gate to own the retry loop. Use `validate_only` when Instructor (or any other parser) already built the object and you only need the semantic check.
 
+To run the structural check before Pydantic field validation, install
+`aischemagate[instructor]` and decorate the response model with
+`AISchemaGateHook.guard`. A contract rejection is reported then, and field
+validators do not run. See
+[`python-framework-adapters.md`](python-framework-adapters.md).
+
 Do not persist `draft` when `checked.ok` is false. The interesting failures are value failures on a payload that already parsed.
