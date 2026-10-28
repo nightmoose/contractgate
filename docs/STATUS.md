@@ -106,6 +106,7 @@ them by name only.
 | 093 | [Egress as a first-class door](rfcs/093-egress-first-class.md) | Shipped |
 | 105 | [ODCS v3.2 property enums, dual-brand MCP metadata, AISchemaGate guardrails](rfcs/105-odcs-v32-and-guardrail-recipes.md) | Shipped |
 | 106 | [Streaming chunk validation](rfcs/106-streaming-chunk-validation.md) | Draft |
+| 107 | [Python framework adapters](rfcs/107-python-framework-adapters.md) | Shipped |
 
 ---
 
@@ -122,6 +123,8 @@ them by name only.
 | **Superseded** | Replaced by a later RFC listed in the notes column; kept for design context. |
 
 ---
+
+*2026-10-28 — RFC-107: PyPI `aischemagate` 0.5.0 adds optional LangChain and LlamaIndex output parsers and an Instructor hook. Each calls the existing egress helper (`POST /egress/{contract_id}`, contract names via `GET /contracts`). The Instructor hook runs that structural check before Pydantic field validation. Streaming chunk validation stays RFC-106 (Draft) and is not implemented.*
 
 *2026-10-27 — RFC-106 (Draft): streaming chunk validation for AISchemaGate. A gate session appends each chunk (not the accumulated payload) and/or the same parser ships as WASM/FFI. `AISchemaGate.wrapStream` on `@nightmoose/aischemagate`, and `AISchemaGate.wrap_stream` on PyPI `aischemagate`, wrap an OpenAI `stream=True` iterator or Anthropic `messages.stream()` with `onValidationError` of `drop`, `throw`, or `repair`. Unrepairable chunks stop the provider after a caller-set budget. A speculative snapshot auto-closes brackets so a UI can parse the partial object. No code. Implementation waits on a UI mockup and owner approval.*
 

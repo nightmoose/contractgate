@@ -1,13 +1,13 @@
 """AISchemaGate — alias over ``contractgate`` for LLM output validation.
 
-RFC-094 §4. This package has no behavior of its own. It re-exports the
-`contractgate` public surface and the `contractgate.llm` additions so
-`from aischemagate import LLMGate` works for AISchemaGate users without
-them typing `contractgate.llm` in their imports. Breaking changes are
-made in `contractgate`; this alias follows via its minimum-version pin.
+The root import re-exports the ``contractgate`` public surface and
+``contractgate.llm`` so ``from aischemagate import LLMGate`` works for
+AISchemaGate users. Framework adapters live in optional submodules
+(``aischemagate.langchain``, ``aischemagate.llamaindex``,
+``aischemagate.instructor``) and are not imported here.
 
 Both brands share the same backend, tenant service, and API keys. The
-`api_key` is the same `cg_live_...` the dashboard issues.
+``api_key`` is the same ``cg_live_...`` the dashboard issues.
 """
 
 from contractgate import (
@@ -55,7 +55,7 @@ from contractgate.llm import (
     extract_json,
 )
 
-__version__ = "0.4.0"
+__version__ = "0.5.0"
 __contractgate_version__ = _contractgate_version
 
 __all__ = [

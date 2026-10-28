@@ -305,6 +305,12 @@ ai_msg = chain.invoke({"input": "..."})
 result = gate.validate_only(ai_msg.content)   # ai_msg.content is the JSON string
 ```
 
+`aischemagate[langchain]` also provides `AISchemaGateParser`, a
+`BaseOutputParser` that calls the same egress check and returns the payload
+or raises `OutputParserException`. See
+[`integrations/python-framework-adapters.md`](integrations/python-framework-adapters.md).
+That parser does not accept a token stream.
+
 ### §5.6 CrewAI
 
 Same `validate_only` pattern: the crew returns a task output; pass the
