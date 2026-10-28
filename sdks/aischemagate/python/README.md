@@ -84,13 +84,17 @@ parser = AISchemaGateParser(
 payload = parser.parse(model_text)  # dict, or OutputParserException
 ```
 
-`parser` can sit at the end of a chain: `chain = prompt | llm | parser`.
+`parser` can sit at the end of a chain. `prompt` is a
+`langchain_core.prompts.ChatPromptTemplate`, and `llm` is a chat model:
+`chain = prompt | llm | parser`.
 
 ### LlamaIndex
 
 Same parser for LlamaIndex `BaseOutputParser`. `parse` returns the egress
-payload, or raises `AISchemaGateRejected` (a `ValueError`). `format` appends
-a JSON instruction to the query.
+payload, or raises `AISchemaGateRejected` (a `ValueError`). A
+`llama_index.core.prompts.PromptTemplate` calls `format` (and
+`format_messages`) on its `output_parser`, which appends a JSON instruction
+to the query.
 
 ```python
 import os

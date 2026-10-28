@@ -19,7 +19,7 @@ Ship three optional extras on the `aischemagate` package. The root import does n
 
 - `aischemagate[langchain]` — `AISchemaGateParser`, a LangChain `BaseOutputParser`. `parse` returns the egress payload or raises `OutputParserException`.
 - `aischemagate[llamaindex]` — the same parser for LlamaIndex `BaseOutputParser`. A rejection raises `AISchemaGateRejected`.
-- `aischemagate[instructor]` — `AISchemaGateHook.guard` subclasses the response model with a Pydantic `mode='before'` validator. Instructor's parser calls `model_validate`, so this check runs before field validators. A structural failure is the `ValidationError` Instructor reports. A passing check validates the egress payload.
+- `aischemagate[instructor]` — `AISchemaGateHook.guard` subclasses the response model with a Pydantic `mode='before'` validator. Instructor's OpenAI parser calls `model_validate_json` (other providers call `model_validate` or `model_validate_json`). Both run `mode='before'` validators before field validators, so this check runs first. A structural failure is the `ValidationError` Instructor wraps in `InstructorRetryException`. A passing check validates the egress payload.
 
 All three call `LLMGate.validate_only`. No new gateway route. A token stream raises the same error `validate_only` already raises.
 
@@ -27,7 +27,7 @@ Instructor's `client.on("completion:response")` handlers cannot carry this check
 
 ## Testing
 
-Unit tests in `sdks/aischemagate/python/tests/` use `httpx.MockTransport`. They cover the egress path, contract-name resolution, a rejected payload, invalid JSON, a stream (no HTTP call), and the Instructor ordering (field validator not called when the structural check fails; repaired payload is what Pydantic sees when it passes).
+Unit tests in `sdks/aischemagate/python/tests/` use `httpx.MockTransport`. They cover the egress path, contract-name resolution, a rejected payload, invalid JSON, a stream (no HTTP call), and the Instructor ordering (field validator not called when the structural check fails; repaired payload is what Pydantic sees when it passes). `test_framework_interfaces.py` drives the same checks through LangChain's runnable chain, a LlamaIndex `PromptTemplate`, and `instructor.from_openai(...).chat.completions.create`.
 
 ## Rollout
 

@@ -7,10 +7,11 @@ Instructor emits ``completion:response`` before Pydantic validation, and its
 hook runner swallows exceptions from those handlers. A handler registered
 with ``client.on`` therefore cannot stop field validation or become the
 error Instructor reports. ``AISchemaGateHook.guard`` subclasses the response
-model with a Pydantic ``mode='before'`` validator. That validator is the
-first step of ``model_validate``, which is what Instructor's response parser
-calls, so a structural failure is the validation error and field validators
-do not run.
+model with a Pydantic ``mode='before'`` validator. Instructor's response
+parsers call ``model_validate_json`` (OpenAI JSON, JSON schema, and tool
+calls) or ``model_validate``. Both run that validator before field
+validators, so a structural failure is the validation error and field
+validators do not run.
 """
 
 from __future__ import annotations

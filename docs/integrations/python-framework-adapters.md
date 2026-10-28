@@ -20,14 +20,17 @@ DataContractGate.
 
 ```python
 import os
+from langchain_core.prompts import ChatPromptTemplate
 from aischemagate.langchain import AISchemaGateParser
 
 parser = AISchemaGateParser(
     api_key=os.environ["CONTRACTGATE_API_KEY"],
     contract_id=os.environ["AISG_CONTRACT_ID"],
 )
+prompt = ChatPromptTemplate.from_template("Extract {topic} as JSON.")
+# `llm` is a LangChain chat model. The extra installs `langchain-core`.
 chain = prompt | llm | parser
-payload = chain.invoke({"input": "Extract the invoice as JSON."})
+payload = chain.invoke({"topic": "the invoice"})
 ```
 
 `parse` raises `OutputParserException` when the text is not a JSON object or
@@ -37,14 +40,16 @@ the contract rejects it.
 
 ```python
 import os
+from llama_index.core.prompts import PromptTemplate
 from aischemagate.llamaindex import AISchemaGateParser
 
 parser = AISchemaGateParser(
     api_key=os.environ["CONTRACTGATE_API_KEY"],
     contract_id=os.environ["AISG_CONTRACT_ID"],
 )
+prompt = PromptTemplate("Extract the invoice as JSON.", output_parser=parser)
+query = prompt.format()
 payload = parser.parse(response_text)
-query = parser.format("Extract the invoice as JSON.")
 ```
 
 A rejection raises `AISchemaGateRejected`.
