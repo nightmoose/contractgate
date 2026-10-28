@@ -1,7 +1,9 @@
 # @nightmoose/contractgate-mcp-server
 
-**AISchemaGate** validates structured LLM output against a contract and returns
-the violation fields used for repair, plus **DataContractGate** data contracts.
+**AISchemaGate** validates and repairs structured LLM output against a contract,
+plus **DataContractGate** data contracts. Repair uses the violation fields from
+that check. The contract checks values a JSON Schema or Pydantic validation can
+leave open.
 
 Official [Model Context Protocol](https://modelcontextprotocol.io) server. Thin
 stdio wrapper over the HTTP API at `https://api.datacontractgate.com` (override
