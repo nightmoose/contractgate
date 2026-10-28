@@ -2,6 +2,10 @@
 
 All notable changes to `@nightmoose/contractgate-sdk`.
 
+## 0.4.1 — 2026-10-28
+
+Version alignment with DataContractGate 0.4.1. No SDK API changes.
+
 ## 0.4.0 — 2026-10-13
 
 - `ingest` now posts to `/v1/ingest/{contract_id}` (was the legacy
