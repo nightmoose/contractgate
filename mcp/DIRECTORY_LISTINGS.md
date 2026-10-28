@@ -4,15 +4,11 @@ Ready-to-paste copy for the MCP server. The registry `name` stays
 `io.github.nightmoose/contractgate`. The npm package is
 `@nightmoose/contractgate-mcp-server`.
 
-**Name:** AISchemaGate and DataContractGate
+Registry `description` in [`server.json`](server.json) (100-character limit):
 
-**One-line description:** AISchemaGate validates and repairs structured LLM output against a contract, plus DataContractGate data contracts.
+> AISchemaGate validates structured LLM output against a contract, plus DataContractGate.
 
-**Short description:** AISchemaGate validates and repairs structured LLM output against a contract, plus DataContractGate data contracts. LLM guardrails for structured output, alongside JSON Schema and Pydantic validation. Repair uses the contract violations from that check (min, max, pattern, enum, compliance_mode). DataContractGate validates ingest, including ODCS, and lists quarantine.
-
-**Category:** Developer Tools
-
-**Install command:**
+Install command, matching the `name` in [`package.json`](package.json):
 
 ```bash
 npx -y @nightmoose/contractgate-mcp-server
@@ -32,43 +28,67 @@ npx -y @nightmoose/contractgate-mcp-server
 }
 ```
 
-**Repo URL:** https://github.com/nightmoose/contractgate
+Shared longer description, for directories that take one description field:
+
+> AISchemaGate validates structured LLM output against a contract. Repair uses the violation fields from that check (min, max, pattern, enum, compliance_mode). DataContractGate infers and deploys contracts, validates ingest, including ODCS v3.1.0 and v3.2.0, and lists quarantine.
 
 ## awesome-mcp-servers
 
-Paste this single line under `### 💻 Developer Tools`:
+Paste this single line under the heading `### 💻 Developer Tools`, in
+alphabetical order by the link text. `📇` is TypeScript, `☁️` is a cloud
+service (the server calls the remote API), and `🍎` `🪟` `🐧` are macOS,
+Windows, and Linux.
 
 ```
-- [nightmoose/contractgate](https://github.com/nightmoose/contractgate) 📇 ☁️ 🍎 🪟 🐧 - AISchemaGate validates and repairs structured LLM output against a contract, plus DataContractGate data contracts. LLM guardrails for structured output, alongside JSON Schema and Pydantic validation. `npx -y @nightmoose/contractgate-mcp-server`
+- [nightmoose/contractgate](https://github.com/nightmoose/contractgate) 📇 ☁️ 🍎 🪟 🐧 - AISchemaGate validates structured LLM output against a contract. Repair uses the violation fields from that check (min, max, pattern, enum, compliance_mode). DataContractGate infers and deploys contracts, validates ingest, including ODCS v3.1.0 and v3.2.0, and lists quarantine. `npx -y @nightmoose/contractgate-mcp-server`
 ```
-
-`📇` TypeScript, `☁️` remote API, `🍎` `🪟` `🐧` macOS, Windows, and Linux.
 
 ## Glama
 
-- **Name:** AISchemaGate and DataContractGate
-- **One-line description:** AISchemaGate validates and repairs structured LLM output against a contract, plus DataContractGate data contracts.
-- **Short description:** AISchemaGate validates and repairs structured LLM output against a contract, plus DataContractGate data contracts. LLM guardrails for structured output, alongside JSON Schema and Pydantic validation. Repair uses the contract violations from that check (min, max, pattern, enum, compliance_mode). DataContractGate validates ingest, including ODCS, and lists quarantine.
-- **Category:** Developer Tools
-- **Install command:** `npx -y @nightmoose/contractgate-mcp-server`
-- **Repo URL:** https://github.com/nightmoose/contractgate
+On the servers page, **Add MCP Server** asks for these fields:
+
+- **GitHub repository URL:** https://github.com/nightmoose/contractgate
+- **Display name:** AISchemaGate and DataContractGate
+- **Short description:** AISchemaGate validates structured LLM output against a contract. Repair uses the violation fields from that check (min, max, pattern, enum, compliance_mode). DataContractGate infers and deploys contracts, validates ingest, including ODCS v3.1.0 and v3.2.0, and lists quarantine.
 
 ## Cursor Directory
 
+`https://cursor.directory/mcp/new` redirects to
+`https://cursor.directory/plugins/new`. Use the **Manual** tab. An auto scan
+of this monorepo reads the root `.mcp.json` (a different server) and
+`plugins/contractgate/.mcp.json`, which still pins
+`@nightmoose/contractgate-mcp-server@0.2.0`.
+
 - **Name:** AISchemaGate and DataContractGate
-- **One-line description:** AISchemaGate validates and repairs structured LLM output against a contract, plus DataContractGate data contracts.
-- **Short description:** AISchemaGate validates and repairs structured LLM output against a contract, plus DataContractGate data contracts. LLM guardrails for structured output, alongside JSON Schema and Pydantic validation. Repair uses the contract violations from that check (min, max, pattern, enum, compliance_mode). DataContractGate validates ingest, including ODCS, and lists quarantine.
-- **Category:** Developer Tools
-- **Install command:** `npx -y @nightmoose/contractgate-mcp-server`
-- **Repo URL:** https://github.com/nightmoose/contractgate
+- **Description:** AISchemaGate validates structured LLM output against a contract. Repair uses the violation fields from that check (min, max, pattern, enum, compliance_mode). DataContractGate infers and deploys contracts, validates ingest, including ODCS v3.1.0 and v3.2.0, and lists quarantine.
+- **Repository URL:** https://github.com/nightmoose/contractgate
+- **Homepage:** https://app.datacontractgate.com/mcp-reference.md
+- **Keywords:** aischemagate, structured-output, llm-guardrails, datacontractgate, odcs, quarantine
+- **Component type:** MCP Server
+- **Component name:** contractgate
+- **Component description:** AISchemaGate validates structured LLM output against a contract and returns violation fields for repair. DataContractGate validates ingest and lists quarantine.
+- **Component content:**
+
+```json
+{
+  "command": "npx",
+  "args": ["-y", "@nightmoose/contractgate-mcp-server"],
+  "env": {
+    "CONTRACTGATE_API_KEY": "${CONTRACTGATE_API_KEY}"
+  }
+}
+```
 
 ## Smithery
 
-- **Name:** AISchemaGate and DataContractGate
-- **One-line description:** AISchemaGate validates and repairs structured LLM output against a contract, plus DataContractGate data contracts.
-- **Short description:** AISchemaGate validates and repairs structured LLM output against a contract, plus DataContractGate data contracts. LLM guardrails for structured output, alongside JSON Schema and Pydantic validation. Repair uses the contract violations from that check (min, max, pattern, enum, compliance_mode). DataContractGate validates ingest, including ODCS, and lists quarantine.
-- **Category:** Developer Tools
-- **Install command:** `npx -y @nightmoose/contractgate-mcp-server`
-- **Repo URL:** https://github.com/nightmoose/contractgate
+This server is stdio. Local publish is an MCPB bundle. URL publish on
+https://smithery.ai/new is for a public Streamable HTTP endpoint. Server
+metadata fields:
 
-The install manifest in this repo is [`smithery.yaml`](smithery.yaml).
+- **displayName:** AISchemaGate and DataContractGate
+- **description:** AISchemaGate validates structured LLM output against a contract. Repair uses the violation fields from that check (min, max, pattern, enum, compliance_mode). DataContractGate infers and deploys contracts, validates ingest, including ODCS v3.1.0 and v3.2.0, and lists quarantine.
+- **homepage:** https://app.datacontractgate.com/mcp-reference.md
+- **repositoryUrl:** https://github.com/nightmoose/contractgate
+
+The stdio command in [`smithery.yaml`](smithery.yaml) is `npx` with args
+`["-y", "@nightmoose/contractgate-mcp-server"]`.

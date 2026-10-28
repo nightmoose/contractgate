@@ -1,13 +1,12 @@
-# AISchemaGate validates and repairs structured LLM output against a contract,
-# plus DataContractGate data contracts. LLM guardrails for structured output,
-# alongside JSON Schema and Pydantic validation.
+# AISchemaGate validates structured LLM output against a contract and returns
+# the violation fields used for repair, plus DataContractGate data contracts.
 # Install manifest for Smithery. The registry listing is mcp/server.json.
 # contractgateBaseUrl is the API gateway, not the dashboard host.
 startCommand:
   type: stdio
   configSchema:
     type: object
-    description: AISchemaGate validates and repairs structured LLM output against a contract, plus DataContractGate data contracts.
+    description: AISchemaGate validates structured LLM output against a contract and returns the violation fields used for repair, plus DataContractGate data contracts.
     required:
       - contractgateApiKey
     properties:

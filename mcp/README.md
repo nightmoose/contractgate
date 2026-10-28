@@ -1,8 +1,7 @@
 # @nightmoose/contractgate-mcp-server
 
-**AISchemaGate** validates and repairs structured LLM output against a contract,
-plus **DataContractGate** data contracts. LLM guardrails for structured output,
-alongside JSON Schema and Pydantic validation.
+**AISchemaGate** validates structured LLM output against a contract and returns
+the violation fields used for repair, plus **DataContractGate** data contracts.
 
 Official [Model Context Protocol](https://modelcontextprotocol.io) server. Thin
 stdio wrapper over the HTTP API at `https://api.datacontractgate.com` (override
@@ -16,7 +15,7 @@ One server, two products, same API key:
   from that check (`min`, `max`, `pattern`, `enum`, `compliance_mode`). Forward
   `payload` from the tool result, not the original body.
 - **DataContractGate** — infer and deploy data contracts, validate ingest
-  (`validate_events` → `POST /v1/ingest/{id}`), including ODCS v3.1 and v3.2
+  (`validate_events` → `POST /v1/ingest/{id}`), including ODCS v3.1.0 and v3.2.0
   contracts, and inspect quarantine (`get_quarantine`). Replay stays on the
   HTTP API (`POST /contracts/{id}/quarantine/replay`).
 
