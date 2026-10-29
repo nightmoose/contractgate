@@ -3,6 +3,7 @@ updates:
   # ── Rust (Cargo) ──────────────────────────────────────────────────────────
   - package-ecosystem: "cargo"
     directory: "/"
+    target-branch: "staging"
     schedule:
       interval: "monthly"
     cooldown:
@@ -28,6 +29,7 @@ updates:
   # ── Dashboard (npm) ───────────────────────────────────────────────────────
   - package-ecosystem: "npm"
     directory: "/dashboard"
+    target-branch: "staging"
     schedule:
       interval: "monthly"
     cooldown:
@@ -54,6 +56,7 @@ updates:
   # routine non-security bumps (Jackson, JUnit, etc.) are version-updated too.
   - package-ecosystem: "maven"
     directory: "/confluent-connector"
+    target-branch: "staging"
     schedule:
       interval: "monthly"
     cooldown:
@@ -90,6 +93,7 @@ updates:
   # ── Docker base images ────────────────────────────────────────────────────
   - package-ecosystem: "docker"
     directory: "/"
+    target-branch: "staging"
     schedule:
       interval: "monthly"
     cooldown:
