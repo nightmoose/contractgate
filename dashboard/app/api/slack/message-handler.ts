@@ -444,8 +444,10 @@ async function callAnthropic(
   history: SlackMessage[],
   userMessage: string
 ): Promise<string> {
+  // MessageParam is only role and content. Stored turns also carry `via`
+  // for rate limits; the Messages API rejects unknown properties.
   const messages: Array<{ role: "user" | "assistant"; content: string }> = [
-    ...history,
+    ...history.map(({ role, content }) => ({ role, content })),
     { role: "user", content: userMessage },
   ];
 
