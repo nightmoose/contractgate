@@ -269,7 +269,10 @@ jobs:
 
   # ── 5. Publish to MCP Registry ────────────────────────────────────────────
   # Runs after npm publish so the registry can verify the npm package
-  # exists at the declared version. Uses GitHub OIDC (no stored secret needed).
+  # exists at the declared version. registry.npmjs.org can lag `npm publish`
+  # by a few seconds (v0.4.1 returned 400 for that reason), so this job polls
+  # until the version is visible, then retries publish. Uses GitHub OIDC
+  # (no stored secret needed).
   publish-mcp-registry:
     name: Publish to MCP Registry
     if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch'
@@ -287,6 +290,32 @@ jobs:
           curl -fsSL \
             "https://github.com/modelcontextprotocol/registry/releases/latest/download/mcp-publisher_linux_amd64.tar.gz" \
             | tar xz mcp-publisher
+      - name: Wait for npm package to be visible
+        run: |
+          # MCP Registry checks the npm package entry in mcp/server.json, not
+          # the server name/version at the top of the file.
+          PKG=$(jq -r '[.packages[] | select(.registryType == "npm")][0].identifier // empty' mcp/server.json)
+          VER=$(jq -r '[.packages[] | select(.registryType == "npm")][0].version // empty' mcp/server.json)
+          if [[ -z "${PKG}" || -z "${VER}" ]]; then
+            echo "::error::mcp/server.json has no npm package identifier and version to wait for."
+            exit 1
+          fi
+          # Scoped names must be percent-encoded (@scope/pkg → %40scope%2Fpkg).
+          ENCODED=$(printf '%s' "${PKG}" | jq -sRr @uri)
+          URL="https://registry.npmjs.org/${ENCODED}/${VER}"
+          echo "Waiting for ${PKG}@${VER} at ${URL}"
+          for attempt in $(seq 1 30); do
+            if curl -fsS -o /dev/null "${URL}"; then
+              echo "${PKG}@${VER} is visible on registry.npmjs.org (attempt ${attempt}/30)."
+              exit 0
+            fi
+            if [[ "${attempt}" -lt 30 ]]; then
+              echo "Attempt ${attempt}/30: ${PKG}@${VER} not yet visible; retrying in 10s."
+              sleep 10
+            fi
+          done
+          echo "::error::${PKG}@${VER} was not visible at ${URL} after 30 attempts (~5 minutes). MCP Registry publish needs that version on registry.npmjs.org."
+          exit 1
       - name: Login (GitHub OIDC) and publish
         run: |
           NAME=$(jq -r .name mcp/server.json)
@@ -298,7 +327,17 @@ jobs:
             exit 0
           fi
           ./mcp-publisher login github-oidc
-          ./mcp-publisher publish mcp/server.json
+          for attempt in 1 2 3; do
+            if ./mcp-publisher publish mcp/server.json; then
+              exit 0
+            fi
+            if [[ "${attempt}" -eq 3 ]]; then
+              echo "::error::mcp-publisher publish failed after 3 attempts."
+              exit 1
+            fi
+            echo "mcp-publisher publish failed (attempt ${attempt}/3); retrying in 30s."
+            sleep 30
+          done
 
   # ── 6. Publish TypeScript SDK ─────────────────────────────────────────────
   # Publishes @nightmoose/contractgate-sdk to npm on tag pushes.
