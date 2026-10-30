@@ -430,9 +430,7 @@ mod tests {
         let plan = body
             .find("require_plan_feature")
             .expect("org replay must reject a free plan");
-        let resolve = body
-            .find("resolve_quarantine_contracts")
-            .expect("resolve");
+        let resolve = body.find("resolve_quarantine_contracts").expect("resolve");
         assert!(
             plan < resolve,
             "unresolved ids must not skip the plan check"
