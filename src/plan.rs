@@ -655,6 +655,44 @@ mod tests {
         assert!(sql.contains("quarantine_replay_jobs"));
     }
 
+    #[test]
+    fn migration_046_is_additive_after_045() {
+        let sql = include_str!("../supabase/migrations/046_quarantine_plan_split.sql");
+        let prior = include_str!("../supabase/migrations/045_drop_mode.sql");
+        let lower = sql.to_ascii_lowercase();
+        assert!(!lower.contains("drop table"));
+        assert!(!lower.contains("drop column"));
+        assert!(!lower.contains("truncate"));
+        assert!(!lower.contains("concurrently"));
+        assert_eq!(lower.matches("create table").count(), 1);
+        assert!(lower.contains("add column if not exists org_id uuid"));
+        assert!(lower.contains("add column if not exists payload_redact_after"));
+        assert!(lower.contains("create table if not exists public.quarantine_replay_jobs"));
+        assert!(lower.contains("create index if not exists"));
+        assert!(lower.contains("payload = 'null'::jsonb"));
+        assert!(lower.contains("interval '30 days'"));
+        assert!(!lower.contains("pg_net"));
+        assert!(!lower.contains("send_email"));
+        let signature =
+            "returns table (audit_deleted integer, quarantine_deleted integer, drops_deleted integer)";
+        assert!(lower.contains(signature));
+        assert!(prior.to_ascii_lowercase().contains(signature));
+        for kept in [
+            "delete from public.dropped_event_counts",
+            "delete from public.dropped_event_samples",
+            "delete from public.quarantine_guard_events",
+            "delete from public.quarantine_volume_minute",
+            "delete from public.quarantine_events where id = any",
+            "delete from public.audit_log where id = any",
+            "perform public.redact_elapsed_payload_grace(p_batch)",
+        ] {
+            assert!(lower.contains(kept), "{kept}");
+        }
+        let counts = crate::storage::PENDING_QUARANTINE_COUNTS_SQL;
+        assert!(counts.contains("status = 'pending'"));
+        assert!(!counts.to_ascii_lowercase().contains("direction"));
+    }
+
     fn section<'a>(sql: &'a str, start: &str, end: &str) -> &'a str {
         let from = sql.find(start).expect(start) + start.len();
         let to = sql[from..].find(end).expect(end) + from;

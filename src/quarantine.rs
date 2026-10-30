@@ -195,6 +195,10 @@ pub async fn replay_all_handler(
         return Err(AppError::Unauthorized);
     }
     ReplayRequest::validate_ids_bounds(&req.event_ids)?;
+    // Unresolved ids never enter the per-contract engine, which is where the
+    // plan check lives. Reject a free plan here so this route still returns
+    // 403 plan_required.
+    crate::plan::require_plan_feature(&state, org_id, "quarantine_replay").await?;
 
     let now = chrono::Utc::now();
     let requested_version = req.version.clone().unwrap_or_default();
@@ -407,6 +411,33 @@ mod tests {
             replay_availability(true, "reviewed", false, false),
             (true, None)
         );
+    }
+
+    /// `POST /quarantine/replay` used to resolve ids first. Unknown ids never
+    /// reached `replay_for_contract`, so a Free plan got 200 instead of
+    /// 403 `plan_required`.
+    #[test]
+    fn org_replay_checks_the_plan_before_resolving_ids() {
+        let src = include_str!("quarantine.rs");
+        let start = src
+            .find("pub async fn replay_all_handler")
+            .expect("handler");
+        let end = src[start..]
+            .find("pub async fn replay_history_all_handler")
+            .expect("next handler")
+            + start;
+        let body = &src[start..end];
+        let plan = body
+            .find("require_plan_feature")
+            .expect("org replay must reject a free plan");
+        let resolve = body
+            .find("resolve_quarantine_contracts")
+            .expect("resolve");
+        assert!(
+            plan < resolve,
+            "unresolved ids must not skip the plan check"
+        );
+        assert!(body.contains("\"quarantine_replay\""));
     }
 
     #[test]

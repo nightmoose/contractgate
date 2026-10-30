@@ -1096,6 +1096,35 @@ mod tests {
         })
         .is_none());
     }
+
+    #[test]
+    fn request_cannot_force_quarantine_past_a_full_cap() {
+        let mut force = input();
+        force.contract_mode = OnFailMode::Drop;
+        force.contract_explicit = true;
+        force.request = Some(OnFailMode::Quarantine);
+        let forced = apply_plan_cap(resolve_on_fail(&force), counts(50_000, 0));
+        assert_eq!(forced.mode, OnFailMode::Drop);
+        assert_eq!(forced.source, OnFailSource::PlanCap);
+        assert_eq!(forced.quarantined, 0);
+        assert_eq!(forced.dropped, 4);
+        assert!(!forced.sample_drops);
+
+        // The contract cap is full even though the shared org cap is not.
+        let mut locked = input();
+        locked.locked = true;
+        locked.contract_explicit = true;
+        locked.request = Some(OnFailMode::Quarantine);
+        let at_contract_cap = apply_plan_cap(resolve_on_fail(&locked), counts(10_000, 10_000));
+        assert!(!at_contract_cap.lock_rejected);
+        assert_eq!(at_contract_cap.source, OnFailSource::PlanCap);
+        assert_eq!(at_contract_cap.mode, OnFailMode::Drop);
+
+        let under = apply_plan_cap(resolve_on_fail(&force), counts(49_999, 9_999));
+        assert_eq!(under.source, OnFailSource::Request);
+        assert_eq!(under.mode, OnFailMode::Quarantine);
+        assert_eq!(under.quarantined, 4);
+    }
 }
 
 /// Independent checks for precedence, storage, the lock, the watch-only cap,
