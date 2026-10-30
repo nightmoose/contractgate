@@ -116,6 +116,9 @@ pub struct EgressQuery {
     /// Validate without writing to the database.
     #[serde(default)]
     pub dry_run: bool,
+    /// `quarantine` (default) or `drop`. Header `X-On-Fail` is the same switch.
+    #[serde(default)]
+    pub on_fail: Option<String>,
 }
 
 /// Per-record outcome in the egress response.
@@ -138,6 +141,10 @@ pub struct EgressOutcome {
     /// Empty (omitted from JSON) when no fields were stripped.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub stripped_fields: Vec<String>,
+    /// `quarantined` or `dropped` for a failing record. Omitted on a pass.
+    /// Separate from `action`, which is the block/fail/tag payload decision.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub disposition: Option<&'static str>,
 }
 
 #[derive(Debug, Serialize)]
@@ -145,6 +152,12 @@ pub struct EgressResponse {
     pub total: usize,
     pub passed: usize,
     pub failed: usize,
+    pub quarantined: usize,
+    pub dropped: usize,
+    pub on_fail_mode: &'static str,
+    pub on_fail_source: &'static str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub auto_trip: Option<crate::fail_policy::AutoTripBody>,
     pub dry_run: bool,
     pub disposition: &'static str,
     /// RFC-030: the egress leakage mode in effect for this request.
@@ -229,6 +242,7 @@ pub fn apply_disposition(
             validation_us: vr.validation_us,
             action,
             stripped_fields: vec![],
+            disposition: None,
         });
     }
 
@@ -493,6 +507,19 @@ pub async fn egress_handler(
     let passed_count = merged_results.iter().filter(|r| r.passed).count();
     let failed_count = total - passed_count;
     let any_fail = failed_count > 0;
+    let decision = crate::fail_policy::resolve_request(
+        &state,
+        org_id,
+        contract_id,
+        &compiled.contract,
+        &version_row.yaml_content,
+        identity.fail_policy.as_ref(),
+        query.on_fail.as_deref(),
+        &headers,
+        query.dry_run,
+        failed_count,
+    )
+    .await?;
 
     // --- Apply disposition (cleaned payload — raw PII never in response) ----
     let (payload, mut outcomes) =
@@ -501,6 +528,9 @@ pub async fn egress_handler(
     for (outcome, sf) in outcomes.iter_mut().zip(stripped_fields_per_record.iter()) {
         outcome.stripped_fields = sf.clone();
     }
+    for (outcome, vr) in outcomes.iter_mut().zip(merged_results.iter()) {
+        outcome.disposition = crate::drop_mode::per_record_disposition(vr.passed, decision.mode);
+    }
 
     // --- Persist (fire-and-forget, direction = 'egress') --------------------
     if !query.dry_run {
@@ -508,6 +538,7 @@ pub async fn egress_handler(
         let audit_rows: Vec<storage::AuditEntryInsert> = merged_results
             .iter()
             .enumerate()
+            .filter(|(_, vr)| crate::drop_mode::writes_audit(vr.passed, decision.mode, false))
             .map(|(idx, vr)| storage::AuditEntryInsert {
                 contract_id,
                 org_id,
@@ -530,7 +561,7 @@ pub async fn egress_handler(
         let quarantine_rows: Vec<storage::QuarantineEventInsert> = merged_results
             .iter()
             .enumerate()
-            .filter(|(_, vr)| !vr.passed)
+            .filter(|(_, vr)| crate::drop_mode::writes_quarantine(vr.passed, decision.mode, false))
             .map(|(idx, vr)| storage::QuarantineEventInsert {
                 contract_id,
                 contract_version: resolved_version.clone(),
@@ -568,11 +599,50 @@ pub async fn egress_handler(
         }
     }
 
+    if decision.dropped > 0 {
+        let failures: Vec<_> = merged_results
+            .iter()
+            .filter(|vr| !vr.passed)
+            .map(|vr| crate::fail_policy::failure_facts(&vr.violations))
+            .collect();
+        if let Err(err) = crate::fail_policy::record_drops(
+            &state,
+            org_id,
+            contract_id,
+            &resolved_version,
+            "egress",
+            decision.source.as_str(),
+            decision.sample_drops,
+            &failures,
+        )
+        .await
+        {
+            tracing::warn!("egress drop ledger write failed: {err:?}");
+        }
+    }
+    if decision.quarantined > 0 {
+        if let Err(err) = crate::fail_policy::record_quarantined(
+            &state,
+            org_id,
+            contract_id,
+            decision.quarantined,
+        )
+        .await
+        {
+            tracing::warn!("egress quarantine volume write failed: {err:?}");
+        }
+    }
+
     // --- Compose response ---------------------------------------------------
     let response_body = EgressResponse {
         total,
         passed: passed_count,
         failed: failed_count,
+        quarantined: decision.quarantined,
+        dropped: decision.dropped,
+        on_fail_mode: decision.mode.as_str(),
+        on_fail_source: decision.source.as_str(),
+        auto_trip: crate::fail_policy::auto_trip_body(decision.auto_trip.as_ref()),
         dry_run: query.dry_run,
         disposition: query.disposition.as_str(),
         egress_leakage_mode: compiled.contract.egress_leakage_mode.as_str(),
@@ -685,6 +755,9 @@ mod tests {
             envelope: None,
             null_as_absent: false,
             egress_leakage_mode,
+            on_fail: crate::contract::OnFailMode::Quarantine,
+            on_fail_locked: false,
+            quarantine_guard: crate::contract::QuarantineGuardConfig::default(),
         })
         .expect("test contract must compile")
     }

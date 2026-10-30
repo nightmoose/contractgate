@@ -258,6 +258,9 @@ fn make_contract(fields: &[(&str, FieldType, bool)]) -> Contract {
         quality: vec![],
         envelope: None,
         null_as_absent: false,
+        on_fail: contractgate::contract::OnFailMode::Quarantine,
+        on_fail_locked: false,
+        quarantine_guard: contractgate::contract::QuarantineGuardConfig::default(),
     }
 }
 

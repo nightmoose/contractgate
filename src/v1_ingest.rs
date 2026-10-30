@@ -80,6 +80,9 @@ pub struct V1IngestQuery {
     pub dry_run: bool,
     #[serde(default)]
     pub atomic: bool,
+    /// `quarantine` (default) or `drop`. Header `X-On-Fail` is the same switch.
+    #[serde(default)]
+    pub on_fail: Option<String>,
 }
 
 /// Per-event result returned in the response.
@@ -99,6 +102,9 @@ pub struct V1IngestEventResult {
     pub quarantine_id: Option<Uuid>,
     /// Post-RFC-004-transform payload that was persisted / forwarded.
     pub transformed_event: Value,
+    /// `quarantined` or `dropped` for a failing record. Omitted on a pass.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub disposition: Option<&'static str>,
 }
 
 /// Top-level response body.
@@ -107,6 +113,12 @@ pub struct V1IngestResponse {
     pub total: usize,
     pub passed: usize,
     pub failed: usize,
+    pub quarantined: usize,
+    pub dropped: usize,
+    pub on_fail_mode: &'static str,
+    pub on_fail_source: &'static str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub auto_trip: Option<crate::fail_policy::AutoTripBody>,
     pub dry_run: bool,
     pub atomic: bool,
     pub resolved_version: String,
@@ -288,6 +300,20 @@ fn build_openapi() -> String {
                 "schema": { "type": "boolean", "default": false }
               },
               {
+                "name": "on_fail",
+                "in": "query",
+                "required": false,
+                "description": "quarantine (default) stores a failing record. drop counts it and stores nothing. Ignored when the contract locks on_fail. Cannot force quarantine while an enforcing safety cap is tripped.",
+                "schema": { "type": "string", "enum": ["quarantine", "drop"] }
+              },
+              {
+                "name": "X-On-Fail",
+                "in": "header",
+                "required": false,
+                "description": "Same values as on_fail. The query parameter wins when both are set to the same value; a disagreement is 400.",
+                "schema": { "type": "string", "enum": ["quarantine", "drop"] }
+              },
+              {
                 "name": "X-Api-Key",
                 "in": "header",
                 "required": true,
@@ -354,6 +380,19 @@ fn build_openapi() -> String {
                 "in": "query",
                 "required": false,
                 "schema": { "type": "boolean", "default": false }
+              },
+              {
+                "name": "on_fail",
+                "in": "query",
+                "required": false,
+                "description": "quarantine (default) or drop. AISchemaGate keeps quarantine as the default.",
+                "schema": { "type": "string", "enum": ["quarantine", "drop"] }
+              },
+              {
+                "name": "X-On-Fail",
+                "in": "header",
+                "required": false,
+                "schema": { "type": "string", "enum": ["quarantine", "drop"] }
               },
               {
                 "name": "X-Contract-Version",
@@ -525,11 +564,17 @@ fn extra_openapi_paths(paths: &mut serde_json::Map<String, Value>) {
     paths.insert("/contracts/{id}/kinesis-ingress/disable".into(), json!({"delete": {"operationId": "disable_kinesis_ingress", "summary": "Disable Kinesis ingress (owner, any plan)", "parameters": [{"name": "id", "in": "path", "required": true, "schema": {"type": "string", "format": "uuid"}}], "responses": {"204": {"description": "Disabled"}, "401": {"description": "Missing or invalid credentials"}, "404": {"description": "Contract not found or not owned by the caller's org"}, "501": {"description": "kinesis-ingress feature not compiled in"}}, "security": [{"ApiKeyAuth": []}]}}));
     paths.insert("/contracts/{id}/kinesis-ingress/rotate-credentials".into(), json!({"post": {"operationId": "rotate_kinesis_credentials", "summary": "Rotate Kinesis IAM credentials (owner, Enterprise)", "parameters": [{"name": "id", "in": "path", "required": true, "schema": {"type": "string", "format": "uuid"}}], "responses": {"200": {"description": "New credentials; secret shown once"}, "401": {"description": "Missing or invalid credentials"}, "404": {"description": "Contract not found or not owned by the caller's org"}, "403": {"description": "Collaborator grant (owner required), or org below Enterprise: \"Kafka/Kinesis streaming ingress requires the Enterprise plan (available on request)\""}, "501": {"description": "kinesis-ingress feature not compiled in"}}, "security": [{"ApiKeyAuth": []}]}}));
     paths.insert("/contracts/deploy".into(), json!({"post": {"operationId": "deploy_contract", "summary": "Create or update a contract from YAML and promote it to stable", "requestBody": {"required": true, "content": {"application/json": {"schema": {"type": "object", "required": ["name", "yaml_content"], "properties": {"name": {"type": "string"}, "yaml_content": {"type": "string", "description": "Contract YAML; the version is read from it"}, "source": {"type": ["string", "null"]}, "deployed_by": {"type": ["string", "null"]}}}}}}, "responses": {"201": {"description": "Deployed: contract_id, version_id, name, version"}, "400": {"description": "Invalid YAML or request"}, "401": {"description": "Missing or invalid credentials"}, "409": {"description": "Version conflict"}}, "security": [{"ApiKeyAuth": []}]}}));
-    paths.insert("/ingest/{contract_id}".into(), json!({"post": {"operationId": "ingest", "summary": "Validate one event or an array of events (legacy ingest; pin with {contract_id}@{version} or X-Contract-Version)", "parameters": [{"name": "contract_id", "in": "path", "required": true, "description": "Contract UUID, optionally suffixed @version. Pins match exactly first, then by normalised numeric version (1.0.0 matches a stored 1.0).", "schema": {"type": "string"}}, {"name": "X-Contract-Version", "in": "header", "required": false, "schema": {"type": "string"}}, {"name": "dry_run", "in": "query", "required": false, "schema": {"type": "boolean", "default": false}}, {"name": "atomic", "in": "query", "required": false, "schema": {"type": "boolean", "default": false}}], "requestBody": {"required": true, "content": {"application/json": {"schema": {"oneOf": [{"type": "object"}, {"type": "array", "items": {"type": "object"}}]}}}}, "responses": {"200": {"description": "Per-event results"}, "400": {"description": "Invalid contract id or body"}, "401": {"description": "Missing or invalid credentials"}, "404": {"description": "Contract or pinned version not found"}, "409": {"description": "No stable version, or ambiguous version pin"}, "422": {"description": "Pinned version is deprecated (code contract_version_deprecated)"}, "429": {"description": "Plan limit exceeded"}}, "security": [{"ApiKeyAuth": []}]}}));
+    paths.insert("/ingest/{contract_id}".into(), json!({"post": {"operationId": "ingest", "summary": "Validate one event or an array of events (legacy ingest; pin with {contract_id}@{version} or X-Contract-Version)", "parameters": [{"name": "contract_id", "in": "path", "required": true, "description": "Contract UUID, optionally suffixed @version. Pins match exactly first, then by normalised numeric version (1.0.0 matches a stored 1.0).", "schema": {"type": "string"}}, {"name": "X-Contract-Version", "in": "header", "required": false, "schema": {"type": "string"}}, {"name": "dry_run", "in": "query", "required": false, "schema": {"type": "boolean", "default": false}}, {"name": "atomic", "in": "query", "required": false, "schema": {"type": "boolean", "default": false}}, {"name": "on_fail", "in": "query", "required": false, "schema": {"type": "string", "enum": ["quarantine", "drop"]}}, {"name": "X-On-Fail", "in": "header", "required": false, "schema": {"type": "string", "enum": ["quarantine", "drop"]}}], "requestBody": {"required": true, "content": {"application/json": {"schema": {"oneOf": [{"type": "object"}, {"type": "array", "items": {"type": "object"}}]}}}}, "responses": {"200": {"description": "Per-event results"}, "400": {"description": "Invalid contract id or body"}, "401": {"description": "Missing or invalid credentials"}, "404": {"description": "Contract or pinned version not found"}, "409": {"description": "No stable version, or ambiguous version pin"}, "422": {"description": "Pinned version is deprecated (code contract_version_deprecated)"}, "429": {"description": "Plan limit exceeded"}}, "security": [{"ApiKeyAuth": []}]}}));
     paths.insert("/contracts/{id}/versions".into(), json!({"get": {"operationId": "list_versions", "summary": "List versions (viewer+)", "parameters": [{"name": "id", "in": "path", "required": true, "schema": {"type": "string", "format": "uuid"}}], "responses": {"200": {"description": "Version summaries"}, "401": {"description": "Missing or invalid credentials"}, "404": {"description": "Contract not found"}}, "security": [{"ApiKeyAuth": []}]}, "post": {"operationId": "create_version", "summary": "Create a draft version", "parameters": [{"name": "id", "in": "path", "required": true, "schema": {"type": "string", "format": "uuid"}}], "requestBody": {"required": true, "content": {"application/json": {"schema": {"type": "object", "required": ["version", "yaml_content"], "properties": {"version": {"type": "string", "description": "e.g. 1.1.0; unique per contract"}, "yaml_content": {"type": "string"}}}}}}, "responses": {"201": {"description": "Draft created"}, "400": {"description": "Invalid YAML"}, "401": {"description": "Missing or invalid credentials"}, "403": {"description": "Caller lacks the required role"}, "404": {"description": "Contract not found"}, "409": {"description": "Version already exists"}}, "security": [{"ApiKeyAuth": []}]}}));
     paths.insert("/contracts".into(), json!({"get": {"operationId": "list_contracts", "summary": "List contracts for the caller's org", "description": "store_event_payloads is the effective value ingest uses: false unless the plan is paid (growth, aisg_pro, enterprise) AND the org master switch is on AND the per-contract override is on. free, aisg_free, and unknown plans report false. A paid plan with the org switch off (the default) also reports false. The columns are not rewritten. Shared by DataContractGate and AISchemaGate.", "responses": {"200": {"description": "Contract summaries. store_event_payloads is boolean and effective for the plan.", "content": {"application/json": {"schema": {"type": "array", "items": {"type": "object", "properties": {"id": {"type": "string", "format": "uuid"}, "name": {"type": "string"}, "store_event_payloads": {"type": "boolean", "description": "True only when ingest will store the body: paid plan, org switch on, per-contract override on."}}}}}}}, "401": {"description": "Missing or invalid credentials"}}, "security": [{"ApiKeyAuth": []}]}}));
     paths.insert("/quarantine/replay".into(), json!({"post": {"operationId": "replay_quarantine", "summary": "Replay quarantined events across the caller's contracts", "description": "Same engine as POST /contracts/{id}/quarantine/replay. A row whose body was not stored is redacted: true (per-contract route: outcome redacted), with passed false and violations empty. Not a validation failure.", "requestBody": {"required": true, "content": {"application/json": {"schema": {"type": "object", "required": ["event_ids"], "properties": {"event_ids": {"type": "array", "items": {"type": "string", "format": "uuid"}}, "version": {"type": "string"}, "contract_id": {"type": "string", "format": "uuid"}}}}}}, "responses": {"200": {"description": "One outcome per event_id, in input order.", "content": {"application/json": {"schema": {"type": "object", "properties": {"replayed": {"type": "integer"}, "outcomes": {"type": "array", "items": {"type": "object", "properties": {"event_id": {"type": "string", "format": "uuid"}, "version": {"type": "string"}, "passed": {"type": "boolean"}, "violations": {"type": "array"}, "replayed_at": {"type": "string", "format": "date-time"}, "redacted": {"type": "boolean", "description": "True when the source body was not stored. Same classification as per-contract outcome=redacted."}}}}}}}}}, "400": {"description": "Empty event_ids, over the 1000 cap, or contract_id assertion failed"}, "401": {"description": "Missing or invalid credentials"}}, "security": [{"ApiKeyAuth": []}]}}));
     paths.insert("/contracts/{id}/quarantine/replay".into(), json!({"post": {"operationId": "replay_contract_quarantine", "summary": "Replay quarantined events for one contract", "description": "A row whose body was not stored returns outcome redacted (and increments the redacted count). The org-wide POST /quarantine/replay reports that same row with redacted true.", "parameters": [{"name": "id", "in": "path", "required": true, "schema": {"type": "string", "format": "uuid"}}], "requestBody": {"required": true, "content": {"application/json": {"schema": {"type": "object", "required": ["ids"], "properties": {"ids": {"type": "array", "items": {"type": "string", "format": "uuid"}}, "target_version": {"type": "string"}}}}}}, "responses": {"200": {"description": "Per-id results. outcome=redacted when the body was not stored."}, "401": {"description": "Missing or invalid credentials"}, "404": {"description": "Contract or target version not found"}}, "security": [{"ApiKeyAuth": []}]}}));
+    let fail_schema = json!({"type": "object", "properties": {"on_fail": {"type": "string", "enum": ["quarantine", "drop"]}, "on_fail_locked": {"type": "boolean"}, "quarantine_guard": {"type": "object"}, "from_override": {"type": "boolean"}, "account_guard": {"type": ["object", "null"]}, "auto_trip": {"type": ["object", "null"]}}});
+    paths.insert("/contracts/{id}/fail-policy".into(), json!({"get": {"operationId": "get_fail_policy", "summary": "On-fail setting and safety-cap state", "parameters": [{"name": "id", "in": "path", "required": true, "schema": {"type": "string", "format": "uuid"}}], "responses": {"200": {"description": "Effective on-fail setting", "content": {"application/json": {"schema": fail_schema}}}, "401": {"description": "Missing or invalid credentials"}, "404": {"description": "Contract not found"}}, "security": [{"ApiKeyAuth": []}]}, "patch": {"operationId": "set_fail_policy", "summary": "Save the live on-fail override (owner)", "parameters": [{"name": "id", "in": "path", "required": true, "schema": {"type": "string", "format": "uuid"}}], "requestBody": {"required": true, "content": {"application/json": {"schema": {"type": "object", "required": ["on_fail"], "properties": {"on_fail": {"type": "string", "enum": ["quarantine", "drop"]}, "on_fail_locked": {"type": "boolean"}, "quarantine_guard": {"type": "object"}}}}}}, "responses": {"200": {"description": "Updated setting", "content": {"application/json": {"schema": {"type": "object", "properties": {"on_fail": {"type": "string"}}}}}}, "400": {"description": "Invalid threshold"}, "401": {"description": "Missing or invalid credentials"}, "403": {"description": "Caller is not the contract owner"}, "404": {"description": "Contract not found"}}, "security": [{"ApiKeyAuth": []}]}}));
+    paths.insert("/contracts/{id}/drop-counts".into(), json!({"get": {"operationId": "get_drop_counts", "summary": "Dropped-record counts by reason", "parameters": [{"name": "id", "in": "path", "required": true, "schema": {"type": "string", "format": "uuid"}}, {"name": "hours", "in": "query", "required": false, "schema": {"type": "integer", "default": 24}}], "responses": {"200": {"description": "Reason totals for the window", "content": {"application/json": {"schema": {"type": "array", "items": {"type": "object", "properties": {"reason_key": {"type": "string"}, "source": {"type": "string"}, "dropped": {"type": "integer"}}}}}}}, "401": {"description": "Missing or invalid credentials"}, "404": {"description": "Contract not found"}}, "security": [{"ApiKeyAuth": []}]}}));
+    paths.insert("/contracts/{id}/quarantine-guard/reset".into(), json!({"post": {"operationId": "reset_contract_quarantine_guard", "summary": "Clear an enforcing contract safety-cap trip (owner)", "parameters": [{"name": "id", "in": "path", "required": true, "schema": {"type": "string", "format": "uuid"}}], "responses": {"200": {"description": "Reset result", "content": {"application/json": {"schema": {"type": "object", "properties": {"reset": {"type": "boolean"}, "scope": {"type": "string"}}}}}}, "401": {"description": "Missing or invalid credentials"}, "403": {"description": "Caller is not the contract owner"}}, "security": [{"ApiKeyAuth": []}]}}));
+    paths.insert("/settings/quarantine-guard".into(), json!({"get": {"operationId": "get_account_quarantine_guard", "summary": "Account safety cap", "responses": {"200": {"description": "Account cap, or null when unset", "content": {"application/json": {"schema": {"type": "object", "properties": {"quarantine_guard": {"type": ["object", "null"]}}}}}}, "400": {"description": "No org on the caller"}, "401": {"description": "Missing or invalid credentials"}}, "security": [{"ApiKeyAuth": []}]}, "patch": {"operationId": "set_account_quarantine_guard", "summary": "Save or clear the account safety cap", "requestBody": {"required": true, "content": {"application/json": {"schema": {"type": "object", "properties": {"quarantine_guard": {"type": ["object", "null"]}}}}}}, "responses": {"200": {"description": "Saved cap", "content": {"application/json": {"schema": {"type": "object", "properties": {"quarantine_guard": {"type": ["object", "null"]}}}}}}, "400": {"description": "Invalid threshold or no org"}, "401": {"description": "Missing or invalid credentials"}}, "security": [{"ApiKeyAuth": []}]}}));
+    paths.insert("/settings/quarantine-guard/reset".into(), json!({"post": {"operationId": "reset_account_quarantine_guard", "summary": "Clear an enforcing account safety-cap trip", "responses": {"200": {"description": "Reset result", "content": {"application/json": {"schema": {"type": "object", "properties": {"reset": {"type": "boolean"}, "scope": {"type": "string"}}}}}}, "400": {"description": "No org on the caller"}, "401": {"description": "Missing or invalid credentials"}}, "security": [{"ApiKeyAuth": []}]}}));
     more_openapi_paths(paths);
 }
 
@@ -1479,6 +1524,10 @@ pub async fn v1_ingest_handler(
             source_ip,
             query.dry_run,
             store_payloads,
+            &headers,
+            &version_row.yaml_content,
+            identity.fail_policy.as_ref(),
+            query.on_fail.as_deref(),
         )
         .await;
     }
@@ -1574,6 +1623,19 @@ pub async fn v1_ingest_handler(
     let total = events.len();
     let passed_count = validation_results.iter().filter(|r| r.passed).count();
     let failed_count = total - passed_count;
+    let decision = crate::fail_policy::resolve_request(
+        &state,
+        org_id,
+        contract_id,
+        &compiled.contract,
+        &version_row.yaml_content,
+        identity.fail_policy.as_ref(),
+        query.on_fail.as_deref(),
+        &headers,
+        query.dry_run,
+        failed_count,
+    )
+    .await?;
     let failed_indices: Vec<usize> = validation_results
         .iter()
         .enumerate()
@@ -1589,7 +1651,10 @@ pub async fn v1_ingest_handler(
     // atomic rejections store none, and an id that points at nothing can't
     // be fetched or replayed (E2E retest 2026-10-13).
     let mut quarantine_ids: Vec<Option<Uuid>> = vec![None; total];
-    if !query.dry_run && !atomic_rejected {
+    if !query.dry_run
+        && !atomic_rejected
+        && decision.mode == crate::contract::OnFailMode::Quarantine
+    {
         for &idx in &failed_indices {
             quarantine_ids[idx] = Some(Uuid::new_v4());
         }
@@ -1600,6 +1665,7 @@ pub async fn v1_ingest_handler(
         let audit_rows: Vec<storage::AuditEntryInsert> = validation_results
             .iter()
             .enumerate()
+            .filter(|(_, vr)| crate::drop_mode::writes_audit(vr.passed, decision.mode, false))
             .map(|(idx, vr)| storage::AuditEntryInsert {
                 contract_id,
                 org_id,
@@ -1620,6 +1686,7 @@ pub async fn v1_ingest_handler(
 
         let quarantine_rows: Vec<storage::QuarantineEventInsert> = failed_indices
             .iter()
+            .filter(|_| decision.mode == crate::contract::OnFailMode::Quarantine)
             .map(|&idx| storage::QuarantineEventInsert {
                 contract_id,
                 contract_version: per_event_versions[idx].clone(),
@@ -1707,7 +1774,7 @@ pub async fn v1_ingest_handler(
                 }
             });
         }
-    } else if !query.dry_run && atomic_rejected {
+    } else if crate::drop_mode::writes_atomic_summary(decision.mode, query.dry_run, failed_count) {
         // Atomic summary audit row.
         let details: Vec<Value> = failed_indices
             .iter()
@@ -1763,6 +1830,7 @@ pub async fn v1_ingest_handler(
             contract_version: per_event_versions[idx].clone(),
             quarantine_id: quarantine_ids[idx],
             transformed_event: transformed_payloads[idx].as_value().clone(),
+            disposition: crate::drop_mode::per_record_disposition(vr.passed, decision.mode),
         })
         .collect();
 
@@ -1777,10 +1845,55 @@ pub async fn v1_ingest_handler(
         StatusCode::MULTI_STATUS
     };
 
+    if decision.dropped > 0 {
+        let mut by_version: HashMap<String, Vec<crate::fail_policy::FailureFacts>> = HashMap::new();
+        for (idx, vr) in validation_results.iter().enumerate() {
+            if !vr.passed {
+                by_version
+                    .entry(per_event_versions[idx].clone())
+                    .or_default()
+                    .push(crate::fail_policy::failure_facts(&vr.violations));
+            }
+        }
+        for (version, failures) in by_version {
+            if let Err(err) = crate::fail_policy::record_drops(
+                &state,
+                org_id,
+                contract_id,
+                &version,
+                "ingress",
+                decision.source.as_str(),
+                decision.sample_drops,
+                &failures,
+            )
+            .await
+            {
+                tracing::warn!("v1 drop ledger write failed: {err:?}");
+            }
+        }
+    }
+    if crate::drop_mode::records_quarantine_volume(decision.quarantined, atomic_rejected) {
+        if let Err(err) = crate::fail_policy::record_quarantined(
+            &state,
+            org_id,
+            contract_id,
+            decision.quarantined,
+        )
+        .await
+        {
+            tracing::warn!("v1 quarantine volume write failed: {err:?}");
+        }
+    }
+
     let response_body = V1IngestResponse {
         total,
         passed: passed_count,
         failed: failed_count,
+        quarantined: decision.quarantined,
+        dropped: decision.dropped,
+        on_fail_mode: decision.mode.as_str(),
+        on_fail_source: decision.source.as_str(),
+        auto_trip: crate::fail_policy::auto_trip_body(decision.auto_trip.as_ref()),
         dry_run: query.dry_run,
         atomic: query.atomic,
         resolved_version: resolved_version.clone(),
@@ -1836,15 +1949,32 @@ pub async fn v1_ingest_handler(
 async fn deprecated_quarantine(
     state: &AppState,
     contract_id: Uuid,
-    _org_id: Option<Uuid>,
+    org_id: Option<Uuid>,
     pinned_version: &str,
     events: Vec<Value>,
     source_ip: Option<String>,
     dry_run: bool,
     store_payloads: bool,
+    headers: &HeaderMap,
+    yaml: &str,
+    fail_policy: Option<&Value>,
+    query_on_fail: Option<&str>,
 ) -> AppResult<Response> {
     let total = events.len();
     let compiled = state.get_compiled(contract_id, pinned_version).await?;
+    let decision = crate::fail_policy::resolve_request(
+        state,
+        org_id,
+        contract_id,
+        &compiled.contract,
+        yaml,
+        fail_policy,
+        query_on_fail,
+        headers,
+        dry_run,
+        total,
+    )
+    .await?;
 
     let transformed: Vec<TransformedPayload> = events
         .iter()
@@ -1864,10 +1994,11 @@ async fn deprecated_quarantine(
             contract_version: pinned_version.to_string(),
             quarantine_id: None,
             transformed_event: transformed[idx].as_value().clone(),
+            disposition: crate::drop_mode::per_record_disposition(false, decision.mode),
         })
         .collect();
 
-    if !dry_run {
+    if !dry_run && decision.mode == crate::contract::OnFailMode::Quarantine {
         let synthetic = json!({
             "kind": "deprecated_contract_version",
             "pinned_version": pinned_version,
@@ -1895,6 +2026,27 @@ async fn deprecated_quarantine(
         });
     }
 
+    if decision.dropped > 0 {
+        let failure = crate::fail_policy::FailureFacts {
+            violations: vec![("deprecated_contract_version".into(), String::new())],
+        };
+        let failures = vec![failure; total];
+        if let Err(err) = crate::fail_policy::record_drops(
+            state,
+            org_id,
+            contract_id,
+            pinned_version,
+            "ingress",
+            decision.source.as_str(),
+            decision.sample_drops,
+            &failures,
+        )
+        .await
+        {
+            tracing::warn!("v1 deprecated-pin drop ledger write failed: {err:?}");
+        }
+    }
+
     let body = json!({
         "error": deprecated_message(pinned_version, contract_id, dry_run),
         "code": "contract_version_deprecated",
@@ -1902,6 +2054,11 @@ async fn deprecated_quarantine(
         "total": total,
         "passed": 0,
         "failed": total,
+        "quarantined": decision.quarantined,
+        "dropped": decision.dropped,
+        "on_fail_mode": decision.mode.as_str(),
+        "on_fail_source": decision.source.as_str(),
+        "auto_trip": crate::fail_policy::auto_trip_body(decision.auto_trip.as_ref()),
         "dry_run": dry_run,
         "version_pin_source": "pinned_deprecated",
         "results": per_event,

@@ -49,6 +49,7 @@ class AISchemaGateParser(BaseOutputParser):
         base_url: str = DEFAULT_BASE_URL,
         version: Optional[str] = None,
         disposition: Optional[str] = None,
+        on_fail: Optional[str] = None,
         dry_run: bool = False,
         client: Any = None,
     ) -> None:
@@ -59,6 +60,7 @@ class AISchemaGateParser(BaseOutputParser):
             base_url=base_url,
             version=version,
             disposition=disposition,
+            on_fail=on_fail,
             client=client,
         )
 

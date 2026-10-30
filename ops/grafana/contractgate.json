@@ -126,7 +126,7 @@
     },
     {
       "id": 4,
-      "title": "Quarantine Rate",
+      "title": "Quarantine and drop rate",
       "description": "Events quarantined per second across all contracts.",
       "type": "timeseries",
       "gridPos": { "h": 8, "w": 12, "x": 12, "y": 8 },
@@ -148,6 +148,18 @@
           "expr": "sum(rate(contractgate_quarantined_total[$__rate_interval]))",
           "legendFormat": "quarantined/s",
           "refId": "A"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+          "expr": "sum(rate(contractgate_dropped_total[$__rate_interval]))",
+          "legendFormat": "dropped/s",
+          "refId": "B"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+          "expr": "sum(rate(contractgate_quarantine_guard_would_trip_total[$__rate_interval]))",
+          "legendFormat": "would-trip/s",
+          "refId": "C"
         }
       ]
     },

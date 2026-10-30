@@ -343,6 +343,7 @@ class LLMGate:
         base_url: str = "https://api.datacontractgate.com",
         version: Optional[str] = None,
         disposition: Optional[str] = None,
+        on_fail: Optional[str] = None,
         max_retries: int = _DEFAULT_MAX_RETRIES,
         repair_prompt: Optional[Callable[[List[Violation]], str]] = None,
         client: Optional[Client] = None,
@@ -352,6 +353,7 @@ class LLMGate:
         self._resolved: Dict[str, str] = {}
         self._version = version
         self._disposition = disposition
+        self._on_fail = on_fail
         self._max_retries = _clamp_retries(max_retries)
         self._repair_prompt = repair_prompt or _default_repair_prompt
         if client is None:
@@ -437,6 +439,7 @@ class LLMGate:
                 version=self._version,
                 disposition=self._disposition,
                 dry_run=dry_run,
+                on_fail=self._on_fail,
             )
         except ValidationFailedError as err:
             return _egress_from_rejection(err)
@@ -535,6 +538,7 @@ class AsyncLLMGate:
         base_url: str = "https://api.datacontractgate.com",
         version: Optional[str] = None,
         disposition: Optional[str] = None,
+        on_fail: Optional[str] = None,
         max_retries: int = _DEFAULT_MAX_RETRIES,
         repair_prompt: Optional[Callable[[List[Violation]], str]] = None,
         client: Optional[AsyncClient] = None,
@@ -544,6 +548,7 @@ class AsyncLLMGate:
         self._resolved: Dict[str, str] = {}
         self._version = version
         self._disposition = disposition
+        self._on_fail = on_fail
         self._max_retries = _clamp_retries(max_retries)
         self._repair_prompt = repair_prompt or _default_repair_prompt
         if client is None:
@@ -620,6 +625,7 @@ class AsyncLLMGate:
                 version=self._version,
                 disposition=self._disposition,
                 dry_run=dry_run,
+                on_fail=self._on_fail,
             )
         except ValidationFailedError as err:
             return _egress_from_rejection(err)

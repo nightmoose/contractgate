@@ -56,11 +56,14 @@ export class Gateway {
   ingest(
     contractId: string,
     events: unknown,
-    opts: { dryRun: boolean },
+    opts: { dryRun: boolean; onFail?: "quarantine" | "drop" },
   ) {
-    const q = opts.dryRun ? "?dry_run=true" : "";
+    const q = new URLSearchParams();
+    if (opts.dryRun) q.set("dry_run", "true");
+    if (opts.onFail) q.set("on_fail", opts.onFail);
+    const qs = q.toString();
     // 207 mixed / 422 all-failed are data results, not transport errors.
-    return this.request("POST", `/v1/ingest/${encodeURIComponent(contractId)}${q}`, {
+    return this.request("POST", `/v1/ingest/${encodeURIComponent(contractId)}${qs ? `?${qs}` : ""}`, {
       body: events,
       ok: [200, 207, 422],
     });
@@ -69,11 +72,12 @@ export class Gateway {
   egress(
     contractId: string,
     events: unknown,
-    opts: { dryRun: boolean; disposition?: string; version?: string },
+    opts: { dryRun: boolean; disposition?: string; version?: string; onFail?: "quarantine" | "drop" },
   ) {
     const q = new URLSearchParams();
     if (opts.dryRun) q.set("dry_run", "true");
     if (opts.disposition) q.set("disposition", opts.disposition);
+    if (opts.onFail) q.set("on_fail", opts.onFail);
     // 207 mixed / 422 all-failed are data results, not transport errors.
     return this.request("POST", `/egress/${encodeURIComponent(contractId)}${q.toString() ? `?${q.toString()}` : ""}`, {
       body: events,
@@ -107,6 +111,16 @@ export class Gateway {
 
   listContracts() {
     return this.request("GET", "/contracts");
+  }
+
+  dropCounts(contractId: string, hours?: number) {
+    const q = new URLSearchParams();
+    if (hours != null) q.set("hours", String(hours));
+    const qs = q.toString();
+    return this.request(
+      "GET",
+      `/contracts/${encodeURIComponent(contractId)}/drop-counts${qs ? `?${qs}` : ""}`,
+    );
   }
 
   private async request(

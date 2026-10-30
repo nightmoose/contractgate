@@ -76,6 +76,7 @@ class AsyncClient:
         version: Optional[str] = None,
         dry_run: bool = False,
         atomic: bool = False,
+        on_fail: Optional[str] = None,
         timeout: Optional[float] = None,
     ) -> BatchIngestResponse:
         spec = _t.build_ingest_request(
@@ -85,6 +86,7 @@ class AsyncClient:
             version=version,
             dry_run=dry_run,
             atomic=atomic,
+            on_fail=on_fail,
             timeout=timeout,
         )
         try:
@@ -103,6 +105,7 @@ class AsyncClient:
         version: Optional[str] = None,
         disposition: Optional[str] = None,
         dry_run: bool = False,
+        on_fail: Optional[str] = None,
         timeout: Optional[float] = None,
     ) -> EgressResponse:
         """Validate an outbound payload via ``POST /egress/{contract_id}``.
@@ -117,6 +120,7 @@ class AsyncClient:
             version=version,
             disposition=disposition,
             dry_run=dry_run,
+            on_fail=on_fail,
             timeout=timeout,
         )
         _, body = await self._dispatch(spec)

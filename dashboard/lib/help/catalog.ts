@@ -219,6 +219,18 @@ export const HELP_CATALOG: Record<string, HelpEntry> = {
     what: "Infer a draft contract from a CSV file of sample rows.",
     does: "Same inference engine as JSON samples, for tabular dumps. Pro plan.",
   },
+  "contracts.fail-policy": {
+    title: "When a record fails",
+    what: "Quarantine keeps a failing record for review. Drop counts it and stores nothing.",
+    does: "Quarantine is the default on every plan, including AISchemaGate. Lock the choice so a request cannot override it.",
+    href: "https://github.com/nightmoose/contractgate/blob/main/docs/drop-mode-reference.md",
+  },
+  "contracts.safety-cap": {
+    title: "Quarantine safety cap",
+    what: "A watch-only limit on how many failing records are stored.",
+    does: "Until enforcement is turned on, crossing a threshold is recorded and records are still quarantined. The account cap overrides the contract cap. Thresholds are yours to set.",
+    href: "https://github.com/nightmoose/contractgate/blob/main/docs/drop-mode-reference.md",
+  },
   "contracts.quarantine": {
     title: "Quarantine",
     what: "Events that failed validation and were held instead of dropped.",

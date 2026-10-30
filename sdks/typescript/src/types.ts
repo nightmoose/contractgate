@@ -36,6 +36,8 @@ export interface IngestEventResult {
   /** Quarantine row for a stored failure; null for passes, dry runs and atomic rejections. */
   quarantine_id: string | null;
   transformed_event: unknown;
+  /** `quarantined` or `dropped` on a failure. Absent on a pass. */
+  disposition?: string | null;
 }
 
 export interface BatchIngestResponse {
@@ -47,6 +49,19 @@ export interface BatchIngestResponse {
   resolved_version: string;
   version_pin_source: string;
   results: IngestEventResult[];
+  quarantined: number;
+  dropped: number;
+  on_fail_mode: string;
+  on_fail_source: string;
+  auto_trip?: AutoTrip | null;
+}
+
+export interface AutoTrip {
+  active: boolean;
+  would_trip: boolean;
+  enforcing: boolean;
+  scope: string;
+  until?: string | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -59,6 +74,7 @@ export interface EgressOutcome {
   violations: Violation[];
   validation_us: number;
   action: string;
+  disposition?: string | null;
 }
 
 export interface EgressResponse {
@@ -70,6 +86,11 @@ export interface EgressResponse {
   resolved_version: string;
   payload: unknown[];
   outcomes: EgressOutcome[];
+  quarantined: number;
+  dropped: number;
+  on_fail_mode: string;
+  on_fail_source: string;
+  auto_trip?: AutoTrip | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -191,6 +212,7 @@ export function ingestEventResultFromJson(raw: unknown): IngestEventResult {
     contract_version: String(r['contract_version'] ?? ''),
     quarantine_id: typeof r['quarantine_id'] === 'string' ? r['quarantine_id'] : null,
     transformed_event: r['transformed_event'] ?? null,
+    disposition: typeof r['disposition'] === 'string' ? r['disposition'] : null,
   };
 }
 
@@ -206,6 +228,11 @@ export function batchIngestResponseFromJson(raw: unknown): BatchIngestResponse {
     resolved_version: String(r['resolved_version'] ?? ''),
     version_pin_source: String(r['version_pin_source'] ?? ''),
     results: rList.map(ingestEventResultFromJson),
+    quarantined: toInt(r['quarantined']),
+    dropped: toInt(r['dropped']),
+    on_fail_mode: String(r['on_fail_mode'] ?? 'quarantine'),
+    on_fail_source: String(r['on_fail_source'] ?? 'default'),
+    auto_trip: autoTripFromJson(r['auto_trip']),
   };
 }
 
@@ -218,6 +245,7 @@ export function egressOutcomeFromJson(raw: unknown): EgressOutcome {
     violations: vList.map(violationFromJson),
     validation_us: toInt(r['validation_us']),
     action: String(r['action'] ?? ''),
+    disposition: typeof r['disposition'] === 'string' ? r['disposition'] : null,
   };
 }
 
@@ -233,7 +261,24 @@ export function egressResponseFromJson(raw: unknown): EgressResponse {
     resolved_version: String(r['resolved_version'] ?? ''),
     payload: Array.isArray(r['payload']) ? r['payload'] : [],
     outcomes: oList.map(egressOutcomeFromJson),
+    quarantined: toInt(r['quarantined']),
+    dropped: toInt(r['dropped']),
+    on_fail_mode: String(r['on_fail_mode'] ?? 'quarantine'),
+    on_fail_source: String(r['on_fail_source'] ?? 'default'),
+    auto_trip: autoTripFromJson(r['auto_trip']),
   };
+
+function autoTripFromJson(raw: unknown): AutoTrip | null {
+  if (raw === null || raw === undefined || typeof raw !== 'object') return null;
+  const r = raw as Record<string, unknown>;
+  return {
+    active: toBool(r['active']),
+    would_trip: toBool(r['would_trip']),
+    enforcing: toBool(r['enforcing']),
+    scope: String(r['scope'] ?? ''),
+    until: typeof r['until'] === 'string' ? r['until'] : null,
+  };
+}
 }
 
 export function contractResponseFromJson(raw: unknown): ContractResponse {

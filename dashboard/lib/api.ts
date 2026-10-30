@@ -274,6 +274,42 @@ export interface BatchIngestResponse {
   resolved_version: string;
   version_pin_source: string;
   results: IngestEventResult[];
+  quarantined?: number;
+  dropped?: number;
+  on_fail_mode?: string;
+  on_fail_source?: string;
+  auto_trip?: AutoTrip | null;
+}
+
+export interface AutoTrip {
+  active: boolean;
+  would_trip: boolean;
+  enforcing: boolean;
+  scope: "account" | "contract" | string;
+  until?: string | null;
+}
+
+export interface QuarantineGuardConfig {
+  enforce: boolean;
+  max_per_minute?: number | null;
+  max_per_hour?: number | null;
+  cooldown_minutes?: number | null;
+  sample_drops: boolean;
+}
+
+export interface FailPolicy {
+  on_fail: "quarantine" | "drop";
+  on_fail_locked: boolean;
+  quarantine_guard: QuarantineGuardConfig;
+  from_override: boolean;
+  account_guard: QuarantineGuardConfig | null;
+  auto_trip?: AutoTrip | null;
+}
+
+export interface DropCountRow {
+  reason_key: string;
+  source: string;
+  dropped: number;
 }
 
 export interface IngestionStats {
@@ -497,6 +533,42 @@ export const deleteVersion = (contractId: string, version: string) =>
     `/contracts/${contractId}/versions/${encodeURIComponent(version)}`,
     { method: "DELETE" }
   );
+
+export const getFailPolicy = (contractId: string) =>
+  apiFetch<FailPolicy>(`/contracts/${contractId}/fail-policy`);
+
+export const setFailPolicy = (
+  contractId: string,
+  body: {
+    on_fail: "quarantine" | "drop";
+    on_fail_locked: boolean;
+    quarantine_guard: QuarantineGuardConfig;
+  }
+) =>
+  apiFetch<FailPolicy>(`/contracts/${contractId}/fail-policy`, {
+    method: "PATCH",
+    body: JSON.stringify(body),
+  });
+
+export const getDropCounts = (contractId: string, hours = 24) =>
+  apiFetch<DropCountRow[]>(`/contracts/${contractId}/drop-counts?hours=${hours}`);
+
+export const resetContractGuard = (contractId: string) =>
+  apiFetch<{ reset: boolean; scope: string }>(
+    `/contracts/${contractId}/quarantine-guard/reset`,
+    { method: "POST" }
+  );
+
+export const resetAccountGuard = () =>
+  apiFetch<{ reset: boolean; scope: string }>("/settings/quarantine-guard/reset", {
+    method: "POST",
+  });
+
+export const setAccountGuard = (quarantine_guard: QuarantineGuardConfig | null) =>
+  apiFetch<{ quarantine_guard: QuarantineGuardConfig | null }>("/settings/quarantine-guard", {
+    method: "PATCH",
+    body: JSON.stringify({ quarantine_guard }),
+  });
 
 // ---------------------------------------------------------------------------
 // Deploy (RFC-028 / RFC-046)

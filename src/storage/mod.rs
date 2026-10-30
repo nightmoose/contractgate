@@ -22,6 +22,7 @@
 mod audit;
 mod collaboration;
 mod contracts;
+mod drops;
 mod publication;
 mod replay;
 mod report;
@@ -30,6 +31,7 @@ mod usage;
 pub use audit::*;
 pub use collaboration::*;
 pub use contracts::*;
+pub use drops::*;
 pub use publication::*;
 pub use replay::*;
 pub use report::*;

@@ -98,6 +98,26 @@ pub struct Contract {
     /// for sparse optional columns; this is the opt-in escape hatch.
     #[serde(default)]
     pub null_as_absent: bool,
+    /// What to do with a record that fails validation.
+    /// `quarantine` (default) stores it for review. `drop` counts it and
+    /// writes neither a quarantine row nor an audit row.
+    #[serde(default, skip_serializing_if = "is_default_on_fail")]
+    pub on_fail: OnFailMode,
+    /// When true, a request cannot override `on_fail`.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub on_fail_locked: bool,
+    /// Optional safety cap. Omitted means the cap is unset: watch-only and
+    /// no thresholds, so it does not change failure handling.
+    #[serde(default, skip_serializing_if = "QuarantineGuardConfig::is_unset")]
+    pub quarantine_guard: QuarantineGuardConfig,
+}
+
+fn is_default_on_fail(mode: &OnFailMode) -> bool {
+    *mode == OnFailMode::Quarantine
+}
+
+fn is_false(value: &bool) -> bool {
+    !*value
 }
 
 // ---------------------------------------------------------------------------
@@ -308,6 +328,141 @@ impl FromStr for EgressLeakageMode {
             _ => Err(format!("invalid EgressLeakageMode: {s:?}")),
         }
     }
+}
+
+// ---------------------------------------------------------------------------
+// On-fail mode
+// ---------------------------------------------------------------------------
+
+/// What happens to a record that fails validation.
+///
+/// `quarantine` is the default on every plan, including AISchemaGate egress.
+/// `drop` counts the failure and stores neither the record nor an audit row.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum OnFailMode {
+    #[default]
+    Quarantine,
+    Drop,
+}
+
+impl OnFailMode {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            OnFailMode::Quarantine => "quarantine",
+            OnFailMode::Drop => "drop",
+        }
+    }
+}
+
+impl FromStr for OnFailMode {
+    type Err = String;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "quarantine" => Ok(Self::Quarantine),
+            "drop" => Ok(Self::Drop),
+            _ => Err(format!("invalid on_fail: {s:?}")),
+        }
+    }
+}
+
+/// Where the effective on-fail mode came from.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum OnFailSource {
+    Request,
+    Contract,
+    Default,
+    AutoTrip,
+}
+
+impl OnFailSource {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            OnFailSource::Request => "request",
+            OnFailSource::Contract => "contract",
+            OnFailSource::Default => "default",
+            OnFailSource::AutoTrip => "auto_trip",
+        }
+    }
+}
+
+/// Which safety cap produced a trip or a would-trip.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum GuardScope {
+    Account,
+    Contract,
+}
+
+impl GuardScope {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            GuardScope::Account => "account",
+            GuardScope::Contract => "contract",
+        }
+    }
+}
+
+/// Safety cap for quarantine volume.
+///
+/// `enforce` defaults to false: crossing a threshold records a would-trip
+/// and does not change on-fail mode. Thresholds are optional. An unset
+/// threshold is not a limit. This struct does not carry a recommended number.
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
+pub struct QuarantineGuardConfig {
+    #[serde(default)]
+    pub enforce: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_per_minute: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_per_hour: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cooldown_minutes: Option<u32>,
+    /// Opt-in metadata samples for dropped records. Default off.
+    /// Samples hold failure reasons only, never record contents.
+    #[serde(default)]
+    pub sample_drops: bool,
+}
+
+impl QuarantineGuardConfig {
+    pub fn is_unset(&self) -> bool {
+        !self.enforce
+            && self.max_per_minute.is_none()
+            && self.max_per_hour.is_none()
+            && self.cooldown_minutes.is_none()
+            && !self.sample_drops
+    }
+
+    /// True when at least one positive threshold is set.
+    /// Zero is ignored so a bad value cannot trip on an empty batch.
+    pub fn configured(&self) -> bool {
+        self.max_per_minute.is_some_and(|n| n > 0) || self.max_per_hour.is_some_and(|n| n > 0)
+    }
+
+    pub fn validate(&self) -> Result<(), String> {
+        if let Some(0) = self.max_per_minute {
+            return Err("max_per_minute must be at least 1 when set".into());
+        }
+        if let Some(0) = self.max_per_hour {
+            return Err("max_per_hour must be at least 1 when set".into());
+        }
+        if let Some(0) = self.cooldown_minutes {
+            return Err("cooldown_minutes must be at least 1 when set".into());
+        }
+        Ok(())
+    }
+}
+
+/// Live contract override stored on `contracts.fail_policy`.
+/// When present it replaces the version document's on-fail settings.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FailPolicyOverride {
+    pub on_fail: OnFailMode,
+    #[serde(default)]
+    pub on_fail_locked: bool,
+    #[serde(default)]
+    pub quarantine_guard: QuarantineGuardConfig,
 }
 
 // ---------------------------------------------------------------------------
@@ -691,6 +846,9 @@ pub struct ContractIdentity {
     /// RFC-086: per-contract override for event-body storage. Only consulted
     /// when the org master switch is on; `false` opts this pipeline out.
     pub store_event_payloads: bool,
+    /// Live on-fail override. `None` means the resolved version document applies.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fail_policy: Option<serde_json::Value>,
 }
 
 /// Version row — one per `(contract_id, version)` pair.  Frozen once state

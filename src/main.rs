@@ -44,13 +44,14 @@ use uuid::Uuid;
 // shared with other binaries (e.g. src/bin/demo.rs).  We re-export it here so
 // existing submodules that refer to `crate::contract` / `crate::validation`
 // continue to resolve unchanged.
-pub use contractgate::{contract, transform, validation};
+pub use contractgate::{contract, drop_mode, transform, validation};
 
 mod api_key_auth;
 mod collaboration;
 mod conformance;
 mod egress;
 mod error;
+mod fail_policy;
 mod fivetran;
 mod fork_filter;
 mod idempotency;
@@ -1743,6 +1744,27 @@ fn build_router(state: Arc<AppState>) -> Router {
         .route(
             "/contracts/{id}/payload-storage",
             axum::routing::patch(settings::set_contract_payload_storage_handler),
+        )
+        .route(
+            "/contracts/{id}/fail-policy",
+            get(fail_policy::get_fail_policy_handler).patch(fail_policy::set_fail_policy_handler),
+        )
+        .route(
+            "/contracts/{id}/drop-counts",
+            get(fail_policy::drop_counts_handler),
+        )
+        .route(
+            "/contracts/{id}/quarantine-guard/reset",
+            post(fail_policy::reset_contract_guard_handler),
+        )
+        .route(
+            "/settings/quarantine-guard",
+            get(fail_policy::get_account_guard_handler)
+                .patch(fail_policy::set_account_guard_handler),
+        )
+        .route(
+            "/settings/quarantine-guard/reset",
+            post(fail_policy::reset_account_guard_handler),
         )
         .route(
             "/contracts/{id}/purge-bodies",
