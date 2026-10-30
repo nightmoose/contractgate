@@ -1872,7 +1872,7 @@ pub async fn v1_ingest_handler(
             }
         }
     }
-    if decision.quarantined > 0 && !atomic_rejected {
+    if crate::drop_mode::records_quarantine_volume(decision.quarantined, atomic_rejected) {
         if let Err(err) = crate::fail_policy::record_quarantined(
             &state,
             org_id,

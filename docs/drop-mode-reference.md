@@ -77,7 +77,9 @@ The cap counts quarantine inserts per minute and per hour. It does not count rec
 
 It ships watch-only (`enforce: false`). Crossing a threshold records a would-trip event and the `contractgate_quarantine_guard_would_trip_total` metric. The on-fail mode does not change, and failing records are still quarantined.
 
-Set `enforce: true` to switch the winning scope to drop until the cooldown elapses or an owner resets it. A request cannot force quarantine during that trip. Each new trip increments `trip_count`.
+Set `enforce: true` to switch the winning scope to drop until the cooldown elapses or an owner resets it. A request cannot force quarantine during that trip, including when the contract locks `on_fail`. Each new trip increments `trip_count`.
+
+An owner reset clears the trip immediately. If that same minute or hour is still at the threshold, the next request starts a new trip. Records that were already dropped are not part of the threshold, so a reset during an active trip usually stays clear.
 
 The account cap replaces the contract cap when the account has at least one positive threshold. Reset either scope with:
 

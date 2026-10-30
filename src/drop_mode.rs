@@ -113,26 +113,30 @@ pub struct OnFailDecision {
 }
 
 /// Resolve precedence:
-/// 1. A locked contract rejects a conflicting request (the caller returns 400).
-/// 2. An enforcing trip forces drop. A request cannot choose quarantine.
-/// 3. Otherwise request, then the contract document, then quarantine.
+/// 1. `dry_run` writes nothing. It does not skip the mode decision.
+/// 2. An enforcing trip forces drop, including the batch that crosses the
+///    threshold. A request cannot choose quarantine, and a lock cannot turn
+///    that batch into a 400.
+/// 3. A locked contract rejects a conflicting request (the caller returns 400).
+/// 4. Otherwise the request, then the contract document, then quarantine.
 ///
-/// The account cap is used instead of the contract cap when the account has a
-/// threshold. Watch-only caps set `would_trip` and leave the mode alone.
+/// The account cap replaces the contract cap when the account has a threshold.
+/// Watch-only caps set `would_trip` and leave the mode alone.
 pub fn resolve_on_fail(input: &ResolveInput) -> OnFailDecision {
     let (base_mode, base_source, lock_rejected) = base_mode(input);
-    if lock_rejected {
-        return finish(input, base_mode, base_source, true, None, None, false);
-    }
-
     let (scope, view) = winning_scope(input);
     let reset = view.trip.cooldown_elapsed(input.now);
-    let clock_active = view.trip.active(input.now);
+    let enforcing_clock = view.trip.active(input.now) && view.config.enforce;
 
-    let add = if input.dry_run || base_mode != OnFailMode::Quarantine {
-        0
-    } else {
+    // Only a batch that would insert quarantine rows counts toward the cap.
+    // A lock rejection, a dry run, drop mode, and an already-enforcing trip
+    // do not insert those rows.
+    let counts_toward_cap =
+        !input.dry_run && !lock_rejected && !enforcing_clock && base_mode == OnFailMode::Quarantine;
+    let add = if counts_toward_cap {
         input.failed as u64
+    } else {
+        0
     };
     let projected = VolumeWindow {
         minute: view.volume.minute.saturating_add(add),
@@ -142,6 +146,7 @@ pub fn resolve_on_fail(input: &ResolveInput) -> OnFailDecision {
 
     let mut mode = base_mode;
     let mut source = base_source;
+    let mut rejected = lock_rejected;
     let mut report: Option<AutoTripReport> = None;
     let mut effect = ScopeEffect {
         scope,
@@ -154,43 +159,47 @@ pub fn resolve_on_fail(input: &ResolveInput) -> OnFailDecision {
         threshold: 0,
     };
 
-    if clock_active && view.config.enforce {
+    let crossing_enforced = counts_toward_cap && view.config.enforce && crossed.is_some();
+
+    if enforcing_clock || crossing_enforced {
+        // The cap is higher precedence than the lock and the request.
+        rejected = false;
         mode = OnFailMode::Drop;
         source = OnFailSource::AutoTrip;
+        let until = if crossing_enforced {
+            effect.trip = true;
+            effect.until = cooldown_until(&view.config, input.now);
+            if let Some((window, observed, threshold)) = crossed {
+                effect.window = Some(window);
+                effect.observed = observed;
+                effect.threshold = threshold;
+            }
+            effect.until
+        } else {
+            view.trip.trip_until
+        };
         report = Some(AutoTripReport {
             active: true,
             would_trip: false,
             enforcing: true,
             scope,
-            until: view.trip.trip_until,
+            until,
         });
+    } else if rejected {
+        return finish(input, base_mode, base_source, true, None, None, false);
     } else if base_mode == OnFailMode::Quarantine {
         if let Some((window, observed, threshold)) = crossed {
             effect.window = Some(window);
             effect.observed = observed;
             effect.threshold = threshold;
-            if view.config.enforce && !input.dry_run {
-                mode = OnFailMode::Drop;
-                source = OnFailSource::AutoTrip;
-                effect.trip = true;
-                effect.until = cooldown_until(&view.config, input.now);
-                report = Some(AutoTripReport {
-                    active: true,
-                    would_trip: false,
-                    enforcing: true,
-                    scope,
-                    until: effect.until,
-                });
-            } else {
-                effect.would_trip = true;
-                report = Some(AutoTripReport {
-                    active: false,
-                    would_trip: true,
-                    enforcing: view.config.enforce,
-                    scope,
-                    until: None,
-                });
-            }
+            effect.would_trip = true;
+            report = Some(AutoTripReport {
+                active: false,
+                would_trip: true,
+                enforcing: view.config.enforce,
+                scope,
+                until: None,
+            });
         }
     }
 
@@ -205,7 +214,7 @@ pub fn resolve_on_fail(input: &ResolveInput) -> OnFailDecision {
     let sample = mode == OnFailMode::Drop
         && (view.config.sample_drops || input.contract_guard.config.sample_drops);
 
-    finish(input, mode, source, false, report, persist, sample)
+    finish(input, mode, source, rejected, report, persist, sample)
 }
 
 fn finish(
@@ -284,6 +293,18 @@ fn cooldown_until(config: &QuarantineGuardConfig, now: DateTime<Utc>) -> Option<
         .cooldown_minutes
         .filter(|minutes| *minutes > 0)
         .map(|minutes| now + Duration::minutes(i64::from(minutes)))
+}
+
+/// Quarantine-insert counter. Atomic rejection stores no quarantine rows,
+/// so it must not advance the safety cap.
+pub fn records_quarantine_volume(quarantined: usize, atomic_rejected: bool) -> bool {
+    quarantined > 0 && !atomic_rejected
+}
+
+/// How many metadata samples still fit in this minute bucket.
+pub fn sample_room(existing: i64) -> usize {
+    let filled = usize::try_from(existing).unwrap_or(0);
+    SAMPLE_CAP.saturating_sub(filled)
 }
 
 /// Stored rows for a batch. Dry-run writes nothing.
@@ -375,16 +396,40 @@ pub struct SampleFact {
 
 /// JSON stored for an opt-in sample. Keys are `kind` and `field` only.
 pub fn sample_document(facts: &[SampleFact]) -> serde_json::Value {
-    let violations: Vec<serde_json::Value> = facts
-        .iter()
-        .map(|fact| {
-            serde_json::json!({
+    sanitize_sample(&serde_json::json!({
+        "violations": facts
+            .iter()
+            .map(|fact| serde_json::json!({
                 "kind": fact.kind,
                 "field": fact.field,
-            })
+            }))
+            .collect::<Vec<_>>()
+    }))
+}
+
+/// Rebuild a sample so only violation kind and field path are stored.
+/// Record bodies, messages, and received values are dropped.
+pub fn sanitize_sample(value: &serde_json::Value) -> serde_json::Value {
+    let violations = value
+        .get("violations")
+        .and_then(serde_json::Value::as_array)
+        .map(|items| {
+            items
+                .iter()
+                .map(|item| {
+                    serde_json::json!({
+                        "kind": clip_meta(item.get("kind").and_then(serde_json::Value::as_str).unwrap_or("")),
+                        "field": clip_meta(item.get("field").and_then(serde_json::Value::as_str).unwrap_or("")),
+                    })
+                })
+                .collect::<Vec<_>>()
         })
-        .collect();
+        .unwrap_or_default();
     serde_json::json!({ "violations": violations })
+}
+
+fn clip_meta(value: &str) -> String {
+    value.trim().chars().take(240).collect()
 }
 
 pub fn minute_bucket(now: DateTime<Utc>) -> DateTime<Utc> {
@@ -840,5 +885,362 @@ mod tests {
         let bucket = minute_bucket(now() + Duration::seconds(42));
         assert_eq!(bucket, now());
         assert_eq!(hour_bucket(now() + Duration::minutes(17)), now());
+    }
+}
+
+/// Independent checks for precedence, storage, the lock, the watch-only cap,
+/// counters, retention, and metadata-only samples.
+#[cfg(test)]
+mod review_invariants {
+    use super::*;
+    use crate::contract::{Contract, OnFailMode};
+
+    const SECRET: &str = "SECRET-ssn-999-00-1234";
+
+    fn at() -> DateTime<Utc> {
+        DateTime::parse_from_rfc3339("2026-10-30T18:00:30Z")
+            .unwrap()
+            .with_timezone(&Utc)
+    }
+
+    fn minute_guard(enforce: bool, per_minute: u64) -> QuarantineGuardConfig {
+        QuarantineGuardConfig {
+            enforce,
+            max_per_minute: Some(per_minute),
+            max_per_hour: None,
+            cooldown_minutes: Some(60),
+            sample_drops: false,
+        }
+    }
+
+    fn base() -> ResolveInput {
+        ResolveInput {
+            request: None,
+            contract_mode: OnFailMode::Quarantine,
+            contract_explicit: true,
+            locked: false,
+            account: None,
+            contract_guard: ScopeView::default(),
+            now: at(),
+            failed: 3,
+            dry_run: false,
+        }
+    }
+
+    fn hot_contract(enforce: bool) -> ScopeView {
+        ScopeView {
+            config: minute_guard(enforce, 10),
+            volume: VolumeWindow { minute: 8, hour: 8 },
+            trip: StoredTrip::default(),
+        }
+    }
+
+    fn active_trip(enforce: bool) -> ScopeView {
+        ScopeView {
+            config: minute_guard(enforce, 10),
+            volume: VolumeWindow::default(),
+            trip: StoredTrip {
+                tripped_at: Some(at() - Duration::minutes(2)),
+                trip_until: Some(at() + Duration::minutes(40)),
+            },
+        }
+    }
+
+    #[test]
+    fn precedence_matrix_dry_run_trip_lock_request_contract_default() {
+        // dry_run writes nothing but still reports an enforcing trip.
+        let mut dry = base();
+        dry.dry_run = true;
+        dry.contract_mode = OnFailMode::Drop;
+        dry.request = Some(OnFailMode::Quarantine);
+        dry.locked = true;
+        dry.contract_guard = active_trip(true);
+        let decision = resolve_on_fail(&dry);
+        assert_eq!(decision.mode, OnFailMode::Drop);
+        assert_eq!(decision.source, OnFailSource::AutoTrip);
+        assert!(!decision.lock_rejected);
+        assert_eq!((decision.quarantined, decision.dropped), (0, 0));
+        assert!(decision.effect.is_none());
+        assert!(!writes_audit(false, decision.mode, true));
+        assert!(!writes_quarantine(false, decision.mode, true));
+        assert!(!writes_ledger(false, decision.mode, true));
+
+        // Unlocked request beats the contract.
+        let mut request = base();
+        request.contract_mode = OnFailMode::Quarantine;
+        request.request = Some(OnFailMode::Drop);
+        let decision = resolve_on_fail(&request);
+        assert_eq!(decision.mode, OnFailMode::Drop);
+        assert_eq!(decision.source, OnFailSource::Request);
+        assert_eq!((decision.quarantined, decision.dropped), (0, 3));
+
+        // Contract beats the default when the request omits on_fail.
+        let mut contract = base();
+        contract.contract_mode = OnFailMode::Drop;
+        let decision = resolve_on_fail(&contract);
+        assert_eq!(decision.source, OnFailSource::Contract);
+        assert_eq!(decision.dropped, 3);
+
+        // Omitted contract value is quarantine.
+        let mut unset = base();
+        unset.contract_explicit = false;
+        unset.contract_mode = OnFailMode::default();
+        let decision = resolve_on_fail(&unset);
+        assert_eq!(decision.mode, OnFailMode::Quarantine);
+        assert_eq!(decision.source, OnFailSource::Default);
+        assert_eq!(decision.quarantined, 3);
+    }
+
+    #[test]
+    fn enforcing_trip_beats_the_lock_and_blocks_forced_quarantine() {
+        // Locked to quarantine, request asks for drop, cap already enforcing.
+        let mut locked_drop_request = base();
+        locked_drop_request.locked = true;
+        locked_drop_request.request = Some(OnFailMode::Drop);
+        locked_drop_request.contract_guard = active_trip(true);
+        let decision = resolve_on_fail(&locked_drop_request);
+        assert!(!decision.lock_rejected);
+        assert_eq!(decision.mode, OnFailMode::Drop);
+        assert_eq!(decision.source, OnFailSource::AutoTrip);
+        assert_eq!(decision.dropped, 3);
+        assert_eq!(decision.quarantined, 0);
+
+        // Locked to drop, request tries to force quarantine during the trip.
+        let mut force = base();
+        force.contract_mode = OnFailMode::Drop;
+        force.locked = true;
+        force.request = Some(OnFailMode::Quarantine);
+        force.contract_guard = active_trip(true);
+        let decision = resolve_on_fail(&force);
+        assert!(!decision.lock_rejected);
+        assert_eq!(decision.mode, OnFailMode::Drop);
+        assert_eq!(decision.source, OnFailSource::AutoTrip);
+
+        // Same conflict with no trip is a 400, and it does not arm the cap.
+        let mut rejected = base();
+        rejected.locked = true;
+        rejected.request = Some(OnFailMode::Drop);
+        rejected.contract_guard = hot_contract(true);
+        let decision = resolve_on_fail(&rejected);
+        assert!(decision.lock_rejected);
+        assert_eq!(decision.mode, OnFailMode::Quarantine);
+        assert!(decision.effect.is_none());
+        assert!(decision.auto_trip.is_none());
+
+        // A matching locked request is accepted, then the crossing cap drops it.
+        let mut matched = base();
+        matched.locked = true;
+        matched.request = Some(OnFailMode::Quarantine);
+        matched.contract_guard = hot_contract(true);
+        let decision = resolve_on_fail(&matched);
+        assert!(!decision.lock_rejected);
+        assert_eq!(decision.source, OnFailSource::AutoTrip);
+        assert_eq!(decision.dropped, 3);
+        assert!(decision.effect.unwrap().trip);
+    }
+
+    #[test]
+    fn drop_writes_no_audit_or_quarantine_rows() {
+        assert!(!writes_audit(false, OnFailMode::Drop, false));
+        assert!(!writes_quarantine(false, OnFailMode::Drop, false));
+        assert!(writes_ledger(false, OnFailMode::Drop, false));
+        assert!(!writes_atomic_summary(OnFailMode::Drop, false, 5));
+        assert!(writes_audit(true, OnFailMode::Drop, false));
+        assert!(!writes_audit(true, OnFailMode::Drop, true));
+        assert!(!records_quarantine_volume(5, true));
+        assert!(records_quarantine_volume(5, false));
+        assert!(!records_quarantine_volume(0, false));
+
+        let mut dropping = base();
+        dropping.request = Some(OnFailMode::Drop);
+        let decision = resolve_on_fail(&dropping);
+        assert_eq!((decision.quarantined, decision.dropped), (0, 3));
+        assert_eq!(
+            per_record_disposition(false, decision.mode),
+            Some("dropped")
+        );
+        assert!(per_record_disposition(true, decision.mode).is_none());
+    }
+
+    #[test]
+    fn watch_only_is_the_default_and_does_not_drop() {
+        let parsed: QuarantineGuardConfig = serde_json::from_str("{}").unwrap();
+        assert!(!parsed.enforce);
+        assert!(!parsed.configured());
+        assert!(!parsed.sample_drops);
+        assert_eq!(OnFailMode::default(), OnFailMode::Quarantine);
+
+        let mut watch = base();
+        watch.contract_guard = hot_contract(false);
+        let decision = resolve_on_fail(&watch);
+        assert_eq!(decision.mode, OnFailMode::Quarantine);
+        assert_eq!(decision.source, OnFailSource::Contract);
+        assert_eq!(decision.quarantined, 3);
+        assert_eq!(decision.dropped, 0);
+        let report = decision.auto_trip.expect("would-trip");
+        assert!(report.would_trip);
+        assert!(!report.active);
+        assert!(!report.enforcing);
+        let effect = decision.effect.expect("record would-trip");
+        assert!(effect.would_trip);
+        assert!(!effect.trip);
+
+        // A threshold with enforce left unset stays watch-only.
+        let yaml = "version: \"1.0\"\nname: demo\nontology:\n  entities: []\nquarantine_guard:\n  max_per_minute: 10\n";
+        let contract: Contract = serde_yaml::from_str(yaml).unwrap();
+        assert!(!contract.quarantine_guard.enforce);
+        assert!(contract.quarantine_guard.configured());
+        assert_eq!(contract.on_fail, OnFailMode::Quarantine);
+        assert!(!contract.on_fail_locked);
+    }
+
+    #[test]
+    fn account_cap_replaces_contract_cap_until_reset() {
+        let mut both = base();
+        both.request = Some(OnFailMode::Quarantine);
+        both.contract_guard = active_trip(true);
+        both.account = Some(ScopeView {
+            config: QuarantineGuardConfig {
+                enforce: true,
+                max_per_minute: None,
+                max_per_hour: Some(100),
+                cooldown_minutes: Some(15),
+                sample_drops: false,
+            },
+            volume: VolumeWindow { minute: 4, hour: 4 },
+            trip: StoredTrip::default(),
+        });
+        let decision = resolve_on_fail(&both);
+        assert_eq!(decision.mode, OnFailMode::Quarantine);
+        assert_eq!(decision.source, OnFailSource::Request);
+        assert!(decision.auto_trip.is_none());
+
+        both.account.as_mut().unwrap().volume.hour = 100;
+        let tripped = resolve_on_fail(&both);
+        assert_eq!(tripped.source, OnFailSource::AutoTrip);
+        assert_eq!(tripped.auto_trip.unwrap().scope, GuardScope::Account);
+        assert_eq!(tripped.effect.unwrap().scope, GuardScope::Account);
+        assert_eq!(tripped.dropped, 3);
+
+        // Cooldown elapsed and the hour is back under: the trip clears.
+        both.account.as_mut().unwrap().volume.hour = 1;
+        both.account.as_mut().unwrap().trip = StoredTrip {
+            tripped_at: Some(at() - Duration::minutes(20)),
+            trip_until: Some(at() - Duration::seconds(1)),
+        };
+        let reset = resolve_on_fail(&both);
+        assert_eq!(reset.mode, OnFailMode::Quarantine);
+        assert!(reset.effect.unwrap().reset);
+        assert!(reset.auto_trip.is_none());
+    }
+
+    #[test]
+    fn counters_are_per_record_and_samples_stop_at_five() {
+        let records = [
+            vec![("type_mismatch", "amount"), ("enum_violation", "status")],
+            vec![("type_mismatch", "amount")],
+            vec![("missing_required_field", "user_id")],
+        ];
+        let tallies = tally_reasons(&records);
+        let total: u64 = tallies.iter().map(|(_, n)| *n).sum();
+        assert_eq!(total, records.len() as u64);
+        assert_eq!(tallies[0], ("type_mismatch:amount".into(), 2));
+
+        assert_eq!(sample_room(0), SAMPLE_CAP);
+        assert_eq!(sample_room(4), 1);
+        assert_eq!(sample_room(SAMPLE_CAP as i64), 0);
+        assert_eq!(sample_room(9), 0);
+        assert_eq!(sample_room(-3), SAMPLE_CAP);
+
+        let bucket = minute_bucket(at());
+        assert_eq!(bucket.timestamp() % 60, 0);
+        let later = bucket + Duration::seconds(59);
+        assert_eq!(minute_bucket(later), bucket);
+        assert_ne!(minute_bucket(bucket + Duration::seconds(60)), bucket);
+    }
+
+    #[test]
+    fn retention_keeps_thirty_days_and_migration_matches() {
+        let t = at();
+        assert!(!drop_bucket_expired(t - Duration::days(30), t));
+        assert!(drop_bucket_expired(
+            t - Duration::days(30) - Duration::seconds(1),
+            t
+        ));
+
+        let sql = include_str!("../supabase/migrations/045_drop_mode.sql");
+        assert!(sql.contains("add column if not exists on_fail text not null default 'quarantine'"));
+        assert!(
+            sql.contains("add column if not exists on_fail_locked boolean not null default false")
+        );
+        assert!(sql.contains("add column if not exists fail_policy jsonb"));
+        assert!(sql.contains("add column if not exists quarantine_guard jsonb"));
+        assert!(sql.contains("constraint dropped_event_counts_bucket"));
+        assert!(sql.contains("constraint quarantine_guard_state_scope"));
+        assert!(sql.contains("sample_idx >= 0 and sample_idx < 5"));
+        assert!(sql.contains("bucket_start < now() - interval '30 days'"));
+        assert!(sql.contains("delete from public.audit_log"));
+        assert!(sql.contains("delete from public.quarantine_events"));
+        assert!(!sql.to_ascii_lowercase().contains("drop table"));
+        assert!(!sql.contains("raw_event"));
+        assert!(!sql.contains("payload"));
+        assert!(sql.contains("Rollback"));
+        assert_eq!(sql.matches("enable row level security").count(), 5);
+    }
+
+    #[test]
+    fn samples_and_reason_keys_drop_record_contents() {
+        let dirty = serde_json::json!({
+            "violations": [{
+                "kind": "type_mismatch",
+                "field": "amount",
+                "message": format!("got {SECRET}"),
+                "received": SECRET,
+                "expected": SECRET,
+                "suggestion": SECRET,
+                "payload": {"ssn": SECRET},
+                "raw_event": {"amount": SECRET}
+            }],
+            "raw_event": SECRET,
+            "payload": SECRET
+        });
+        let clean = sanitize_sample(&dirty);
+        let text = clean.to_string();
+        assert!(!text.contains(SECRET));
+        assert!(!text.contains("message"));
+        assert!(!text.contains("received"));
+        assert!(!text.contains("payload"));
+        assert!(!text.contains("raw_event"));
+        assert_eq!(clean["violations"][0]["kind"], "type_mismatch");
+        assert_eq!(clean["violations"][0]["field"], "amount");
+        assert_eq!(clean["violations"][0].as_object().unwrap().len(), 2);
+
+        let doc = sample_document(&[SampleFact {
+            kind: "enum_violation".into(),
+            field: "status".into(),
+        }]);
+        assert_eq!(sanitize_sample(&doc), doc);
+
+        let key = reason_key("type_mismatch", "amount");
+        assert_eq!(key, "type_mismatch:amount");
+        assert!(!key.contains(SECRET));
+        assert!(reason_key(&format!("type_mismatch {SECRET}"), "amount").len() <= 240);
+    }
+
+    #[test]
+    fn contract_yaml_round_trip_rejects_unknown_on_fail() {
+        let yaml = "version: \"1.0\"\nname: demo\nontology:\n  entities: []\non_fail: drop\non_fail_locked: true\n";
+        let contract: Contract = serde_yaml::from_str(yaml).unwrap();
+        assert_eq!(contract.on_fail, OnFailMode::Drop);
+        assert!(contract.on_fail_locked);
+        assert!(yaml_sets_on_fail(yaml));
+        let again = serde_yaml::to_string(&contract).unwrap();
+        let parsed: Contract = serde_yaml::from_str(&again).unwrap();
+        assert_eq!(parsed.on_fail, OnFailMode::Drop);
+        assert!(parsed.on_fail_locked);
+
+        let invalid = "version: \"1.0\"\nname: demo\nontology:\n  entities: []\non_fail: discard\n";
+        assert!(serde_yaml::from_str::<Contract>(invalid).is_err());
+        assert!(parse_on_fail_args(Some("discard"), None).is_err());
     }
 }

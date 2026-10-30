@@ -170,7 +170,7 @@ pub async fn record_drop_counts(
                 bucket_start, source, reason_key, dropped
             )
             VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-            ON CONFLICT (org_id, contract_id, contract_version, direction, bucket_start, source, reason_key)
+            ON CONFLICT ON CONSTRAINT dropped_event_counts_bucket
             DO UPDATE SET dropped = dropped_event_counts.dropped + EXCLUDED.dropped
             "#,
         )
@@ -216,18 +216,15 @@ pub async fn record_drop_samples(
     .await
     .db_op("record_drop_samples:count")?;
 
-    let room = (5 - existing).max(0) as usize;
+    let room = crate::drop_mode::sample_room(existing);
     for (offset, sample) in samples.iter().take(room).enumerate() {
+        let sample = crate::drop_mode::sanitize_sample(sample);
         let idx = existing as i16 + offset as i16;
         let reason = sample["violations"][0]["kind"]
             .as_str()
             .unwrap_or("unspecified");
         let field = sample["violations"][0]["field"].as_str().unwrap_or("");
-        let reason_key = if field.is_empty() {
-            reason.to_string()
-        } else {
-            format!("{reason}:{field}")
-        };
+        let reason_key = crate::drop_mode::reason_key(reason, field);
         sqlx::query(
             r#"
             INSERT INTO dropped_event_samples (
@@ -267,7 +264,7 @@ pub async fn trip_guard(
             org_id, contract_id, tripped_at, trip_until, reason, trip_count
         )
         VALUES ($1, $2, NOW(), $3, $4, 1)
-        ON CONFLICT (org_id, contract_id)
+        ON CONFLICT ON CONSTRAINT quarantine_guard_state_scope
         DO UPDATE SET
             tripped_at = NOW(),
             trip_until = EXCLUDED.trip_until,

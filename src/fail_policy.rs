@@ -633,3 +633,35 @@ pub async fn reset_account_guard_handler(
         scope: "account",
     }))
 }
+
+#[cfg(test)]
+mod review_tests {
+    use super::failure_facts;
+    use crate::validation::{Violation, ViolationKind};
+
+    #[test]
+    fn failure_facts_keep_kind_and_field_only() {
+        let secret = "SECRET-ssn-999-00-1234";
+        let facts = failure_facts(&[Violation {
+            field: "amount".into(),
+            message: format!("expected an integer, got {secret}"),
+            kind: ViolationKind::TypeMismatch,
+            received: Some(serde_json::json!(secret)),
+            expected: Some(secret.to_string()),
+            suggestion: Some(format!("remove {secret}")),
+        }]);
+        assert_eq!(facts.violations.len(), 1);
+        let (kind, field) = &facts.violations[0];
+        assert_eq!(kind, "type_mismatch");
+        assert_eq!(field, "amount");
+        let key = crate::drop_mode::reason_key(kind, field);
+        let doc = crate::drop_mode::sample_document(&[crate::drop_mode::SampleFact {
+            kind: kind.clone(),
+            field: field.clone(),
+        }]);
+        let rendered = format!("{key} {doc}");
+        assert!(!rendered.contains(secret));
+        assert!(!rendered.contains("message"));
+        assert!(!rendered.contains("received"));
+    }
+}

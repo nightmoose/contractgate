@@ -74,6 +74,9 @@ create table if not exists public.dropped_event_samples (
 comment on table public.dropped_event_samples is
     'Optional samples of dropped failures. Failure metadata only; never record contents. Kept 30 days.';
 
+create index if not exists dropped_event_samples_bucket_idx
+    on public.dropped_event_samples (bucket_start);
+
 -- Quarantine inserts per minute, so the safety cap does not scan quarantine_events.
 create table if not exists public.quarantine_volume_minute (
     org_id        uuid,
@@ -280,3 +283,16 @@ end;
 $$;
 
 revoke execute on function public.purge_expired_logs(integer) from public, anon, authenticated;
+
+-- Rollback (apply in this order, in one transaction):
+--   1. Restore purge_expired_logs(integer) from migration 037. It returns
+--      (audit_deleted, quarantine_deleted) and does not read the tables below.
+--      pg_cron calls the function by name, so replace it before dropping tables.
+--   2. Drop the new tables: dropped_event_counts, dropped_event_samples,
+--      quarantine_volume_minute, quarantine_guard_state, quarantine_guard_events.
+--   3. Alter contract_versions drop column on_fail, drop column on_fail_locked.
+--   4. Alter contracts drop column fail_policy.
+--   5. Alter orgs drop column quarantine_guard.
+-- Existing audit_log and quarantine_events rows are not rewritten or deleted
+-- by this migration. New columns are nullable or constant-default, so applying
+-- it does not rewrite those tables.

@@ -481,7 +481,7 @@ pub async fn ingest_handler(
                 tracing::warn!("envelope drop ledger write failed: {err:?}");
             }
         }
-        if decision.quarantined > 0 && !query.atomic {
+        if crate::drop_mode::records_quarantine_volume(decision.quarantined, query.atomic) {
             if let Err(err) = crate::fail_policy::record_quarantined(
                 &state,
                 org_id,
@@ -496,9 +496,11 @@ pub async fn ingest_handler(
 
         let mut body = serde_json::to_value(&result).unwrap_or_else(|_| json!({}));
         if let Some(obj) = body.as_object_mut() {
+            let failed_records = result.quarantined;
             if decision.mode == crate::contract::OnFailMode::Drop {
                 obj.insert("quarantined".into(), json!(0));
             }
+            obj.insert("failed".into(), json!(failed_records));
             obj.insert("dropped".into(), json!(decision.dropped));
             obj.insert("on_fail_mode".into(), json!(decision.mode.as_str()));
             obj.insert("on_fail_source".into(), json!(decision.source.as_str()));
@@ -870,7 +872,7 @@ pub async fn ingest_handler(
             }
         }
     }
-    if decision.quarantined > 0 {
+    if crate::drop_mode::records_quarantine_volume(decision.quarantined, atomic_rejected) {
         if let Err(err) = crate::fail_policy::record_quarantined(
             &state,
             org_id,
