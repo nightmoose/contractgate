@@ -99,3 +99,18 @@ updates:
     cooldown:
       default-days: 7
     open-pull-requests-limit: 1
+
+  # ── MCP server (npm) ──────────────────────────────────────────────────────
+  # Version updates are off (limit 0); this entry exists so the ignore rule
+  # below also applies to security updates for /mcp.
+  - package-ecosystem: "npm"
+    directory: "/mcp"
+    target-branch: "staging"
+    schedule:
+      interval: "monthly"
+    open-pull-requests-limit: 0
+    ignore:
+      # 2.3.0 relicensed the package from MIT to Apache-2.0. Staying on the
+      # MIT-licensed 2.x line (<= 2.2.0). Declined 2026-10-30 (PR #342).
+      - dependency-name: "@modelcontextprotocol/server"
+        versions: [">=2.3.0"]
