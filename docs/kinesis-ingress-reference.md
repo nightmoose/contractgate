@@ -28,7 +28,15 @@ For each contract three Kinesis streams are created:
 |---|---|
 | `cg-{contract_id}-raw` | Inbound events from the data producer. Producer writes here. |
 | `cg-{contract_id}-clean` | Events that passed validation. Downstream consumers read from here. |
-| `cg-{contract_id}-quarantine` | Events that failed validation. Held for inspection or replay. |
+| `cg-{contract_id}-quarantine` | Events that failed validation and resolved to quarantine. |
+
+Quarantine is the default. Drop mode, an enforcing safety cap, and a full Free
+quarantine cap (50,000 pending rows per organization, 10,000 per contract,
+shared with AISchemaGate) count the failure in `dropped_event_counts` and do
+not publish it to the quarantine stream. `on_fail_source` is `plan_cap` when
+the Free cap is the reason. Paid plans have no cap. Passing records still go
+to the clean stream. The consumer does not insert `quarantine_events`. A
+counted drop is not written to the audit log.
 
 ---
 

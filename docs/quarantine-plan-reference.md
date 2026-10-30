@@ -51,6 +51,10 @@ Free keeps rows 7 days, Pro 90, Enterprise 365. Migration 046 redacts leftover F
 
 The AISchemaGate repair loop uses the in-memory model output, so it works on every plan. Replay of a stored output is Pro.
 
+## Hosted streams
+
+Hosted Kafka and Kinesis consumers use the same on-fail decision as HTTP ingest. They do not insert `quarantine_events`. When the decision is quarantine, the failure is published to the quarantine topic. When the decision is drop — including `on_fail_source: plan_cap` at the Free cap — the failure is counted in `dropped_event_counts` and is not published. Passing records still go to the clean topic or stream. Paid plans have no cap, so a quarantine decision on a paid plan is unchanged.
+
 ## Follow-ups
 
-Pricing pages in the website repositories are not in this repo. Hosted Kafka and Kinesis consumers publish to a quarantine topic and do not insert `quarantine_events`.
+Pricing pages in the website repositories are not in this repo.

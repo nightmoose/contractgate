@@ -81,6 +81,7 @@ mod quarantine_actions;
 mod quarantine_cap;
 #[cfg(test)]
 mod rag_contract_tests;
+mod stream_fail;
 use contractgate::rate_limit;
 mod openapi_schemas;
 mod replay;
