@@ -22,7 +22,9 @@ on:
       - "Cargo.lock"
       - "deny.toml"
       - "scripts/check-npm-licenses.sh"
+      - "scripts/check-npm-build.sh"
       - "scripts/check-python-licenses.sh"
+      - "scripts/prune-npm-license-tree.mjs"
       - "scripts/license/**"
       - ".github/workflows/license-check.yml"
   schedule:
@@ -54,8 +56,13 @@ jobs:
         with:
           node-version: "22"
 
-      - name: license-checker-rseidelsohn --onlyAllow MIT
+      - name: license-checker-rseidelsohn
         run: bash scripts/check-npm-licenses.sh ${{ matrix.dir }}
+
+      - name: Typecheck and build
+        run: bash scripts/check-npm-build.sh ${{ matrix.dir }}
+        env:
+          NEXT_PUBLIC_API_URL: "http://localhost:3001"
 
   python:
     name: python — ${{ matrix.dir }}

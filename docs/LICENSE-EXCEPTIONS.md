@@ -22,8 +22,8 @@ Versions below are what the checkers reported when this list was written. npm ex
 
 | Ecosystem | Exceptions |
 |---|---|
-| Rust | 26 crates |
-| npm | 19 packages |
+| Rust | 25 crates |
+| npm | 15 packages |
 | Python | 2 distributions, in each of the three projects |
 
 `ops/dogfood` has no production dependencies. The checker reports that no packages were found and exits 0.
@@ -55,42 +55,37 @@ ICU4X note, for every Unicode-3.0 row: crates.io lists `idna` 0.5.0 as `MIT OR A
 | `zerovec` 0.11.6 | Unicode-3.0 | ICU4X vector used by the crates above | none found | large |
 | `zerovec-derive` 0.11.3 | Unicode-3.0 | Derive for `zerovec` | none found | large |
 | `unicode-ident` 1.0.24 | `(MIT OR Apache-2.0) AND Unicode-3.0` | Identifier tables for `syn` and other macros. MIT covers the code; the tables add Unicode-3.0 | none found | large |
-| `metrics-exporter-prometheus` 0.18.3 | MIT AND Apache-2.0 | Direct dependency. Prometheus scrape endpoint. crates.io lists 0.18.0 and 0.18.1 as MIT; 0.18.3 is MIT AND Apache-2.0 | `metrics-exporter-prometheus` 0.18.1 (MIT on crates.io) | small |
-| `ring` 0.17.14 | Apache-2.0 AND ISC | rustls crypto provider used by reqwest and sqlx. ISC is allowed; the AND still requires Apache-2.0. crates.io lists current `aws-lc-rs` as `ISC AND (Apache-2.0 OR ISC)` | none found | large |
+| `ring` 0.17.14 | Apache-2.0 AND ISC | Accepted. rustls crypto; no MIT or ISC provider is viable. | none found | large |
 | `ryu` 1.0.23 | Apache-2.0 OR BSL-1.0 | Float formatting inside `csv`, `serde_urlencoded`, and `serde_yaml` | none found | large |
 | `foldhash` 0.1.5 and 0.2.0 | Zlib | Hasher selected by hashbrown. Every crates.io release checked is Zlib | none found | large |
-| `sketches-ddsketch` 0.3.1 | Apache-2.0 | Histogram sketch used by `metrics-exporter-prometheus`. crates.io releases are Apache-2.0 | none found | large |
-| `sync_wrapper` 1.0.2 | Apache-2.0 | Task wrapper used by axum, tower, and reqwest. Every crates.io release checked is Apache-2.0 | none found | large |
+| `sketches-ddsketch` 0.3.1 | Apache-2.0 | Accepted. Via the metrics exporter; every version is Apache-2.0. | none found | large |
+| `sync_wrapper` 1.0.2 | Apache-2.0 | Accepted. axum and tower stack. | none found | large |
 | `webpki-roots` 0.26.11 and 1.0.10 | CDLA-Permissive-2.0 | Bundled Mozilla CA set. reqwest feature `rustls-tls` and sqlx feature `runtime-tokio-rustls` (which selects `tls-rustls-ring-webpki`) depend on it. `rustls-native-certs` 0.8 is `Apache-2.0 OR ISC OR MIT` on crates.io, so MIT can be selected. reqwest has `rustls-tls-native-roots`. sqlx has `tls-rustls-ring-native-roots` (used with `runtime-tokio`, not with `runtime-tokio-rustls`). That switch drops this crate and still uses `ring` | `rustls-native-certs` (OS trust store, MIT-selectable) | medium |
 
 ## npm
 
-`npm ci --omit=dev`, then `license-checker-rseidelsohn` 5.0.1 with `--production` and `--onlyAllow 'MIT;ISC;BSD-2-Clause;BSD-3-Clause;0BSD'`. The checker treats an SPDX `AND` as satisfied when every license in it is allowed, so `sha.js` (`MIT AND BSD-3-Clause`) is not an exception. `sdks/aischemagate/typescript` has no lockfile (the release workflow deletes one) and is installed with `npm install --omit=dev --no-package-lock`. The linux x64 optional binaries are the ones this CI image installs. Other `@img/sharp-*` platform packages are not installed here, so they were not scanned.
+`npm ci --omit=dev --omit=peer`, then a prune of packages that are only devDependencies or peerDependencies, then `license-checker-rseidelsohn` 5.0.1 with `--production` and `--onlyAllow 'MIT;ISC;BSD-2-Clause;BSD-3-Clause;0BSD'`. That drops optional peers such as Playwright and the TypeScript peer of `valibot`. The checker treats an SPDX `AND` as satisfied when every license in it is allowed, so `sha.js` (`MIT AND BSD-3-Clause`) is not an exception. `sdks/aischemagate/typescript` has no committed lockfile. The linux x64 optional binaries are the ones this CI image installs. Other `@img/sharp-*` platform packages are not installed here, so they were not scanned.
 
 | Package | License | Why it is used | MIT replacement candidates | Effort |
 |---|---|---|---|---|
-| `typescript` 5.9.3 | Apache-2.0 | Optional peer of `valibot`, which `tmcp` depends on. npm still installs it for a production install of `mcp`. The server does not import it | none found | large |
-| `sharp` 0.35.5 | Apache-2.0 | Optional dependency of `next` for image optimization | none found that `next` will call instead | large |
-| `@img/sharp-linux-x64` 0.35.5 | Apache-2.0 | linux x64 build of `sharp`, installed on the CI image | none found | large |
-| `@img/sharp-libvips-linux-x64` 1.3.4 | LGPL-3.0-or-later | libvips binary bundled for that `sharp` build | none found. `jimp` 1.6.1 on npm is MIT and is not a `next` image optimizer | large |
-| `@opentelemetry/api` 1.9.1 | Apache-2.0 | Dependency of `@anthropic-ai/sdk` in the dashboard | none found | large |
-| `@swc/helpers` 0.5.23 | Apache-2.0 | Dependency of `next` | none found | large |
-| `baseline-browser-mapping` 2.11.24 | Apache-2.0 | Dependency of `next` | none found | large |
+| `sharp` 0.35.5 | Apache-2.0 | Accepted. Next.js optional dependency, installed but not executed; images unoptimized. | none found | large |
+| `@img/sharp-linux-x64` 0.35.5 | Apache-2.0 | Accepted. Next.js optional dependency, installed but not executed; images unoptimized. | none found | large |
+| `@img/sharp-libvips-linux-x64` 1.3.4 | LGPL-3.0-or-later | Accepted. Next.js optional dependency, installed but not executed; images unoptimized. | none found | large |
+| `@opentelemetry/api` 1.9.1 | Apache-2.0 | Accepted. Hard dependency of `@anthropic-ai/sdk`. | none found | large |
+| `@swc/helpers` 0.5.23 | Apache-2.0 | Accepted. Hard dependency of Next.js. | none found | large |
+| `baseline-browser-mapping` 2.11.24 | Apache-2.0 | Accepted. Hard dependency of Next.js. | none found | large |
 | `caniuse-lite` 1.0.30001788 | CC-BY-4.0 | Browser-compatibility data shipped with `next` | none found | large |
 | `argparse` 3.0.3 | PSF-2.0 | Dependency of dashboard `js-yaml` 5.5.0 | none found | large |
 | `argparse` 2.0.1 | Python-2.0 | Dependency of `js-yaml` 4.3.2 in both TypeScript SDKs | none found | large |
 | `fast-sha256` 1.3.0 | Unlicense | Dependency of `standardwebhooks`, used by `@anthropic-ai/sdk` and `resend`. `@noble/hashes` 2.4.0 on npm is MIT and is not the module those packages import | none found | large |
 | `postal-mime` 2.7.6 | MIT-0 | Dependency of `resend`. MIT-0 is a different SPDX identifier | none found | large |
-| `detect-libc` 2.1.2 | Apache-2.0 | libc detection inside `sharp` | none found | large |
-| `@playwright/test` 1.64.1 | Apache-2.0 | Optional peer of `next`. Installed because the dashboard lockfile records it (also a dashboard devDependency) | none found | large |
-| `playwright` 1.64.1 | Apache-2.0 | Dependency of `@playwright/test` | none found | large |
-| `playwright-core` 1.64.1 | Apache-2.0 | Dependency of `playwright` | none found | large |
-| `zapier-platform-core` 19.1.0 | Zapier Platform Agreement (`SEE LICENSE IN LICENSE`; the checker reports `Custom: LICENSE`) | Direct dependency of the Zapier integration | none found | large |
-| `zapier-platform-schema` 19.1.0 | Zapier Platform Agreement, same license file | Dependency of `zapier-platform-core` | none found | large |
-| `oauth-sign` 0.9.0 | Apache-2.0 | OAuth signing inside `zapier-platform-core` | none found | large |
+| `detect-libc` 2.1.2 | Apache-2.0 | Accepted. Next.js optional dependency, installed but not executed; images unoptimized. | none found | large |
+| `zapier-platform-core` 19.1.0 | Zapier Platform Agreement (`SEE LICENSE IN LICENSE`; the checker reports `Custom: LICENSE`) | Accepted. Required for the Zapier integration. | none found | large |
+| `zapier-platform-schema` 19.1.0 | Zapier Platform Agreement, same license file | Accepted. Required for the Zapier integration. | none found | large |
+| `oauth-sign` 0.9.0 | Apache-2.0 | Accepted. Required for the Zapier integration. | none found | large |
 | `json-metaschema` 1.3.0 | Public Domain | JSON Schema meta-schemas inside `zapier-platform-schema` | none found | large |
 
-`argparse` is one excluded name and two license strings. The npm count of 19 is package names in `scripts/license/npm-exclude.txt`.
+`argparse` is one excluded name and two license strings. The npm count of 15 is package names in `scripts/license/npm-exclude.txt`. `metrics-exporter-prometheus` is pinned to 0.18.1, which is MIT, so it is not an exception. Playwright and TypeScript are dev or peer dependencies and are not installed for this check.
 
 ## Python
 

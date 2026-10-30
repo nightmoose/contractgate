@@ -181,11 +181,6 @@ allow = ["Unicode-3.0"]
 crate = "zerovec-derive"
 allow = ["Unicode-3.0"]
 
-# Prometheus scrape endpoint. 0.18.3 is MIT AND Apache-2.0.
-[[licenses.exceptions]]
-crate = "metrics-exporter-prometheus"
-allow = ["MIT", "Apache-2.0"]
-
 # rustls ring backend, pulled by reqwest and sqlx.
 # Apache-2.0 AND ISC: ISC is allowed globally, Apache-2.0 is not.
 [[licenses.exceptions]]

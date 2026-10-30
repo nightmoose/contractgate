@@ -150,10 +150,10 @@ once_cell = "1"
 hdrhistogram = "7"
 
 # Observability (RFC-016): Prometheus metrics exposition.
-# metrics 0.24 + metrics-exporter-prometheus 0.16 are tested against
-# tokio 1.x and have no system deps (pure Rust).
+# metrics 0.24 with the exporter's http-listener feature. 0.18.1 is MIT.
+# 0.18.3 is MIT AND Apache-2.0, so the version is pinned.
 metrics = "0.24"
-metrics-exporter-prometheus = { version = "0.18", default-features = false, features = ["http-listener"] }
+metrics-exporter-prometheus = { version = "=0.18.1", default-features = false, features = ["http-listener"] }
 
 # Kafka transport (bundles librdkafka via cmake — needs cmake + a C compiler
 # available on the build host).  Used by the `demo` binary and the
