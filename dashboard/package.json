@@ -2,6 +2,7 @@
   "name": "contractgate-dashboard",
   "version": "0.4.0",
   "private": true,
+  "license": "MIT",
   "scripts": {
     "dev": "node scripts/sync-llm-docs.mjs && next dev",
     "prebuild": "node scripts/check-required-env.mjs && node scripts/check-known-routes.mjs && node scripts/sync-llm-docs.mjs",

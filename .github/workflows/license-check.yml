@@ -1,0 +1,97 @@
+# MIT-only dependency check.
+#
+# Pull requests that touch a manifest or lockfile, plus a weekly run.
+# npm: license-checker-rseidelsohn --production --onlyAllow MIT
+# Python: pip-licenses --allow-only MIT (and the "MIT License" classifier string)
+# Rust: cargo deny check licenses (deny.toml allow is MIT only)
+#
+# Named exceptions: scripts/license/ and docs/LICENSE-EXCEPTIONS.md.
+# ISC, BSD, and 0BSD are not on the allow list.
+
+name: Licenses
+
+on:
+  pull_request:
+    branches: [main, staging]
+    paths:
+      - "**/package.json"
+      - "**/package-lock.json"
+      - "**/pyproject.toml"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "deny.toml"
+      - "scripts/check-npm-licenses.sh"
+      - "scripts/check-python-licenses.sh"
+      - "scripts/license/**"
+      - ".github/workflows/license-check.yml"
+  schedule:
+    # Monday 06:17 UTC.
+    - cron: "17 6 * * 1"
+
+permissions:
+  contents: read
+
+jobs:
+  npm:
+    name: npm — ${{ matrix.dir }}
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        dir:
+          - mcp
+          - dashboard
+          - zapier
+          - sdks/typescript
+          - sdks/aischemagate/typescript
+          - ops/dogfood
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+
+      - name: Setup Node 22
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
+        with:
+          node-version: "22"
+
+      - name: license-checker-rseidelsohn --onlyAllow MIT
+        run: bash scripts/check-npm-licenses.sh ${{ matrix.dir }}
+
+  python:
+    name: python — ${{ matrix.dir }}
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        dir: [".", "sdks/python", "sdks/aischemagate/python"]
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+
+      - name: Setup Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: "3.12"
+
+      - name: pip-licenses --allow-only MIT
+        run: bash scripts/check-python-licenses.sh ${{ matrix.dir }}
+
+  rust:
+    name: rust — cargo deny licenses
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # v1
+        with:
+          toolchain: stable
+
+      - name: Install cargo-deny
+        run: |
+          curl -fsSL -o /tmp/cargo-deny.tgz -L \
+            https://github.com/EmbarkStudios/cargo-deny/releases/download/0.18.5/cargo-deny-0.18.5-x86_64-unknown-linux-musl.tar.gz
+          tar -xzf /tmp/cargo-deny.tgz -C /tmp
+          sudo install /tmp/cargo-deny-0.18.5-x86_64-unknown-linux-musl/cargo-deny /usr/local/bin/cargo-deny
+          cargo-deny --version
+
+      - name: cargo deny check licenses
+        run: cargo deny check licenses

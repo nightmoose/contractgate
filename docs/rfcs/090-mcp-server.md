@@ -54,8 +54,10 @@ samples, dry-run events against it, deploy YAML to stable, and list quarantine
 
 ### Package
 
-`mcp/` — `@contractgate/mcp-server`, official TypeScript SDK
-(`@modelcontextprotocol/server`, 2026-07-28 spec), stdio via `serveStdio`.
+`mcp/` — `@nightmoose/contractgate-mcp-server`, on `tmcp` (MIT) with
+`@tmcp/transport-stdio` and `@tmcp/adapter-zod`. Zod 4 schemas. Stdio via
+`StdioTransport.listen`. The 2026-07-28 protocol is unchanged: the same six
+tools and the `integrate-contractgate` prompt.
 
 Auth: `CONTRACTGATE_API_KEY` (required) and optional `CONTRACTGATE_BASE_URL`
 (default `https://app.datacontractgate.com`). Same key and `X-Api-Key` header

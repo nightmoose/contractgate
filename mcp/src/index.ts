@@ -1,6 +1,7 @@
 #!/usr/bin/env node
-import { serveStdio } from "@modelcontextprotocol/server/stdio";
+import { StdioTransport } from "@tmcp/transport-stdio";
 import { createServer } from "./server.js";
 
-void serveStdio(() => createServer());
+const transport = new StdioTransport(createServer());
+transport.listen();
 console.error("contractgate MCP server running on stdio");
