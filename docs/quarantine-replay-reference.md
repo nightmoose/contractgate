@@ -13,6 +13,8 @@ caller's org (resolved from the API key or Bearer JWT — see
 treated as not-found and never surfaced. In production a request with no
 resolvable org returns **401**.
 
+Replay and bulk replay are included with Pro. Free keeps the failure details. See [`quarantine-plan-reference.md`](./quarantine-plan-reference.md).
+
 There is also a per-contract variant of replay
 (`POST /contracts/{id}/quarantine/replay`, `GET /contracts/{id}/quarantine/{quar_id}/replay-history`)
 retained from RFC-003; the routes below are the org-wide equivalents and share

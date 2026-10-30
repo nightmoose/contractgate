@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { Client, AuthError, BadRequestError, NotFoundError, ServerError, ValidationFailedError } from '../src/index.js';
+import { Client, AuthError, BadRequestError, NotFoundError, PlanRequiredError, ServerError, ValidationFailedError } from '../src/index.js';
 
 function mockFetch(status: number, body: unknown): typeof globalThis.fetch {
   return async (_url, _opts) => {
@@ -161,5 +161,18 @@ describe('Client', () => {
     await c.audit({ limit: 10, offset: 20 });
     assert.ok(capturedUrl.includes('limit=10'), capturedUrl);
     assert.ok(capturedUrl.includes('offset=20'), capturedUrl);
+  });
+
+  it('ingest — plan_required is PlanRequiredError', async () => {
+    const c = client(403, {
+      error: 'plan_required',
+      message: 'Replay is included with Pro.',
+      feature: 'quarantine_replay',
+    });
+    await assert.rejects(() => c.ingest({ contractId: CONTRACT_ID, events: [{}] }), (err: unknown) => {
+      assert.ok(err instanceof PlanRequiredError);
+      assert.match((err as Error).message, /included with Pro/);
+      return true;
+    });
   });
 });

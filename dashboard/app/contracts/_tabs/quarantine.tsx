@@ -17,7 +17,22 @@ import {
   getReplayHistory,
   setContractPayloadStorage,
   purgeContractBodies,
+  getUsage,
+  getQuarantineSummary,
+  reviewQuarantine,
+  startBulkReplay,
+  getReplayJob,
+  downloadQuarantineCsv,
+  type QuarantineSummary,
+  type ReplayJob,
 } from "@/lib/api";
+import { usePaidFeatures } from "@/lib/use-paid-features";
+import {
+  FREE_REPLAY_TOOLTIP,
+  FREE_UPGRADE,
+  capNotice,
+  retentionSentence,
+} from "@/lib/quarantine-plan";
 import { FailPolicyPanel } from "./fail-policy";
 import type {
   ContractSummary,
@@ -125,6 +140,20 @@ export function QuarantineTab({ contracts }: { contracts?: ContractSummary[] }) 
   const [previewEvent, setPreviewEvent] = useState<QuarantinedEventEx | null>(null);
   const [previewCopied, setPreviewCopied] = useState(false);
 
+  const paidFeatures = usePaidFeatures();
+  const canReplay = paidFeatures !== false;
+  const [exporting, setExporting] = useState(false);
+  const [reviewing, setReviewing] = useState(false);
+  const [bulkOpen, setBulkOpen] = useState(false);
+  const [bulkReason, setBulkReason] = useState("");
+  const [bulkJob, setBulkJob] = useState<ReplayJob | null>(null);
+
+  const { data: usage } = useSWR(canReplay ? null : "usage:quarantine", () => getUsage());
+  const { data: summary } = useSWR<QuarantineSummary>(
+    contractFilter ? `quarantine-summary:${contractFilter}` : null,
+    () => getQuarantineSummary(contractFilter),
+  );
+
   // Replay-history drawer
   const [drawerEventId, setDrawerEventId] = useState<string | null>(null);
   const [drawerHistory, setDrawerHistory] = useState<ReplayOutcome[] | null>(null);
@@ -151,6 +180,60 @@ export function QuarantineTab({ contracts }: { contracts?: ContractSummary[] }) 
       .catch(() => { if (!cancelled) setPickerVersions([]); });
     return () => { cancelled = true; };
   }, [contractFilter]);
+
+  useEffect(() => {
+    if (!bulkJob || !contractFilter) return;
+    if (bulkJob.status === "completed" || bulkJob.status === "failed") return;
+    const timer = setTimeout(() => {
+      getReplayJob(contractFilter, bulkJob.job_id)
+        .then(setBulkJob)
+        .catch(() => {});
+    }, 2000);
+    return () => clearTimeout(timer);
+  }, [bulkJob, contractFilter]);
+
+  const markReviewed = async () => {
+    if (!contractFilter || selected.size === 0) return;
+    setReviewing(true);
+    setReplayError(null);
+    try {
+      await reviewQuarantine(contractFilter, Array.from(selected));
+      setSelected(new Set());
+      await mutateEvents();
+    } catch (e: unknown) {
+      setReplayError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setReviewing(false);
+    }
+  };
+
+  const exportCsv = async () => {
+    if (!contractFilter) return;
+    setExporting(true);
+    setReplayError(null);
+    try {
+      await downloadQuarantineCsv(contractFilter);
+    } catch (e: unknown) {
+      setReplayError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setExporting(false);
+    }
+  };
+
+  const startBulk = async () => {
+    if (!contractFilter) return;
+    setReplayError(null);
+    try {
+      const job = await startBulkReplay(contractFilter, {
+        ...(replayVersion ? { target_version: replayVersion } : {}),
+        ...(bulkReason.trim() ? { reason: bulkReason.trim() } : {}),
+      });
+      setBulkJob(job);
+      setBulkOpen(false);
+    } catch (e: unknown) {
+      setReplayError(e instanceof Error ? e.message : String(e));
+    }
+  };
 
   // Fetch quarantined events
   const swrKey = contractFilter ? `quarantine:${contractFilter}` : "quarantine:all";
@@ -234,6 +317,14 @@ export function QuarantineTab({ contracts }: { contracts?: ContractSummary[] }) 
   const closeDrawer = () => { setDrawerEventId(null); setDrawerHistory(null); };
 
   // Batch summary counts (maps current ReplayResponse shape)
+  const orgPending = summary?.org_pending ?? usage?.quarantine?.pending ?? 0;
+  const orgCap = summary?.org_cap ?? usage?.quarantine?.cap ?? null;
+  const bindingPending = summary?.scope === "contract" ? summary.contract_pending : orgPending;
+  const bindingLimit = summary?.scope === "contract" ? summary.contract_cap : orgCap;
+  const capState = summary?.state ?? usage?.quarantine?.state;
+  const notice = capNotice(capState, bindingPending, bindingLimit);
+  const replayLocked = summary ? !summary.replay_allowed : !canReplay;
+
   const summaryReplayed = replayResult?.replayed ?? 0;
   const summaryTotal = replayResult?.outcomes?.length ?? 0;
   const summaryFailed = summaryTotal - summaryReplayed;
@@ -250,6 +341,27 @@ export function QuarantineTab({ contracts }: { contracts?: ContractSummary[] }) 
           onConfirm={() => executeReplay(replayPending.ids, replayPending.version)}
           onCancel={() => setReplayPending(null)}
         />
+      )}
+
+      {bulkOpen && (
+        <div className="rounded-xl border border-[#1f2937] bg-[#111827] p-4 space-y-3">
+          <p className="text-sm text-slate-200">Replay all matching</p>
+          <p className="text-xs text-slate-500">Runs in batches of 1,000. You can leave this page.</p>
+          <label className="block text-xs text-slate-400">
+            Reason
+            <input
+              value={bulkReason}
+              onChange={(e) => setBulkReason(e.target.value)}
+              placeholder="missing_required"
+              className="mt-1 w-full bg-[#0a0d12] border border-[#1f2937] text-slate-300 text-sm rounded-lg px-3 py-1.5"
+            />
+          </label>
+          <p className="text-xs text-slate-500">Target version: {replayVersion || "latest stable"}</p>
+          <div className="flex gap-2">
+            <button type="button" onClick={() => setBulkOpen(false)} className="px-3 py-1.5 text-sm text-slate-400">Cancel</button>
+            <button type="button" onClick={startBulk} className="px-3 py-1.5 text-sm bg-indigo-600 text-white rounded-lg">Start replay</button>
+          </div>
+        </div>
       )}
 
       {/* Replay summary modal */}
@@ -273,6 +385,33 @@ export function QuarantineTab({ contracts }: { contracts?: ContractSummary[] }) 
           Select a contract to set quarantine or drop, and to see the safety-cap banner.
         </p>
       )}
+
+      <div className="rounded-xl border border-[#1f2937] bg-[#111827] px-4 py-3 space-y-2">
+        <p className="text-sm text-slate-200">
+          {orgCap != null
+            ? `${orgPending.toLocaleString()} of ${orgCap.toLocaleString()} held · failure details for each record`
+            : "Failure details for each held record"}
+        </p>
+        <p className="text-xs text-slate-500">{retentionSentence(summary?.retention_days)}</p>
+        {replayLocked && (
+          <p className="text-sm text-slate-300">
+            {FREE_UPGRADE}{" "}
+            <a href="/pricing" className="text-green-400 hover:text-green-300">See Pro plan</a>
+          </p>
+        )}
+        {notice && (
+          <p className={notice.tone === "full" ? "text-sm text-green-300" : "text-sm text-slate-300"}>
+            {notice.text}{" "}
+            <a href="#drop-counts" className="text-green-400 hover:text-green-300">View drops</a>
+          </p>
+        )}
+        {bulkJob && (
+          <p className="text-xs text-slate-400">
+            Bulk replay {bulkJob.status}: {bulkJob.replayed} replayed, {bulkJob.failed} still held, {bulkJob.skipped} skipped
+            {bulkJob.error ? `. ${bulkJob.error}` : ""}
+          </p>
+        )}
+      </div>
 
       {/* ── Filter bar ── */}
       <div className="flex flex-wrap items-center gap-3">
@@ -323,6 +462,24 @@ export function QuarantineTab({ contracts }: { contracts?: ContractSummary[] }) 
           className="bg-[#111827] border border-[#1f2937] text-slate-300 text-sm rounded-lg px-3 py-1.5 outline-none focus:border-indigo-600 w-48"
         />
 
+        <button
+          type="button"
+          onClick={exportCsv}
+          disabled={!contractFilter || exporting}
+          className="text-xs text-slate-300 border border-[#374151] rounded-lg px-3 py-1.5 disabled:opacity-40"
+        >
+          {exporting ? "Exporting…" : "Export failures (CSV)"}
+        </button>
+        {contractFilter && !replayLocked && (
+          <button
+            type="button"
+            onClick={() => setBulkOpen(true)}
+            className="text-xs text-slate-300 border border-[#374151] rounded-lg px-3 py-1.5"
+          >
+            Replay all matching
+          </button>
+        )}
+
         {(contractFilter || kindFilter !== "all" || timeWindow !== "all" || textFilter) && (
           <button
             onClick={() => { setContractFilter(""); setKindFilter("all"); setTimeWindow("all"); setTextFilter(""); setSelected(new Set()); }}
@@ -369,13 +526,35 @@ export function QuarantineTab({ contracts }: { contracts?: ContractSummary[] }) 
             </div>
           )}
 
-          <button
-            onClick={() => openReplayConfirm(Array.from(selected))}
-            disabled={replaying}
-            className="px-4 py-1.5 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white text-sm font-medium rounded-lg transition-colors"
-          >
-            {replaying ? "Replaying…" : "▶ Replay"}
-          </button>
+          {replayLocked ? (
+            <TooltipWrap content={FREE_REPLAY_TOOLTIP}>
+              <button
+                type="button"
+                disabled
+                className="px-4 py-1.5 bg-indigo-600/40 text-white/70 text-sm font-medium rounded-lg cursor-not-allowed"
+              >
+                Replay
+              </button>
+            </TooltipWrap>
+          ) : (
+            <button
+              onClick={() => openReplayConfirm(Array.from(selected))}
+              disabled={replaying}
+              className="px-4 py-1.5 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white text-sm font-medium rounded-lg transition-colors"
+            >
+              {replaying ? "Replaying…" : "Replay"}
+            </button>
+          )}
+          {contractFilter && (
+            <button
+              type="button"
+              onClick={markReviewed}
+              disabled={reviewing}
+              className="px-3 py-1.5 bg-[#1f2937] hover:bg-[#374151] disabled:opacity-50 text-slate-200 text-sm rounded-lg"
+            >
+              {reviewing ? "Saving…" : "Mark reviewed"}
+            </button>
+          )}
           <button
             onClick={() => setSelected(new Set())}
             className="px-3 py-1.5 bg-[#1f2937] hover:bg-[#374151] text-slate-400 text-sm rounded-lg transition-colors"
@@ -488,14 +667,18 @@ export function QuarantineTab({ contracts }: { contracts?: ContractSummary[] }) 
                     </td>
                     <td className="px-3 py-3" onClick={(e) => e.stopPropagation()}>
                       <div className="flex items-center gap-1">
-                        {isPurged ? (
-                          <TooltipWrap content="Event purged — past retention window. Replay is no longer possible.">
+                        {replayLocked || ev.replay_unavailable_reason === "plan" ? (
+                          <TooltipWrap content={FREE_REPLAY_TOOLTIP}>
+                            <span className="text-xs text-slate-500 cursor-default px-2 py-1">Replay</span>
+                          </TooltipWrap>
+                        ) : isPurged ? (
+                          <TooltipWrap content="This record is past its retention window, so replay is no longer possible.">
                             <span className="text-xs text-slate-600 cursor-default px-2 py-1">
                               ⊘
                             </span>
                           </TooltipWrap>
-                        ) : isRedacted ? (
-                          <TooltipWrap content="Body not stored — event payload storage is off for this contract. Replay is unavailable until storage is enabled.">
+                        ) : isRedacted || ev.replay_unavailable_reason === "body_not_stored" ? (
+                          <TooltipWrap content="The record body was not stored, so there is nothing to replay. New records validate live.">
                             <span className="text-xs text-slate-600 cursor-default px-2 py-1">
                               🚫
                             </span>

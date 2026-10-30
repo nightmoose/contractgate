@@ -229,6 +229,26 @@ def test_status_codes_map_to_exceptions(status: int, exc: type):
     assert ei.value.body == {"error": "boom"}
 
 
+def test_plan_required_maps_to_plan_required_error():
+    from contractgate.exceptions import PlanRequiredError
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            403,
+            json={
+                "error": "plan_required",
+                "message": "Replay is included with Pro.",
+                "feature": "quarantine_replay",
+            },
+        )
+
+    with Client(base_url="https://gw", api_key="k", transport=httpx.MockTransport(handler)) as cg:
+        with pytest.raises(PlanRequiredError) as ei:
+            cg.ingest(contract_id="abc", events=[{}])
+    assert ei.value.status == 403
+    assert "Pro" in str(ei.value)
+
+
 def test_network_error_wraps_to_connection_error():
     def handler(request: httpx.Request) -> httpx.Response:
         raise httpx.ConnectError("dns blew up")

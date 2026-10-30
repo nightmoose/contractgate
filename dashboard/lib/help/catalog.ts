@@ -221,8 +221,8 @@ export const HELP_CATALOG: Record<string, HelpEntry> = {
   },
   "contracts.fail-policy": {
     title: "When a record fails",
-    what: "Quarantine keeps a failing record for review. Drop counts it and stores nothing.",
-    does: "Quarantine is the default on every plan, including AISchemaGate. Lock the choice so a request cannot override it.",
+    what: "Quarantine keeps what failed and why. Drop counts the failure and stores nothing.",
+    does: "Quarantine is the default on every plan, including AISchemaGate. On Free, a full cap counts new failures under Drops. An enforcing safety cap still forces drop, including when on_fail is locked.",
     href: "https://github.com/nightmoose/contractgate/blob/main/docs/drop-mode-reference.md",
   },
   "contracts.safety-cap": {
@@ -286,14 +286,14 @@ export const HELP_CATALOG: Record<string, HelpEntry> = {
   },
   "term.quarantine": {
     title: "Quarantine",
-    what: "Events that failed contract validation are held here for inspection and optional replay. Nothing is silently dropped.",
-    does: "Open a row to see the payload and violations; replay it against a fixed version when ready.",
+    what: "Failed records are held with the reason. On Free the record body is not stored. When the Free cap is full, new failures are counted under Drops.",
+    does: "Pro adds the stored body, replay, and bulk replay. Marking a row reviewed frees Free cap space immediately.",
     href: "https://github.com/nightmoose/contractgate/blob/main/docs/quarantine-replay-reference.md",
   },
   "term.replay": {
     title: "Replay",
-    what: "Re-validate a quarantined event against a current contract version.",
-    does: "If it passes, it is written to the audit log and forwarded downstream. The original quarantine row is kept.",
+    what: "Re-validate a stored record against a contract version. Included with Pro.",
+    does: "If it passes, it is written to the audit log and forwarded downstream. The original quarantine row is kept. Bulk replay runs in the background.",
     href: "https://github.com/nightmoose/contractgate/blob/main/docs/quarantine-replay-reference.md",
   },
   "term.retention": {

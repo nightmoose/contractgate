@@ -2351,6 +2351,7 @@ mod rfc029_tests {
             on_fail_mode: "quarantine",
             on_fail_source: "default",
             auto_trip: None,
+            quarantine_cap: None,
             dry_run: false,
             disposition: "block",
             egress_leakage_mode: "off",
@@ -2401,6 +2402,7 @@ mod rfc029_tests {
             on_fail_mode: "quarantine",
             on_fail_source: "default",
             auto_trip: None,
+            quarantine_cap: None,
             dry_run: true,
             disposition: "tag",
             egress_leakage_mode: "strip",
@@ -5724,7 +5726,8 @@ metrics: []
         let db_url = std::env::var("DATABASE_URL").expect("DATABASE_URL must be set");
         let pool = sqlx::PgPool::connect(&db_url).await.unwrap();
         let org = Uuid::new_v4();
-        seed_org(&pool, org, "free").await;
+        // Replay is Pro. This test checks a missing body, not the plan gate.
+        seed_org(&pool, org, "growth").await;
         let (identity, version) = storage::create_contract(
             &pool,
             "api_bugfix_replay",

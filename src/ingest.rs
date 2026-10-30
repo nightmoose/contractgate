@@ -169,6 +169,9 @@ pub struct BatchIngestResponse {
     /// Present when a safety cap is enforcing or would have tripped.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub auto_trip: Option<crate::fail_policy::AutoTripBody>,
+    /// Present on Free when a quarantine cap applies to this org.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub quarantine_cap: Option<crate::drop_mode::QuarantineCapView>,
     pub dry_run: bool,
     pub atomic: bool,
     /// Resolved version the request was dispatched against (before any
@@ -509,6 +512,11 @@ pub async fn ingest_handler(
                     obj.insert("auto_trip".into(), value);
                 }
             }
+            if let Some(cap) = &decision.quarantine_cap {
+                if let Ok(value) = serde_json::to_value(cap) {
+                    obj.insert("quarantine_cap".into(), value);
+                }
+            }
         }
         return Ok(axum::Json(body).into_response());
     }
@@ -818,6 +826,13 @@ pub async fn ingest_handler(
             });
         }
         if !quarantine_rows.is_empty() {
+            if let Some(org) = org_id {
+                crate::quarantine_cap::note_pending_delta(
+                    org,
+                    contract_id,
+                    quarantine_rows.len() as i64,
+                );
+            }
             let pool = state.db.clone();
             tokio::spawn(async move {
                 if let Err(e) =
@@ -895,6 +910,7 @@ pub async fn ingest_handler(
         on_fail_mode: decision.mode.as_str(),
         on_fail_source: decision.source.as_str(),
         auto_trip: crate::fail_policy::auto_trip_body(decision.auto_trip.as_ref()),
+        quarantine_cap: decision.quarantine_cap,
         dry_run: query.dry_run,
         atomic: query.atomic,
         resolved_version: resolved_version.clone(),
@@ -1019,6 +1035,13 @@ async fn deprecated_pin_quarantine(
             })
             .collect();
 
+        if let Some(org) = org_id {
+            crate::quarantine_cap::note_pending_delta(
+                org,
+                contract_id,
+                quarantine_rows.len() as i64,
+            );
+        }
         let pool_q = state.db.clone();
         let q_rows = quarantine_rows.clone();
         tokio::spawn(async move {
@@ -1114,6 +1137,7 @@ async fn deprecated_pin_quarantine(
         on_fail_mode: decision.mode.as_str(),
         on_fail_source: decision.source.as_str(),
         auto_trip: crate::fail_policy::auto_trip_body(decision.auto_trip.as_ref()),
+        quarantine_cap: decision.quarantine_cap,
         dry_run: query.dry_run,
         atomic: query.atomic,
         resolved_version: pinned_version.to_string(),
@@ -1436,6 +1460,13 @@ fn persist_envelope_batch(
         });
     }
     if !quarantine_rows.is_empty() {
+        if let Some(org) = org_id {
+            crate::quarantine_cap::note_pending_delta(
+                org,
+                contract_id,
+                quarantine_rows.len() as i64,
+            );
+        }
         let pool = state.db.clone();
         tokio::spawn(async move {
             if let Err(e) =

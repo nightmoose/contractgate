@@ -63,6 +63,10 @@ pub struct QuarantinedEventOut {
     pub replay_count: i64,
     pub last_replayed_at: Option<chrono::DateTime<chrono::Utc>>,
     pub last_replay_passed: Option<bool>,
+    pub status: String,
+    pub replayable: bool,
+    /// `plan`, `body_not_stored`, `purged`, or null when replayable.
+    pub replay_unavailable_reason: Option<&'static str>,
 }
 
 /// `GET /quarantine?contract_id=&limit=&offset=`
@@ -79,24 +83,67 @@ pub async fn list_quarantine_handler(
     let rows =
         storage::list_quarantine_events(&state.db, org_id, q.contract_id, limit, offset).await?;
 
+    let replay_allowed = replay_allowed(&state, org_id).await?;
     let out = rows
         .into_iter()
-        .map(|r| QuarantinedEventOut {
-            id: r.id,
-            contract_id: r.contract_id,
-            contract_version: r.contract_version,
-            raw_event: r.payload.unwrap_or(serde_json::Value::Null),
-            payload_redacted: r.payload_redacted,
-            violation_details: r.violation_details,
-            violation_count: r.violation_count,
-            source_ip: r.source_ip,
-            quarantined_at: r.created_at,
-            replay_count: r.replay_count,
-            last_replayed_at: r.last_replayed_at,
-            last_replay_passed: r.last_replay_passed,
+        .map(|r| {
+            let missing = r.payload.is_none();
+            let (replayable, reason) =
+                replay_availability(replay_allowed, &r.status, r.payload_redacted, missing);
+            QuarantinedEventOut {
+                id: r.id,
+                contract_id: r.contract_id,
+                contract_version: r.contract_version,
+                raw_event: r.payload.unwrap_or(serde_json::Value::Null),
+                payload_redacted: r.payload_redacted,
+                violation_details: r.violation_details,
+                violation_count: r.violation_count,
+                source_ip: r.source_ip,
+                quarantined_at: r.created_at,
+                replay_count: r.replay_count,
+                last_replayed_at: r.last_replayed_at,
+                last_replay_passed: r.last_replay_passed,
+                status: r.status,
+                replayable,
+                replay_unavailable_reason: reason,
+            }
         })
         .collect();
     Ok(Json(out))
+}
+
+async fn replay_allowed(state: &AppState, org_id: Option<Uuid>) -> AppResult<bool> {
+    if state.self_hosted || org_id.is_none() {
+        return Ok(true);
+    }
+    match storage::get_org_plan(&state.db, org_id.expect("org checked")).await {
+        Ok(plan) => Ok(crate::plan::gate_paid(
+            false,
+            plan.as_deref().unwrap_or("free"),
+        )),
+        Err(err) => {
+            tracing::warn!("quarantine list plan lookup failed: {err}");
+            Ok(true)
+        }
+    }
+}
+
+pub fn replay_availability(
+    replay_allowed: bool,
+    status: &str,
+    payload_redacted: bool,
+    payload_missing: bool,
+) -> (bool, Option<&'static str>) {
+    if !replay_allowed {
+        return (false, Some("plan"));
+    }
+    if status == "purged" {
+        return (false, Some("purged"));
+    }
+    if payload_redacted || payload_missing {
+        return (false, Some("body_not_stored"));
+    }
+    (true, None)
 }
 
 // ---------------------------------------------------------------------------
@@ -148,6 +195,10 @@ pub async fn replay_all_handler(
         return Err(AppError::Unauthorized);
     }
     ReplayRequest::validate_ids_bounds(&req.event_ids)?;
+    // Unresolved ids never enter the per-contract engine, which is where the
+    // plan check lives. Reject a free plan here so this route still returns
+    // 403 plan_required.
+    crate::plan::require_plan_feature(&state, org_id, "quarantine_replay").await?;
 
     let now = chrono::Utc::now();
     let requested_version = req.version.clone().unwrap_or_default();
@@ -309,6 +360,9 @@ mod tests {
             replay_count: 0,
             last_replayed_at: None,
             last_replay_passed: None,
+            status: "pending".into(),
+            replayable: true,
+            replay_unavailable_reason: None,
         };
         let v = serde_json::to_value(&ev).unwrap();
         let keys: std::collections::BTreeSet<&str> =
@@ -326,10 +380,62 @@ mod tests {
             "replay_count",
             "last_replayed_at",
             "last_replay_passed",
+            "status",
+            "replayable",
+            "replay_unavailable_reason",
         ]
         .into_iter()
         .collect();
         assert_eq!(keys, expected, "QuarantinedEvent wire shape drifted");
+    }
+
+    #[test]
+    fn replay_availability_reasons() {
+        assert_eq!(
+            replay_availability(false, "pending", true, true),
+            (false, Some("plan"))
+        );
+        assert_eq!(
+            replay_availability(true, "purged", false, false),
+            (false, Some("purged"))
+        );
+        assert_eq!(
+            replay_availability(true, "pending", true, false),
+            (false, Some("body_not_stored"))
+        );
+        assert_eq!(
+            replay_availability(true, "pending", false, false),
+            (true, None)
+        );
+        assert_eq!(
+            replay_availability(true, "reviewed", false, false),
+            (true, None)
+        );
+    }
+
+    /// `POST /quarantine/replay` used to resolve ids first. Unknown ids never
+    /// reached `replay_for_contract`, so a Free plan got 200 instead of
+    /// 403 `plan_required`.
+    #[test]
+    fn org_replay_checks_the_plan_before_resolving_ids() {
+        let src = include_str!("quarantine.rs");
+        let start = src
+            .find("pub async fn replay_all_handler")
+            .expect("handler");
+        let end = src[start..]
+            .find("pub async fn replay_history_all_handler")
+            .expect("next handler")
+            + start;
+        let body = &src[start..end];
+        let plan = body
+            .find("require_plan_feature")
+            .expect("org replay must reject a free plan");
+        let resolve = body.find("resolve_quarantine_contracts").expect("resolve");
+        assert!(
+            plan < resolve,
+            "unresolved ids must not skip the plan check"
+        );
+        assert!(body.contains("\"quarantine_replay\""));
     }
 
     #[test]

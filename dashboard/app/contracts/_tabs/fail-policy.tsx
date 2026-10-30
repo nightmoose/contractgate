@@ -314,7 +314,7 @@ export function FailPolicyPanel({ contractId }: { contractId: string }) {
         {error && <p className="text-xs text-red-400">{error}</p>}
       </div>
 
-      <div className="rounded-xl border border-[#1f2937] overflow-hidden">
+      <div id="drop-counts" className="rounded-xl border border-[#1f2937] overflow-hidden">
         <div className="px-4 py-2 text-xs text-slate-400 bg-[#111827] flex justify-between">
           <span>Dropped records (last 24h)</span>
           <span className={clsx(total > 0 ? "text-slate-200" : "text-slate-600")}>{total.toLocaleString()}</span>
