@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Install production dependencies in one npm directory and require MIT.
-# ISC, BSD, and 0BSD are not allow-listed. Named packages are excluded.
+# Install production dependencies in one npm directory and require an allowed license.
+# Allowed: MIT, ISC, BSD-2-Clause, BSD-3-Clause, 0BSD. Named packages are excluded.
 set -euo pipefail
 
 dir="${1:?npm directory, for example mcp}"
@@ -22,5 +22,5 @@ excl="$(grep -v '^[[:space:]]*#' "$root/scripts/license/npm-exclude.txt" | grep 
 npx --yes license-checker-rseidelsohn@5.0.1 \
   --production \
   --excludePrivatePackages \
-  --onlyAllow 'MIT' \
+  --onlyAllow 'MIT;ISC;BSD-2-Clause;BSD-3-Clause;0BSD' \
   --excludePackages "$excl"

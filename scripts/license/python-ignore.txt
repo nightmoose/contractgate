@@ -1,7 +1,4 @@
-# Distributions pip-licenses reports as something other than MIT / "MIT License".
+# Distributions pip-licenses reports under a license that is not allowed.
 # Reviewed versions and reasons: docs/LICENSE-EXCEPTIONS.md.
 certifi
-httpcore
-httpx
-idna
 typing_extensions

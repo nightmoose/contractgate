@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
-# MIT check for one Python project. Installs that project's required dependencies
+# License check for one Python project. Installs that project's required dependencies
 # into a temporary venv. The root hooks package is installed against the local SDK.
+# Allow list uses the pip-licenses classifier names, plus the SPDX strings the
+# tool prints when a distribution sets License-Expression.
 set -euo pipefail
 
 target="${1:?project path: . | sdks/python | sdks/aischemagate/python}"
@@ -33,5 +35,8 @@ case "$target" in
 esac
 
 "$venv/bin/pip" install -q 'pip-licenses==5.5.5'
+# Classifier tails from PyPI, and the SPDX forms pip-licenses emits instead
+# when License-Expression is set (idna and httpcore report BSD-3-Clause).
+allow='MIT;MIT License;BSD License;BSD-2-Clause;BSD-3-Clause;ISC License (ISCL);ISC;Zero-Clause BSD (0BSD);0BSD'
 # shellcheck disable=SC2086
-"$venv/bin/pip-licenses" --allow-only 'MIT;MIT License' --ignore-packages $ignore
+"$venv/bin/pip-licenses" --allow-only "$allow" --ignore-packages $ignore
