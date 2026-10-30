@@ -3,7 +3,10 @@
 //! One consumer task per enabled contract, polling `cg-{contract_id}-raw`
 //! via `GetRecords`.  Each record is validated by the existing `validate_event()`
 //! engine; the result is routed to the clean or quarantine output stream, and an
-//! `audit_log` row is written with `source = 'kinesis'`.
+//! `audit_log` row is written with `source = 'kinesis'`. A failure that resolves
+//! to drop — contract `on_fail`, an enforcing safety cap, or the Free quarantine
+//! cap — is counted in `dropped_event_counts` and is not published. Passing
+//! records still go to the clean stream.
 //!
 //! **Scaling model** (resolved in RFC-026 §4):
 //!   - Standard `GetRecords` (not Enhanced Fan-Out) — 5 reads/s per shard.
@@ -237,6 +240,7 @@ mod inner {
                 .fetch_one(&state.db)
                 .await
                 .unwrap_or(None);
+        let contract_policy = crate::stream_fail::load_contract_policy(state, contract_id).await;
 
         for (shard_id, maybe_iter) in shard_iterators.iter_mut() {
             let iter = match maybe_iter {
@@ -268,75 +272,164 @@ mod inner {
             }
             any_records = true;
 
-            let mut audit_entries: Vec<AuditEntryInsert> = Vec::with_capacity(records.len());
+            // Classify the poll, then one on-fail decision for every failure
+            // in it. Passing records are not part of that decision.
+            enum Held {
+                ParseFail {
+                    data: Vec<u8>,
+                },
+                Record {
+                    seq: String,
+                    event: JsonValue,
+                    transformed: crate::transform::TransformedPayload,
+                    result: crate::validation::ValidationResult,
+                    validation_us: i64,
+                },
+            }
 
+            let mut held: Vec<Held> = Vec::with_capacity(records.len());
             for record in records {
                 let seq = record.sequence_number().to_string();
-                let data = record.data().as_ref();
-
-                // Parse JSON; quarantine immediately on parse failure.
-                let event: JsonValue = match serde_json::from_slice(data) {
+                let data = record.data().as_ref().to_vec();
+                let event: JsonValue = match serde_json::from_slice(&data) {
                     Ok(v) => v,
                     Err(e) => {
-                        tracing::warn!(seq, error = %e, "non-JSON kinesis record; quarantining");
-                        route_quarantine(
-                            kinesis,
-                            quarantine_stream,
-                            data,
-                            "invalid JSON",
-                            "unknown",
-                        )
-                        .await;
+                        tracing::warn!(seq, error = %e, "non-JSON kinesis record");
+                        held.push(Held::ParseFail { data });
                         continue;
                     }
                 };
-
-                // Time + validate.
                 let t0 = std::time::Instant::now();
                 let result = validate(&compiled, &event);
                 let validation_us = t0.elapsed().as_micros() as i64;
-
-                // Apply PII transforms (RFC-004) after validation.
                 let transformed = apply_transforms(&compiled, event.clone());
-
-                if result.passed {
-                    // In-memory publish. This consumer does not insert `forwarded_events`.
-                    route_clean(kinesis, clean_stream, &transformed.as_value().clone()).await;
-                } else {
-                    let reason = result
-                        .violations
-                        .first()
-                        .map(|v| v.message.as_str())
-                        .unwrap_or("validation failed")
-                        .to_string();
-                    route_quarantine(
-                        kinesis,
-                        quarantine_stream,
-                        &serde_json::to_vec(&event).unwrap_or_default(),
-                        &reason,
-                        &version_row.version,
-                    )
-                    .await;
-                }
-
-                // Audit entry — contract_version = matched version (audit honesty).
-                audit_entries.push(AuditEntryInsert {
-                    contract_id,
-                    org_id: meter_org, // RFC-083: owning org so usage reconcile meters stream events
-                    contract_version: version_row.version.clone(),
-                    passed: result.passed,
-                    violation_count: result.violations.len() as i32,
-                    violation_details: serde_json::to_value(&result.violations).unwrap_or_default(),
-                    raw_event: transformed,
+                held.push(Held::Record {
+                    seq,
+                    event,
+                    transformed,
+                    result,
                     validation_us,
-                    source_ip: None,
-                    source: "kinesis".to_string(),
-                    pre_assigned_id: None,
-                    replay_of_quarantine_id: None,
-                    direction: "ingress".to_string(),
                 });
+            }
 
-                sequence_numbers.insert(shard_id.clone(), seq);
+            let mut failure_facts: Vec<crate::fail_policy::FailureFacts> = Vec::new();
+            for item in &held {
+                match item {
+                    Held::ParseFail { .. } => {
+                        failure_facts.push(crate::stream_fail::parse_failure())
+                    }
+                    Held::Record { result, .. } if !result.passed => {
+                        failure_facts.push(crate::fail_policy::failure_facts(&result.violations));
+                    }
+                    Held::Record { .. } => {}
+                }
+            }
+            let route = if failure_facts.is_empty() {
+                None
+            } else {
+                Some(
+                    crate::stream_fail::route_failures(
+                        state,
+                        meter_org,
+                        contract_id,
+                        &compiled.contract,
+                        &version_row.yaml_content,
+                        &contract_policy,
+                        failure_facts.len(),
+                    )
+                    .await,
+                )
+            };
+            let publish_failures = route
+                .map(|route| route.publishes_quarantine())
+                .unwrap_or(true);
+
+            let mut audit_entries: Vec<AuditEntryInsert> = Vec::with_capacity(held.len());
+            for item in held {
+                match item {
+                    Held::ParseFail { data, .. } => {
+                        if publish_failures {
+                            route_quarantine(
+                                kinesis,
+                                quarantine_stream,
+                                &data,
+                                "invalid JSON",
+                                "unknown",
+                            )
+                            .await;
+                        }
+                    }
+                    Held::Record {
+                        seq,
+                        event,
+                        transformed,
+                        result,
+                        validation_us,
+                    } => {
+                        if result.passed {
+                            // In-memory publish. This consumer does not insert `forwarded_events`.
+                            route_clean(kinesis, clean_stream, &transformed.as_value().clone())
+                                .await;
+                        } else if publish_failures {
+                            let reason = result
+                                .violations
+                                .first()
+                                .map(|v| v.message.as_str())
+                                .unwrap_or("validation failed")
+                                .to_string();
+                            route_quarantine(
+                                kinesis,
+                                quarantine_stream,
+                                &serde_json::to_vec(&event).unwrap_or_default(),
+                                &reason,
+                                &version_row.version,
+                            )
+                            .await;
+                        }
+
+                        let audit_this = result.passed || publish_failures;
+                        if audit_this {
+                            audit_entries.push(AuditEntryInsert {
+                                contract_id,
+                                org_id: meter_org,
+                                contract_version: version_row.version.clone(),
+                                passed: result.passed,
+                                violation_count: result.violations.len() as i32,
+                                violation_details: serde_json::to_value(&result.violations)
+                                    .unwrap_or_default(),
+                                raw_event: transformed,
+                                validation_us,
+                                source_ip: None,
+                                source: "kinesis".to_string(),
+                                pre_assigned_id: None,
+                                replay_of_quarantine_id: None,
+                                direction: "ingress".to_string(),
+                            });
+                        }
+                        sequence_numbers.insert(shard_id.clone(), seq);
+                    }
+                }
+            }
+
+            if let Some(crate::stream_fail::FailureRoute::CountedDrop { source, sample }) = route {
+                crate::stream_fail::record_counted_drops(
+                    state,
+                    meter_org,
+                    contract_id,
+                    &version_row.version,
+                    source,
+                    sample,
+                    &failure_facts,
+                )
+                .await;
+            } else if publish_failures && contract_policy.is_ready() && !failure_facts.is_empty() {
+                crate::stream_fail::record_published_quarantine(
+                    state,
+                    meter_org,
+                    contract_id,
+                    failure_facts.len(),
+                )
+                .await;
             }
 
             if !audit_entries.is_empty() {
@@ -502,3 +595,100 @@ mod inner {
 }
 
 pub use inner::ConsumerPool;
+
+#[cfg(test)]
+mod tests {
+    use crate::contract::{OnFailMode, OnFailSource};
+    use crate::drop_mode::PlanCapCounts;
+    use crate::stream_fail::{free_cap_counts, route_resolved, stream_input, FailureRoute};
+
+    #[test]
+    fn kinesis_consumer_at_contract_cap_counts_the_drop_and_does_not_publish() {
+        let route = route_resolved(
+            &stream_input(OnFailMode::Quarantine, false),
+            free_cap_counts(1_000, 10_000),
+        );
+        assert_eq!(
+            route,
+            FailureRoute::CountedDrop {
+                source: OnFailSource::PlanCap,
+                sample: false,
+            }
+        );
+        assert!(!route.publishes_quarantine());
+    }
+
+    #[test]
+    fn kinesis_consumer_near_the_cap_still_publishes() {
+        let route = route_resolved(
+            &stream_input(OnFailMode::Quarantine, false),
+            free_cap_counts(40_000, 8_000),
+        );
+        assert_eq!(route, FailureRoute::PublishQuarantine);
+        assert!(route.publishes_quarantine());
+    }
+
+    #[test]
+    fn kinesis_consumer_paid_plan_still_publishes() {
+        let uncapped = PlanCapCounts {
+            org_pending: 80_000,
+            org_limit: None,
+            contract_pending: 20_000,
+            contract_limit: None,
+            near_percent: 80,
+        };
+        let route = route_resolved(&stream_input(OnFailMode::Quarantine, true), uncapped);
+        assert_eq!(route, FailureRoute::PublishQuarantine);
+        assert_eq!(
+            crate::drop_mode::resolve_on_fail(&stream_input(OnFailMode::Quarantine, true)).source,
+            OnFailSource::Contract
+        );
+    }
+
+    #[test]
+    fn kinesis_consumer_drop_mode_counts_and_does_not_publish() {
+        let route = route_resolved(
+            &stream_input(OnFailMode::Drop, true),
+            free_cap_counts(50_000, 10_000),
+        );
+        assert_eq!(
+            route,
+            FailureRoute::CountedDrop {
+                source: OnFailSource::Contract,
+                sample: false,
+            }
+        );
+        assert!(!route.publishes_quarantine());
+    }
+
+    #[test]
+    fn kinesis_consumer_safety_cap_beats_a_full_plan_cap() {
+        let mut input = stream_input(OnFailMode::Quarantine, true);
+        input.contract_guard.config.enforce = true;
+        input.contract_guard.config.max_per_minute = Some(1);
+        input.contract_guard.volume.minute = 5;
+        let route = route_resolved(&input, free_cap_counts(50_000, 10_000));
+        assert_eq!(
+            route,
+            FailureRoute::CountedDrop {
+                source: OnFailSource::AutoTrip,
+                sample: false,
+            }
+        );
+    }
+
+    #[test]
+    fn kinesis_consumer_org_cap_counts_the_drop() {
+        let route = route_resolved(
+            &stream_input(OnFailMode::Quarantine, false),
+            free_cap_counts(50_000, 0),
+        );
+        assert_eq!(
+            route,
+            FailureRoute::CountedDrop {
+                source: OnFailSource::PlanCap,
+                sample: false,
+            }
+        );
+    }
+}

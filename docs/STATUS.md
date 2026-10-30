@@ -127,7 +127,7 @@ them by name only.
 
 ---
 
-*2026-10-30 — RFC-110: Free quarantine caps (50,000 per organization and 10,000 per contract, shared by DataContractGate and AISchemaGate) live in `src/plan.rs`. A full cap counts new failures under Drops. Replay and bulk replay return 403 `plan_required`. Migration 046 redacts leftover Free bodies and keeps the rows. A downgrade waits 30 days. See `docs/quarantine-plan-reference.md`.*
+*2026-10-30 — RFC-110: Free quarantine caps (50,000 per organization and 10,000 per contract, shared by DataContractGate and AISchemaGate) live in `src/plan.rs`. A full cap counts new failures under Drops. Hosted Kafka and Kinesis consumers use that decision and do not publish a counted drop to the quarantine topic. Replay and bulk replay return 403 `plan_required`. Migration 046 redacts leftover Free bodies and keeps the rows. A downgrade waits 30 days. See `docs/quarantine-plan-reference.md`.*
 
 *2026-10-30 — RFC-109: failing records can be counted and not stored (`on_fail: drop`). Quarantine stays the default for DataContractGate and AISchemaGate. The safety cap is watch-only until enforcement is enabled. Drop counts are minute buckets kept 30 days. See `docs/drop-mode-reference.md`.*
 

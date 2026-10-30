@@ -30,4 +30,4 @@ The client-side AISchemaGate repair loop uses the in-memory output and works on 
 
 ## Follow-ups
 
-Pricing pages in `datacontractgate_website` and `aischemagate-www` are outside this repository. Hosted Kafka and Kinesis consumers still publish failures to a quarantine topic and do not insert `quarantine_events`, so this cap does not apply to those topic routes.
+Pricing pages in `datacontractgate_website` and `aischemagate-www` are outside this repository. Hosted Kafka and Kinesis consumers do not insert `quarantine_events`. They apply the same on-fail decision: a full Free cap counts the failure in `dropped_event_counts` with `on_fail_source: plan_cap` and does not publish it to the quarantine topic.

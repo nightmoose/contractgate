@@ -39,6 +39,11 @@ Precedence, highest first:
 6. The contract value, or the live override when one is saved.
 7. Default `quarantine`.
 
+Hosted Kafka and Kinesis consumers use this order. They have no request
+override. A drop is counted and is not published to the quarantine topic or
+stream. A quarantine decision is published there and is not inserted into
+`quarantine_events`.
+
 `atomic=true` with drop still rejects the whole batch. The failures are counted as dropped and nothing is quarantined. An atomic rejection does not advance the quarantine volume counter, because no quarantine rows are stored.
 
 A pin to a deprecated version follows the same mode.
