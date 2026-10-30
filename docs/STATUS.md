@@ -107,6 +107,7 @@ them by name only.
 | 105 | [ODCS v3.2 property enums, dual-brand MCP metadata, AISchemaGate guardrails](rfcs/105-odcs-v32-and-guardrail-recipes.md) | Shipped |
 | 106 | [Streaming chunk validation](rfcs/106-streaming-chunk-validation.md) | Draft |
 | 107 | [Python framework adapters](rfcs/107-python-framework-adapters.md) | Shipped |
+| 108 | [MIT-only dependency policy](rfcs/108-mit-only-dependencies.md) | Accepted |
 
 ---
 
@@ -123,6 +124,8 @@ them by name only.
 | **Superseded** | Replaced by a later RFC listed in the notes column; kept for design context. |
 
 ---
+
+*2026-10-30 — RFC-108: dependency licenses are MIT-only. The MCP server uses `tmcp` (MIT) with `@tmcp/transport-stdio` and `@tmcp/adapter-zod`. `cargo deny` allows MIT only, and npm and Python trees use the same rule. Crates and packages that cannot be used under MIT are listed in `docs/LICENSE-EXCEPTIONS.md`. A pull request that changes a manifest or lockfile runs the check, and so does a weekly schedule.*
 
 *2026-10-28 — RFC-107: PyPI `aischemagate` 0.5.0 adds optional LangChain and LlamaIndex output parsers and an Instructor hook. Each calls the existing egress helper (`POST /egress/{contract_id}`, contract names via `GET /contracts`). The Instructor hook runs that structural check before Pydantic field validation. Streaming chunk validation stays RFC-106 (Draft) and is not implemented.*
 

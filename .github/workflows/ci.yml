@@ -216,6 +216,17 @@ jobs:
       - name: npm install
         run: npm install
 
+      - name: No @modelcontextprotocol packages
+        run: |
+          if grep -q '@modelcontextprotocol/' package-lock.json; then
+            echo "::error::@modelcontextprotocol remains in mcp/package-lock.json"
+            exit 1
+          fi
+          if npm ls --all --depth=8 2>/dev/null | grep -q '@modelcontextprotocol/'; then
+            echo "::error::@modelcontextprotocol is installed"
+            exit 1
+          fi
+
       - name: TypeScript type-check
         run: npm run typecheck
 

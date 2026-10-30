@@ -1,0 +1,32 @@
+# Production packages license-checker-rseidelsohn reports as something other than MIT.
+# Names only (every version). Reviewed versions and reasons: docs/LICENSE-EXCEPTIONS.md.
+# ISC, BSD, and 0BSD stay on this list. They are not added to --onlyAllow.
+@img/sharp-libvips-linux-x64
+@img/sharp-linux-x64
+@opentelemetry/api
+@playwright/test
+@swc/helpers
+@zapier/secret-scrubber
+argparse
+baseline-browser-mapping
+caniuse-lite
+detect-libc
+dotenv
+fast-sha256
+inherits
+json-metaschema
+oauth-sign
+picocolors
+playwright
+playwright-core
+postal-mime
+semver
+sha.js
+sharp
+source-map-js
+tslib
+typescript
+uri-template-matcher
+webidl-conversions
+zapier-platform-core
+zapier-platform-schema

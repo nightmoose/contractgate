@@ -1,6 +1,7 @@
 {
   "name": "contractgate-dogfood",
   "private": true,
+  "license": "MIT",
   "description": "E2E dogfood: browser (Playwright) + API against production",
   "scripts": {
     "test": "playwright test --config browser/playwright.config.ts",
