@@ -10,11 +10,11 @@ DataContractGate and AISchemaGate pull third-party code through Cargo, npm, and 
 
 ## Decision
 
-The enforced license is MIT.
+The allow list is MIT, ISC, BSD-2-Clause, BSD-3-Clause, and 0BSD.
 
-- Rust: `deny.toml` `[licenses] allow` is `MIT` only. A crate whose SPDX expression is `MIT OR …` is accepted, because MIT can be selected. `MIT OR Apache-2.0` is not an allow-list entry, and neither is `Apache-2.0`. Every crate that cannot be used under MIT alone has a `[[licenses.exceptions]]` entry.
-- npm: `license-checker-rseidelsohn --production --onlyAllow MIT` in `mcp`, `dashboard`, `zapier`, `sdks/typescript`, `sdks/aischemagate/typescript`, and `ops/dogfood`. ISC, BSD-2-Clause, BSD-3-Clause, and 0BSD are not added to `--onlyAllow`. Each non-MIT package is named in `scripts/license/npm-exclude.txt`.
-- Python: `pip-licenses --allow-only 'MIT;MIT License'` for the root hooks package, `sdks/python`, and `sdks/aischemagate/python` (required dependencies). The second string is the MIT classifier text the tool prints for some MIT distributions. Non-MIT distributions are named in `scripts/license/python-ignore.txt`.
+- Rust: `deny.toml` `[licenses] allow` is those five SPDX identifiers. A crate whose SPDX expression is `MIT OR …` is accepted, because MIT can be selected. `MIT OR Apache-2.0` is not an allow-list entry, and neither is `Apache-2.0`. Every crate that still cannot be used under an allowed license has a `[[licenses.exceptions]]` entry.
+- npm: `license-checker-rseidelsohn --production --onlyAllow 'MIT;ISC;BSD-2-Clause;BSD-3-Clause;0BSD'` in `mcp`, `dashboard`, `zapier`, `sdks/typescript`, `sdks/aischemagate/typescript`, and `ops/dogfood`. Each other package is named in `scripts/license/npm-exclude.txt`.
+- Python: `pip-licenses --allow-only` for the root hooks package, `sdks/python`, and `sdks/aischemagate/python` (required dependencies). The allow list uses the classifier names `MIT License`, `BSD License`, `ISC License (ISCL)`, and `Zero-Clause BSD (0BSD)`, plus `MIT`, `BSD-2-Clause`, `BSD-3-Clause`, `ISC`, and `0BSD`, because a distribution that sets `License-Expression` is reported as that SPDX string. Remaining distributions are named in `scripts/license/python-ignore.txt`.
 
 The review record is [`docs/LICENSE-EXCEPTIONS.md`](../LICENSE-EXCEPTIONS.md). `about.toml` stays the wider diligence inventory. It is not the CI allow list.
 

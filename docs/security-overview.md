@@ -131,7 +131,7 @@ per-contract `pii_salt`. Detail: [`docs/pii-masking-reference.md`](./pii-masking
 From [`SECURITY.md`](../SECURITY.md):
 
 - GitHub secret scanning + push protection; CodeQL static analysis.
-- `cargo audit` + `cargo deny` and Dependabot in CI. `deny.toml` allows MIT only. Every other Rust, npm, and Python license is listed in [`docs/LICENSE-EXCEPTIONS.md`](./LICENSE-EXCEPTIONS.md).
+- `cargo audit` + `cargo deny` and Dependabot in CI. `deny.toml` allows MIT, ISC, BSD-2-Clause, BSD-3-Clause, and 0BSD. Every other Rust, npm, and Python license is listed in [`docs/LICENSE-EXCEPTIONS.md`](./LICENSE-EXCEPTIONS.md).
 - Signed commits required on `main`; branch protection enabled.
 - Coverage ratchet gate (RFC-071) and a migration-drift check
   ([`docs/migration-drift-check-reference.md`](./migration-drift-check-reference.md)).

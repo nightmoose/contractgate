@@ -1,12 +1,13 @@
-# MIT-only dependency check.
+# Dependency license check.
 #
 # Pull requests that touch a manifest or lockfile, plus a weekly run.
-# npm: license-checker-rseidelsohn --production --onlyAllow MIT
-# Python: pip-licenses --allow-only MIT (and the "MIT License" classifier string)
-# Rust: cargo deny check licenses (deny.toml allow is MIT only)
+# Allowed: MIT, ISC, BSD-2-Clause, BSD-3-Clause, 0BSD.
+# npm: license-checker-rseidelsohn --production --onlyAllow those SPDX ids
+# Python: pip-licenses --allow-only, using classifier names plus SPDX forms
+# Rust: cargo deny check licenses
 #
 # Named exceptions: scripts/license/ and docs/LICENSE-EXCEPTIONS.md.
-# ISC, BSD, and 0BSD are not on the allow list.
+# A MIT OR dual license still passes when MIT can be selected.
 
 name: Licenses
 

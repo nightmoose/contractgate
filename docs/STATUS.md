@@ -125,7 +125,7 @@ them by name only.
 
 ---
 
-*2026-10-30 — RFC-108: dependency licenses are MIT-only. The MCP server uses `tmcp` (MIT) with `@tmcp/transport-stdio` and `@tmcp/adapter-zod`. `cargo deny` allows MIT only, and npm and Python trees use the same rule. Crates and packages that cannot be used under MIT are listed in `docs/LICENSE-EXCEPTIONS.md`. A pull request that changes a manifest or lockfile runs the check, and so does a weekly schedule.*
+*2026-10-30 — RFC-108: dependency licenses allow MIT, ISC, BSD-2-Clause, BSD-3-Clause, and 0BSD. The MCP server uses `tmcp` (MIT) with `@tmcp/transport-stdio` and `@tmcp/adapter-zod`. `cargo deny` uses that allow list, and a `MIT OR …` crate still passes because MIT can be selected. npm and Python use the same licenses. Python names them with the pip-licenses classifier strings. Everything else is listed in `docs/LICENSE-EXCEPTIONS.md`. A pull request that changes a manifest or lockfile runs the check, and so does a weekly schedule.*
 
 *2026-10-28 — RFC-107: PyPI `aischemagate` 0.5.0 adds optional LangChain and LlamaIndex output parsers and an Instructor hook. Each calls the existing egress helper (`POST /egress/{contract_id}`, contract names via `GET /contracts`). The Instructor hook runs that structural check before Pydantic field validation. Streaming chunk validation stays RFC-106 (Draft) and is not implemented.*
 
