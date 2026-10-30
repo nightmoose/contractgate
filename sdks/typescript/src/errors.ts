@@ -25,6 +25,7 @@ export class NotFoundError extends HTTPError {}
 export class ConflictError extends HTTPError {}
 export class ValidationFailedError extends HTTPError {}
 export class ServerError extends HTTPError {}
+export class PlanRequiredError extends HTTPError {}
 
 type HTTPErrorCtor = new (message: string, status: number, body: unknown) => HTTPError;
 
@@ -40,9 +41,26 @@ export function statusToException(status: number): HTTPErrorCtor {
 
 export function raiseForStatus(status: number, body: unknown): void {
   if (status >= 200 && status < 300) return;
+  if (isPlanRequired(body)) {
+    const message = planRequiredMessage(body) ?? `HTTP ${status}`;
+    throw new PlanRequiredError(message, status, body);
+  }
   const Cls = statusToException(status);
   const message = extractErrorMessage(body) ?? `HTTP ${status}`;
   throw new Cls(message, status, body);
+}
+
+function isPlanRequired(body: unknown): boolean {
+  return body !== null && typeof body === 'object' && !Array.isArray(body)
+    && (body as Record<string, unknown>)['error'] === 'plan_required';
+}
+
+function planRequiredMessage(body: unknown): string | null {
+  if (body !== null && typeof body === 'object' && !Array.isArray(body)) {
+    const message = (body as Record<string, unknown>)['message'];
+    if (typeof message === 'string' && message) return message;
+  }
+  return extractErrorMessage(body);
 }
 
 function extractErrorMessage(body: unknown): string | null {

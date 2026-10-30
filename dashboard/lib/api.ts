@@ -59,8 +59,11 @@ function extractYamlMeta(
 async function extractErrorMessage(res: Response): Promise<string> {
   try {
     const body = await res.clone().json();
-    if (body && typeof body === "object" && typeof body.error === "string") {
-      return body.error;
+    if (body && typeof body === "object") {
+      if (body.error === "plan_required" && typeof body.message === "string") {
+        return body.message;
+      }
+      if (typeof body.error === "string") return body.error;
     }
   } catch {
     // not JSON — fall through
@@ -359,6 +362,9 @@ export interface QuarantinedEvent {
   last_replayed_at: string | null;
   /** Result of the most recent replay attempt, or null if never replayed. */
   last_replay_passed: boolean | null;
+  status?: "pending" | "reviewed" | "replayed" | "purged";
+  replayable?: boolean;
+  replay_unavailable_reason?: "plan" | "body_not_stored" | "purged" | null;
 }
 
 /** One outcome row written by the replay engine for a single event. */
@@ -394,9 +400,76 @@ export interface UsageResponse {
   remaining: number | null;
   pct: number | null;
   unlimited: boolean;
+  quarantine?: {
+    pending: number;
+    cap: number | null;
+    contract_cap: number | null;
+    state: "ok" | "near" | "reached";
+  };
+}
+
+export interface QuarantineSummary {
+  org_pending: number;
+  org_cap: number | null;
+  contract_pending: number;
+  contract_cap: number | null;
+  state: "ok" | "near" | "reached";
+  scope: "org" | "contract" | null;
+  retention_days: number;
+  replay_allowed: boolean;
+}
+
+export interface ReplayJob {
+  job_id: string;
+  status: "queued" | "running" | "completed" | "failed" | string;
+  record_limit: number;
+  selected: number;
+  replayed: number;
+  failed: number;
+  skipped: number;
+  error: string | null;
 }
 
 export const getUsage = () => apiFetch<UsageResponse>("/usage");
+
+export const getQuarantineSummary = (contractId: string) =>
+  apiFetch<QuarantineSummary>(`/contracts/${contractId}/quarantine/summary`);
+
+export const reviewQuarantine = (contractId: string, ids: string[]) =>
+  apiFetch<{ reviewed: number }>(`/contracts/${contractId}/quarantine/review`, {
+    method: "POST",
+    body: JSON.stringify({ ids }),
+  });
+
+export const startBulkReplay = (
+  contractId: string,
+  body: { target_version?: string; contract_version?: string; reason?: string },
+) =>
+  apiFetch<ReplayJob>(`/contracts/${contractId}/quarantine/replay-bulk`, {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+
+export const getReplayJob = (contractId: string, jobId: string) =>
+  apiFetch<ReplayJob>(`/contracts/${contractId}/quarantine/replay-jobs/${jobId}`);
+
+export async function downloadQuarantineCsv(contractId: string): Promise<void> {
+  const headers: Record<string, string> = {};
+  if (_apiSession) headers.authorization = `Bearer ${_apiSession}`;
+  else if (API_KEY) headers["x-api-key"] = API_KEY;
+  const res = await fetch(`${BASE}/contracts/${contractId}/quarantine/export`, { headers });
+  if (!res.ok) {
+    const message = await extractErrorMessage(res);
+    throw new Error(message);
+  }
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = "quarantine-failures.csv";
+  link.click();
+  URL.revokeObjectURL(url);
+}
 
 /** `GET /v1/me`. `paid_features` is absent on older gateways. */
 export interface MeResponse {

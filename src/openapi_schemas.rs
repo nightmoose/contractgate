@@ -19,6 +19,7 @@ pub(crate) fn apply(paths: &mut Map<String, Value>) {
     fill_version_bodies(paths);
     fill_sharing_and_collab(paths);
     fill_ingress(paths);
+    fill_quarantine_plan(paths);
 }
 
 /// Replace placeholder `{}` schemas that mean "any JSON value".
@@ -384,7 +385,7 @@ fn egress_response_schema(violation: &Value) -> Value {
             "quarantined": {"type": "integer", "description": "Failures stored in quarantine. Zero on a dry run."},
             "dropped": {"type": "integer", "description": "Failures counted and not stored. Zero on a dry run."},
             "on_fail_mode": {"type": "string", "enum": ["quarantine", "drop"]},
-            "on_fail_source": {"type": "string", "enum": ["request", "contract", "default", "auto_trip"]},
+            "on_fail_source": {"type": "string", "enum": ["request", "contract", "default", "auto_trip", "plan_cap"]},
             "auto_trip": {
                 "type": "object",
                 "description": "Present when a safety cap is enforcing or would have tripped. Omitted otherwise.",
@@ -456,7 +457,7 @@ fn v1_ingest_response_schema(violation: &Value) -> Value {
             "quarantined": {"type": "integer"},
             "dropped": {"type": "integer"},
             "on_fail_mode": {"type": "string", "enum": ["quarantine", "drop"]},
-            "on_fail_source": {"type": "string", "enum": ["request", "contract", "default", "auto_trip"]},
+            "on_fail_source": {"type": "string", "enum": ["request", "contract", "default", "auto_trip", "plan_cap"]},
             "auto_trip": {
                 "type": "object",
                 "properties": {
@@ -533,7 +534,7 @@ fn batch_ingest_response_schema(violation: &Value) -> Value {
             "quarantined": {"type": "integer"},
             "dropped": {"type": "integer"},
             "on_fail_mode": {"type": "string", "enum": ["quarantine", "drop"]},
-            "on_fail_source": {"type": "string", "enum": ["request", "contract", "default", "auto_trip"]},
+            "on_fail_source": {"type": "string", "enum": ["request", "contract", "default", "auto_trip", "plan_cap"]},
             "auto_trip": {
                 "type": "object",
                 "properties": {
@@ -1246,4 +1247,184 @@ fn fill_ingress(paths: &mut Map<String, Value>) {
         "200",
         kinesis,
     );
+}
+
+fn fill_quarantine_plan(paths: &mut Map<String, Value>) {
+    add_quarantine_cap_property_map(paths);
+
+    let id = json!({"name": "id", "in": "path", "required": true, "schema": {"type": "string", "format": "uuid"}});
+    let unauthorized = json!({"description": "Missing or invalid credentials"});
+    let plan_required = json!({
+        "description": "403 plan_required. Replay and bulk replay are included with Pro.",
+        "content": {"application/json": {"schema": plan_required_schema()}}
+    });
+    paths.insert(
+        "/contracts/{id}/quarantine/export".into(),
+        json!({"get": {
+            "operationId": "export_quarantine_csv",
+            "summary": "CSV of quarantine failures and reasons, without record bodies",
+            "parameters": [id.clone()],
+            "responses": {
+                "200": {"description": "text/csv. Columns: quarantined_at, contract_version, reason, field, status.", "content": {"text/csv": {"schema": {"type": "string"}}}},
+                "401": unauthorized.clone()
+            },
+            "security": [{"ApiKeyAuth": []}]
+        }}),
+    );
+    paths.insert(
+        "/contracts/{id}/quarantine/review".into(),
+        json!({"post": {
+            "operationId": "review_quarantine",
+            "summary": "Mark pending quarantine rows reviewed. Reviewed rows free Free cap space immediately.",
+            "parameters": [id.clone()],
+            "requestBody": {"required": true, "content": {"application/json": {"schema": {"type": "object", "required": ["ids"], "properties": {"ids": {"type": "array", "items": {"type": "string", "format": "uuid"}}}}}}},
+            "responses": {
+                "200": {"description": "reviewed count", "content": {"application/json": {"schema": {"type": "object", "properties": {"reviewed": {"type": "integer"}}}}}},
+                "401": unauthorized.clone()
+            },
+            "security": [{"ApiKeyAuth": []}]
+        }}),
+    );
+    paths.insert(
+        "/contracts/{id}/quarantine/summary".into(),
+        json!({"get": {
+            "operationId": "quarantine_summary",
+            "summary": "Pending quarantine counts against the Free caps",
+            "parameters": [id.clone()],
+            "responses": {
+                "200": {"description": "Org and contract pending counts. cap is null when the plan has no cap.", "content": {"application/json": {"schema": {"type": "object", "properties": {
+                    "org_pending": {"type": "integer"},
+                    "org_cap": {"type": ["integer", "null"]},
+                    "contract_pending": {"type": "integer"},
+                    "contract_cap": {"type": ["integer", "null"]},
+                    "state": {"type": "string", "enum": ["ok", "near", "reached"]},
+                    "scope": {"type": ["string", "null"], "enum": ["org", "contract", null]},
+                    "retention_days": {"type": "integer"},
+                    "replay_allowed": {"type": "boolean"}
+                }}}}},
+                "401": unauthorized.clone()
+            },
+            "security": [{"ApiKeyAuth": []}]
+        }}),
+    );
+    paths.insert(
+        "/contracts/{id}/quarantine/replay-bulk".into(),
+        json!({"post": {
+            "operationId": "replay_quarantine_bulk",
+            "summary": "Start a background replay of matching stored records. Pro.",
+            "parameters": [id.clone()],
+            "requestBody": {"required": true, "content": {"application/json": {"schema": {"type": "object", "properties": {
+                "target_version": {"type": "string"},
+                "contract_version": {"type": "string"},
+                "reason": {"type": "string"}
+            }}}}},
+            "responses": {
+                "202": {"description": "Job accepted", "content": {"application/json": {"schema": replay_job_schema()}}},
+                "401": unauthorized.clone(),
+                "403": plan_required.clone()
+            },
+            "security": [{"ApiKeyAuth": []}]
+        }}),
+    );
+    paths.insert(
+        "/contracts/{id}/quarantine/replay-jobs/{job_id}".into(),
+        json!({"get": {
+            "operationId": "get_replay_job",
+            "summary": "Status of a bulk replay job",
+            "parameters": [
+                id,
+                {"name": "job_id", "in": "path", "required": true, "schema": {"type": "string", "format": "uuid"}}
+            ],
+            "responses": {
+                "200": {"description": "Job status", "content": {"application/json": {"schema": replay_job_schema()}}},
+                "401": unauthorized,
+                "404": {"description": "Job not found"}
+            },
+            "security": [{"ApiKeyAuth": []}]
+        }}),
+    );
+    if let Some(post) = paths
+        .get_mut("/contracts/{id}/quarantine/replay")
+        .and_then(|entry| entry.get_mut("post"))
+    {
+        if let Some(responses) = post
+            .get_mut("responses")
+            .and_then(|value| value.as_object_mut())
+        {
+            responses.insert("403".into(), plan_required);
+        }
+    }
+}
+
+fn plan_required_schema() -> Value {
+    json!({
+        "type": "object",
+        "required": ["error", "message", "required_plan", "current_plan", "feature", "upgrade_url"],
+        "properties": {
+            "error": {"type": "string", "const": "plan_required"},
+            "message": {"type": "string"},
+            "required_plan": {"type": "string", "const": "pro"},
+            "current_plan": {"type": "string"},
+            "feature": {"type": "string", "enum": ["quarantine_replay", "bulk_replay"]},
+            "upgrade_url": {"type": "string"},
+            "status": {"type": "integer"}
+        }
+    })
+}
+
+fn replay_job_schema() -> Value {
+    json!({
+        "type": "object",
+        "properties": {
+            "job_id": {"type": "string", "format": "uuid"},
+            "status": {"type": "string", "enum": ["queued", "running", "completed", "failed"]},
+            "record_limit": {"type": "integer"},
+            "selected": {"type": "integer"},
+            "replayed": {"type": "integer"},
+            "failed": {"type": "integer"},
+            "skipped": {"type": "integer"},
+            "error": {"type": ["string", "null"]}
+        }
+    })
+}
+
+fn quarantine_cap_schema() -> Value {
+    json!({
+        "type": "object",
+        "description": "Present on Free when the shared quarantine cap applies. Omitted otherwise.",
+        "properties": {
+            "limit": {"type": "integer"},
+            "pending": {"type": "integer"},
+            "state": {"type": "string", "enum": ["ok", "near", "reached"]},
+            "scope": {"type": "string", "enum": ["org", "contract"]},
+            "org_limit": {"type": "integer"},
+            "org_pending": {"type": "integer"},
+            "contract_limit": {"type": "integer"},
+            "contract_pending": {"type": "integer"}
+        }
+    })
+}
+
+fn add_quarantine_cap_property(value: &mut Value) {
+    match value {
+        Value::Array(items) => {
+            for child in items {
+                add_quarantine_cap_property(child);
+            }
+        }
+        Value::Object(map) => add_quarantine_cap_property_map(map),
+        _ => {}
+    }
+}
+
+fn add_quarantine_cap_property_map(map: &mut Map<String, Value>) {
+    if map.contains_key("on_fail_source") && !map.contains_key("quarantine_cap") {
+        map.insert("quarantine_cap".into(), quarantine_cap_schema());
+    }
+    let keys: Vec<String> = map.keys().cloned().collect();
+    for key in keys {
+        if let Some(child) = map.get_mut(&key) {
+            add_quarantine_cap_property(child);
+        }
+    }
 }

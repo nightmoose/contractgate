@@ -24,6 +24,7 @@ export {
   ContractGateError,
   HTTPError,
   NotFoundError,
+  PlanRequiredError,
   ServerError,
   ValidationFailedError,
 } from './errors.js';

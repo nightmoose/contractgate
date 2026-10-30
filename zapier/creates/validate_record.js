@@ -69,6 +69,14 @@ const perform = async (z, bundle) => {
     skipThrowForStatus: true,
   });
 
+  const body = asJson(response);
+  if (body && body.error === "plan_required") {
+    const message = typeof body.message === "string" && body.message
+      ? body.message
+      : errorMessage(body, response.status);
+    throw new z.errors.Error(message, "PlanRequired", response.status);
+  }
+
   if (response.status === 401 || response.status === 403) {
     throw new z.errors.ExpiredAuthError(
       "DataContractGate rejected this API key. Create a key at https://app.datacontractgate.com/account and reconnect.",
@@ -86,7 +94,6 @@ const perform = async (z, bundle) => {
     );
   }
 
-  const body = asJson(response);
   if (response.status === 409) {
     throw new z.errors.Error(
       "This contract has no stable version yet. In DataContractGate, open the contract and deploy a version to stable, or put a draft version number in Contract Version.",

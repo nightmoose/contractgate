@@ -96,7 +96,7 @@ pub async fn decide(state: &AppState, req: &PolicyRequest) -> AppResult<OnFailDe
         }
     }
     record_trip_metrics(req.contract_id, &decision);
-    Ok(decision)
+    Ok(crate::quarantine_cap::apply(state, req.org_id, req.contract_id, decision).await)
 }
 
 fn effective_contract(req: &PolicyRequest) -> (OnFailMode, bool, bool, QuarantineGuardConfig) {

@@ -6,7 +6,9 @@
  * (`specificationVersion: 'v4'`, `wrapGenerate`). Pass it to
  * `wrapLanguageModel` from the `ai` package.
  *
- * Generated JSON is checked with `POST /egress/{id}`. When `autoRepair` is
+ * Generated JSON is checked with `POST /egress/{id}`. The repair loop uses
+ * the in-memory output, so it works on every plan, including Free. Replay
+ * of a stored output is included with Pro. When `autoRepair` is
  * set, a bounded re-prompt runs only for semantic violations: `min` / `max`
  * (`range_violation`), `pattern` (`pattern_mismatch`), `enum`
  * (`enum_violation`), and `compliance_mode` (`undeclared_field`). The text

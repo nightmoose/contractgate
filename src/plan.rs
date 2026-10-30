@@ -148,6 +148,133 @@ pub fn log_retention_days(plan: &str) -> i32 {
     }
 }
 
+/// Placeholder pending-quarantine cap for one organization.
+///
+/// DataContractGate and AISchemaGate share this count. Change the constant
+/// to resize the cap. Paid plans and self-host have no cap.
+pub const FREE_QUARANTINE_ORG_CAP: i64 = 50_000;
+
+/// Placeholder pending-quarantine cap for one contract on Free.
+pub const FREE_QUARANTINE_CONTRACT_CAP: i64 = 10_000;
+
+/// `near` starts at this percent of a cap. `reached` is the cap itself.
+/// Reviewed rows stop counting immediately, so quarantine resumes as soon
+/// as pending drops below the cap.
+pub const QUARANTINE_CAP_NEAR_PERCENT: i64 = 80;
+
+/// How long stored bodies remain after a paid-to-free downgrade.
+///
+/// The hourly purge reads the same interval from migration 046. This
+/// constant is the Rust side of that pair and is checked by the migration test.
+#[cfg_attr(not(test), allow(dead_code))]
+pub const DOWNGRADE_BODY_GRACE_DAYS: i64 = 30;
+
+/// Placeholder ceiling for one bulk-replay job.
+///
+/// Reuses [`FREE_QUARANTINE_CONTRACT_CAP`] so the bound is not a separate
+/// figure. Set `CONTRACTGATE_BULK_REPLAY_JOB_LIMIT` to a positive integer
+/// to override it. A job still replays in batches of 1,000.
+pub const BULK_REPLAY_JOB_LIMIT: i64 = FREE_QUARANTINE_CONTRACT_CAP;
+
+/// Short in-process cache for pending counts. Not a customer-facing limit.
+pub const QUARANTINE_COUNT_CACHE_SECS: u64 = 5;
+
+pub const BULK_REPLAY_JOB_LIMIT_ENV: &str = "CONTRACTGATE_BULK_REPLAY_JOB_LIMIT";
+
+/// Pending rows a plan may hold. `None` means no cap.
+///
+/// Unknown plan strings use the Free cap, the same fallback as
+/// [`monthly_event_limit`].
+pub fn quarantine_row_cap(plan: &str) -> Option<i64> {
+    if is_paid(plan) {
+        None
+    } else {
+        Some(FREE_QUARANTINE_ORG_CAP)
+    }
+}
+
+pub fn per_contract_quarantine_cap(plan: &str) -> Option<i64> {
+    if is_paid(plan) {
+        None
+    } else {
+        Some(FREE_QUARANTINE_CONTRACT_CAP)
+    }
+}
+
+pub fn quarantine_row_cap_for(self_hosted: bool, plan: &str) -> Option<i64> {
+    if self_hosted {
+        None
+    } else {
+        quarantine_row_cap(plan)
+    }
+}
+
+pub fn per_contract_quarantine_cap_for(self_hosted: bool, plan: &str) -> Option<i64> {
+    if self_hosted {
+        None
+    } else {
+        per_contract_quarantine_cap(plan)
+    }
+}
+
+pub fn bulk_replay_allowed(self_hosted: bool, plan: &str) -> bool {
+    gate_paid(self_hosted, plan)
+}
+
+/// Positive override, or [`BULK_REPLAY_JOB_LIMIT`]. A bad value is ignored
+/// and not logged.
+pub fn bulk_replay_job_limit(raw: Option<&str>) -> i64 {
+    match raw.map(str::trim).filter(|value| !value.is_empty()) {
+        Some(value) => value
+            .parse::<i64>()
+            .ok()
+            .filter(|n| *n > 0)
+            .unwrap_or(BULK_REPLAY_JOB_LIMIT),
+        None => BULK_REPLAY_JOB_LIMIT,
+    }
+}
+
+pub fn plan_required_message(feature: &str) -> &'static str {
+    match feature {
+        "bulk_replay" => {
+            "Bulk replay is included with Pro. It runs in the background and uses the stored record body."
+        }
+        "quarantine_replay" => {
+            "Replay is included with Pro. Quarantined records on Free keep the failure details without the record body."
+        }
+        _ => "This action is included with Pro.",
+    }
+}
+
+/// 403 `plan_required` unless the org is paid or this process is self-hosted.
+/// No org (local dev without tenancy) is allowed.
+pub async fn require_plan_feature(
+    state: &crate::AppState,
+    org_id: Option<uuid::Uuid>,
+    feature: &'static str,
+) -> Result<(), crate::error::AppError> {
+    if state.self_hosted || org_id.is_none() {
+        return Ok(());
+    }
+    let org_id = org_id.expect("org checked");
+    let plan = crate::storage::get_org_plan(&state.db, org_id)
+        .await?
+        .unwrap_or_else(|| "free".to_string());
+    let allowed = if feature == "bulk_replay" {
+        bulk_replay_allowed(false, &plan)
+    } else {
+        gate_paid(false, &plan)
+    };
+    if allowed {
+        return Ok(());
+    }
+    Err(crate::error::AppError::PlanRequired {
+        feature,
+        current_plan: plan,
+        message: plan_required_message(feature),
+    })
+}
+
 fn english_or(items: &[&str]) -> String {
     match items.split_last() {
         None => String::new(),
@@ -475,5 +602,62 @@ mod tests {
         assert_eq!(log_retention_days("aisg_pro"), 90);
         assert_eq!(log_retention_days("enterprise"), 365);
         assert_eq!(log_retention_days("bogus"), 7);
+    }
+
+    #[test]
+    fn quarantine_caps_are_shared_placeholders() {
+        for free in ["free", "aisg_free", "bogus"] {
+            assert_eq!(quarantine_row_cap(free), Some(FREE_QUARANTINE_ORG_CAP));
+            assert_eq!(
+                per_contract_quarantine_cap(free),
+                Some(FREE_QUARANTINE_CONTRACT_CAP)
+            );
+            assert!(!bulk_replay_allowed(false, free), "{free}");
+            assert!(bulk_replay_allowed(true, free), "{free}");
+            assert_eq!(quarantine_row_cap_for(true, free), None);
+            assert_eq!(per_contract_quarantine_cap_for(true, free), None);
+        }
+        for paid in ["growth", "aisg_pro", "enterprise"] {
+            assert_eq!(quarantine_row_cap(paid), None, "{paid}");
+            assert_eq!(per_contract_quarantine_cap(paid), None, "{paid}");
+            assert!(bulk_replay_allowed(false, paid), "{paid}");
+        }
+        assert_eq!(FREE_QUARANTINE_ORG_CAP, 50_000);
+        assert_eq!(FREE_QUARANTINE_CONTRACT_CAP, 10_000);
+        assert_eq!(QUARANTINE_CAP_NEAR_PERCENT, 80);
+        assert_eq!(DOWNGRADE_BODY_GRACE_DAYS, 30);
+        assert_eq!(BULK_REPLAY_JOB_LIMIT, FREE_QUARANTINE_CONTRACT_CAP);
+        assert_eq!(bulk_replay_job_limit(None), BULK_REPLAY_JOB_LIMIT);
+        assert_eq!(bulk_replay_job_limit(Some("2500")), 2500);
+        assert_eq!(bulk_replay_job_limit(Some("0")), BULK_REPLAY_JOB_LIMIT);
+        assert_eq!(bulk_replay_job_limit(Some("nope")), BULK_REPLAY_JOB_LIMIT);
+        assert!(plan_required_message("quarantine_replay").contains("Pro"));
+        assert!(!plan_required_message("bulk_replay").contains("ContractGate"));
+    }
+
+    #[test]
+    fn migration_046_redacts_free_bodies_and_keeps_rows() {
+        let sql = include_str!("../supabase/migrations/046_quarantine_plan_split.sql");
+        let redaction = section(sql, "BEGIN free body redaction", "END free body redaction");
+        assert!(redaction.contains("payload = null"));
+        assert!(redaction.contains("payload_redacted = true"));
+        assert!(redaction.contains("'free'"));
+        assert!(redaction.contains("'aisg_free'"));
+        assert!(
+            !redaction.to_ascii_lowercase().contains("delete from"),
+            "free body cleanup must keep the rows"
+        );
+        let grace = section(sql, "BEGIN grace redaction", "END grace redaction");
+        assert!(grace.contains(&format!("interval '{} days'", DOWNGRADE_BODY_GRACE_DAYS)));
+        assert!(grace.contains("payload_redacted = true"));
+        assert!(!grace.to_ascii_lowercase().contains("delete from"));
+        assert!(sql.contains("idx_quarantine_org_status_created"));
+        assert!(sql.contains("quarantine_replay_jobs"));
+    }
+
+    fn section<'a>(sql: &'a str, start: &str, end: &str) -> &'a str {
+        let from = sql.find(start).expect(start) + start.len();
+        let to = sql[from..].find(end).expect(end) + from;
+        &sql[from..to]
     }
 }

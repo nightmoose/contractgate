@@ -161,6 +161,7 @@ pub async fn replay_for_contract(
     if state.auth_configured() && org_id.is_none() {
         return Err(AppError::Unauthorized);
     }
+    crate::plan::require_plan_feature(state, org_id, "quarantine_replay").await?;
 
     ReplayRequest::validate_ids_bounds(&ids)?;
 

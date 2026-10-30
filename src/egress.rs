@@ -158,6 +158,9 @@ pub struct EgressResponse {
     pub on_fail_source: &'static str,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub auto_trip: Option<crate::fail_policy::AutoTripBody>,
+    /// Present on Free when a quarantine cap applies to this org.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub quarantine_cap: Option<crate::drop_mode::QuarantineCapView>,
     pub dry_run: bool,
     pub disposition: &'static str,
     /// RFC-030: the egress leakage mode in effect for this request.
@@ -588,6 +591,13 @@ pub async fn egress_handler(
             });
         }
         if !quarantine_rows.is_empty() {
+            if let Some(org) = org_id {
+                crate::quarantine_cap::note_pending_delta(
+                    org,
+                    contract_id,
+                    quarantine_rows.len() as i64,
+                );
+            }
             let pool = state.db.clone();
             tokio::spawn(async move {
                 if let Err(e) =
@@ -643,6 +653,7 @@ pub async fn egress_handler(
         on_fail_mode: decision.mode.as_str(),
         on_fail_source: decision.source.as_str(),
         auto_trip: crate::fail_policy::auto_trip_body(decision.auto_trip.as_ref()),
+        quarantine_cap: decision.quarantine_cap,
         dry_run: query.dry_run,
         disposition: query.disposition.as_str(),
         egress_leakage_mode: compiled.contract.egress_leakage_mode.as_str(),

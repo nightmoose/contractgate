@@ -171,6 +171,28 @@ test("deploy_contract posts yaml and defaults deployed_by", async () => {
   assert.equal(out.contract_id, "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa");
 });
 
+test("plan_required surfaces the message", async () => {
+  const g = gw({
+    "GET /quarantine": async () =>
+      Response.json(
+        {
+          error: "plan_required",
+          message: "Replay is included with Pro.",
+          feature: "quarantine_replay",
+        },
+        { status: 403 },
+      ),
+  });
+  await assert.rejects(
+    () => getQuarantine(g, {}),
+    (err: unknown) => {
+      assert.ok(err instanceof GatewayError);
+      assert.match(err.message, /included with Pro/);
+      return true;
+    },
+  );
+});
+
 test("get_quarantine forwards query params", async () => {
   const g = gw({
     "GET /quarantine": async (req) => {

@@ -130,6 +130,26 @@ test("halt off returns the failure so a Path can branch, with a null payload", a
   assert.match(result.violations_summary, /email: required/);
 });
 
+test("plan_required passes the Pro message through", async () => {
+  nock(BASE).post(`/v1/ingest/${CONTRACT}`).reply(403, {
+    error: "plan_required",
+    message: "Replay is included with Pro.",
+    feature: "quarantine_replay",
+  });
+
+  await assert.rejects(
+    () =>
+      appTester(
+        App.creates.validate_record.operation.perform,
+        bundle({ contract_id: CONTRACT, record: { email: "a@b.c" } }),
+      ),
+    (err) => {
+      assert.match(String(err.message), /included with Pro/);
+      return true;
+    },
+  );
+});
+
 test("an expired API key asks the user to reconnect", async () => {
   nock(BASE).post(`/v1/ingest/${CONTRACT}`).reply(401, { error: "unauthorized" });
 

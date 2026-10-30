@@ -145,10 +145,22 @@ export class Gateway {
       ? allowed.includes(res.status)
       : res.status >= 200 && res.status < 300;
     if (!success) {
-      throw new GatewayError(res.status, text || res.statusText);
+      throw new GatewayError(res.status, planRequiredText(text) || text || res.statusText);
     }
     return decode(text);
   }
+}
+
+function planRequiredText(text: string): string | null {
+  try {
+    const body = JSON.parse(text) as { error?: unknown; message?: unknown };
+    if (body.error === "plan_required" && typeof body.message === "string" && body.message) {
+      return body.message;
+    }
+  } catch {
+    return null;
+  }
+  return null;
 }
 
 function decode(text: string): unknown {

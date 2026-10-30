@@ -216,6 +216,18 @@ export function ingestEventResultFromJson(raw: unknown): IngestEventResult {
   };
 }
 
+function autoTripFromJson(raw: unknown): AutoTrip | null {
+  if (raw === null || raw === undefined || typeof raw !== 'object') return null;
+  const r = raw as Record<string, unknown>;
+  return {
+    active: toBool(r['active']),
+    would_trip: toBool(r['would_trip']),
+    enforcing: toBool(r['enforcing']),
+    scope: String(r['scope'] ?? ''),
+    until: typeof r['until'] === 'string' ? r['until'] : null,
+  };
+}
+
 export function batchIngestResponseFromJson(raw: unknown): BatchIngestResponse {
   const r = toRaw(raw);
   const rList = Array.isArray(r['results']) ? r['results'] : [];
@@ -267,18 +279,6 @@ export function egressResponseFromJson(raw: unknown): EgressResponse {
     on_fail_source: String(r['on_fail_source'] ?? 'default'),
     auto_trip: autoTripFromJson(r['auto_trip']),
   };
-
-function autoTripFromJson(raw: unknown): AutoTrip | null {
-  if (raw === null || raw === undefined || typeof raw !== 'object') return null;
-  const r = raw as Record<string, unknown>;
-  return {
-    active: toBool(r['active']),
-    would_trip: toBool(r['would_trip']),
-    enforcing: toBool(r['enforcing']),
-    scope: String(r['scope'] ?? ''),
-    until: typeof r['until'] === 'string' ? r['until'] : null,
-  };
-}
 }
 
 export function contractResponseFromJson(raw: unknown): ContractResponse {

@@ -52,6 +52,7 @@ from contractgate.exceptions import (
     ContractGateError,
     HTTPError,
     NotFoundError,
+    PlanRequiredError,
     ServerError,
     ValidationFailedError,
 )
@@ -106,6 +107,7 @@ __all__ = [
     "NotFoundError",
     "ConflictError",
     "ValidationFailedError",
+    "PlanRequiredError",
     "ServerError",
     "ConnectionError",
     "ContractCompileError",

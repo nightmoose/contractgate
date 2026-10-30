@@ -12,6 +12,10 @@ use thiserror::Error;
 
 use crate::rate_limit::RateLimitOutcome;
 
+/// Dashboard plan section. Kept here so the library error type does not
+/// depend on the server plan module.
+pub const PLAN_REQUIRED_UPGRADE_URL: &str = "https://app.datacontractgate.com/account#plan";
+
 #[derive(Debug, Error)]
 pub enum AppError {
     #[error("Contract not found: {0}")]
@@ -139,6 +143,14 @@ pub enum AppError {
     #[error("Forbidden: {0}")]
     Forbidden(String),
 
+    /// The caller's plan does not include this action.  403, `error: plan_required`.
+    #[error("{message}")]
+    PlanRequired {
+        feature: &'static str,
+        current_plan: String,
+        message: &'static str,
+    },
+
     /// Fivetran rejected the API key or secret. 401. The message is fixed
     /// and never includes the key, the secret, or the minted DataContractGate key.
     #[error("Fivetran rejected the API key")]
@@ -254,6 +266,22 @@ impl IntoResponse for AppError {
             AppError::OdcsReviewRequired { .. } => (StatusCode::CONFLICT, self.to_string()),
             AppError::NotFound(_) => (StatusCode::NOT_FOUND, self.to_string()),
             AppError::Forbidden(_) => (StatusCode::FORBIDDEN, self.to_string()),
+            AppError::PlanRequired {
+                feature,
+                current_plan,
+                message,
+            } => {
+                let body = Json(json!({
+                    "error": "plan_required",
+                    "message": message,
+                    "required_plan": "pro",
+                    "current_plan": current_plan,
+                    "feature": feature,
+                    "upgrade_url": PLAN_REQUIRED_UPGRADE_URL,
+                    "status": 403,
+                }));
+                return (StatusCode::FORBIDDEN, body).into_response();
+            }
             AppError::FivetranUnauthorized => (StatusCode::UNAUTHORIZED, self.to_string()),
             AppError::FivetranUpstream(_) => (StatusCode::BAD_GATEWAY, self.to_string()),
             AppError::Gone(_) => (StatusCode::GONE, self.to_string()),
@@ -384,6 +412,27 @@ impl<T> DbOpContext<T> for Result<T, sqlx::Error> {
 mod tests {
     use super::*;
     use axum::body::to_bytes;
+
+    #[tokio::test]
+    async fn plan_required_is_403_with_code() {
+        let resp = AppError::PlanRequired {
+            feature: "quarantine_replay",
+            current_plan: "free".into(),
+            message: "Replay is included with Pro. Quarantined records on Free keep the failure details without the record body.",
+        }
+        .into_response();
+        assert_eq!(resp.status(), StatusCode::FORBIDDEN);
+        let bytes = to_bytes(resp.into_body(), 4096).await.unwrap();
+        let body: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+        assert_eq!(body["error"], "plan_required");
+        assert_eq!(body["status"], 403);
+        assert_eq!(body["required_plan"], "pro");
+        assert_eq!(body["current_plan"], "free");
+        assert_eq!(body["feature"], "quarantine_replay");
+        assert!(body["message"].as_str().unwrap().contains("Pro"));
+        assert!(!body["message"].as_str().unwrap().contains("ContractGate"));
+        assert_eq!(body["upgrade_url"], PLAN_REQUIRED_UPGRADE_URL);
+    }
 
     /// RFC-103: every `AppError::RateLimitExceeded` 429 must carry the full
     /// IETF-draft `X-RateLimit-*` trio **and** an RFC 6585 `Retry-After` in

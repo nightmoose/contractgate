@@ -32,13 +32,14 @@ The `X-On-Fail` header carries the same values. If the query and the header disa
 Precedence, highest first:
 
 1. `dry_run=true` writes nothing.
-2. An enforcing safety cap that is tripped forces drop. A request cannot choose quarantine while it is tripped.
-3. `on_fail_locked` rejects a request whose value differs from the contract (400). A request that omits `on_fail`, or repeats the locked value, is accepted.
-4. The request value.
-5. The contract value, or the live override when one is saved.
-6. Default `quarantine`.
+2. An enforcing safety cap that is tripped forces drop, including when `on_fail` is locked. A request cannot choose quarantine while it is tripped.
+3. The Free quarantine cap, when it is full (`on_fail_source: plan_cap`). A request cannot force quarantine past that cap. DataContractGate and AISchemaGate share it. See `docs/quarantine-plan-reference.md`.
+4. `on_fail_locked` rejects a request whose value differs from the contract (400). A request that omits `on_fail`, or repeats the locked value, is accepted.
+5. The request value.
+6. The contract value, or the live override when one is saved.
+7. Default `quarantine`.
 
-`atomic=true` with drop still rejects the whole batch. The failures are counted as dropped and nothing is quarantined.
+`atomic=true` with drop still rejects the whole batch. The failures are counted as dropped and nothing is quarantined. An atomic rejection does not advance the quarantine volume counter, because no quarantine rows are stored.
 
 A pin to a deprecated version follows the same mode.
 
@@ -51,7 +52,8 @@ Ingest and egress responses add:
 | `quarantined` | Failures stored in `quarantine_events`. |
 | `dropped` | Failures counted and not stored. |
 | `on_fail_mode` | `quarantine` or `drop`. |
-| `on_fail_source` | `request`, `contract`, `default`, or `auto_trip`. |
+| `on_fail_source` | `request`, `contract`, `default`, `auto_trip`, or `plan_cap`. |
+| `quarantine_cap` | Present on Free: `limit`, `pending`, `state` (`ok`, `near`, `reached`), and `scope`. |
 | `auto_trip` | Present when a cap is enforcing or would have tripped. |
 
 On a dry run, `quarantined` and `dropped` are both 0. Otherwise `failed = quarantined + dropped`.

@@ -77,6 +77,8 @@ mod plan;
 mod public_catalog;
 mod publication;
 mod quarantine;
+mod quarantine_actions;
+mod quarantine_cap;
 #[cfg(test)]
 mod rag_contract_tests;
 use contractgate::rate_limit;
@@ -1712,6 +1714,26 @@ fn build_router(state: Arc<AppState>) -> Router {
         .route(
             "/contracts/{id}/quarantine/replay",
             post(replay::replay_handler),
+        )
+        .route(
+            "/contracts/{id}/quarantine/export",
+            get(quarantine_actions::export_quarantine_csv),
+        )
+        .route(
+            "/contracts/{id}/quarantine/review",
+            post(quarantine_actions::review_quarantine_handler),
+        )
+        .route(
+            "/contracts/{id}/quarantine/summary",
+            get(quarantine_actions::quarantine_summary_handler),
+        )
+        .route(
+            "/contracts/{id}/quarantine/replay-bulk",
+            post(quarantine_actions::replay_bulk_handler),
+        )
+        .route(
+            "/contracts/{id}/quarantine/replay-jobs/{job_id}",
+            get(quarantine_actions::replay_job_handler),
         )
         .route(
             "/contracts/{id}/quarantine/{quar_id}/replay-history",

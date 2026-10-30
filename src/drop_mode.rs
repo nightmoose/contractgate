@@ -11,6 +11,7 @@
 //! for a different mode.
 
 use chrono::{DateTime, Duration, Timelike, Utc};
+use serde::Serialize;
 
 use crate::contract::{GuardScope, OnFailMode, OnFailSource, QuarantineGuardConfig};
 
@@ -110,6 +111,34 @@ pub struct OnFailDecision {
     pub sample_drops: bool,
     pub quarantined: usize,
     pub dropped: usize,
+    /// Set by the plan-cap layer. The safety-cap resolver leaves this empty.
+    pub quarantine_cap: Option<QuarantineCapView>,
+}
+
+/// Pending quarantine rows against the Free caps. Omitted when the plan has no cap.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+pub struct QuarantineCapView {
+    pub limit: i64,
+    pub pending: i64,
+    /// `ok`, `near`, or `reached`.
+    pub state: &'static str,
+    /// `org` or `contract`: the cap closest to full.
+    pub scope: &'static str,
+    pub org_limit: i64,
+    pub org_pending: i64,
+    pub contract_limit: i64,
+    pub contract_pending: i64,
+}
+
+/// Counts and limits for one ingest or egress batch.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PlanCapCounts {
+    pub org_pending: i64,
+    pub org_limit: Option<i64>,
+    pub contract_pending: i64,
+    pub contract_limit: Option<i64>,
+    /// Percent of a cap at which `state` becomes `near`. 100 is the reached line.
+    pub near_percent: i64,
 }
 
 /// Resolve precedence:
@@ -236,6 +265,111 @@ fn finish(
         sample_drops,
         quarantined,
         dropped,
+        quarantine_cap: None,
+    }
+}
+
+/// Precedence above the request: an enforcing safety-cap trip, then a full
+/// Free cap. A full cap switches a quarantine decision to the counted drop
+/// path. Dry-run and an already-dropped batch are left alone. Marking rows
+/// reviewed lowers `pending` immediately; there is no lower watermark.
+pub fn apply_plan_cap(mut decision: OnFailDecision, counts: PlanCapCounts) -> OnFailDecision {
+    decision.quarantine_cap = quarantine_cap_view(counts);
+    if decision.lock_rejected {
+        return decision;
+    }
+    if decision.source == OnFailSource::AutoTrip && decision.mode == OnFailMode::Drop {
+        return decision;
+    }
+    if decision.mode != OnFailMode::Quarantine || decision.quarantined == 0 {
+        return decision;
+    }
+    if cap_reached(counts) {
+        let failed = decision.quarantined;
+        decision.mode = OnFailMode::Drop;
+        decision.source = OnFailSource::PlanCap;
+        decision.quarantined = 0;
+        decision.dropped = failed;
+        decision.sample_drops = false;
+    }
+    decision
+}
+
+fn cap_reached(counts: PlanCapCounts) -> bool {
+    scope_reached(counts.org_pending, counts.org_limit)
+        || scope_reached(counts.contract_pending, counts.contract_limit)
+}
+
+fn scope_reached(pending: i64, limit: Option<i64>) -> bool {
+    limit.is_some_and(|limit| limit > 0 && pending >= limit)
+}
+
+/// The tighter cap, when either limit is set.
+pub fn quarantine_cap_view(counts: PlanCapCounts) -> Option<QuarantineCapView> {
+    let org_limit = counts.org_limit.filter(|limit| *limit > 0);
+    let contract_limit = counts.contract_limit.filter(|limit| *limit > 0);
+    let (limit, pending, scope) = match (org_limit, contract_limit) {
+        (None, None) => return None,
+        (Some(limit), None) => (limit, counts.org_pending, "org"),
+        (None, Some(limit)) => (limit, counts.contract_pending, "contract"),
+        (Some(org_limit), Some(contract_limit)) => {
+            let org_rank = state_rank(scope_state(
+                counts.org_pending,
+                org_limit,
+                counts.near_percent,
+            ));
+            let contract_rank = state_rank(scope_state(
+                counts.contract_pending,
+                contract_limit,
+                counts.near_percent,
+            ));
+            let contract_tighter = contract_rank > org_rank
+                || (contract_rank == org_rank
+                    && ratio(counts.contract_pending, contract_limit)
+                        > ratio(counts.org_pending, org_limit));
+            if contract_tighter {
+                (contract_limit, counts.contract_pending, "contract")
+            } else {
+                (org_limit, counts.org_pending, "org")
+            }
+        }
+    };
+    Some(QuarantineCapView {
+        limit,
+        pending,
+        state: scope_state(pending, limit, counts.near_percent),
+        scope,
+        org_limit: org_limit.unwrap_or(0),
+        org_pending: counts.org_pending,
+        contract_limit: contract_limit.unwrap_or(0),
+        contract_pending: counts.contract_pending,
+    })
+}
+
+fn scope_state(pending: i64, limit: i64, near_percent: i64) -> &'static str {
+    if pending >= limit {
+        "reached"
+    } else if limit > 0 && pending.saturating_mul(100) >= limit.saturating_mul(near_percent.max(0))
+    {
+        "near"
+    } else {
+        "ok"
+    }
+}
+
+fn state_rank(state: &str) -> u8 {
+    match state {
+        "reached" => 2,
+        "near" => 1,
+        _ => 0,
+    }
+}
+
+fn ratio(pending: i64, limit: i64) -> i128 {
+    if limit <= 0 {
+        0
+    } else {
+        i128::from(pending) * 1_000_000 / i128::from(limit)
     }
 }
 
@@ -885,6 +1019,82 @@ mod tests {
         let bucket = minute_bucket(now() + Duration::seconds(42));
         assert_eq!(bucket, now());
         assert_eq!(hour_bucket(now() + Duration::minutes(17)), now());
+    }
+
+    fn counts(org_pending: i64, contract_pending: i64) -> PlanCapCounts {
+        PlanCapCounts {
+            org_pending,
+            org_limit: Some(50_000),
+            contract_pending,
+            contract_limit: Some(10_000),
+            near_percent: 80,
+        }
+    }
+
+    #[test]
+    fn plan_cap_table_and_precedence() {
+        let open = quarantine_cap_view(counts(12_480, 100)).expect("view");
+        assert_eq!(open.state, "ok");
+        assert_eq!(open.scope, "org");
+        assert_eq!(open.limit, 50_000);
+
+        let near = quarantine_cap_view(counts(40_000, 100)).expect("near");
+        assert_eq!(near.state, "near");
+        assert_eq!(near.pending, 40_000);
+
+        let contract_full = quarantine_cap_view(counts(100, 10_000)).expect("contract");
+        assert_eq!(contract_full.state, "reached");
+        assert_eq!(contract_full.scope, "contract");
+        assert_eq!(contract_full.limit, 10_000);
+
+        // One under the cap is room again. Reviewed rows are not in `pending`.
+        let resumed = quarantine_cap_view(counts(49_999, 9_999)).expect("resumed");
+        assert_eq!(resumed.state, "near");
+        assert!(!scope_reached(49_999, Some(50_000)));
+
+        let base = input();
+        let forced = apply_plan_cap(resolve_on_fail(&base), counts(50_000, 0));
+        assert_eq!(forced.mode, OnFailMode::Drop);
+        assert_eq!(forced.source, OnFailSource::PlanCap);
+        assert_eq!(forced.dropped, 4);
+        assert_eq!(forced.quarantined, 0);
+        assert!(!forced.sample_drops);
+        assert_eq!(forced.quarantine_cap.unwrap().state, "reached");
+
+        let mut dry = input();
+        dry.dry_run = true;
+        let dry_decision = apply_plan_cap(resolve_on_fail(&dry), counts(50_000, 0));
+        assert_eq!(dry_decision.mode, OnFailMode::Quarantine);
+        assert_eq!(dry_decision.dropped, 0);
+        assert_eq!(dry_decision.source, OnFailSource::Default);
+
+        let mut request_drop = input();
+        request_drop.request = Some(OnFailMode::Drop);
+        let dropped = apply_plan_cap(resolve_on_fail(&request_drop), counts(50_000, 0));
+        assert_eq!(dropped.source, OnFailSource::Request);
+        assert_eq!(dropped.mode, OnFailMode::Drop);
+
+        let mut tripped = input();
+        tripped.contract_guard.config.enforce = true;
+        tripped.contract_guard.config.max_per_minute = Some(1);
+        tripped.contract_guard.volume.minute = 5;
+        let safety = apply_plan_cap(resolve_on_fail(&tripped), counts(50_000, 0));
+        assert_eq!(safety.source, OnFailSource::AutoTrip);
+        assert_eq!(safety.mode, OnFailMode::Drop);
+
+        let under = apply_plan_cap(resolve_on_fail(&base), counts(10, 10));
+        assert_eq!(under.source, OnFailSource::Default);
+        assert_eq!(under.mode, OnFailMode::Quarantine);
+        assert_eq!(under.quarantined, 4);
+
+        assert!(quarantine_cap_view(PlanCapCounts {
+            org_pending: 1,
+            org_limit: None,
+            contract_pending: 1,
+            contract_limit: None,
+            near_percent: 80,
+        })
+        .is_none());
     }
 }
 

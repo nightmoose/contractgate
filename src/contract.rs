@@ -374,6 +374,8 @@ pub enum OnFailSource {
     Contract,
     Default,
     AutoTrip,
+    /// The Free quarantine cap is full. The batch is counted and not stored.
+    PlanCap,
 }
 
 impl OnFailSource {
@@ -383,6 +385,7 @@ impl OnFailSource {
             OnFailSource::Contract => "contract",
             OnFailSource::Default => "default",
             OnFailSource::AutoTrip => "auto_trip",
+            OnFailSource::PlanCap => "plan_cap",
         }
     }
 }
