@@ -124,6 +124,10 @@ pub struct IngestQuery {
 
     #[serde(default)]
     pub atomic: bool,
+
+    /// `quarantine` (default) or `drop`. Header `X-On-Fail` is the same switch.
+    #[serde(default)]
+    pub on_fail: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -146,6 +150,9 @@ pub struct IngestEventResult {
     /// response echoing the raw request must switch to tracking the
     /// request body themselves.
     pub transformed_event: Value,
+    /// `quarantined` or `dropped` for a failing record. Omitted on a pass.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub disposition: Option<&'static str>,
 }
 
 #[derive(Debug, Serialize)]
@@ -153,6 +160,15 @@ pub struct BatchIngestResponse {
     pub total: usize,
     pub passed: usize,
     pub failed: usize,
+    /// Failures stored in `quarantine_events`. Zero on a dry run.
+    pub quarantined: usize,
+    /// Failures counted and not stored. Zero on a dry run.
+    pub dropped: usize,
+    pub on_fail_mode: &'static str,
+    pub on_fail_source: &'static str,
+    /// Present when a safety cap is enforcing or would have tripped.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub auto_trip: Option<crate::fail_policy::AutoTripBody>,
     pub dry_run: bool,
     pub atomic: bool,
     /// Resolved version the request was dispatched against (before any
@@ -359,6 +375,9 @@ pub async fn ingest_handler(
             query,
             deprecated_compiled,
             store_payloads,
+            &headers,
+            &version_row.yaml_content,
+            identity.fail_policy.as_ref(),
         )
         .await;
     }
@@ -398,12 +417,25 @@ pub async fn ingest_handler(
             "envelope batch validated"
         );
 
-        // dry_run: validate only. atomic + any fail: summary audit only (same
-        // semantics as the per-record path), no per-record persist.
-        // RFC-083: envelope is billable — metering runs inside the audit spawn
-        // after a successful write (same coupling as the non-envelope path).
+        // dry_run: validate only. atomic + any fail: summary audit only when
+        // failures are quarantined. Drop mode counts them and stores nothing.
+        let decision = crate::fail_policy::resolve_request(
+            &state,
+            org_id,
+            contract_id,
+            &compiled.contract,
+            &version_row.yaml_content,
+            identity.fail_policy.as_ref(),
+            query.on_fail.as_deref(),
+            &headers,
+            query.dry_run,
+            result.quarantined,
+        )
+        .await?;
         if !query.dry_run {
-            if query.atomic && result.quarantined > 0 {
+            if crate::drop_mode::writes_atomic_summary(decision.mode, false, result.quarantined)
+                && query.atomic
+            {
                 write_envelope_atomic_rejected_audit(
                     &state,
                     contract_id,
@@ -424,11 +456,59 @@ pub async fn ingest_handler(
                     &result,
                     source_ip.clone(),
                     store_payloads,
+                    decision.mode,
                 );
             }
         }
+        if decision.dropped > 0 {
+            let failures: Vec<_> = envelope_per_record_results(&envelope_cfg, payload, &result)
+                .into_iter()
+                .filter(|(_, vr)| !vr.passed)
+                .map(|(_, vr)| crate::fail_policy::failure_facts(&vr.violations))
+                .collect();
+            if let Err(err) = crate::fail_policy::record_drops(
+                &state,
+                org_id,
+                contract_id,
+                &resolved_version,
+                "ingress",
+                decision.source.as_str(),
+                decision.sample_drops,
+                &failures,
+            )
+            .await
+            {
+                tracing::warn!("envelope drop ledger write failed: {err:?}");
+            }
+        }
+        if decision.quarantined > 0 && !query.atomic {
+            if let Err(err) = crate::fail_policy::record_quarantined(
+                &state,
+                org_id,
+                contract_id,
+                decision.quarantined,
+            )
+            .await
+            {
+                tracing::warn!("envelope quarantine volume write failed: {err:?}");
+            }
+        }
 
-        return Ok(axum::Json(result).into_response());
+        let mut body = serde_json::to_value(&result).unwrap_or_else(|_| json!({}));
+        if let Some(obj) = body.as_object_mut() {
+            if decision.mode == crate::contract::OnFailMode::Drop {
+                obj.insert("quarantined".into(), json!(0));
+            }
+            obj.insert("dropped".into(), json!(decision.dropped));
+            obj.insert("on_fail_mode".into(), json!(decision.mode.as_str()));
+            obj.insert("on_fail_source".into(), json!(decision.source.as_str()));
+            if let Some(trip) = crate::fail_policy::auto_trip_body(decision.auto_trip.as_ref()) {
+                if let Ok(value) = serde_json::to_value(trip) {
+                    obj.insert("auto_trip".into(), value);
+                }
+            }
+        }
+        return Ok(axum::Json(body).into_response());
     }
 
     // --- First-pass validation against the resolved version ----------------
@@ -581,13 +661,33 @@ pub async fn ingest_handler(
             // wrapper so the storage path below still owns an
             // independent copy.
             transformed_event: transformed_payloads[idx].as_value().clone(),
+            disposition: None,
         });
     }
     let failed_count = total - passed_count;
 
+    let decision = crate::fail_policy::resolve_request(
+        &state,
+        org_id,
+        contract_id,
+        &compiled.contract,
+        &version_row.yaml_content,
+        identity.fail_policy.as_ref(),
+        query.on_fail.as_deref(),
+        &headers,
+        query.dry_run,
+        failed_count,
+    )
+    .await?;
+    for (result, vr) in per_event_results.iter_mut().zip(effective_results.iter()) {
+        result.disposition = crate::drop_mode::per_record_disposition(vr.passed, decision.mode);
+    }
+
     // --- Atomic-mode short-circuit ----------------------------------------
     let atomic_rejected = query.atomic && failed_count > 0;
-    if atomic_rejected && !query.dry_run {
+    if atomic_rejected
+        && crate::drop_mode::writes_atomic_summary(decision.mode, query.dry_run, failed_count)
+    {
         write_batch_rejected_audit(
             &state,
             contract_id,
@@ -612,6 +712,7 @@ pub async fn ingest_handler(
             .iter()
             .enumerate()
             .zip(events.iter())
+            .filter(|((_, vr), _)| crate::drop_mode::writes_audit(vr.passed, decision.mode, false))
             .map(|((idx, vr), _event)| storage::AuditEntryInsert {
                 contract_id,
                 org_id,
@@ -637,7 +738,9 @@ pub async fn ingest_handler(
             .iter()
             .enumerate()
             .zip(events.iter())
-            .filter(|((_, vr), _)| !vr.passed)
+            .filter(|((_, vr), _)| {
+                crate::drop_mode::writes_quarantine(vr.passed, decision.mode, false)
+            })
             .map(|((idx, vr), _event)| storage::QuarantineEventInsert {
                 contract_id,
                 contract_version: per_event_versions[idx].clone(),
@@ -740,11 +843,56 @@ pub async fn ingest_handler(
         }
     }
 
+    if decision.dropped > 0 {
+        let mut by_version: HashMap<String, Vec<crate::fail_policy::FailureFacts>> = HashMap::new();
+        for (idx, vr) in effective_results.iter().enumerate() {
+            if !vr.passed {
+                by_version
+                    .entry(per_event_versions[idx].clone())
+                    .or_default()
+                    .push(crate::fail_policy::failure_facts(&vr.violations));
+            }
+        }
+        for (version, failures) in by_version {
+            if let Err(err) = crate::fail_policy::record_drops(
+                &state,
+                org_id,
+                contract_id,
+                &version,
+                "ingress",
+                decision.source.as_str(),
+                decision.sample_drops,
+                &failures,
+            )
+            .await
+            {
+                tracing::warn!("drop ledger write failed: {err:?}");
+            }
+        }
+    }
+    if decision.quarantined > 0 {
+        if let Err(err) = crate::fail_policy::record_quarantined(
+            &state,
+            org_id,
+            contract_id,
+            decision.quarantined,
+        )
+        .await
+        {
+            tracing::warn!("quarantine volume write failed: {err:?}");
+        }
+    }
+
     // --- Compose response --------------------------------------------------
     let response_body = BatchIngestResponse {
         total,
         passed: passed_count,
         failed: failed_count,
+        quarantined: decision.quarantined,
+        dropped: decision.dropped,
+        on_fail_mode: decision.mode.as_str(),
+        on_fail_source: decision.source.as_str(),
+        auto_trip: crate::fail_policy::auto_trip_body(decision.auto_trip.as_ref()),
         dry_run: query.dry_run,
         atomic: query.atomic,
         resolved_version: resolved_version.clone(),
@@ -801,8 +949,24 @@ async fn deprecated_pin_quarantine(
     query: IngestQuery,
     compiled: Arc<CompiledContract>,
     store_payloads: bool,
+    headers: &HeaderMap,
+    yaml: &str,
+    fail_policy: Option<&Value>,
 ) -> AppResult<axum::response::Response> {
     let total = events.len();
+    let decision = crate::fail_policy::resolve_request(
+        state,
+        org_id,
+        contract_id,
+        &compiled.contract,
+        yaml,
+        fail_policy,
+        query.on_fail.as_deref(),
+        headers,
+        query.dry_run,
+        total,
+    )
+    .await?;
     let synthetic_violation = json!({
         "kind": "deprecated_contract_version",
         "pinned_version": pinned_version,
@@ -830,10 +994,11 @@ async fn deprecated_pin_quarantine(
             forwarded: false,
             contract_version: pinned_version.to_string(),
             transformed_event: tp.as_value().clone(),
+            disposition: crate::drop_mode::per_record_disposition(false, decision.mode),
         })
         .collect();
 
-    if !query.dry_run {
+    if !query.dry_run && decision.mode == crate::contract::OnFailMode::Quarantine {
         // Bulk-quarantine every event under the pinned (deprecated) version.
         let quarantine_rows: Vec<storage::QuarantineEventInsert> = transformed_payloads
             .iter()
@@ -909,10 +1074,44 @@ async fn deprecated_pin_quarantine(
         });
     }
 
+    if decision.dropped > 0 {
+        let failure = crate::fail_policy::FailureFacts {
+            violations: vec![("deprecated_contract_version".into(), String::new())],
+        };
+        let failures = vec![failure; total];
+        if let Err(err) = crate::fail_policy::record_drops(
+            state,
+            org_id,
+            contract_id,
+            pinned_version,
+            "ingress",
+            decision.source.as_str(),
+            decision.sample_drops,
+            &failures,
+        )
+        .await
+        {
+            tracing::warn!("deprecated-pin drop ledger write failed: {err:?}");
+        }
+    }
+    if decision.quarantined > 0 {
+        if let Err(err) =
+            crate::fail_policy::record_quarantined(state, org_id, contract_id, decision.quarantined)
+                .await
+        {
+            tracing::warn!("deprecated-pin quarantine volume write failed: {err:?}");
+        }
+    }
+
     let response_body = BatchIngestResponse {
         total,
         passed: 0,
         failed: total,
+        quarantined: decision.quarantined,
+        dropped: decision.dropped,
+        on_fail_mode: decision.mode.as_str(),
+        on_fail_source: decision.source.as_str(),
+        auto_trip: crate::fail_policy::auto_trip_body(decision.auto_trip.as_ref()),
         dry_run: query.dry_run,
         atomic: query.atomic,
         resolved_version: pinned_version.to_string(),
@@ -921,11 +1120,18 @@ async fn deprecated_pin_quarantine(
         results: per_event_results,
     };
 
+    let stored = if query.dry_run {
+        "dry run: nothing was stored"
+    } else if decision.mode == crate::contract::OnFailMode::Drop {
+        "failing records were counted and not stored"
+    } else {
+        "every event was quarantined"
+    };
     let body = json!({
         "error": crate::version_pin::deprecated_message(
             pinned_version,
             contract_id,
-            if query.dry_run { "dry run: nothing was quarantined" } else { "every event was quarantined" },
+            stored,
         ),
         "status": StatusCode::UNPROCESSABLE_ENTITY.as_u16(),
         "code": crate::version_pin::DEPRECATED_CODE,
@@ -1124,6 +1330,7 @@ fn persist_envelope_batch(
     batch: &BatchValidationResult,
     source_ip: Option<String>,
     store_payloads: bool,
+    mode: crate::contract::OnFailMode,
 ) {
     let per_record = envelope_per_record_results(envelope_cfg, payload, batch);
     if per_record.is_empty() {
@@ -1138,6 +1345,7 @@ fn persist_envelope_batch(
 
     let audit_rows: Vec<storage::AuditEntryInsert> = prepared
         .iter()
+        .filter(|(_, vr)| crate::drop_mode::writes_audit(vr.passed, mode, false))
         .map(|(transformed, vr)| storage::AuditEntryInsert {
             contract_id,
             org_id,
@@ -1158,7 +1366,7 @@ fn persist_envelope_batch(
 
     let quarantine_rows: Vec<storage::QuarantineEventInsert> = prepared
         .iter()
-        .filter(|(_, vr)| !vr.passed)
+        .filter(|(_, vr)| crate::drop_mode::writes_quarantine(vr.passed, mode, false))
         .map(|(transformed, vr)| storage::QuarantineEventInsert {
             contract_id,
             contract_version: contract_version.to_string(),

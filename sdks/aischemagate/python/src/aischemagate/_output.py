@@ -60,6 +60,7 @@ def build_gate(
     base_url: str = DEFAULT_BASE_URL,
     version: Optional[str] = None,
     disposition: Optional[str] = None,
+    on_fail: Optional[str] = None,
     client: Optional[Client] = None,
 ) -> LLMGate:
     """Construct the :class:`LLMGate` the adapters call.
@@ -77,6 +78,7 @@ def build_gate(
         base_url=base_url,
         version=version,
         disposition=disposition,
+        on_fail=on_fail,
         client=client,
     )
 

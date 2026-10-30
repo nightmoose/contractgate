@@ -108,6 +108,7 @@ them by name only.
 | 106 | [Streaming chunk validation](rfcs/106-streaming-chunk-validation.md) | Draft |
 | 107 | [Python framework adapters](rfcs/107-python-framework-adapters.md) | Shipped |
 | 108 | [MIT-only dependency policy](rfcs/108-mit-only-dependencies.md) | Accepted |
+| 109 | [Drop mode for failing records](rfcs/109-drop-mode.md) | Accepted |
 
 ---
 
@@ -124,6 +125,8 @@ them by name only.
 | **Superseded** | Replaced by a later RFC listed in the notes column; kept for design context. |
 
 ---
+
+*2026-10-30 — RFC-109: failing records can be counted and not stored (`on_fail: drop`). Quarantine stays the default for DataContractGate and AISchemaGate. The safety cap is watch-only until enforcement is enabled. Drop counts are minute buckets kept 30 days. See `docs/drop-mode-reference.md`.*
 
 *2026-10-30 — RFC-108: dependency licenses allow MIT, ISC, BSD-2-Clause, BSD-3-Clause, and 0BSD. The MCP server uses `tmcp` (MIT) with `@tmcp/transport-stdio` and `@tmcp/adapter-zod`. `cargo deny` uses that allow list, and a `MIT OR …` crate still passes because MIT can be selected. npm and Python use the same licenses. Python names them with the pip-licenses classifier strings. Everything else is listed in `docs/LICENSE-EXCEPTIONS.md`. A pull request that changes a manifest or lockfile runs the check, and so does a weekly schedule.*
 

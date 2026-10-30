@@ -124,6 +124,7 @@ test("stdio speaks initialize, tools/list, tools/call, and prompts/get", async (
       [
         "deploy_contract",
         "egress_validate",
+        "get_drop_counts",
         "get_quarantine",
         "infer_contract",
         "list_contracts",

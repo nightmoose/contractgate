@@ -91,6 +91,7 @@ class IngestEventResult:
     # failure (``None`` for passes, dry runs and atomic rejections).
     index: Optional[int] = None
     quarantine_id: Optional[str] = None
+    disposition: Optional[str] = None
 
     @classmethod
     def from_dict(cls, raw: Dict[str, Any]) -> "IngestEventResult":
@@ -103,6 +104,7 @@ class IngestEventResult:
             transformed_event=raw.get("transformed_event"),
             index=raw.get("index"),
             quarantine_id=raw.get("quarantine_id"),
+            disposition=raw.get("disposition"),
         )
 
 
@@ -116,6 +118,11 @@ class BatchIngestResponse:
     resolved_version: str
     version_pin_source: str
     results: List[IngestEventResult]
+    quarantined: int = 0
+    dropped: int = 0
+    on_fail_mode: Optional[str] = None
+    on_fail_source: Optional[str] = None
+    auto_trip: Optional[Dict[str, Any]] = None
 
     @classmethod
     def from_dict(cls, raw: Dict[str, Any]) -> "BatchIngestResponse":
@@ -128,6 +135,11 @@ class BatchIngestResponse:
             resolved_version=raw["resolved_version"],
             version_pin_source=raw["version_pin_source"],
             results=[IngestEventResult.from_dict(r) for r in raw.get("results", [])],
+            quarantined=int(raw.get("quarantined", 0) or 0),
+            dropped=int(raw.get("dropped", 0) or 0),
+            on_fail_mode=raw.get("on_fail_mode"),
+            on_fail_source=raw.get("on_fail_source"),
+            auto_trip=raw.get("auto_trip"),
         )
 
 
@@ -145,6 +157,7 @@ class EgressOutcome:
     violations: List[Violation]
     validation_us: int
     action: str  # "included" | "blocked" | "rejected" | "tagged"
+    disposition: Optional[str] = None
 
     @classmethod
     def from_dict(cls, raw: Dict[str, Any]) -> "EgressOutcome":
@@ -154,6 +167,7 @@ class EgressOutcome:
             violations=[Violation.from_dict(v) for v in raw.get("violations", [])],
             validation_us=int(raw.get("validation_us", 0)),
             action=raw.get("action", ""),
+            disposition=raw.get("disposition"),
         )
 
 
@@ -173,6 +187,11 @@ class EgressResponse:
     resolved_version: str
     payload: List[Any]
     outcomes: List[EgressOutcome]
+    quarantined: int = 0
+    dropped: int = 0
+    on_fail_mode: Optional[str] = None
+    on_fail_source: Optional[str] = None
+    auto_trip: Optional[Dict[str, Any]] = None
 
     @classmethod
     def from_dict(cls, raw: Dict[str, Any]) -> "EgressResponse":
@@ -185,6 +204,11 @@ class EgressResponse:
             resolved_version=raw["resolved_version"],
             payload=raw.get("payload", []),
             outcomes=[EgressOutcome.from_dict(o) for o in raw.get("outcomes", [])],
+            quarantined=int(raw.get("quarantined", 0) or 0),
+            dropped=int(raw.get("dropped", 0) or 0),
+            on_fail_mode=raw.get("on_fail_mode"),
+            on_fail_source=raw.get("on_fail_source"),
+            auto_trip=raw.get("auto_trip"),
         )
 
 

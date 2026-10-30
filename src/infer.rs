@@ -98,6 +98,9 @@ pub async fn infer_handler(Json(req): Json<InferRequest>) -> AppResult<Json<Infe
         quality: vec![],
         envelope: None,
         null_as_absent: samples_have_nulls(&req.samples),
+        on_fail: crate::contract::OnFailMode::Quarantine,
+        on_fail_locked: false,
+        quarantine_guard: crate::contract::QuarantineGuardConfig::default(),
     };
 
     let yaml_content = serde_yaml::to_string(&contract)
@@ -447,6 +450,9 @@ mod tests {
             quality: vec![],
             envelope: None,
             null_as_absent: samples_have_nulls(&samples),
+            on_fail: crate::contract::OnFailMode::Quarantine,
+            on_fail_locked: false,
+            quarantine_guard: crate::contract::QuarantineGuardConfig::default(),
         }
     }
 

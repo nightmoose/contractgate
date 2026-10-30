@@ -31,6 +31,7 @@ Source: https://github.com/nightmoose/contractgate
 - [Contract deploy](https://github.com/nightmoose/contractgate/blob/main/docs/deploy-contract-reference.md): POST /contracts/deploy and the `contractgate deploy-contract` CLI — atomic promotion to stable, prior-version deprecation.
 - [CSV and URL inference](https://github.com/nightmoose/contractgate/blob/main/docs/csv-inference-reference.md): Generate a draft contract from a CSV file or a public data URL.
 - [Quarantine and replay](https://github.com/nightmoose/contractgate/blob/main/docs/quarantine-replay-reference.md): Review rejected events and replay them against a corrected contract version.
+- [Drop mode](https://github.com/nightmoose/contractgate/blob/main/docs/drop-mode-reference.md): Count a failing record and store nothing. Quarantine stays the default. The safety cap is watch-only until enforcement is enabled.
 - [PII masking](https://github.com/nightmoose/contractgate/blob/main/docs/pii-masking-reference.md): Declarative `transform:` rules — mask or hash string fields after validation, before storage.
 - [OpenAPI spec](https://api.datacontractgate.com/openapi.json): Machine-readable route inventory for the whole gateway.
 

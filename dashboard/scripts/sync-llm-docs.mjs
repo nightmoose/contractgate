@@ -45,6 +45,7 @@ const FULL_BUNDLE = [
   "deploy-contract-reference.md",
   "csv-inference-reference.md",
   "quarantine-replay-reference.md",
+  "drop-mode-reference.md",
   "pii-masking-reference.md",
 ];
 

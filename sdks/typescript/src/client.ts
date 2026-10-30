@@ -63,6 +63,7 @@ export class Client {
     version?: string;
     dryRun?: boolean;
     atomic?: boolean;
+    onFail?: 'quarantine' | 'drop';
     timeoutMs?: number;
   }): Promise<BatchIngestResponse> {
     // `/v1/ingest` takes the pin as `?version=` and returns each result's
@@ -75,6 +76,7 @@ export class Client {
     if (version) params['version'] = version;
     if (opts.dryRun) params['dry_run'] = 'true';
     if (opts.atomic) params['atomic'] = 'true';
+    if (opts.onFail) params['on_fail'] = opts.onFail;
 
     let body: unknown;
     try {
@@ -106,11 +108,13 @@ export class Client {
     version?: string;
     disposition?: string;
     dryRun?: boolean;
+    onFail?: 'quarantine' | 'drop';
     timeoutMs?: number;
   }): Promise<EgressResponse> {
     const params: Record<string, string> = {};
     if (opts.dryRun) params['dry_run'] = 'true';
     if (opts.disposition) params['disposition'] = opts.disposition;
+    if (opts.onFail) params['on_fail'] = opts.onFail;
 
     const extra: Record<string, string> = {};
     if (opts.version) extra['X-Contract-Version'] = opts.version;

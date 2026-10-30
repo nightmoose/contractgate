@@ -18,6 +18,7 @@ import {
   setContractPayloadStorage,
   purgeContractBodies,
 } from "@/lib/api";
+import { FailPolicyPanel } from "./fail-policy";
 import type {
   ContractSummary,
   VersionSummary,
@@ -263,6 +264,14 @@ export function QuarantineTab({ contracts }: { contracts?: ContractSummary[] }) 
           contractId={contractFilter || undefined}
           onClose={() => { setShowSummary(false); setReplayResult(null); }}
         />
+      )}
+
+      {contractFilter ? (
+        <FailPolicyPanel contractId={contractFilter} />
+      ) : (
+        <p className="text-xs text-slate-500">
+          Select a contract to set quarantine or drop, and to see the safety-cap banner.
+        </p>
       )}
 
       {/* ── Filter bar ── */}

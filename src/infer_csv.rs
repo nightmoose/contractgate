@@ -133,6 +133,9 @@ pub fn infer_from_text(
         quality: vec![],
         envelope: None,
         null_as_absent: crate::infer::samples_have_nulls(&rows),
+        on_fail: crate::contract::OnFailMode::Quarantine,
+        on_fail_locked: false,
+        quarantine_guard: crate::contract::QuarantineGuardConfig::default(),
     };
 
     let yaml_content = serde_yaml::to_string(&contract)

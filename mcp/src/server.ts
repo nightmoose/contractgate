@@ -6,6 +6,7 @@ import { ConfigError, Gateway, GatewayError } from "./gateway.js";
 import {
   deployContract,
   egressValidate,
+  getDropCounts,
   getQuarantine,
   inferContract,
   listContracts,
@@ -105,6 +106,10 @@ export function createServer(opts: ServerOpts = {}): McpServer {
             .boolean()
             .optional()
             .describe("Ingest only. Default true. Set false only after a successful dry run."),
+          on_fail: z
+            .enum(["quarantine", "drop"])
+            .optional()
+            .describe("Ingest only. Default quarantine. drop counts a failure and stores neither a quarantine row nor an audit row."),
         })
         .refine((v) => Boolean(v.contract_id) !== Boolean(v.yaml_content), {
           message:
@@ -174,7 +179,11 @@ export function createServer(opts: ServerOpts = {}): McpServer {
         dry_run: z
           .boolean()
           .optional()
-          .describe("Default true. Set false only after a successful dry run — live calls write audit and quarantine rows."),
+          .describe("Default true. Set false only after a successful dry run — live calls write audit and quarantine rows unless on_fail is drop."),
+        on_fail: z
+          .enum(["quarantine", "drop"])
+          .optional()
+          .describe("Default quarantine. drop counts a failure and stores neither a quarantine row nor an audit row. Ignored when the contract locks on_fail."),
         version: z
           .string()
           .optional()
@@ -183,6 +192,27 @@ export function createServer(opts: ServerOpts = {}): McpServer {
       annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: true },
     },
     async (args) => runTool(() => egressValidate(gateway(opts), args)),
+  );
+
+  server.tool(
+    {
+      name: "get_drop_counts",
+      title: "List dropped-record counts",
+      description:
+        "GET /contracts/{id}/drop-counts. Minute buckets of dropped failures by reason, kept 30 days. Counts and failure metadata only — never record contents.",
+      schema: z.object({
+        contract_id: z.string().uuid().describe("Deployed contract UUID"),
+        hours: z
+          .number()
+          .int()
+          .min(1)
+          .max(24 * 30)
+          .optional()
+          .describe("Lookback in hours. Default 24."),
+      }),
+      annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: true },
+    },
+    async (args) => runTool(() => getDropCounts(gateway(opts), args)),
   );
 
   server.prompt(

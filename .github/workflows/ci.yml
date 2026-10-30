@@ -621,6 +621,44 @@ jobs:
           fi
           echo "Sentinel A9 OK: store_event_payloads present + payload NULLable (migration 034)."
 
+          # Sentinel A10 — migration 045 (drop mode): ledger, 30-day purge, RLS.
+          DROP_TABLE=$(psql "$DATABASE_URL" -Atc \
+            "SELECT COUNT(*) FROM information_schema.tables
+             WHERE table_schema = 'public' AND table_name = 'dropped_event_counts'")
+          if [[ "$DROP_TABLE" != "1" ]]; then
+            echo "::error::Migration 045 sentinel failed — dropped_event_counts table not found."
+            exit 1
+          fi
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -c \
+            "INSERT INTO orgs (id, name, slug, plan) VALUES
+               ('00000000-0000-0000-0000-000000000045', 'drop-mode-sentinel', 'drop-mode-sentinel-045', 'free');
+             INSERT INTO contracts (id, org_id, name) VALUES
+               ('00000000-0000-0000-0000-000000000046', '00000000-0000-0000-0000-000000000045', 'drop-mode-sentinel');
+             INSERT INTO dropped_event_counts (
+               org_id, contract_id, contract_version, direction, bucket_start, source, reason_key, dropped
+             ) VALUES
+               ('00000000-0000-0000-0000-000000000045', '00000000-0000-0000-0000-000000000046',
+                '1.0.0', 'ingress', now() - interval '31 days', 'contract', 'type_mismatch:amount', 3),
+               ('00000000-0000-0000-0000-000000000045', '00000000-0000-0000-0000-000000000046',
+                '1.0.0', 'ingress', now() - interval '1 day', 'request', 'missing_required_field:user_id', 2);"
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -c "SELECT public.purge_expired_logs(100);" >/dev/null
+          KEPT=$(psql "$DATABASE_URL" -Atc \
+            "SELECT COALESCE(SUM(dropped), 0) FROM dropped_event_counts
+             WHERE contract_id = '00000000-0000-0000-0000-000000000046'")
+          if [[ "$KEPT" != "2" ]]; then
+            echo "::error::Migration 045 sentinel failed — expected the 1-day bucket to remain (got '$KEPT')."
+            exit 1
+          fi
+          RLS=$(psql "$DATABASE_URL" -Atc \
+            "SELECT COUNT(*) FROM pg_class c
+             JOIN pg_namespace n ON n.oid = c.relnamespace
+             WHERE n.nspname = 'public' AND c.relname = 'dropped_event_counts' AND c.relrowsecurity")
+          if [[ "$RLS" != "1" ]]; then
+            echo "::error::Migration 045 sentinel failed — dropped_event_counts RLS is not enabled."
+            exit 1
+          fi
+          echo "Sentinel A10 OK: drop ledger retains 30 days and purges older buckets (migration 045)."
+
           # Sentinel B (file count) was removed 2026-08-07. It required a manual
           # bump per migration and asserted nothing about the database — a file
           # could be present, counted, and still unapplied in prod. Coverage now:

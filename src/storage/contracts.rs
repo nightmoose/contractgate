@@ -35,6 +35,8 @@ struct ContractIdentityRow {
     pii_salt: Vec<u8>,
     /// RFC-086: per-contract event-body storage override.
     store_event_payloads: bool,
+    /// Live on-fail override. Null means the version document applies.
+    fail_policy: Option<serde_json::Value>,
 }
 
 impl ContractIdentityRow {
@@ -54,6 +56,7 @@ impl ContractIdentityRow {
             updated_at: self.updated_at,
             pii_salt: self.pii_salt,
             store_event_payloads: self.store_event_payloads,
+            fail_policy: self.fail_policy,
         })
     }
 }
@@ -175,6 +178,8 @@ pub async fn create_contract(
         .map_err(|e| AppError::InvalidContractYaml(e.to_string()))?;
     let compliance_mode = parsed.compliance_mode;
     let egress_leakage_mode = parsed.egress_leakage_mode.as_str();
+    let on_fail = parsed.on_fail.as_str();
+    let on_fail_locked = parsed.on_fail_locked;
 
     let contract_id = Uuid::new_v4();
     let version_id = Uuid::new_v4();
@@ -187,7 +192,7 @@ pub async fn create_contract(
             (id, org_id, name, description, multi_stable_resolution, created_at, updated_at)
         VALUES ($1, $2, $3, $4, $5, NOW(), NOW())
         RETURNING id, name, description, multi_stable_resolution, created_at, updated_at,
-                  pii_salt, store_event_payloads
+                  pii_salt, store_event_payloads, fail_policy
         "#,
     )
     .bind(contract_id)
@@ -203,8 +208,8 @@ pub async fn create_contract(
         r#"
         INSERT INTO contract_versions
             (id, contract_id, version, state, yaml_content, created_at, compliance_mode,
-             egress_leakage_mode, import_source, requires_review)
-        VALUES ($1, $2, '1.0.0', 'draft', $3, NOW(), $4, $5, 'native', FALSE)
+             egress_leakage_mode, import_source, requires_review, on_fail, on_fail_locked)
+        VALUES ($1, $2, '1.0.0', 'draft', $3, NOW(), $4, $5, 'native', FALSE, $6, $7)
         RETURNING id, contract_id, version, state, yaml_content,
                   created_at, promoted_at, deprecated_at, compliance_mode,
                   egress_leakage_mode, import_source, requires_review
@@ -215,6 +220,8 @@ pub async fn create_contract(
     .bind(yaml_content)
     .bind(compliance_mode)
     .bind(egress_leakage_mode)
+    .bind(on_fail)
+    .bind(on_fail_locked)
     .fetch_one(&mut *tx)
     .await
     .db_op("create_contract:insert_initial_version")?;
@@ -238,7 +245,7 @@ pub async fn get_contract_identity(
     let row = sqlx::query_as::<_, ContractIdentityRow>(
         r#"
         SELECT id, name, description, multi_stable_resolution, created_at, updated_at,
-               pii_salt, store_event_payloads
+               pii_salt, store_event_payloads, fail_policy
         FROM contracts
         WHERE id = $1 AND deleted_at IS NULL AND ($2 IS NULL OR org_id = $2)
         "#,
@@ -414,7 +421,7 @@ pub async fn patch_contract_identity(
             updated_at              = NOW()
         WHERE id = $1 AND ($5 IS NULL OR org_id = $5)
         RETURNING id, name, description, multi_stable_resolution, created_at, updated_at,
-                  pii_salt, store_event_payloads
+                  pii_salt, store_event_payloads, fail_policy
         "#,
     )
     .bind(id)
@@ -528,6 +535,8 @@ pub async fn create_version(
         .map_err(|e| AppError::InvalidContractYaml(e.to_string()))?;
     let compliance_mode = parsed.compliance_mode;
     let egress_leakage_mode = parsed.egress_leakage_mode.as_str();
+    let on_fail = parsed.on_fail.as_str();
+    let on_fail_locked = parsed.on_fail_locked;
 
     // Ensure the contract exists and belongs to the caller's org (RFC-047).
     let _ = get_contract_identity(pool, contract_id, org_id).await?;
@@ -540,8 +549,8 @@ pub async fn create_version(
         r#"
         INSERT INTO contract_versions
             (id, contract_id, version, state, yaml_content, created_at, compliance_mode,
-             egress_leakage_mode, import_source, requires_review)
-        VALUES ($1, $2, $3, 'draft', $4, NOW(), $5, $6, 'native', FALSE)
+             egress_leakage_mode, import_source, requires_review, on_fail, on_fail_locked)
+        VALUES ($1, $2, $3, 'draft', $4, NOW(), $5, $6, 'native', FALSE, $7, $8)
         RETURNING id, contract_id, version, state, yaml_content,
                   created_at, promoted_at, deprecated_at, compliance_mode,
                   egress_leakage_mode, import_source, requires_review
@@ -553,6 +562,8 @@ pub async fn create_version(
     .bind(yaml_content)
     .bind(compliance_mode)
     .bind(egress_leakage_mode)
+    .bind(on_fail)
+    .bind(on_fail_locked)
     .fetch_one(pool)
     .await
     .map_err(|e| match &e {
@@ -589,6 +600,8 @@ pub async fn patch_version_yaml(
         .map_err(|e| AppError::InvalidContractYaml(e.to_string()))?;
     let compliance_mode = parsed.compliance_mode;
     let egress_leakage_mode = parsed.egress_leakage_mode.as_str();
+    let on_fail = parsed.on_fail.as_str();
+    let on_fail_locked = parsed.on_fail_locked;
 
     // Fetch first so we can emit a specific error (not-found vs. immutable).
     // org_id check happens inside get_version (RFC-047).
@@ -605,7 +618,9 @@ pub async fn patch_version_yaml(
         UPDATE contract_versions
         SET yaml_content = $3,
             compliance_mode = $4,
-            egress_leakage_mode = $5
+            egress_leakage_mode = $5,
+            on_fail = $6,
+            on_fail_locked = $7
         WHERE contract_id = $1 AND version = $2
         RETURNING id, contract_id, version, state, yaml_content,
                   created_at, promoted_at, deprecated_at, compliance_mode,
@@ -617,6 +632,8 @@ pub async fn patch_version_yaml(
     .bind(yaml_content)
     .bind(compliance_mode)
     .bind(egress_leakage_mode)
+    .bind(on_fail)
+    .bind(on_fail_locked)
     .fetch_one(pool)
     .await?;
 
@@ -728,6 +745,8 @@ pub async fn deploy_contract_version(
     let version = parsed.version.clone();
     let compliance_mode = parsed.compliance_mode;
     let egress_leakage_mode = parsed.egress_leakage_mode.as_str();
+    let on_fail = parsed.on_fail.as_str();
+    let on_fail_locked = parsed.on_fail_locked;
     let parsed_json = serde_json::to_value(&parsed)
         .map_err(|e| AppError::Internal(format!("contract json serialization: {e}")))?;
 
@@ -743,7 +762,7 @@ pub async fn deploy_contract_version(
     let maybe_identity = sqlx::query_as::<_, ContractIdentityRow>(
         r#"
         SELECT id, name, description, multi_stable_resolution, created_at, updated_at,
-               pii_salt, store_event_payloads
+               pii_salt, store_event_payloads, fail_policy
         FROM contracts
         WHERE name = $1
           AND deleted_at IS NULL
@@ -809,10 +828,11 @@ pub async fn deploy_contract_version(
         INSERT INTO contract_versions
             (id, contract_id, version, state, yaml_content, created_at,
              promoted_at, compliance_mode, egress_leakage_mode, import_source,
-             requires_review, source, deployed_by, deployed_at, parsed_json)
+             requires_review, source, deployed_by, deployed_at, parsed_json,
+             on_fail, on_fail_locked)
         VALUES ($1, $2, $3, 'stable', $4, $5,
                 $5, $6, $7, 'native', FALSE,
-                $8, $9, $5, $10)
+                $8, $9, $5, $10, $11, $12)
         RETURNING id, contract_id, version, state, yaml_content,
                   created_at, promoted_at, deprecated_at, compliance_mode,
                   egress_leakage_mode, import_source, requires_review
@@ -828,6 +848,8 @@ pub async fn deploy_contract_version(
     .bind(source)
     .bind(deployed_by)
     .bind(parsed_json)
+    .bind(on_fail)
+    .bind(on_fail_locked)
     .fetch_one(&mut *tx)
     .await
     .map_err(|e| match &e {
@@ -1144,6 +1166,8 @@ pub async fn create_version_from_import(
         .map_err(|e| AppError::InvalidContractYaml(e.to_string()))?;
     let compliance_mode = parsed.compliance_mode;
     let egress_leakage_mode = parsed.egress_leakage_mode.as_str();
+    let on_fail = parsed.on_fail.as_str();
+    let on_fail_locked = parsed.on_fail_locked;
     let requires_review = import_source == ImportSource::OdcsStripped;
 
     let _ = get_contract_identity(pool, contract_id, org_id).await?;
@@ -1156,8 +1180,8 @@ pub async fn create_version_from_import(
         r#"
         INSERT INTO contract_versions
             (id, contract_id, version, state, yaml_content, created_at, compliance_mode,
-             egress_leakage_mode, import_source, requires_review)
-        VALUES ($1, $2, $3, 'draft', $4, NOW(), $5, $6, $7, $8)
+             egress_leakage_mode, import_source, requires_review, on_fail, on_fail_locked)
+        VALUES ($1, $2, $3, 'draft', $4, NOW(), $5, $6, $7, $8, $9, $10)
         RETURNING id, contract_id, version, state, yaml_content,
                   created_at, promoted_at, deprecated_at, compliance_mode,
                   egress_leakage_mode, import_source, requires_review
@@ -1171,6 +1195,8 @@ pub async fn create_version_from_import(
     .bind(egress_leakage_mode)
     .bind(import_source.as_str())
     .bind(requires_review)
+    .bind(on_fail)
+    .bind(on_fail_locked)
     .fetch_one(pool)
     .await
     .map_err(|e| match &e {
