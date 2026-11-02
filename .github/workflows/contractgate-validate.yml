@@ -9,7 +9,9 @@ on:
       - "contractgate_hooks/**"
   push:
     branches:
-      [main, staging]paths:
+      - main
+      - staging
+    paths:
       - "contracts/**"
       - "actions/validate/**"
       - "contractgate_hooks/**"
