@@ -22,7 +22,7 @@ use axum::Json;
 use sqlx::postgres::PgPoolOptions;
 use sqlx::{Connection, Executor, PgPool};
 
-/// Outer budget for every request except the demo SSE streams.
+/// Outer budget for every request.
 pub const REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
 /// Checkout, including a bounded ping of an idle connection. Inside the HTTP budget
 /// so a pool wait is attributed to `pool_acquire` instead of the outer timer.
@@ -50,9 +50,6 @@ pub const IDLE_IN_TRANSACTION_TIMEOUT: Duration = Duration::from_secs(15);
 const STAGE_HANDLER: u8 = 0;
 const STAGE_POOL_ACQUIRE: u8 = 1;
 const STAGE_DB_STATEMENT: u8 = 2;
-
-/// Routes that are allowed to stay open. Both are demo SSE streams with a 15s keepalive.
-const UNBOUNDED_PATHS: &[&str] = &["/demo/stream", "/demo/events"];
 
 tokio::task_local! {
     static STAGE: Arc<AtomicU8>;
@@ -119,10 +116,6 @@ pub fn db_timeout(error: &sqlx::Error) -> Option<DbTimeout> {
     }
 }
 
-pub fn is_unbounded_path(path: &str) -> bool {
-    UNBOUNDED_PATHS.contains(&path)
-}
-
 /// Axum layer: 30s budget, 504 JSON, and an error log with route + stage.
 pub async fn request_timeout(req: Request, next: Next) -> Response {
     enforce_request_timeout(REQUEST_TIMEOUT, req, next).await
@@ -130,10 +123,6 @@ pub async fn request_timeout(req: Request, next: Next) -> Response {
 
 pub(crate) async fn enforce_request_timeout(limit: Duration, req: Request, next: Next) -> Response {
     let path = req.uri().path().to_owned();
-    if is_unbounded_path(&path) {
-        return next.run(req).await;
-    }
-
     let method = req.method().clone();
     let route: Arc<str> = Arc::from(format!("{method} {path}"));
     let stage = Arc::new(AtomicU8::new(STAGE_HANDLER));
@@ -467,13 +456,6 @@ mod tests {
                     StatusCode::OK
                 }),
             )
-            .route(
-                "/demo/stream",
-                get(|| async {
-                    tokio::time::sleep(Duration::from_millis(200)).await;
-                    StatusCode::OK
-                }),
-            )
             .route("/fast", get(|| async { StatusCode::OK }))
             .layer(axum::middleware::from_fn(move |req, next| {
                 let limit = limit;
@@ -515,12 +497,6 @@ mod tests {
         assert_eq!(status, StatusCode::GATEWAY_TIMEOUT);
         assert_eq!(body["stage"], "db_statement");
         assert_eq!(body["error"], "request timed out during db_statement");
-    }
-
-    #[tokio::test]
-    async fn demo_stream_is_not_cut_at_the_request_budget() {
-        let (status, _) = call(router(Duration::from_millis(40)), "/demo/stream").await;
-        assert_eq!(status, StatusCode::OK);
     }
 
     #[tokio::test]

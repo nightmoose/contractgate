@@ -197,7 +197,7 @@ Customer-facing targets: [Support SLA](../support-sla.md).
 ## 9. Related demos
 
 - Hero pilot path: [`demo/hero/README.md`](../../demo/hero/README.md) + `scripts/hero_demo.sh`
-- Stream demo: `app.datacontractgate.com/stream-demo`
+- Local throughput demo: [`demo/README.md`](../../demo/README.md) (`docker compose -f docker-compose.kafka-demo.yml up -d` + `cargo run --features demo --bin demo`, dashboard on `localhost:8088`)
 - Self-host: `make demo`
 
 ---

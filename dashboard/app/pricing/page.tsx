@@ -84,7 +84,7 @@ const FEATURES: Feature[] = [
   { label: "Ingest API",                       selfHosted: true,                free: true,              growth: true,         enterprise: true },
   { label: "Playground (test without save)",   selfHosted: true,                free: true,              growth: true,         enterprise: true },
   { label: "Audit log retention",              selfHosted: "Local Postgres",    free: "7 days",          growth: "90 days",    enterprise: "Custom" },
-  { label: "Stream demo dashboard",            selfHosted: true,                free: true,              growth: true,         enterprise: true },
+  { label: "Local Docker demo",                selfHosted: true,                free: true,              growth: true,         enterprise: true },
   { label: "Batch ingest",                     selfHosted: true,                free: false,             growth: true,         enterprise: true },
   { label: "Data-parallel validation (Rayon)", selfHosted: true,                free: false,             growth: true,         enterprise: true },
   { label: "Auth & API key management",        selfHosted: false,               free: true,              growth: true,         enterprise: true },

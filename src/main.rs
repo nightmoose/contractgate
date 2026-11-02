@@ -92,7 +92,6 @@ mod scorecard;
 mod security_headers;
 mod settings;
 mod storage;
-mod stream_demo;
 #[cfg(test)]
 mod tests;
 mod usage;
@@ -136,8 +135,6 @@ pub struct AppState {
     pub key_cache: Arc<api_key_auth::ApiKeyCache>,
     /// Per-API-key token-bucket rate limiter (RFC-021).
     pub rate_limiter: Arc<rate_limit::RateLimitState>,
-    /// In-process stream demo state (no Kafka, no DB writes).
-    pub stream_demo: std::sync::Arc<stream_demo::StreamDemoState>,
     /// RFC-025: platform-side Kafka consumer pool (one task per enabled contract).
     pub kafka_consumers: kafka_consumer::ConsumerPool,
     /// RFC-026: platform-side Kinesis consumer pool (one task per enabled contract).
@@ -173,7 +170,6 @@ impl AppState {
             ),
             key_cache: Arc::new(api_key_auth::ApiKeyCache::default()),
             rate_limiter: Arc::new(rate_limit::RateLimitState::default()),
-            stream_demo: std::sync::Arc::new(stream_demo::StreamDemoState::new()),
             kafka_consumers: kafka_consumer::ConsumerPool::new(),
             kinesis_consumers: kinesis_consumer::ConsumerPool::new(),
             supabase_jwks: Arc::new(ArcSwap::from_pointee(supabase_jwks)),
@@ -1649,13 +1645,6 @@ fn build_router(state: Arc<AppState>) -> Router {
         // Open by default; Bearer-auth gated when METRICS_AUTH_TOKEN is set.
         // Mounted as public so Prometheus can scrape without an x-api-key.
         .route("/metrics", get(observability::metrics_handler))
-        // Stream demo — public so the browser's EventSource can connect
-        // without auth headers (no sensitive data, local demo only).
-        .route("/demo/start", post(stream_demo::start_handler))
-        .route("/demo/stop", post(stream_demo::stop_handler))
-        .route("/demo/stream", get(stream_demo::stream_handler))
-        .route("/demo/events", get(stream_demo::events_handler))
-        .route("/demo/contract", get(stream_demo::contract_handler))
         // RFC-032: public-fetch for published contracts (visibility checked inside handler)
         .route(
             "/published/{publication_ref}",
