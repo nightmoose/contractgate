@@ -10,6 +10,8 @@ import {
   type ReactNode,
 } from "react";
 import * as Tooltip from "@radix-ui/react-tooltip";
+import clsx from "clsx";
+import { DEMO_MODE } from "@/lib/demo";
 import { HelpCard } from "./HelpCard";
 import { HelpToggle } from "./HelpToggle";
 
@@ -136,14 +138,20 @@ export default function HelpProvider({ children }: { children: ReactNode }) {
       <Tooltip.Provider delayDuration={300}>
         {children}
         {!mode && (
-          <div data-help-ui className="fixed z-[60] bottom-4 right-4 md:hidden">
+          <div
+            data-help-ui
+            className={clsx(
+              "fixed z-[60] right-2 md:hidden",
+              DEMO_MODE ? "top-[calc(36px+0.5rem)]" : "top-2",
+            )}
+          >
             <HelpToggle compact mode={mode} onToggle={toggle} />
           </div>
         )}
         {mode && (
           <div
             data-help-ui
-            className="fixed z-[55] bottom-4 left-1/2 -translate-x-1/2 flex items-center gap-3 bg-[#111827] border border-green-800/50 text-slate-200 text-xs rounded-full px-4 py-2 shadow-xl"
+            className="fixed z-[55] bottom-4 left-1/2 -translate-x-1/2 flex max-w-[calc(100vw-2rem)] flex-wrap items-center justify-center gap-3 bg-[#111827] border border-green-800/50 text-slate-200 text-xs rounded-full px-4 py-2 shadow-xl"
           >
             <span>
               <span className="text-green-400 font-medium">What’s this?</span>

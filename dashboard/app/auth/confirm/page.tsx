@@ -1,13 +1,14 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import BrandWordmark from "@/components/BrandWordmark";
+import { pageMeta } from "@/lib/page-meta";
 import { confirmEmailLink } from "./actions";
 
 export const dynamic = "force-dynamic";
 
 export const metadata: Metadata = {
+  ...pageMeta("Confirm link", "Confirm an email link for your DataContractGate account."),
   robots: { index: false, follow: false },
-  title: "Confirm link",
 };
 
 function first(value: string | string[] | undefined): string {

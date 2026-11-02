@@ -29,7 +29,7 @@ use std::{
     collections::HashMap,
     net::SocketAddr,
     sync::{
-        atomic::{AtomicU64, Ordering},
+        atomic::{AtomicU32, AtomicU64, Ordering},
         Arc, RwLock, RwLockReadGuard, RwLockWriteGuard,
     },
 };
@@ -1133,6 +1133,9 @@ fn build_id() -> Option<String> {
 ///
 /// Platform health checks (Fly, docker-compose) should point at `/ready`;
 /// `/health` is the liveness probe and intentionally never touches the DB.
+/// One 503 does not restart the machine. After three consecutive failures
+/// the process exits so Fly's `on-failure` restart policy can replace a
+/// machine whose pool never recovered.
 async fn ready_handler(State(state): State<Arc<AppState>>) -> impl IntoResponse {
     let db = &state.db;
     let probe = tokio::time::timeout(
@@ -1145,18 +1148,22 @@ async fn ready_handler(State(state): State<Arc<AppState>>) -> impl IntoResponse 
     let idle = db.num_idle();
 
     match probe {
-        Ok(Ok(_)) => (
-            StatusCode::OK,
-            Json(serde_json::json!({
-                "status": "ready",
-                "db": "ok",
-                "version": env!("CARGO_PKG_VERSION"),
-                "pool": { "size": size, "idle": idle },
-            })),
-        )
-            .into_response(),
+        Ok(Ok(_)) => {
+            record_readiness(true);
+            (
+                StatusCode::OK,
+                Json(serde_json::json!({
+                    "status": "ready",
+                    "db": "ok",
+                    "version": env!("CARGO_PKG_VERSION"),
+                    "pool": { "size": size, "idle": idle },
+                })),
+            )
+                .into_response()
+        }
         Ok(Err(e)) => {
             tracing::warn!("readiness probe DB error: {e}");
+            record_readiness(false);
             (
                 StatusCode::SERVICE_UNAVAILABLE,
                 Json(serde_json::json!({ "status": "degraded", "db": "error" })),
@@ -1165,6 +1172,7 @@ async fn ready_handler(State(state): State<Arc<AppState>>) -> impl IntoResponse 
         }
         Err(_elapsed) => {
             tracing::warn!("readiness probe timed out after 2s");
+            record_readiness(false);
             (
                 StatusCode::SERVICE_UNAVAILABLE,
                 Json(serde_json::json!({ "status": "degraded", "db": "error" })),
@@ -1172,6 +1180,36 @@ async fn ready_handler(State(state): State<Arc<AppState>>) -> impl IntoResponse 
                 .into_response()
         }
     }
+}
+
+static CONSECUTIVE_READY_FAILURES: AtomicU32 = AtomicU32::new(0);
+
+fn record_readiness(ok: bool) {
+    let failures = if ok {
+        CONSECUTIVE_READY_FAILURES.store(0, Ordering::Relaxed);
+        0
+    } else {
+        CONSECUTIVE_READY_FAILURES
+            .fetch_add(1, Ordering::Relaxed)
+            .saturating_add(1)
+    };
+    if !request_limits::readiness_failure_should_exit(failures) {
+        return;
+    }
+    tracing::error!(
+        consecutive_failures = failures,
+        "readiness probe stayed failing; exiting so Fly can restart the machine"
+    );
+    // The test binary calls this handler with a closed pool. Exiting there
+    // would kill `cargo test`. Production releases do not set `cfg(test)`.
+    if cfg!(test) {
+        return;
+    }
+    // Let the 503 flush, then a non-zero status trips [[restart]] on-failure.
+    let _exit = tokio::spawn(async {
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+        std::process::exit(1);
+    });
 }
 
 // ---------------------------------------------------------------------------
