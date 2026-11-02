@@ -16,6 +16,14 @@ case "$dir" in
     ;;
   sdks/aischemagate/typescript)
     npm install --no-package-lock --no-audit --no-fund
+    # The alias calls drop-mode fields on the in-repo client. The copy on npm
+    # can lag those fields, so typecheck the workspace build instead.
+    (
+      cd "$root/sdks/typescript"
+      npm ci --no-audit --no-fund
+      npm run build
+    )
+    npm install --no-save --no-package-lock --no-audit --no-fund "$root/sdks/typescript"
     npm run typecheck
     npm run build
     ;;

@@ -1,6 +1,8 @@
 # Dependency license check.
 #
-# Pull requests that touch a manifest or lockfile, plus a weekly run.
+# Pull requests into main and staging, and pushes to main and staging, when
+# a manifest, lockfile, or TypeScript SDK source changes, plus a weekly run.
+# The npm jobs typecheck those SDK packages.
 # Allowed: MIT, ISC, BSD-2-Clause, BSD-3-Clause, 0BSD.
 # npm: license-checker-rseidelsohn --production --onlyAllow those SPDX ids
 # Python: pip-licenses --allow-only, using classifier names plus SPDX forms
@@ -12,6 +14,23 @@
 name: Licenses
 
 on:
+  push:
+    branches: [main, staging]
+    paths:
+      - "**/package.json"
+      - "**/package-lock.json"
+      - "**/pyproject.toml"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "deny.toml"
+      - "scripts/check-npm-licenses.sh"
+      - "scripts/check-npm-build.sh"
+      - "scripts/check-python-licenses.sh"
+      - "scripts/prune-npm-license-tree.mjs"
+      - "scripts/license/**"
+      - ".github/workflows/license-check.yml"
+      - "sdks/typescript/**"
+      - "sdks/aischemagate/typescript/**"
   pull_request:
     branches: [main, staging]
     paths:
@@ -27,6 +46,8 @@ on:
       - "scripts/prune-npm-license-tree.mjs"
       - "scripts/license/**"
       - ".github/workflows/license-check.yml"
+      - "sdks/typescript/**"
+      - "sdks/aischemagate/typescript/**"
   schedule:
     # Monday 06:17 UTC.
     - cron: "17 6 * * 1"

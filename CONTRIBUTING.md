@@ -87,6 +87,11 @@ quarantine paths. Don't mark a test `#[ignore]` to make CI pass; gate it on
       update the relevant `docs/` page, or add `docs/<feature>-reference.md`.
 - [ ] RFC added/updated and `docs/STATUS.md` reflects the change.
 
+## Releases
+
+Promotion from `staging` to `main` is one merge commit after staging is verified.
+See [`RELEASING.md`](RELEASING.md).
+
 ## Security
 
 Do not file public issues for security-sensitive findings — see

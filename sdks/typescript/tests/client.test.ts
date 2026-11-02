@@ -163,6 +163,49 @@ describe('Client', () => {
     assert.ok(capturedUrl.includes('offset=20'), capturedUrl);
   });
 
+  it('egress — sends onFail as the on_fail query param', async () => {
+    const urls: URL[] = [];
+    const c = new Client({
+      baseUrl: 'http://localhost:8080',
+      apiKey: 'cg_key',
+      fetch: async (url) => {
+        urls.push(new URL(String(url)));
+        return new Response(JSON.stringify({
+          total: 1, passed: 0, failed: 1, dry_run: false,
+          disposition: 'block', resolved_version: '1.0.0',
+          payload: [], outcomes: [],
+          quarantined: 0, dropped: 1,
+          on_fail_mode: 'drop', on_fail_source: 'request',
+        }), { status: 200 });
+      },
+    });
+    const r = await c.egress({ contractId: CONTRACT_ID, events: [{ amount: 1 }], onFail: 'drop' });
+    assert.equal(urls[0].pathname, `/egress/${CONTRACT_ID}`);
+    assert.equal(urls[0].searchParams.get('on_fail'), 'drop');
+    assert.equal(r.dropped, 1);
+    assert.equal(r.on_fail_mode, 'drop');
+    assert.equal(r.on_fail_source, 'request');
+  });
+
+  it('ingest — sends onFail as the on_fail query param', async () => {
+    const urls: URL[] = [];
+    const c = new Client({
+      baseUrl: 'http://localhost:8080',
+      apiKey: 'cg_key',
+      fetch: async (url) => {
+        urls.push(new URL(String(url)));
+        return new Response(JSON.stringify({
+          total: 0, passed: 0, failed: 0, dry_run: false, atomic: false,
+          resolved_version: '1', version_pin_source: 'default', results: [],
+          quarantined: 0, dropped: 0,
+          on_fail_mode: 'quarantine', on_fail_source: 'request',
+        }), { status: 200 });
+      },
+    });
+    await c.ingest({ contractId: CONTRACT_ID, events: [], onFail: 'quarantine' });
+    assert.equal(urls[0].searchParams.get('on_fail'), 'quarantine');
+  });
+
   it('ingest — plan_required is PlanRequiredError', async () => {
     const c = client(403, {
       error: 'plan_required',
