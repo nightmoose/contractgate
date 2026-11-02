@@ -163,7 +163,11 @@ export default function SignupPage() {
             {/* Honeypot — hidden from real users, bots fill every field.
                 The name must stay meaningless: autofill targets website/url/
                 company and would silently trip this for a genuine user. */}
+            <label htmlFor="hp_field" className="sr-only">
+              Leave this field empty
+            </label>
             <input
+              id="hp_field"
               type="text"
               name="hp_field"
               value={hpField}
@@ -171,7 +175,7 @@ export default function SignupPage() {
               style={{ display: "none" }}
               tabIndex={-1}
               autoComplete="off"
-              aria-hidden="true"
+              aria-label="Leave this field empty"
             />
 
             <div>

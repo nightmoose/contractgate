@@ -1,5 +1,12 @@
+import type { Metadata } from "next";
 import Link from "next/link";
 import { HelpTarget } from "@/components/help/HelpTarget";
+import { pageMeta } from "@/lib/page-meta";
+
+export const metadata: Metadata = pageMeta(
+  "Docs",
+  "Integration guides for DataContractGate: Python SDK, Kafka Connect, Fivetran, and the agent playbook.",
+);
 
 const DOCS = [
   {
@@ -68,7 +75,7 @@ const DOCS = [
 
 export default function DocsIndexPage() {
   return (
-    <div className="max-w-3xl py-10">
+    <div className="max-w-3xl min-w-0 py-10">
       {/* Header */}
       <div className="mb-12">
         <HelpTarget id="page.docs">

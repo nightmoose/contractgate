@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import clsx from "clsx";
@@ -8,6 +9,7 @@ import { HelpToggle } from "@/components/help/HelpToggle";
 import { useHelp } from "@/components/help/HelpProvider";
 import { useBrand } from "@/components/BrandProvider";
 import { AISG_DOCS_URL, BRAND_NAME, BRAND_TAGLINE } from "@/lib/brand";
+import { DEMO_MODE } from "@/lib/demo";
 
 // AISchemaGate accounts only see what their product uses (LLM output
 // validation). Hidden: DataContractGate docs/demos and the data-pipeline tools
@@ -43,13 +45,26 @@ const ACCOUNT_NAV = [
   { href: "/account",    label: "Account",    icon: "🔑", helpId: "nav.account" },
 ];
 
-function NavLink({ href, label, icon, helpId }: { href: string; label: string; icon: string; helpId: string }) {
+function NavLink({
+  href,
+  label,
+  icon,
+  helpId,
+  onNavigate,
+}: {
+  href: string;
+  label: string;
+  icon: string;
+  helpId: string;
+  onNavigate?: () => void;
+}) {
   const pathname = usePathname();
   const active = pathname === href;
   return (
     <HelpTarget id={helpId}>
       <Link
         href={href}
+        onClick={onNavigate}
         className={clsx(
           "flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors",
           active
@@ -64,14 +79,92 @@ function NavLink({ href, label, icon, helpId }: { href: string; label: string; i
   );
 }
 
+function MenuIcon() {
+  return (
+    <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true">
+      <path d="M3 5h14M3 10h14M3 15h14" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+function CloseIcon() {
+  return (
+    <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true">
+      <path d="M5 5l10 10M15 5L5 15" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" />
+    </svg>
+  );
+}
+
 export default function Sidebar() {
   const { mode, toggle } = useHelp();
   const brand = useBrand();
+  const pathname = usePathname();
+  const [open, setOpen] = useState(false);
   const aisg = brand === "aisg";
   const publicNav = aisg ? [AISG_DOCS, ...PUBLIC_NAV.filter((i) => !AISG_HIDDEN.has(i.href))] : PUBLIC_NAV;
   const accountNav = aisg ? ACCOUNT_NAV.filter((i) => !AISG_HIDDEN.has(i.href)) : ACCOUNT_NAV;
+  const close = () => setOpen(false);
+
+  useEffect(() => {
+    setOpen(false);
+  }, [pathname]);
+
+  useEffect(() => {
+    if (!open) return;
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setOpen(false);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => {
+      document.body.style.overflow = prev;
+      window.removeEventListener("keydown", onKey);
+    };
+  }, [open]);
+
   return (
-    <aside className="hidden md:flex fixed left-0 top-0 h-full w-64 bg-[#111827] border-r border-[#1f2937] flex-col z-50">
+    <>
+      <div
+        className={clsx(
+          "md:hidden fixed inset-x-0 z-50 h-14 flex items-center gap-2 px-2 pr-14 border-b border-[#1f2937] bg-[#0a0d12]",
+          DEMO_MODE ? "top-9" : "top-0",
+        )}
+      >
+        <button
+          type="button"
+          className="inline-flex h-10 w-10 items-center justify-center rounded-lg text-slate-200 hover:bg-[#1f2937]"
+          aria-expanded={open}
+          aria-controls="app-sidebar"
+          aria-label={open ? "Close menu" : "Open menu"}
+          onClick={() => setOpen((v) => !v)}
+        >
+          {open ? <CloseIcon /> : <MenuIcon />}
+        </button>
+        <span className="truncate text-base font-bold text-green-400">{BRAND_NAME[brand]}</span>
+      </div>
+
+      {open && (
+        <div
+          className={clsx(
+            "md:hidden fixed inset-x-0 bottom-0 z-40 bg-black/60",
+            DEMO_MODE ? "top-[calc(36px+3.5rem)]" : "top-14",
+          )}
+          onClick={close}
+        />
+      )}
+
+      <aside
+        id="app-sidebar"
+        className={clsx(
+          "fixed left-0 z-50 w-64 bg-[#111827] border-r border-[#1f2937] flex-col",
+          "md:top-0 md:flex md:h-full",
+          open ? "flex" : "hidden",
+          DEMO_MODE
+            ? "top-[calc(36px+3.5rem)] h-[calc(100%-36px-3.5rem)]"
+            : "top-14 h-[calc(100%-3.5rem)]",
+        )}
+      >
       {/* Logo */}
       <div className="p-6 border-b border-[#1f2937]">
         <div className="flex flex-col">
@@ -93,7 +186,7 @@ export default function Sidebar() {
         {/* Public section */}
         <div className="space-y-1">
           {publicNav.map((item) => (
-            <NavLink key={item.href} {...item} />
+            <NavLink key={item.href} {...item} onNavigate={close} />
           ))}
         </div>
 
@@ -109,7 +202,7 @@ export default function Sidebar() {
         {/* Account section */}
         <div className="space-y-1">
           {accountNav.map((item) => (
-            <NavLink key={item.href} {...item} />
+            <NavLink key={item.href} {...item} onNavigate={close} />
           ))}
         </div>
       </nav>
@@ -120,5 +213,6 @@ export default function Sidebar() {
         <p className="text-xs text-slate-600">v{process.env.NEXT_PUBLIC_APP_VERSION}</p>
       </div>
     </aside>
+    </>
   );
 }

@@ -32,7 +32,21 @@ async function requestBrand(): Promise<Brand> {
 
 export async function generateMetadata(): Promise<Metadata> {
   if ((await requestBrand()) === "aisg") {
-    return { ...metadata, title: AISG_TITLE, description: AISG_DESCRIPTION };
+    return {
+      ...metadata,
+      title: { default: AISG_TITLE, template: "%s — AISchemaGate" },
+      description: AISG_DESCRIPTION,
+      openGraph: {
+        ...metadata.openGraph,
+        title: AISG_TITLE,
+        description: AISG_DESCRIPTION,
+      },
+      twitter: {
+        ...metadata.twitter,
+        title: AISG_TITLE,
+        description: AISG_DESCRIPTION,
+      },
+    };
   }
   return metadata;
 }
@@ -41,7 +55,10 @@ const metadata: Metadata = {
   // Resolves the opengraph-image.jpg / twitter-image.jpg file conventions in
   // this directory into absolute URLs.
   metadataBase: new URL(SITE_URL),
-  title: TITLE,
+  title: {
+    default: TITLE,
+    template: "%s — DataContractGate",
+  },
   description: DESCRIPTION,
   openGraph: {
     title: TITLE,
@@ -85,7 +102,13 @@ export default async function RootLayout({
         {DEMO_MODE && <DemoBanner />}
         <Sidebar />
         <ClientOrgProvider />
-        <main className={`flex-1 ml-0 md:ml-64 p-8 min-h-screen${DEMO_MODE ? " pt-[calc(2rem+36px)]" : ""}`}>
+        <main
+          className={`flex-1 min-w-0 ml-0 md:ml-64 min-h-screen ${
+            DEMO_MODE
+              ? "px-4 pb-4 pt-[calc(36px+4rem)] md:px-8 md:pb-8 md:pt-[calc(36px+2rem)]"
+              : "px-4 pb-4 pt-16 md:p-8"
+          }`}
+        >
           {children}
         </main>
         {/* Vercel Web Analytics.

@@ -701,30 +701,30 @@ export default function StreamDemoPage() {
       <div className="bg-[#111827] border border-[#1f2937] rounded-xl p-4">
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4 items-end">
           <div>
-            <label className="block text-[10px] text-slate-500 uppercase tracking-wider mb-1.5">Scenario</label>
-            <select value={scenario} onChange={(e) => setScenario(e.target.value as "simple" | "nested")} disabled={running}
+            <label htmlFor="stream-scenario" className="block text-[10px] text-slate-500 uppercase tracking-wider mb-1.5">Scenario</label>
+            <select id="stream-scenario" value={scenario} onChange={(e) => setScenario(e.target.value as "simple" | "nested")} disabled={running}
               className="w-full bg-[#0a0d12] border border-[#1f2937] text-slate-300 text-sm rounded-lg px-3 py-2 outline-none focus:border-green-700 disabled:opacity-50">
               <option value="simple">simple — flat click-stream</option>
               <option value="nested">nested — e-commerce order</option>
             </select>
           </div>
           <div>
-            <label className="block text-[10px] text-slate-500 uppercase tracking-wider mb-1.5">Fail ratio (% violating)</label>
-            <input type="number" min={0} max={100} step={1} value={failPct}
+            <label htmlFor="stream-fail-pct" className="block text-[10px] text-slate-500 uppercase tracking-wider mb-1.5">Fail ratio (% violating)</label>
+            <input id="stream-fail-pct" type="number" min={0} max={100} step={1} value={failPct}
               onChange={(e) => setFailPct(Math.max(0, Math.min(100, Number(e.target.value) || 0)))}
               disabled={running}
               className="w-full bg-[#0a0d12] border border-[#1f2937] text-slate-300 text-sm rounded-lg px-3 py-2 outline-none focus:border-green-700 disabled:opacity-50" />
           </div>
           <div>
-            <label className="block text-[10px] text-slate-500 uppercase tracking-wider mb-1.5">Target rate (ev/s, 0 = max)</label>
-            <input type="number" min={0} step={1000} value={targetRate}
+            <label htmlFor="stream-target-rate" className="block text-[10px] text-slate-500 uppercase tracking-wider mb-1.5">Target rate (ev/s, 0 = max)</label>
+            <input id="stream-target-rate" type="number" min={0} step={1000} value={targetRate}
               onChange={(e) => setTargetRate(Math.max(0, Number(e.target.value) || 0))}
               disabled={running}
               className="w-full bg-[#0a0d12] border border-[#1f2937] text-slate-300 text-sm rounded-lg px-3 py-2 outline-none focus:border-green-700 disabled:opacity-50" />
           </div>
           <div>
-            <label className="block text-[10px] text-slate-500 uppercase tracking-wider mb-1.5">Duration (s, 0 = until stop)</label>
-            <input type="number" min={0} step={5} value={durationSecs}
+            <label htmlFor="stream-duration" className="block text-[10px] text-slate-500 uppercase tracking-wider mb-1.5">Duration (s, 0 = until stop)</label>
+            <input id="stream-duration" type="number" min={0} step={5} value={durationSecs}
               onChange={(e) => setDurationSecs(Math.max(0, Number(e.target.value) || 0))}
               disabled={running}
               className="w-full bg-[#0a0d12] border border-[#1f2937] text-slate-300 text-sm rounded-lg px-3 py-2 outline-none focus:border-green-700 disabled:opacity-50" />

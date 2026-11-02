@@ -1,6 +1,11 @@
+import type { Metadata } from "next";
 import Link from "next/link";
+import { pageMeta } from "@/lib/page-meta";
 
-export const metadata = { title: "Terms of Service — DataContractGate" };
+export const metadata: Metadata = pageMeta(
+  "Terms of service",
+  "Terms of service for the DataContractGate and AISchemaGate dashboard and APIs.",
+);
 
 export default function TermsPage() {
   return (
