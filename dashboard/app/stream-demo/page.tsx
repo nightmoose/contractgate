@@ -438,6 +438,12 @@ function ContractTab({ scenario }: { scenario: "simple" | "nested" }) {
       .catch((e) => { setErr(String(e)); setLoading(false); });
   }, [scenario]);
 
+  // Fixed links for the two allowed scenarios, so no user-controlled text reaches the href.
+  const RAW_CONTRACT_LINKS = {
+    simple: `${BASE}/demo/contract?scenario=simple`,
+    nested: `${BASE}/demo/contract?scenario=nested`,
+  } as const;
+
   const labels: Record<string, string> = {
     simple: "simple — flat click-stream",
     nested: "nested — e-commerce order",
@@ -452,7 +458,7 @@ function ContractTab({ scenario }: { scenario: "simple" | "nested" }) {
           <p className="text-sm text-slate-200 mt-0.5 font-mono">{labels[scenario]}</p>
         </div>
         <a
-          href={`${BASE}/demo/contract?scenario=${scenario}`}
+          href={RAW_CONTRACT_LINKS[scenario === "nested" ? "nested" : "simple"]}
           target="_blank"
           rel="noreferrer"
           className="text-xs text-slate-500 hover:text-slate-300 underline underline-offset-2"
