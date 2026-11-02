@@ -127,6 +127,8 @@ them by name only.
 
 ---
 
+*2026-11-02 — Demo improvements: the hosted live stream demo is retired in favour of a self-contained local Docker demo. The gateway drops the five public `/demo/*` SSE routes, the in-process `stream_demo` module, and its request-timeout exemption, so every route now sits inside the one 30s budget. The dashboard `/stream-demo` page is gone and `/stream-demo` 307s to `/playground`. "See it run" now points at the local throughput demo (`docker compose -f docker-compose.kafka-demo.yml up -d` + `cargo run --features demo --bin demo`, dashboard on `localhost:8088`) and the full zero-auth stack (`make demo`). The gateway image publishes to `ghcr.io/contractgate/gateway` on `main` and version tags for a one-line `docker run` quickstart. See `README.md` → "Run the demo locally" and `demo/README.md`.*
+
 *2026-10-30 — RFC-110: Free quarantine caps (50,000 per organization and 10,000 per contract, shared by DataContractGate and AISchemaGate) live in `src/plan.rs`. A full cap counts new failures under Drops. Hosted Kafka and Kinesis consumers use that decision and do not publish a counted drop to the quarantine topic. Replay and bulk replay return 403 `plan_required`. Migration 046 redacts leftover Free bodies and keeps the rows. A downgrade waits 30 days. See `docs/quarantine-plan-reference.md`.*
 
 *2026-10-30 — RFC-109: failing records can be counted and not stored (`on_fail: drop`). Quarantine stays the default for DataContractGate and AISchemaGate. The safety cap is watch-only until enforcement is enabled. Drop counts are minute buckets kept 30 days. See `docs/drop-mode-reference.md`.*

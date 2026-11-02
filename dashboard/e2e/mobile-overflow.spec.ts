@@ -27,7 +27,6 @@ const ROUTES: { path: string; title: string }[] = [
   { path: "/scaffold", title: "Sign in — DataContractGate" },
   { path: "/workbench", title: "Sign in — DataContractGate" },
   { path: "/account", title: "Sign in — DataContractGate" },
-  { path: "/stream-demo", title: "Stream demo — DataContractGate" },
   { path: "/privacy", title: "Privacy policy — DataContractGate" },
   { path: "/terms", title: "Terms of service — DataContractGate" },
   { path: "/billing/success", title: "Sign in — DataContractGate" },

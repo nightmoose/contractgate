@@ -27,8 +27,8 @@ The server log line for that 504 names the **route** and the **stage**.
 | `statement_timeout` | 15s. Response is 504 `database statement timed out` |
 | `idle_in_transaction_session_timeout` | 15s |
 
-`GET /demo/stream` and `GET /demo/events` are not under the 30s budget (SSE).
-Every other route is, including `POST /contracts/{id}/versions/{version}/promote`.
+Every route is under the 30s budget, including
+`POST /contracts/{id}/versions/{version}/promote`.
 
 A timed-out promote applies nothing. Retrying is safe: promote is one
 conditional `UPDATE` (`WHERE state = 'draft'`).
