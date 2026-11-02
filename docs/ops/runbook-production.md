@@ -32,6 +32,8 @@ curl -sS https://api.datacontractgate.com/ready
 
 **Gotcha:** `/health` 200 while JWT path panics → dashboard “CORS”/502. Always check **logs** for panics (see §6).
 
+The pool pings an idle connection before checkout and closes it when the ping errors or exceeds 2 seconds, so a dead socket is replaced instead of wedging every later request. Connections older than `CONTRACTGATE_DB_POOL_MAX_LIFETIME_SECS` (default 30 minutes; acquire timeout stays 8s, idle timeout 60s) are closed even if they stay busy. `fly.toml` probes `GET /ready` every 15s (5s timeout, 30s grace). One failure returns 503 and the service check stops routing to that machine; it does not restart it. Three consecutive failures exit the process. `[[restart]]` `policy = "on-failure"` (10 retries) starts it again. `policy = "always"` is not used: it would fight `auto_stop_machines`.
+
 ---
 
 ## 3. Deploy
@@ -83,6 +85,7 @@ Set via `fly secrets set` (never commit).
 | `RUST_LOG` | No | e.g. `contractgate=info,tower_http=warn` |
 | `SUPABASE_URL` | If pooler breaks JWKS | Explicit project URL for JWKS fetch |
 | `USAGE_RECONCILE_INTERVAL_SECS` | No | RFC-083 counter reconcile period (default `21600` = 6h, min 300) |
+| `CONTRACTGATE_DB_POOL_MAX_LIFETIME_SECS` | No | Recycle Postgres connections after this many seconds (default `1800`). `0` or non-numeric is ignored. |
 | `CONTRACTGATE_DEV_NO_AUTH` | **Never in prod** | Disables auth when `1` |
 
 Dashboard (Vercel) separately needs Supabase anon/service keys, Stripe, `NEXT_PUBLIC_API_URL`, etc.
@@ -127,7 +130,7 @@ After max restart count, machines stay **stopped** → edge **502** with **no CO
 ### C. `/ready` 503 / degraded
 
 1. Supabase outage or wrong `DATABASE_URL`
-2. Pool exhausted (check idle/size in `/ready` JSON when partially up)
+2. Pool exhausted (check idle/size in `/ready` JSON when partially up). A pool that stays failed exits after three probes and Fly restarts the machine; a single 503 does not.
 3. Network from Fly region to Supabase
 
 ### D. Stripe “paid but still free”

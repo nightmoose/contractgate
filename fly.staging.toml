@@ -32,15 +32,29 @@ primary_region = 'iad'
     hard_limit = 200
     soft_limit = 150
 
+  # Same readiness contract as production fly.toml. One failed /ready
+  # stops routing; three consecutive failures exit the process and
+  # [[restart]] brings the machine back.
+  [[http_service.checks]]
+    grace_period = '30s'
+    interval = '15s'
+    timeout = '5s'
+    method = 'GET'
+    path = '/ready'
+
 [checks]
   [checks.ready]
     port = 3001
     type = 'http'
-    interval = '30s'
+    interval = '15s'
     timeout = '5s'
-    grace_period = '20s'
+    grace_period = '30s'
     method = 'GET'
     path = '/ready'
+
+[[restart]]
+  policy = 'on-failure'
+  retries = 10
 
 [[vm]]
   cpu_kind = 'shared'
