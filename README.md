@@ -163,7 +163,7 @@ pip install contractgate
 ```python
 from contractgate import Client
 client = Client(base_url="http://localhost:8080", api_key="cg_demo_key")
-client.validate(contract_id="...", event={"user_id": "u1", "event_type": "click"})
+client.ingest(contract_id="...", events={"user_id": "u1", "event_type": "click"})
 ```
 
 **CLI:**
