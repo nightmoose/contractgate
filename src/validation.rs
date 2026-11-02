@@ -1426,6 +1426,9 @@ mod tests {
             quality: vec![],
             envelope: None,
             null_as_absent: false,
+            on_fail: crate::contract::OnFailMode::Quarantine,
+            on_fail_locked: false,
+            quarantine_guard: crate::contract::QuarantineGuardConfig::default(),
         }
     }
 

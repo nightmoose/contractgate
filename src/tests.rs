@@ -87,6 +87,9 @@ mod fixtures {
             quality: vec![],
             envelope: None,
             null_as_absent: false,
+            on_fail: crate::contract::OnFailMode::Quarantine,
+            on_fail_locked: false,
+            quarantine_guard: crate::contract::QuarantineGuardConfig::default(),
         }
     }
 
@@ -113,6 +116,9 @@ mod fixtures {
             quality,
             envelope: None,
             null_as_absent: false,
+            on_fail: crate::contract::OnFailMode::Quarantine,
+            on_fail_locked: false,
+            quarantine_guard: crate::contract::QuarantineGuardConfig::default(),
         }
     }
 }
@@ -780,6 +786,7 @@ mod odcs_tests {
             updated_at: Utc::now(),
             pii_salt: vec![0u8; 32],
             store_event_payloads: true,
+            fail_policy: None,
         }
     }
 
@@ -2098,6 +2105,9 @@ mod rfc028_tests {
             envelope: None,
             null_as_absent: false,
             egress_leakage_mode: EgressLeakageMode::Off,
+            on_fail: crate::contract::OnFailMode::Quarantine,
+            on_fail_locked: false,
+            quarantine_guard: crate::contract::QuarantineGuardConfig::default(),
         };
 
         let json_val = serde_json::to_value(&c).expect("Contract must serialize to JSON");
@@ -2148,6 +2158,9 @@ mod rfc028_tests {
             envelope: None,
             null_as_absent: false,
             egress_leakage_mode: EgressLeakageMode::Off,
+            on_fail: crate::contract::OnFailMode::Quarantine,
+            on_fail_locked: false,
+            quarantine_guard: crate::contract::QuarantineGuardConfig::default(),
         };
         let json_val = serde_json::to_value(&c).unwrap();
         assert!(
@@ -2217,6 +2230,9 @@ mod rfc028_tests {
             envelope: None,
             null_as_absent: false,
             egress_leakage_mode: EgressLeakageMode::default(),
+            on_fail: crate::contract::OnFailMode::Quarantine,
+            on_fail_locked: false,
+            quarantine_guard: crate::contract::QuarantineGuardConfig::default(),
         };
         assert_eq!(c.egress_leakage_mode, EgressLeakageMode::Off);
     }
@@ -2283,6 +2299,7 @@ mod rfc029_tests {
             validation_us: 42,
             action: "included",
             stripped_fields: vec![],
+            disposition: None,
         };
         let val = serde_json::to_value(&o).unwrap();
         assert_eq!(val["index"], 0);
@@ -2307,6 +2324,7 @@ mod rfc029_tests {
             validation_us: 8,
             action: "blocked",
             stripped_fields: vec!["internal_key".into()],
+            disposition: Some("quarantined"),
         };
         let val = serde_json::to_value(&o).unwrap();
         assert_eq!(val["index"], 3);
@@ -2328,6 +2346,12 @@ mod rfc029_tests {
             total: 2,
             passed: 2,
             failed: 0,
+            quarantined: 0,
+            dropped: 0,
+            on_fail_mode: "quarantine",
+            on_fail_source: "default",
+            auto_trip: None,
+            quarantine_cap: None,
             dry_run: false,
             disposition: "block",
             egress_leakage_mode: "off",
@@ -2342,6 +2366,7 @@ mod rfc029_tests {
                     validation_us: 5,
                     action: "included",
                     stripped_fields: vec![],
+                    disposition: None,
                 },
                 EgressOutcome {
                     index: 1,
@@ -2350,6 +2375,7 @@ mod rfc029_tests {
                     validation_us: 4,
                     action: "included",
                     stripped_fields: vec![],
+                    disposition: None,
                 },
             ],
         };
@@ -2371,6 +2397,12 @@ mod rfc029_tests {
             total: 1,
             passed: 1,
             failed: 0,
+            quarantined: 0,
+            dropped: 0,
+            on_fail_mode: "quarantine",
+            on_fail_source: "default",
+            auto_trip: None,
+            quarantine_cap: None,
             dry_run: true,
             disposition: "tag",
             egress_leakage_mode: "strip",
@@ -5694,7 +5726,8 @@ metrics: []
         let db_url = std::env::var("DATABASE_URL").expect("DATABASE_URL must be set");
         let pool = sqlx::PgPool::connect(&db_url).await.unwrap();
         let org = Uuid::new_v4();
-        seed_org(&pool, org, "free").await;
+        // Replay is Pro. This test checks a missing body, not the plan gate.
+        seed_org(&pool, org, "growth").await;
         let (identity, version) = storage::create_contract(
             &pool,
             "api_bugfix_replay",

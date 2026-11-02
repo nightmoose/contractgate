@@ -153,6 +153,9 @@ pub fn three_way_merge(base: Option<&Contract>, ours: &Contract, theirs: &Contra
         glossary: ours.glossary.clone(),
         metrics: ours.metrics.clone(),
         quality: ours.quality.clone(),
+        on_fail: ours.on_fail,
+        on_fail_locked: ours.on_fail_locked,
+        quarantine_guard: ours.quarantine_guard.clone(),
     };
 
     MergeResult {
@@ -234,6 +237,9 @@ mod tests {
             quality: vec![],
             envelope: None,
             null_as_absent: false,
+            on_fail: crate::contract::OnFailMode::Quarantine,
+            on_fail_locked: false,
+            quarantine_guard: crate::contract::QuarantineGuardConfig::default(),
         }
     }
 

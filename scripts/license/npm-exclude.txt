@@ -1,0 +1,18 @@
+# Production packages whose license is not MIT, ISC, BSD-2-Clause, BSD-3-Clause, or 0BSD.
+# Dev dependencies and peer dependencies are not installed for this check.
+# Names only (every version). Reviewed versions and reasons: docs/LICENSE-EXCEPTIONS.md.
+@img/sharp-libvips-linux-x64
+@img/sharp-linux-x64
+@opentelemetry/api
+@swc/helpers
+argparse
+baseline-browser-mapping
+caniuse-lite
+detect-libc
+fast-sha256
+json-metaschema
+oauth-sign
+postal-mime
+sharp
+zapier-platform-core
+zapier-platform-schema

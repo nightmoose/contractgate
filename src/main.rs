@@ -44,13 +44,14 @@ use uuid::Uuid;
 // shared with other binaries (e.g. src/bin/demo.rs).  We re-export it here so
 // existing submodules that refer to `crate::contract` / `crate::validation`
 // continue to resolve unchanged.
-pub use contractgate::{contract, transform, validation};
+pub use contractgate::{contract, drop_mode, transform, validation};
 
 mod api_key_auth;
 mod collaboration;
 mod conformance;
 mod egress;
 mod error;
+mod fail_policy;
 mod fivetran;
 mod fork_filter;
 mod idempotency;
@@ -76,8 +77,11 @@ mod plan;
 mod public_catalog;
 mod publication;
 mod quarantine;
+mod quarantine_actions;
+mod quarantine_cap;
 #[cfg(test)]
 mod rag_contract_tests;
+mod stream_fail;
 use contractgate::rate_limit;
 mod openapi_schemas;
 mod replay;
@@ -1713,6 +1717,26 @@ fn build_router(state: Arc<AppState>) -> Router {
             post(replay::replay_handler),
         )
         .route(
+            "/contracts/{id}/quarantine/export",
+            get(quarantine_actions::export_quarantine_csv),
+        )
+        .route(
+            "/contracts/{id}/quarantine/review",
+            post(quarantine_actions::review_quarantine_handler),
+        )
+        .route(
+            "/contracts/{id}/quarantine/summary",
+            get(quarantine_actions::quarantine_summary_handler),
+        )
+        .route(
+            "/contracts/{id}/quarantine/replay-bulk",
+            post(quarantine_actions::replay_bulk_handler),
+        )
+        .route(
+            "/contracts/{id}/quarantine/replay-jobs/{job_id}",
+            get(quarantine_actions::replay_job_handler),
+        )
+        .route(
             "/contracts/{id}/quarantine/{quar_id}/replay-history",
             get(replay::replay_history_handler),
         )
@@ -1743,6 +1767,27 @@ fn build_router(state: Arc<AppState>) -> Router {
         .route(
             "/contracts/{id}/payload-storage",
             axum::routing::patch(settings::set_contract_payload_storage_handler),
+        )
+        .route(
+            "/contracts/{id}/fail-policy",
+            get(fail_policy::get_fail_policy_handler).patch(fail_policy::set_fail_policy_handler),
+        )
+        .route(
+            "/contracts/{id}/drop-counts",
+            get(fail_policy::drop_counts_handler),
+        )
+        .route(
+            "/contracts/{id}/quarantine-guard/reset",
+            post(fail_policy::reset_contract_guard_handler),
+        )
+        .route(
+            "/settings/quarantine-guard",
+            get(fail_policy::get_account_guard_handler)
+                .patch(fail_policy::set_account_guard_handler),
+        )
+        .route(
+            "/settings/quarantine-guard/reset",
+            post(fail_policy::reset_account_guard_handler),
         )
         .route(
             "/contracts/{id}/purge-bodies",

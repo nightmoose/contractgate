@@ -12,6 +12,7 @@
 pub mod cli;
 pub mod contract;
 pub mod demo_seed;
+pub mod drop_mode;
 pub mod error;
 pub mod infer;
 pub mod infer_avro;

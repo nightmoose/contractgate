@@ -83,6 +83,7 @@ def build_ingest_request(
     version: Optional[str] = None,
     dry_run: bool = False,
     atomic: bool = False,
+    on_fail: Optional[str] = None,
     timeout: Optional[float] = None,
 ) -> RequestSpec:
     """Build a POST to ``/v1/ingest/{contract_id}``.
@@ -109,6 +110,8 @@ def build_ingest_request(
         params["dry_run"] = "true"
     if atomic:
         params["atomic"] = "true"
+    if on_fail is not None:
+        params["on_fail"] = on_fail
     return RequestSpec(
         method="POST",
         url=cfg.url(path),
@@ -127,6 +130,7 @@ def build_egress_request(
     version: Optional[str] = None,
     disposition: Optional[str] = None,
     dry_run: bool = False,
+    on_fail: Optional[str] = None,
     timeout: Optional[float] = None,
 ) -> RequestSpec:
     """Build a POST to ``/egress/{contract_id}``."""
@@ -138,6 +142,8 @@ def build_egress_request(
         params["dry_run"] = "true"
     if disposition is not None:
         params["disposition"] = disposition
+    if on_fail is not None:
+        params["on_fail"] = on_fail
     return RequestSpec(
         method="POST",
         url=cfg.url(f"/egress/{contract_id}"),

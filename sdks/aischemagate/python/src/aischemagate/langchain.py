@@ -46,6 +46,7 @@ class AISchemaGateParser(BaseOutputParser[Dict[str, Any]]):
     base_url: str = DEFAULT_BASE_URL
     version: Optional[str] = None
     disposition: Optional[str] = None
+    on_fail: Optional[str] = None
     dry_run: bool = False
     client: Optional[Any] = Field(default=None, repr=False, exclude=True)
 
@@ -59,6 +60,7 @@ class AISchemaGateParser(BaseOutputParser[Dict[str, Any]]):
             base_url=self.base_url,
             version=self.version,
             disposition=self.disposition,
+            on_fail=self.on_fail,
             client=self.client,
         )
 

@@ -82,21 +82,27 @@ stable version** of the contract.
 | Outcome   | Destination topic           | Headers added                      |
 |-----------|-----------------------------|------------------------------------|
 | Valid     | `cg-{contract_id}-clean`    | `cg-contract-version`              |
-| Invalid   | `cg-{contract_id}-quarantine` | `cg-contract-version`, `cg-violation-reason` |
+| Invalid, quarantine | `cg-{contract_id}-quarantine` | `cg-contract-version`, `cg-violation-reason` |
+| Invalid, drop | not published | — |
 
-The original payload is always preserved in the message value — invalid events
-are never mutated or dropped.
+Quarantine is the default. Drop mode, an enforcing safety cap, and a full Free
+quarantine cap (50,000 pending rows per organization, 10,000 per contract,
+shared with AISchemaGate) count the failure in `dropped_event_counts` and do
+not publish it. `on_fail_source` is `plan_cap` when the Free cap is the reason.
+Paid plans have no cap. Passing records are unchanged. The consumer does not
+insert `quarantine_events`.
 
-Invalid events also appear in the **Quarantine** tab of the dashboard and can
-be replayed after fixing the contract.
+A published invalid event keeps its payload. A counted drop is not written to
+the audit log.
 
 ---
 
 ## Audit Log
 
-Every event processed via Kafka is written to the audit log with
-`source = 'kafka'`. The `contract_version` field always reflects the version
-that produced the validation decision (audit honesty rule).
+Passing records and failures that are published to the quarantine topic are
+written to the audit log with `source = 'kafka'`. A counted drop is not.
+The `contract_version` field always reflects the version that produced the
+validation decision (audit honesty rule).
 
 ## Metering (RFC-083)
 

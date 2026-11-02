@@ -37,6 +37,7 @@ up to 1 000 objects.
 |---------------|---------|---------|-------------|
 | `disposition` | string  | `block` | How to handle failing records. |
 | `dry_run`     | boolean | `false` | Validate without writing to the database. |
+| `on_fail`     | string  | `quarantine` | `drop` counts a failure and stores nothing. Quarantine stays the default, including for AISchemaGate. See [Drop mode](drop-mode-reference.md). |
 
 ---
 

@@ -11,6 +11,7 @@ export type ValidateArgs = {
   contract_id?: string;
   yaml_content?: string;
   dry_run?: boolean;
+  on_fail?: "quarantine" | "drop";
 };
 
 export type DeployArgs = {
@@ -59,6 +60,7 @@ export async function validateEvents(gw: Gateway, args: ValidateArgs) {
   }
   return gw.ingest(args.contract_id!, args.events, {
     dryRun: args.dry_run !== false,
+    onFail: args.on_fail,
   });
 }
 
@@ -88,13 +90,24 @@ export type EgressArgs = {
   events: Record<string, unknown>[];
   disposition?: "block" | "fail" | "tag";
   dry_run?: boolean;
+  on_fail?: "quarantine" | "drop";
   version?: string;
+};
+
+export type DropCountArgs = {
+  contract_id: string;
+  hours?: number;
 };
 
 export function egressValidate(gw: Gateway, args: EgressArgs) {
   return gw.egress(args.contract_id, args.events, {
     dryRun: args.dry_run !== false,
     disposition: args.disposition,
+    onFail: args.on_fail,
     version: args.version,
   });
+}
+
+export function getDropCounts(gw: Gateway, args: DropCountArgs) {
+  return gw.dropCounts(args.contract_id, args.hours);
 }

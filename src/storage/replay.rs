@@ -157,6 +157,7 @@ pub struct QuarantineListRow {
     pub violation_count: i32,
     pub source_ip: Option<String>,
     pub created_at: chrono::DateTime<chrono::Utc>,
+    pub status: String,
     /// Number of replay attempts made against this source row (passes + fails).
     pub replay_count: i64,
     pub last_replayed_at: Option<chrono::DateTime<chrono::Utc>>,
@@ -192,6 +193,7 @@ pub async fn list_quarantine_events(
             qe.violation_count,
             qe.source_ip,
             qe.created_at,
+            qe.status,
             COALESCE(att.replay_count, 0) AS replay_count,
             att.last_replayed_at,
             att.last_replay_passed

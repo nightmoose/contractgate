@@ -6,7 +6,9 @@
  * (`specificationVersion: 'v4'`, `wrapGenerate`). Pass it to
  * `wrapLanguageModel` from the `ai` package.
  *
- * Generated JSON is checked with `POST /egress/{id}`. When `autoRepair` is
+ * Generated JSON is checked with `POST /egress/{id}`. The repair loop uses
+ * the in-memory output, so it works on every plan, including Free. Replay
+ * of a stored output is included with Pro. When `autoRepair` is
  * set, a bounded re-prompt runs only for semantic violations: `min` / `max`
  * (`range_violation`), `pattern` (`pattern_mismatch`), `enum`
  * (`enum_violation`), and `compliance_mode` (`undeclared_field`). The text
@@ -60,6 +62,8 @@ export interface GuardrailOutcome {
   payload: Record<string, unknown>;
   violations: Violation[];
   attempts: number;
+  /** True when egress counted the failure and stored nothing. */
+  dropped: boolean;
 }
 
 export interface AiSchemaGateGuardrailOptions {
@@ -71,6 +75,8 @@ export interface AiSchemaGateGuardrailOptions {
   client?: Client;
   version?: string;
   disposition?: 'block' | 'fail' | 'tag';
+  /** Default quarantine. `drop` counts a failed check and stores nothing. */
+  onFail?: 'quarantine' | 'drop';
   /** Default false, matching `LLMGate`: a live egress call. Set true to skip audit and quarantine. */
   dryRun?: boolean;
   /**
@@ -222,7 +228,13 @@ function outcomeFromEgress(
   if (ok && egress.payload.length > 0 && isRecord(egress.payload[0])) {
     payload = egress.payload[0];
   }
-  return { ok, payload, violations, attempts };
+  return {
+    ok,
+    payload,
+    violations,
+    attempts,
+    dropped: !ok && (egress.dropped > 0 || egress.on_fail_mode === 'drop'),
+  };
 }
 
 class GateSession {
@@ -230,6 +242,7 @@ class GateSession {
   readonly #contractId: string;
   readonly #version?: string;
   readonly #disposition?: 'block' | 'fail' | 'tag';
+  readonly #onFail?: 'quarantine' | 'drop';
   readonly #dryRun: boolean;
   readonly #autoRepair: boolean;
   readonly #maxRetries: number;
@@ -248,6 +261,7 @@ class GateSession {
     this.#contractId = opts.contractId;
     this.#version = opts.version;
     this.#disposition = opts.disposition;
+    this.#onFail = opts.onFail;
     this.#dryRun = opts.dryRun ?? false;
     this.#autoRepair = opts.autoRepair ?? false;
     this.#maxRetries = clampRetries(opts.maxRetries ?? 2);
@@ -283,6 +297,7 @@ class GateSession {
         events: [payload],
         version: this.#version,
         disposition: this.#disposition,
+        onFail: this.#onFail,
         dryRun: this.#dryRun,
       });
     } catch (err) {
@@ -301,6 +316,7 @@ class GateSession {
       payload: current,
       violations: [],
       attempts: 0,
+      dropped: false,
     };
     for (let attempt = 1; attempt <= total; attempt++) {
       const egress = await this.egress(current);
@@ -455,6 +471,7 @@ export function aischemagateGuardrail(opts: AiSchemaGateGuardrailOptions): AiSch
           payload: {},
           violations: [],
           attempts: 1,
+          dropped: false,
         };
         if (throwIfRejected) {
           throw new AiSchemaGateRejectedError(

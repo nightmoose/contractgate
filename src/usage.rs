@@ -26,6 +26,19 @@ pub struct UsageResponse {
     /// Percent of the cap used; `null` when unlimited.
     pub pct: Option<f64>,
     pub unlimited: bool,
+    /// Pending quarantine rows for this org. Ingest and egress share the count.
+    pub quarantine: QuarantineUsage,
+}
+
+#[derive(Debug, Serialize)]
+pub struct QuarantineUsage {
+    pub pending: i64,
+    /// Org cap. `null` when the plan has no cap.
+    pub cap: Option<i64>,
+    /// Per-contract cap. `null` when the plan has no cap.
+    pub contract_cap: Option<i64>,
+    /// `ok`, `near`, or `reached` against the org cap.
+    pub state: &'static str,
 }
 
 /// `GET /usage`
@@ -64,6 +77,8 @@ pub async fn usage_handler(
         }
     });
 
+    let quarantine = quarantine_usage(&state, org_id, &plan).await;
+
     Ok(Json(UsageResponse {
         plan,
         period_start,
@@ -72,7 +87,44 @@ pub async fn usage_handler(
         remaining,
         pct,
         unlimited,
+        quarantine,
     }))
+}
+
+async fn quarantine_usage(
+    state: &AppState,
+    org_id: Option<uuid::Uuid>,
+    plan: &str,
+) -> QuarantineUsage {
+    let cap = crate::plan::quarantine_row_cap_for(state.self_hosted, plan);
+    let contract_cap = crate::plan::per_contract_quarantine_cap_for(state.self_hosted, plan);
+    let pending = match org_id {
+        Some(org_id) => match storage::org_pending_quarantine_count(&state.db, org_id).await {
+            Ok(count) => count,
+            Err(err) => {
+                tracing::warn!("usage quarantine count failed: {err}");
+                0
+            }
+        },
+        None => 0,
+    };
+    let state_name = match cap {
+        Some(limit) if limit > 0 && pending >= limit => "reached",
+        Some(limit)
+            if limit > 0
+                && pending.saturating_mul(100)
+                    >= limit.saturating_mul(crate::plan::QUARANTINE_CAP_NEAR_PERCENT) =>
+        {
+            "near"
+        }
+        _ => "ok",
+    };
+    QuarantineUsage {
+        pending,
+        cap,
+        contract_cap,
+        state: state_name,
+    }
 }
 
 #[cfg(test)]
@@ -89,6 +141,12 @@ mod tests {
             remaining: Some(999_900),
             pct: Some(0.01),
             unlimited: false,
+            quarantine: QuarantineUsage {
+                pending: 0,
+                cap: Some(50_000),
+                contract_cap: Some(10_000),
+                state: "ok",
+            },
         };
         let v = serde_json::to_value(&resp).unwrap();
         let keys: std::collections::BTreeSet<&str> =
@@ -101,6 +159,7 @@ mod tests {
             "remaining",
             "pct",
             "unlimited",
+            "quarantine",
         ]
         .into_iter()
         .collect();

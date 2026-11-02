@@ -87,6 +87,10 @@ class ServerError(HTTPError):
     """5xx — server fault. Retry with backoff if appropriate."""
 
 
+class PlanRequiredError(HTTPError):
+    """403 ``plan_required`` — the action is included with Pro."""
+
+
 def status_to_exception(status: int) -> type[HTTPError]:
     """Map an HTTP status to the most specific ``HTTPError`` subclass."""
     if status == 400:
@@ -111,6 +115,12 @@ def raise_for_status(status: int, body: Any, default_message: Optional[str] = No
     """
     if 200 <= status < 300:
         return
+    if isinstance(body, dict) and body.get("error") == "plan_required":
+        message = body.get("message")
+        msg = message if isinstance(message, str) and message else (
+            _extract_error_message(body) or "plan_required"
+        )
+        raise PlanRequiredError(msg, status=status, body=body)
     cls = status_to_exception(status)
     msg = default_message or _extract_error_message(body) or f"HTTP {status}"
     raise cls(msg, status=status, body=body)

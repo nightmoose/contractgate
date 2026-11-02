@@ -4,7 +4,10 @@
 //! `cg-{contract_id}-raw`.  Each message is validated by the existing
 //! `validate_event()` engine; the result is routed to either the clean or
 //! quarantine output topic, and an `audit_log` row is written with
-//! `source = 'kafka'`.
+//! `source = 'kafka'`. A failure that resolves to drop — contract `on_fail`,
+//! an enforcing safety cap, or the Free quarantine cap — is counted in
+//! `dropped_event_counts` and is not published. Passing records still go to
+//! the clean topic.
 //!
 //! **Feature gate**: the rdkafka consumer loop is compiled only with
 //! `--features kafka-ingress`.  A zero-cost stub is always present so
@@ -218,12 +221,20 @@ mod inner {
         meter_org: Option<Uuid>,
         payload_bytes: Vec<u8>,
     ) {
-        // 1. Parse JSON — route to quarantine on failure.
+        // 1. Parse JSON. A parse failure is still a failure for on-fail routing.
         let event: Value = match serde_json::from_slice(&payload_bytes) {
             Ok(v) => v,
             Err(e) => {
                 let reason = format!("json_parse_error: {e}");
-                route_to_quarantine_raw(producer, contract_id, &payload_bytes, &reason).await;
+                route_parse_failure(
+                    state,
+                    producer,
+                    contract_id,
+                    meter_org,
+                    &payload_bytes,
+                    &reason,
+                )
+                .await;
                 return;
             }
         };
@@ -258,48 +269,180 @@ mod inner {
         // 4. Apply transforms (RFC-004).
         let transformed: TransformedPayload = apply_transforms(&compiled, event);
 
-        // 5. Route to clean or quarantine.
-        let output_topic = if result.passed {
-            format!("cg-{}-clean", contract_id)
-        } else {
-            format!("cg-{}-quarantine", contract_id)
-        };
-
-        let payload_str = transformed.as_value().to_string();
-        let violation_json = serde_json::to_string(&result.violations).unwrap_or_default();
-
-        let mut headers = OwnedHeaders::new()
-            .insert(Header {
-                key: "cg-contract-id",
-                value: Some(contract_id.to_string().as_bytes()),
-            })
-            .insert(Header {
-                key: "cg-contract-version",
-                value: Some(version_row.version.as_bytes()),
-            });
-
-        if !result.passed {
-            headers = headers.insert(Header {
-                key: "cg-violation-reason",
-                value: Some(violation_json.as_bytes()),
-            });
-        }
-
-        let _ = producer
-            .send(
-                FutureRecord::to(&output_topic)
-                    .payload(payload_str.as_bytes())
-                    .key("")
-                    .headers(headers),
-                Duration::from_secs(5),
+        // 5. Passing records go to the clean topic. Failures follow on-fail:
+        //    quarantine publishes, drop counts and does not publish.
+        if result.passed {
+            let payload_str = transformed.as_value().to_string();
+            let topic = format!("cg-{contract_id}-clean");
+            publish_kafka(
+                producer,
+                &topic,
+                payload_str.as_bytes(),
+                &version_row.version,
+                contract_id,
+                None,
             )
             .await;
+            write_kafka_audit(
+                state,
+                kafka_audit(
+                    contract_id,
+                    meter_org,
+                    &version_row.version,
+                    &result,
+                    transformed,
+                    validation_us,
+                ),
+            )
+            .await;
+            return;
+        }
 
-        // 6. Write audit log — source = 'kafka', version = matched version (audit honesty).
-        let audit = AuditEntryInsert {
+        let policy = crate::stream_fail::load_contract_policy(state, contract_id).await;
+        let route = crate::stream_fail::route_failures(
+            state,
+            meter_org,
             contract_id,
-            org_id: meter_org, // RFC-083: owning org so usage reconcile meters stream events
-            contract_version: version_row.version.clone(),
+            &compiled.contract,
+            &version_row.yaml_content,
+            &policy,
+            1,
+        )
+        .await;
+        let facts = crate::fail_policy::failure_facts(&result.violations);
+        match route {
+            crate::stream_fail::FailureRoute::PublishQuarantine => {
+                let violation_json = serde_json::to_string(&result.violations).unwrap_or_default();
+                let payload_str = transformed.as_value().to_string();
+                let topic = format!("cg-{contract_id}-quarantine");
+                publish_kafka(
+                    producer,
+                    &topic,
+                    payload_str.as_bytes(),
+                    &version_row.version,
+                    contract_id,
+                    Some(violation_json.as_bytes()),
+                )
+                .await;
+                write_kafka_audit(
+                    state,
+                    kafka_audit(
+                        contract_id,
+                        meter_org,
+                        &version_row.version,
+                        &result,
+                        transformed,
+                        validation_us,
+                    ),
+                )
+                .await;
+                if policy.is_ready() {
+                    crate::stream_fail::record_published_quarantine(
+                        state,
+                        meter_org,
+                        contract_id,
+                        1,
+                    )
+                    .await;
+                }
+            }
+            crate::stream_fail::FailureRoute::CountedDrop { source, sample } => {
+                crate::stream_fail::record_counted_drops(
+                    state,
+                    meter_org,
+                    contract_id,
+                    &version_row.version,
+                    source,
+                    sample,
+                    &[facts],
+                )
+                .await;
+            }
+        }
+    }
+
+    async fn route_parse_failure(
+        state: &AppState,
+        producer: &FutureProducer,
+        contract_id: Uuid,
+        meter_org: Option<Uuid>,
+        payload_bytes: &[u8],
+        reason: &str,
+    ) {
+        let version_row = match crate::storage::get_latest_stable_version(&state.db, contract_id)
+            .await
+        {
+            Ok(Some(v)) => v,
+            Ok(None) => {
+                tracing::warn!(contract_id = %contract_id, "no stable version; quarantining unparsed record");
+                route_to_quarantine_raw(producer, contract_id, payload_bytes, reason).await;
+                return;
+            }
+            Err(e) => {
+                tracing::error!(contract_id = %contract_id, "version lookup: {e}");
+                route_to_quarantine_raw(producer, contract_id, payload_bytes, reason).await;
+                return;
+            }
+        };
+        let compiled = match state.get_compiled(contract_id, &version_row.version).await {
+            Ok(c) => c,
+            Err(e) => {
+                tracing::error!(contract_id = %contract_id, "compile: {e}");
+                route_to_quarantine_raw(producer, contract_id, payload_bytes, reason).await;
+                return;
+            }
+        };
+        let policy = crate::stream_fail::load_contract_policy(state, contract_id).await;
+        let route = crate::stream_fail::route_failures(
+            state,
+            meter_org,
+            contract_id,
+            &compiled.contract,
+            &version_row.yaml_content,
+            &policy,
+            1,
+        )
+        .await;
+        match route {
+            crate::stream_fail::FailureRoute::PublishQuarantine => {
+                route_to_quarantine_raw(producer, contract_id, payload_bytes, reason).await;
+                if policy.is_ready() {
+                    crate::stream_fail::record_published_quarantine(
+                        state,
+                        meter_org,
+                        contract_id,
+                        1,
+                    )
+                    .await;
+                }
+            }
+            crate::stream_fail::FailureRoute::CountedDrop { source, sample } => {
+                crate::stream_fail::record_counted_drops(
+                    state,
+                    meter_org,
+                    contract_id,
+                    &version_row.version,
+                    source,
+                    sample,
+                    &[crate::stream_fail::parse_failure()],
+                )
+                .await;
+            }
+        }
+    }
+
+    fn kafka_audit(
+        contract_id: Uuid,
+        meter_org: Option<Uuid>,
+        version: &str,
+        result: &crate::validation::ValidationResult,
+        transformed: TransformedPayload,
+        validation_us: i64,
+    ) -> AuditEntryInsert {
+        AuditEntryInsert {
+            contract_id,
+            org_id: meter_org,
+            contract_version: version.to_string(),
             passed: result.passed,
             violation_count: result.violations.len() as i32,
             violation_details: serde_json::to_value(&result.violations).unwrap_or_default(),
@@ -310,9 +453,12 @@ mod inner {
             pre_assigned_id: None,
             replay_of_quarantine_id: None,
             direction: "ingress".to_string(),
-        };
+        }
+    }
 
-        // Downstream topic publish uses `payload_str` in memory only. This
+    async fn write_kafka_audit(state: &AppState, audit: AuditEntryInsert) {
+        let contract_id = audit.contract_id;
+        // Downstream topic publish uses the payload in memory only. This
         // consumer does not insert `forwarded_events`.
         // RFC-086: gate event-body storage for this contract (one indexed read).
         let store_payloads =
@@ -322,6 +468,40 @@ mod inner {
         if let Err(e) = log_audit_entries_batch(&state.db, &[audit], store_payloads).await {
             tracing::error!(contract_id = %contract_id, "audit log write: {e}");
         }
+    }
+
+    async fn publish_kafka(
+        producer: &FutureProducer,
+        topic: &str,
+        payload: &[u8],
+        version: &str,
+        contract_id: Uuid,
+        violation_json: Option<&[u8]>,
+    ) {
+        let mut headers = OwnedHeaders::new()
+            .insert(Header {
+                key: "cg-contract-id",
+                value: Some(contract_id.to_string().as_bytes()),
+            })
+            .insert(Header {
+                key: "cg-contract-version",
+                value: Some(version.as_bytes()),
+            });
+        if let Some(violation_json) = violation_json {
+            headers = headers.insert(Header {
+                key: "cg-violation-reason",
+                value: Some(violation_json),
+            });
+        }
+        let _ = producer
+            .send(
+                FutureRecord::to(topic)
+                    .payload(payload)
+                    .key("")
+                    .headers(headers),
+                Duration::from_secs(5),
+            )
+            .await;
     }
 
     /// Route raw (unparseable) bytes to quarantine with a cg-violation-reason header.
@@ -373,3 +553,103 @@ mod inner {
 // ── Public re-export ─────────────────────────────────────────────────────────
 
 pub use inner::ConsumerPool;
+
+#[cfg(test)]
+mod tests {
+    use crate::contract::{OnFailMode, OnFailSource};
+    use crate::drop_mode::PlanCapCounts;
+    use crate::stream_fail::{
+        failure_route, free_cap_counts, route_resolved, stream_input, FailureRoute,
+    };
+
+    #[test]
+    fn kafka_consumer_at_org_cap_counts_the_drop_and_does_not_publish() {
+        let route = route_resolved(
+            &stream_input(OnFailMode::Quarantine, false),
+            free_cap_counts(50_000, 1),
+        );
+        assert_eq!(
+            route,
+            FailureRoute::CountedDrop {
+                source: OnFailSource::PlanCap,
+                sample: false,
+            }
+        );
+        assert!(!route.publishes_quarantine());
+    }
+
+    #[test]
+    fn kafka_consumer_under_the_cap_still_publishes() {
+        let route = route_resolved(
+            &stream_input(OnFailMode::Quarantine, false),
+            free_cap_counts(49_999, 9_999),
+        );
+        assert_eq!(route, FailureRoute::PublishQuarantine);
+        assert!(route.publishes_quarantine());
+    }
+
+    #[test]
+    fn kafka_consumer_paid_plan_still_publishes() {
+        let uncapped = PlanCapCounts {
+            org_pending: 80_000,
+            org_limit: None,
+            contract_pending: 20_000,
+            contract_limit: None,
+            near_percent: 80,
+        };
+        let route = route_resolved(&stream_input(OnFailMode::Quarantine, false), uncapped);
+        assert_eq!(route, FailureRoute::PublishQuarantine);
+    }
+
+    #[test]
+    fn kafka_consumer_drop_mode_counts_and_does_not_publish() {
+        let mut input = stream_input(OnFailMode::Drop, true);
+        input.contract_guard.config.sample_drops = true;
+        let route = route_resolved(&input, free_cap_counts(1, 1));
+        assert_eq!(
+            route,
+            FailureRoute::CountedDrop {
+                source: OnFailSource::Contract,
+                sample: true,
+            }
+        );
+        assert!(!route.publishes_quarantine());
+    }
+
+    #[test]
+    fn kafka_consumer_safety_cap_beats_a_full_plan_cap() {
+        let mut input = stream_input(OnFailMode::Quarantine, false);
+        input.contract_guard.config.enforce = true;
+        input.contract_guard.config.max_per_minute = Some(1);
+        input.contract_guard.volume.minute = 5;
+        let route = route_resolved(&input, free_cap_counts(50_000, 10_000));
+        assert_eq!(
+            route,
+            FailureRoute::CountedDrop {
+                source: OnFailSource::AutoTrip,
+                sample: false,
+            }
+        );
+    }
+
+    #[test]
+    fn kafka_consumer_plan_cap_does_not_keep_drop_samples() {
+        let mut input = stream_input(OnFailMode::Quarantine, false);
+        input.contract_guard.config.sample_drops = true;
+        let route = route_resolved(&input, free_cap_counts(50_000, 0));
+        assert_eq!(
+            failure_route(&crate::drop_mode::apply_plan_cap(
+                crate::drop_mode::resolve_on_fail(&input),
+                free_cap_counts(50_000, 0),
+            )),
+            route
+        );
+        assert_eq!(
+            route,
+            FailureRoute::CountedDrop {
+                source: OnFailSource::PlanCap,
+                sample: false,
+            }
+        );
+    }
+}

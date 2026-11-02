@@ -51,7 +51,7 @@ For vLLM / Ollama OpenAI-compat, call `gate.completion(...)` unchanged.
 
 ## Vercel AI SDK guardrail
 
-`aischemagateGuardrail` is a `LanguageModelV4Middleware`. It does not depend on the `ai` package. `wrapGenerate` reads the JSON object from text content (or a tool-call `input`) and posts it to `POST /egress/{id}`. On success the model text is replaced with the egress payload. Set `autoRepair: true` to re-prompt, up to `maxRetries` extra calls (hard cap 5), when `min`, `max`, `pattern`, `enum`, or `compliance_mode` fails.
+`aischemagateGuardrail` is a `LanguageModelV4Middleware`. It does not depend on the `ai` package. `wrapGenerate` reads the JSON object from text content (or a tool-call `input`) and posts it to `POST /egress/{id}`. On success the model text is replaced with the egress payload. Set `autoRepair: true` to re-prompt, up to `maxRetries` extra calls (hard cap 5), when `min`, `max`, `pattern`, `enum`, or `compliance_mode` fails. The repair loop uses that in-memory output, so it works on every plan. Replay of a stored output is included with Pro.
 
 ```ts
 import { generateText, Output, wrapLanguageModel } from 'ai';

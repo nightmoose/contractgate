@@ -148,6 +148,30 @@ def test_ingest_dry_run_and_atomic_become_query_params():
     assert "atomic=true" in captured["url"]
 
 
+def test_ingest_on_fail_becomes_query_param():
+    captured: Dict[str, Any] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured["url"] = str(request.url)
+        body = _ok_ingest_body(passed=0)
+        body["failed"] = 1
+        body["passed"] = 0
+        body["quarantined"] = 0
+        body["dropped"] = 1
+        body["on_fail_mode"] = "drop"
+        body["on_fail_source"] = "request"
+        return httpx.Response(200, json=body)
+
+    with Client(base_url="https://gw", api_key="k", transport=httpx.MockTransport(handler)) as cg:
+        response = cg.ingest(contract_id="abc", events=[{}], on_fail="drop")
+
+    assert "on_fail=drop" in captured["url"]
+    assert response.dropped == 1
+    assert response.quarantined == 0
+    assert response.on_fail_mode == "drop"
+    assert response.on_fail_source == "request"
+
+
 def test_ingest_207_does_not_raise():
     """207 Multi-Status carries per-event details — must surface, not raise."""
 
@@ -203,6 +227,26 @@ def test_status_codes_map_to_exceptions(status: int, exc: type):
             cg.ingest(contract_id="abc", events=[{}])
     assert ei.value.status == status
     assert ei.value.body == {"error": "boom"}
+
+
+def test_plan_required_maps_to_plan_required_error():
+    from contractgate.exceptions import PlanRequiredError
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            403,
+            json={
+                "error": "plan_required",
+                "message": "Replay is included with Pro.",
+                "feature": "quarantine_replay",
+            },
+        )
+
+    with Client(base_url="https://gw", api_key="k", transport=httpx.MockTransport(handler)) as cg:
+        with pytest.raises(PlanRequiredError) as ei:
+            cg.ingest(contract_id="abc", events=[{}])
+    assert ei.value.status == 403
+    assert "Pro" in str(ei.value)
 
 
 def test_network_error_wraps_to_connection_error():

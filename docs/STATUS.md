@@ -107,6 +107,9 @@ them by name only.
 | 105 | [ODCS v3.2 property enums, dual-brand MCP metadata, AISchemaGate guardrails](rfcs/105-odcs-v32-and-guardrail-recipes.md) | Shipped |
 | 106 | [Streaming chunk validation](rfcs/106-streaming-chunk-validation.md) | Draft |
 | 107 | [Python framework adapters](rfcs/107-python-framework-adapters.md) | Shipped |
+| 108 | [MIT-only dependency policy](rfcs/108-mit-only-dependencies.md) | Accepted |
+| 109 | [Drop mode for failing records](rfcs/109-drop-mode.md) | Accepted |
+| 110 | [Quarantine by plan](rfcs/110-quarantine-plan-split.md) | Accepted |
 
 ---
 
@@ -123,6 +126,12 @@ them by name only.
 | **Superseded** | Replaced by a later RFC listed in the notes column; kept for design context. |
 
 ---
+
+*2026-10-30 — RFC-110: Free quarantine caps (50,000 per organization and 10,000 per contract, shared by DataContractGate and AISchemaGate) live in `src/plan.rs`. A full cap counts new failures under Drops. Hosted Kafka and Kinesis consumers use that decision and do not publish a counted drop to the quarantine topic. Replay and bulk replay return 403 `plan_required`. Migration 046 redacts leftover Free bodies and keeps the rows. A downgrade waits 30 days. See `docs/quarantine-plan-reference.md`.*
+
+*2026-10-30 — RFC-109: failing records can be counted and not stored (`on_fail: drop`). Quarantine stays the default for DataContractGate and AISchemaGate. The safety cap is watch-only until enforcement is enabled. Drop counts are minute buckets kept 30 days. See `docs/drop-mode-reference.md`.*
+
+*2026-10-30 — RFC-108: dependency licenses allow MIT, ISC, BSD-2-Clause, BSD-3-Clause, and 0BSD. The MCP server uses `tmcp` (MIT) with `@tmcp/transport-stdio` and `@tmcp/adapter-zod`. `cargo deny` uses that allow list, and a `MIT OR …` crate still passes because MIT can be selected. npm and Python use the same licenses. Python names them with the pip-licenses classifier strings. Everything else is listed in `docs/LICENSE-EXCEPTIONS.md`. A pull request that changes a manifest or lockfile runs the check, and so does a weekly schedule.*
 
 *2026-10-28 — RFC-107: PyPI `aischemagate` 0.5.0 adds optional LangChain and LlamaIndex output parsers and an Instructor hook. Each calls the existing egress helper (`POST /egress/{contract_id}`, contract names via `GET /contracts`). The Instructor hook runs that structural check before Pydantic field validation. Streaming chunk validation stays RFC-106 (Draft) and is not implemented.*
 

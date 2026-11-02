@@ -111,6 +111,13 @@ Idempotency-Key: <opaque_string>        # optional
 | `results[].violations` | array | Validation violations (empty on pass). See the violation shape below. |
 | `results[].quarantine_id` | UUID \| null | ID of the quarantine row for rejected events. Use with the replay API. Always `null` on `dry_run=true` and on an atomic rejection, which store no quarantine rows. |
 | `results[].transformed_event` | object | Post-transform payload that was persisted (RFC-004).      |
+| `quarantined` | integer | Failures stored in quarantine. `0` on a dry run. |
+| `dropped` | integer | Failures counted and not stored. `0` on a dry run. |
+| `on_fail_mode` | string | `quarantine` (default) or `drop`. |
+| `on_fail_source` | string | `request`, `contract`, `default`, or `auto_trip`. |
+| `auto_trip` | object | Present when a safety cap is enforcing or would have tripped. |
+
+`?on_fail=drop` counts failing records and skips both the quarantine row and the audit row for those records. Quarantine stays the default. See [Drop mode](drop-mode-reference.md).
 
 ### Violation shape
 

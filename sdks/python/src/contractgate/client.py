@@ -82,6 +82,7 @@ class Client:
         version: Optional[str] = None,
         dry_run: bool = False,
         atomic: bool = False,
+        on_fail: Optional[str] = None,
         timeout: Optional[float] = None,
     ) -> BatchIngestResponse:
         """Validate + persist a batch via ``POST /v1/ingest/{contract_id}``.
@@ -102,6 +103,7 @@ class Client:
             version=version,
             dry_run=dry_run,
             atomic=atomic,
+            on_fail=on_fail,
             timeout=timeout,
         )
         try:
@@ -120,6 +122,7 @@ class Client:
         version: Optional[str] = None,
         disposition: Optional[str] = None,
         dry_run: bool = False,
+        on_fail: Optional[str] = None,
         timeout: Optional[float] = None,
     ) -> EgressResponse:
         """Validate an outbound payload via ``POST /egress/{contract_id}``.
@@ -134,6 +137,7 @@ class Client:
             version=version,
             disposition=disposition,
             dry_run=dry_run,
+            on_fail=on_fail,
             timeout=timeout,
         )
         _, body = self._dispatch(spec)

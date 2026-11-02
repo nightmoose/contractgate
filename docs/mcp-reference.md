@@ -76,6 +76,7 @@ Validate events against a deployed contract or against in-flight YAML.
 | `contract_id` | uuid | exactly one of `contract_id` / `yaml_content` |
 | `yaml_content` | string | exactly one of `contract_id` / `yaml_content` |
 | `dry_run` | boolean | no, default `true` |
+| `on_fail` | `quarantine` \| `drop` | no. Ingest only. Default `quarantine`. |
 
 - `contract_id` → `POST /v1/ingest/{contract_id}`. Default `dry_run=true` (no
   audit row, no quarantine, no metered usage). Set `dry_run=false` only after a
@@ -127,9 +128,19 @@ Save the returned `contract_id`. It is not a secret.
 | `events` | object[] | yes, ≥1 |
 | `disposition` | `block` \| `fail` \| `tag` | no, default `block` |
 | `dry_run` | boolean | no, default `true` |
+| `on_fail` | `quarantine` \| `drop` | no, default `quarantine` |
 | `version` | string | no, default latest stable |
 
-- Default `dry_run=true` — no audit row, no quarantine, no metered usage. Set `dry_run=false` only after a dry run has passed.
+- Default `dry_run=true` — no audit row, no quarantine, no metered usage. Set `dry_run=false` only after a dry run has passed. `on_fail=drop` counts a live failure and stores neither row. Quarantine stays the default.
+
+### `get_drop_counts`
+
+`GET /contracts/{id}/drop-counts`. Minute buckets of dropped failures by reason, kept 30 days. Counts and failure metadata only.
+
+| Argument | Type | Required |
+|---|---|---|
+| `contract_id` | uuid | yes |
+| `hours` | int | no, default 24, max 720 |
 - `200` / `207` / `422` all return the body. Read `outcomes[].violations` to repair failing records.
 - **Forward `response.payload` only.** Never forward the original request body after a `block` or `fail`.
 - `block` (default) drops failing records from `payload`; passing records still ship. `fail` rejects the entire batch atomically. `tag` passes all records through with per-record violation flags.

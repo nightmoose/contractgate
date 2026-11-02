@@ -337,6 +337,7 @@ mod tests {
             updated_at: Utc::now(),
             pii_salt: vec![],
             store_event_payloads: true,
+            fail_policy: None,
         }
     }
 
@@ -415,6 +416,9 @@ mod tests {
             quality,
             envelope: None,
             null_as_absent: false,
+            on_fail: crate::contract::OnFailMode::Quarantine,
+            on_fail_locked: false,
+            quarantine_guard: crate::contract::QuarantineGuardConfig::default(),
         }
     }
 
