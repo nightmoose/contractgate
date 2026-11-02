@@ -4,6 +4,32 @@
 
 Stop bad data **before** it reaches your warehouse, lakehouse, or ML pipeline.
 
+## Try it in 10 minutes (Self-Hosted Free)
+
+No Supabase account. No API keys. No sign-up.
+
+```bash
+git clone https://github.com/nightmoose/contractgate.git
+cd contractgate
+make demo
+```
+
+Opens at **http://localhost:3000** — dashboard pre-loaded with three starter
+contracts and a live event stream. First build ~3 min, subsequent runs instant
+(Docker layer cache).
+
+```bash
+make demo-reset   # wipe + reseed (clean slate)
+make demo-down    # stop and remove volumes
+make demo-logs    # follow all service logs
+```
+
+> **Self-Hosted Free** (`make demo`) runs the real gateway binary with auth off.
+> Unlimited local events, full YAML editor, playground, audit log.
+> [Feature comparison below ↓](#self-hosted-free-vs-cloud)
+
+![Purchase passes the user_events contract; delete is outside the enum and a negative amount is below the minimum](docs/images/validate-terminal.png)
+
 DataContractGate is a high-performance validation gateway that enforces rich semantic data contracts in real time. Built in Rust for sub-millisecond per-event validation (86k+ events/sec/core), it goes far beyond JSON Schema or basic type checks — ontology, glossary, patterns, enums, computed metrics, and automatic inference.
 
 The same contract can gate what **leaves** your system. `POST /egress/{contract_id}` runs the identical engine on any outbound payload — a reverse-ETL row, a notebook export, a state object headed to a decision model. Failing records are blocked, declared PII is masked, and the caller forwards only the returned `payload`. See [`docs/egress-validation-reference.md`](docs/egress-validation-reference.md).
@@ -69,30 +95,6 @@ Redpanda Connect (HTTP processor, no custom plugin): [`docs/examples/redpanda-co
 Zapier — validate the record a Zap just pulled, before the next step writes it. A failure is quarantined and the Zap stops. A pass continues with the payload DataContractGate returned. Setup and the `zapier-platform push` commands: [`docs/zapier.md`](docs/zapier.md). Source: [`zapier/`](zapier/).
 
 ---
-
-## Try it in 10 minutes (Self-Hosted Free)
-
-No Supabase account. No API keys. No sign-up.
-
-```bash
-git clone https://github.com/nightmoose/contractgate.git
-cd contractgate
-make demo
-```
-
-Opens at **http://localhost:3000** — dashboard pre-loaded with three starter
-contracts and a live event stream. First build ~3 min, subsequent runs instant
-(Docker layer cache).
-
-```bash
-make demo-reset   # wipe + reseed (clean slate)
-make demo-down    # stop and remove volumes
-make demo-logs    # follow all service logs
-```
-
-> **Self-Hosted Free** (`make demo`) runs the real gateway binary with auth off.
-> Unlimited local events, full YAML editor, playground, audit log.
-> [Feature comparison below ↓](#self-hosted-free-vs-cloud)
 
 ## Real login (self-host)
 
