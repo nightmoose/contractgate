@@ -54,8 +54,10 @@ Returned when the pool cannot serve `SELECT 1` within 2 seconds (pool
 exhausted, Supabase project paused, network partition).
 
 **Use as:** platform health check for traffic routing.  Fly.io and
-docker-compose are already configured to probe `/ready` so that traffic
-is drained from an instance whose DB pool is broken.
+docker-compose probe `/ready` so that traffic is drained from an instance
+whose DB pool is broken.  One failed probe does not restart the machine.
+Three consecutive failures exit the DataContractGate process; Fly's
+`on-failure` restart policy starts it again.
 
 ---
 
@@ -64,16 +66,31 @@ is drained from an instance whose DB pool is broken.
 ### Fly.io (`fly.toml`)
 
 ```toml
+[[http_service.checks]]
+  grace_period = '30s'
+  interval     = '15s'
+  timeout      = '5s'
+  method       = 'GET'
+  path         = '/ready'
+
 [checks]
   [checks.ready]
     port         = 3001
     type         = 'http'
     interval     = '15s'
     timeout      = '5s'
-    grace_period = '10s'
+    grace_period = '30s'
     method       = 'GET'
     path         = '/ready'
+
+[[restart]]
+  policy  = 'on-failure'
+  retries = 10
 ```
+
+The service check stops routing while `/ready` is non-2xx. The top-level
+check is the same path for `fly checks list`. `on-failure` restarts a
+non-zero exit (including the three-failure exit) and still allows autostop.
 
 ### docker-compose
 
