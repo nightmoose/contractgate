@@ -653,64 +653,6 @@ fn more_openapi_paths(paths: &mut serde_json::Map<String, Value>) {
     );
     merge_openapi_op(
         paths,
-        "/demo/start",
-        "post",
-        json!({
-            "operationId": "demo_start",
-            "summary": "Start the local stream demo",
-            "requestBody": {"required": true, "content": {"application/json": {"schema": {"type": "object", "required": ["scenario", "fail_ratio", "duration_secs"], "properties": {"scenario": {"type": "string"}, "fail_ratio": {"type": "number"}, "target_rate": {"type": ["integer", "null"]}, "duration_secs": {"type": "integer"}}}}}},
-            "responses": {
-                "200": {"description": "Started", "content": {"application/json": {"schema": {"type": "object", "properties": {"status": {"type": "string"}, "scenario": {"type": "string"}}}}}},
-                "400": {"description": "Unknown scenario"}
-            }
-        }),
-    );
-    merge_openapi_op(
-        paths,
-        "/demo/stop",
-        "post",
-        json!({
-            "operationId": "demo_stop",
-            "summary": "Stop the local stream demo",
-            "responses": {"200": {"description": "Stopped", "content": {"application/json": {"schema": {"type": "object", "properties": {"status": {"type": "string"}}}}}}}
-        }),
-    );
-    merge_openapi_op(
-        paths,
-        "/demo/stream",
-        "get",
-        json!({
-            "operationId": "demo_stream",
-            "summary": "Server-sent stats snapshots for the stream demo",
-            "responses": {"200": {"description": "text/event-stream of stats snapshots", "content": {"text/event-stream": {"schema": {"type": "string"}}}}}
-        }),
-    );
-    merge_openapi_op(
-        paths,
-        "/demo/events",
-        "get",
-        json!({
-            "operationId": "demo_events",
-            "summary": "Server-sent demo events",
-            "responses": {"200": {"description": "text/event-stream of demo events", "content": {"text/event-stream": {"schema": {"type": "string"}}}}}
-        }),
-    );
-    merge_openapi_op(
-        paths,
-        "/demo/contract",
-        "get",
-        json!({
-            "operationId": "demo_contract",
-            "summary": "YAML for a demo scenario",
-            "parameters": [{"name": "scenario", "in": "query", "required": false, "schema": {"type": "string", "enum": ["simple", "nested"], "default": "simple"}}],
-            "responses": {
-                "200": {"description": "Contract YAML", "content": {"text/plain": {"schema": {"type": "string"}}}},
-                "404": {"description": "Unknown scenario"}
-            }
-        }),
-    );
-    merge_openapi_op(
-        paths,
         "/public-contracts",
         "get",
         json!({

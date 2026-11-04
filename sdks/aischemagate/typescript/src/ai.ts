@@ -187,6 +187,7 @@ function egressFromBody(body: unknown): EgressResponse {
       violations,
       validation_us: typeof o['validation_us'] === 'number' ? o['validation_us'] : 0,
       action: String(o['action'] ?? ''),
+      disposition: typeof o['disposition'] === 'string' ? o['disposition'] : null,
     };
   });
   return {
@@ -198,6 +199,10 @@ function egressFromBody(body: unknown): EgressResponse {
     resolved_version: String(r['resolved_version'] ?? ''),
     payload: Array.isArray(r['payload']) ? r['payload'] : [],
     outcomes,
+    quarantined: typeof r['quarantined'] === 'number' ? r['quarantined'] : 0,
+    dropped: typeof r['dropped'] === 'number' ? r['dropped'] : 0,
+    on_fail_mode: typeof r['on_fail_mode'] === 'string' ? r['on_fail_mode'] : 'quarantine',
+    on_fail_source: typeof r['on_fail_source'] === 'string' ? r['on_fail_source'] : 'default',
   };
 }
 

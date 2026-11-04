@@ -35,11 +35,12 @@ test.describe("Public website surfaces", () => {
     expect(body.toLowerCase()).toMatch(/free|growth|enterprise|pricing|plan/);
   });
 
-  test("stream demo is publicly reachable", async ({ page }) => {
+  test("legacy stream-demo URL redirects to the playground", async ({ page }) => {
     const res = await page.goto("/stream-demo");
     expect(res?.status()).toBeLessThan(500);
+    // The hosted stream demo was retired; /stream-demo now lands on /playground.
+    await expect(page).toHaveURL(/\/playground/);
     await expect(page.locator("body")).toBeVisible();
-    // Should not hard-error
     const body = await page.locator("body").innerText();
     expect(body.toLowerCase()).not.toMatch(/internal server error|application error/);
   });

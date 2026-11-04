@@ -19,8 +19,8 @@ function Code({
     setTimeout(() => setCopied(false), 2000);
   };
   return (
-    <div className="relative group my-4">
-      <pre className="bg-[#0d1117] border border-[#1f2937] rounded-lg p-4 overflow-x-auto text-sm text-slate-300 font-mono leading-relaxed">
+    <div className="relative group my-4 min-w-0 max-w-full">
+      <pre className="bg-[#0d1117] border border-[#1f2937] rounded-lg p-4 overflow-x-auto max-w-full text-sm text-slate-300 font-mono leading-relaxed">
         <code>{children.trim()}</code>
       </pre>
       <button
@@ -600,7 +600,7 @@ export default function PythonSDKDocsPage() {
   const toc = activeTab === "readme" ? README_TOC : RFC_TOC;
 
   return (
-    <div className="flex gap-8 min-h-screen">
+    <div className="flex gap-8 min-h-screen min-w-0">
       {/* Sticky TOC sidebar */}
       <aside className="hidden xl:block w-52 flex-shrink-0 pt-10">
         <div className="sticky top-8">
@@ -636,7 +636,7 @@ export default function PythonSDKDocsPage() {
       </aside>
 
       {/* Main content */}
-      <main className="flex-1 max-w-3xl py-10 px-2">
+      <main className="flex-1 min-w-0 max-w-3xl py-10 px-2">
         {/* Breadcrumb + header */}
         <div className="mb-8">
           <div className="flex items-center gap-2 text-sm text-slate-500 mb-4">

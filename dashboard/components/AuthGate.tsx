@@ -29,7 +29,8 @@ export default function AuthGate({ page, children }: AuthGateProps) {
   // Loading — render nothing to avoid flash
   if (authed === null) return (
     <div className="flex items-center justify-center h-64">
-      <div className="w-5 h-5 border-2 border-green-600 border-t-transparent rounded-full animate-spin" />
+      <h1 className="sr-only">{PREVIEWS[page].title}</h1>
+      <div className="w-5 h-5 border-2 border-green-600 border-t-transparent rounded-full animate-spin" aria-hidden="true" />
     </div>
   );
 
@@ -53,7 +54,7 @@ export default function AuthGate({ page, children }: AuthGateProps) {
 
       {/* Copy */}
       <div className="text-center">
-        <h2 className="text-2xl font-bold text-slate-100 mb-3">{preview.title}</h2>
+        <h1 className="text-2xl font-bold text-slate-100 mb-3">{preview.title}</h1>
         <p className="text-slate-400 leading-relaxed mb-8 max-w-md mx-auto">
           {preview.description}
         </p>
@@ -73,7 +74,7 @@ export default function AuthGate({ page, children }: AuthGateProps) {
         </div>
         <p className="mt-5 text-xs text-slate-600">
           No credit card required · Free to start ·{" "}
-          <Link href="/stream-demo" className="text-green-600 hover:text-green-500">
+          <Link href="/playground" className="text-green-600 hover:text-green-500">
             Try the live demo first →
           </Link>
         </p>
