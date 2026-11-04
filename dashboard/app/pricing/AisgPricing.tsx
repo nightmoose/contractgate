@@ -18,7 +18,7 @@ const TIERS = [
     features: [
       "100,000 validations / month",
       "Python & TypeScript LLMGate SDKs",
-      "Hosted Rust validation engine (sub-15ms)",
+      "Hosted Rust validation engine",
       "Up to 3 schema contracts",
       "PII masking",
       "7-day validation log",
@@ -86,7 +86,7 @@ export default function AisgPricing() {
             {t.key === "pro" && <ProCta />}
             {t.key === "enterprise" && (
               <a
-                href="mailto:datacontractgate@nightmoose.com?subject=AISchemaGate%20Enterprise"
+                href="mailto:hello@datacontractgate.com?subject=AISchemaGate%20Enterprise"
                 className="block text-center py-2.5 rounded-lg text-sm font-semibold mb-6 bg-[#1f2937] hover:bg-[#2a3449] text-slate-200"
               >
                 Contact us
@@ -105,7 +105,7 @@ export default function AisgPricing() {
       </div>
 
       <p className="text-center text-xs text-slate-500 mt-8">
-        Enterprise inquiries: datacontractgate@nightmoose.com · Same account and API key as DataContractGate.
+        Enterprise inquiries: hello@datacontractgate.com · Same account and API key as DataContractGate.
       </p>
     </div>
   );
@@ -188,7 +188,7 @@ function ProCta() {
       });
       const data = await res.json();
       if (data.url) window.location.href = data.url;
-      else setError(data.error || "Could not start checkout. Try again, or contact datacontractgate@nightmoose.com.");
+      else setError(data.error || "Could not start checkout. Try again, or contact hello@datacontractgate.com.");
     } catch {
       setError("Network error starting checkout. Try again.");
     } finally {

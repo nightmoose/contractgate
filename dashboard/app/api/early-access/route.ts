@@ -1,9 +1,20 @@
 // app/api/early-access/route.ts
 import { NextResponse } from "next/server";
-import { Resend } from 'resend';
+import { SESv2Client, SendEmailCommand } from "@aws-sdk/client-sesv2";
 
-if (!process.env.RESEND_API_KEY) {
-  console.error("[early-access] ❌ RESEND_API_KEY is not set!");
+// Standard AWS env vars (AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY) are picked up
+// by the SDK's default credential provider chain — never hardcode credentials.
+const AWS_REGION = process.env.AWS_REGION || "us-east-1";
+
+// Verified sender identity on datacontractgate.com (see docs/email-sending-setup.md).
+const FROM_ADDRESS = "DataContractGate <no-reply@datacontractgate.com>";
+
+// Internal inbox that receives early-access requests. Kept out of source so the
+// public address can change without a code deploy.
+const NOTIFY_TO = process.env.EARLY_ACCESS_NOTIFY_TO;
+
+if (!NOTIFY_TO) {
+  console.error("[early-access] ❌ EARLY_ACCESS_NOTIFY_TO is not set!");
 }
 
 const CORS_HEADERS = {
@@ -28,14 +39,29 @@ export async function POST(req: Request) {
       );
     }
 
-    const resend = new Resend(process.env.RESEND_API_KEY);
+    if (!NOTIFY_TO) {
+      console.error(
+        "[early-access] EARLY_ACCESS_NOTIFY_TO is not configured — cannot send notification."
+      );
+      return NextResponse.json(
+        { error: "Something went wrong." },
+        { status: 500, headers: CORS_HEADERS }
+      );
+    }
 
-    await resend.emails.send({
-      from: 'DataContractGate Early Access <datacontractgate@nightmoose.com>',
-      to: 'datacontractgate_signup@nightmoose.com',
-      replyTo: email,
-      subject: `Early Access Request from ${name}`,
-      html: `
+    const ses = new SESv2Client({ region: AWS_REGION });
+
+    await ses.send(
+      new SendEmailCommand({
+        FromEmailAddress: FROM_ADDRESS,
+        Destination: { ToAddresses: [NOTIFY_TO] },
+        ReplyToAddresses: [email],
+        Content: {
+          Simple: {
+            Subject: { Data: `Early Access Request from ${name}` },
+            Body: {
+              Html: {
+                Data: `
         <h2>New Early Access Request</h2>
         <p><strong>Name:</strong> ${name}</p>
         <p><strong>Email:</strong> ${email}</p>
@@ -46,7 +72,12 @@ export async function POST(req: Request) {
         <hr>
         <p style="font-size: 12px; color: #666;">Sent from datacontractgate.com marketing site • ${new Date().toISOString()}</p>
       `,
-    });
+              },
+            },
+          },
+        },
+      })
+    );
 
     return NextResponse.json({ success: true }, { headers: CORS_HEADERS });
   } catch (err) {

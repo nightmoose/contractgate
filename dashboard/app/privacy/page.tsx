@@ -107,10 +107,10 @@ export default function PrivacyPage() {
             <p>
               Privacy questions or requests? Email us at{" "}
               <a
-                href="mailto:datacontractgate@nightmoose.com"
+                href="mailto:hello@datacontractgate.com"
                 className="text-green-400 hover:text-green-300"
               >
-                datacontractgate@nightmoose.com
+                hello@datacontractgate.com
               </a>
               .
             </p>

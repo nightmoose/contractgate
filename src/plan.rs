@@ -341,7 +341,7 @@ pub fn effective_store_event_payloads_for(
 /// Kafka/Kinesis streaming ingress.
 pub const STREAMING_REQUIRES_ENTERPRISE: &str =
     "Kafka/Kinesis streaming ingress requires the Enterprise plan (available on request). \
-     Use POST /v1/ingest instead, or contact datacontractgate@nightmoose.com.";
+     Use POST /v1/ingest instead, or contact hello@datacontractgate.com.";
 
 /// Whether a plan may enable Kafka/Kinesis streaming ingress. Enterprise only:
 /// streaming is not part of any self-serve plan. Self-host allows it for
