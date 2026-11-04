@@ -1,17 +1,19 @@
 # Publish the gateway container image to GHCR.
 #
-# Runs on pushes to `main` and on version tags (`v*.*.*`) only — never on PRs
-# or feature branches. This keeps `ghcr.io/contractgate/gateway:latest` (and the
-# per-version tags) in step with released code, so the README's `docker run`
-# quickstart and the `docker-compose.yml` `${TAG:-latest}` reference resolve to a
-# real, published image. Publishing an image is not a deploy: nothing in
-# production is touched.
+# Runs on pushes to `main`, on version tags (`v*`), and on manual dispatch —
+# never on PRs or feature branches. This keeps `ghcr.io/contractgate/gateway:latest`
+# (and the per-version tags) in step with released code, so the README's
+# `docker run` quickstart and the `docker-compose.yml` `${TAG:-latest}` reference
+# resolve to a real, published image. The manual trigger lets a maintainer
+# re-publish `latest` without a new commit. Publishing an image is not a deploy:
+# nothing in production is touched.
 name: Publish image
 
 on:
   push:
     branches: [main]
-    tags: ["v*.*.*"]
+    tags: ["v*"]
+  workflow_dispatch: {}
 
 concurrency:
   group: publish-image-${{ github.ref }}

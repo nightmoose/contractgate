@@ -116,9 +116,13 @@ Allowed headers: `Authorization, Content-Type, Accept, x-api-key`.
 > the 502. Check `https://api.datacontractgate.com/health` and Fly logs
 > before changing CORS config.
 
-**Public surface** (`/health`, `/metrics`, `/openapi.json`, `/demo/*`,
+**Public surface** (`/health`, `/metrics`, `/openapi.json`,
 `/public-contracts`, `/catalog`, `/published/*`): wildcard `*` — these routes
-expose no tenant data and are safe to embed from any origin.
+expose no tenant data and are safe to embed from any origin. The
+unauthenticated read routes `/published/*`, `/public-contracts` and `/catalog`
+carry no API key, so they are rate-limited per client IP (30 req/s, burst 60);
+`/catalog` stays CDN-cacheable because the limiter never rewrites a successful
+response.
 
 ### `DASHBOARD_ORIGIN` environment variable
 
