@@ -21,15 +21,34 @@ primary_region = 'iad'
   # (one backend, two front doors):
   # fly secrets set DASHBOARD_ORIGIN=https://app.datacontractgate.com,https://aischemagate.com,https://aischemagate.dev
   # Production must set CANONICAL_API_ORIGIN=https://api.datacontractgate.com
+  #
+  # DATABASE_URL (set via `fly secrets`, never here) MUST use the Supabase
+  # pooler host (*.pooler.supabase.com), never the direct host
+  # (db.<project>.supabase.co). The direct host opens one Postgres backend per
+  # connection and cannot absorb a spike; the server logs a startup warning if
+  # it sees the direct host.
+  #
+  # DB pool size per machine is CONTRACTGATE_DB_POOL_MAX_CONNECTIONS (default
+  # 10, src/request_limits.rs). `pool size * min_machines_running` is the
+  # steady-state connection count and MUST stay under the Supabase pooler's
+  # connection limit. Today: 10 * 2 = 20. Raise the pool and the machine count
+  # together, and check the pooler limit before scaling past it (see
+  # docs/ops/spike-day-runbook.md).
 
 [http_service]
   internal_port = 3001
   force_https = true
-  auto_stop_machines = 'stop'
+  # Always-on for the spike: keep machines up so the first Show HN burst does
+  # not pay a cold-start. auto_start still brings a stopped machine back if one
+  # ever exits.
+  auto_stop_machines = 'off'
   auto_start_machines = true
-  min_machines_running = 1
+  min_machines_running = 2
 
   [http_service.concurrency]
+    # PLACEHOLDER pending staging load test (ops/loadtest/spike.js). These are
+    # the pre-spike values, not yet validated against performance-1x + the
+    # pool size above; tune from the staging run before the event.
     type = 'requests'
     hard_limit = 500
     soft_limit = 400
@@ -58,13 +77,18 @@ primary_region = 'iad'
     method = 'GET'
     path = '/ready'
 
-# on-failure restarts a non-zero exit (the wedged-pool exit) and still
-# allows autostop. `always` would fight auto_stop_machines.
+# on-failure restarts a non-zero exit (the wedged-pool exit). Kept at
+# on-failure (not `always`) so it stays correct if auto_stop is ever turned
+# back on; with auto_stop_machines = 'off' the machines do not stop anyway.
 [[restart]]
   policy = 'on-failure'
   retries = 10
 
 [[vm]]
-  cpu_kind = 'shared'
+  # performance-1x for the spike: a dedicated CPU holds p99 under load where a
+  # shared CPU would be throttled. 2048 MB gives headroom for the pool and
+  # per-request buffers; drop to 1024 if cost matters and the staging load test
+  # shows memory stays well under it.
+  cpu_kind = 'performance'
   cpus = 1
-  memory_mb = 256
+  memory_mb = 2048
