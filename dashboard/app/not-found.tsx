@@ -1,6 +1,11 @@
+import type { Metadata } from "next";
 import Link from "next/link";
+import { pageMeta } from "@/lib/page-meta";
 
-export const metadata = { title: "Page not found — DataContractGate" };
+export const metadata: Metadata = pageMeta(
+  "Page not found",
+  "This DataContractGate page does not exist.",
+);
 
 export default function NotFound() {
   return (

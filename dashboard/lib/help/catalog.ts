@@ -16,11 +16,6 @@ export interface HelpEntry {
 
 export const HELP_CATALOG: Record<string, HelpEntry> = {
   // ── Nav ──────────────────────────────────────────────────────────────────
-  "nav.stream-demo": {
-    title: "Stream Demo",
-    what: "A live race between the real validator and a no-op copy path — no Kafka, no database writes.",
-    does: "Shows per-event pass/fail, latency, and overhead so you can see the engine work before wiring production traffic.",
-  },
   "nav.kafka-connect": {
     title: "Kafka Connect",
     what: "Docs for the Kafka Connect Single Message Transform that validates records in-flight.",
@@ -149,11 +144,6 @@ export const HELP_CATALOG: Record<string, HelpEntry> = {
     title: "Account",
     what: "This user’s org, keys, and billing.",
     does: "Create API keys (shown once), manage members, and open the Stripe portal on paid plans.",
-  },
-  "page.stream-demo": {
-    title: "Stream Demo",
-    what: "Public live demo of the validation engine versus a straight-copy baseline.",
-    does: "Starts a timed scenario and streams pass/fail and latency so you can judge overhead without an account.",
   },
   "page.docs": {
     title: "Docs",

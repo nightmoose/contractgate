@@ -1,6 +1,11 @@
+import type { Metadata } from "next";
 import Link from "next/link";
+import { pageMeta } from "@/lib/page-meta";
 
-export const metadata = { title: "Privacy Policy — DataContractGate" };
+export const metadata: Metadata = pageMeta(
+  "Privacy policy",
+  "How NightMoose, Inc. collects, uses, and retains information when you use DataContractGate.",
+);
 
 export default function PrivacyPage() {
   return (

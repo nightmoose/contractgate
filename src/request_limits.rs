@@ -22,7 +22,7 @@ use axum::Json;
 use sqlx::postgres::PgPoolOptions;
 use sqlx::{Connection, Executor, PgPool};
 
-/// Outer budget for every request except the demo SSE streams.
+/// Outer budget for every request.
 pub const REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
 /// Checkout, including a bounded ping of an idle connection. Inside the HTTP budget
 /// so a pool wait is attributed to `pool_acquire` instead of the outer timer.
@@ -33,7 +33,15 @@ pub const PING_TIMEOUT: Duration = Duration::from_secs(2);
 /// Close idle connections before a pooler or NAT silently drops them.
 /// sqlx's default is 10 minutes, which is long enough to hand out a dead socket.
 pub const IDLE_TIMEOUT: Duration = Duration::from_secs(60);
+/// Recycle a connection even if it stays busy. sqlx's default is also 30
+/// minutes; the env var below overrides this when it is a positive integer.
 pub const MAX_LIFETIME: Duration = Duration::from_secs(30 * 60);
+/// Seconds. Unset, empty, zero, or non-numeric keeps [`MAX_LIFETIME`].
+pub const MAX_LIFETIME_ENV: &str = "CONTRACTGATE_DB_POOL_MAX_LIFETIME_SECS";
+/// Consecutive `GET /ready` failures before the process exits so Fly's
+/// `on-failure` restart policy can replace a machine whose pool stayed wedged.
+/// One failure is a 503 and does not exit.
+pub const READY_FAILURES_BEFORE_EXIT: u32 = 3;
 /// Server-side. A query that never reaches Postgres is caught by [`REQUEST_TIMEOUT`].
 pub const STATEMENT_TIMEOUT: Duration = Duration::from_secs(15);
 pub const LOCK_TIMEOUT: Duration = Duration::from_secs(5);
@@ -42,9 +50,6 @@ pub const IDLE_IN_TRANSACTION_TIMEOUT: Duration = Duration::from_secs(15);
 const STAGE_HANDLER: u8 = 0;
 const STAGE_POOL_ACQUIRE: u8 = 1;
 const STAGE_DB_STATEMENT: u8 = 2;
-
-/// Routes that are allowed to stay open. Both are demo SSE streams with a 15s keepalive.
-const UNBOUNDED_PATHS: &[&str] = &["/demo/stream", "/demo/events"];
 
 tokio::task_local! {
     static STAGE: Arc<AtomicU8>;
@@ -111,10 +116,6 @@ pub fn db_timeout(error: &sqlx::Error) -> Option<DbTimeout> {
     }
 }
 
-pub fn is_unbounded_path(path: &str) -> bool {
-    UNBOUNDED_PATHS.contains(&path)
-}
-
 /// Axum layer: 30s budget, 504 JSON, and an error log with route + stage.
 pub async fn request_timeout(req: Request, next: Next) -> Response {
     enforce_request_timeout(REQUEST_TIMEOUT, req, next).await
@@ -122,10 +123,6 @@ pub async fn request_timeout(req: Request, next: Next) -> Response {
 
 pub(crate) async fn enforce_request_timeout(limit: Duration, req: Request, next: Next) -> Response {
     let path = req.uri().path().to_owned();
-    if is_unbounded_path(&path) {
-        return next.run(req).await;
-    }
-
     let method = req.method().clone();
     let route: Arc<str> = Arc::from(format!("{method} {path}"));
     let stage = Arc::new(AtomicU8::new(STAGE_HANDLER));
@@ -232,27 +229,59 @@ impl Tracker {
     }
 }
 
+/// `CONTRACTGATE_DB_POOL_MAX_LIFETIME_SECS`. Unset, empty, zero, or not a
+/// positive integer uses [`MAX_LIFETIME`] (30 minutes).
+pub fn max_lifetime_from(raw: Option<&str>) -> Duration {
+    let Some(raw) = raw.map(str::trim).filter(|s| !s.is_empty()) else {
+        return MAX_LIFETIME;
+    };
+    match raw.parse::<u64>() {
+        Ok(secs) if secs > 0 => Duration::from_secs(secs),
+        _ => {
+            tracing::warn!(
+                env = MAX_LIFETIME_ENV,
+                value = raw,
+                default_secs = MAX_LIFETIME.as_secs(),
+                "ignoring invalid database pool max lifetime"
+            );
+            MAX_LIFETIME
+        }
+    }
+}
+
+/// True once `/ready` has failed [`READY_FAILURES_BEFORE_EXIT`] times in a row.
+pub fn readiness_failure_should_exit(consecutive_failures: u32) -> bool {
+    consecutive_failures >= READY_FAILURES_BEFORE_EXIT
+}
+
 /// Pool used by the server and the one-shot CLI subcommands.
 ///
-/// `test_before_acquire` is off: sqlx's built-in ping has no deadline of its
-/// own, so a stale socket blocks the checkout until `acquire_timeout` (and,
-/// if that timer is not polled, until TCP gives up). The `before_acquire`
-/// hook pings with [`PING_TIMEOUT`] and discards the connection on expiry.
+/// `test_before_acquire` drops an idle connection when sqlx's ping returns an
+/// error, so a dead socket is not checked out. That ping has no deadline of
+/// its own; [`ACQUIRE_TIMEOUT`] cancels a ping that never returns and releases
+/// the pool slot, which is what lets the next checkout open a new connection.
+/// The `before_acquire` hook then applies [`PING_TIMEOUT`].
 pub async fn connect_pool(database_url: &str) -> Result<PgPool, sqlx::Error> {
+    let max_lifetime = max_lifetime_from(std::env::var(MAX_LIFETIME_ENV).ok().as_deref());
     tracing::info!(
         acquire_timeout_secs = ACQUIRE_TIMEOUT.as_secs(),
         ping_timeout_secs = PING_TIMEOUT.as_secs(),
         idle_timeout_secs = IDLE_TIMEOUT.as_secs(),
+        max_lifetime_secs = max_lifetime.as_secs(),
         statement_timeout_secs = STATEMENT_TIMEOUT.as_secs(),
         lock_timeout_secs = LOCK_TIMEOUT.as_secs(),
         "postgres pool limits"
     );
 
+    pool_options(max_lifetime).connect(database_url).await
+}
+
+fn pool_options(max_lifetime: Duration) -> PgPoolOptions {
     PgPoolOptions::new()
         .acquire_timeout(ACQUIRE_TIMEOUT)
         .idle_timeout(IDLE_TIMEOUT)
-        .max_lifetime(MAX_LIFETIME)
-        .test_before_acquire(false)
+        .max_lifetime(max_lifetime)
+        .test_before_acquire(true)
         .before_acquire(|conn, _meta| {
             Box::pin(async move {
                 set_pool_acquire();
@@ -301,8 +330,6 @@ pub async fn connect_pool(database_url: &str) -> Result<PgPool, sqlx::Error> {
                 Ok(())
             })
         })
-        .connect(database_url)
-        .await
 }
 
 #[cfg(test)]
@@ -323,6 +350,46 @@ mod tests {
         assert!(STATEMENT_TIMEOUT < REQUEST_TIMEOUT);
         assert!(IDLE_IN_TRANSACTION_TIMEOUT <= STATEMENT_TIMEOUT);
         assert!(IDLE_TIMEOUT < Duration::from_secs(10 * 60));
+        assert!(IDLE_TIMEOUT < MAX_LIFETIME);
+        assert_eq!(ACQUIRE_TIMEOUT, Duration::from_secs(8));
+        assert_eq!(PING_TIMEOUT, Duration::from_secs(2));
+        assert_eq!(IDLE_TIMEOUT, Duration::from_secs(60));
+        assert_eq!(MAX_LIFETIME, Duration::from_secs(30 * 60));
+    }
+
+    #[test]
+    fn pool_rechecks_idle_connections_and_caps_lifetime() {
+        let lifetime = Duration::from_secs(15 * 60);
+        let opts = pool_options(lifetime);
+        assert!(opts.get_test_before_acquire());
+        assert_eq!(opts.get_max_lifetime(), Some(lifetime));
+        assert_eq!(opts.get_acquire_timeout(), ACQUIRE_TIMEOUT);
+        assert_eq!(opts.get_idle_timeout(), Some(IDLE_TIMEOUT));
+    }
+
+    #[test]
+    fn max_lifetime_env_defaults_and_rejects_junk() {
+        assert_eq!(max_lifetime_from(None), MAX_LIFETIME);
+        assert_eq!(max_lifetime_from(Some("")), MAX_LIFETIME);
+        assert_eq!(max_lifetime_from(Some("  ")), MAX_LIFETIME);
+        assert_eq!(max_lifetime_from(Some("0")), MAX_LIFETIME);
+        assert_eq!(max_lifetime_from(Some("nope")), MAX_LIFETIME);
+        assert_eq!(max_lifetime_from(Some("-5")), MAX_LIFETIME);
+        assert_eq!(max_lifetime_from(Some("900")), Duration::from_secs(900));
+        assert_eq!(max_lifetime_from(Some(" 1200 ")), Duration::from_secs(1200));
+    }
+
+    #[test]
+    fn one_readiness_failure_does_not_exit() {
+        assert!(!readiness_failure_should_exit(0));
+        assert!(!readiness_failure_should_exit(1));
+        assert!(!readiness_failure_should_exit(
+            READY_FAILURES_BEFORE_EXIT - 1
+        ));
+        assert!(readiness_failure_should_exit(READY_FAILURES_BEFORE_EXIT));
+        assert!(readiness_failure_should_exit(
+            READY_FAILURES_BEFORE_EXIT + 1
+        ));
     }
 
     #[test]
@@ -389,13 +456,6 @@ mod tests {
                     StatusCode::OK
                 }),
             )
-            .route(
-                "/demo/stream",
-                get(|| async {
-                    tokio::time::sleep(Duration::from_millis(200)).await;
-                    StatusCode::OK
-                }),
-            )
             .route("/fast", get(|| async { StatusCode::OK }))
             .layer(axum::middleware::from_fn(move |req, next| {
                 let limit = limit;
@@ -437,12 +497,6 @@ mod tests {
         assert_eq!(status, StatusCode::GATEWAY_TIMEOUT);
         assert_eq!(body["stage"], "db_statement");
         assert_eq!(body["error"], "request timed out during db_statement");
-    }
-
-    #[tokio::test]
-    async fn demo_stream_is_not_cut_at_the_request_budget() {
-        let (status, _) = call(router(Duration::from_millis(40)), "/demo/stream").await;
-        assert_eq!(status, StatusCode::OK);
     }
 
     #[tokio::test]

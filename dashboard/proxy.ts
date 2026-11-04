@@ -25,7 +25,6 @@ const PUBLIC_ROUTES = [
   "/privacy",
   "/terms",
   "/docs",
-  "/stream-demo",
   // AuthGate pages — show feature preview to unauthenticated users
   "/",
   "/contracts",
@@ -50,7 +49,7 @@ const PUBLIC_ROUTES = [
 // round). Keep in sync with app/ (one entry per top-level directory).
 const KNOWN_TOP_LEVEL = new Set([
   "", "account", "api", "audit", "auth", "billing", "catalog", "contracts", "docs",
-  "playground", "pricing", "privacy", "scaffold", "scorecard", "stream-demo", "terms",
+  "playground", "pricing", "privacy", "scaffold", "scorecard", "terms",
   "usage", "workbench",
 ]);
 
@@ -116,6 +115,19 @@ async function route(request: NextRequest): Promise<NextResponse> {
   if (isApiRequest(request)) {
     const target = new URL(request.nextUrl.pathname + request.nextUrl.search, API_ORIGIN);
     return NextResponse.rewrite(target);
+  }
+
+  // The hosted stream demo was retired in favour of a local Docker demo. Keep
+  // the old URL working by sending it to the playground, the closest live
+  // equivalent. Covers both `/stream-demo` and any `/stream-demo/...` deep link.
+  if (
+    request.nextUrl.pathname === "/stream-demo" ||
+    request.nextUrl.pathname.startsWith("/stream-demo/")
+  ) {
+    const url = request.nextUrl.clone();
+    url.pathname = "/playground";
+    url.search = "";
+    return NextResponse.redirect(url);
   }
 
   // Stripe webhooks are unauthenticated server-to-server POSTs (verified by

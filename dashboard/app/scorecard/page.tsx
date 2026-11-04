@@ -316,7 +316,8 @@ function ScorecardContent() {
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={(e) => { if (e.key === "Enter") handleSearch(); }}
             placeholder="e.g. yardi, entrata, appfolio…"
-            className="flex-1 bg-[#0a0d12] border border-[#1f2937] rounded-lg px-4 py-2 text-sm text-slate-200 placeholder-slate-600 outline-none focus:border-indigo-600 transition-colors"
+            aria-label="Provider source"
+            className="flex-1 min-w-0 bg-[#0a0d12] border border-[#1f2937] rounded-lg px-4 py-2 text-sm text-slate-200 placeholder-slate-600 outline-none focus:border-indigo-600 transition-colors"
           />
           <button
             onClick={handleSearch}

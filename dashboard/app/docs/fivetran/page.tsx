@@ -11,7 +11,7 @@ function H2({ id, children }: { id: string; children: ReactNode }) {
 
 export default function FivetranDocsPage() {
   return (
-    <div className="max-w-3xl py-10">
+    <div className="max-w-3xl min-w-0 py-10">
       <p className="text-sm text-slate-500 mb-3">
         <Link href="/docs" className="hover:text-green-400">
           Docs

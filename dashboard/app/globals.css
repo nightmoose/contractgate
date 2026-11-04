@@ -47,6 +47,16 @@ body {
   font-family: system-ui, -apple-system, sans-serif;
 }
 
+/* Long lines scroll inside the content column instead of widening the page. */
+main pre {
+  max-width: 100%;
+  overflow-x: auto;
+}
+
+main :where(p, li, td, dd) code {
+  overflow-wrap: anywhere;
+}
+
 /* RFC-091: inspect-mode outlines on registered help targets */
 html[data-help-mode] [data-help] {
   outline: 1px dashed rgba(74, 222, 128, 0.55);

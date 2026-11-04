@@ -34,18 +34,35 @@ primary_region = 'iad'
     hard_limit = 500
     soft_limit = 400
 
+  # Service check: a non-2xx on /ready stops routing to this machine.
+  # One failure does not restart it. The process exits after three
+  # consecutive failures; [[restart]] below brings the machine back.
+  # timeout is above the handler's 2s SELECT 1 so a slow probe returns
+  # 503 instead of the check itself timing out. grace_period covers boot.
+  [[http_service.checks]]
+    grace_period = '30s'
+    interval = '15s'
+    timeout = '5s'
+    method = 'GET'
+    path = '/ready'
+
 [checks]
-  # RFC-053: readiness probe (SELECT 1 against the DB pool).
-  # /health is the liveness probe (process-up, no DB); use /ready for
-  # platform routing so a dead DB pool drains traffic from this instance.
+  # Same probe, for `fly checks list`. Top-level checks do not route or
+  # restart; the service check and [[restart]] do.
   [checks.ready]
     port = 3001
     type = 'http'
     interval = '15s'
     timeout = '5s'
-    grace_period = '10s'
+    grace_period = '30s'
     method = 'GET'
     path = '/ready'
+
+# on-failure restarts a non-zero exit (the wedged-pool exit) and still
+# allows autostop. `always` would fight auto_stop_machines.
+[[restart]]
+  policy = 'on-failure'
+  retries = 10
 
 [[vm]]
   cpu_kind = 'shared'

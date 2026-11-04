@@ -101,9 +101,47 @@ describe('aischemagateGuardrail', () => {
     });
     assert.equal(seen?.key, 'cg_live_test');
     assert.equal(new URL(seen!.url).pathname, `/egress/${CONTRACT}`);
+    assert.equal(new URL(seen!.url).searchParams.get('on_fail'), null);
     assert.deepEqual(seen?.body, [{ total: 12.5, currency: 'USD', email: 'a@b.co' }]);
     const text = (result.content[0] as { text: string }).text;
     assert.deepEqual(JSON.parse(text), { total: 12.5, currency: 'USD', email: '****' });
+  });
+
+  it('sends onFail=drop on egress and marks the outcome dropped', async () => {
+    let url = '';
+    const client = clientWith(async (req) => {
+      url = req.url;
+      return jsonResponse(422, {
+        total: 1,
+        passed: 0,
+        failed: 1,
+        dry_run: false,
+        disposition: 'block',
+        resolved_version: '1.0.0',
+        payload: [],
+        outcomes: [
+          {
+            index: 0,
+            passed: false,
+            violations: [{ field: 'total', kind: 'range_violation', message: 'below min' }],
+            validation_us: 12,
+            action: 'blocked',
+            disposition: 'dropped',
+          },
+        ],
+        quarantined: 0,
+        dropped: 1,
+        on_fail_mode: 'drop',
+        on_fail_source: 'request',
+      });
+    });
+    const result = await validateStructuredOutput(
+      { apiKey: 'cg_live_test', contractId: CONTRACT, client, onFail: 'drop' },
+      { total: -1 },
+    );
+    assert.equal(new URL(url).searchParams.get('on_fail'), 'drop');
+    assert.equal(result.ok, false);
+    assert.equal(result.dropped, true);
   });
 
   it('re-prompts once when an enum and a minimum fail, then returns the repair', async () => {
