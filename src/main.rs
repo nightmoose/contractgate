@@ -1549,13 +1549,23 @@ const PUBLIC_IP_RATE_LIMIT_RPS: u32 = 30;
 const PUBLIC_IP_RATE_LIMIT_BURST: u32 = 60;
 
 /// Token-bucket key for an unauthenticated caller: a stable v5 UUID derived
-/// from the client IP. We read the first hop of `X-Forwarded-For` (falling
-/// back to `X-Real-IP`), matching how ingest already captures the source IP;
-/// requests with neither header share one `"unknown"` bucket. The derived
-/// UUID lets these routes reuse the RFC-021 `RateLimitState` unchanged.
+/// from the client IP.
+///
+/// The address MUST come from a hop the client cannot forge, or the limiter is
+/// pointless: a scraper that controls its own source IP string lands in a fresh
+/// bucket on every request and never hits the ceiling. In production we run
+/// behind Fly, whose edge sets `Fly-Client-IP` to the real peer address and
+/// overwrites any client-supplied value — that is the only trustworthy source,
+/// so we read it first. `X-Forwarded-For` (first hop) / `X-Real-IP` are only a
+/// fallback for non-Fly or local deployments that sit behind a trusted reverse
+/// proxy; on Fly they are attacker-controlled and deliberately ignored while
+/// `Fly-Client-IP` is present. Requests with none of these headers share one
+/// `"unknown"` bucket. The derived UUID lets these routes reuse the RFC-021
+/// `RateLimitState` unchanged.
 fn client_ip_bucket(headers: &axum::http::HeaderMap) -> Uuid {
     let ip = headers
-        .get("x-forwarded-for")
+        .get("fly-client-ip")
+        .or_else(|| headers.get("x-forwarded-for"))
         .or_else(|| headers.get("x-real-ip"))
         .and_then(|v| v.to_str().ok())
         .map(|s| s.split(',').next().unwrap_or(s).trim())
