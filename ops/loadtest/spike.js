@@ -104,8 +104,11 @@ function getRead(path, endpoint, extra) {
     ...(extra || {}),
   });
   // 404 on an optional published ref is an expected "not seeded", not an error.
+  // status 0 is a dropped/failed request (connection refused, timeout, reset) —
+  // the dominant failure mode under a spike, so it must count as an error, not a
+  // pass. `r.status < 500` alone would let status 0 through.
   const ok = check(res, {
-    [`${endpoint} not 5xx`]: (r) => r.status < 500,
+    [`${endpoint} not 5xx`]: (r) => r.status >= 200 && r.status < 500,
   });
   readErrors.add(!ok);
   return res;
@@ -164,7 +167,7 @@ export function ingest() {
   });
   check(res, {
     'ingest accepted': (r) => r.status === 200 || r.status === 207,
-    'ingest not 5xx': (r) => r.status < 500,
+    'ingest not 5xx': (r) => r.status >= 200 && r.status < 500,
   });
   sleep(Math.random() + 0.2);
 }
