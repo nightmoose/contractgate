@@ -28,7 +28,9 @@ const PUBLISHED_REF = __ENV.PUBLISHED_REF || '';
 
 // Refuse prod unless explicitly allowed. This runs in init context, so a bad
 // BASE_URL aborts before any VU starts.
-if (BASE_URL.includes('api.datacontractgate.com') && !ALLOW_PROD) {
+const HOST = ((BASE_URL.match(/^[a-z]+:\/\/([^/:?#]+)/i) || [])[1] || '').toLowerCase();
+const PROD_HOSTS = ['api.datacontractgate.com', 'contractgate-api.fly.dev'];
+if (PROD_HOSTS.includes(HOST) && !ALLOW_PROD) {
   throw new Error(
     `Refusing to load test production (${BASE_URL}). ` +
       'Point BASE_URL at staging, or set ALLOW_PROD=1 to override.',
