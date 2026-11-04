@@ -6477,7 +6477,7 @@ mod public_ip_rate_limit_tests {
     /// finite enough to stop a monopolising scraper.
     #[test]
     fn public_limit_constants_are_sane() {
-        assert!(PUBLIC_IP_RATE_LIMIT_RPS >= 10);
-        assert!(PUBLIC_IP_RATE_LIMIT_BURST >= PUBLIC_IP_RATE_LIMIT_RPS);
+        const { assert!(PUBLIC_IP_RATE_LIMIT_RPS >= 10) };
+        const { assert!(PUBLIC_IP_RATE_LIMIT_BURST >= PUBLIC_IP_RATE_LIMIT_RPS) };
     }
 }
