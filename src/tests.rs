@@ -6339,9 +6339,7 @@ mod public_ip_rate_limit_tests {
     use axum::http::{HeaderMap, HeaderName, HeaderValue};
     use contractgate::rate_limit::RateLimitState;
 
-    use super::super::{
-        client_ip_bucket, PUBLIC_IP_RATE_LIMIT_BURST, PUBLIC_IP_RATE_LIMIT_RPS,
-    };
+    use super::super::{client_ip_bucket, PUBLIC_IP_RATE_LIMIT_BURST, PUBLIC_IP_RATE_LIMIT_RPS};
 
     /// Build a `HeaderMap` from `(name, value)` pairs.
     fn headers(pairs: &[(&str, &str)]) -> HeaderMap {
@@ -6401,7 +6399,13 @@ mod public_ip_rate_limit_tests {
         for i in 0..PUBLIC_IP_RATE_LIMIT_BURST {
             let xff = format!("{i}.{i}.{i}.{i}");
             assert!(
-                allowed(&state, &[("fly-client-ip", "198.51.100.42"), ("x-forwarded-for", &xff)]),
+                allowed(
+                    &state,
+                    &[
+                        ("fly-client-ip", "198.51.100.42"),
+                        ("x-forwarded-for", &xff)
+                    ]
+                ),
                 "request {i} within burst should pass"
             );
         }
@@ -6410,7 +6414,10 @@ mod public_ip_rate_limit_tests {
         assert!(
             !allowed(
                 &state,
-                &[("fly-client-ip", "198.51.100.42"), ("x-forwarded-for", "255.255.255.255")]
+                &[
+                    ("fly-client-ip", "198.51.100.42"),
+                    ("x-forwarded-for", "255.255.255.255")
+                ]
             ),
             "burst+1 must be denied even with a fresh spoofed XFF"
         );
@@ -6446,7 +6453,10 @@ mod public_ip_rate_limit_tests {
         assert_eq!(a, a_again, "only the first XFF hop keys the bucket");
 
         let real_ip = client_ip_bucket(&headers(&[("x-real-ip", "10.0.0.1")]));
-        assert_eq!(a, real_ip, "X-Real-IP and the first XFF hop agree on the IP");
+        assert_eq!(
+            a, real_ip,
+            "X-Real-IP and the first XFF hop agree on the IP"
+        );
     }
 
     /// Requests with none of the IP headers all land in one shared `"unknown"`
@@ -6457,7 +6467,10 @@ mod public_ip_rate_limit_tests {
         let y = client_ip_bucket(&headers(&[("accept", "application/json")]));
         assert_eq!(x, y);
         // And distinct from a real address.
-        assert_ne!(x, client_ip_bucket(&headers(&[("fly-client-ip", "203.0.113.9")])));
+        assert_ne!(
+            x,
+            client_ip_bucket(&headers(&[("fly-client-ip", "203.0.113.9")]))
+        );
     }
 
     /// Sanity-check the configured ceiling: generous enough for browsing,
