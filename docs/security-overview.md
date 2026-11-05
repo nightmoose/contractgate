@@ -16,8 +16,8 @@ Producer → (API key / JWT resolves **org**) → per-org **contract** → **val
 (sub-millisecond, panic-free Rust hot path) → **audit** + **quarantine** on
 failure. Bad events are stopped *before* the warehouse.
 
-- Validation engine: Rust (Axum), compile-once / validate-many. Target **<15 ms
-  p99**; measured p99 ~31 µs (2026-05-24 perf test). The request path is
+- Validation engine: Rust (Axum), compile-once / validate-many. Low-latency by
+  design; measured p99 ~31 µs (2026-05-24 perf test). The request path is
   panic-free by policy (RFC-067 converted latent `unwrap`/`expect` to clean 4xx).
 - Backend hosting: Fly.io (`primary_region = iad`, US East).
 - Data store: Supabase Postgres (project `contract gate`, `us-east-2`, PG 17).

@@ -1685,19 +1685,18 @@ pub async fn v1_ingest_handler(
             }
         }
 
+        // RFC: route durable writes through the bounded, batched write queue
+        // instead of spawning up to three untracked tasks per request.  A full
+        // queue drops the job and bumps `contractgate_write_queue_dropped_total`
+        // rather than blocking the response.
         if !audit_rows.is_empty() {
-            let n = audit_rows.len();
-            let pool = state.db.clone();
-            let meter_org = org_id;
-            tokio::spawn(async move {
-                if let Err(e) =
-                    storage::log_audit_entries_batch(&pool, &audit_rows, store_payloads).await
-                {
-                    tracing::warn!("v1 ingest: audit write failed: {e:?}");
-                    return;
-                }
-                crate::metering::record_batch_usage_blocking(&pool, meter_org, n).await;
-            });
+            state
+                .write_queue
+                .submit(crate::write_queue::WriteJob::Audit {
+                    rows: audit_rows,
+                    store_payloads,
+                    meter_org: org_id,
+                });
         }
         if !quarantine_rows.is_empty() {
             if let Some(org) = org_id {
@@ -1707,24 +1706,20 @@ pub async fn v1_ingest_handler(
                     quarantine_rows.len() as i64,
                 );
             }
-            let pool = state.db.clone();
-            tokio::spawn(async move {
-                if let Err(e) =
-                    storage::quarantine_events_batch(&pool, &quarantine_rows, store_payloads).await
-                {
-                    tracing::warn!("v1 ingest: quarantine write failed: {e:?}");
-                }
-            });
+            state
+                .write_queue
+                .submit(crate::write_queue::WriteJob::Quarantine {
+                    rows: quarantine_rows,
+                    store_payloads,
+                });
         }
         if !forward_rows.is_empty() {
-            let pool = state.db.clone();
-            tokio::spawn(async move {
-                if let Err(e) =
-                    storage::forward_events_batch(&pool, &forward_rows, store_payloads).await
-                {
-                    tracing::warn!("v1 ingest: forward write failed: {e:?}");
-                }
-            });
+            state
+                .write_queue
+                .submit(crate::write_queue::WriteJob::Forward {
+                    rows: forward_rows,
+                    store_payloads,
+                });
         }
     } else if crate::drop_mode::writes_atomic_summary(decision.mode, query.dry_run, failed_count) {
         // Atomic summary audit row.

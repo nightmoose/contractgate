@@ -15,7 +15,7 @@ flowchart LR
     subgraph GW[DataContractGate gateway - Rust Axum on Fly.io]
       A[Auth: API key or Bearer JWT] --> O[Resolve org + key scope]
       O --> C[Resolve contract + version]
-      C --> V[Validate - compile once, validate many, p99 under 15ms]
+      C --> V[Validate - compile once, validate many, low-latency]
     end
 
     V -->|pass| F[Forward downstream + audit_log]
@@ -30,7 +30,7 @@ flowchart LR
 
 | Component | Tech | Role |
 |---|---|---|
-| Validation gateway | Rust (Axum), Fly.io `iad` | The engine. Compile-once/validate-many; panic-free hot path; p99 ~31µs measured (target < 15 ms). |
+| Validation gateway | Rust (Axum), Fly.io `iad` | The engine. Compile-once/validate-many; panic-free hot path; p99 ~31µs measured (low-latency; see benches). |
 | Dashboard | Next.js + TS + Tailwind, Vercel | Contracts, quarantine/replay, usage, keys, billing. |
 | Data store | Supabase Postgres (`us-east-2`, PG 17) | Contracts/versions, `audit_log`, `quarantine_events`, `api_keys` (hashed), org/tenancy, usage. |
 | Billing | Stripe Checkout + webhooks | Growth self-serve; plan status on `orgs`. |
