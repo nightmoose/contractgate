@@ -24,7 +24,7 @@ We aim to acknowledge reports within 48 hours and provide a fix timeline within 
 - Secret Scanning + Push Protection (GitHub)
 - Dependabot dependency updates
 - CodeQL static analysis
-- `cargo audit` + `cargo deny` in CI. The license allow list is MIT, ISC, BSD-2-Clause, BSD-3-Clause, and 0BSD ([`docs/LICENSE-EXCEPTIONS.md`](docs/LICENSE-EXCEPTIONS.md)).
+- `cargo audit` and `cargo deny check advisories bans sources` in CI, plus Dependabot dependency updates.
 - Signed commits required on `main`
 - Branch protection rules
 
