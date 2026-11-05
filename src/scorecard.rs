@@ -7,7 +7,7 @@
 //!
 //! Reads from SQL views `provider_scorecard` and `provider_field_health`, plus
 //! `provider_field_baseline` for drift detection.  No writes to the hot ingest
-//! path — the <15ms p99 budget is untouched.
+//! path — the low-latency validation path is untouched (see benches).
 //!
 //! ## Drift detection
 //!

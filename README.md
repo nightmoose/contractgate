@@ -75,10 +75,9 @@ The same contract can gate what **leaves** your system. `POST /egress/{contract_
 **Validating LLM output?** The same engine powers [AISchemaGate](https://aischemagate.com) (`pip install aischemagate` / `npm install @nightmoose/aischemagate`). One-line wrapper over OpenAI / Anthropic / vLLM / Ollama responses — extracts the structured JSON, validates against your contract, optionally re-prompts on violation. Non-streaming only in v1. See [`docs/llm-output-validation.md`](docs/llm-output-validation.md), [`docs/llm-sdk-reference.md`](docs/llm-sdk-reference.md), and the copy-paste guides in [`docs/integrations/`](docs/integrations/) (Vercel AI SDK, structured outputs, LangGraph). Ingest recipes: [`examples/recipes/`](examples/recipes/).
 
 <!-- LATENCY NOTE (measured 2026-05-24): Per-event validation p99 latency is 31 µs server-side,
-     measured with warm compiled-contract cache. This is ~484x under the <15 ms p99 end-to-end
-     budget (network + DB), leaving ample headroom for transport and storage. Performance is
-     driven by Rust + Axum core with zero-copy contract matching. See ops/bench/ for
-     reproducible benchmark. -->
+     measured with warm compiled-contract cache, leaving ample headroom for transport and
+     storage (network + DB). Low-latency by design — Rust + Axum core with zero-copy contract
+     matching. See ops/bench/ for the reproducible benchmark. -->
 
 [![Security](https://img.shields.io/badge/security-hardened-brightgreen)](https://github.com/nightmoose/contractgate/security)
 [![Dependabot](https://img.shields.io/badge/Dependabot-enabled-brightgreen)](https://github.com/nightmoose/contractgate/security/dependabot)

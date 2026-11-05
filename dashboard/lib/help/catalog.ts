@@ -175,7 +175,7 @@ export const HELP_CATALOG: Record<string, HelpEntry> = {
   "dashboard.avg-latency": {
     title: "Avg Latency",
     what: "Mean server-side validation time per event, in microseconds.",
-    does: "The engine budget is well under 15 ms p99 end-to-end. This card is the validator itself, not network time.",
+    does: "The engine is low-latency end-to-end (see benches). This card is the validator itself, not network time.",
   },
   "dashboard.public-contracts": {
     title: "Public Contracts",
