@@ -46,12 +46,17 @@ primary_region = 'iad'
   min_machines_running = 2
 
   [http_service.concurrency]
-    # PLACEHOLDER pending staging load test (ops/loadtest/spike.js). These are
-    # the pre-spike values, not yet validated against performance-1x + the
-    # pool size above; tune from the staging run before the event.
+    # Sized from the staging run of ops/loadtest/spike.js on 2026-11-04
+    # (read-only browse scenario, 100 VUs, 2 machines, pool 5 each): about 82
+    # req/s, p95 530ms, p99 588ms, no errors, no 429s. DB-backed reads took
+    # about 210ms median against 26ms for /health, so the DB pool sets the
+    # limit, not the CPU. With pool 10 per machine, a 400-request soft limit
+    # would queue requests in the pool past its 8s acquire timeout before Fly
+    # starts routing elsewhere. Lower limits make the proxy shed and spread
+    # load first. Re-run the load test before raising them.
     type = 'requests'
-    hard_limit = 500
-    soft_limit = 400
+    hard_limit = 150
+    soft_limit = 100
 
   # Service check: a non-2xx on /ready stops routing to this machine.
   # One failure does not restart it. The process exits after three
