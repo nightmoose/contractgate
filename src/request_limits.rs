@@ -38,6 +38,13 @@ pub const IDLE_TIMEOUT: Duration = Duration::from_secs(60);
 pub const MAX_LIFETIME: Duration = Duration::from_secs(30 * 60);
 /// Seconds. Unset, empty, zero, or non-numeric keeps [`MAX_LIFETIME`].
 pub const MAX_LIFETIME_ENV: &str = "CONTRACTGATE_DB_POOL_MAX_LIFETIME_SECS";
+/// Connections sqlx keeps per machine. This equals sqlx's own default, so it
+/// is the value prod runs today; the env var below overrides it when it is a
+/// positive integer. `pool size * running machines` must stay under the
+/// Supabase pooler's connection limit — see `fly.toml` and the spike runbook.
+pub const MAX_CONNECTIONS: u32 = 10;
+/// Positive integer. Unset, empty, zero, or non-numeric keeps [`MAX_CONNECTIONS`].
+pub const MAX_CONNECTIONS_ENV: &str = "CONTRACTGATE_DB_POOL_MAX_CONNECTIONS";
 /// Consecutive `GET /ready` failures before the process exits so Fly's
 /// `on-failure` restart policy can replace a machine whose pool stayed wedged.
 /// One failure is a 503 and does not exit.
@@ -254,6 +261,44 @@ pub fn readiness_failure_should_exit(consecutive_failures: u32) -> bool {
     consecutive_failures >= READY_FAILURES_BEFORE_EXIT
 }
 
+/// `CONTRACTGATE_DB_POOL_MAX_CONNECTIONS`. Unset, empty, zero, or not a
+/// positive integer uses [`MAX_CONNECTIONS`] (sqlx's own default).
+pub fn max_connections_from(raw: Option<&str>) -> u32 {
+    let Some(raw) = raw.map(str::trim).filter(|s| !s.is_empty()) else {
+        return MAX_CONNECTIONS;
+    };
+    match raw.parse::<u32>() {
+        Ok(n) if n > 0 => n,
+        _ => {
+            tracing::warn!(
+                env = MAX_CONNECTIONS_ENV,
+                value = raw,
+                default = MAX_CONNECTIONS,
+                "ignoring invalid database pool max connections"
+            );
+            MAX_CONNECTIONS
+        }
+    }
+}
+
+/// True when `DATABASE_URL` points at Supabase's direct host
+/// (`db.<project>.supabase.co`) instead of the pooler
+/// (`<...>.pooler.supabase.com`). The direct host opens one Postgres backend
+/// per connection and is not built to absorb a traffic spike; production must
+/// use the pooler. The caller warns at startup so a misconfigured deploy is
+/// obvious in the logs.
+pub fn is_direct_supabase_host(database_url: &str) -> bool {
+    let Some(after_at) = database_url.split('@').nth(1) else {
+        return false;
+    };
+    let host = after_at
+        .split(['/', ':'])
+        .next()
+        .map(str::trim)
+        .unwrap_or("");
+    host.starts_with("db.") && host.ends_with(".supabase.co")
+}
+
 /// Pool used by the server and the one-shot CLI subcommands.
 ///
 /// `test_before_acquire` drops an idle connection when sqlx's ping returns an
@@ -263,21 +308,34 @@ pub fn readiness_failure_should_exit(consecutive_failures: u32) -> bool {
 /// The `before_acquire` hook then applies [`PING_TIMEOUT`].
 pub async fn connect_pool(database_url: &str) -> Result<PgPool, sqlx::Error> {
     let max_lifetime = max_lifetime_from(std::env::var(MAX_LIFETIME_ENV).ok().as_deref());
+    let max_connections = max_connections_from(std::env::var(MAX_CONNECTIONS_ENV).ok().as_deref());
+    if is_direct_supabase_host(database_url) {
+        tracing::warn!(
+            "DATABASE_URL uses the Supabase direct host (db.*.supabase.co); use \
+             the pooler host (*.pooler.supabase.com) in production — the direct \
+             host opens one Postgres backend per connection and will exhaust \
+             the database under a traffic spike"
+        );
+    }
     tracing::info!(
         acquire_timeout_secs = ACQUIRE_TIMEOUT.as_secs(),
         ping_timeout_secs = PING_TIMEOUT.as_secs(),
         idle_timeout_secs = IDLE_TIMEOUT.as_secs(),
         max_lifetime_secs = max_lifetime.as_secs(),
+        max_connections = max_connections,
         statement_timeout_secs = STATEMENT_TIMEOUT.as_secs(),
         lock_timeout_secs = LOCK_TIMEOUT.as_secs(),
         "postgres pool limits"
     );
 
-    pool_options(max_lifetime).connect(database_url).await
+    pool_options(max_lifetime, max_connections)
+        .connect(database_url)
+        .await
 }
 
-fn pool_options(max_lifetime: Duration) -> PgPoolOptions {
+fn pool_options(max_lifetime: Duration, max_connections: u32) -> PgPoolOptions {
     PgPoolOptions::new()
+        .max_connections(max_connections)
         .acquire_timeout(ACQUIRE_TIMEOUT)
         .idle_timeout(IDLE_TIMEOUT)
         .max_lifetime(max_lifetime)
@@ -360,11 +418,39 @@ mod tests {
     #[test]
     fn pool_rechecks_idle_connections_and_caps_lifetime() {
         let lifetime = Duration::from_secs(15 * 60);
-        let opts = pool_options(lifetime);
+        let opts = pool_options(lifetime, 25);
         assert!(opts.get_test_before_acquire());
         assert_eq!(opts.get_max_lifetime(), Some(lifetime));
+        assert_eq!(opts.get_max_connections(), 25);
         assert_eq!(opts.get_acquire_timeout(), ACQUIRE_TIMEOUT);
         assert_eq!(opts.get_idle_timeout(), Some(IDLE_TIMEOUT));
+    }
+
+    #[test]
+    fn max_connections_env_defaults_and_rejects_junk() {
+        assert_eq!(max_connections_from(None), MAX_CONNECTIONS);
+        assert_eq!(max_connections_from(Some("")), MAX_CONNECTIONS);
+        assert_eq!(max_connections_from(Some("  ")), MAX_CONNECTIONS);
+        assert_eq!(max_connections_from(Some("0")), MAX_CONNECTIONS);
+        assert_eq!(max_connections_from(Some("nope")), MAX_CONNECTIONS);
+        assert_eq!(max_connections_from(Some("-5")), MAX_CONNECTIONS);
+        assert_eq!(max_connections_from(Some("5.5")), MAX_CONNECTIONS);
+        assert_eq!(max_connections_from(Some("20")), 20);
+        assert_eq!(max_connections_from(Some(" 40 ")), 40);
+    }
+
+    #[test]
+    fn direct_supabase_host_is_flagged_but_pooler_is_not() {
+        assert!(is_direct_supabase_host(
+            "postgresql://postgres:pw@db.abcdefgh.supabase.co:5432/postgres"
+        ));
+        assert!(!is_direct_supabase_host(
+            "postgresql://postgres.abcdefgh:pw@aws-0-us-east-1.pooler.supabase.com:6543/postgres"
+        ));
+        assert!(!is_direct_supabase_host(
+            "postgresql://user:pw@localhost:5432/postgres"
+        ));
+        assert!(!is_direct_supabase_host("not a url"));
     }
 
     #[test]
