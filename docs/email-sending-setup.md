@@ -103,10 +103,13 @@ Preview if you want the form live there):
 | `AWS_REGION` | `us-east-1` | Optional — defaults to `us-east-1` in code. |
 | `AWS_ACCESS_KEY_ID` | `AKIA…` | From the least-privilege IAM user above. |
 | `AWS_SECRET_ACCESS_KEY` | `…` | Server secret — never expose client-side. |
+| `AWS_SESSION_TOKEN` | `…` | Optional — only when using temporary STS credentials; signed as `X-Amz-Security-Token`. |
 | `EARLY_ACCESS_NOTIFY_TO` | `early-access@datacontractgate.com` | Internal inbox that receives requests. If unset, the route returns a 500 and logs — it never crashes. |
 
-Credentials are read by the AWS SDK's default provider chain; the code never
-hardcodes them.
+The route calls the SES v2 `SendEmail` HTTP API directly, signing each request
+with AWS Signature Version 4 (a small `node:crypto` signer in
+`dashboard/lib/aws-sigv4.ts`) — no AWS SDK dependency. Credentials are read from
+the env vars above at request time; the code never hardcodes them.
 
 ## 5. Verify
 
