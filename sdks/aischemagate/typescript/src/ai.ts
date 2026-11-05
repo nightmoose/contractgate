@@ -221,6 +221,19 @@ function semanticHit(violations: Violation[], kinds: ReadonlySet<string>): boole
   return violations.some((v) => kinds.has(v.kind));
 }
 
+/**
+ * Drop-mode fields the published `@nightmoose/contractgate-sdk` types omit.
+ * The gateway still returns them, and the in-repo client declares them.
+ */
+function dropMode(egress: EgressResponse): { dropped: number; onFailMode: string } {
+  const raw: unknown = egress;
+  const rec = isRecord(raw) ? raw : {};
+  return {
+    dropped: typeof rec['dropped'] === 'number' ? rec['dropped'] : 0,
+    onFailMode: typeof rec['on_fail_mode'] === 'string' ? rec['on_fail_mode'] : 'quarantine',
+  };
+}
+
 function outcomeFromEgress(
   egress: EgressResponse,
   submitted: Record<string, unknown>,
@@ -233,12 +246,13 @@ function outcomeFromEgress(
   if (ok && egress.payload.length > 0 && isRecord(egress.payload[0])) {
     payload = egress.payload[0];
   }
+  const mode = dropMode(egress);
   return {
     ok,
     payload,
     violations,
     attempts,
-    dropped: !ok && (egress.dropped > 0 || egress.on_fail_mode === 'drop'),
+    dropped: !ok && (mode.dropped > 0 || mode.onFailMode === 'drop'),
   };
 }
 
@@ -296,15 +310,18 @@ class GateSession {
   }
 
   async egress(payload: Record<string, unknown>): Promise<EgressResponse> {
+    // Hold the call in a variable so `onFail` is still sent when the client
+    // accepts it. The published SDK types do not declare that option.
+    const request = {
+      contractId: await this.resolve(this.#contractId),
+      events: [payload],
+      version: this.#version,
+      disposition: this.#disposition,
+      onFail: this.#onFail,
+      dryRun: this.#dryRun,
+    };
     try {
-      return await this.#client.egress({
-        contractId: await this.resolve(this.#contractId),
-        events: [payload],
-        version: this.#version,
-        disposition: this.#disposition,
-        onFail: this.#onFail,
-        dryRun: this.#dryRun,
-      });
+      return await this.#client.egress(request);
     } catch (err) {
       if (err instanceof ValidationFailedError && isEgressBody(err.body)) {
         return egressFromBody(err.body);

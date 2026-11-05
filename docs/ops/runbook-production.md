@@ -86,6 +86,7 @@ Set via `fly secrets set` (never commit).
 | `SUPABASE_URL` | If pooler breaks JWKS | Explicit project URL for JWKS fetch |
 | `USAGE_RECONCILE_INTERVAL_SECS` | No | RFC-083 counter reconcile period (default `21600` = 6h, min 300) |
 | `CONTRACTGATE_DB_POOL_MAX_LIFETIME_SECS` | No | Recycle Postgres connections after this many seconds (default `1800`). `0` or non-numeric is ignored. |
+| `CONTRACTGATE_DB_POOL_MAX_CONNECTIONS` | No | Max pooled Postgres connections per machine (default `10`). `0` or non-numeric is ignored. `pool size × machines` must stay under the Supabase pooler limit — see [spike-day runbook](spike-day-runbook.md). |
 | `CONTRACTGATE_DEV_NO_AUTH` | **Never in prod** | Disables auth when `1` |
 
 Dashboard (Vercel) separately needs Supabase anon/service keys, Stripe, `NEXT_PUBLIC_API_URL`, etc.
