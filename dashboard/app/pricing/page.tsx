@@ -70,7 +70,7 @@ const TIERS = [
     price: { monthly: "Custom", annual: "Custom" },
     priceSub: { monthly: "contact us", annual: "contact us" },
     cta: "Talk to us",
-    ctaHref: "mailto:datacontractgate@nightmoose.com",
+    ctaHref: "mailto:hello@datacontractgate.com",
     highlight: false,
     color: "border-[#1f2937]",
     badge: null,
@@ -382,7 +382,7 @@ export default function PricingPage() {
           named SRE. We&apos;ll scope your POC in one call.
         </p>
         <a
-          href="mailto:datacontractgate@nightmoose.com"
+          href="mailto:hello@datacontractgate.com"
           className="inline-block bg-green-600 hover:bg-green-500 text-white font-semibold text-sm px-6 py-3 rounded-lg transition-colors"
         >
           Talk to sales →

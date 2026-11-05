@@ -184,7 +184,7 @@ The comparison table below is the zero-auth demo. With `CONTRACTGATE_SELF_HOSTED
 | Managed hosting + SLA | ❌ Self-hosted | ✅ |
 
 [→ Full pricing](https://app.datacontractgate.com/pricing)
-[→ Talk to sales](mailto:datacontractgate@nightmoose.com)
+[→ Talk to sales](mailto:hello@datacontractgate.com)
 
 ---
 
