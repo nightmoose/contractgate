@@ -22,7 +22,7 @@ Versions below are what the checkers reported when this list was written. npm ex
 
 | Ecosystem | Exceptions |
 |---|---|
-| Rust | 25 crates |
+| Rust | 26 crates |
 | npm | 15 packages |
 | Python | 2 distributions, in each of the three projects |
 
@@ -60,6 +60,7 @@ ICU4X note, for every Unicode-3.0 row: crates.io lists `idna` 0.5.0 as `MIT OR A
 | `foldhash` 0.1.5 and 0.2.0 | Zlib | Hasher selected by hashbrown. Every crates.io release checked is Zlib | none found | large |
 | `sketches-ddsketch` 0.3.1 | Apache-2.0 | Accepted. Via the metrics exporter; every version is Apache-2.0. | none found | large |
 | `sync_wrapper` 1.0.2 | Apache-2.0 | Accepted. axum and tower stack. | none found | large |
+| `metrics-exporter-prometheus` 0.18.3 | MIT AND Apache-2.0 | Prometheus exporter. MIT and Apache-2.0 are both on the owner's allow list, so the conjunction is accepted. 0.18.1 was MIT only | none found | large |
 | `webpki-roots` 0.26.11 and 1.0.10 | CDLA-Permissive-2.0 | Bundled Mozilla CA set. reqwest feature `rustls-tls` and sqlx feature `runtime-tokio-rustls` (which selects `tls-rustls-ring-webpki`) depend on it. `rustls-native-certs` 0.8 is `Apache-2.0 OR ISC OR MIT` on crates.io, so MIT can be selected. reqwest has `rustls-tls-native-roots`. sqlx has `tls-rustls-ring-native-roots` (used with `runtime-tokio`, not with `runtime-tokio-rustls`). That switch drops this crate and still uses `ring` | `rustls-native-certs` (OS trust store, MIT-selectable) | medium |
 
 ## npm
@@ -85,7 +86,7 @@ ICU4X note, for every Unicode-3.0 row: crates.io lists `idna` 0.5.0 as `MIT OR A
 | `oauth-sign` 0.9.0 | Apache-2.0 | Accepted. Required for the Zapier integration. | none found | large |
 | `json-metaschema` 1.3.0 | Public Domain | JSON Schema meta-schemas inside `zapier-platform-schema` | none found | large |
 
-`argparse` is one excluded name and two license strings. The npm count of 15 is package names in `scripts/license/npm-exclude.txt`. `metrics-exporter-prometheus` is pinned to 0.18.1, which is MIT, so it is not an exception. Playwright and TypeScript are dev or peer dependencies and are not installed for this check.
+`argparse` is one excluded name and two license strings. The npm count of 15 is package names in `scripts/license/npm-exclude.txt`. Playwright and TypeScript are dev or peer dependencies and are not installed for this check.
 
 ## Python
 

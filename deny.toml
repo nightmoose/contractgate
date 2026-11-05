@@ -207,6 +207,14 @@ allow = ["Apache-2.0"]
 crate = "sync_wrapper"
 allow = ["Apache-2.0"]
 
+# 0.18.3 is the expression "MIT AND Apache-2.0". MIT is allowed globally.
+# Apache-2.0 is on the owner's allow list, so the conjunction is accepted
+# for this crate. cargo-deny matches each license in an AND, not the
+# whole expression as one allow-list entry.
+[[licenses.exceptions]]
+crate = "metrics-exporter-prometheus"
+allow = ["Apache-2.0", "MIT"]
+
 # Bundled Mozilla CA set used by reqwest's rustls-tls and sqlx's rustls feature.
 [[licenses.exceptions]]
 crate = "webpki-roots"
