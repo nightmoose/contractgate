@@ -6322,3 +6322,162 @@ metrics: []
             .unwrap();
     }
 }
+
+// ---------------------------------------------------------------------------
+// Per-IP rate limit for the public, unauthenticated read routes
+// (`/published/{ref}`, `/public-contracts`, `/catalog`).
+//
+// These tests pin the security-critical part of the guard added for the
+// stream-demo removal: the token-bucket key MUST be derived from an address
+// the client cannot forge. Production runs behind Fly, which sets the
+// trustworthy `Fly-Client-IP`; `X-Forwarded-For` is attacker-controlled there.
+// They also exercise the limiting behaviour end-to-end against the real
+// `RateLimitState` with the actual public-route constants — no DB required.
+// ---------------------------------------------------------------------------
+#[cfg(test)]
+mod public_ip_rate_limit_tests {
+    use axum::http::{HeaderMap, HeaderName, HeaderValue};
+    use contractgate::rate_limit::RateLimitState;
+
+    use super::super::{client_ip_bucket, PUBLIC_IP_RATE_LIMIT_BURST, PUBLIC_IP_RATE_LIMIT_RPS};
+
+    /// Build a `HeaderMap` from `(name, value)` pairs.
+    fn headers(pairs: &[(&str, &str)]) -> HeaderMap {
+        let mut h = HeaderMap::new();
+        for (k, v) in pairs {
+            h.insert(
+                HeaderName::from_bytes(k.as_bytes()).unwrap(),
+                HeaderValue::from_str(v).unwrap(),
+            );
+        }
+        h
+    }
+
+    /// One pass through the guard's logic: derive the per-IP bucket from the
+    /// headers and charge it against a shared limiter using the real
+    /// public-route constants. Mirrors `public_ip_rate_limit` without needing
+    /// a full `AppState`/DB.
+    fn allowed(state: &RateLimitState, pairs: &[(&str, &str)]) -> bool {
+        state
+            .check(
+                client_ip_bucket(&headers(pairs)),
+                Some(PUBLIC_IP_RATE_LIMIT_RPS),
+                Some(PUBLIC_IP_RATE_LIMIT_BURST),
+            )
+            .allowed
+    }
+
+    /// SECURITY: on Fly the real client IP is `Fly-Client-IP`; `X-Forwarded-For`
+    /// is attacker-supplied. A rotating, spoofed XFF must NOT change the bucket
+    /// while `Fly-Client-IP` is constant — otherwise the limiter is trivially
+    /// bypassed by varying one header per request.
+    #[test]
+    fn fly_client_ip_wins_over_spoofed_forwarded_for() {
+        let real = client_ip_bucket(&headers(&[
+            ("fly-client-ip", "203.0.113.7"),
+            ("x-forwarded-for", "1.1.1.1"),
+        ]));
+        let spoof_rotated = client_ip_bucket(&headers(&[
+            ("fly-client-ip", "203.0.113.7"),
+            ("x-forwarded-for", "2.2.2.2, 9.9.9.9"),
+        ]));
+        let spoof_none = client_ip_bucket(&headers(&[("fly-client-ip", "203.0.113.7")]));
+        assert_eq!(
+            real, spoof_rotated,
+            "bucket must be keyed on Fly-Client-IP, not the spoofable XFF"
+        );
+        assert_eq!(real, spoof_none);
+    }
+
+    /// The whole point of the fix: a single Fly client that rotates its
+    /// `X-Forwarded-For` on every request is still capped at the burst, because
+    /// the bucket follows `Fly-Client-IP`.
+    #[test]
+    fn rotating_forwarded_for_cannot_escape_the_limit_on_fly() {
+        let state = RateLimitState::default();
+        // Burst requests, each with a different spoofed XFF but the same real IP.
+        for i in 0..PUBLIC_IP_RATE_LIMIT_BURST {
+            let xff = format!("{i}.{i}.{i}.{i}");
+            assert!(
+                allowed(
+                    &state,
+                    &[
+                        ("fly-client-ip", "198.51.100.42"),
+                        ("x-forwarded-for", &xff)
+                    ]
+                ),
+                "request {i} within burst should pass"
+            );
+        }
+        // One more within the same second: the bucket is drained despite the
+        // brand-new XFF, so the scraper is finally told to back off.
+        assert!(
+            !allowed(
+                &state,
+                &[
+                    ("fly-client-ip", "198.51.100.42"),
+                    ("x-forwarded-for", "255.255.255.255")
+                ]
+            ),
+            "burst+1 must be denied even with a fresh spoofed XFF"
+        );
+    }
+
+    /// Distinct real clients get independent buckets: exhausting one must not
+    /// starve another.
+    #[test]
+    fn distinct_fly_clients_have_independent_buckets() {
+        let state = RateLimitState::default();
+        for _ in 0..PUBLIC_IP_RATE_LIMIT_BURST {
+            assert!(allowed(&state, &[("fly-client-ip", "203.0.113.1")]));
+        }
+        assert!(
+            !allowed(&state, &[("fly-client-ip", "203.0.113.1")]),
+            "first client should be exhausted"
+        );
+        assert!(
+            allowed(&state, &[("fly-client-ip", "203.0.113.2")]),
+            "a different client must be unaffected"
+        );
+    }
+
+    /// Off Fly (no `Fly-Client-IP`) the guard falls back to the first hop of
+    /// `X-Forwarded-For`, then `X-Real-IP`. Different first hops → different
+    /// buckets; a trailing proxy chain is ignored.
+    #[test]
+    fn falls_back_to_forwarded_for_then_real_ip() {
+        let a = client_ip_bucket(&headers(&[("x-forwarded-for", "10.0.0.1, 10.0.0.9")]));
+        let b = client_ip_bucket(&headers(&[("x-forwarded-for", "10.0.0.2, 10.0.0.9")]));
+        let a_again = client_ip_bucket(&headers(&[("x-forwarded-for", "10.0.0.1, 7.7.7.7")]));
+        assert_ne!(a, b, "different first hops must key different buckets");
+        assert_eq!(a, a_again, "only the first XFF hop keys the bucket");
+
+        let real_ip = client_ip_bucket(&headers(&[("x-real-ip", "10.0.0.1")]));
+        assert_eq!(
+            a, real_ip,
+            "X-Real-IP and the first XFF hop agree on the IP"
+        );
+    }
+
+    /// Requests with none of the IP headers all land in one shared `"unknown"`
+    /// bucket (stable, so they are collectively limited rather than unbounded).
+    #[test]
+    fn missing_headers_share_one_stable_bucket() {
+        let x = client_ip_bucket(&HeaderMap::new());
+        let y = client_ip_bucket(&headers(&[("accept", "application/json")]));
+        assert_eq!(x, y);
+        // And distinct from a real address.
+        assert_ne!(
+            x,
+            client_ip_bucket(&headers(&[("fly-client-ip", "203.0.113.9")]))
+        );
+    }
+
+    /// Sanity-check the configured ceiling: generous enough for browsing,
+    /// finite enough to stop a monopolising scraper.
+    #[test]
+    fn public_limit_constants_are_sane() {
+        const { assert!(PUBLIC_IP_RATE_LIMIT_RPS >= 10) };
+        const { assert!(PUBLIC_IP_RATE_LIMIT_BURST >= PUBLIC_IP_RATE_LIMIT_RPS) };
+    }
+}
