@@ -28,6 +28,44 @@ make demo-logs    # follow all service logs
 > Unlimited local events, full YAML editor, playground, audit log.
 > [Feature comparison below ↓](#self-hosted-free-vs-cloud)
 
+## Run the demo locally
+
+Everything the demo shows runs on your machine in Docker — no account, no hosted
+service, no data leaving your laptop. Two options, depending on what you want to
+see:
+
+**1. The full product (dashboard in your browser).** The zero-auth stack boots
+the real gateway, Postgres, and the dashboard, pre-seeded with three starter
+contracts and a live event stream:
+
+```bash
+git clone https://github.com/nightmoose/contractgate.git
+cd contractgate
+make demo            # docker compose --profile demo up --build
+# open http://localhost:3000
+```
+
+Prefer a single container? The gateway image is published to GHCR on every
+release, so you can run just the API without cloning:
+
+```bash
+docker run --rm -p 3001:3001 ghcr.io/contractgate/gateway:latest
+# health check: curl http://localhost:3001/health
+```
+
+**2. The throughput speed demo.** A self-contained, Kafka-backed demo that races
+the real validator against a zero-validation baseline over the same stream, with
+a live dashboard at **http://localhost:8088**. This is the local replacement for
+the old hosted stream demo:
+
+```bash
+docker compose -f docker-compose.kafka-demo.yml up -d   # Redpanda (Kafka)
+cargo run --release --features demo --bin demo          # start the demo
+# open http://localhost:8088
+```
+
+Full walkthrough and tuning knobs: [`demo/README.md`](demo/README.md).
+
 ![Purchase passes the user_events contract; delete is outside the enum and a negative amount is below the minimum](docs/images/validate-terminal.png)
 
 DataContractGate is a high-performance validation gateway that enforces rich semantic data contracts in real time. Built in Rust for sub-millisecond per-event validation (86k+ events/sec/core), it goes far beyond JSON Schema or basic type checks — ontology, glossary, patterns, enums, computed metrics, and automatic inference.
@@ -37,16 +75,15 @@ The same contract can gate what **leaves** your system. `POST /egress/{contract_
 **Validating LLM output?** The same engine powers [AISchemaGate](https://aischemagate.com) (`pip install aischemagate` / `npm install @nightmoose/aischemagate`). One-line wrapper over OpenAI / Anthropic / vLLM / Ollama responses — extracts the structured JSON, validates against your contract, optionally re-prompts on violation. Non-streaming only in v1. See [`docs/llm-output-validation.md`](docs/llm-output-validation.md), [`docs/llm-sdk-reference.md`](docs/llm-sdk-reference.md), and the copy-paste guides in [`docs/integrations/`](docs/integrations/) (Vercel AI SDK, structured outputs, LangGraph). Ingest recipes: [`examples/recipes/`](examples/recipes/).
 
 <!-- LATENCY NOTE (measured 2026-05-24): Per-event validation p99 latency is 31 µs server-side,
-     measured with warm compiled-contract cache. This is ~484x under the <15 ms p99 end-to-end
-     budget (network + DB), leaving ample headroom for transport and storage. Performance is
-     driven by Rust + Axum core with zero-copy contract matching. See ops/bench/ for
-     reproducible benchmark. -->
+     measured with warm compiled-contract cache, leaving ample headroom for transport and
+     storage (network + DB). Low-latency by design — Rust + Axum core with zero-copy contract
+     matching. See ops/bench/ for the reproducible benchmark. -->
 
 [![Security](https://img.shields.io/badge/security-hardened-brightgreen)](https://github.com/nightmoose/contractgate/security)
 [![Dependabot](https://img.shields.io/badge/Dependabot-enabled-brightgreen)](https://github.com/nightmoose/contractgate/security/dependabot)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 
-**Live demo** → [app.datacontractgate.com/stream-demo](https://app.datacontractgate.com/stream-demo)
+**See it run** → [Run the demo locally](#run-the-demo-locally) in Docker, or open the [playground](https://app.datacontractgate.com/playground).
 
 ---
 
@@ -147,7 +184,7 @@ The comparison table below is the zero-auth demo. With `CONTRACTGATE_SELF_HOSTED
 | Managed hosting + SLA | ❌ Self-hosted | ✅ |
 
 [→ Full pricing](https://app.datacontractgate.com/pricing)
-[→ Talk to sales](mailto:datacontractgate@nightmoose.com)
+[→ Talk to sales](mailto:hello@datacontractgate.com)
 
 ---
 

@@ -1,0 +1,60 @@
+# Publish the gateway container image to GHCR.
+#
+# Runs on pushes to `main`, on version tags (`v*`), and on manual dispatch —
+# never on PRs or feature branches. This keeps `ghcr.io/contractgate/gateway:latest`
+# (and the per-version tags) in step with released code, so the README's
+# `docker run` quickstart and the `docker-compose.yml` `${TAG:-latest}` reference
+# resolve to a real, published image. The manual trigger lets a maintainer
+# re-publish `latest` without a new commit. Publishing an image is not a deploy:
+# nothing in production is touched.
+name: Publish image
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  workflow_dispatch: {}
+
+concurrency:
+  group: publish-image-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  publish-image:
+    name: Build & push gateway image
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+
+      # Log in to GHCR with the workflow token. --password-stdin keeps the token
+      # off the process table and out of the logs.
+      - name: Log in to GHCR
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+
+      # Tag `latest` for every main/tag build; add the bare version (e.g.
+      # `0.4.1`) on tag pushes so compose files can pin `TAG=0.4.1`.
+      - name: Compute image tags
+        id: tags
+        run: |
+          image="ghcr.io/contractgate/gateway"
+          tags="${image}:latest"
+          if [ "${GITHUB_REF_TYPE}" = "tag" ]; then
+            version="${GITHUB_REF_NAME#v}"
+            tags="${tags},${image}:${version}"
+          fi
+          echo "tags=${tags}" >> "${GITHUB_OUTPUT}"
+
+      - name: Build & push
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          push: true
+          tags: ${{ steps.tags.outputs.tags }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

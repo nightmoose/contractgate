@@ -37,8 +37,9 @@ Status legend: ✅ done · ⬜ open · ❔ confirm
 
 - ✅ Project license: **MIT** ([LICENSE](../../LICENSE), [NOTICE](../../NOTICE)).
 - ✅ **Dependency license inventory** — Rust tree: [dependency-licenses.md](./dependency-licenses.md)
-  (cargo-about; regenerate via `about.toml` + `about.hbs`). Optional follow-up:
-  npm dashboard scan + `deny.toml` `[licenses]` CI allowlist.
+  (cargo-about; regenerate via `about.toml` + `about.hbs`). Dashboard npm
+  inventory: [dashboard-dependency-licenses.md](./dashboard-dependency-licenses.md).
+  `about.toml` is the diligence list for third-party licenses.
 - ❔ **Third-party assets** — fonts, icons, sample datasets (e.g. ACS catalog
   data): confirm redistribution rights.
 

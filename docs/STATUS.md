@@ -107,9 +107,10 @@ them by name only.
 | 105 | [ODCS v3.2 property enums, dual-brand MCP metadata, AISchemaGate guardrails](rfcs/105-odcs-v32-and-guardrail-recipes.md) | Shipped |
 | 106 | [Streaming chunk validation](rfcs/106-streaming-chunk-validation.md) | Draft |
 | 107 | [Python framework adapters](rfcs/107-python-framework-adapters.md) | Shipped |
-| 108 | [MIT-only dependency policy](rfcs/108-mit-only-dependencies.md) | Accepted |
+| 108 | [MIT-only dependency policy](rfcs/108-mit-only-dependencies.md) | Superseded by RFC-111 |
 | 109 | [Drop mode for failing records](rfcs/109-drop-mode.md) | Accepted |
 | 110 | [Quarantine by plan](rfcs/110-quarantine-plan-split.md) | Accepted |
+| 111 | [Remove the dependency license CI gate](rfcs/111-remove-dependency-license-ci.md) | Accepted |
 
 ---
 
@@ -126,6 +127,10 @@ them by name only.
 | **Superseded** | Replaced by a later RFC listed in the notes column; kept for design context. |
 
 ---
+
+*2026-11-05 — RFC-111: the dependency license CI gate is removed. The Licenses workflow, the npm and Python license checkers, `docs/LICENSE-EXCEPTIONS.md`, and the `deny.toml` `[licenses]` section are removed. `cargo deny` in CI checks advisories, bans, and sources. The project license stays MIT. Typecheck and build of the TypeScript SDK and the AISchemaGate alias run in the main CI workflow. See `docs/rfcs/111-remove-dependency-license-ci.md`.*
+
+*2026-11-02 — Demo improvements: the hosted live stream demo is retired in favour of a self-contained local Docker demo. The gateway drops the five public `/demo/*` SSE routes, the in-process `stream_demo` module, and its request-timeout exemption, so every route now sits inside the one 30s budget. The dashboard `/stream-demo` page is gone and `/stream-demo` 307s to `/playground`. "See it run" now points at the local throughput demo (`docker compose -f docker-compose.kafka-demo.yml up -d` + `cargo run --features demo --bin demo`, dashboard on `localhost:8088`) and the full zero-auth stack (`make demo`). The gateway image publishes to `ghcr.io/contractgate/gateway` on `main` and version tags for a one-line `docker run` quickstart. See `README.md` → "Run the demo locally" and `demo/README.md`.*
 
 *2026-10-30 — RFC-110: Free quarantine caps (50,000 per organization and 10,000 per contract, shared by DataContractGate and AISchemaGate) live in `src/plan.rs`. A full cap counts new failures under Drops. Hosted Kafka and Kinesis consumers use that decision and do not publish a counted drop to the quarantine topic. Replay and bulk replay return 403 `plan_required`. Migration 046 redacts leftover Free bodies and keeps the rows. A downgrade waits 30 days. See `docs/quarantine-plan-reference.md`.*
 

@@ -405,19 +405,60 @@ pub async fn egress_handler(
         .filter(|s| !s.is_empty());
 
     // --- Load contract identity (RFC-074: org-scoped; 404 if not owned) -----
-    let identity = storage::get_contract_identity(&state.db, contract_id, org_id).await?;
+    // Served from the egress TTL cache when warm; misses fall through to the DB
+    // and populate the cache. Only successful lookups are cached, so a 404 for a
+    // not-yet-created contract is never memoised.
+    let identity = match state.egress_cache.identity_get(contract_id, org_id) {
+        Some(identity) => identity,
+        None => {
+            let identity = storage::get_contract_identity(&state.db, contract_id, org_id).await?;
+            state
+                .egress_cache
+                .identity_put(contract_id, org_id, identity.clone());
+            identity
+        }
+    };
 
-    // RFC-086: gate egress event-body storage the same way ingest does.
-    let store_payloads =
-        crate::ingest::resolve_store_payloads(&state, org_id, identity.store_event_payloads).await;
+    // RFC-086: gate egress event-body storage the same way ingest does. The plan
+    // check is cached per (org, contract switch) for the egress TTL window.
+    let store_payloads = match state
+        .egress_cache
+        .payload_policy_get(org_id, identity.store_event_payloads)
+    {
+        Some(v) => v,
+        None => {
+            let v = crate::ingest::resolve_store_payloads(
+                &state,
+                org_id,
+                identity.store_event_payloads,
+            )
+            .await;
+            state
+                .egress_cache
+                .payload_policy_put(org_id, identity.store_event_payloads, v);
+            v
+        }
+    };
 
     // --- Resolve version ----------------------------------------------------
     let (resolved_version, _pin_source) =
         resolve_version(&state, contract_id, header_version, path_version).await?;
 
     // --- Fetch version row (check deprecated) --------------------------------
-    let version_row =
-        storage::get_version_for_pin(&state.db, contract_id, &resolved_version, org_id).await?;
+    let version_row = match state
+        .egress_cache
+        .version_get(contract_id, &resolved_version, org_id)
+    {
+        Some(v) => v,
+        None => {
+            let v = storage::get_version_for_pin(&state.db, contract_id, &resolved_version, org_id)
+                .await?;
+            state
+                .egress_cache
+                .version_put(contract_id, &resolved_version, org_id, v.clone());
+            v
+        }
+    };
     // A normalised pin (`1.0.0` for a stored `1.0`) continues as the stored string;
     // the caller's spelling is echoed back as `requested_version`.
     let requested_version =
@@ -702,9 +743,18 @@ async fn resolve_version(
     if let Some(v) = path_version {
         return Ok((v, "path"));
     }
-    let latest = storage::get_latest_stable_version(&state.db, contract_id)
-        .await?
-        .ok_or(AppError::NoStableVersion { contract_id })?;
+    // Default pin: resolve the latest stable version, served from the egress
+    // TTL cache when warm (the `None` answer is cached too, so a contract with
+    // no stable version does not re-query on every request).
+    let latest = match state.egress_cache.latest_stable_get(contract_id) {
+        Some(cached) => cached,
+        None => {
+            let v = storage::get_latest_stable_version(&state.db, contract_id).await?;
+            state.egress_cache.latest_stable_put(contract_id, v.clone());
+            v
+        }
+    };
+    let latest = latest.ok_or(AppError::NoStableVersion { contract_id })?;
     Ok((latest.version, "default_stable"))
 }
 

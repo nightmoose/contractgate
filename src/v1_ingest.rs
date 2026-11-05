@@ -653,64 +653,6 @@ fn more_openapi_paths(paths: &mut serde_json::Map<String, Value>) {
     );
     merge_openapi_op(
         paths,
-        "/demo/start",
-        "post",
-        json!({
-            "operationId": "demo_start",
-            "summary": "Start the local stream demo",
-            "requestBody": {"required": true, "content": {"application/json": {"schema": {"type": "object", "required": ["scenario", "fail_ratio", "duration_secs"], "properties": {"scenario": {"type": "string"}, "fail_ratio": {"type": "number"}, "target_rate": {"type": ["integer", "null"]}, "duration_secs": {"type": "integer"}}}}}},
-            "responses": {
-                "200": {"description": "Started", "content": {"application/json": {"schema": {"type": "object", "properties": {"status": {"type": "string"}, "scenario": {"type": "string"}}}}}},
-                "400": {"description": "Unknown scenario"}
-            }
-        }),
-    );
-    merge_openapi_op(
-        paths,
-        "/demo/stop",
-        "post",
-        json!({
-            "operationId": "demo_stop",
-            "summary": "Stop the local stream demo",
-            "responses": {"200": {"description": "Stopped", "content": {"application/json": {"schema": {"type": "object", "properties": {"status": {"type": "string"}}}}}}}
-        }),
-    );
-    merge_openapi_op(
-        paths,
-        "/demo/stream",
-        "get",
-        json!({
-            "operationId": "demo_stream",
-            "summary": "Server-sent stats snapshots for the stream demo",
-            "responses": {"200": {"description": "text/event-stream of stats snapshots", "content": {"text/event-stream": {"schema": {"type": "string"}}}}}
-        }),
-    );
-    merge_openapi_op(
-        paths,
-        "/demo/events",
-        "get",
-        json!({
-            "operationId": "demo_events",
-            "summary": "Server-sent demo events",
-            "responses": {"200": {"description": "text/event-stream of demo events", "content": {"text/event-stream": {"schema": {"type": "string"}}}}}
-        }),
-    );
-    merge_openapi_op(
-        paths,
-        "/demo/contract",
-        "get",
-        json!({
-            "operationId": "demo_contract",
-            "summary": "YAML for a demo scenario",
-            "parameters": [{"name": "scenario", "in": "query", "required": false, "schema": {"type": "string", "enum": ["simple", "nested"], "default": "simple"}}],
-            "responses": {
-                "200": {"description": "Contract YAML", "content": {"text/plain": {"schema": {"type": "string"}}}},
-                "404": {"description": "Unknown scenario"}
-            }
-        }),
-    );
-    merge_openapi_op(
-        paths,
         "/public-contracts",
         "get",
         json!({
@@ -1743,19 +1685,18 @@ pub async fn v1_ingest_handler(
             }
         }
 
+        // RFC: route durable writes through the bounded, batched write queue
+        // instead of spawning up to three untracked tasks per request.  A full
+        // queue drops the job and bumps `contractgate_write_queue_dropped_total`
+        // rather than blocking the response.
         if !audit_rows.is_empty() {
-            let n = audit_rows.len();
-            let pool = state.db.clone();
-            let meter_org = org_id;
-            tokio::spawn(async move {
-                if let Err(e) =
-                    storage::log_audit_entries_batch(&pool, &audit_rows, store_payloads).await
-                {
-                    tracing::warn!("v1 ingest: audit write failed: {e:?}");
-                    return;
-                }
-                crate::metering::record_batch_usage_blocking(&pool, meter_org, n).await;
-            });
+            state
+                .write_queue
+                .submit(crate::write_queue::WriteJob::Audit {
+                    rows: audit_rows,
+                    store_payloads,
+                    meter_org: org_id,
+                });
         }
         if !quarantine_rows.is_empty() {
             if let Some(org) = org_id {
@@ -1765,24 +1706,20 @@ pub async fn v1_ingest_handler(
                     quarantine_rows.len() as i64,
                 );
             }
-            let pool = state.db.clone();
-            tokio::spawn(async move {
-                if let Err(e) =
-                    storage::quarantine_events_batch(&pool, &quarantine_rows, store_payloads).await
-                {
-                    tracing::warn!("v1 ingest: quarantine write failed: {e:?}");
-                }
-            });
+            state
+                .write_queue
+                .submit(crate::write_queue::WriteJob::Quarantine {
+                    rows: quarantine_rows,
+                    store_payloads,
+                });
         }
         if !forward_rows.is_empty() {
-            let pool = state.db.clone();
-            tokio::spawn(async move {
-                if let Err(e) =
-                    storage::forward_events_batch(&pool, &forward_rows, store_payloads).await
-                {
-                    tracing::warn!("v1 ingest: forward write failed: {e:?}");
-                }
-            });
+            state
+                .write_queue
+                .submit(crate::write_queue::WriteJob::Forward {
+                    rows: forward_rows,
+                    store_payloads,
+                });
         }
     } else if crate::drop_mode::writes_atomic_summary(decision.mode, query.dry_run, failed_count) {
         // Atomic summary audit row.

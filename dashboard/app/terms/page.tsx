@@ -87,10 +87,10 @@ export default function TermsPage() {
                 </Link>{" "}
                 page under Billing, which opens the Stripe billing portal, or by emailing{" "}
                 <a
-                  href="mailto:datacontractgate@nightmoose.com"
+                  href="mailto:hello@datacontractgate.com"
                   className="text-green-400 hover:text-green-300"
                 >
-                  datacontractgate@nightmoose.com
+                  hello@datacontractgate.com
                 </a>
                 . Cancellation stops all future renewals. Your paid features remain
                 available until the end of the billing period you have already paid for.
@@ -127,10 +127,10 @@ export default function TermsPage() {
             <p>
               Questions about these Terms? Email us at{" "}
               <a
-                href="mailto:datacontractgate@nightmoose.com"
+                href="mailto:hello@datacontractgate.com"
                 className="text-green-400 hover:text-green-300"
               >
-                datacontractgate@nightmoose.com
+                hello@datacontractgate.com
               </a>
               .
             </p>

@@ -15,7 +15,6 @@ import { DEMO_MODE } from "@/lib/demo";
 // validation). Hidden: DataContractGate docs/demos and the data-pipeline tools
 // (Catalog, Scorecard, Scaffold, Workbench). The pages still exist by URL.
 const AISG_HIDDEN = new Set([
-  "/stream-demo",
   "/docs/kafka-connect",
   "/docs/python-sdk",
   "/catalog",
@@ -26,7 +25,6 @@ const AISG_HIDDEN = new Set([
 const AISG_DOCS = { href: AISG_DOCS_URL, label: "Docs", icon: "📘", helpId: "nav.docs" };
 
 const PUBLIC_NAV = [
-  { href: "/stream-demo",        label: "Stream Demo",  icon: "⚡", helpId: "nav.stream-demo" },
   { href: "/docs/kafka-connect", label: "Kafka Connect", icon: "🔗", helpId: "nav.kafka-connect" },
   { href: "/docs/fivetran", label: "Fivetran", icon: "⟳", helpId: "nav.fivetran" },
   { href: "/docs/python-sdk",    label: "Python SDK",    icon: "🐍", helpId: "nav.python-sdk" },

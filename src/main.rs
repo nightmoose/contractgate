@@ -50,6 +50,7 @@ mod api_key_auth;
 mod collaboration;
 mod conformance;
 mod egress;
+mod egress_cache;
 mod error;
 mod fail_policy;
 mod fivetran;
@@ -92,12 +93,12 @@ mod scorecard;
 mod security_headers;
 mod settings;
 mod storage;
-mod stream_demo;
 #[cfg(test)]
 mod tests;
 mod usage;
 mod v1_ingest;
 mod version_pin;
+mod write_queue;
 
 use contract::{
     Contract, ContractIdentity, ContractResponse, ContractSummary, ContractVersion,
@@ -136,8 +137,6 @@ pub struct AppState {
     pub key_cache: Arc<api_key_auth::ApiKeyCache>,
     /// Per-API-key token-bucket rate limiter (RFC-021).
     pub rate_limiter: Arc<rate_limit::RateLimitState>,
-    /// In-process stream demo state (no Kafka, no DB writes).
-    pub stream_demo: std::sync::Arc<stream_demo::StreamDemoState>,
     /// RFC-025: platform-side Kafka consumer pool (one task per enabled contract).
     pub kafka_consumers: kafka_consumer::ConsumerPool,
     /// RFC-026: platform-side Kinesis consumer pool (one task per enabled contract).
@@ -155,6 +154,11 @@ pub struct AppState {
     /// Unix-epoch-seconds of the last out-of-band kid-refresh attempt.
     /// Used to debounce refresh-on-unknown-kid to at most once per 60 s.
     pub jwks_last_kid_refresh: Arc<AtomicU64>,
+    /// Bounded, batched background-write queue for the ingest hot path.
+    /// Replaces the previous per-request `tokio::spawn` fan-out.
+    pub write_queue: write_queue::WriteQueue,
+    /// Short-TTL caches for the egress hot-path DB lookups.
+    pub egress_cache: egress_cache::EgressCache,
 }
 
 impl AppState {
@@ -164,8 +168,13 @@ impl AppState {
         supabase_jwks: Option<JwkSet>,
         supabase_jwks_url: Option<String>,
     ) -> Self {
+        // Spawn the background-write worker from the pool before `db` is moved
+        // into the struct.  Requires a Tokio runtime (always present here).
+        let write_queue = write_queue::WriteQueue::new(db.clone());
         AppState {
             db,
+            write_queue,
+            egress_cache: egress_cache::EgressCache::default(),
             contract_cache: RwLock::new(HashMap::new()),
             dev_no_auth,
             self_hosted: crate::plan::self_hosted_flag(
@@ -173,7 +182,6 @@ impl AppState {
             ),
             key_cache: Arc::new(api_key_auth::ApiKeyCache::default()),
             rate_limiter: Arc::new(rate_limit::RateLimitState::default()),
-            stream_demo: std::sync::Arc::new(stream_demo::StreamDemoState::new()),
             kafka_consumers: kafka_consumer::ConsumerPool::new(),
             kinesis_consumers: kinesis_consumer::ConsumerPool::new(),
             supabase_jwks: Arc::new(ArcSwap::from_pointee(supabase_jwks)),
@@ -291,12 +299,17 @@ impl AppState {
     pub fn invalidate_version(&self, contract_id: Uuid, version: &str) {
         let mut cache = self.cache_write();
         cache.remove(&(contract_id, version.to_string()));
+        drop(cache);
+        // Keep the egress hot-path caches in step with contract edits.
+        self.egress_cache.invalidate_version(contract_id, version);
     }
 
     /// Drop every cached version for a contract.  Call on delete.
     pub fn invalidate_contract_all(&self, contract_id: Uuid) {
         let mut cache = self.cache_write();
         cache.retain(|(cid, _), _| *cid != contract_id);
+        drop(cache);
+        self.egress_cache.invalidate_contract_all(contract_id);
     }
 
     /// Returns true when auth is required (the normal case). Used by org-scoped
@@ -618,7 +631,11 @@ async fn patch_contract_handler(
         org_id,
     )
     .await?;
-    // Identity-only patch doesn't touch yaml; no cache eviction needed.
+    // Identity-only patch doesn't touch yaml, so the compiled cache is still
+    // valid.  It can change `multi_stable_resolution`, which the egress default
+    // pin resolves against, and the egress identity cache holds a copy of this
+    // row — evict the contract's egress entries so the edit is visible at once.
+    state.egress_cache.invalidate_contract_all(id);
     let stored = identity.store_event_payloads;
     let decision = payload_decision(&state.db, org_id).await?;
     Ok(Json(
@@ -761,6 +778,10 @@ async fn promote_version_handler(
     // Version is now stable and frozen.  Pre-warm the cache so the first
     // ingest request doesn't take the slow path.
     let _ = state.get_compiled(contract_id, &version).await;
+    // The egress default pin caches the latest-stable answer (including the
+    // negative "no stable version"); evict so the freshly promoted version is
+    // served immediately rather than after the TTL.
+    state.egress_cache.invalidate_contract_all(contract_id);
     Ok(Json(VersionResponse::from(&v)))
 }
 
@@ -774,9 +795,12 @@ async fn deprecate_version_handler(
     }
     require_owner(&state, contract_id, org_id).await?;
     let v = storage::deprecate_version(&state.db, contract_id, &version, org_id).await?;
-    // Cached compiled form is still correct (YAML didn't change); the
-    // deprecated-pin short-circuit in ingest.rs looks at the DB row's state,
-    // not the cache.  No invalidation needed.
+    // Cached compiled form is still correct (YAML didn't change); the ingest
+    // deprecated-pin short-circuit reads the DB row's state, not that cache.
+    // The egress hot path, however, now caches the version *row* it fetched, so
+    // without eviction a just-deprecated pin would keep certifying egress
+    // output until the TTL expired.  Drop the contract's egress cache entries.
+    state.egress_cache.invalidate_contract_all(contract_id);
     Ok(Json(VersionResponse::from(&v)))
 }
 
@@ -1540,6 +1564,68 @@ async fn require_api_key(
 }
 
 // ---------------------------------------------------------------------------
+// Per-IP rate limit for the unauthenticated public read routes
+// ---------------------------------------------------------------------------
+
+/// Sustained per-IP rate (req/sec) for `/published/{ref}`, `/public-contracts`
+/// and `/catalog`. These carry no API key, so one client can only be told
+/// apart by its address. The reads are cheap and cached, so the ceiling is
+/// generous; it exists to stop a single scraper from monopolising the public
+/// surface, not to meter normal browsing.
+const PUBLIC_IP_RATE_LIMIT_RPS: u32 = 30;
+/// Burst capacity (back-to-back requests) for the same per-IP bucket.
+const PUBLIC_IP_RATE_LIMIT_BURST: u32 = 60;
+
+/// Token-bucket key for an unauthenticated caller: a stable v5 UUID derived
+/// from the client IP.
+///
+/// The address MUST come from a hop the client cannot forge, or the limiter is
+/// pointless: a scraper that controls its own source IP string lands in a fresh
+/// bucket on every request and never hits the ceiling. In production we run
+/// behind Fly, whose edge sets `Fly-Client-IP` to the real peer address and
+/// overwrites any client-supplied value — that is the only trustworthy source,
+/// so we read it first. `X-Forwarded-For` (first hop) / `X-Real-IP` are only a
+/// fallback for non-Fly or local deployments that sit behind a trusted reverse
+/// proxy; on Fly they are attacker-controlled and deliberately ignored while
+/// `Fly-Client-IP` is present. Requests with none of these headers share one
+/// `"unknown"` bucket. The derived UUID lets these routes reuse the RFC-021
+/// `RateLimitState` unchanged.
+fn client_ip_bucket(headers: &axum::http::HeaderMap) -> Uuid {
+    let ip = headers
+        .get("fly-client-ip")
+        .or_else(|| headers.get("x-forwarded-for"))
+        .or_else(|| headers.get("x-real-ip"))
+        .and_then(|v| v.to_str().ok())
+        .map(|s| s.split(',').next().unwrap_or(s).trim())
+        .filter(|s| !s.is_empty())
+        .unwrap_or("unknown");
+    Uuid::new_v5(&Uuid::NAMESPACE_OID, ip.as_bytes())
+}
+
+/// Per-IP token-bucket guard for the public, unauthenticated read routes.
+///
+/// On exhaustion it returns the standard 429 (with `X-RateLimit-*` +
+/// `Retry-After`). On success the response is returned untouched — in
+/// particular it adds no headers, so `/catalog` keeps whatever cache headers
+/// it carries and stays CDN-cacheable.
+async fn public_ip_rate_limit(
+    State(state): State<Arc<AppState>>,
+    request: Request,
+    next: Next,
+) -> Result<axum::response::Response, error::AppError> {
+    let bucket = client_ip_bucket(request.headers());
+    let outcome = state.rate_limiter.check(
+        bucket,
+        Some(PUBLIC_IP_RATE_LIMIT_RPS),
+        Some(PUBLIC_IP_RATE_LIMIT_BURST),
+    );
+    if !outcome.allowed {
+        return Err(error::AppError::RateLimitExceeded(outcome));
+    }
+    Ok(next.run(request).await)
+}
+
+// ---------------------------------------------------------------------------
 // RFC-064: SMT version probe
 // ---------------------------------------------------------------------------
 
@@ -1638,6 +1724,29 @@ fn build_router(state: Arc<AppState>) -> Router {
         .allow_methods(Any)
         .allow_headers(Any);
 
+    // Public read routes that are unauthenticated and cheap but open to the
+    // internet. A per-IP token bucket (reusing the RFC-021 limiter) caps any
+    // single address so a scraper can't monopolise them. The guard only reads
+    // headers and 429s; it never rewrites a 2xx, so `/catalog` keeps its cache
+    // headers and stays CDN-cacheable.
+    let public_rate_limited = Router::new()
+        // RFC-032: public-fetch for published contracts (visibility checked inside handler)
+        .route(
+            "/published/{publication_ref}",
+            get(publication::fetch_published_handler),
+        )
+        // Curated open-data public contracts (no auth — readable by anyone)
+        .route(
+            "/public-contracts",
+            get(public_catalog::list_public_contracts_handler),
+        )
+        // User-published contracts catalog (no auth — lists public visibility publications)
+        .route("/catalog", get(publication::catalog_handler))
+        .layer(middleware::from_fn_with_state(
+            state.clone(),
+            public_ip_rate_limit,
+        ));
+
     // Public routes — no auth required
     let public = Router::new()
         .route("/health", get(health_handler))
@@ -1649,29 +1758,11 @@ fn build_router(state: Arc<AppState>) -> Router {
         // Open by default; Bearer-auth gated when METRICS_AUTH_TOKEN is set.
         // Mounted as public so Prometheus can scrape without an x-api-key.
         .route("/metrics", get(observability::metrics_handler))
-        // Stream demo — public so the browser's EventSource can connect
-        // without auth headers (no sensitive data, local demo only).
-        .route("/demo/start", post(stream_demo::start_handler))
-        .route("/demo/stop", post(stream_demo::stop_handler))
-        .route("/demo/stream", get(stream_demo::stream_handler))
-        .route("/demo/events", get(stream_demo::events_handler))
-        .route("/demo/contract", get(stream_demo::contract_handler))
-        // RFC-032: public-fetch for published contracts (visibility checked inside handler)
-        .route(
-            "/published/{publication_ref}",
-            get(publication::fetch_published_handler),
-        )
-        // Curated open-data public contracts (no auth — readable by anyone)
-        .route(
-            "/public-contracts",
-            get(public_catalog::list_public_contracts_handler),
-        )
         .route(
             "/public-contracts/{id}",
             get(public_catalog::get_public_contract_handler),
         )
-        // User-published contracts catalog (no auth — lists public visibility publications)
-        .route("/catalog", get(publication::catalog_handler));
+        .merge(public_rate_limited);
 
     // Protected routes — require x-api-key header
     let protected = Router::new()
@@ -2030,9 +2121,9 @@ fn build_router(state: Arc<AppState>) -> Router {
         .layer(middleware::from_fn(observability::track_requests))
         .layer(TraceLayer::new_for_http())
         // 30s budget. Logs the route and the stage that was in progress
-        // (`handler`, `pool_acquire`, `db_statement`) and returns 504.
-        // Demo SSE streams are excluded; a wedged worker is still logged by
-        // the deadline thread because that wait does not yield.
+        // (`handler`, `pool_acquire`, `db_statement`) and returns 504. Every
+        // route now sits inside this one budget; a wedged worker is still
+        // logged by the deadline thread because that wait does not yield.
         .layer(middleware::from_fn(request_limits::request_timeout))
         // Retire the old contractgate-api.fly.dev host (opt-in via the
         // LEGACY_API_HOSTS secret). Outside CORS/auth so a legacy request is
@@ -2219,7 +2310,7 @@ async fn main() -> anyhow::Result<()> {
     metering::spawn_usage_reconcile_task(state.db.clone());
     tracing::info!("usage reconcile background task spawned");
 
-    let app = build_router(state);
+    let app = build_router(Arc::clone(&state));
 
     let port: u16 = std::env::var("PORT")
         .ok()
@@ -2230,7 +2321,46 @@ async fn main() -> anyhow::Result<()> {
     tracing::info!("DataContractGate listening on {}", addr);
 
     let listener = tokio::net::TcpListener::bind(addr).await?;
-    axum::serve(listener, app).await?;
+    axum::serve(listener, app)
+        .with_graceful_shutdown(shutdown_signal())
+        .await?;
+
+    // Drain the background-write queue so an orderly restart does not lose
+    // audit/quarantine/forward rows that were queued but not yet written.
+    tracing::info!("draining background write queue");
+    state
+        .write_queue
+        .shutdown(std::time::Duration::from_secs(10))
+        .await;
+    tracing::info!("shutdown complete");
 
     Ok(())
+}
+
+/// Resolve when the process receives SIGINT (Ctrl-C) or SIGTERM (container
+/// stop). Triggers Axum's graceful shutdown so in-flight requests finish and
+/// the background-write queue can drain.
+async fn shutdown_signal() {
+    let ctrl_c = async {
+        tokio::signal::ctrl_c()
+            .await
+            .expect("failed to install Ctrl-C handler");
+    };
+
+    #[cfg(unix)]
+    let terminate = async {
+        tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
+            .expect("failed to install SIGTERM handler")
+            .recv()
+            .await;
+    };
+
+    #[cfg(not(unix))]
+    let terminate = std::future::pending::<()>();
+
+    tokio::select! {
+        _ = ctrl_c => {},
+        _ = terminate => {},
+    }
+    tracing::info!("shutdown signal received");
 }

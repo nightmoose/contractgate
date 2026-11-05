@@ -500,8 +500,8 @@ function DashboardContent() {
                   stats.p99_validation_us < 1000
                     ? `${stats.p99_validation_us}µs`
                     : `${(stats.p99_validation_us / 1000).toFixed(2)}ms`
-                } (target <15ms)`
-              : "p99 target: <15ms"
+                } (low-latency)`
+              : "p99: low-latency"
           }
           color={
             stats?.p99_validation_us != null && stats.p99_validation_us < 15000

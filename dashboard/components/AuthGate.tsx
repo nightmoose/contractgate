@@ -74,7 +74,7 @@ export default function AuthGate({ page, children }: AuthGateProps) {
         </div>
         <p className="mt-5 text-xs text-slate-600">
           No credit card required · Free to start ·{" "}
-          <Link href="/stream-demo" className="text-green-600 hover:text-green-500">
+          <Link href="/playground" className="text-green-600 hover:text-green-500">
             Try the live demo first →
           </Link>
         </p>

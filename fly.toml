@@ -21,18 +21,42 @@ primary_region = 'iad'
   # (one backend, two front doors):
   # fly secrets set DASHBOARD_ORIGIN=https://app.datacontractgate.com,https://aischemagate.com,https://aischemagate.dev
   # Production must set CANONICAL_API_ORIGIN=https://api.datacontractgate.com
+  #
+  # DATABASE_URL (set via `fly secrets`, never here) MUST use the Supabase
+  # pooler host (*.pooler.supabase.com), never the direct host
+  # (db.<project>.supabase.co). The direct host opens one Postgres backend per
+  # connection and cannot absorb a spike; the server logs a startup warning if
+  # it sees the direct host.
+  #
+  # DB pool size per machine is CONTRACTGATE_DB_POOL_MAX_CONNECTIONS (default
+  # 10, src/request_limits.rs). `pool size * min_machines_running` is the
+  # steady-state connection count and MUST stay under the Supabase pooler's
+  # connection limit. Today: 10 * 2 = 20. Raise the pool and the machine count
+  # together, and check the pooler limit before scaling past it (see
+  # docs/ops/spike-day-runbook.md).
 
 [http_service]
   internal_port = 3001
   force_https = true
-  auto_stop_machines = 'stop'
+  # Always-on for the spike: keep machines up so the first Show HN burst does
+  # not pay a cold-start. auto_start still brings a stopped machine back if one
+  # ever exits.
+  auto_stop_machines = 'off'
   auto_start_machines = true
-  min_machines_running = 1
+  min_machines_running = 2
 
   [http_service.concurrency]
+    # Sized from the staging run of ops/loadtest/spike.js on 2026-11-04
+    # (read-only browse scenario, 100 VUs, 2 machines, pool 5 each): about 82
+    # req/s, p95 530ms, p99 588ms, no errors, no 429s. DB-backed reads took
+    # about 210ms median against 26ms for /health, so the DB pool sets the
+    # limit, not the CPU. With pool 10 per machine, a 400-request soft limit
+    # would queue requests in the pool past its 8s acquire timeout before Fly
+    # starts routing elsewhere. Lower limits make the proxy shed and spread
+    # load first. Re-run the load test before raising them.
     type = 'requests'
-    hard_limit = 500
-    soft_limit = 400
+    hard_limit = 150
+    soft_limit = 100
 
   # Service check: a non-2xx on /ready stops routing to this machine.
   # One failure does not restart it. The process exits after three
@@ -58,13 +82,18 @@ primary_region = 'iad'
     method = 'GET'
     path = '/ready'
 
-# on-failure restarts a non-zero exit (the wedged-pool exit) and still
-# allows autostop. `always` would fight auto_stop_machines.
+# on-failure restarts a non-zero exit (the wedged-pool exit). Kept at
+# on-failure (not `always`) so it stays correct if auto_stop is ever turned
+# back on; with auto_stop_machines = 'off' the machines do not stop anyway.
 [[restart]]
   policy = 'on-failure'
   retries = 10
 
 [[vm]]
-  cpu_kind = 'shared'
+  # performance-1x for the spike: a dedicated CPU holds p99 under load where a
+  # shared CPU would be throttled. 2048 MB gives headroom for the pool and
+  # per-request buffers; drop to 1024 if cost matters and the staging load test
+  # shows memory stays well under it.
+  cpu_kind = 'performance'
   cpus = 1
-  memory_mb = 256
+  memory_mb = 2048

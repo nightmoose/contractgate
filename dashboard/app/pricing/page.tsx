@@ -70,7 +70,7 @@ const TIERS = [
     price: { monthly: "Custom", annual: "Custom" },
     priceSub: { monthly: "contact us", annual: "contact us" },
     cta: "Talk to us",
-    ctaHref: "mailto:datacontractgate@nightmoose.com",
+    ctaHref: "mailto:hello@datacontractgate.com",
     highlight: false,
     color: "border-[#1f2937]",
     badge: null,
@@ -84,7 +84,7 @@ const FEATURES: Feature[] = [
   { label: "Ingest API",                       selfHosted: true,                free: true,              growth: true,         enterprise: true },
   { label: "Playground (test without save)",   selfHosted: true,                free: true,              growth: true,         enterprise: true },
   { label: "Audit log retention",              selfHosted: "Local Postgres",    free: "7 days",          growth: "90 days",    enterprise: "Custom" },
-  { label: "Stream demo dashboard",            selfHosted: true,                free: true,              growth: true,         enterprise: true },
+  { label: "Local Docker demo",                selfHosted: true,                free: true,              growth: true,         enterprise: true },
   { label: "Batch ingest",                     selfHosted: true,                free: false,             growth: true,         enterprise: true },
   { label: "Data-parallel validation (Rayon)", selfHosted: true,                free: false,             growth: true,         enterprise: true },
   { label: "Auth & API key management",        selfHosted: false,               free: true,              growth: true,         enterprise: true },
@@ -164,7 +164,7 @@ export default function PricingPage() {
       <div className="text-center pt-4">
         <div className="inline-flex items-center gap-2 bg-green-900/30 border border-green-700/40 rounded-full px-3 py-1 text-xs text-green-400 font-medium mb-4">
           <span className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse" />
-          Patent Pending · Rust-native · &lt;15 ms p99
+          Patent Pending · Rust-native · low-latency
         </div>
         <HelpTarget id="page.pricing">
           <h1 className="text-4xl font-bold tracking-tight">
@@ -382,7 +382,7 @@ export default function PricingPage() {
           named SRE. We&apos;ll scope your POC in one call.
         </p>
         <a
-          href="mailto:datacontractgate@nightmoose.com"
+          href="mailto:hello@datacontractgate.com"
           className="inline-block bg-green-600 hover:bg-green-500 text-white font-semibold text-sm px-6 py-3 rounded-lg transition-colors"
         >
           Talk to sales →

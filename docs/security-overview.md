@@ -16,8 +16,8 @@ Producer → (API key / JWT resolves **org**) → per-org **contract** → **val
 (sub-millisecond, panic-free Rust hot path) → **audit** + **quarantine** on
 failure. Bad events are stopped *before* the warehouse.
 
-- Validation engine: Rust (Axum), compile-once / validate-many. Target **<15 ms
-  p99**; measured p99 ~31 µs (2026-05-24 perf test). The request path is
+- Validation engine: Rust (Axum), compile-once / validate-many. Low-latency by
+  design; measured p99 ~31 µs (2026-05-24 perf test). The request path is
   panic-free by policy (RFC-067 converted latent `unwrap`/`expect` to clean 4xx).
 - Backend hosting: Fly.io (`primary_region = iad`, US East).
 - Data store: Supabase Postgres (project `contract gate`, `us-east-2`, PG 17).
@@ -131,7 +131,7 @@ per-contract `pii_salt`. Detail: [`docs/pii-masking-reference.md`](./pii-masking
 From [`SECURITY.md`](../SECURITY.md):
 
 - GitHub secret scanning + push protection; CodeQL static analysis.
-- `cargo audit` + `cargo deny` and Dependabot in CI. `deny.toml` allows MIT, ISC, BSD-2-Clause, BSD-3-Clause, and 0BSD. Every other Rust, npm, and Python license is listed in [`docs/LICENSE-EXCEPTIONS.md`](./LICENSE-EXCEPTIONS.md).
+- `cargo audit`, `cargo deny check advisories bans sources`, and Dependabot in CI.
 - Signed commits required on `main`; branch protection enabled.
 - Coverage ratchet gate (RFC-071) and a migration-drift check
   ([`docs/migration-drift-check-reference.md`](./migration-drift-check-reference.md)).
