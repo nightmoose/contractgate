@@ -71,11 +71,14 @@ impl WriteJob {
 /// Where the worker actually persists batches.  Abstracted so tests can observe
 /// batching/drain without a database.
 pub trait WriteSink: Send + Sync + 'static {
+    /// Persist a batch of audit rows. Returns `true` if the write succeeded, so
+    /// the worker only meters usage for requests whose audit row was durably
+    /// written (keeps usage from exceeding `audit_log` truth).
     fn flush_audit(
         &self,
         rows: Vec<AuditEntryInsert>,
         store_payloads: bool,
-    ) -> impl std::future::Future<Output = ()> + Send;
+    ) -> impl std::future::Future<Output = bool> + Send;
 
     fn flush_quarantine(
         &self,
@@ -102,14 +105,16 @@ struct PgSink {
 }
 
 impl WriteSink for PgSink {
-    async fn flush_audit(&self, rows: Vec<AuditEntryInsert>, store_payloads: bool) {
-        if let Err(e) =
-            crate::storage::log_audit_entries_batch(&self.pool, &rows, store_payloads).await
-        {
-            tracing::warn!(
-                "write queue: audit write failed ({} rows): {e:?}",
-                rows.len()
-            );
+    async fn flush_audit(&self, rows: Vec<AuditEntryInsert>, store_payloads: bool) -> bool {
+        match crate::storage::log_audit_entries_batch(&self.pool, &rows, store_payloads).await {
+            Ok(_) => true,
+            Err(e) => {
+                tracing::warn!(
+                    "write queue: audit write failed ({} rows): {e:?}",
+                    rows.len()
+                );
+                false
+            }
         }
     }
 
@@ -239,10 +244,13 @@ async fn flush<S: WriteSink>(sink: &S, jobs: Vec<WriteJob>) {
     }
 
     use std::collections::HashMap;
-    let mut audit: HashMap<bool, Vec<AuditEntryInsert>> = HashMap::new();
+    // Audit rows are grouped by `store_payloads`; each group carries the
+    // per-request metering follow-ups for the requests whose rows it holds, so
+    // metering stays tied to the audit batch that must succeed first.
+    type AuditGroup = (Vec<AuditEntryInsert>, Vec<(Option<Uuid>, usize)>);
+    let mut audit: HashMap<bool, AuditGroup> = HashMap::new();
     let mut quarantine: HashMap<bool, Vec<QuarantineEventInsert>> = HashMap::new();
     let mut forward: HashMap<bool, Vec<ForwardEventInsert>> = HashMap::new();
-    let mut meter: Vec<(Option<Uuid>, usize)> = Vec::new();
 
     for job in jobs {
         match job {
@@ -253,8 +261,9 @@ async fn flush<S: WriteSink>(sink: &S, jobs: Vec<WriteJob>) {
             } => {
                 let n = rows.len();
                 if n > 0 {
-                    meter.push((meter_org, n));
-                    audit.entry(store_payloads).or_default().extend(rows);
+                    let group = audit.entry(store_payloads).or_default();
+                    group.1.push((meter_org, n));
+                    group.0.extend(rows);
                 }
             }
             WriteJob::Quarantine {
@@ -276,14 +285,18 @@ async fn flush<S: WriteSink>(sink: &S, jobs: Vec<WriteJob>) {
         }
     }
 
-    for (store_payloads, rows) in audit {
-        sink.flush_audit(rows, store_payloads).await;
-    }
-    // Metering follows the audit write, mirroring the original per-request order.
-    // Under-counts (e.g. an audit write that failed above) are repaired by the
-    // periodic usage-reconcile task, so decoupling them here is safe.
-    for (org, n) in meter {
-        sink.meter(org, n).await;
+    // Metering follows the audit write, mirroring the original per-request
+    // order, and is applied only when the audit batch persisted. If the audit
+    // write fails those events never reach `audit_log`, so skipping their
+    // metering keeps usage from exceeding audit truth — the periodic reconcile
+    // task only ever *raises* counters to match `audit_log`, so an over-count
+    // here would never self-heal.
+    for (store_payloads, (rows, meters)) in audit {
+        if sink.flush_audit(rows, store_payloads).await {
+            for (org, n) in meters {
+                sink.meter(org, n).await;
+            }
+        }
     }
     for (store_payloads, rows) in quarantine {
         sink.flush_quarantine(rows, store_payloads).await;
@@ -368,8 +381,9 @@ mod tests {
     }
 
     impl WriteSink for Arc<RecordingSink> {
-        async fn flush_audit(&self, rows: Vec<AuditEntryInsert>, _store_payloads: bool) {
+        async fn flush_audit(&self, rows: Vec<AuditEntryInsert>, _store_payloads: bool) -> bool {
             self.audit_batches.lock().unwrap().push(rows.len());
+            true
         }
         async fn flush_quarantine(&self, rows: Vec<QuarantineEventInsert>, _store_payloads: bool) {
             self.quarantine_batches.lock().unwrap().push(rows.len());
@@ -421,6 +435,36 @@ mod tests {
         assert_eq!(
             *sink.meter_calls.lock().unwrap(),
             vec![(Some(org), 2), (Some(org), 3)]
+        );
+    }
+
+    /// Sink whose audit writes always fail, to prove metering is gated on a
+    /// successful audit write (no over-count of usage past `audit_log` truth).
+    #[derive(Default)]
+    struct FailingAuditSink {
+        meter_calls: StdMutex<Vec<(Option<Uuid>, usize)>>,
+    }
+
+    impl WriteSink for Arc<FailingAuditSink> {
+        async fn flush_audit(&self, _rows: Vec<AuditEntryInsert>, _store_payloads: bool) -> bool {
+            false
+        }
+        async fn flush_quarantine(&self, _rows: Vec<QuarantineEventInsert>, _sp: bool) {}
+        async fn flush_forward(&self, _rows: Vec<ForwardEventInsert>, _sp: bool) {}
+        async fn meter(&self, org: Option<Uuid>, event_count: usize) {
+            self.meter_calls.lock().unwrap().push((org, event_count));
+        }
+    }
+
+    #[tokio::test]
+    async fn failed_audit_write_skips_metering() {
+        let sink = Arc::new(FailingAuditSink::default());
+        let org = Uuid::new_v4();
+        flush(&Arc::clone(&sink), vec![audit_job(4, Some(org))]).await;
+        // Audit write failed → the org must not be billed for those events.
+        assert!(
+            sink.meter_calls.lock().unwrap().is_empty(),
+            "metering must not run when the audit write fails"
         );
     }
 

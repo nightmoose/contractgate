@@ -631,7 +631,11 @@ async fn patch_contract_handler(
         org_id,
     )
     .await?;
-    // Identity-only patch doesn't touch yaml; no cache eviction needed.
+    // Identity-only patch doesn't touch yaml, so the compiled cache is still
+    // valid.  It can change `multi_stable_resolution`, which the egress default
+    // pin resolves against, and the egress identity cache holds a copy of this
+    // row — evict the contract's egress entries so the edit is visible at once.
+    state.egress_cache.invalidate_contract_all(id);
     let stored = identity.store_event_payloads;
     let decision = payload_decision(&state.db, org_id).await?;
     Ok(Json(
@@ -774,6 +778,10 @@ async fn promote_version_handler(
     // Version is now stable and frozen.  Pre-warm the cache so the first
     // ingest request doesn't take the slow path.
     let _ = state.get_compiled(contract_id, &version).await;
+    // The egress default pin caches the latest-stable answer (including the
+    // negative "no stable version"); evict so the freshly promoted version is
+    // served immediately rather than after the TTL.
+    state.egress_cache.invalidate_contract_all(contract_id);
     Ok(Json(VersionResponse::from(&v)))
 }
 
@@ -787,9 +795,12 @@ async fn deprecate_version_handler(
     }
     require_owner(&state, contract_id, org_id).await?;
     let v = storage::deprecate_version(&state.db, contract_id, &version, org_id).await?;
-    // Cached compiled form is still correct (YAML didn't change); the
-    // deprecated-pin short-circuit in ingest.rs looks at the DB row's state,
-    // not the cache.  No invalidation needed.
+    // Cached compiled form is still correct (YAML didn't change); the ingest
+    // deprecated-pin short-circuit reads the DB row's state, not that cache.
+    // The egress hot path, however, now caches the version *row* it fetched, so
+    // without eviction a just-deprecated pin would keep certifying egress
+    // output until the TTL expired.  Drop the contract's egress cache entries.
+    state.egress_cache.invalidate_contract_all(contract_id);
     Ok(Json(VersionResponse::from(&v)))
 }
 

@@ -13,8 +13,9 @@
 //! ## Staleness
 //!
 //! Entries live for `TTL_SECONDS`.  The contract/version caches are invalidated
-//! eagerly from `AppState::invalidate_version` / `invalidate_contract_all` (the
-//! draft-edit and delete paths), so edits are visible immediately.  The
+//! eagerly from every control-plane mutation of a contract — draft edits,
+//! delete, promote, deprecate, and identity patches (see the handlers in
+//! `main.rs`) — so those edits are visible to egress immediately.  The
 //! payload-policy cache is keyed by org, not contract, and is **not** eagerly
 //! invalidated: a plan change can take up to `TTL_SECONDS` to take effect on the
 //! egress path.  That window is intentional and bounded.
