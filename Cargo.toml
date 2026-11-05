@@ -199,8 +199,7 @@ reqwest = { version = "0.12", features = ["json", "rustls-tls"], default-feature
 uuid = { version = "1", features = ["v4"] }
 # Property-based tests for scaffold profiler + merge algorithm (RFC-024).
 proptest = "1"
-# Official ODCS JSON Schema check in tests (odcs_strict_tests). Pinned to 0.20:
-# later releases pull borrow-or-share (MIT-0), not in deny.toml's allow list.
+# Official ODCS JSON Schema check in tests (odcs_strict_tests). Pinned to 0.20.
 jsonschema = { version = "0.20", default-features = false }
 
 [profile.release]
