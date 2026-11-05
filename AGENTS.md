@@ -5,7 +5,7 @@ shares the same engine. See [`README.md`](README.md) for the overview and
 [`CONTRIBUTING.md`](CONTRIBUTING.md) for the full process.
 
 ## Stack
-- Rust (Axum) gateway in `src/`. The validation engine must stay fast (p99 well under 15 ms) and correct.
+- Rust (Axum) gateway in `src/`. The validation engine must stay low-latency (see benches) and correct.
 - Next.js + TypeScript + Tailwind dashboard in `dashboard/`.
 - Supabase Postgres (contracts, audit log, quarantined events); migrations in `supabase/migrations/`.
 

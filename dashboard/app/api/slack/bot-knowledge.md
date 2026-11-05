@@ -26,9 +26,9 @@ and partner payloads **before** they pollute downstream.
 - **Hot path:** every event is validated in the gateway. Rust (Axum) is chosen for
   predictable low latency and a panic-free validation path.
 - **Compile once, validate many:** contracts are compiled (regexes, field index,
-  etc.) and reused; measured validation p99 is well under the 15 ms product target
-  (on the order of tens of microseconds in local/prod measurements — always say
-  "sub-millisecond / well under 15 ms p99 target" unless citing a specific bench).
+  etc.) and reused; measured validation p99 is low (on the order of tens of
+  microseconds in local/prod measurements — say "low-latency; see benches" and
+  cite a specific bench when you need a number).
 - **Python still matters:** there is a **Python SDK** and CLI/tooling ecosystem;
   TypeScript dashboard on Vercel. Rust is the **engine**, not the only language
   in the product.

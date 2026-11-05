@@ -18,7 +18,7 @@ const TIERS = [
     features: [
       "100,000 validations / month",
       "Python & TypeScript LLMGate SDKs",
-      "Hosted Rust validation engine (sub-15ms)",
+      "Hosted Rust validation engine (low-latency)",
       "Up to 3 schema contracts",
       "PII masking",
       "7-day validation log",

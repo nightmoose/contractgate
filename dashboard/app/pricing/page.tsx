@@ -164,7 +164,7 @@ export default function PricingPage() {
       <div className="text-center pt-4">
         <div className="inline-flex items-center gap-2 bg-green-900/30 border border-green-700/40 rounded-full px-3 py-1 text-xs text-green-400 font-medium mb-4">
           <span className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse" />
-          Patent Pending · Rust-native · &lt;15 ms p99
+          Patent Pending · Rust-native · low-latency
         </div>
         <HelpTarget id="page.pricing">
           <h1 className="text-4xl font-bold tracking-tight">

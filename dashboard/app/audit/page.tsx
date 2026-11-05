@@ -319,7 +319,7 @@ function StatBar({ stats, loading }: { stats?: IngestionStats; loading: boolean 
         )}>
           {p99Str}
         </p>
-        <p className="text-xs text-slate-600 mt-0.5">target &lt;15ms</p>
+        <p className="text-xs text-slate-600 mt-0.5">low-latency</p>
       </div>
     </div>
   );

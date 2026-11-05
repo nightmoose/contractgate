@@ -49,7 +49,7 @@
 //!
 //!   - Zero heap allocations in the hot path wherever possible
 //!   - All regex compiled once at contract load time (cached via `CompiledContract`)
-//!   - Sub-15 ms p99 for typical event sizes on modest hardware
+//!   - Low-latency for typical event sizes on modest hardware (see benches)
 //!   - Clear, actionable violation messages for data engineers
 //!   - `validate()` is total: any input shape produces a `ValidationResult`,
 //!     never a panic or `Result::Err`.

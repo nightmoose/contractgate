@@ -8,7 +8,7 @@
 
 ## Overview
 
-The scorecard surfaces per-provider data-quality metrics aggregated from existing audit and quarantine data. No new writes touch the ingest path — the `<15ms p99` budget is untouched.
+The scorecard surfaces per-provider data-quality metrics aggregated from existing audit and quarantine data. No new writes touch the ingest path — the low-latency validation hot path is untouched (see benches).
 
 `source` is the provider identifier set when a contract version is deployed (the `source` field in `POST /contracts/deploy` or on a `contract_versions` row). Contracts with no `source` are binned under `(unsourced)`.
 

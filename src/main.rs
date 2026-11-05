@@ -50,6 +50,7 @@ mod api_key_auth;
 mod collaboration;
 mod conformance;
 mod egress;
+mod egress_cache;
 mod error;
 mod fail_policy;
 mod fivetran;
@@ -97,6 +98,7 @@ mod tests;
 mod usage;
 mod v1_ingest;
 mod version_pin;
+mod write_queue;
 
 use contract::{
     Contract, ContractIdentity, ContractResponse, ContractSummary, ContractVersion,
@@ -152,6 +154,11 @@ pub struct AppState {
     /// Unix-epoch-seconds of the last out-of-band kid-refresh attempt.
     /// Used to debounce refresh-on-unknown-kid to at most once per 60 s.
     pub jwks_last_kid_refresh: Arc<AtomicU64>,
+    /// Bounded, batched background-write queue for the ingest hot path.
+    /// Replaces the previous per-request `tokio::spawn` fan-out.
+    pub write_queue: write_queue::WriteQueue,
+    /// Short-TTL caches for the egress hot-path DB lookups.
+    pub egress_cache: egress_cache::EgressCache,
 }
 
 impl AppState {
@@ -161,8 +168,13 @@ impl AppState {
         supabase_jwks: Option<JwkSet>,
         supabase_jwks_url: Option<String>,
     ) -> Self {
+        // Spawn the background-write worker from the pool before `db` is moved
+        // into the struct.  Requires a Tokio runtime (always present here).
+        let write_queue = write_queue::WriteQueue::new(db.clone());
         AppState {
             db,
+            write_queue,
+            egress_cache: egress_cache::EgressCache::default(),
             contract_cache: RwLock::new(HashMap::new()),
             dev_no_auth,
             self_hosted: crate::plan::self_hosted_flag(
@@ -287,12 +299,17 @@ impl AppState {
     pub fn invalidate_version(&self, contract_id: Uuid, version: &str) {
         let mut cache = self.cache_write();
         cache.remove(&(contract_id, version.to_string()));
+        drop(cache);
+        // Keep the egress hot-path caches in step with contract edits.
+        self.egress_cache.invalidate_version(contract_id, version);
     }
 
     /// Drop every cached version for a contract.  Call on delete.
     pub fn invalidate_contract_all(&self, contract_id: Uuid) {
         let mut cache = self.cache_write();
         cache.retain(|(cid, _), _| *cid != contract_id);
+        drop(cache);
+        self.egress_cache.invalidate_contract_all(contract_id);
     }
 
     /// Returns true when auth is required (the normal case). Used by org-scoped
@@ -614,7 +631,11 @@ async fn patch_contract_handler(
         org_id,
     )
     .await?;
-    // Identity-only patch doesn't touch yaml; no cache eviction needed.
+    // Identity-only patch doesn't touch yaml, so the compiled cache is still
+    // valid.  It can change `multi_stable_resolution`, which the egress default
+    // pin resolves against, and the egress identity cache holds a copy of this
+    // row — evict the contract's egress entries so the edit is visible at once.
+    state.egress_cache.invalidate_contract_all(id);
     let stored = identity.store_event_payloads;
     let decision = payload_decision(&state.db, org_id).await?;
     Ok(Json(
@@ -757,6 +778,10 @@ async fn promote_version_handler(
     // Version is now stable and frozen.  Pre-warm the cache so the first
     // ingest request doesn't take the slow path.
     let _ = state.get_compiled(contract_id, &version).await;
+    // The egress default pin caches the latest-stable answer (including the
+    // negative "no stable version"); evict so the freshly promoted version is
+    // served immediately rather than after the TTL.
+    state.egress_cache.invalidate_contract_all(contract_id);
     Ok(Json(VersionResponse::from(&v)))
 }
 
@@ -770,9 +795,12 @@ async fn deprecate_version_handler(
     }
     require_owner(&state, contract_id, org_id).await?;
     let v = storage::deprecate_version(&state.db, contract_id, &version, org_id).await?;
-    // Cached compiled form is still correct (YAML didn't change); the
-    // deprecated-pin short-circuit in ingest.rs looks at the DB row's state,
-    // not the cache.  No invalidation needed.
+    // Cached compiled form is still correct (YAML didn't change); the ingest
+    // deprecated-pin short-circuit reads the DB row's state, not that cache.
+    // The egress hot path, however, now caches the version *row* it fetched, so
+    // without eviction a just-deprecated pin would keep certifying egress
+    // output until the TTL expired.  Drop the contract's egress cache entries.
+    state.egress_cache.invalidate_contract_all(contract_id);
     Ok(Json(VersionResponse::from(&v)))
 }
 
@@ -2282,7 +2310,7 @@ async fn main() -> anyhow::Result<()> {
     metering::spawn_usage_reconcile_task(state.db.clone());
     tracing::info!("usage reconcile background task spawned");
 
-    let app = build_router(state);
+    let app = build_router(Arc::clone(&state));
 
     let port: u16 = std::env::var("PORT")
         .ok()
@@ -2293,7 +2321,46 @@ async fn main() -> anyhow::Result<()> {
     tracing::info!("DataContractGate listening on {}", addr);
 
     let listener = tokio::net::TcpListener::bind(addr).await?;
-    axum::serve(listener, app).await?;
+    axum::serve(listener, app)
+        .with_graceful_shutdown(shutdown_signal())
+        .await?;
+
+    // Drain the background-write queue so an orderly restart does not lose
+    // audit/quarantine/forward rows that were queued but not yet written.
+    tracing::info!("draining background write queue");
+    state
+        .write_queue
+        .shutdown(std::time::Duration::from_secs(10))
+        .await;
+    tracing::info!("shutdown complete");
 
     Ok(())
+}
+
+/// Resolve when the process receives SIGINT (Ctrl-C) or SIGTERM (container
+/// stop). Triggers Axum's graceful shutdown so in-flight requests finish and
+/// the background-write queue can drain.
+async fn shutdown_signal() {
+    let ctrl_c = async {
+        tokio::signal::ctrl_c()
+            .await
+            .expect("failed to install Ctrl-C handler");
+    };
+
+    #[cfg(unix)]
+    let terminate = async {
+        tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
+            .expect("failed to install SIGTERM handler")
+            .recv()
+            .await;
+    };
+
+    #[cfg(not(unix))]
+    let terminate = std::future::pending::<()>();
+
+    tokio::select! {
+        _ = ctrl_c => {},
+        _ = terminate => {},
+    }
+    tracing::info!("shutdown signal received");
 }
