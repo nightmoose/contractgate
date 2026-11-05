@@ -1,4 +1,0 @@
-# Distributions pip-licenses reports under a license that is not allowed.
-# Reviewed versions and reasons: docs/LICENSE-EXCEPTIONS.md.
-certifi
-typing_extensions
