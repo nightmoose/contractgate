@@ -1564,6 +1564,68 @@ async fn require_api_key(
 }
 
 // ---------------------------------------------------------------------------
+// Per-IP rate limit for the unauthenticated public read routes
+// ---------------------------------------------------------------------------
+
+/// Sustained per-IP rate (req/sec) for `/published/{ref}`, `/public-contracts`
+/// and `/catalog`. These carry no API key, so one client can only be told
+/// apart by its address. The reads are cheap and cached, so the ceiling is
+/// generous; it exists to stop a single scraper from monopolising the public
+/// surface, not to meter normal browsing.
+const PUBLIC_IP_RATE_LIMIT_RPS: u32 = 30;
+/// Burst capacity (back-to-back requests) for the same per-IP bucket.
+const PUBLIC_IP_RATE_LIMIT_BURST: u32 = 60;
+
+/// Token-bucket key for an unauthenticated caller: a stable v5 UUID derived
+/// from the client IP.
+///
+/// The address MUST come from a hop the client cannot forge, or the limiter is
+/// pointless: a scraper that controls its own source IP string lands in a fresh
+/// bucket on every request and never hits the ceiling. In production we run
+/// behind Fly, whose edge sets `Fly-Client-IP` to the real peer address and
+/// overwrites any client-supplied value — that is the only trustworthy source,
+/// so we read it first. `X-Forwarded-For` (first hop) / `X-Real-IP` are only a
+/// fallback for non-Fly or local deployments that sit behind a trusted reverse
+/// proxy; on Fly they are attacker-controlled and deliberately ignored while
+/// `Fly-Client-IP` is present. Requests with none of these headers share one
+/// `"unknown"` bucket. The derived UUID lets these routes reuse the RFC-021
+/// `RateLimitState` unchanged.
+fn client_ip_bucket(headers: &axum::http::HeaderMap) -> Uuid {
+    let ip = headers
+        .get("fly-client-ip")
+        .or_else(|| headers.get("x-forwarded-for"))
+        .or_else(|| headers.get("x-real-ip"))
+        .and_then(|v| v.to_str().ok())
+        .map(|s| s.split(',').next().unwrap_or(s).trim())
+        .filter(|s| !s.is_empty())
+        .unwrap_or("unknown");
+    Uuid::new_v5(&Uuid::NAMESPACE_OID, ip.as_bytes())
+}
+
+/// Per-IP token-bucket guard for the public, unauthenticated read routes.
+///
+/// On exhaustion it returns the standard 429 (with `X-RateLimit-*` +
+/// `Retry-After`). On success the response is returned untouched — in
+/// particular it adds no headers, so `/catalog` keeps whatever cache headers
+/// it carries and stays CDN-cacheable.
+async fn public_ip_rate_limit(
+    State(state): State<Arc<AppState>>,
+    request: Request,
+    next: Next,
+) -> Result<axum::response::Response, error::AppError> {
+    let bucket = client_ip_bucket(request.headers());
+    let outcome = state.rate_limiter.check(
+        bucket,
+        Some(PUBLIC_IP_RATE_LIMIT_RPS),
+        Some(PUBLIC_IP_RATE_LIMIT_BURST),
+    );
+    if !outcome.allowed {
+        return Err(error::AppError::RateLimitExceeded(outcome));
+    }
+    Ok(next.run(request).await)
+}
+
+// ---------------------------------------------------------------------------
 // RFC-064: SMT version probe
 // ---------------------------------------------------------------------------
 
@@ -1662,6 +1724,29 @@ fn build_router(state: Arc<AppState>) -> Router {
         .allow_methods(Any)
         .allow_headers(Any);
 
+    // Public read routes that are unauthenticated and cheap but open to the
+    // internet. A per-IP token bucket (reusing the RFC-021 limiter) caps any
+    // single address so a scraper can't monopolise them. The guard only reads
+    // headers and 429s; it never rewrites a 2xx, so `/catalog` keeps its cache
+    // headers and stays CDN-cacheable.
+    let public_rate_limited = Router::new()
+        // RFC-032: public-fetch for published contracts (visibility checked inside handler)
+        .route(
+            "/published/{publication_ref}",
+            get(publication::fetch_published_handler),
+        )
+        // Curated open-data public contracts (no auth — readable by anyone)
+        .route(
+            "/public-contracts",
+            get(public_catalog::list_public_contracts_handler),
+        )
+        // User-published contracts catalog (no auth — lists public visibility publications)
+        .route("/catalog", get(publication::catalog_handler))
+        .layer(middleware::from_fn_with_state(
+            state.clone(),
+            public_ip_rate_limit,
+        ));
+
     // Public routes — no auth required
     let public = Router::new()
         .route("/health", get(health_handler))
@@ -1673,22 +1758,11 @@ fn build_router(state: Arc<AppState>) -> Router {
         // Open by default; Bearer-auth gated when METRICS_AUTH_TOKEN is set.
         // Mounted as public so Prometheus can scrape without an x-api-key.
         .route("/metrics", get(observability::metrics_handler))
-        // RFC-032: public-fetch for published contracts (visibility checked inside handler)
-        .route(
-            "/published/{publication_ref}",
-            get(publication::fetch_published_handler),
-        )
-        // Curated open-data public contracts (no auth — readable by anyone)
-        .route(
-            "/public-contracts",
-            get(public_catalog::list_public_contracts_handler),
-        )
         .route(
             "/public-contracts/{id}",
             get(public_catalog::get_public_contract_handler),
         )
-        // User-published contracts catalog (no auth — lists public visibility publications)
-        .route("/catalog", get(publication::catalog_handler));
+        .merge(public_rate_limited);
 
     // Protected routes — require x-api-key header
     let protected = Router::new()
@@ -2047,9 +2121,9 @@ fn build_router(state: Arc<AppState>) -> Router {
         .layer(middleware::from_fn(observability::track_requests))
         .layer(TraceLayer::new_for_http())
         // 30s budget. Logs the route and the stage that was in progress
-        // (`handler`, `pool_acquire`, `db_statement`) and returns 504.
-        // Demo SSE streams are excluded; a wedged worker is still logged by
-        // the deadline thread because that wait does not yield.
+        // (`handler`, `pool_acquire`, `db_statement`) and returns 504. Every
+        // route now sits inside this one budget; a wedged worker is still
+        // logged by the deadline thread because that wait does not yield.
         .layer(middleware::from_fn(request_limits::request_timeout))
         // Retire the old contractgate-api.fly.dev host (opt-in via the
         // LEGACY_API_HOSTS secret). Outside CORS/auth so a legacy request is
