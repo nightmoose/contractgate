@@ -1,0 +1,29 @@
+[
+  {
+    "event_date": "20260115",
+    "event_timestamp": 1736935800000000,
+    "event_name": "page_view",
+    "user_pseudo_id": "1234567890.0987654321",
+    "platform": "WEB",
+    "stream_id": "1234567",
+    "event_bundle_sequence_id": 1
+  },
+  {
+    "event_date": "20260115",
+    "event_timestamp": 1736935860000000,
+    "event_name": "session_start",
+    "user_pseudo_id": "1234567890.0987654321",
+    "user_id": "user_0001",
+    "platform": "ANDROID",
+    "stream_id": "7654321",
+    "event_previous_timestamp": 1736935800000000
+  },
+  {
+    "event_date": "20260116",
+    "event_timestamp": 1737022200000000,
+    "event_name": "purchase",
+    "user_pseudo_id": "2233445566.1122334455",
+    "platform": "IOS",
+    "stream_id": "7654321"
+  }
+]

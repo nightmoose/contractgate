@@ -1,0 +1,37 @@
+[
+  {
+    "Id": "006ExampleOppy0001",
+    "Name": "Example Co - New Platform",
+    "AccountId": "001ExampleAcct0001",
+    "StageName": "Proposal/Price Quote",
+    "Amount": 48000,
+    "Probability": 60,
+    "CloseDate": "2026-03-31",
+    "Type": "New Customer",
+    "IsClosed": false,
+    "IsWon": false,
+    "CreatedDate": "2026-01-10T16:05:00Z"
+  },
+  {
+    "Id": "006ExampleOppy0002",
+    "Name": "Acme Test - Renewal",
+    "AccountId": "001ExampleAcct0002",
+    "StageName": "Closed Won",
+    "Amount": 12000,
+    "Probability": 100,
+    "CloseDate": "2026-02-15",
+    "Type": "Existing Customer - Upgrade",
+    "IsClosed": true,
+    "IsWon": true,
+    "CreatedDate": "2026-01-11T09:40:00Z"
+  },
+  {
+    "Id": "006ExampleOppy0003",
+    "Name": "Sample Partner - Pilot",
+    "StageName": "Qualification",
+    "Probability": 20,
+    "CloseDate": "2026-04-30",
+    "IsClosed": false,
+    "IsWon": false
+  }
+]

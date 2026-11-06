@@ -1,0 +1,31 @@
+[
+  {
+    "date": "2026-01-03",
+    "description": "Client retainer - January",
+    "amount": 2500.00,
+    "currency": "USD",
+    "category": "Income",
+    "account": "Operating",
+    "reference": "INV-1001",
+    "balance": 2500.00
+  },
+  {
+    "date": "2026-01-05",
+    "description": "SaaS subscription",
+    "amount": -49.00,
+    "currency": "USD",
+    "category": "Software",
+    "account": "Operating",
+    "reference": "sub_0001",
+    "balance": 2451.00
+  },
+  {
+    "date": "2026-01-08",
+    "description": "Bank fee",
+    "amount": -12.50,
+    "currency": "USD",
+    "category": "Fees",
+    "account": "Operating",
+    "balance": 2438.50
+  }
+]

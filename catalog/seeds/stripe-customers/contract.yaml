@@ -1,0 +1,55 @@
+version: "1.0"
+name: "stripe-customers"
+description: "Stripe Customer object — core fields of an exported Stripe customer. Compatible with Stripe's API Customer object; not affiliated with Stripe."
+
+ontology:
+  entities:
+    - name: id
+      type: string
+      required: true
+      pattern: "^cus_[A-Za-z0-9]+$"
+    - name: object
+      type: string
+      required: true
+      enum: ["customer"]
+    - name: email
+      type: string
+      required: false
+      format: email
+    - name: name
+      type: string
+      required: false
+    - name: description
+      type: string
+      required: false
+    - name: phone
+      type: string
+      required: false
+    - name: created
+      type: integer
+      required: true
+      min: 0
+    - name: currency
+      type: string
+      required: false
+      pattern: "^[a-z]{3}$"
+    - name: balance
+      type: integer
+      required: false
+    - name: delinquent
+      type: boolean
+      required: false
+    - name: livemode
+      type: boolean
+      required: false
+
+glossary:
+  - field: id
+    description: "Unique identifier for the customer."
+    constraints: "starts with cus_"
+  - field: balance
+    description: "Current balance, if any, in the smallest currency unit. A negative balance is credit."
+    constraints: "integer, may be negative"
+  - field: created
+    description: "Time at which the object was created (Unix epoch seconds)."
+    constraints: "non-negative integer"

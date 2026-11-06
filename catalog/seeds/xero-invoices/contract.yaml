@@ -1,0 +1,77 @@
+version: "1.0"
+name: "xero-invoices"
+description: "Xero Invoice — core fields from the Accounting API Invoices endpoint. Compatible with Xero's documented Invoice object; not affiliated with Xero."
+
+ontology:
+  entities:
+    - name: InvoiceID
+      type: string
+      required: false
+      pattern: "^[0-9a-fA-F-]{36}$"
+    - name: InvoiceNumber
+      type: string
+      required: false
+    - name: Type
+      type: string
+      required: true
+      enum: ["ACCREC", "ACCPAY"]
+    - name: Contact
+      type: object
+      required: true
+      properties:
+        - name: ContactID
+          type: string
+          required: false
+          pattern: "^[0-9a-fA-F-]{36}$"
+        - name: Name
+          type: string
+          required: true
+    - name: Date
+      type: date
+      required: false
+    - name: DueDate
+      type: date
+      required: false
+    - name: Status
+      type: string
+      required: false
+      enum: ["DRAFT", "SUBMITTED", "AUTHORISED", "PAID", "VOIDED", "DELETED"]
+    - name: LineAmountTypes
+      type: string
+      required: false
+      enum: ["Exclusive", "Inclusive", "NoTax"]
+    - name: CurrencyCode
+      type: string
+      required: false
+      pattern: "^[A-Z]{3}$"
+    - name: SubTotal
+      type: number
+      required: false
+      min: 0
+    - name: TotalTax
+      type: number
+      required: false
+      min: 0
+    - name: Total
+      type: number
+      required: false
+      min: 0
+    - name: AmountDue
+      type: number
+      required: false
+      min: 0
+    - name: AmountPaid
+      type: number
+      required: false
+      min: 0
+
+glossary:
+  - field: Type
+    description: "Invoice type: ACCREC (accounts receivable / sales) or ACCPAY (accounts payable / bills)."
+    constraints: "ACCREC or ACCPAY"
+  - field: Contact
+    description: "The contact the invoice is issued to or from."
+    constraints: "object with Name and optional ContactID"
+  - field: Status
+    description: "Invoice status in Xero."
+    constraints: "Xero invoice status value"

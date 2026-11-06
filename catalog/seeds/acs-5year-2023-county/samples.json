@@ -1,0 +1,26 @@
+[
+  {
+    "NAME": "Example County, Teststate",
+    "B01003_001E": 55200,
+    "B19013_001E": 62000,
+    "B19013_001MA": 2500,
+    "state": "99",
+    "county": "001"
+  },
+  {
+    "NAME": "Sample County, Teststate",
+    "B01003_001E": 12840,
+    "B19013_001E": 48750,
+    "B19013_001MA": 3100,
+    "state": "99",
+    "county": "002"
+  },
+  {
+    "NAME": "Demo County, Teststate",
+    "B01003_001E": 304100,
+    "B19013_001E": 81250,
+    "B19013_001MA": 1800,
+    "state": "99",
+    "county": "003"
+  }
+]

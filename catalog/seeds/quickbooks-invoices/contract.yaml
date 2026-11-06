@@ -1,0 +1,64 @@
+version: "1.0"
+name: "quickbooks-invoices"
+description: "QuickBooks Online Invoice entity — core fields from the Accounting API. Compatible with Intuit's documented Invoice entity; not affiliated with Intuit or QuickBooks."
+
+ontology:
+  entities:
+    - name: Id
+      type: string
+      required: true
+      pattern: "^[0-9]+$"
+    - name: SyncToken
+      type: string
+      required: false
+      pattern: "^[0-9]+$"
+    - name: DocNumber
+      type: string
+      required: false
+    - name: TxnDate
+      type: date
+      required: false
+    - name: DueDate
+      type: date
+      required: false
+    - name: CustomerRef
+      type: object
+      required: true
+      properties:
+        - name: value
+          type: string
+          required: true
+          pattern: "^[0-9]+$"
+        - name: name
+          type: string
+          required: false
+    - name: CurrencyRef
+      type: object
+      required: false
+      properties:
+        - name: value
+          type: string
+          required: true
+          pattern: "^[A-Z]{3}$"
+        - name: name
+          type: string
+          required: false
+    - name: TotalAmt
+      type: number
+      required: true
+      min: 0
+    - name: Balance
+      type: number
+      required: false
+      min: 0
+
+glossary:
+  - field: Id
+    description: "Unique identifier for the invoice within the QuickBooks company."
+    constraints: "numeric string"
+  - field: CustomerRef
+    description: "Reference to the customer the invoice is for."
+    constraints: "object with value (customer id) and optional name"
+  - field: TotalAmt
+    description: "Total amount of the transaction, including tax."
+    constraints: "non-negative number"
