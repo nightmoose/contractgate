@@ -233,6 +233,25 @@ changes. 047 is not rewritten after it has been applied.
 
 ---
 
+## Live smoke test
+
+`scripts/catalog_live_smoke.py` is a read-only check of the production catalog.
+Run it after a catalog seed migration deploys:
+
+```bash
+cargo build --bin contractgate
+python3 scripts/catalog_live_smoke.py --wait 1800
+```
+
+It waits up to `--wait` seconds for the ACS row to show `B19013_001M`. Then it
+checks four things. All 12 slugs return 200 (JSON, `/yaml`, `/odcs`, and the
+app's `/catalog/<slug>` page). The catalog review fixes are live. Every
+published sample passes `contractgate test`. Live rows match `catalog/seeds`.
+Flags: `--api`, `--app`, `--cg`, `--repo`, `--interval`. Exit code 1 on any
+failure. Needs PyYAML.
+
+---
+
 ## Related
 
 - [RFC-034](rfcs/034-public-data-source-contracts.md) — design rationale.
