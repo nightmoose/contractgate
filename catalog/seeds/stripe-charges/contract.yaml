@@ -7,7 +7,7 @@ ontology:
     - name: id
       type: string
       required: true
-      pattern: "^ch_[A-Za-z0-9]+$"
+      pattern: "^(ch|py)_[A-Za-z0-9]+$"
     - name: object
       type: string
       required: true
@@ -65,6 +65,9 @@ ontology:
       pattern: "^pi_[A-Za-z0-9]+$"
 
 glossary:
+  - field: id
+    description: "Charge id. Card charges use the ch_ prefix. Some bank-debit charges and Connect payment objects returned by the Charges API use py_. Other Stripe prefixes do not belong on this field."
+    constraints: "ch_ or py_, then alphanumeric"
   - field: amount
     description: "Amount intended to be collected, in the smallest currency unit (e.g. cents)."
     constraints: "non-negative integer"

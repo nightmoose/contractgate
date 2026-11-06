@@ -26,7 +26,14 @@ ontology:
     - name: source_type
       type: string
       required: false
-      enum: ["CARD", "BANK_ACCOUNT", "WALLET", "CASH", "EXTERNAL"]
+      enum:
+        - "CARD"
+        - "BANK_ACCOUNT"
+        - "WALLET"
+        - "BUY_NOW_PAY_LATER"
+        - "SQUARE_ACCOUNT"
+        - "CASH"
+        - "EXTERNAL"
     - name: location_id
       type: string
       required: false
@@ -55,4 +62,4 @@ glossary:
     constraints: "APPROVED, PENDING, COMPLETED, CANCELED, or FAILED"
   - field: source_type
     description: "The source type for the payment."
-    constraints: "CARD, BANK_ACCOUNT, WALLET, CASH, or EXTERNAL"
+    constraints: "CARD, BANK_ACCOUNT, WALLET, BUY_NOW_PAY_LATER, SQUARE_ACCOUNT, CASH, or EXTERNAL"

@@ -5,7 +5,7 @@
   "category": "Commerce",
   "surface": "Shopify orders CSV export (Store admin → Orders → Export)",
   "verified_source_url": "https://help.shopify.com/en/manual/orders/export-orders",
-  "verified_at": "2026-11-05",
+  "verified_at": "2026-11-06",
   "who_uses_this": "Validate a client's Shopify orders CSV export before loading it into your warehouse.",
   "license_note": "MIT",
   "source_format": "csv",

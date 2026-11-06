@@ -14,6 +14,12 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 import { getOpenDataContract, forkPublicContract } from "@/lib/api";
+import {
+  catalogSampleEvent,
+  PLAYGROUND_CONTRACT_ID_KEY,
+  PLAYGROUND_EVENT_KEY,
+  PLAYGROUND_YAML_KEY,
+} from "@/lib/playground-prefill";
 
 export default function CatalogForkPage({
   params,
@@ -52,9 +58,13 @@ export default function CatalogForkPage({
         });
 
         // Hand the forked YAML to the playground (same keys the "Test in
-        // Playground" flow uses) so the user lands ready to upload a file.
-        sessionStorage.setItem("playground_yaml", detail.contract_yaml);
-        sessionStorage.setItem("playground_contract_id", fork.contract_id);
+        // Playground" flow uses). Also hand the first published synthetic
+        // sample so Validate passes — the playground's example_* guess does
+        // not satisfy these contracts.
+        sessionStorage.setItem(PLAYGROUND_YAML_KEY, detail.contract_yaml);
+        sessionStorage.setItem(PLAYGROUND_CONTRACT_ID_KEY, fork.contract_id);
+        const sample = catalogSampleEvent(detail.sample_json);
+        if (sample) sessionStorage.setItem(PLAYGROUND_EVENT_KEY, sample);
 
         setStatus("Opening the validation playground…");
         router.replace("/playground");

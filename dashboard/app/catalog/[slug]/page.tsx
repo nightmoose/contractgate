@@ -25,6 +25,7 @@ import {
   curlSnippet,
   SITE_URL,
 } from "@/lib/catalog";
+import { catalogHeaderAside } from "@/lib/catalog-copy";
 import CatalogDisclaimer from "../CatalogDisclaimer";
 import DetailActions from "./DetailActions";
 
@@ -106,7 +107,7 @@ export default async function CatalogDetailPage({
         <h1 className="text-2xl font-bold text-slate-100 mt-3">
           {vendor} — data contract{" "}
           <span className="text-slate-500 font-normal text-lg">
-            (compatible with {vendor}&rsquo;s documented schema; not affiliated with {vendor})
+            {catalogHeaderAside(slug, vendor)}
           </span>
         </h1>
         <p className="text-sm text-slate-400 mt-3 leading-relaxed">{detail.description}</p>

@@ -1,6 +1,6 @@
 version: "1.0"
 name: "hubspot-contacts"
-description: "HubSpot CRM contact — default properties from the Contacts API / export. Compatible with HubSpot's documented default contact properties; not affiliated with HubSpot."
+description: "HubSpot CRM contact — default properties from the Contacts API / export. Compatible with HubSpot's documented default contact properties; not affiliated with HubSpot. Lifecycle stages listed here are the defaults; newer accounts can define their own."
 
 ontology:
   entities:
@@ -52,7 +52,7 @@ glossary:
     description: "HubSpot record id for the contact."
     constraints: "numeric string"
   - field: lifecyclestage
-    description: "The contact's stage in the marketing/sales lifecycle."
+    description: "The contact's stage in the marketing/sales lifecycle. The allowed values are HubSpot's default stages. Newer accounts can define their own stages; those values will not match until this list is edited."
     constraints: "HubSpot default lifecycle stage value"
   - field: createdate
     description: "Timestamp when the contact was created."

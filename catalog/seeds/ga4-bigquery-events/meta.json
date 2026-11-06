@@ -5,7 +5,7 @@
   "category": "Analytics",
   "surface": "GA4 BigQuery Export daily events_ table (core scalar columns)",
   "verified_source_url": "https://support.google.com/analytics/answer/7029846",
-  "verified_at": "2026-11-05",
+  "verified_at": "2026-11-06",
   "who_uses_this": "Validate a client's GA4 BigQuery events export before building reporting models on top of it.",
   "license_note": "MIT",
   "source_format": "json",

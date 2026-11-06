@@ -1,15 +1,15 @@
 {
   "slug": "generic-sheets-transactions-csv",
   "title": "Generic transactions CSV — data contract",
-  "vendor": "DataContractGate",
+  "vendor": "Spreadsheet CSV",
   "category": "Spreadsheets",
-  "surface": "Generic bank / ledger transactions CSV (open spec)",
-  "verified_source_url": "https://app.datacontractgate.com/catalog/generic-sheets-transactions-csv",
-  "verified_at": "2026-11-05",
-  "who_uses_this": "Validate a client's ad-hoc Google Sheet or bank/ledger CSV before loading it into your books or warehouse.",
+  "surface": "Generic bank / ledger transactions CSV (open column set)",
+  "verified_source_url": "https://www.rfc-editor.org/rfc/rfc4180",
+  "verified_at": "2026-11-06",
+  "who_uses_this": "Validate a client's ad-hoc spreadsheet or bank/ledger CSV before loading it into your books or warehouse.",
   "license_note": "MIT",
   "source_format": "csv",
   "source_url": null,
   "version": "1.0",
-  "description": "Generic transactions / ledger CSV — a practical spreadsheet format for bank, ledger, and bookkeeping exports. Authored by DataContractGate as an open spec; not tied to any vendor."
+  "description": "Generic transactions / ledger CSV for spreadsheet, bank, and bookkeeping exports. Open column set (date, description, amount, currency) documented with the project; file syntax follows RFC 4180. Not a vendor schema."
 }

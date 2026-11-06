@@ -1,7 +1,7 @@
 [
   {
     "event_date": "20260115",
-    "event_timestamp": 1736935800000000,
+    "event_timestamp": 1768491000000000,
     "event_name": "page_view",
     "user_pseudo_id": "1234567890.0987654321",
     "platform": "WEB",
@@ -10,20 +10,20 @@
   },
   {
     "event_date": "20260115",
-    "event_timestamp": 1736935860000000,
+    "event_timestamp": 1768500300000000,
     "event_name": "session_start",
-    "user_pseudo_id": "1234567890.0987654321",
+    "user_pseudo_id": "a1b2c3d4-e5f6-4789-a012-3456789abcde",
     "user_id": "user_0001",
     "platform": "ANDROID",
     "stream_id": "7654321",
-    "event_previous_timestamp": 1736935800000000
+    "event_previous_timestamp": 1768500240000000
   },
   {
     "event_date": "20260116",
-    "event_timestamp": 1737022200000000,
+    "event_timestamp": 1768579800000000,
     "event_name": "purchase",
-    "user_pseudo_id": "2233445566.1122334455",
+    "user_pseudo_id": "f0e1d2c3-b4a5-4678-9012-3456789abcdf",
     "platform": "IOS",
-    "stream_id": "7654321"
+    "stream_id": "8901234"
   }
 ]

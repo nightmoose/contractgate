@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import Link from "next/link";
 import type { OpenDataContract } from "@/lib/api";
+import { catalogCardLine } from "@/lib/catalog-copy";
 import { CATALOG_CATEGORIES } from "@/lib/catalog-categories";
 
 /** Card grid with client-side search + category filter over the catalog list. */
@@ -98,7 +99,7 @@ export default function CatalogBrowser({
                 {c.description}
               </p>
               <p className="text-[11px] text-slate-600 mt-3">
-                compatible with {c.vendor ?? "the documented schema"}
+                {catalogCardLine(c.slug, c.vendor)}
               </p>
             </Link>
           ))}

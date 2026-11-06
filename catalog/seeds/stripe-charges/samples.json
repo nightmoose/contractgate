@@ -18,7 +18,7 @@
     "payment_intent": "pi_3Oexample0001"
   },
   {
-    "id": "ch_3Oexample0002IjKlMnOp",
+    "id": "py_3Oexample0002IjKlMnOp",
     "object": "charge",
     "amount": 1599,
     "amount_captured": 0,
