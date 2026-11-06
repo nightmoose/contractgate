@@ -7,7 +7,7 @@ ontology:
     - name: Name
       type: string
       required: true
-      pattern: "^#?[0-9]+$"
+      pattern: "^#?[A-Za-z_-]{0,20}[0-9]{1,12}[A-Za-z0-9_-]{0,20}$"
     - name: Email
       type: string
       required: false
@@ -23,7 +23,7 @@ ontology:
         - "refunded"
         - "voided"
         - "partially_refunded"
-        - "unpaid"
+        - "expired"
     - name: Fulfillment Status
       type: string
       required: false
@@ -54,11 +54,11 @@ ontology:
 
 glossary:
   - field: Name
-    description: "Order name as shown in the admin (e.g. #1001)."
-    constraints: "order number, optional leading #"
+    description: "Order name as shown in the admin. The default is #1001; stores often add a prefix or suffix, for example SH1001 or 1001-A."
+    constraints: "optional leading #, a letter prefix or suffix, and at least one digit"
   - field: Financial Status
-    description: "Payment status of the order."
-    constraints: "Shopify financial status value"
+    description: "Admin payment status (the values behind displayFinancialStatus). expired is included. unpaid is not a status — Shopify uses it as a filter grouping of authorized, pending, expired, and partially paid orders. The legacy REST financial_status field still omits expired and reports those orders as pending."
+    constraints: "pending, authorized, paid, partially_paid, partially_refunded, refunded, voided, or expired"
   - field: Total
     description: "Order total in the order currency."
     constraints: "decimal string"

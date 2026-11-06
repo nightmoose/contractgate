@@ -46,3 +46,6 @@ glossary:
   - field: platform
     description: "The data stream platform the event came from."
     constraints: "WEB, ANDROID, or IOS"
+  - field: user_pseudo_id
+    description: "Client id for this stream. A web stream uses the cookie-style id (two numbers separated by a dot). An app stream uses its own app-instance id and never shares the web cookie id."
+    constraints: "distinct per stream; web and app ids are different formats"

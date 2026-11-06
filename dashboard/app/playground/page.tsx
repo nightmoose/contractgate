@@ -9,6 +9,11 @@ import clsx from "clsx";
 import AuthGate from "@/components/AuthGate";
 import { useOrg } from "@/lib/org";
 import { HelpTarget } from "@/components/help/HelpTarget";
+import {
+  PLAYGROUND_CONTRACT_ID_KEY,
+  PLAYGROUND_EVENT_KEY,
+  PLAYGROUND_YAML_KEY,
+} from "@/lib/playground-prefill";
 
 const DEFAULT_YAML = `version: "1.0"
 name: "user_events"
@@ -561,20 +566,27 @@ function PlaygroundContent() {
 
   // On mount: check if we were sent here from the Contracts page via "Test in Playground"
   useEffect(() => {
-    const storedYaml = sessionStorage.getItem("playground_yaml");
-    const storedId   = sessionStorage.getItem("playground_contract_id");
+    const storedYaml = sessionStorage.getItem(PLAYGROUND_YAML_KEY);
+    const storedId = sessionStorage.getItem(PLAYGROUND_CONTRACT_ID_KEY);
+    const storedEvent = sessionStorage.getItem(PLAYGROUND_EVENT_KEY);
+    sessionStorage.removeItem(PLAYGROUND_YAML_KEY);
+    sessionStorage.removeItem(PLAYGROUND_CONTRACT_ID_KEY);
+    sessionStorage.removeItem(PLAYGROUND_EVENT_KEY);
     if (storedYaml) {
       setYaml(storedYaml);
       setResult(null);
       setSubmittedEvent(null);
       if (storedId) setPrefilledFrom(storedId);
-      sessionStorage.removeItem("playground_yaml");
-      sessionStorage.removeItem("playground_contract_id");
-      // Generate a sample event from the pre-filled contract so the user
-      // doesn't arrive to a stale/mismatched default event.
-      const parsed = parseContractRules(storedYaml);
-      if (parsed.entities.length > 0) {
-        setEventJson(JSON.stringify(generateSampleEvent(parsed.entities), null, 2));
+      // A catalog fork passes one of the published synthetic samples. Those
+      // validate. The schema guess below does not satisfy vendor id patterns,
+      // so only use it when nobody handed us a sample.
+      if (storedEvent) {
+        setEventJson(storedEvent);
+      } else {
+        const parsed = parseContractRules(storedYaml);
+        if (parsed.entities.length > 0) {
+          setEventJson(JSON.stringify(generateSampleEvent(parsed.entities), null, 2));
+        }
       }
     }
   }, []);

@@ -1,6 +1,6 @@
 version: "1.0"
 name: "generic-sheets-transactions-csv"
-description: "Generic transactions / ledger CSV — a practical spreadsheet format for bank, ledger, and bookkeeping exports. Authored by DataContractGate as an open spec; not tied to any vendor."
+description: "Generic transactions / ledger CSV for spreadsheet, bank, and bookkeeping exports. Open column set (date, description, amount, currency) documented with the project; file syntax follows RFC 4180. Not a vendor schema."
 
 ontology:
   entities:
@@ -33,7 +33,7 @@ ontology:
 
 glossary:
   - field: date
-    description: "Transaction date (YYYY-MM-DD)."
+    description: "Transaction date (YYYY-MM-DD). Column meanings are this project's open spreadsheet set; the file syntax follows RFC 4180."
     constraints: "calendar date"
   - field: amount
     description: "Signed transaction amount; negative for debits, positive for credits."
