@@ -5,11 +5,11 @@
   "category": "Accounting",
   "surface": "Xero Accounting API Invoices endpoint",
   "verified_source_url": "https://developer.xero.com/documentation/api/accounting/invoices",
-  "verified_at": "2026-11-05",
+  "verified_at": "2026-11-06",
   "who_uses_this": "Validate a client's Xero invoices export before reconciling it in your warehouse.",
   "license_note": "MIT",
   "source_format": "json",
   "source_url": null,
   "version": "1.0",
-  "description": "Xero Invoice — core fields from the Accounting API Invoices endpoint. Compatible with Xero's documented Invoice object; not affiliated with Xero."
+  "description": "Xero Invoice — core fields from the Accounting API Invoices endpoint. Compatible with Xero's documented Invoice object; not affiliated with Xero. Date and DueDate match the raw JSON API (/Date(milliseconds+offset)/), not YYYY-MM-DD."
 }

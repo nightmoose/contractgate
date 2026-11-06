@@ -1,10 +1,10 @@
 /**
- * Generate supabase/migrations/047_public_catalog_expansion.sql from the
+ * Generate supabase/migrations/048_public_catalog_seed_refresh.sql from the
  * reviewable seed files in catalog/seeds/<slug>/.
  *
- * Keeping the migration generated (never hand-edited) guarantees the rows that
- * land in staging/prod match the in-repo seed files the tests validate. Re-run
- * after changing any seed:
+ * Migration 047 already shipped the original 12 rows and is not rewritten.
+ * This file is an idempotent upsert so a database that applied 047 picks up
+ * later seed corrections. Re-run after changing any seed:
  *
  *   node catalog/scripts/generate-migration.mjs
  *
@@ -16,7 +16,7 @@ import { fileURLToPath } from "node:url";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const seedsDir = join(here, "..", "seeds");
-const outFile = join(here, "..", "..", "supabase", "migrations", "047_public_catalog_expansion.sql");
+const outFile = join(here, "..", "..", "supabase", "migrations", "048_public_catalog_seed_refresh.sql");
 
 // Launch order (ACS last — it is an UPDATE of the existing 022 row).
 const SLUGS = [
@@ -87,49 +87,17 @@ ON CONFLICT (name) DO UPDATE SET
 }
 
 const header = `-- ─────────────────────────────────────────────────────────────────────────────
--- Migration 047: Public Catalog phase 1 expansion
+-- Migration 048: Public catalog seed refresh
 --
 -- GENERATED FILE — do not hand-edit. Source of truth is catalog/seeds/<slug>/.
 -- Regenerate with:  node catalog/scripts/generate-migration.mjs
 --
--- Adds the provenance / discovery columns the public catalog pages need, makes
--- source_url nullable (vendor handover contracts are file-based — there is no
--- public unauthenticated data URL to fetch), backfills the existing ACS row,
--- and upserts all 12 launch contracts (11 vendor/generic + ACS).
---
--- Do NOT apply this to prod/staging until sign-off. It belongs in the PR only.
+-- 047 already created the columns and inserted the original 12 rows. This
+-- upserts those same slugs with the corrected contracts, samples, citations,
+-- and blurbs. Idempotent: a fresh database applies 047, then this overwrites
+-- the rows with the current seeds.
 -- ─────────────────────────────────────────────────────────────────────────────
 
--- ── 1. New columns on public_contracts ───────────────────────────────────────
-
-ALTER TABLE public_contracts
-    ADD COLUMN IF NOT EXISTS slug                text,
-    ADD COLUMN IF NOT EXISTS vendor              text,
-    ADD COLUMN IF NOT EXISTS category            text,
-    ADD COLUMN IF NOT EXISTS verified_source_url text,
-    ADD COLUMN IF NOT EXISTS verified_at         date,
-    ADD COLUMN IF NOT EXISTS sample_json         jsonb,
-    ADD COLUMN IF NOT EXISTS license_note        text,
-    ADD COLUMN IF NOT EXISTS author_org_id       uuid REFERENCES public.orgs(id);
-
-COMMENT ON COLUMN public_contracts.slug IS
-    'URL-safe public catalog slug, e.g. stripe-charges. NULL = not published to the public directory.';
-COMMENT ON COLUMN public_contracts.author_org_id IS
-    'Community author org (phase 2). NULL = authored by DataContractGate.';
-
-CREATE UNIQUE INDEX IF NOT EXISTS idx_public_contracts_slug
-    ON public_contracts (slug)
-    WHERE slug IS NOT NULL;
-
--- ── 2. source_url becomes nullable (file-based vendor handover contracts) ──────
--- ACS keeps a real source_url so its live CSV export still works; vendor
--- handover contracts (Stripe, Shopify, …) have NULL source_url — the client
--- hands over a file, there is nothing to fetch. The docs citation lives in
--- verified_source_url instead.
-
-ALTER TABLE public_contracts ALTER COLUMN source_url DROP NOT NULL;
-
--- ── 3. Upsert the 12 launch contracts ─────────────────────────────────────────
 `;
 
 const body = SLUGS.map(upsertFor).join("\n");

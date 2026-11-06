@@ -5,7 +5,7 @@
   "category": "Payments",
   "surface": "Stripe API Charge object (export / webhook payload)",
   "verified_source_url": "https://docs.stripe.com/api/charges/object",
-  "verified_at": "2026-11-05",
+  "verified_at": "2026-11-06",
   "who_uses_this": "Validate a client's Stripe charges export before it lands in your warehouse.",
   "license_note": "MIT",
   "source_format": "json",

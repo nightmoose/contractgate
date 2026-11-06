@@ -1,8 +1,9 @@
 -- ─────────────────────────────────────────────────────────────────────────────
 -- Migration 047: Public Catalog phase 1 expansion
 --
--- GENERATED FILE — do not hand-edit. Source of truth is catalog/seeds/<slug>/.
--- Regenerate with:  node catalog/scripts/generate-migration.mjs
+-- GENERATED FILE — do not hand-edit. Historical snapshot of the original 12
+-- rows. Later seed corrections are upserted by 048_public_catalog_seed_refresh.sql
+-- (node catalog/scripts/generate-migration.mjs). Do not regenerate this file.
 --
 -- Adds the provenance / discovery columns the public catalog pages need, makes
 -- source_url nullable (vendor handover contracts are file-based — there is no

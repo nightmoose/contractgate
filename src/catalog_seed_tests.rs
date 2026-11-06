@@ -107,6 +107,166 @@ fn every_meta_json_is_well_formed() {
 }
 
 #[test]
+fn review_findings_stay_fixed() {
+    let acs = load_contract("acs-5year-2023-county");
+    let acs_fields: std::collections::HashMap<_, _> = acs
+        .ontology
+        .entities
+        .iter()
+        .map(|f| (f.name.as_str(), f))
+        .collect();
+    assert_eq!(
+        acs_fields["B19013_001M"].field_type,
+        crate::contract::FieldType::String,
+        "B19013_001M is the numeric margin of error, returned as a string"
+    );
+    assert_eq!(
+        acs_fields["B19013_001MA"].field_type,
+        crate::contract::FieldType::String,
+        "B19013_001MA is the annotation, a text code"
+    );
+    assert!(
+        acs.null_as_absent,
+        "Census JSON null cells must be treated as absent"
+    );
+    let acs_meta =
+        std::fs::read_to_string(seeds_dir().join("acs-5year-2023-county").join("meta.json"))
+            .unwrap();
+    assert!(
+        acs_meta.contains("https://www.census.gov/data/developers/data-sets/acs-5year.html"),
+        "ACS citation must be the working 5-year dataset page"
+    );
+    assert!(
+        !acs_meta.contains("acs/acs5.html"),
+        "the old ACS dataset URL 404s"
+    );
+    assert!(
+        acs_meta.contains("not affiliated with the U.S. Census Bureau"),
+        "ACS card copy needs an affiliation line"
+    );
+
+    let stripe = load_contract("stripe-charges");
+    let id_pattern = stripe
+        .ontology
+        .entities
+        .iter()
+        .find(|f| f.name == "id")
+        .and_then(|f| f.pattern.as_deref())
+        .unwrap();
+    let id_re = regex::Regex::new(id_pattern).unwrap();
+    assert!(id_re.is_match("ch_3Oexample0001AbCdEfGh"));
+    assert!(id_re.is_match("py_3Oexample0002IjKlMnOp"));
+    assert!(!id_re.is_match("src_example"));
+
+    let shopify = load_contract("shopify-orders");
+    let financial = shopify
+        .ontology
+        .entities
+        .iter()
+        .find(|f| f.name == "Financial Status")
+        .and_then(|f| f.allowed_values.as_ref())
+        .unwrap();
+    let financial: Vec<_> = financial.iter().map(|v| v.as_str().unwrap()).collect();
+    assert!(
+        financial.contains(&"expired"),
+        "admin status list includes expired"
+    );
+    assert!(
+        !financial.contains(&"unpaid"),
+        "unpaid is a filter grouping, not a status"
+    );
+    let name_re = regex::Regex::new(
+        shopify
+            .ontology
+            .entities
+            .iter()
+            .find(|f| f.name == "Name")
+            .and_then(|f| f.pattern.as_deref())
+            .unwrap(),
+    )
+    .unwrap();
+    assert!(name_re.is_match("#1001"));
+    assert!(name_re.is_match("SH1001"));
+    assert!(name_re.is_match("1001-A"));
+    assert!(!name_re.is_match("example_Name"));
+
+    let square = load_contract("square-payments");
+    let sources = square
+        .ontology
+        .entities
+        .iter()
+        .find(|f| f.name == "source_type")
+        .and_then(|f| f.allowed_values.as_ref())
+        .unwrap();
+    let sources: Vec<_> = sources.iter().map(|v| v.as_str().unwrap()).collect();
+    assert!(sources.contains(&"BUY_NOW_PAY_LATER"));
+    assert!(sources.contains(&"SQUARE_ACCOUNT"));
+    let square_samples = load_samples("square-payments");
+    for sample in &square_samples {
+        let id = sample["id"].as_str().unwrap();
+        assert!(!id.starts_with("pmt_"), "{id} uses a Stripe-style prefix");
+        assert!(!id.starts_with("ord_"), "{id} uses a Stripe-style prefix");
+    }
+
+    let generic_meta = std::fs::read_to_string(
+        seeds_dir()
+            .join("generic-sheets-transactions-csv")
+            .join("meta.json"),
+    )
+    .unwrap();
+    assert!(
+        !generic_meta.contains("app.datacontractgate.com/catalog/"),
+        "generic citation must not point at its own catalog page"
+    );
+    assert!(
+        !generic_meta.contains("not affiliated with DataContractGate"),
+        "generic copy must not disclaim affiliation with itself"
+    );
+    assert!(
+        !generic_meta.contains("compatible with DataContractGate"),
+        "generic copy must not claim compatibility with itself"
+    );
+
+    let xero = load_contract("xero-invoices");
+    assert!(
+        xero.description.as_deref().unwrap_or("").contains("/Date("),
+        "Xero description must say the JSON API emits /Date(...)/"
+    );
+    let xero_date = xero
+        .ontology
+        .entities
+        .iter()
+        .find(|f| f.name == "Date")
+        .unwrap();
+    assert_eq!(xero_date.field_type, crate::contract::FieldType::String);
+    let date_re = regex::Regex::new(xero_date.pattern.as_deref().unwrap()).unwrap();
+    assert!(date_re.is_match("/Date(1768003200000+0000)/"));
+    assert!(!date_re.is_match("2026-01-10"));
+
+    let hubspot_meta =
+        std::fs::read_to_string(seeds_dir().join("hubspot-contacts").join("meta.json")).unwrap();
+    assert!(
+        !hubspot_meta.contains("https://developers.hubspot.com/docs/api/crm/contacts\""),
+        "HubSpot citation must not stay on the legacy contacts URL"
+    );
+    assert!(hubspot_meta.contains("developers.hubspot.com/docs/api-reference/"));
+
+    // Salesforce catalog samples are already 15–18 character ids. The playground
+    // failure was example_Id, which these samples are not.
+    let sf_re = regex::Regex::new(r"^[A-Za-z0-9]{15,18}$").unwrap();
+    for slug in ["salesforce-account", "salesforce-opportunity"] {
+        for sample in load_samples(slug) {
+            let id = sample["Id"].as_str().unwrap();
+            assert!(
+                sf_re.is_match(id),
+                "{slug} sample Id {id} is not 15–18 alphanumeric"
+            );
+            assert!(id.to_ascii_lowercase().contains("example") || id.contains("Example"));
+        }
+    }
+}
+
+#[test]
 fn three_samples_validate_with_zero_violations() {
     for slug in LAUNCH_SLUGS {
         let contract = load_contract(slug);

@@ -30,6 +30,11 @@ import { usePaidFeatures, useSelfHosted } from "@/lib/use-paid-features";
 import { useBrand } from "@/components/BrandProvider";
 import { createClient } from "@/lib/supabase/client";
 import {
+  PLAYGROUND_CONTRACT_ID_KEY,
+  PLAYGROUND_EVENT_KEY,
+  PLAYGROUND_YAML_KEY,
+} from "@/lib/playground-prefill";
+import {
   listContracts,
   getContract,
   createContract,
@@ -1948,8 +1953,9 @@ function ContractsContent() {
   };
 
   const handleTestInPlayground = (yaml: string, contractId: string) => {
-    sessionStorage.setItem("playground_yaml", yaml);
-    sessionStorage.setItem("playground_contract_id", contractId);
+    sessionStorage.setItem(PLAYGROUND_YAML_KEY, yaml);
+    sessionStorage.setItem(PLAYGROUND_CONTRACT_ID_KEY, contractId);
+    sessionStorage.removeItem(PLAYGROUND_EVENT_KEY);
     router.push("/playground");
   };
 

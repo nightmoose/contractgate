@@ -204,7 +204,12 @@ entirely returns all columns and all rows.
 
 ## Database objects
 
-Migration `022_public_catalog.sql` adds:
+Migration `022_public_catalog.sql` adds the table. Migration `047_public_catalog_expansion.sql`
+publishes the 12 launch rows. Migration `048_public_catalog_seed_refresh.sql` upserts
+those same slugs from `catalog/seeds/` when a seed contract, sample, or citation
+changes. 047 is not rewritten after it has been applied.
+
+`022_public_catalog.sql` adds:
 
 | Object | Type | Notes |
 |---|---|---|

@@ -1,6 +1,7 @@
 version: "1.0"
 name: "acs_5year_2023_county"
-description: "ACS 5-Year Estimates 2023 — county-level population and income. Source: US Census Bureau."
+description: "ACS 5-Year Estimates 2023 — county-level population and median household income in 2023 inflation-adjusted dollars. Compatible with the US Census Bureau American Community Survey 5-year API; not affiliated with the U.S. Census Bureau. A raw API row is strings (including numeric estimates). JSON null means the cell is absent. Estimate and margin-of-error cells use Census placeholder codes such as -666666666 when a number cannot be shown."
+null_as_absent: true
 
 ontology:
   entities:
@@ -8,38 +9,48 @@ ontology:
       type: string
       required: true
     - name: B01003_001E
-      type: integer
+      type: string
       required: true
-      min: 0
+      pattern: "^-?[0-9]+$"
     - name: B19013_001E
-      type: integer
+      type: string
       required: false
+      pattern: "^-?[0-9]+$"
+    - name: B19013_001M
+      type: string
+      required: false
+      pattern: "^-?[0-9]+$"
     - name: B19013_001MA
-      type: integer
+      type: string
       required: false
     - name: state
       type: string
       required: true
+      pattern: "^[0-9]{2}$"
     - name: county
       type: string
       required: true
+      pattern: "^[0-9]{3}$"
 
 glossary:
   - field: NAME
-    description: "County and state name (e.g. Autauga County, Alabama)"
+    description: "County and state name (for example Autauga County, Alabama)."
     constraints: "non-empty string"
   - field: B01003_001E
-    description: "Total population estimate"
-    constraints: "non-negative integer"
+    description: "Total population estimate. The Census API returns this as a numeric string, not a JSON integer."
+    constraints: "integer string; Census placeholder codes are negative"
   - field: B19013_001E
-    description: "Median household income (USD, inflation-adjusted)"
-    constraints: "-666666666 indicates data not available for this county"
+    description: "Median household income in the past 12 months, in 2023 inflation-adjusted dollars. Returned as a numeric string. -666666666 means the estimate could not be computed (insufficient sample, or a median in an open-ended interval). -888888888 means not applicable. -999999999 means too few sample cases."
+    constraints: "integer string, including Census placeholder codes"
+  - field: B19013_001M
+    description: "Margin of error for median household income (B19013_001E), in 2023 inflation-adjusted dollars. This is the numeric margin of error. Returned as a numeric string. -222222222 means the margin of error could not be computed; -333333333 means the median is in an open-ended interval; -555555555 means a margin of error is not appropriate because the estimate is controlled."
+    constraints: "integer string, including Census placeholder codes"
   - field: B19013_001MA
-    description: "Median household income margin of error (USD)"
-    constraints: "null when income estimate unavailable"
+    description: "Annotation of the margin of error (attribute of B19013_001M). A short text code such as -, **, ***, *****, (X), or N — not a dollar amount. JSON null when the Census API has no annotation. The dollar margin of error is B19013_001M."
+    constraints: "text annotation code, or absent"
   - field: state
-    description: "State FIPS code (2-digit string, e.g. 01 for Alabama)"
+    description: "State FIPS code (2-digit string, for example 01 for Alabama)."
     constraints: "always 2 characters, zero-padded"
   - field: county
-    description: "County FIPS code (3-digit string, e.g. 001 for Autauga County AL)"
+    description: "County FIPS code (3-digit string, for example 001)."
     constraints: "always 3 characters, zero-padded"
