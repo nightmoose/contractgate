@@ -21,16 +21,7 @@ export const SITE_URL =
 // Revalidate catalog data roughly hourly (ISR).
 const REVALIDATE_SECONDS = 3600;
 
-// Categories shown as filters on the index, in display order.
-export const CATALOG_CATEGORIES = [
-  "Payments",
-  "Commerce",
-  "Accounting",
-  "CRM",
-  "Analytics",
-  "Spreadsheets",
-  "Public data",
-] as const;
+export { CATALOG_CATEGORIES } from "@/lib/catalog-categories";
 
 /** Only rows that have been published to the public directory (have a slug). */
 export async function fetchPublicCatalog(): Promise<OpenDataContract[]> {

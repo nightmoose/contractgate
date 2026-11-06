@@ -37,6 +37,20 @@ export default function SignupPage() {
       : "";
   }
 
+  // Honor ?next= (e.g. the catalog CTA's /catalog/{slug}/fork) through both the
+  // email confirmation link and the GitHub OAuth redirect, so a new account
+  // lands where it started instead of on the dashboard home. Only same-origin
+  // paths are accepted; anything else falls back to "/".
+  function nextParam() {
+    const raw = new URLSearchParams(location.search).get("next");
+    if (raw && raw.startsWith("/") && !raw.startsWith("//")) return raw;
+    return "/";
+  }
+
+  function callbackRedirect() {
+    return `${location.origin}/auth/callback?next=${encodeURIComponent(nextParam())}${productSuffix()}`;
+  }
+
   async function handleGitHubSignUp() {
     setError("");
     setGithubLoading(true);
@@ -44,7 +58,7 @@ export default function SignupPage() {
     const { error: authError } = await supabase.auth.signInWithOAuth({
       provider: "github",
       options: {
-        redirectTo: `${location.origin}/auth/callback?next=/${productSuffix()}`,
+        redirectTo: callbackRedirect(),
       },
     });
     if (authError) {
@@ -90,7 +104,7 @@ export default function SignupPage() {
         // supabase/templates/confirmation.html), not {{ .ConfirmationURL }}.
         // product is already in user metadata; /auth/confirm copies it onto
         // the brand cookie after verifyOtp.
-        emailRedirectTo: `${location.origin}/auth/callback?next=/${productSuffix()}`,
+        emailRedirectTo: callbackRedirect(),
         captchaToken,
       },
     });
