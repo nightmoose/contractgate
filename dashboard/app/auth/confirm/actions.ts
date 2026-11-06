@@ -8,7 +8,7 @@ import {
   defaultNext,
   failurePath,
   isEmailOtpType,
-  safeNextPath,
+  safeInternalPath,
 } from "@/lib/auth-email-link";
 
 // Verifies a token_hash from a Supabase email template. Called from the
@@ -47,5 +47,5 @@ export async function confirmEmailLink(formData: FormData) {
     });
   }
 
-  redirect(safeNextPath(next, defaultNext(type)));
+  redirect(safeInternalPath(next, defaultNext(type)));
 }
