@@ -1,5 +1,9 @@
-<!-- PKCE ConfirmationURL only works in the browser that signed up. Keep token_hash. -->
+<!-- PKCE ConfirmationURL only works in the browser that signed up. Keep token_hash.
+     signup_next is the safe relative return path from the signup page
+     (for example /catalog/stripe-charges/fork). Missing metadata falls back
+     to next=/. product is added only for AISchemaGate signups. html/template
+     percent-encodes the path; /auth/confirm decodes it before redirecting. -->
 <h2>Confirm your signup</h2>
 
 <p>Follow this link to confirm your user:</p>
-<p><a href="{{ .SiteURL }}/auth/confirm?token_hash={{ .TokenHash }}&type=signup&next=/">Confirm your mail</a></p>
+<p><a href="{{ .SiteURL }}/auth/confirm?token_hash={{ .TokenHash }}&type=signup&next={{ if .Data }}{{ or .Data.signup_next "/" }}{{ else }}/{{ end }}{{ if and .Data (eq .Data.product "aischemagate") }}&product=aischemagate{{ end }}">Confirm your mail</a></p>

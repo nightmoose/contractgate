@@ -4,13 +4,18 @@ import { useRef, useState, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
+import { callbackRedirectUrl, safeInternalPath, withAuthReturn } from "@/lib/auth-email-link";
 import { AuthCaptcha, captchaEnabled, type AuthCaptchaHandle } from "@/components/AuthCaptcha";
 import BrandWordmark, { BrandTagline } from "@/components/BrandWordmark";
 
 function LoginForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const next = searchParams.get("next") ?? "/";
+  const nextRaw = searchParams.get("next");
+  const productRaw = searchParams.get("product");
+  // Only an in-app path. An external or protocol-relative next stays on "/".
+  const next = safeInternalPath(nextRaw, "/");
+  const signUpHref = withAuthReturn("/auth/signup", nextRaw, productRaw);
   const linkError = searchParams.get("error");
 
   const [email, setEmail] = useState("");
@@ -50,7 +55,7 @@ function LoginForm() {
     const { error: authError } = await supabase.auth.signInWithOAuth({
       provider: "github",
       options: {
-        redirectTo: `${location.origin}/auth/callback?next=${encodeURIComponent(next)}`,
+        redirectTo: callbackRedirectUrl(location.origin, nextRaw, productRaw),
       },
     });
     if (authError) {
@@ -161,7 +166,7 @@ function LoginForm() {
 
           <p className="mt-6 text-center text-sm text-slate-500">
             Don&apos;t have an account?{" "}
-            <Link href="/auth/signup" className="text-green-400 hover:text-green-300">
+            <Link href={signUpHref} className="text-green-400 hover:text-green-300">
               Sign up free
             </Link>
           </p>
