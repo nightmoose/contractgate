@@ -231,14 +231,26 @@ point at the app. Source HTML is `supabase/templates/`. Recovery:
 <a href="{{ .SiteURL }}/auth/confirm?token_hash={{ .TokenHash }}&type=recovery&next=/auth/reset">Reset Password</a>
 ```
 
-Confirmation uses `type=signup&next=/`, magic link `type=magiclink&next=/`,
-email change `type=email_change&next=/account`, invite `type=invite&next=/`.
+Confirmation reads `signup_next` from the new user's metadata (the safe
+relative path the signup page was opened with, such as
+`/catalog/stripe-charges/fork`). The template falls back to `next=/` when that
+value is absent. `product=aischemagate` is added only for AISchemaGate
+signups. html/template percent-encodes the path in the href;
+`/auth/confirm` decodes it and redirects only if it is still an in-app path.
+Magic link uses `type=magiclink&next=/`, email change
+`type=email_change&next=/account`, invite `type=invite&next=/`.
+The signup page's "Sign in" link forwards the same `next` (and product, when
+present) to `/auth/login`, which already returns there after a password or
+GitHub sign-in.
+
 `/auth/confirm` only renders a form. Submitting it calls
 `verifyOtp({ type, token_hash })` on the server, which does not need the code
 verifier, and then redirects to `next`. The form is not submitted on GET, so a
 scanner that only opens the link does not consume the token. Do not switch
 these templates back to `{{ .ConfirmationURL }}`. Apply them to the hosted
-project only after `/auth/confirm` is deployed:
+project only after `/auth/confirm` is deployed. Re-apply after the
+confirmation template changes, or hosted signup mail keeps the previous
+`next=/` link:
 
 ```bash
 SUPABASE_ACCESS_TOKEN=… python3 scripts/apply-auth-email-templates.py --apply

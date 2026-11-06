@@ -1,5 +1,6 @@
 import { createClient } from "@/lib/supabase/server";
 import { NextResponse } from "next/server";
+import { sameOriginRedirect } from "@/lib/auth-email-link";
 import { BRAND_COOKIE } from "@/lib/brand";
 
 /**
@@ -9,7 +10,7 @@ import { BRAND_COOKIE } from "@/lib/brand";
 export async function GET(request: Request) {
   const { searchParams, origin } = new URL(request.url);
   const code = searchParams.get("code");
-  const next = searchParams.get("next") ?? "/";
+  const next = sameOriginRedirect(origin, searchParams.get("next"), "/");
   // Signup pages that came from aischemagate.com embed product=aischemagate in
   // the Supabase email `redirectTo` so cross-device confirmation lands AISG-
   // branded even before useOrg() resolves. Same cookie options as proxy.ts.
@@ -19,7 +20,7 @@ export async function GET(request: Request) {
     const supabase = await createClient();
     const { error } = await supabase.auth.exchangeCodeForSession(code);
     if (!error) {
-      const response = NextResponse.redirect(`${origin}${next}`);
+      const response = NextResponse.redirect(next);
       if (isAisg) {
         response.cookies.set(BRAND_COOKIE, "aisg", {
           path: "/",
