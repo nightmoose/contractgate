@@ -1,0 +1,34 @@
+[
+  {
+    "id": "cus_Example0001",
+    "object": "customer",
+    "email": "customer@example.com",
+    "name": "Jordan Example",
+    "description": "Imported from client CRM",
+    "phone": "555-0100",
+    "created": 1731000000,
+    "currency": "usd",
+    "balance": 0,
+    "delinquent": false,
+    "livemode": false
+  },
+  {
+    "id": "cus_Example0002",
+    "object": "customer",
+    "email": "billing@example.org",
+    "name": "Casey Sample",
+    "created": 1731003600,
+    "balance": -500,
+    "delinquent": false
+  },
+  {
+    "id": "cus_Example0003",
+    "object": "customer",
+    "name": "Acme Test LLC",
+    "phone": "555-0133",
+    "created": 1731090000,
+    "currency": "eur",
+    "delinquent": true,
+    "livemode": false
+  }
+]

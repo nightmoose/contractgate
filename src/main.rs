@@ -1762,6 +1762,14 @@ fn build_router(state: Arc<AppState>) -> Router {
             "/public-contracts/{id}",
             get(public_catalog::get_public_contract_handler),
         )
+        .route(
+            "/public-contracts/{id}/yaml",
+            get(public_catalog::get_public_contract_yaml_handler),
+        )
+        .route(
+            "/public-contracts/{id}/odcs",
+            get(public_catalog::get_public_contract_odcs_handler),
+        )
         .merge(public_rate_limited);
 
     // Protected routes — require x-api-key header

@@ -1,0 +1,64 @@
+version: "1.0"
+name: "shopify-orders"
+description: "Shopify orders CSV export — core columns from the Store admin Orders export. Compatible with Shopify's documented orders CSV; not affiliated with Shopify. Values are CSV strings; money columns are validated as decimal strings."
+
+ontology:
+  entities:
+    - name: Name
+      type: string
+      required: true
+      pattern: "^#?[0-9]+$"
+    - name: Email
+      type: string
+      required: false
+      format: email
+    - name: Financial Status
+      type: string
+      required: false
+      enum:
+        - "pending"
+        - "authorized"
+        - "paid"
+        - "partially_paid"
+        - "refunded"
+        - "voided"
+        - "partially_refunded"
+        - "unpaid"
+    - name: Fulfillment Status
+      type: string
+      required: false
+      enum: ["fulfilled", "unfulfilled", "partial", "restocked"]
+    - name: Currency
+      type: string
+      required: true
+      pattern: "^[A-Z]{3}$"
+    - name: Subtotal
+      type: string
+      required: false
+      pattern: "^-?[0-9]+(\\.[0-9]{1,2})?$"
+    - name: Shipping
+      type: string
+      required: false
+      pattern: "^-?[0-9]+(\\.[0-9]{1,2})?$"
+    - name: Taxes
+      type: string
+      required: false
+      pattern: "^-?[0-9]+(\\.[0-9]{1,2})?$"
+    - name: Total
+      type: string
+      required: true
+      pattern: "^-?[0-9]+(\\.[0-9]{1,2})?$"
+    - name: Created at
+      type: string
+      required: false
+
+glossary:
+  - field: Name
+    description: "Order name as shown in the admin (e.g. #1001)."
+    constraints: "order number, optional leading #"
+  - field: Financial Status
+    description: "Payment status of the order."
+    constraints: "Shopify financial status value"
+  - field: Total
+    description: "Order total in the order currency."
+    constraints: "decimal string"

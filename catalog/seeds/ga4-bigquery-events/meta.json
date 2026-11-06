@@ -1,0 +1,15 @@
+{
+  "slug": "ga4-bigquery-events",
+  "title": "GA4 BigQuery events export — data contract",
+  "vendor": "Google Analytics 4",
+  "category": "Analytics",
+  "surface": "GA4 BigQuery Export daily events_ table (core scalar columns)",
+  "verified_source_url": "https://support.google.com/analytics/answer/7029846",
+  "verified_at": "2026-11-05",
+  "who_uses_this": "Validate a client's GA4 BigQuery events export before building reporting models on top of it.",
+  "license_note": "MIT",
+  "source_format": "json",
+  "source_url": null,
+  "version": "1.0",
+  "description": "GA4 BigQuery Export events — core scalar columns of the daily events_ table. Compatible with Google Analytics 4's documented BigQuery export schema; not affiliated with Google. Nested RECORD columns (event_params, user_properties, items) are omitted from this core contract."
+}

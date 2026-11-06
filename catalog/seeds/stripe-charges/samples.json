@@ -1,0 +1,50 @@
+[
+  {
+    "id": "ch_3Oexample0001AbCdEfGh",
+    "object": "charge",
+    "amount": 4200,
+    "amount_captured": 4200,
+    "amount_refunded": 0,
+    "currency": "usd",
+    "customer": "cus_Example0001",
+    "description": "Invoice INV-1001",
+    "paid": true,
+    "refunded": false,
+    "captured": true,
+    "status": "succeeded",
+    "created": 1731000000,
+    "livemode": false,
+    "receipt_email": "customer@example.com",
+    "payment_intent": "pi_3Oexample0001"
+  },
+  {
+    "id": "ch_3Oexample0002IjKlMnOp",
+    "object": "charge",
+    "amount": 1599,
+    "amount_captured": 0,
+    "amount_refunded": 0,
+    "currency": "eur",
+    "description": "Pending subscription charge",
+    "paid": false,
+    "refunded": false,
+    "captured": false,
+    "status": "pending",
+    "created": 1731003600
+  },
+  {
+    "id": "ch_3Oexample0003QrStUvWx",
+    "object": "charge",
+    "amount": 9900,
+    "amount_captured": 9900,
+    "amount_refunded": 9900,
+    "currency": "gbp",
+    "customer": "cus_Example0003",
+    "description": "Refunded order 5582",
+    "paid": true,
+    "refunded": true,
+    "captured": true,
+    "status": "succeeded",
+    "created": 1731090000,
+    "receipt_email": "refunds@example.com"
+  }
+]

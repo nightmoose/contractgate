@@ -675,6 +675,34 @@ fn more_openapi_paths(paths: &mut serde_json::Map<String, Value>) {
             }
         }),
     );
+    merge_openapi_op(
+        paths,
+        "/public-contracts/{id}/yaml",
+        "get",
+        json!({
+            "operationId": "get_public_contract_yaml",
+            "summary": "Download a public-catalog contract as DataContractGate YAML (no API key)",
+            "parameters": [{"name": "id", "in": "path", "required": true, "schema": {"type": "string"}, "description": "Catalog UUID or slug"}],
+            "responses": {
+                "200": {"description": "Contract YAML", "content": {"application/yaml": {"schema": {"type": "string"}}}},
+                "404": {"description": "Unknown id or slug"}
+            }
+        }),
+    );
+    merge_openapi_op(
+        paths,
+        "/public-contracts/{id}/odcs",
+        "get",
+        json!({
+            "operationId": "get_public_contract_odcs",
+            "summary": "Download a public-catalog contract as ODCS YAML (no API key)",
+            "parameters": [{"name": "id", "in": "path", "required": true, "schema": {"type": "string"}, "description": "Catalog UUID or slug"}],
+            "responses": {
+                "200": {"description": "ODCS YAML", "content": {"application/yaml": {"schema": {"type": "string"}}}},
+                "404": {"description": "Unknown id or slug"}
+            }
+        }),
+    );
 
     let store_desc = format!(
         "True only when ingest will store the body: paid plan ({paid}), org master switch on, and per-contract override on. free, aisg_free, and unknown plans are false. A paid plan with the org switch off is false. Columns are not rewritten."

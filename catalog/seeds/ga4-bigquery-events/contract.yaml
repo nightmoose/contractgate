@@ -1,0 +1,48 @@
+version: "1.0"
+name: "ga4-bigquery-events"
+description: "GA4 BigQuery Export events — core scalar columns of the daily events_ table. Compatible with Google Analytics 4's documented BigQuery export schema; not affiliated with Google. Nested RECORD columns (event_params, user_properties, items) are omitted from this core contract."
+
+ontology:
+  entities:
+    - name: event_date
+      type: string
+      required: true
+      pattern: "^[0-9]{8}$"
+    - name: event_timestamp
+      type: integer
+      required: true
+      min: 0
+    - name: event_name
+      type: string
+      required: true
+    - name: event_previous_timestamp
+      type: integer
+      required: false
+      min: 0
+    - name: event_bundle_sequence_id
+      type: integer
+      required: false
+    - name: user_pseudo_id
+      type: string
+      required: false
+    - name: user_id
+      type: string
+      required: false
+    - name: platform
+      type: string
+      required: false
+      enum: ["WEB", "ANDROID", "IOS"]
+    - name: stream_id
+      type: string
+      required: false
+
+glossary:
+  - field: event_date
+    description: "The date on which the event was logged (YYYYMMDD, in the property's reporting time zone)."
+    constraints: "8-digit date string"
+  - field: event_timestamp
+    description: "The time (in microseconds, UTC) at which the event was logged on the client."
+    constraints: "non-negative integer (microseconds)"
+  - field: platform
+    description: "The data stream platform the event came from."
+    constraints: "WEB, ANDROID, or IOS"

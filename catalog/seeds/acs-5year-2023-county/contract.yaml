@@ -1,0 +1,45 @@
+version: "1.0"
+name: "acs_5year_2023_county"
+description: "ACS 5-Year Estimates 2023 — county-level population and income. Source: US Census Bureau."
+
+ontology:
+  entities:
+    - name: NAME
+      type: string
+      required: true
+    - name: B01003_001E
+      type: integer
+      required: true
+      min: 0
+    - name: B19013_001E
+      type: integer
+      required: false
+    - name: B19013_001MA
+      type: integer
+      required: false
+    - name: state
+      type: string
+      required: true
+    - name: county
+      type: string
+      required: true
+
+glossary:
+  - field: NAME
+    description: "County and state name (e.g. Autauga County, Alabama)"
+    constraints: "non-empty string"
+  - field: B01003_001E
+    description: "Total population estimate"
+    constraints: "non-negative integer"
+  - field: B19013_001E
+    description: "Median household income (USD, inflation-adjusted)"
+    constraints: "-666666666 indicates data not available for this county"
+  - field: B19013_001MA
+    description: "Median household income margin of error (USD)"
+    constraints: "null when income estimate unavailable"
+  - field: state
+    description: "State FIPS code (2-digit string, e.g. 01 for Alabama)"
+    constraints: "always 2 characters, zero-padded"
+  - field: county
+    description: "County FIPS code (3-digit string, e.g. 001 for Autauga County AL)"
+    constraints: "always 3 characters, zero-padded"
