@@ -40,18 +40,14 @@ fn seeds_dir() -> PathBuf {
 
 fn load_contract(slug: &str) -> Contract {
     let path = seeds_dir().join(slug).join("contract.yaml");
-    let yaml = fs::read_to_string(&path)
-        .unwrap_or_else(|e| panic!("read {}: {e}", path.display()));
-    serde_yaml::from_str(&yaml)
-        .unwrap_or_else(|e| panic!("parse contract.yaml for {slug}: {e}"))
+    let yaml = fs::read_to_string(&path).unwrap_or_else(|e| panic!("read {}: {e}", path.display()));
+    serde_yaml::from_str(&yaml).unwrap_or_else(|e| panic!("parse contract.yaml for {slug}: {e}"))
 }
 
 fn load_samples(slug: &str) -> Vec<serde_json::Value> {
     let path = seeds_dir().join(slug).join("samples.json");
-    let text = fs::read_to_string(&path)
-        .unwrap_or_else(|e| panic!("read {}: {e}", path.display()));
-    serde_json::from_str(&text)
-        .unwrap_or_else(|e| panic!("parse samples.json for {slug}: {e}"))
+    let text = fs::read_to_string(&path).unwrap_or_else(|e| panic!("read {}: {e}", path.display()));
+    serde_json::from_str(&text).unwrap_or_else(|e| panic!("parse samples.json for {slug}: {e}"))
 }
 
 #[test]
@@ -95,7 +91,13 @@ fn every_meta_json_is_well_formed() {
             Some(*slug),
             "meta.json slug mismatch for {slug}"
         );
-        for key in ["vendor", "category", "verified_source_url", "verified_at", "license_note"] {
+        for key in [
+            "vendor",
+            "category",
+            "verified_source_url",
+            "verified_at",
+            "license_note",
+        ] {
             assert!(
                 meta.get(key).and_then(|v| v.as_str()).is_some(),
                 "meta.json for {slug} missing string field {key}"

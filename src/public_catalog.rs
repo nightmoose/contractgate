@@ -169,9 +169,7 @@ fn default_format() -> String {
 // ---------------------------------------------------------------------------
 
 async fn db_list_public_contracts(db: &PgPool) -> AppResult<Vec<PublicContractRow>> {
-    let sql = format!(
-        "SELECT {PUBLIC_CONTRACT_COLUMNS} FROM public_contracts ORDER BY name ASC"
-    );
+    let sql = format!("SELECT {PUBLIC_CONTRACT_COLUMNS} FROM public_contracts ORDER BY name ASC");
     sqlx::query_as::<_, PublicContractRow>(&sql)
         .fetch_all(db)
         .await
@@ -179,9 +177,7 @@ async fn db_list_public_contracts(db: &PgPool) -> AppResult<Vec<PublicContractRo
 }
 
 async fn db_get_public_contract(db: &PgPool, id: Uuid) -> AppResult<PublicContractRow> {
-    let sql = format!(
-        "SELECT {PUBLIC_CONTRACT_COLUMNS} FROM public_contracts WHERE id = $1"
-    );
+    let sql = format!("SELECT {PUBLIC_CONTRACT_COLUMNS} FROM public_contracts WHERE id = $1");
     sqlx::query_as::<_, PublicContractRow>(&sql)
         .bind(id)
         .fetch_optional(db)
@@ -200,9 +196,7 @@ async fn db_get_public_contract_by_ref(
     if let Ok(id) = Uuid::parse_str(id_or_slug) {
         return db_get_public_contract(db, id).await;
     }
-    let sql = format!(
-        "SELECT {PUBLIC_CONTRACT_COLUMNS} FROM public_contracts WHERE slug = $1"
-    );
+    let sql = format!("SELECT {PUBLIC_CONTRACT_COLUMNS} FROM public_contracts WHERE slug = $1");
     sqlx::query_as::<_, PublicContractRow>(&sql)
         .bind(id_or_slug)
         .fetch_optional(db)
@@ -565,7 +559,10 @@ pub async fn get_public_contract_yaml_handler(
     Ok((
         StatusCode::OK,
         [
-            (header::CONTENT_TYPE, "application/yaml; charset=utf-8".to_string()),
+            (
+                header::CONTENT_TYPE,
+                "application/yaml; charset=utf-8".to_string(),
+            ),
             (
                 header::CONTENT_DISPOSITION,
                 format!("attachment; filename=\"{filename}.yaml\""),
@@ -629,7 +626,10 @@ pub async fn get_public_contract_odcs_handler(
     Ok((
         StatusCode::OK,
         [
-            (header::CONTENT_TYPE, "application/yaml; charset=utf-8".to_string()),
+            (
+                header::CONTENT_TYPE,
+                "application/yaml; charset=utf-8".to_string(),
+            ),
             (
                 header::CONTENT_DISPOSITION,
                 format!("attachment; filename=\"{filename}.odcs.yaml\""),
