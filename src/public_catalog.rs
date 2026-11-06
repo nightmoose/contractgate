@@ -31,7 +31,7 @@ use axum::{
     http::{header, StatusCode},
     response::{IntoResponse, Json, Response},
 };
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, NaiveDate, Utc};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use sqlx::{PgPool, Row as _};
@@ -56,13 +56,31 @@ struct PublicContractRow {
     id: Uuid,
     name: String,
     description: Option<String>,
-    source_url: String,
+    // Nullable since migration 047: vendor handover contracts are file-based and
+    // have no public URL to fetch (only ACS keeps a real source_url).
+    source_url: Option<String>,
     source_format: String,
     contract_yaml: String,
     version: String,
     created_at: DateTime<Utc>,
     updated_at: DateTime<Utc>,
+    // Public-catalog phase 1 columns (migration 047). NULL on legacy rows that
+    // predate the catalog expansion.
+    slug: Option<String>,
+    vendor: Option<String>,
+    category: Option<String>,
+    verified_source_url: Option<String>,
+    verified_at: Option<NaiveDate>,
+    sample_json: Option<Value>,
+    license_note: Option<String>,
+    author_org_id: Option<Uuid>,
 }
+
+/// Columns selected for both list and detail queries. Centralised so the two
+/// stay in sync as catalog columns grow.
+const PUBLIC_CONTRACT_COLUMNS: &str = "id, name, description, source_url, source_format, \
+     contract_yaml, version, created_at, updated_at, slug, vendor, category, \
+     verified_source_url, verified_at, sample_json, license_note, author_org_id";
 
 // ---------------------------------------------------------------------------
 // Response types
@@ -77,6 +95,14 @@ pub struct PublicContractSummary {
     pub version: String,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
+    pub slug: Option<String>,
+    pub vendor: Option<String>,
+    pub category: Option<String>,
+    pub verified_source_url: Option<String>,
+    pub verified_at: Option<NaiveDate>,
+    pub license_note: Option<String>,
+    /// NULL = authored by DataContractGate (phase 1 has no community authors).
+    pub author_org_id: Option<Uuid>,
 }
 
 #[derive(Serialize)]
@@ -84,12 +110,22 @@ pub struct PublicContractDetail {
     pub id: Uuid,
     pub name: String,
     pub description: Option<String>,
-    pub source_url: String,
+    pub source_url: Option<String>,
     pub source_format: String,
     pub contract_yaml: String,
     pub version: String,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
+    pub slug: Option<String>,
+    pub vendor: Option<String>,
+    pub category: Option<String>,
+    pub verified_source_url: Option<String>,
+    pub verified_at: Option<NaiveDate>,
+    /// 3 synthetic sample rows we wrote; validate against this contract with 0
+    /// violations. No real customer data.
+    pub sample_json: Option<Value>,
+    pub license_note: Option<String>,
+    pub author_org_id: Option<Uuid>,
 }
 
 #[derive(Serialize)]
@@ -133,29 +169,46 @@ fn default_format() -> String {
 // ---------------------------------------------------------------------------
 
 async fn db_list_public_contracts(db: &PgPool) -> AppResult<Vec<PublicContractRow>> {
-    sqlx::query_as::<_, PublicContractRow>(
-        r#"SELECT id, name, description, source_url, source_format,
-                  contract_yaml, version, created_at, updated_at
-           FROM public_contracts
-           ORDER BY name ASC"#,
-    )
-    .fetch_all(db)
-    .await
-    .map_err(|e| AppError::Internal(format!("failed to list public contracts: {e}")))
+    let sql = format!(
+        "SELECT {PUBLIC_CONTRACT_COLUMNS} FROM public_contracts ORDER BY name ASC"
+    );
+    sqlx::query_as::<_, PublicContractRow>(&sql)
+        .fetch_all(db)
+        .await
+        .map_err(|e| AppError::Internal(format!("failed to list public contracts: {e}")))
 }
 
 async fn db_get_public_contract(db: &PgPool, id: Uuid) -> AppResult<PublicContractRow> {
-    sqlx::query_as::<_, PublicContractRow>(
-        r#"SELECT id, name, description, source_url, source_format,
-                  contract_yaml, version, created_at, updated_at
-           FROM public_contracts
-           WHERE id = $1"#,
-    )
-    .bind(id)
-    .fetch_optional(db)
-    .await
-    .map_err(|e| AppError::Internal(format!("failed to fetch public contract: {e}")))?
-    .ok_or_else(|| AppError::NotFound("public contract not found".into()))
+    let sql = format!(
+        "SELECT {PUBLIC_CONTRACT_COLUMNS} FROM public_contracts WHERE id = $1"
+    );
+    sqlx::query_as::<_, PublicContractRow>(&sql)
+        .bind(id)
+        .fetch_optional(db)
+        .await
+        .map_err(|e| AppError::Internal(format!("failed to fetch public contract: {e}")))?
+        .ok_or_else(|| AppError::NotFound("public contract not found".into()))
+}
+
+/// Resolve a public contract by UUID or by slug. The public detail/YAML/ODCS
+/// routes accept either, so a human-readable `/catalog/stripe-charges` URL and
+/// a legacy UUID link both work.
+async fn db_get_public_contract_by_ref(
+    db: &PgPool,
+    id_or_slug: &str,
+) -> AppResult<PublicContractRow> {
+    if let Ok(id) = Uuid::parse_str(id_or_slug) {
+        return db_get_public_contract(db, id).await;
+    }
+    let sql = format!(
+        "SELECT {PUBLIC_CONTRACT_COLUMNS} FROM public_contracts WHERE slug = $1"
+    );
+    sqlx::query_as::<_, PublicContractRow>(&sql)
+        .bind(id_or_slug)
+        .fetch_optional(db)
+        .await
+        .map_err(|e| AppError::Internal(format!("failed to fetch public contract: {e}")))?
+        .ok_or_else(|| AppError::NotFound("public contract not found".into()))
 }
 
 /// Create a new fork contract in the caller's org.
@@ -228,7 +281,8 @@ async fn db_fork_public_contract(
 /// and the fork's stored filter.
 #[derive(sqlx::FromRow)]
 struct ForkExportInfo {
-    source_url: String,
+    // Nullable since 047: file-based handover contracts have no fetchable URL.
+    source_url: Option<String>,
     source_format: String,
     fork_filter: Option<Value>, // JSONB
 }
@@ -456,18 +510,20 @@ pub async fn list_public_contracts_handler(
             version: r.version,
             created_at: r.created_at,
             updated_at: r.updated_at,
+            slug: r.slug,
+            vendor: r.vendor,
+            category: r.category,
+            verified_source_url: r.verified_source_url,
+            verified_at: r.verified_at,
+            license_note: r.license_note,
+            author_org_id: r.author_org_id,
         })
         .collect();
     Ok(Json(summaries))
 }
 
-/// `GET /public-contracts/:id` — get one entry with full YAML (no auth required).
-pub async fn get_public_contract_handler(
-    State(state): State<Arc<AppState>>,
-    Path(id): Path<Uuid>,
-) -> AppResult<Json<PublicContractDetail>> {
-    let row = db_get_public_contract(&state.db, id).await?;
-    Ok(Json(PublicContractDetail {
+fn row_to_detail(row: PublicContractRow) -> PublicContractDetail {
+    PublicContractDetail {
         id: row.id,
         name: row.name,
         description: row.description,
@@ -477,7 +533,111 @@ pub async fn get_public_contract_handler(
         version: row.version,
         created_at: row.created_at,
         updated_at: row.updated_at,
-    }))
+        slug: row.slug,
+        vendor: row.vendor,
+        category: row.category,
+        verified_source_url: row.verified_source_url,
+        verified_at: row.verified_at,
+        sample_json: row.sample_json,
+        license_note: row.license_note,
+        author_org_id: row.author_org_id,
+    }
+}
+
+/// `GET /public-contracts/:id_or_slug` — get one entry with full YAML + samples
+/// (no auth required). Accepts a UUID or a catalog slug.
+pub async fn get_public_contract_handler(
+    State(state): State<Arc<AppState>>,
+    Path(id_or_slug): Path<String>,
+) -> AppResult<Json<PublicContractDetail>> {
+    let row = db_get_public_contract_by_ref(&state.db, &id_or_slug).await?;
+    Ok(Json(row_to_detail(row)))
+}
+
+/// `GET /public-contracts/:id_or_slug/yaml` — download the raw DataContractGate
+/// contract YAML (no auth required). Accepts a UUID or a catalog slug.
+pub async fn get_public_contract_yaml_handler(
+    State(state): State<Arc<AppState>>,
+    Path(id_or_slug): Path<String>,
+) -> AppResult<Response> {
+    let row = db_get_public_contract_by_ref(&state.db, &id_or_slug).await?;
+    let filename = row.slug.clone().unwrap_or_else(|| row.name.clone());
+    Ok((
+        StatusCode::OK,
+        [
+            (header::CONTENT_TYPE, "application/yaml; charset=utf-8".to_string()),
+            (
+                header::CONTENT_DISPOSITION,
+                format!("attachment; filename=\"{filename}.yaml\""),
+            ),
+        ],
+        row.contract_yaml,
+    )
+        .into_response())
+}
+
+/// `GET /public-contracts/:id_or_slug/odcs` — download the contract as an
+/// ODCS v3.1.0 YAML document (no auth required). Built from the catalog YAML via
+/// the same exporter used for authenticated contracts.
+pub async fn get_public_contract_odcs_handler(
+    State(state): State<Arc<AppState>>,
+    Path(id_or_slug): Path<String>,
+) -> AppResult<Response> {
+    use crate::contract::{
+        Contract, ContractIdentity, ContractVersion, MultiStableResolution, VersionState,
+    };
+
+    let row = db_get_public_contract_by_ref(&state.db, &id_or_slug).await?;
+    let filename = row.slug.clone().unwrap_or_else(|| row.name.clone());
+
+    let contract: Contract = serde_yaml::from_str(&row.contract_yaml)
+        .map_err(|e| AppError::Internal(format!("failed to parse catalog YAML: {e}")))?;
+
+    let identity = ContractIdentity {
+        id: row.id,
+        name: row.name.clone(),
+        description: row.description.clone(),
+        multi_stable_resolution: MultiStableResolution::default(),
+        created_at: row.created_at,
+        updated_at: row.updated_at,
+        pii_salt: Vec::new(),
+        store_event_payloads: false,
+        fail_policy: None,
+    };
+    let version = ContractVersion {
+        id: row.id,
+        contract_id: row.id,
+        version: row.version.clone(),
+        state: VersionState::Stable,
+        yaml_content: row.contract_yaml.clone(),
+        created_at: row.created_at,
+        promoted_at: Some(row.created_at),
+        deprecated_at: None,
+        compliance_mode: contract.compliance_mode,
+        egress_leakage_mode: contract.egress_leakage_mode,
+        import_source: Default::default(),
+        requires_review: false,
+    };
+
+    let odcs = crate::odcs::export_odcs(crate::odcs::OdcsExportInput {
+        identity: &identity,
+        version: &version,
+        contract: &contract,
+    })
+    .map_err(AppError::Internal)?;
+
+    Ok((
+        StatusCode::OK,
+        [
+            (header::CONTENT_TYPE, "application/yaml; charset=utf-8".to_string()),
+            (
+                header::CONTENT_DISPOSITION,
+                format!("attachment; filename=\"{filename}.odcs.yaml\""),
+            ),
+        ],
+        odcs,
+    )
+        .into_response())
 }
 
 /// `POST /contracts/:id/fork` — fork a public contract into the caller's org.
@@ -553,8 +713,17 @@ pub async fn export_fork_handler(
         })
         .transpose()?;
 
-    // Fetch upstream.
-    let bytes = fetch_upstream(&info.source_url).await?;
+    // Fetch upstream. File-based handover contracts (Stripe, Shopify, …) have no
+    // source URL — there is nothing to fetch; the caller uploads the file to the
+    // validation playground instead.
+    let source_url = info.source_url.as_deref().ok_or_else(|| {
+        AppError::BadRequest(
+            "this contract is file-based (no fetchable source); upload the file to the \
+             validation playground instead of exporting"
+                .into(),
+        )
+    })?;
+    let bytes = fetch_upstream(source_url).await?;
     let rows_fetched_raw = parse_upstream(&bytes, &info.source_format)?;
     let rows_fetched = rows_fetched_raw.len();
 

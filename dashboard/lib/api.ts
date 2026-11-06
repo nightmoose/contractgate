@@ -1344,12 +1344,22 @@ export interface OpenDataContract {
   version: string;
   created_at: string;
   updated_at: string;
+  // Public catalog phase 1 fields (migration 047). Null on legacy rows.
+  slug: string | null;
+  vendor: string | null;
+  category: string | null;
+  verified_source_url: string | null;
+  verified_at: string | null;
+  license_note: string | null;
+  author_org_id: string | null;
 }
 
-/** Full detail from GET /public-contracts/{id} — includes YAML. */
+/** Full detail from GET /public-contracts/{id_or_slug} — includes YAML + samples. */
 export interface OpenDataContractDetail extends OpenDataContract {
-  source_url: string;
+  source_url: string | null;
   contract_yaml: string;
+  /** 3 synthetic sample rows; validate against this contract with 0 violations. */
+  sample_json: unknown[] | null;
 }
 
 /** Response from POST /contracts/{id}/fork. */
@@ -1365,9 +1375,17 @@ export interface ForkResponse {
 export const listOpenDataContracts = (): Promise<OpenDataContract[]> =>
   apiFetch<OpenDataContract[]>("/public-contracts");
 
-/** Fetch a single curated contract with full YAML (no auth required). */
-export const getOpenDataContract = (id: string): Promise<OpenDataContractDetail> =>
-  apiFetch<OpenDataContractDetail>(`/public-contracts/${encodeURIComponent(id)}`);
+/** Fetch a single curated contract with full YAML (no auth required). Accepts a UUID or a slug. */
+export const getOpenDataContract = (idOrSlug: string): Promise<OpenDataContractDetail> =>
+  apiFetch<OpenDataContractDetail>(`/public-contracts/${encodeURIComponent(idOrSlug)}`);
+
+/** Public, unauthenticated download URL for the DataContractGate contract YAML. */
+export const publicContractYamlUrl = (idOrSlug: string): string =>
+  `${BASE}/public-contracts/${encodeURIComponent(idOrSlug)}/yaml`;
+
+/** Public, unauthenticated download URL for the ODCS v3.1.0 export. */
+export const publicContractOdcsUrl = (idOrSlug: string): string =>
+  `${BASE}/public-contracts/${encodeURIComponent(idOrSlug)}/odcs`;
 
 /** Fork a curated public contract into the caller's org (auth required). */
 export const forkPublicContract = (
