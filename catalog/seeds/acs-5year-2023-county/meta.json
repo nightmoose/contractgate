@@ -1,0 +1,16 @@
+{
+  "slug": "acs-5year-2023-county",
+  "name": "acs_5year_2023_county",
+  "title": "ACS 5-Year Estimates 2023 (county) — data contract",
+  "vendor": "US Census Bureau",
+  "category": "Public data",
+  "surface": "Census ACS 5-Year Estimates 2023 API (county level)",
+  "verified_source_url": "https://www.census.gov/data/developers/data-sets/acs/acs5.html",
+  "verified_at": "2026-11-05",
+  "who_uses_this": "Enrich or validate county-level demographic joins before they hit your warehouse.",
+  "license_note": "MIT",
+  "source_format": "json_rows",
+  "source_url": "https://api.census.gov/data/2023/acs/acs5?get=NAME,B01003_001E,B19013_001E,B19013_001MA&for=county:*&in=state:*",
+  "version": "1.0",
+  "description": "ACS 5-Year Estimates 2023 — county-level population and income. Source: US Census Bureau (data.census.gov). No API key required for < 500 requests/day."
+}

@@ -1,0 +1,15 @@
+{
+  "slug": "hubspot-contacts",
+  "title": "HubSpot Contacts export — data contract",
+  "vendor": "HubSpot",
+  "category": "CRM",
+  "surface": "HubSpot CRM Contacts API default properties (export)",
+  "verified_source_url": "https://developers.hubspot.com/docs/api/crm/contacts",
+  "verified_at": "2026-11-05",
+  "who_uses_this": "Validate a client's HubSpot contacts export before importing it into your CRM or warehouse.",
+  "license_note": "MIT",
+  "source_format": "json",
+  "source_url": null,
+  "version": "1.0",
+  "description": "HubSpot CRM contact — default properties from the Contacts API / export. Compatible with HubSpot's documented default contact properties; not affiliated with HubSpot."
+}

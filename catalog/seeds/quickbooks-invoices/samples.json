@@ -1,0 +1,32 @@
+[
+  {
+    "Id": "130",
+    "SyncToken": "0",
+    "DocNumber": "1070",
+    "TxnDate": "2026-01-10",
+    "DueDate": "2026-02-09",
+    "CustomerRef": { "value": "24", "name": "Sample Client Co" },
+    "CurrencyRef": { "value": "USD", "name": "United States Dollar" },
+    "TotalAmt": 1250.00,
+    "Balance": 1250.00
+  },
+  {
+    "Id": "131",
+    "SyncToken": "2",
+    "DocNumber": "1071",
+    "TxnDate": "2026-01-12",
+    "DueDate": "2026-01-26",
+    "CustomerRef": { "value": "25", "name": "Example Retail LLC" },
+    "TotalAmt": 480.50,
+    "Balance": 0
+  },
+  {
+    "Id": "132",
+    "DocNumber": "1072",
+    "TxnDate": "2026-01-15",
+    "CustomerRef": { "value": "26" },
+    "CurrencyRef": { "value": "CAD" },
+    "TotalAmt": 99.99,
+    "Balance": 99.99
+  }
+]

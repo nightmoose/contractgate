@@ -1,0 +1,46 @@
+version: "1.0"
+name: "generic-sheets-transactions-csv"
+description: "Generic transactions / ledger CSV — a practical spreadsheet format for bank, ledger, and bookkeeping exports. Authored by DataContractGate as an open spec; not tied to any vendor."
+
+ontology:
+  entities:
+    - name: date
+      type: date
+      required: true
+    - name: description
+      type: string
+      required: true
+      min_length: 1
+    - name: amount
+      type: number
+      required: true
+    - name: currency
+      type: string
+      required: true
+      pattern: "^[A-Z]{3}$"
+    - name: category
+      type: string
+      required: false
+    - name: account
+      type: string
+      required: false
+    - name: reference
+      type: string
+      required: false
+    - name: balance
+      type: number
+      required: false
+
+glossary:
+  - field: date
+    description: "Transaction date (YYYY-MM-DD)."
+    constraints: "calendar date"
+  - field: amount
+    description: "Signed transaction amount; negative for debits, positive for credits."
+    constraints: "number, may be negative"
+  - field: currency
+    description: "Three-letter ISO currency code, uppercase."
+    constraints: "ISO 4217, uppercase"
+  - field: balance
+    description: "Running account balance after this transaction, if provided."
+    constraints: "number"
