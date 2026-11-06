@@ -1,15 +1,24 @@
 /**
  * Public contract catalog — detail page (RFC public-catalog phase 1).
  *
- * Server-rendered, ISR (~1h), NO AuthGate. Anonymous visitors + crawlers get
- * HTTP 200 with HTML including JSON-LD `Dataset`.
+ * Server-rendered on the request, NO AuthGate. Anonymous visitors and crawlers
+ * get HTTP 200 with HTML including canonical, Open Graph, and JSON-LD `Dataset`.
+ *
+ * Do not opt this segment into ISR (`revalidate` + `generateStaticParams`).
+ * The root layout reads the brand cookie in `generateMetadata` and while
+ * rendering the shell. That read is valid on a dynamic render and throws
+ * DYNAMIC_SERVER_USAGE during static generation. When `generateStaticParams`
+ * returned no paths (the catalog API was unreachable at build), Next.js never
+ * prerendered one, so it never saw that bailout and left the route as
+ * on-demand SSG. The request then failed in MetadataOutlet with HTTP 500
+ * while the page body was already in the RSC payload. `force-dynamic` keeps
+ * the route dynamic in that build so metadata resolves on the request.
  */
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import {
   fetchCatalogDetail,
-  fetchPublicCatalog,
   parseContractFields,
   yamlDownloadUrl,
   odcsDownloadUrl,
@@ -19,16 +28,7 @@ import {
 import CatalogDisclaimer from "../CatalogDisclaimer";
 import DetailActions from "./DetailActions";
 
-export const revalidate = 3600;
-
-export async function generateStaticParams() {
-  try {
-    const contracts = await fetchPublicCatalog();
-    return contracts.map((c) => ({ slug: c.slug as string }));
-  } catch {
-    return [];
-  }
-}
+export const dynamic = "force-dynamic";
 
 export async function generateMetadata({
   params,
