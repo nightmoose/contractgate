@@ -129,7 +129,9 @@ fn review_findings_stay_fixed() {
         acs.null_as_absent,
         "Census JSON null cells must be treated as absent"
     );
-    let acs_meta = std::fs::read_to_string(seeds_dir().join("acs-5year-2023-county").join("meta.json")).unwrap();
+    let acs_meta =
+        std::fs::read_to_string(seeds_dir().join("acs-5year-2023-county").join("meta.json"))
+            .unwrap();
     assert!(
         acs_meta.contains("https://www.census.gov/data/developers/data-sets/acs-5year.html"),
         "ACS citation must be the working 5-year dataset page"
@@ -165,8 +167,14 @@ fn review_findings_stay_fixed() {
         .and_then(|f| f.allowed_values.as_ref())
         .unwrap();
     let financial: Vec<_> = financial.iter().map(|v| v.as_str().unwrap()).collect();
-    assert!(financial.contains(&"expired"), "admin status list includes expired");
-    assert!(!financial.contains(&"unpaid"), "unpaid is a filter grouping, not a status");
+    assert!(
+        financial.contains(&"expired"),
+        "admin status list includes expired"
+    );
+    assert!(
+        !financial.contains(&"unpaid"),
+        "unpaid is a filter grouping, not a status"
+    );
     let name_re = regex::Regex::new(
         shopify
             .ontology
@@ -249,7 +257,10 @@ fn review_findings_stay_fixed() {
     for slug in ["salesforce-account", "salesforce-opportunity"] {
         for sample in load_samples(slug) {
             let id = sample["Id"].as_str().unwrap();
-            assert!(sf_re.is_match(id), "{slug} sample Id {id} is not 15–18 alphanumeric");
+            assert!(
+                sf_re.is_match(id),
+                "{slug} sample Id {id} is not 15–18 alphanumeric"
+            );
             assert!(id.to_ascii_lowercase().contains("example") || id.contains("Example"));
         }
     }

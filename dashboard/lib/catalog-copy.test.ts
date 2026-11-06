@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { catalogCardLine, catalogHeaderAside } from "./catalog-copy.ts";
-import { catalogSampleEvent } from "./playground-prefill.ts";
+import { catalogCardLine, catalogHeaderAside } from "./catalog-copy";
+import { catalogSampleEvent } from "./playground-prefill";
 
 test("GA4 header names Google, not the product, as the unaffiliated company", () => {
   const aside = catalogHeaderAside("ga4-bigquery-events", "Google Analytics 4");
