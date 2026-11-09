@@ -1,0 +1,11 @@
+version: 2
+
+# Singular test severity is set in the SQL file via:
+#   {{ config(severity='error') }}   # or 'warn'
+#
+# This file is optional documentation for the source.
+sources:
+  - name: datacontractgate
+    tables:
+      - name: quarantine_events
+        description: See sources.yml for the full column list.

@@ -3,6 +3,10 @@
 **One-pager for security questionnaires and data-room review.**
 Last updated: 2026-07-15.
 
+For pipeline placement (ingest / mid-stream / egress / AISchemaGate) and
+orchestrator quarantine signals, see
+[`docs/architecture/where-to-enforce-contracts.md`](architecture/where-to-enforce-contracts.md).
+
 > Stop bad events **before** they hit the warehouse — semantic contracts enforced
 > at ingest, with quarantine/replay and sub-millisecond validation.
 
