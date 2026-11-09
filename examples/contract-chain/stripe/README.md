@@ -4,7 +4,7 @@
 
 Public brand: **DataContractGate** (and **AISchemaGate** for LLM output). Not affiliated with Stripe. All sample ids (`ch_3Qdemo…`, `cus_Demo…`, `po_demo_…`) are obviously fake.
 
-This chain is documentation + playground material. It does not add product features.
+This folder is the reference shape for a contract family, and the seed for the public catalog family `stripe-charges-pipeline` (migration `050_contract_families.sql`). See [`docs/contract-families-reference.md`](../../../docs/contract-families-reference.md).
 
 ## Contracts
 
@@ -15,7 +15,7 @@ This chain is documentation + playground material. It does not add product featu
 | (c) Daily mart | `revenue_daily_mart` | Stage / mart (alongside dbt · GE · Soda) | `POST /v1/ingest/{contract_id}` (or `/egress/...` if publishing the mart) |
 | (d) Partner feed | `partner_payout_feed` | Egress | `POST /egress/{contract_id}` |
 
-Linkage is recorded in each contract’s `description` (`derived_from: …` / `chain: …`) and in YAML comments — no new schema fields.
+The contract YAML schema has no new field. `derived_from` in each `description`, and the YAML comments, stay as prose. The product relation is a family link: which contract this one is derived from, and the boundary (`ingest`, `stage` for between stages, or `egress`).
 
 `stripe_charges_raw` mirrors the public catalog seed [`catalog/seeds/stripe-charges`](../../../catalog/seeds/stripe-charges/).
 

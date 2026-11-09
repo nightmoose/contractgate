@@ -2856,6 +2856,166 @@ metrics: []
             .unwrap();
     }
 
+    /// A family is visible only to the org that owns it. Org B cannot read org
+    /// A's family or append a link to it. Org A can extend its own chain.
+    #[tokio::test]
+    #[ignore = "requires DATABASE_URL and a live Postgres migrated through 050"]
+    async fn two_org_contract_family_isolation() {
+        use super::super::contract_families::{self, CreateLinkRequest, PipelineBoundary};
+        use super::super::error::AppError;
+
+        let db_url = std::env::var("DATABASE_URL").expect("DATABASE_URL must be set");
+        let pool = sqlx::PgPool::connect(&db_url).await.unwrap();
+
+        let org_a = uuid::Uuid::new_v4();
+        let org_b = uuid::Uuid::new_v4();
+        for (org, slug) in [(org_a, "fam-iso-a"), (org_b, "fam-iso-b")] {
+            sqlx::query("INSERT INTO orgs (id, name, slug) VALUES ($1, $2, $3)")
+                .bind(org)
+                .bind("family isolation org")
+                .bind(format!("{slug}-{}", org.simple()))
+                .execute(&pool)
+                .await
+                .expect("seed org");
+        }
+
+        let yaml = r#"
+version: "1.0"
+name: "family_iso_contract"
+description: "Contract family isolation"
+ontology:
+  entities:
+    - name: id
+      type: string
+      required: true
+glossary: []
+metrics: []
+"#;
+        let (raw, _) = super::super::storage::create_contract(
+            &pool,
+            "family_iso_raw",
+            Some("raw"),
+            yaml,
+            Default::default(),
+            Some(org_a),
+        )
+        .await
+        .expect("org A raw contract");
+        let (staged, _) = super::super::storage::create_contract(
+            &pool,
+            "family_iso_staged",
+            Some("staged"),
+            yaml,
+            Default::default(),
+            Some(org_a),
+        )
+        .await
+        .expect("org A staged contract");
+        let (other, _) = super::super::storage::create_contract(
+            &pool,
+            "family_iso_other",
+            Some("other org"),
+            yaml,
+            Default::default(),
+            Some(org_b),
+        )
+        .await
+        .expect("org B contract");
+
+        let created = contract_families::create_family(
+            &pool,
+            org_a,
+            "family isolation",
+            Some("org A only"),
+            &[CreateLinkRequest {
+                contract_id: raw.id,
+                derived_from_contract_id: None,
+                boundary: "ingest".into(),
+            }],
+        )
+        .await
+        .expect("org A creates the family");
+
+        let hidden = contract_families::get_family(&pool, created.id, Some(org_b))
+            .await
+            .unwrap_err();
+        assert!(
+            matches!(hidden, AppError::NotFound(_)),
+            "org B must not read org A's family, got {hidden:?}"
+        );
+
+        let listed = contract_families::list_families(&pool, Some(org_b))
+            .await
+            .unwrap();
+        assert!(listed.iter().all(|family| family.id != created.id));
+
+        let visible = contract_families::get_family(&pool, created.id, Some(org_a))
+            .await
+            .unwrap();
+        assert_eq!(visible.links.len(), 1);
+        assert_eq!(visible.links[0].boundary, PipelineBoundary::Ingest);
+
+        let cross = contract_families::add_family_link(
+            &pool,
+            created.id,
+            Some(org_b),
+            &CreateLinkRequest {
+                contract_id: other.id,
+                derived_from_contract_id: Some(raw.id),
+                boundary: "egress".into(),
+            },
+        )
+        .await
+        .unwrap_err();
+        assert!(
+            matches!(cross, AppError::NotFound(_)),
+            "org B must not extend org A's family, got {cross:?}"
+        );
+
+        let extended = contract_families::add_family_link(
+            &pool,
+            created.id,
+            Some(org_a),
+            &CreateLinkRequest {
+                contract_id: staged.id,
+                derived_from_contract_id: Some(raw.id),
+                boundary: "between_stages".into(),
+            },
+        )
+        .await
+        .expect("org A extends the chain");
+        assert_eq!(extended.links.len(), 2);
+        assert_eq!(extended.links[1].contract_id, staged.id);
+        assert_eq!(extended.links[1].boundary, PipelineBoundary::Stage);
+        assert_eq!(extended.links[1].position, 1);
+        assert_eq!(extended.links[1].derived_from_contract_id, Some(raw.id));
+
+        let via_contract = contract_families::family_for_contract(&pool, staged.id, Some(org_a))
+            .await
+            .unwrap();
+        assert_eq!(via_contract.id, created.id);
+        let via_other = contract_families::family_for_contract(&pool, staged.id, Some(org_b))
+            .await
+            .unwrap_err();
+        assert!(matches!(via_other, AppError::ContractNotFound(_)));
+
+        sqlx::query("DELETE FROM contract_families WHERE id = $1")
+            .bind(created.id)
+            .execute(&pool)
+            .await
+            .unwrap();
+        sqlx::query("DELETE FROM contracts WHERE id = ANY($1)")
+            .bind(vec![raw.id, staged.id, other.id])
+            .execute(&pool)
+            .await
+            .unwrap();
+        sqlx::query("DELETE FROM orgs WHERE id = ANY($1)")
+            .bind(vec![org_a, org_b])
+            .execute(&pool)
+            .await
+            .unwrap();
+    }
+
     /// RFC-081: the org-scoped quarantine LIST + id-resolution helpers never
     /// surface another org's quarantine rows. Org B must not see or resolve org
     /// A's quarantined event; dev mode (org_id=None) sees all.

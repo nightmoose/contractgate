@@ -47,6 +47,7 @@ const FULL_BUNDLE = [
   "quarantine-replay-reference.md",
   "drop-mode-reference.md",
   "pii-masking-reference.md",
+  "contract-families-reference.md",
 ];
 
 const missing = [...new Set([...FILES, ...FULL_BUNDLE])].filter(

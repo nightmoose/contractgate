@@ -730,6 +730,7 @@ fn more_openapi_paths(paths: &mut serde_json::Map<String, Value>) {
         json!({
             "operationId": "get_public_contract",
             "summary": "One public-catalog contract, including YAML (no API key)",
+            "description": "When the contract belongs to a family, the response includes family: the chain from the root, with boundary ingest, stage (between stages), or egress on each link. Contracts that are not in a family omit family.",
             "parameters": [{"name": "id", "in": "path", "required": true, "schema": {"type": "string", "format": "uuid"}}],
             "responses": {
                 "200": {"description": "Catalog entry", "content": {"application/json": {"schema": {"type": "object", "properties": {"id": {"type": "string", "format": "uuid"}, "name": {"type": "string"}, "description": {"type": ["string", "null"]}, "source_url": {"type": "string"}, "source_format": {"type": "string"}, "contract_yaml": {"type": "string"}, "version": {"type": "string"}, "created_at": {"type": "string", "format": "date-time"}, "updated_at": {"type": "string", "format": "date-time"}}}}}},
@@ -763,6 +764,174 @@ fn more_openapi_paths(paths: &mut serde_json::Map<String, Value>) {
                 "200": {"description": "ODCS YAML", "content": {"application/yaml": {"schema": {"type": "string"}}}},
                 "404": {"description": "Unknown id or slug"}
             }
+        }),
+    );
+    let family_link_schema = json!({
+        "type": "object",
+        "properties": {
+            "public_contract_id": {"type": "string", "format": "uuid"},
+            "name": {"type": "string"},
+            "slug": {"type": ["string", "null"]},
+            "derived_from_public_contract_id": {"type": ["string", "null"], "format": "uuid"},
+            "derived_from_name": {"type": ["string", "null"]},
+            "derived_from_slug": {"type": ["string", "null"]},
+            "boundary": {"type": "string", "enum": ["ingest", "stage", "egress"], "description": "stage is the between-stages boundary"},
+            "position": {"type": "integer"}
+        }
+    });
+    let public_family_schema = json!({
+        "type": "object",
+        "properties": {
+            "id": {"type": "string", "format": "uuid"},
+            "name": {"type": "string"},
+            "slug": {"type": "string"},
+            "description": {"type": ["string", "null"]},
+            "links": {"type": "array", "items": family_link_schema}
+        }
+    });
+    merge_openapi_op(
+        paths,
+        "/public-contract-families",
+        "get",
+        json!({
+            "operationId": "list_public_contract_families",
+            "summary": "List public catalog contract families as chains (no API key)",
+            "description": "Each family is one chain. links are ordered from the root (position 0) to the leaf. boundary is ingest, stage (between stages), or egress.",
+            "responses": {"200": {"description": "Public families", "content": {"application/json": {"schema": {"type": "array", "items": public_family_schema.clone()}}}}}
+        }),
+    );
+    merge_openapi_op(
+        paths,
+        "/public-contract-families/{id}",
+        "get",
+        json!({
+            "operationId": "get_public_contract_family",
+            "summary": "One public catalog family as a chain (no API key)",
+            "parameters": [{"name": "id", "in": "path", "required": true, "schema": {"type": "string"}, "description": "Family UUID or slug"}],
+            "responses": {
+                "200": {"description": "The family chain", "content": {"application/json": {"schema": public_family_schema.clone()}}},
+                "404": {"description": "Unknown family"}
+            }
+        }),
+    );
+    merge_openapi_op(
+        paths,
+        "/public-contracts/{id}/family",
+        "get",
+        json!({
+            "operationId": "get_public_contract_family_for_contract",
+            "summary": "Family chain for one public catalog contract (no API key)",
+            "parameters": [{"name": "id", "in": "path", "required": true, "schema": {"type": "string"}, "description": "Catalog UUID or slug"}],
+            "responses": {
+                "200": {"description": "The family chain this contract belongs to", "content": {"application/json": {"schema": public_family_schema.clone()}}},
+                "404": {"description": "Unknown contract, or the contract is not in a family"}
+            }
+        }),
+    );
+    let private_link_schema = json!({
+        "type": "object",
+        "required": ["contract_id", "boundary"],
+        "properties": {
+            "contract_id": {"type": "string", "format": "uuid"},
+            "derived_from_contract_id": {"type": ["string", "null"], "format": "uuid", "description": "Previous contract in the chain. Null on the root."},
+            "boundary": {"type": "string", "description": "ingest, stage (or between_stages), or egress. between_stages is stored as stage."}
+        }
+    });
+    let private_family_schema = json!({
+        "type": "object",
+        "properties": {
+            "id": {"type": "string", "format": "uuid"},
+            "org_id": {"type": "string", "format": "uuid"},
+            "name": {"type": "string"},
+            "description": {"type": ["string", "null"]},
+            "created_at": {"type": "string", "format": "date-time"},
+            "updated_at": {"type": "string", "format": "date-time"},
+            "links": {"type": "array", "description": "Ordered root to leaf.", "items": {"type": "object"}}
+        }
+    });
+    merge_openapi_op(
+        paths,
+        "/contract-families",
+        "get",
+        json!({
+            "operationId": "list_contract_families",
+            "summary": "List contract families in the caller's org",
+            "responses": {
+                "200": {"description": "Family summaries, including link_count", "content": {"application/json": {"schema": {"type": "array", "items": {"type": "object"}}}}},
+                "401": {"description": "Missing or invalid credentials"}
+            },
+            "security": [{"ApiKeyAuth": []}]
+        }),
+    );
+    merge_openapi_op(
+        paths,
+        "/contract-families",
+        "post",
+        json!({
+            "operationId": "create_contract_family",
+            "summary": "Create a contract family and, optionally, its chain",
+            "description": "Every contract_id must belong to the caller's org. The links must form one chain: exactly one root (no derived_from_contract_id), each contract derived from the previous. Positions are assigned along that walk.",
+            "requestBody": {"required": true, "content": {"application/json": {"schema": {"type": "object", "required": ["name"], "properties": {"name": {"type": "string"}, "description": {"type": ["string", "null"]}, "links": {"type": "array", "items": private_link_schema.clone()}}}}}},
+            "responses": {
+                "201": {"description": "Created family, links ordered root to leaf", "content": {"application/json": {"schema": private_family_schema.clone()}}},
+                "400": {"description": "The links are not a single chain, or a boundary is unknown"},
+                "401": {"description": "Missing or invalid credentials"},
+                "404": {"description": "A contract was not found in this org"},
+                "409": {"description": "A family with this name already exists, or a contract is already in a family"}
+            },
+            "security": [{"ApiKeyAuth": []}]
+        }),
+    );
+    merge_openapi_op(
+        paths,
+        "/contract-families/{id}",
+        "get",
+        json!({
+            "operationId": "get_contract_family",
+            "summary": "Read one contract family, including its chain",
+            "parameters": [{"name": "id", "in": "path", "required": true, "schema": {"type": "string", "format": "uuid"}}],
+            "responses": {
+                "200": {"description": "The family", "content": {"application/json": {"schema": private_family_schema.clone()}}},
+                "401": {"description": "Missing or invalid credentials"},
+                "404": {"description": "Family not found in this org"}
+            },
+            "security": [{"ApiKeyAuth": []}]
+        }),
+    );
+    merge_openapi_op(
+        paths,
+        "/contract-families/{id}/links",
+        "post",
+        json!({
+            "operationId": "add_contract_family_link",
+            "summary": "Add a contract to a family chain",
+            "description": "The resulting set of links must still be one chain. The usual add extends the current tail.",
+            "parameters": [{"name": "id", "in": "path", "required": true, "schema": {"type": "string", "format": "uuid"}}],
+            "requestBody": {"required": true, "content": {"application/json": {"schema": private_link_schema.clone()}}},
+            "responses": {
+                "201": {"description": "Updated family", "content": {"application/json": {"schema": private_family_schema.clone()}}},
+                "400": {"description": "The links are not a single chain, or a boundary is unknown"},
+                "401": {"description": "Missing or invalid credentials"},
+                "404": {"description": "Family or contract not found in this org"},
+                "409": {"description": "Contract is already in a family"}
+            },
+            "security": [{"ApiKeyAuth": []}]
+        }),
+    );
+    merge_openapi_op(
+        paths,
+        "/contracts/{id}/family",
+        "get",
+        json!({
+            "operationId": "get_family_for_contract",
+            "summary": "Read the family a private contract belongs to",
+            "parameters": [{"name": "id", "in": "path", "required": true, "schema": {"type": "string", "format": "uuid"}}],
+            "responses": {
+                "200": {"description": "The family chain", "content": {"application/json": {"schema": private_family_schema.clone()}}},
+                "401": {"description": "Missing or invalid credentials"},
+                "404": {"description": "Contract not found in this org, or the contract is not in a family"}
+            },
+            "security": [{"ApiKeyAuth": []}]
         }),
     );
 

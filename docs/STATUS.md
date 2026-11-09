@@ -112,6 +112,7 @@ them by name only.
 | 110 | [Quarantine by plan](rfcs/110-quarantine-plan-split.md) | Accepted |
 | 111 | [Remove the dependency license CI gate](rfcs/111-remove-dependency-license-ci.md) | Accepted |
 | 112 | [Per-run quarantine](rfcs/112-quarantine-batch-id.md) | Accepted |
+| 113 | [Contract families](rfcs/113-contract-families.md) | Accepted |
 
 ---
 
@@ -128,6 +129,8 @@ them by name only.
 | **Superseded** | Replaced by a later RFC listed in the notes column; kept for design context. |
 
 ---
+
+*2026-11-09 — RFC-113: contract families. A family is a chain of contracts for one dataset as it changes shape. Each link stores `derived_from` and a boundary of `ingest`, `stage` (between stages), or `egress`. Private families are org-scoped like contract identity. The public catalog seeds the Stripe charges chain (`stripe-charges-pipeline`) and the catalog contract page shows the chain. Migration `050_contract_families.sql`. See `docs/contract-families-reference.md`.*
 
 *2026-11-09 — RFC-112: optional `X-Batch-Id` (alias `run_id`) on ingest and egress is stored on `quarantine_events.batch_id`. `GET /quarantine/summary?contract_id=&batch_id=` returns counts by status and direction so dbt (`invocation_id`) and Airflow (`run_id`) can fail a run when `pending` is above zero. The time window remains the fallback for rows with a null `batch_id`. Migration `049_quarantine_batch_id.sql`. See `docs/quarantine-batch-reference.md`.*
 
