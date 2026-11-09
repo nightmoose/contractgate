@@ -1,0 +1,43 @@
+[
+  {
+    "InvoiceID": "00000000-0000-4000-8000-000000000001",
+    "InvoiceNumber": "INV-1001",
+    "Type": "ACCREC",
+    "Contact": { "ContactID": "00000000-0000-4000-8000-0000000000c1", "Name": "Example Client Co" },
+    "Date": "/Date(1768003200000+0000)/",
+    "DueDate": "/Date(1770595200000+0000)/",
+    "Status": "AUTHORISED",
+    "LineAmountTypes": "Exclusive",
+    "CurrencyCode": "USD",
+    "SubTotal": 1000.00,
+    "TotalTax": 80.00,
+    "Total": 1080.00,
+    "AmountDue": 1080.00,
+    "AmountPaid": 0
+  },
+  {
+    "InvoiceID": "00000000-0000-4000-8000-000000000002",
+    "InvoiceNumber": "INV-1002",
+    "Type": "ACCREC",
+    "Contact": { "Name": "Acme Test LLC" },
+    "Date": "/Date(1768176000000+0000)/",
+    "DueDate": "/Date(1769385600000+0000)/",
+    "Status": "PAID",
+    "CurrencyCode": "USD",
+    "SubTotal": 450.00,
+    "TotalTax": 36.00,
+    "Total": 486.00,
+    "AmountDue": 0,
+    "AmountPaid": 486.00
+  },
+  {
+    "InvoiceNumber": "BILL-5001",
+    "Type": "ACCPAY",
+    "Contact": { "Name": "Sample Supplier Ltd" },
+    "Date": "/Date(1768435200000+0000)/",
+    "Status": "SUBMITTED",
+    "CurrencyCode": "GBP",
+    "Total": 220.00,
+    "AmountDue": 220.00
+  }
+]

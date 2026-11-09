@@ -1,0 +1,10 @@
+{
+  "revenue_date": "2025-01-01",
+  "currency": "USD",
+  "status": "succeeded",
+  "charge_count": 3,
+  "gross_amount": 128.97,
+  "refunded_amount": 0.0,
+  "net_amount": 128.97,
+  "as_of": "2025-01-02T06:00:00Z"
+}

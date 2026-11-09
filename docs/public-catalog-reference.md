@@ -204,7 +204,12 @@ entirely returns all columns and all rows.
 
 ## Database objects
 
-Migration `022_public_catalog.sql` adds:
+Migration `022_public_catalog.sql` adds the table. Migration `047_public_catalog_expansion.sql`
+publishes the 12 launch rows. Migration `048_public_catalog_seed_refresh.sql` upserts
+those same slugs from `catalog/seeds/` when a seed contract, sample, or citation
+changes. 047 is not rewritten after it has been applied.
+
+`022_public_catalog.sql` adds:
 
 | Object | Type | Notes |
 |---|---|---|
@@ -225,6 +230,25 @@ Migration `022_public_catalog.sql` adds:
   Supply `format=csv` or omit the parameter (CSV is the default).
 - **Non-fork contract.** Calling `/export` on a contract that is not a fork
   returns `400 Bad Request: "contract is not a fork of a public data source"`.
+
+---
+
+## Live smoke test
+
+`scripts/catalog_live_smoke.py` is a read-only check of the production catalog.
+Run it after a catalog seed migration deploys:
+
+```bash
+cargo build --bin contractgate
+python3 scripts/catalog_live_smoke.py --wait 1800
+```
+
+It waits up to `--wait` seconds for the ACS row to show `B19013_001M`. Then it
+checks four things. All 12 slugs return 200 (JSON, `/yaml`, `/odcs`, and the
+app's `/catalog/<slug>` page). The catalog review fixes are live. Every
+published sample passes `contractgate test`. Live rows match `catalog/seeds`.
+Flags: `--api`, `--app`, `--cg`, `--repo`, `--interval`. Exit code 1 on any
+failure. Needs PyYAML.
 
 ---
 

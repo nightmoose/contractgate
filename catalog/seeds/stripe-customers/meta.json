@@ -1,0 +1,15 @@
+{
+  "slug": "stripe-customers",
+  "title": "Stripe Customers export \u2014 data contract",
+  "vendor": "Stripe",
+  "category": "Payments",
+  "surface": "Stripe API Customer object (export / webhook payload)",
+  "verified_source_url": "https://docs.stripe.com/api/customers/object",
+  "verified_at": "2026-11-05",
+  "who_uses_this": "Validate a client's Stripe customer export before syncing it into your systems, or with POST /egress before sending the same shape to a partner, reverse ETL, or an AI agent.",
+  "license_note": "MIT",
+  "source_format": "json",
+  "source_url": null,
+  "version": "1.0",
+  "description": "Stripe Customer object \u2014 core fields of an exported Stripe customer. Compatible with Stripe's API Customer object; not affiliated with Stripe."
+}

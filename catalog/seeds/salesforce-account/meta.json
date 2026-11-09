@@ -1,0 +1,15 @@
+{
+  "slug": "salesforce-account",
+  "title": "Salesforce Account export \u2014 data contract",
+  "vendor": "Salesforce",
+  "category": "CRM",
+  "surface": "Salesforce Account standard object (Object Reference)",
+  "verified_source_url": "https://developer.salesforce.com/docs/atlas.en-us.object_reference.meta/object_reference/sforce_api_objects_account.htm",
+  "verified_at": "2026-11-05",
+  "who_uses_this": "Validate a client's Salesforce Account export at ingest into your warehouse, or with POST /egress before sending the same shape to a partner, reverse ETL, or an AI agent.",
+  "license_note": "MIT",
+  "source_format": "json",
+  "source_url": null,
+  "version": "1.0",
+  "description": "Salesforce Account object \u2014 core standard fields from the Object Reference. Compatible with Salesforce's documented Account object; not affiliated with Salesforce."
+}

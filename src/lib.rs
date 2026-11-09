@@ -25,3 +25,6 @@ pub mod validation;
 
 #[cfg(test)]
 mod yaml_parser;
+
+#[cfg(test)]
+mod catalog_seed_tests;

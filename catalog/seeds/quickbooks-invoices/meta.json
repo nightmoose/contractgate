@@ -1,0 +1,15 @@
+{
+  "slug": "quickbooks-invoices",
+  "title": "QuickBooks Online Invoices export \u2014 data contract",
+  "vendor": "Intuit QuickBooks Online",
+  "category": "Accounting",
+  "surface": "QuickBooks Online Accounting API Invoice entity",
+  "verified_source_url": "https://developer.intuit.com/app/developer/qbo/docs/api/accounting/all-entities/invoice",
+  "verified_at": "2026-11-05",
+  "who_uses_this": "Validate a client's QuickBooks Online invoice export before reconciling it in your warehouse, or with POST /egress before sending the same shape to a partner, reverse ETL, or an AI agent.",
+  "license_note": "MIT",
+  "source_format": "json",
+  "source_url": null,
+  "version": "1.0",
+  "description": "QuickBooks Online Invoice entity \u2014 core fields from the Accounting API. Compatible with Intuit's documented Invoice entity; not affiliated with Intuit or QuickBooks."
+}

@@ -1,0 +1,35 @@
+[
+  {
+    "id": "101",
+    "email": "contact@example.com",
+    "firstname": "Alex",
+    "lastname": "Sample",
+    "phone": "555-0100",
+    "company": "Example Co",
+    "lifecyclestage": "lead",
+    "hs_object_id": "101",
+    "createdate": "2026-01-05T10:00:00Z",
+    "lastmodifieddate": "2026-01-20T14:30:00Z"
+  },
+  {
+    "id": "102",
+    "email": "jordan@example.org",
+    "firstname": "Jordan",
+    "lastname": "Test",
+    "company": "Acme Test LLC",
+    "lifecyclestage": "customer",
+    "hs_object_id": "102",
+    "createdate": "2026-01-06T08:15:00Z",
+    "lastmodifieddate": "2026-01-21T09:00:00Z"
+  },
+  {
+    "id": "103",
+    "email": "casey@example.net",
+    "firstname": "Casey",
+    "lastname": "Demo",
+    "phone": "555-0177",
+    "lifecyclestage": "subscriber",
+    "hs_object_id": "103",
+    "createdate": "2026-01-07T12:45:00Z"
+  }
+]

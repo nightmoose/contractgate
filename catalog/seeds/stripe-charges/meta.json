@@ -1,0 +1,15 @@
+{
+  "slug": "stripe-charges",
+  "title": "Stripe Charges export \u2014 data contract",
+  "vendor": "Stripe",
+  "category": "Payments",
+  "surface": "Stripe API Charge object (export / webhook payload)",
+  "verified_source_url": "https://docs.stripe.com/api/charges/object",
+  "verified_at": "2026-11-06",
+  "who_uses_this": "Validate a client's Stripe charges export at ingest into your warehouse, or with POST /egress before sending the same shape to a partner, reverse ETL, or an AI agent.",
+  "license_note": "MIT",
+  "source_format": "json",
+  "source_url": null,
+  "version": "1.0",
+  "description": "Stripe Charge object \u2014 core fields of an exported Stripe charge. Compatible with Stripe's API Charge object; not affiliated with Stripe."
+}

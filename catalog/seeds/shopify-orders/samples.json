@@ -1,0 +1,38 @@
+[
+  {
+    "Name": "#1001",
+    "Email": "shopper@example.com",
+    "Financial Status": "paid",
+    "Fulfillment Status": "fulfilled",
+    "Currency": "USD",
+    "Subtotal": "42.00",
+    "Shipping": "5.00",
+    "Taxes": "3.36",
+    "Total": "50.36",
+    "Created at": "2026-01-15 09:30:00 -0500"
+  },
+  {
+    "Name": "#1002",
+    "Email": "buyer@example.org",
+    "Financial Status": "pending",
+    "Fulfillment Status": "unfulfilled",
+    "Currency": "USD",
+    "Subtotal": "19.99",
+    "Shipping": "0.00",
+    "Taxes": "1.60",
+    "Total": "21.59",
+    "Created at": "2026-01-16 14:05:00 -0500"
+  },
+  {
+    "Name": "SH1003",
+    "Email": "returns@example.com",
+    "Financial Status": "refunded",
+    "Fulfillment Status": "restocked",
+    "Currency": "CAD",
+    "Subtotal": "120.00",
+    "Shipping": "12.50",
+    "Taxes": "17.16",
+    "Total": "149.66",
+    "Created at": "2026-01-17 11:45:00 -0500"
+  }
+]

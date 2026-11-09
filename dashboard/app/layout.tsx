@@ -18,7 +18,7 @@ const SITE_URL =
 
 const TITLE = "DataContractGate — Semantic Contract Enforcement";
 const DESCRIPTION =
-  "Stop bad data before it hits your warehouse. Semantic data contracts enforced at ingestion — enums, patterns, ranges, and required fields validated per event, with quarantine and replay.";
+  "Trust but verify at every boundary. Semantic data contracts at ingest, between stages, and on egress — enums, patterns, ranges, and required fields validated per event, with quarantine and replay.";
 
 // Shown to visitors who arrived from aischemagate.com and to AISchemaGate
 // accounts whose cookie is set (see lib/brand.ts). Same app, family branding.

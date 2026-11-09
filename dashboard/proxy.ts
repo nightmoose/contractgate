@@ -25,6 +25,13 @@ const PUBLIC_ROUTES = [
   "/privacy",
   "/terms",
   "/docs",
+  // Public contract catalog (RFC public-catalog phase 1). SSR, no AuthGate.
+  // "/catalog" also covers "/catalog/{slug}" and "/catalog/{slug}/fork" via the
+  // prefix check in isPublic(). The signed-in library at "/catalog/library" and
+  // the fork step gate themselves client-side (AuthGate / session redirect).
+  "/catalog",
+  // Agent-facing markdown listing of the catalog, generated from the API.
+  "/catalog.md",
   // AuthGate pages — show feature preview to unauthenticated users
   "/",
   "/contracts",
@@ -51,6 +58,10 @@ const KNOWN_TOP_LEVEL = new Set([
   "", "account", "api", "audit", "auth", "billing", "catalog", "contracts", "docs",
   "playground", "pricing", "privacy", "scaffold", "scorecard", "terms",
   "usage", "workbench",
+  // app/catalog.md/route.ts serves /catalog.md. The auth matcher already
+  // excludes *.md, so this never gates; listed to keep check-known-routes.mjs
+  // (which scans app/ top-level dirs) green.
+  "catalog.md",
 ]);
 
 function isKnownRoute(pathname: string) {

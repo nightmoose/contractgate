@@ -31,9 +31,27 @@ Source: https://github.com/nightmoose/contractgate
 - [Contract deploy](https://github.com/nightmoose/contractgate/blob/main/docs/deploy-contract-reference.md): POST /contracts/deploy and the `contractgate deploy-contract` CLI — atomic promotion to stable, prior-version deprecation.
 - [CSV and URL inference](https://github.com/nightmoose/contractgate/blob/main/docs/csv-inference-reference.md): Generate a draft contract from a CSV file or a public data URL.
 - [Quarantine and replay](https://github.com/nightmoose/contractgate/blob/main/docs/quarantine-replay-reference.md): Review rejected events and replay them against a corrected contract version.
+- [Where to enforce contracts](https://github.com/nightmoose/contractgate/blob/main/docs/architecture/where-to-enforce-contracts.md): Trust but verify at every boundary — ingest, mid-stream, egress, AISchemaGate; Airflow/dbt quarantine-check examples.
 - [Drop mode](https://github.com/nightmoose/contractgate/blob/main/docs/drop-mode-reference.md): Count a failing record and store nothing. Quarantine stays the default. The safety cap is watch-only until enforcement is enabled.
 - [PII masking](https://github.com/nightmoose/contractgate/blob/main/docs/pii-masking-reference.md): Declarative `transform:` rules — mask or hash string fields after validation, before storage.
 - [OpenAPI spec](https://api.datacontractgate.com/openapi.json): Machine-readable route inventory for the whole gateway.
+
+## Contract catalog
+
+Ready-to-use data contracts for common client exports. Pick a source, fork the contract, validate the client's file the same day. Full listing: https://app.datacontractgate.com/catalog.md — directory: https://app.datacontractgate.com/catalog
+
+- [Stripe Charges](https://app.datacontractgate.com/catalog/stripe-charges): Validate a client's Stripe charges export before it hits your warehouse.
+- [Stripe Customers](https://app.datacontractgate.com/catalog/stripe-customers): Validate a client's Stripe customer export before syncing it.
+- [Shopify Orders CSV](https://app.datacontractgate.com/catalog/shopify-orders): Validate a client's Shopify orders CSV export before loading it.
+- [QuickBooks Online Invoices](https://app.datacontractgate.com/catalog/quickbooks-invoices): Validate a client's QuickBooks Online invoice export before reconciling it.
+- [HubSpot Contacts](https://app.datacontractgate.com/catalog/hubspot-contacts): Validate a client's HubSpot contacts export before importing it.
+- [Salesforce Account](https://app.datacontractgate.com/catalog/salesforce-account): Validate a client's Salesforce Account export before loading it.
+- [Salesforce Opportunity](https://app.datacontractgate.com/catalog/salesforce-opportunity): Validate a client's Salesforce Opportunity export before pipeline reporting.
+- [GA4 BigQuery events](https://app.datacontractgate.com/catalog/ga4-bigquery-events): Validate a client's GA4 BigQuery events export before building models.
+- [Square Payments](https://app.datacontractgate.com/catalog/square-payments): Validate a client's Square payments export before it hits your warehouse.
+- [Xero Invoices](https://app.datacontractgate.com/catalog/xero-invoices): Validate a client's Xero invoices export before reconciling it.
+- [Generic transactions CSV](https://app.datacontractgate.com/catalog/generic-sheets-transactions-csv): Validate an ad-hoc Google Sheet / bank-ledger CSV before loading it.
+- [ACS 5-Year 2023 (county)](https://app.datacontractgate.com/catalog/acs-5year-2023-county): Validate county-level Census demographic joins before they hit your warehouse.
 
 ## Optional
 

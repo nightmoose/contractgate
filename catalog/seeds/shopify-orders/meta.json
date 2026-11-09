@@ -1,0 +1,15 @@
+{
+  "slug": "shopify-orders",
+  "title": "Shopify Orders CSV export \u2014 data contract",
+  "vendor": "Shopify",
+  "category": "Commerce",
+  "surface": "Shopify orders CSV export (Store admin \u2192 Orders \u2192 Export)",
+  "verified_source_url": "https://help.shopify.com/en/manual/orders/export-orders",
+  "verified_at": "2026-11-06",
+  "who_uses_this": "Validate a client's Shopify orders CSV export at ingest into your warehouse, or with POST /egress before sending the same shape to a partner, reverse ETL, or an AI agent.",
+  "license_note": "MIT",
+  "source_format": "csv",
+  "source_url": null,
+  "version": "1.0",
+  "description": "Shopify orders CSV export \u2014 core columns from the Store admin Orders export. Compatible with Shopify's documented orders CSV; not affiliated with Shopify. Values are CSV strings; money columns are validated as decimal strings."
+}

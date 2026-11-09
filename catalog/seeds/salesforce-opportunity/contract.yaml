@@ -1,0 +1,71 @@
+version: "1.0"
+name: "salesforce-opportunity"
+description: "Salesforce Opportunity object — core standard fields from the Object Reference. Compatible with Salesforce's documented Opportunity object; not affiliated with Salesforce."
+
+ontology:
+  entities:
+    - name: Id
+      type: string
+      required: true
+      pattern: "^[A-Za-z0-9]{15,18}$"
+    - name: Name
+      type: string
+      required: true
+    - name: AccountId
+      type: string
+      required: false
+      pattern: "^[A-Za-z0-9]{15,18}$"
+    - name: StageName
+      type: string
+      required: true
+      enum:
+        - "Prospecting"
+        - "Qualification"
+        - "Needs Analysis"
+        - "Value Proposition"
+        - "Id. Decision Makers"
+        - "Perception Analysis"
+        - "Proposal/Price Quote"
+        - "Negotiation/Review"
+        - "Closed Won"
+        - "Closed Lost"
+    - name: Amount
+      type: number
+      required: false
+      min: 0
+    - name: Probability
+      type: number
+      required: false
+      min: 0
+      max: 100
+    - name: CloseDate
+      type: date
+      required: true
+    - name: Type
+      type: string
+      required: false
+      enum:
+        - "Existing Customer - Upgrade"
+        - "Existing Customer - Replacement"
+        - "Existing Customer - Downgrade"
+        - "New Customer"
+    - name: IsClosed
+      type: boolean
+      required: false
+    - name: IsWon
+      type: boolean
+      required: false
+    - name: CreatedDate
+      type: timestamp
+      required: false
+
+glossary:
+  - field: StageName
+    description: "Current stage of the opportunity (standard sales process picklist)."
+    constraints: "standard Opportunity.StageName value"
+  - field: CloseDate
+    description: "Date when the opportunity is expected to close."
+    constraints: "YYYY-MM-DD calendar date"
+  - field: Probability
+    description: "Percentage likelihood the opportunity will close."
+    constraints: "0–100"

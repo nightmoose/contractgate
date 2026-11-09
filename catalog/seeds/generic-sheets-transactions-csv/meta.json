@@ -1,0 +1,15 @@
+{
+  "slug": "generic-sheets-transactions-csv",
+  "title": "Generic transactions CSV \u2014 data contract",
+  "vendor": "Spreadsheet CSV",
+  "category": "Spreadsheets",
+  "surface": "Generic bank / ledger transactions CSV (open column set)",
+  "verified_source_url": "https://www.rfc-editor.org/rfc/rfc4180",
+  "verified_at": "2026-11-06",
+  "who_uses_this": "Validate a client's ad-hoc spreadsheet or bank/ledger CSV before loading it into your books or warehouse, or with POST /egress before sharing the same shape with a partner or AI agent.",
+  "license_note": "MIT",
+  "source_format": "csv",
+  "source_url": null,
+  "version": "1.0",
+  "description": "Generic transactions / ledger CSV for spreadsheet, bank, and bookkeeping exports. Open column set (date, description, amount, currency) documented with the project; file syntax follows RFC 4180. Not a vendor schema."
+}

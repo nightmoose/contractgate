@@ -1,0 +1,66 @@
+version: "1.0"
+name: "salesforce-account"
+description: "Salesforce Account object — core standard fields from the Object Reference. Compatible with Salesforce's documented Account object; not affiliated with Salesforce."
+
+ontology:
+  entities:
+    - name: Id
+      type: string
+      required: true
+      pattern: "^[A-Za-z0-9]{15,18}$"
+    - name: Name
+      type: string
+      required: true
+    - name: Type
+      type: string
+      required: false
+      enum:
+        - "Prospect"
+        - "Customer - Direct"
+        - "Customer - Channel"
+        - "Channel Partner / Reseller"
+        - "Installation Partner"
+        - "Technology Partner"
+        - "Other"
+    - name: Industry
+      type: string
+      required: false
+    - name: AnnualRevenue
+      type: number
+      required: false
+      min: 0
+    - name: NumberOfEmployees
+      type: integer
+      required: false
+      min: 0
+    - name: Phone
+      type: string
+      required: false
+    - name: Website
+      type: string
+      required: false
+      format: uri
+    - name: BillingCity
+      type: string
+      required: false
+    - name: BillingCountry
+      type: string
+      required: false
+    - name: OwnerId
+      type: string
+      required: false
+      pattern: "^[A-Za-z0-9]{15,18}$"
+    - name: CreatedDate
+      type: timestamp
+      required: false
+
+glossary:
+  - field: Id
+    description: "Salesforce 15- or 18-character record id."
+    constraints: "15 or 18 alphanumeric characters"
+  - field: Type
+    description: "Type of account (standard picklist; may be customised per org)."
+    constraints: "standard Account.Type value"
+  - field: AnnualRevenue
+    description: "Estimated annual revenue of the account."
+    constraints: "non-negative number"

@@ -1,0 +1,65 @@
+version: "1.0"
+name: "square-payments"
+description: "Square Payment object — core fields from the Payments API. Compatible with Square's documented Payment object; not affiliated with Square."
+
+ontology:
+  entities:
+    - name: id
+      type: string
+      required: true
+    - name: status
+      type: string
+      required: false
+      enum: ["APPROVED", "PENDING", "COMPLETED", "CANCELED", "FAILED"]
+    - name: amount_money
+      type: object
+      required: true
+      properties:
+        - name: amount
+          type: integer
+          required: true
+          min: 0
+        - name: currency
+          type: string
+          required: true
+          pattern: "^[A-Z]{3}$"
+    - name: source_type
+      type: string
+      required: false
+      enum:
+        - "CARD"
+        - "BANK_ACCOUNT"
+        - "WALLET"
+        - "BUY_NOW_PAY_LATER"
+        - "SQUARE_ACCOUNT"
+        - "CASH"
+        - "EXTERNAL"
+    - name: location_id
+      type: string
+      required: false
+    - name: order_id
+      type: string
+      required: false
+    - name: reference_id
+      type: string
+      required: false
+    - name: receipt_number
+      type: string
+      required: false
+    - name: created_at
+      type: timestamp
+      required: false
+    - name: updated_at
+      type: timestamp
+      required: false
+
+glossary:
+  - field: amount_money
+    description: "The amount of money processed for the payment."
+    constraints: "object with integer amount (smallest currency unit) and ISO currency"
+  - field: status
+    description: "Status of the payment."
+    constraints: "APPROVED, PENDING, COMPLETED, CANCELED, or FAILED"
+  - field: source_type
+    description: "The source type for the payment."
+    constraints: "CARD, BANK_ACCOUNT, WALLET, BUY_NOW_PAY_LATER, SQUARE_ACCOUNT, CASH, or EXTERNAL"

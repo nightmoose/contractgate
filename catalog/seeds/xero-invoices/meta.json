@@ -1,0 +1,15 @@
+{
+  "slug": "xero-invoices",
+  "title": "Xero Invoices export \u2014 data contract",
+  "vendor": "Xero",
+  "category": "Accounting",
+  "surface": "Xero Accounting API Invoices endpoint",
+  "verified_source_url": "https://developer.xero.com/documentation/api/accounting/invoices",
+  "verified_at": "2026-11-06",
+  "who_uses_this": "Validate a client's Xero invoices export before reconciling it in your warehouse, or with POST /egress before sending the same shape to a partner, reverse ETL, or an AI agent.",
+  "license_note": "MIT",
+  "source_format": "json",
+  "source_url": null,
+  "version": "1.0",
+  "description": "Xero Invoice \u2014 core fields from the Accounting API Invoices endpoint. Compatible with Xero's documented Invoice object; not affiliated with Xero. Date and DueDate match the raw JSON API (/Date(milliseconds+offset)/), not YYYY-MM-DD."
+}

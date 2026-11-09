@@ -1,8 +1,10 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useRef, useState, Suspense } from "react";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
+import { callbackRedirectUrl, signupUserMetadata, withAuthReturn } from "@/lib/auth-email-link";
 import { AuthCaptcha, captchaEnabled, type AuthCaptchaHandle } from "@/components/AuthCaptcha";
 import BrandWordmark, { BrandTagline } from "@/components/BrandWordmark";
 
@@ -11,7 +13,11 @@ import BrandWordmark, { BrandTagline } from "@/components/BrandWordmark";
 // outage came from a test-key fallback and an app-side check; AuthCaptcha has
 // neither. See docs/auth-reference.md for the rollout order.
 
-export default function SignupPage() {
+function SignupForm() {
+  const searchParams = useSearchParams();
+  const nextRaw = searchParams.get("next");
+  const productRaw = searchParams.get("product");
+  const signInHref = withAuthReturn("/auth/login", nextRaw, productRaw);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [displayName, setDisplayName] = useState("");
@@ -26,15 +32,13 @@ export default function SignupPage() {
   const [captchaToken, setCaptchaToken] = useState<string>();
   const captcha = useRef<AuthCaptchaHandle>(null);
 
-  // Keep the AISchemaGate signal on both the OAuth redirect and the email
-  // confirmation link. Supabase embeds this URL in the confirmation email as
-  // `redirect_to`; without the suffix, a user confirming on a second device
-  // lands with no `cg_product=aisg` cookie and sees a DataContractGate flash
-  // before `useOrg()` resolves. /auth/callback also reads it to set the cookie.
-  function productSuffix() {
-    return new URLSearchParams(location.search).get("product") === "aischemagate"
-      ? "&product=aischemagate"
-      : "";
+  // GitHub OAuth returns through /auth/callback, which reads next and product.
+  // The confirmation email does not: its template is token_hash HTML and
+  // ignores emailRedirectTo, so the return path also goes in user metadata
+  // (signup_next) for supabase/templates/confirmation.html. Only same-app
+  // paths are accepted; an external next falls back to "/".
+  function callbackRedirect() {
+    return callbackRedirectUrl(location.origin, nextRaw, productRaw);
   }
 
   async function handleGitHubSignUp() {
@@ -44,7 +48,7 @@ export default function SignupPage() {
     const { error: authError } = await supabase.auth.signInWithOAuth({
       provider: "github",
       options: {
-        redirectTo: `${location.origin}/auth/callback?next=/${productSuffix()}`,
+        redirectTo: callbackRedirect(),
       },
     });
     if (authError) {
@@ -78,19 +82,18 @@ export default function SignupPage() {
       email,
       password,
       options: {
-        data: {
-          display_name: displayName || email.split("@")[0],
-          // Migration 036: sign-ups linked from aischemagate.com
-          // (?product=aischemagate) start on the AISchemaGate Developer plan.
-          ...(new URLSearchParams(location.search).get("product") === "aischemagate"
-            ? { product: "aischemagate" }
-            : {}),
-        },
+        data: signupUserMetadata({
+          displayName,
+          email,
+          next: nextRaw,
+          product: productRaw,
+        }),
         // The confirmation email must use the token_hash template (see
         // supabase/templates/confirmation.html), not {{ .ConfirmationURL }}.
-        // product is already in user metadata; /auth/confirm copies it onto
-        // the brand cookie after verifyOtp.
-        emailRedirectTo: `${location.origin}/auth/callback?next=/${productSuffix()}`,
+        // That template reads signup_next and product from the metadata above.
+        // emailRedirectTo remains the allow-listed /auth/callback URL, which
+        // GitHub OAuth uses as well.
+        emailRedirectTo: callbackRedirect(),
         captchaToken,
       },
     });
@@ -114,7 +117,7 @@ export default function SignupPage() {
             We sent a confirmation link to{" "}
             <span className="text-slate-200">{email}</span>. Click it to activate your account.
           </p>
-          <Link href="/auth/login" className="text-green-400 hover:text-green-300 text-sm">
+          <Link href={signInHref} className="text-green-400 hover:text-green-300 text-sm">
             Back to sign in
           </Link>
         </div>
@@ -252,12 +255,20 @@ export default function SignupPage() {
 
           <p className="mt-4 text-center text-sm text-slate-500">
             Already have an account?{" "}
-            <Link href="/auth/login" className="text-green-400 hover:text-green-300">
+            <Link href={signInHref} className="text-green-400 hover:text-green-300">
               Sign in
             </Link>
           </p>
         </div>
       </div>
     </div>
+  );
+}
+
+export default function SignupPage() {
+  return (
+    <Suspense>
+      <SignupForm />
+    </Suspense>
   );
 }

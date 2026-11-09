@@ -1,0 +1,64 @@
+version: "1.0"
+name: "shopify-orders"
+description: "Shopify orders CSV export — core columns from the Store admin Orders export. Compatible with Shopify's documented orders CSV; not affiliated with Shopify. Values are CSV strings; money columns are validated as decimal strings."
+
+ontology:
+  entities:
+    - name: Name
+      type: string
+      required: true
+      pattern: "^#?[A-Za-z_-]{0,20}[0-9]{1,12}[A-Za-z0-9_-]{0,20}$"
+    - name: Email
+      type: string
+      required: false
+      format: email
+    - name: Financial Status
+      type: string
+      required: false
+      enum:
+        - "pending"
+        - "authorized"
+        - "paid"
+        - "partially_paid"
+        - "refunded"
+        - "voided"
+        - "partially_refunded"
+        - "expired"
+    - name: Fulfillment Status
+      type: string
+      required: false
+      enum: ["fulfilled", "unfulfilled", "partial", "restocked"]
+    - name: Currency
+      type: string
+      required: true
+      pattern: "^[A-Z]{3}$"
+    - name: Subtotal
+      type: string
+      required: false
+      pattern: "^-?[0-9]+(\\.[0-9]{1,2})?$"
+    - name: Shipping
+      type: string
+      required: false
+      pattern: "^-?[0-9]+(\\.[0-9]{1,2})?$"
+    - name: Taxes
+      type: string
+      required: false
+      pattern: "^-?[0-9]+(\\.[0-9]{1,2})?$"
+    - name: Total
+      type: string
+      required: true
+      pattern: "^-?[0-9]+(\\.[0-9]{1,2})?$"
+    - name: Created at
+      type: string
+      required: false
+
+glossary:
+  - field: Name
+    description: "Order name as shown in the admin. The default is #1001; stores often add a prefix or suffix, for example SH1001 or 1001-A."
+    constraints: "optional leading #, a letter prefix or suffix, and at least one digit"
+  - field: Financial Status
+    description: "Admin payment status (the values behind displayFinancialStatus). expired is included. unpaid is not a status — Shopify uses it as a filter grouping of authorized, pending, expired, and partially paid orders. The legacy REST financial_status field still omits expired and reports those orders as pending."
+    constraints: "pending, authorized, paid, partially_paid, partially_refunded, refunded, voided, or expired"
+  - field: Total
+    description: "Order total in the order currency."
+    constraints: "decimal string"

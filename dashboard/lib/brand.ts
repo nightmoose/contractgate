@@ -21,7 +21,7 @@ export const BRAND_NAME: Record<Brand, string> = {
 };
 
 export const BRAND_TAGLINE: Record<Brand, string> = {
-  dcg: "Semantic contract enforcement at ingestion",
+  dcg: "Semantic contracts at every pipeline boundary",
   aisg: "Semantic validation for LLM outputs",
 };
 
