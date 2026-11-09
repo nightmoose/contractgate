@@ -47,6 +47,7 @@ use uuid::Uuid;
 pub use contractgate::{contract, drop_mode, transform, validation};
 
 mod api_key_auth;
+mod batch_id;
 mod collaboration;
 mod conformance;
 mod egress;
@@ -1891,6 +1892,7 @@ fn build_router(state: Arc<AppState>) -> Router {
         // Org-scoped top-level quarantine API (RFC-081) — backs the dashboard
         // Quarantine tab: list, replay-by-event-id, and per-event history.
         .route("/quarantine", get(quarantine::list_quarantine_handler))
+        .route("/quarantine/summary", get(quarantine::run_summary_handler))
         .route("/quarantine/replay", post(quarantine::replay_all_handler))
         .route(
             "/quarantine/replay-history",

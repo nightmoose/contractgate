@@ -158,6 +158,8 @@ pub struct QuarantineListRow {
     pub source_ip: Option<String>,
     pub created_at: chrono::DateTime<chrono::Utc>,
     pub status: String,
+    /// Caller-supplied run id. NULL when the ingest or egress call omitted it.
+    pub batch_id: Option<String>,
     /// Number of replay attempts made against this source row (passes + fails).
     pub replay_count: i64,
     pub last_replayed_at: Option<chrono::DateTime<chrono::Utc>>,
@@ -172,12 +174,15 @@ pub struct QuarantineListRow {
 /// - `org_id = None` (dev-no-auth only) skips the org filter, matching the rest
 ///   of the dev surface. In production the handler guarantees `Some`.
 /// - `contract_id = None` lists across all of the org's contracts.
+/// - `batch_id = None` does not filter on the run id. A value keeps rows whose
+///   stored `batch_id` equals it.
 /// - Soft-deleted contracts are excluded. `DELETE /contracts/{id}` also
 ///   removes the rows; this filter hides any left from an earlier soft delete.
 pub async fn list_quarantine_events(
     pool: &PgPool,
     org_id: Option<Uuid>,
     contract_id: Option<Uuid>,
+    batch_id: Option<&str>,
     limit: i64,
     offset: i64,
 ) -> AppResult<Vec<QuarantineListRow>> {
@@ -194,6 +199,7 @@ pub async fn list_quarantine_events(
             qe.source_ip,
             qe.created_at,
             qe.status,
+            qe.batch_id,
             COALESCE(att.replay_count, 0) AS replay_count,
             att.last_replayed_at,
             att.last_replay_passed
@@ -218,17 +224,59 @@ pub async fn list_quarantine_events(
           AND c.deleted_at IS NULL
           AND ($1::uuid IS NULL OR qe.contract_id = $1)
           AND ($2::uuid IS NULL OR c.org_id = $2)
+          AND ($3::text IS NULL OR qe.batch_id = $3)
         ORDER BY qe.created_at DESC
-        LIMIT $3 OFFSET $4
+        LIMIT $4 OFFSET $5
         "#,
     )
     .bind(contract_id)
     .bind(org_id)
+    .bind(batch_id)
     .bind(limit)
     .bind(offset)
     .fetch_all(pool)
     .await?;
 
+    Ok(rows)
+}
+
+/// One `(status, direction)` bucket from [`summarize_quarantine`].
+#[derive(Debug, Clone, sqlx::FromRow)]
+pub struct QuarantineCountRow {
+    pub status: String,
+    pub direction: String,
+    pub count: i64,
+}
+
+/// Count source quarantine rows by status and direction.
+///
+/// `batch_id = None` counts every source row in the scope. Replay children
+/// (`replay_of_quarantine_id` set) are excluded, matching the list. Soft-deleted
+/// contracts are excluded. `org_id = None` is the dev-no-auth scope.
+pub async fn summarize_quarantine(
+    pool: &PgPool,
+    org_id: Option<Uuid>,
+    contract_id: Option<Uuid>,
+    batch_id: Option<&str>,
+) -> AppResult<Vec<QuarantineCountRow>> {
+    let rows: Vec<QuarantineCountRow> = sqlx::query_as(
+        r#"
+        SELECT qe.status, qe.direction, count(*)::bigint AS count
+        FROM quarantine_events qe
+        JOIN contracts c ON c.id = qe.contract_id
+        WHERE qe.replay_of_quarantine_id IS NULL
+          AND c.deleted_at IS NULL
+          AND ($1::uuid IS NULL OR qe.contract_id = $1)
+          AND ($2::uuid IS NULL OR c.org_id = $2)
+          AND ($3::text IS NULL OR qe.batch_id = $3)
+        GROUP BY qe.status, qe.direction
+        "#,
+    )
+    .bind(contract_id)
+    .bind(org_id)
+    .bind(batch_id)
+    .fetch_all(pool)
+    .await?;
     Ok(rows)
 }
 

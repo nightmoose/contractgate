@@ -22,10 +22,10 @@ flowchart LR
 
 | Checkpoint | Boundary | Endpoint | What it catches | Fail handling | How the orchestrator learns |
 |---|---|---|---|---|---|
-| **(a) Ingest** | Source → raw | `POST /v1/ingest/{contract_id}` | Shape/semantics on vendor exports, webhooks, files, SDK events before they land | Default: quarantine (`?on_fail=quarantine`). Or `?on_fail=drop` to count and store nothing. `?dry_run=true` validates without persisting. | Cloud: `GET /quarantine`. Self-host: SQL on `quarantine_events`. Ingest response also returns per-event `quarantine_id`s. |
+| **(a) Ingest** | Source → raw | `POST /v1/ingest/{contract_id}` | Shape/semantics on vendor exports, webhooks, files, SDK events before they land | Default: quarantine (`?on_fail=quarantine`). Or `?on_fail=drop` to count and store nothing. `?dry_run=true` validates without persisting. Optional `X-Batch-Id` (alias `run_id`) stamps quarantine rows for this run. | Cloud: `GET /quarantine/summary?contract_id=&batch_id=`. Self-host: SQL on `quarantine_events.batch_id`. Ingest response also returns per-event `quarantine_id`s. |
 | **(b) Between stages** | Raw → staging / transform outputs | Same `POST /v1/ingest/{contract_id}` (or a second contract if the shape changed) | Broken transforms, dropped required fields, enum/range drift between layers | Same as ingest | Same as ingest — filter by the mid-pipeline contract id |
 | **(c) Alongside modeling tests** | After models land | *(not DataContractGate)* dbt / GE / Soda | Modeling logic, uniqueness, freshness of tables, business rules on warehouse data | Their own runners | Their own test results. Keep them. |
-| **(d) Egress** | Marts → reverse ETL / partners / customer APIs | `POST /egress/{contract_id}` | Outbound rows that no longer match what you promised | Default disposition `block` (failing records omitted from returned `payload`). `?on_fail=quarantine` (default) or `drop`. Forward **only** `response.payload`. | Same quarantine list/SQL; DB column `direction = 'egress'` on self-host |
+| **(d) Egress** | Marts → reverse ETL / partners / customer APIs | `POST /egress/{contract_id}` | Outbound rows that no longer match what you promised | Default disposition `block` (failing records omitted from returned `payload`). `?on_fail=quarantine` (default) or `drop`. Forward **only** `response.payload`. Same optional `X-Batch-Id` as ingest. | Same summary/SQL; DB column `direction = 'egress'` |
 | **(e) LLM / agent output** | Model → app | AISchemaGate SDKs → same engine (`POST /egress/...` under the hood) | Hallucinated fields, bad enums, missing required keys, PII that should be masked | Bounded auto-repair (optional); otherwise treat like egress | Same account, API keys, quarantine, and dashboard as DataContractGate |
 
 Auth for gateway calls: `X-Api-Key` (same key for ingest, egress, and quarantine list).
@@ -43,19 +43,22 @@ Replay (Pro / self-host): `POST /quarantine/replay` with quarantine row ids. See
 
 ## Signal back to the orchestrator
 
-Orchestrators (Airflow, Prefect, Dagster, a cron job) should treat “pending quarantine rows for this contract since the run window started” as a signal that data was held back.
+Send the pipeline's run id as `X-Batch-Id` on ingest and egress. Then treat `pending > 0` from the summary as a signal that this run held data back.
 
 ### Cloud (API)
 
 ```
-GET /quarantine?contract_id={uuid}&limit=100&offset=0
+GET /quarantine/summary?contract_id={uuid}&batch_id={run_id}
 ```
 
 - Auth: `X-Api-Key`
-- Paginate with `limit` (1–500, default 100) and `offset`
-- Response fields include `id`, `contract_id`, `status`, `quarantined_at`, `violation_details`, `raw_event` (may be null if redacted), etc.
-- **Client-side filter:** `status === "pending"` and `quarantined_at >= data_interval_start` (or your lookback)
-- The list API does **not** currently return `direction` or accept a time-range query param — filter time (and, if you need ingress vs egress, use self-host SQL or separate contracts)
+- `batch_id` is the value you sent as `X-Batch-Id`. `run_id` is an alias.
+- Response `pending` (and `by_status.pending`) is the count to gate on. `by_direction` splits `ingress` and `egress`. `total` is every status.
+- Omit `batch_id` only when you want every source row for the contract, not one run.
+
+`GET /quarantine?contract_id=&batch_id=` still lists the rows. Each row includes `batch_id`.
+
+Full request rules: [`docs/quarantine-batch-reference.md`](../quarantine-batch-reference.md).
 
 ### Self-host (SQL)
 
@@ -64,29 +67,29 @@ SELECT count(*) AS pending_count
 FROM quarantine_events
 WHERE status = 'pending'
   AND contract_id = ANY (:contract_ids::uuid[])
-  AND created_at >= :window_start
+  AND batch_id = :batch_id
+  AND replay_of_quarantine_id IS NULL
   -- optional: AND direction = 'ingress'  -- or 'egress'
 ;
 ```
 
 `created_at` in the table is exposed as `quarantined_at` on the API.
 
-### Honest limit: no per-run id yet
+### Time window, when the rows have no run id
 
-There is **no** `batch_id` / `run_id` / Airflow `run_id` column on `quarantine_events`.
-`Idempotency-Key` on ingest is stored separately and is not linked to quarantine rows.
-
-Until a product change adds a run correlation id, filter by:
+Calls that omit `X-Batch-Id`, and rows written before migration `049_quarantine_batch_id.sql`, store `batch_id` null. Filter those by:
 
 1. `contract_id` (one contract per checkpoint is clearest)
 2. Time window (`quarantined_at` / `created_at` ≥ run start or lookback)
 3. `status = 'pending'`
-4. On self-host only: `direction` if one contract serves both ingest and egress
+4. `direction` when one contract serves both ingest and egress
+
+`Idempotency-Key` is still not linked to quarantine rows.
 
 Examples:
 
-- dbt (self-host SQL): [`examples/dbt/`](../../examples/dbt/)
-- Airflow (Cloud or self-host API): [`examples/airflow/`](../../examples/airflow/)
+- dbt (self-host SQL, `invocation_id`, time window as a fallback): [`examples/dbt/`](../../examples/dbt/)
+- Airflow (Cloud or self-host API, `run_id`, time window as a fallback): [`examples/airflow/`](../../examples/airflow/)
 - Stripe ingest → stage → mart → egress chain (YAML + pass/fail samples): [`examples/contract-chain/stripe/`](../../examples/contract-chain/stripe/)
 
 ## Related docs
@@ -94,6 +97,7 @@ Examples:
 - [`docs/v1-ingest-reference.md`](../v1-ingest-reference.md)
 - [`docs/egress-validation-reference.md`](../egress-validation-reference.md)
 - [`docs/quarantine-replay-reference.md`](../quarantine-replay-reference.md)
+- [`docs/quarantine-batch-reference.md`](../quarantine-batch-reference.md)
 - [`docs/drop-mode-reference.md`](../drop-mode-reference.md)
 - [`docs/llm-output-validation.md`](../llm-output-validation.md) (AISchemaGate)
 - [`docs/architecture-overview.md`](../architecture-overview.md)

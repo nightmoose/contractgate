@@ -2921,7 +2921,7 @@ metrics: []
 
         // Org A sees it.
         let a_list =
-            super::super::storage::list_quarantine_events(&pool, Some(org_a), None, 100, 0)
+            super::super::storage::list_quarantine_events(&pool, Some(org_a), None, None, 100, 0)
                 .await
                 .unwrap();
         assert!(
@@ -2931,7 +2931,7 @@ metrics: []
 
         // Org B must NOT see it.
         let b_list =
-            super::super::storage::list_quarantine_events(&pool, Some(org_b), None, 100, 0)
+            super::super::storage::list_quarantine_events(&pool, Some(org_b), None, None, 100, 0)
                 .await
                 .unwrap();
         assert!(
@@ -2957,9 +2957,10 @@ metrics: []
         assert_eq!(resolved_a, vec![(quar_id, contract_id)]);
 
         // Dev mode (org_id=None) is unscoped and sees the row.
-        let dev_list = super::super::storage::list_quarantine_events(&pool, None, None, 100, 0)
-            .await
-            .unwrap();
+        let dev_list =
+            super::super::storage::list_quarantine_events(&pool, None, None, None, 100, 0)
+                .await
+                .unwrap();
         assert!(dev_list.iter().any(|r| r.id == quar_id));
 
         // Cleanup (contract delete cascades the quarantine row).
@@ -3685,6 +3686,7 @@ metrics: []
             replay_of_quarantine_id: None,
             pre_assigned_id: None,
             direction: "ingress".to_string(),
+            batch_id: None,
         }
     }
 
@@ -3739,7 +3741,7 @@ metrics: []
             .await
             .unwrap();
 
-        let rows = storage::list_quarantine_events(&pool, Some(org), Some(cid), 100, 0)
+        let rows = storage::list_quarantine_events(&pool, Some(org), Some(cid), None, 100, 0)
             .await
             .unwrap();
         assert_eq!(rows.len(), 1, "one source quarantine row");
@@ -5753,6 +5755,7 @@ metrics: []
                 replay_of_quarantine_id: None,
                 pre_assigned_id: Some(qid),
                 direction: "ingress".to_string(),
+                batch_id: None,
             }],
             false, // payload NULL + payload_redacted, same as Free ingest
         )
@@ -6126,6 +6129,7 @@ metrics: []
                     replay_of_quarantine_id: None,
                     pre_assigned_id: Some(parent),
                     direction: "ingress".to_string(),
+                    batch_id: None,
                 },
                 QuarantineEventInsert {
                     contract_id: cid,
@@ -6138,6 +6142,7 @@ metrics: []
                     replay_of_quarantine_id: Some(parent),
                     pre_assigned_id: Some(child),
                     direction: "ingress".to_string(),
+                    batch_id: None,
                 },
             ],
             true,
@@ -6205,7 +6210,7 @@ metrics: []
         let missing = storage::get_contract_identity(&pool, cid, Some(org)).await;
         assert!(matches!(missing, Err(AppError::ContractNotFound(_))));
 
-        let listed = storage::list_quarantine_events(&pool, Some(org), Some(cid), 50, 0)
+        let listed = storage::list_quarantine_events(&pool, Some(org), Some(cid), None, 50, 0)
             .await
             .unwrap();
         assert!(
@@ -6280,6 +6285,7 @@ metrics: []
                 replay_of_quarantine_id: None,
                 pre_assigned_id: None,
                 direction: "ingress".into(),
+                batch_id: None,
             }],
             false,
         )
@@ -6290,9 +6296,10 @@ metrics: []
             .execute(&pool)
             .await
             .unwrap();
-        let orphan_list = storage::list_quarantine_events(&pool, Some(org), Some(other.id), 50, 0)
-            .await
-            .unwrap();
+        let orphan_list =
+            storage::list_quarantine_events(&pool, Some(org), Some(other.id), None, 50, 0)
+                .await
+                .unwrap();
         assert!(
             orphan_list.is_empty(),
             "soft-deleted contract is excluded from the list"
@@ -6479,5 +6486,231 @@ mod public_ip_rate_limit_tests {
     fn public_limit_constants_are_sane() {
         const { assert!(PUBLIC_IP_RATE_LIMIT_RPS >= 10) };
         const { assert!(PUBLIC_IP_RATE_LIMIT_BURST >= PUBLIC_IP_RATE_LIMIT_RPS) };
+    }
+}
+
+/// Per-run quarantine counts. Requires a database migrated through 049.
+#[cfg(test)]
+mod quarantine_batch {
+    use axum::http::StatusCode;
+    use axum::routing::get;
+    use axum_test::TestServer;
+    use serde_json::json;
+    use std::sync::Arc;
+    use uuid::Uuid;
+
+    use super::super::storage::{self, QuarantineEventInsert};
+    use super::super::transform::TransformedPayload;
+    use super::super::{api_key_auth::ValidatedKey, quarantine, AppState};
+
+    const YAML: &str = r#"
+version: "1.0"
+name: "quarantine_batch_contract"
+description: "per-run quarantine summary"
+ontology:
+  entities:
+    - name: id
+      type: string
+      required: true
+glossary: []
+metrics: []
+"#;
+
+    fn row(contract_id: Uuid, direction: &str, batch_id: Option<&str>) -> QuarantineEventInsert {
+        QuarantineEventInsert {
+            contract_id,
+            contract_version: "1.0.0".into(),
+            payload: TransformedPayload::from_stored(json!({"id": "body"})),
+            violation_count: 1,
+            violation_details: json!([{"field":"id","kind":"x","message":"m"}]),
+            validation_us: 3,
+            source_ip: None,
+            replay_of_quarantine_id: None,
+            pre_assigned_id: Some(Uuid::new_v4()),
+            direction: direction.into(),
+            batch_id: batch_id.map(str::to_owned),
+        }
+    }
+
+    fn server(state: Arc<AppState>, org: Uuid) -> TestServer {
+        let app = axum::Router::new()
+            .route("/quarantine", get(quarantine::list_quarantine_handler))
+            .route("/quarantine/summary", get(quarantine::run_summary_handler))
+            .layer(axum::middleware::from_fn(
+                move |mut req: axum::extract::Request, next: axum::middleware::Next| async move {
+                    req.extensions_mut().insert(ValidatedKey {
+                        api_key_id: Uuid::new_v4(),
+                        user_id: Uuid::new_v4(),
+                        org_id: org,
+                        allowed_contract_ids: None,
+                        rate_limit_rps: None,
+                        rate_limit_burst: None,
+                    });
+                    next.run(req).await
+                },
+            ))
+            .with_state(state);
+        TestServer::new(app)
+    }
+
+    #[tokio::test]
+    #[ignore = "requires DATABASE_URL and a live Postgres migrated through 049"]
+    async fn summary_counts_one_run() {
+        let db_url = std::env::var("DATABASE_URL").expect("DATABASE_URL must be set");
+        let pool = sqlx::PgPool::connect(&db_url).await.unwrap();
+        let org_a = Uuid::new_v4();
+        let org_b = Uuid::new_v4();
+        for (org, slug) in [(org_a, "qb-a"), (org_b, "qb-b")] {
+            sqlx::query("INSERT INTO orgs (id, name, slug) VALUES ($1, $2, $3)")
+                .bind(org)
+                .bind("quarantine batch org")
+                .bind(format!("{slug}-{}", org.simple()))
+                .execute(&pool)
+                .await
+                .expect("seed org");
+        }
+        let (contract_a, _) = storage::create_contract(
+            &pool,
+            &format!("qb-{}", org_a.simple()),
+            Some("t"),
+            YAML,
+            Default::default(),
+            Some(org_a),
+        )
+        .await
+        .expect("contract A");
+        let (contract_b, _) = storage::create_contract(
+            &pool,
+            &format!("qb-{}", org_b.simple()),
+            Some("t"),
+            YAML,
+            Default::default(),
+            Some(org_b),
+        )
+        .await
+        .expect("contract B");
+
+        let ingress = row(contract_a.id, "ingress", Some("run-a"));
+        let ingress_id = ingress.pre_assigned_id.unwrap();
+        let reviewed = row(contract_a.id, "ingress", Some("run-a"));
+        let reviewed_id = reviewed.pre_assigned_id.unwrap();
+        let mut child = row(contract_a.id, "ingress", Some("run-a"));
+        child.replay_of_quarantine_id = Some(ingress_id);
+        storage::quarantine_events_batch(
+            &pool,
+            &[
+                ingress,
+                row(contract_a.id, "egress", Some("run-a")),
+                reviewed,
+                row(contract_a.id, "ingress", Some("run-b")),
+                row(contract_a.id, "ingress", None),
+                child,
+                row(contract_b.id, "ingress", Some("run-a")),
+            ],
+            true,
+        )
+        .await
+        .unwrap();
+        sqlx::query("UPDATE quarantine_events SET status = 'reviewed' WHERE id = $1")
+            .bind(reviewed_id)
+            .execute(&pool)
+            .await
+            .unwrap();
+
+        let rows =
+            storage::summarize_quarantine(&pool, Some(org_a), Some(contract_a.id), Some("run-a"))
+                .await
+                .unwrap();
+        let summary = quarantine::assemble_run_summary(
+            Some(contract_a.id),
+            Some("run-a".into()),
+            rows.into_iter()
+                .map(|row| (row.status, row.direction, row.count)),
+        );
+        assert_eq!(
+            summary.pending, 2,
+            "ingress + egress pending, child excluded"
+        );
+        assert_eq!(summary.by_status.reviewed, 1);
+        assert_eq!(summary.by_direction.ingress, 2);
+        assert_eq!(summary.by_direction.egress, 1);
+        assert_eq!(summary.total, 3);
+
+        let all = storage::summarize_quarantine(&pool, Some(org_a), Some(contract_a.id), None)
+            .await
+            .unwrap();
+        let all_total: i64 = all.iter().map(|row| row.count).sum();
+        assert_eq!(
+            all_total, 5,
+            "run-b and the unstamped row join the three run-a rows"
+        );
+
+        let listed = storage::list_quarantine_events(
+            &pool,
+            Some(org_a),
+            Some(contract_a.id),
+            Some("run-a"),
+            50,
+            0,
+        )
+        .await
+        .unwrap();
+        assert_eq!(listed.len(), 3);
+        assert!(listed
+            .iter()
+            .all(|row| row.batch_id.as_deref() == Some("run-a")));
+
+        let state = Arc::new(AppState::new(pool.clone(), false, None, None));
+        let http = server(state, org_a);
+        let resp = http
+            .get("/quarantine/summary")
+            .add_query_param("contract_id", contract_a.id.to_string())
+            .add_query_param("batch_id", "run-a")
+            .await;
+        assert_eq!(resp.status_code(), StatusCode::OK, "{}", resp.text());
+        let body: serde_json::Value = resp.json();
+        assert_eq!(body["pending"], json!(2));
+        assert_eq!(body["total"], json!(3));
+        assert_eq!(body["by_status"]["pending"], json!(2));
+        assert_eq!(body["by_status"]["reviewed"], json!(1));
+        assert_eq!(body["by_direction"]["ingress"], json!(2));
+        assert_eq!(body["by_direction"]["egress"], json!(1));
+        assert_eq!(body["batch_id"], json!("run-a"));
+
+        let conflict = http
+            .get("/quarantine/summary")
+            .add_query_param("batch_id", "run-a")
+            .add_query_param("run_id", "other")
+            .await;
+        assert_eq!(conflict.status_code(), StatusCode::BAD_REQUEST);
+
+        let foreign = http
+            .get("/quarantine/summary")
+            .add_query_param("contract_id", contract_b.id.to_string())
+            .add_query_param("batch_id", "run-a")
+            .await;
+        assert_eq!(foreign.status_code(), StatusCode::NOT_FOUND);
+
+        let list = http
+            .get("/quarantine")
+            .add_query_param("contract_id", contract_a.id.to_string())
+            .add_query_param("run_id", "run-a")
+            .await;
+        assert_eq!(list.status_code(), StatusCode::OK, "{}", list.text());
+        let list_body: serde_json::Value = list.json();
+        assert_eq!(list_body.as_array().unwrap().len(), 3);
+
+        sqlx::query("DELETE FROM contracts WHERE id = $1 OR id = $2")
+            .bind(contract_a.id)
+            .bind(contract_b.id)
+            .execute(&pool)
+            .await
+            .unwrap();
+        sqlx::query("DELETE FROM orgs WHERE id = $1 OR id = $2")
+            .bind(org_a)
+            .bind(org_b)
+            .execute(&pool)
+            .await
+            .unwrap();
     }
 }

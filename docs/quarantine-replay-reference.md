@@ -1,6 +1,6 @@
 # Quarantine + Replay API Reference
 
-**Last updated:** 2026-10-16
+**Last updated:** 2026-11-09
 
 Events that fail contract validation at ingest are written to the **quarantine**
 store instead of being forwarded. This API lists them, replays them against a
@@ -37,6 +37,8 @@ Query parameters:
 | Param | Type | Default | Notes |
 |---|---|---|---|
 | `contract_id` | uuid | — | Restrict to one contract. Omit for all of the org's contracts. |
+| `batch_id` | string | — | Only rows stamped with this run id. Alias of `run_id`. See [Per-run quarantine](quarantine-batch-reference.md). |
+| `run_id` | string | — | Alias of `batch_id`. |
 | `limit` | int | 100 | Clamped to 1–500. |
 | `offset` | int | 0 | For pagination. |
 
@@ -55,14 +57,27 @@ attempt are excluded; they show up under replay-history). Response is an array o
   "quarantined_at": "2026-07-14T12:00:00Z",
   "replay_count": 0,
   "last_replayed_at": null,
-  "last_replay_passed": null
+  "last_replay_passed": null,
+  "batch_id": null
 }
 ```
+
+`batch_id` is the optional run id sent as `X-Batch-Id` on ingest or egress. It is null when the caller omitted it.
 
 `replay_count` / `last_replayed_at` / `last_replay_passed` summarize replay
 attempts against the row: count of attempts, the most-recent attempt time, and
 whether that most-recent attempt passed (`true`), failed (`false`), or there were
 none (`null`).
+
+## `GET /quarantine/summary`
+
+Counts source rows by status and direction for one contract and, optionally, one run. An orchestrator fails the task when `pending` is above zero.
+
+```
+GET /quarantine/summary?contract_id={uuid}&batch_id={run_id}
+```
+
+`run_id` is an alias of `batch_id`. The response includes `by_status`, `by_direction`, `by_status_and_direction`, `total`, and `pending`. Details: [Per-run quarantine](quarantine-batch-reference.md).
 
 ---
 

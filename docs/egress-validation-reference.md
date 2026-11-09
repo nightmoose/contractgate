@@ -17,6 +17,9 @@ POST /egress/{contract_id}
   Accepts an optional `@version` suffix: `/egress/{uuid}@1.2.3`.
 - **Version header**: `X-Contract-Version: 1.2.3` (takes precedence over
   the path suffix when both are supplied).
+- **Run id**: `X-Batch-Id` (alias `X-Run-Id`). Stored on quarantine rows
+  from this call. The same value is `batch_id` / `run_id` on the query
+  string. See [Per-run quarantine](quarantine-batch-reference.md).
 - **Default version**: latest stable (same as ingest).
 
 ### Request body
@@ -38,6 +41,8 @@ up to 1 000 objects.
 | `disposition` | string  | `block` | How to handle failing records. |
 | `dry_run`     | boolean | `false` | Validate without writing to the database. |
 | `on_fail`     | string  | `quarantine` | `drop` counts a failure and stores nothing. Quarantine stays the default, including for AISchemaGate. See [Drop mode](drop-mode-reference.md). |
+| `batch_id`    | string  | — | Optional run id stored on egress quarantine rows. Alias of `run_id`. Header `X-Batch-Id` is preferred. See [Per-run quarantine](quarantine-batch-reference.md). |
+| `run_id`      | string  | — | Alias of `batch_id`. |
 
 ---
 

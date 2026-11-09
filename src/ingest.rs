@@ -128,6 +128,14 @@ pub struct IngestQuery {
     /// `quarantine` (default) or `drop`. Header `X-On-Fail` is the same switch.
     #[serde(default)]
     pub on_fail: Option<String>,
+
+    /// Run id stored on quarantine rows. Alias of `run_id` and of `X-Batch-Id`.
+    #[serde(default)]
+    pub batch_id: Option<String>,
+
+    /// Alias of `batch_id`.
+    #[serde(default)]
+    pub run_id: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -263,6 +271,11 @@ pub async fn ingest_handler(
     key_ext: Option<Extension<ValidatedKey>>,
     Json(body): Json<Value>,
 ) -> AppResult<axum::response::Response> {
+    let batch_id = crate::batch_id::resolve_batch_id(
+        query.batch_id.as_deref(),
+        query.run_id.as_deref(),
+        &headers,
+    )?;
     // DB-backed key wins; fall back to x-org-id header in dev mode (CONTRACTGATE_DEV_NO_AUTH).
     let org_id: Option<Uuid> = key_ext.as_ref().map(|Extension(k)| k.org_id).or_else(|| {
         headers
@@ -381,6 +394,7 @@ pub async fn ingest_handler(
             &headers,
             &version_row.yaml_content,
             identity.fail_policy.as_ref(),
+            batch_id.as_deref(),
         )
         .await;
     }
@@ -460,6 +474,7 @@ pub async fn ingest_handler(
                     source_ip.clone(),
                     store_payloads,
                     decision.mode,
+                    batch_id.as_deref(),
                 );
             }
         }
@@ -764,6 +779,7 @@ pub async fn ingest_handler(
                 replay_of_quarantine_id: None,
                 pre_assigned_id: None,
                 direction: "ingress".to_string(),
+                batch_id: batch_id.clone(),
             })
             .collect();
 
@@ -970,6 +986,7 @@ async fn deprecated_pin_quarantine(
     headers: &HeaderMap,
     yaml: &str,
     fail_policy: Option<&Value>,
+    batch_id: Option<&str>,
 ) -> AppResult<axum::response::Response> {
     let total = events.len();
     let decision = crate::fail_policy::resolve_request(
@@ -1032,6 +1049,7 @@ async fn deprecated_pin_quarantine(
                 replay_of_quarantine_id: None,
                 pre_assigned_id: None,
                 direction: "ingress".to_string(),
+                batch_id: batch_id.map(str::to_owned),
             })
             .collect();
 
@@ -1357,6 +1375,7 @@ fn persist_envelope_batch(
     source_ip: Option<String>,
     store_payloads: bool,
     mode: crate::contract::OnFailMode,
+    batch_id: Option<&str>,
 ) {
     let per_record = envelope_per_record_results(envelope_cfg, payload, batch);
     if per_record.is_empty() {
@@ -1405,6 +1424,7 @@ fn persist_envelope_batch(
             replay_of_quarantine_id: None,
             pre_assigned_id: None,
             direction: "ingress".to_string(),
+            batch_id: batch_id.map(str::to_owned),
         })
         .collect();
 
