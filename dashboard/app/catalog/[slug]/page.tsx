@@ -66,7 +66,7 @@ export default async function CatalogDetailPage({
   const vendor = detail.vendor ?? detail.name;
   const fields = parseContractFields(detail.contract_yaml);
   const samples = Array.isArray(detail.sample_json) ? detail.sample_json : [];
-  const whoUses = `Validate a client's ${vendor} export before it hits your warehouse.`;
+  const whoUses = `Validate a client's ${vendor} export at ingest into your warehouse, or with POST /egress before sending the same shape to a partner, reverse ETL, or an AI agent.`;
 
   const dataset = {
     "@context": "https://schema.org",

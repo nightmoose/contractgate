@@ -56,6 +56,12 @@ ignore = [
     # Suppressed: 2026-10-27. Revisit: when jsonwebtoken depends on
     # elliptic-curve 0.14 (crypto-bigint >=0.7.6).
     "RUSTSEC-2026-0387",
+
+    # libsqlite3-sys 0.30.1 — C SQLite CVE-2026-119375 (RUSTSEC-2026-0459).
+    # Fixed in libsqlite3-sys >=0.39.0 via sqlx-sqlite. sqlx 0.8.6 still
+    # pins 0.30.x. Production uses Postgres; sqlite is a sqlx feature path.
+    # Suppressed: 2026-11-09. Revisit: next sqlx bump that pulls >=0.39.
+    "RUSTSEC-2026-0459",
 ]
 
 [output]
