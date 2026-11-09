@@ -19,7 +19,7 @@
 
 services:
   gateway-authon:
-    image: ghcr.io/contractgate/gateway:${TAG:-latest}
+    image: ghcr.io/nightmoose/contractgate-gateway:${TAG:-latest}
     ports:
       # Host 8081 → container 8080. Distinct host port from the base gateway
       # (8080) so both can run side by side if needed.

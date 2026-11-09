@@ -909,7 +909,7 @@ jobs:
         with:
           context: .
           load: true
-          tags: ghcr.io/contractgate/gateway:ci
+          tags: ghcr.io/nightmoose/contractgate-gateway:ci
           cache-from: type=gha
 
       - name: Run compose smoke test
@@ -945,7 +945,7 @@ jobs:
         with:
           context: .
           load: true
-          tags: ghcr.io/contractgate/gateway:ci
+          tags: ghcr.io/nightmoose/contractgate-gateway:ci
           cache-from: type=gha
 
       - name: Run compose demo smoke test
@@ -982,7 +982,7 @@ jobs:
         with:
           context: .
           load: true
-          tags: ghcr.io/contractgate/gateway:ci
+          tags: ghcr.io/nightmoose/contractgate-gateway:ci
           cache-from: type=gha
 
       - name: Run auth-on isolation smoke test
