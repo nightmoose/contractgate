@@ -109,13 +109,24 @@ chrono = { version = "0.4", features = ["serde"] }
 # removes the "need libssl-dev before `cargo check` will run" paper cut.
 # rustls is a pure-Rust TLS implementation and is fully compatible with
 # Postgres over TLS.
-sqlx = { version = "0.8", features = [
+#
+# default-features is off so `any` and `migrate` (unused here) stay off.
+# chrono, uuid, and json are enabled on `sqlx-postgres` below, not on
+# `sqlx`. Those `sqlx` features are weak dependencies on sqlx-sqlite
+# (`sqlx-sqlite?/chrono`, and the same for uuid and json). Cargo still
+# records that crate in Cargo.lock (rust-lang/cargo#10801), which is how
+# libsqlite3-sys 0.30.1 and RUSTSEC-2026-0459 entered the lockfile. sqlx
+# 0.9.0 still requires libsqlite3-sys <0.38, so a version bump does not
+# clear the advisory. This process only opens Postgres.
+sqlx = { version = "0.8", default-features = false, features = [
     "runtime-tokio-rustls",
     "postgres",
-    "chrono",
-    "uuid",
-    "json",
+    "macros",
 ] }
+# Feature unification only; nothing imports this crate directly. Enables
+# chrono, uuid, and json decoding on the sqlx-postgres package `sqlx`
+# already depends on.
+sqlx-postgres = { version = "0.8", features = ["chrono", "uuid", "json"] }
 
 # Error handling
 anyhow = "1"
