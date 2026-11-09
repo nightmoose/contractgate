@@ -1,0 +1,10 @@
+{
+  "charge_id": "ch_3Qdemo0001AaBbCcDd",
+  "customer_id": "cus_DemoAcme0001",
+  "amount": 42.99,
+  "currency": "usd",
+  "status": "succeeded",
+  "paid": true,
+  "refunded": false,
+  "charged_at": "2025-01-01 00:00:00"
+}

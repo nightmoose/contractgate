@@ -1,0 +1,9 @@
+{
+  "payout_id": "po_20250101_USD_001",
+  "partner_id": "ptr_demo_acme_revshare",
+  "currency": "USD",
+  "amount": 0,
+  "revenue_date": "2025-01-01",
+  "status": "queued",
+  "generated_at": "2025-01-02T07:00:00Z"
+}
