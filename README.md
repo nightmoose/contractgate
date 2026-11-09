@@ -1,8 +1,8 @@
 # DataContractGate
 
-**Semantic Contract Enforcement at Ingestion** — *Patent Pending*
+**Semantic contracts at every pipeline boundary** — *Patent Pending*
 
-Stop bad data **before** it reaches your warehouse, lakehouse, or ML pipeline.
+Trust but verify at ingest, between stages, and on egress — before your warehouse, reverse ETL, partners, or AI agents.
 
 ## Try it in 10 minutes (Self-Hosted Free)
 
@@ -243,6 +243,8 @@ repos:
 | Connectors | Kafka Connect, HTTP, batch, Python SDK, CLI |
 | Observability | Prometheus + Grafana |
 
+**Where to put the gate:** [Trust but verify at every boundary](docs/architecture/where-to-enforce-contracts.md) — ingest, between stages, egress, and AISchemaGate for LLM output, plus Airflow/dbt quarantine-check examples under [`examples/airflow/`](examples/airflow/) and [`examples/dbt/`](examples/dbt/).
+
 Full RFCs and design docs live in [`docs/rfcs/`](docs/rfcs/). For a quick shipped-vs-draft view, see [`docs/STATUS.md`](docs/STATUS.md).
 
 ---
@@ -251,7 +253,7 @@ Full RFCs and design docs live in [`docs/rfcs/`](docs/rfcs/). For a quick shippe
 
 | Feature | **DataContractGate** | Great Expectations | Soda | Monte Carlo | dbt |
 |---|---|---|---|---|---|
-| Validation timing | **At ingestion** | Post-hoc / batch | Mix (mostly batch) | Observability | During dbt runs |
+| Validation timing | **At every boundary (ingest + egress)** | After modeling | Mix (mostly after modeling) | Observability | During dbt runs |
 | Performance | **Sub-ms per-event, 86k+ ev/s** (Rust, see note) | Python-based | Varies | Not a validator | Not real-time |
 | Semantic depth | **Ontology + glossary + metrics** | Basic expectations | Checks + rules | No contracts | Basic schema |
 | Visual builder | **Yes + live YAML** | Partial | Limited | No | YAML only |
@@ -260,6 +262,8 @@ Full RFCs and design docs live in [`docs/rfcs/`](docs/rfcs/). For a quick shippe
 | Versioning | **Draft → stable → deprecated** | Manual | Basic | No | Basic |
 | Self-hosted OSS | **Yes (`make demo`)** | Yes | Open core | Commercial | Yes |
 | License | **MIT** | Apache 2.0 | Open core | Commercial | Apache 2.0 |
+
+Keep your Great Expectations, Soda, and dbt tests. They check modeled data after processing. DataContractGate verifies payloads as they cross boundaries — complementary, not either/or.
 
 ---
 

@@ -1,0 +1,28 @@
+# Declares DataContractGate quarantine_events for self-hosted Postgres.
+# Point your dbt profile at the same database the gateway uses.
+version: 2
+
+sources:
+  - name: datacontractgate
+    description: >
+      DataContractGate gateway tables (self-host). Quarantine rows held when
+      payloads fail a contract at ingest or egress.
+    schema: public
+    tables:
+      - name: quarantine_events
+        description: >
+          Failed validation events. status pending = held, not forwarded.
+          created_at is the quarantine time; direction is ingress or egress.
+        columns:
+          - name: id
+            description: Quarantine row UUID
+          - name: contract_id
+            description: Contract that rejected the payload
+          - name: status
+            description: pending | reviewed | replayed | purged
+          - name: created_at
+            description: When the row was quarantined
+          - name: direction
+            description: ingress or egress
+          - name: violation_count
+          - name: violation_details

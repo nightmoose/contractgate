@@ -1,15 +1,15 @@
 {
   "slug": "square-payments",
-  "title": "Square Payments export — data contract",
+  "title": "Square Payments export \u2014 data contract",
   "vendor": "Square",
   "category": "Payments",
   "surface": "Square Payments API Payment object",
   "verified_source_url": "https://developer.squareup.com/reference/square/objects/Payment",
   "verified_at": "2026-11-06",
-  "who_uses_this": "Validate a client's Square payments export before it hits your warehouse.",
+  "who_uses_this": "Validate a client's Square payments export at ingest into your warehouse, or with POST /egress before sending the same shape to a partner, reverse ETL, or an AI agent.",
   "license_note": "MIT",
   "source_format": "json",
   "source_url": null,
   "version": "1.0",
-  "description": "Square Payment object — core fields from the Payments API. Compatible with Square's documented Payment object; not affiliated with Square."
+  "description": "Square Payment object \u2014 core fields from the Payments API. Compatible with Square's documented Payment object; not affiliated with Square."
 }
