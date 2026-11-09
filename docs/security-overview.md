@@ -117,10 +117,13 @@ per-contract `pii_salt`. Detail: [`docs/pii-masking-reference.md`](./pii-masking
   - `get_my_org_ids()` remains executable by `authenticated` **by design** — org
     RLS policies depend on it. Revoking it would break tenancy.
   - `early_access` public-waitlist INSERT policy is intentional.
-  - Four service-role-only tables (`idempotency_keys`, `public_contracts`,
-    `stripe_processed_events`, `stripe_failed_events`) have RLS enabled with no
-    anon/authenticated policy — deny-by-default is the intended posture
-    (documented via `COMMENT ON TABLE`).
+  - Service-role-only tables (`idempotency_keys`, `public_contracts`,
+    `stripe_processed_events`, `stripe_failed_events`, and the migration 050
+    family tables `contract_families`, `contract_family_links`,
+    `public_contract_families`, `public_contract_family_links`) have RLS enabled
+    with no anon/authenticated policy — deny-by-default is the intended posture
+    (documented via `COMMENT ON TABLE`). The gateway reads them with a role that
+    bypasses RLS.
   - Auth "leaked password protection" (HaveIBeenPwned check) is a paid-plan Auth
     feature; not available on the current Supabase plan. Not an open action.
 

@@ -119,6 +119,12 @@ pub struct EgressQuery {
     /// `quarantine` (default) or `drop`. Header `X-On-Fail` is the same switch.
     #[serde(default)]
     pub on_fail: Option<String>,
+    /// Run id stored on quarantine rows. Alias of `run_id` and of `X-Batch-Id`.
+    #[serde(default)]
+    pub batch_id: Option<String>,
+    /// Alias of `batch_id`.
+    #[serde(default)]
+    pub run_id: Option<String>,
 }
 
 /// Per-record outcome in the egress response.
@@ -378,6 +384,11 @@ pub async fn egress_handler(
     key_ext: Option<Extension<ValidatedKey>>,
     Json(body): Json<Value>,
 ) -> AppResult<axum::response::Response> {
+    let batch_id = crate::batch_id::resolve_batch_id(
+        query.batch_id.as_deref(),
+        query.run_id.as_deref(),
+        &headers,
+    )?;
     // --- Resolve org_id (same pattern as ingest) ----------------------------
     let org_id: Option<Uuid> = key_ext.as_ref().map(|Extension(k)| k.org_id).or_else(|| {
         headers
@@ -618,6 +629,7 @@ pub async fn egress_handler(
                 replay_of_quarantine_id: None,
                 pre_assigned_id: None,
                 direction: "egress".to_string(),
+                batch_id: batch_id.clone(),
             })
             .collect();
 

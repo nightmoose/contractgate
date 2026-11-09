@@ -6,6 +6,7 @@
 //! no new validation logic. Endpoints:
 //!
 //! * `GET  /quarantine`                — list source quarantine rows (org-scoped)
+//! * `GET  /quarantine/summary`        — counts by status and direction for one run
 //! * `POST /quarantine/replay`         — replay by event id across contracts
 //! * `GET  /quarantine/replay-history` — attempt history for one event
 //!
@@ -15,6 +16,7 @@
 
 use axum::{
     extract::{Query, State},
+    http::HeaderMap,
     Json,
 };
 use serde::{Deserialize, Serialize};
@@ -35,6 +37,12 @@ use crate::{AppState, OrgId};
 #[derive(Debug, Deserialize)]
 pub struct QuarantineListQuery {
     pub contract_id: Option<Uuid>,
+    /// Run id stored on the row. Alias of `run_id`.
+    #[serde(default)]
+    pub batch_id: Option<String>,
+    /// Alias of `batch_id`.
+    #[serde(default)]
+    pub run_id: Option<String>,
     #[serde(default = "default_list_limit")]
     pub limit: i64,
     #[serde(default)]
@@ -64,6 +72,8 @@ pub struct QuarantinedEventOut {
     pub last_replayed_at: Option<chrono::DateTime<chrono::Utc>>,
     pub last_replay_passed: Option<bool>,
     pub status: String,
+    /// Run id supplied on the ingest or egress call. Null when omitted.
+    pub batch_id: Option<String>,
     pub replayable: bool,
     /// `plan`, `body_not_stored`, `purged`, or null when replayable.
     pub replay_unavailable_reason: Option<&'static str>,
@@ -73,15 +83,25 @@ pub struct QuarantinedEventOut {
 pub async fn list_quarantine_handler(
     State(state): State<Arc<AppState>>,
     OrgId(org_id): OrgId,
+    headers: HeaderMap,
     Query(q): Query<QuarantineListQuery>,
 ) -> AppResult<Json<Vec<QuarantinedEventOut>>> {
     if state.auth_configured() && org_id.is_none() {
         return Err(AppError::Unauthorized);
     }
+    let batch_id =
+        crate::batch_id::resolve_batch_id(q.batch_id.as_deref(), q.run_id.as_deref(), &headers)?;
     let limit = q.limit.clamp(1, 500);
     let offset = q.offset.max(0);
-    let rows =
-        storage::list_quarantine_events(&state.db, org_id, q.contract_id, limit, offset).await?;
+    let rows = storage::list_quarantine_events(
+        &state.db,
+        org_id,
+        q.contract_id,
+        batch_id.as_deref(),
+        limit,
+        offset,
+    )
+    .await?;
 
     let replay_allowed = replay_allowed(&state, org_id).await?;
     let out = rows
@@ -104,6 +124,7 @@ pub async fn list_quarantine_handler(
                 last_replayed_at: r.last_replayed_at,
                 last_replay_passed: r.last_replay_passed,
                 status: r.status,
+                batch_id: r.batch_id,
                 replayable,
                 replay_unavailable_reason: reason,
             }
@@ -144,6 +165,172 @@ pub fn replay_availability(
         return (false, Some("body_not_stored"));
     }
     (true, None)
+}
+
+// ---------------------------------------------------------------------------
+// GET /quarantine/summary
+// ---------------------------------------------------------------------------
+
+const QUARANTINE_STATUSES: [&str; 4] = ["pending", "reviewed", "replayed", "purged"];
+const QUARANTINE_DIRECTIONS: [&str; 2] = ["ingress", "egress"];
+
+#[derive(Debug, Deserialize)]
+pub struct RunSummaryQuery {
+    pub contract_id: Option<Uuid>,
+    /// Run id stored on the row. Alias of `run_id`.
+    #[serde(default)]
+    pub batch_id: Option<String>,
+    /// Alias of `batch_id`.
+    #[serde(default)]
+    pub run_id: Option<String>,
+}
+
+/// Counts for one lifecycle status. Missing rows are zero.
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+pub struct StatusCounts {
+    pub pending: i64,
+    pub reviewed: i64,
+    pub replayed: i64,
+    pub purged: i64,
+}
+
+/// Counts for one traffic direction. Missing rows are zero.
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+pub struct DirectionCounts {
+    pub ingress: i64,
+    pub egress: i64,
+}
+
+/// One status × direction cell. The known eight cells are always present.
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+pub struct StatusDirectionCount {
+    pub status: String,
+    pub direction: String,
+    pub count: i64,
+}
+
+/// `GET /quarantine/summary` body. `pending` is `by_status.pending`, the number
+/// an orchestrator compares with zero.
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+pub struct QuarantineRunSummary {
+    pub contract_id: Option<Uuid>,
+    pub batch_id: Option<String>,
+    pub by_status: StatusCounts,
+    pub by_direction: DirectionCounts,
+    pub by_status_and_direction: Vec<StatusDirectionCount>,
+    pub total: i64,
+    pub pending: i64,
+}
+
+/// Fold raw `(status, direction, count)` rows into a stable summary.
+///
+/// The four statuses and two directions are always present, even at zero.
+/// A status or direction outside that set is kept in `by_status_and_direction`
+/// and in `total`.
+pub fn assemble_run_summary(
+    contract_id: Option<Uuid>,
+    batch_id: Option<String>,
+    rows: impl IntoIterator<Item = (String, String, i64)>,
+) -> QuarantineRunSummary {
+    let mut cells: BTreeMap<(String, String), i64> = BTreeMap::new();
+    for (status, direction, count) in rows {
+        *cells.entry((status, direction)).or_insert(0) += count;
+    }
+
+    let mut by_status = StatusCounts {
+        pending: 0,
+        reviewed: 0,
+        replayed: 0,
+        purged: 0,
+    };
+    let mut by_direction = DirectionCounts {
+        ingress: 0,
+        egress: 0,
+    };
+    let mut total = 0i64;
+    for ((status, direction), count) in &cells {
+        total += count;
+        match status.as_str() {
+            "pending" => by_status.pending += count,
+            "reviewed" => by_status.reviewed += count,
+            "replayed" => by_status.replayed += count,
+            "purged" => by_status.purged += count,
+            _ => {}
+        }
+        match direction.as_str() {
+            "ingress" => by_direction.ingress += count,
+            "egress" => by_direction.egress += count,
+            _ => {}
+        }
+    }
+
+    let mut breakdown = Vec::with_capacity(cells.len());
+    for status in QUARANTINE_STATUSES {
+        for direction in QUARANTINE_DIRECTIONS {
+            let count = cells
+                .get(&(status.to_string(), direction.to_string()))
+                .copied()
+                .unwrap_or(0);
+            breakdown.push(StatusDirectionCount {
+                status: status.to_string(),
+                direction: direction.to_string(),
+                count,
+            });
+        }
+    }
+    for ((status, direction), count) in &cells {
+        let known_status = QUARANTINE_STATUSES.contains(&status.as_str());
+        let known_direction = QUARANTINE_DIRECTIONS.contains(&direction.as_str());
+        if known_status && known_direction {
+            continue;
+        }
+        breakdown.push(StatusDirectionCount {
+            status: status.clone(),
+            direction: direction.clone(),
+            count: *count,
+        });
+    }
+
+    let pending = by_status.pending;
+    QuarantineRunSummary {
+        contract_id,
+        batch_id,
+        by_status,
+        by_direction,
+        by_status_and_direction: breakdown,
+        total,
+        pending,
+    }
+}
+
+/// `GET /quarantine/summary?contract_id=&batch_id=`
+///
+/// Counts source quarantine rows for the caller's org. `batch_id` (alias
+/// `run_id`, or the `X-Batch-Id` / `X-Run-Id` headers) limits the count to one
+/// pipeline run. Omit it to count every source row in the contract or org.
+pub async fn run_summary_handler(
+    State(state): State<Arc<AppState>>,
+    OrgId(org_id): OrgId,
+    headers: HeaderMap,
+    Query(q): Query<RunSummaryQuery>,
+) -> AppResult<Json<QuarantineRunSummary>> {
+    if state.auth_configured() && org_id.is_none() {
+        return Err(AppError::Unauthorized);
+    }
+    let batch_id =
+        crate::batch_id::resolve_batch_id(q.batch_id.as_deref(), q.run_id.as_deref(), &headers)?;
+    if let Some(contract_id) = q.contract_id {
+        storage::get_contract_identity(&state.db, contract_id, org_id).await?;
+    }
+    let rows = storage::summarize_quarantine(&state.db, org_id, q.contract_id, batch_id.as_deref())
+        .await?;
+    let summary = assemble_run_summary(
+        q.contract_id,
+        batch_id,
+        rows.into_iter()
+            .map(|row| (row.status, row.direction, row.count)),
+    );
+    Ok(Json(summary))
 }
 
 // ---------------------------------------------------------------------------
@@ -361,6 +548,7 @@ mod tests {
             last_replayed_at: None,
             last_replay_passed: None,
             status: "pending".into(),
+            batch_id: None,
             replayable: true,
             replay_unavailable_reason: None,
         };
@@ -381,12 +569,56 @@ mod tests {
             "last_replayed_at",
             "last_replay_passed",
             "status",
+            "batch_id",
             "replayable",
             "replay_unavailable_reason",
         ]
         .into_iter()
         .collect();
         assert_eq!(keys, expected, "QuarantinedEvent wire shape drifted");
+    }
+
+    #[test]
+    fn run_summary_zero_fills_and_sums_one_batch() {
+        let empty = assemble_run_summary(None, None, []);
+        assert_eq!(empty.total, 0);
+        assert_eq!(empty.pending, 0);
+        assert_eq!(empty.by_status.pending, 0);
+        assert_eq!(empty.by_status.reviewed, 0);
+        assert_eq!(empty.by_direction.ingress, 0);
+        assert_eq!(empty.by_direction.egress, 0);
+        assert_eq!(empty.by_status_and_direction.len(), 8);
+
+        let summary = assemble_run_summary(
+            Some(Uuid::nil()),
+            Some("run-1".into()),
+            [
+                ("pending".into(), "ingress".into(), 2),
+                ("pending".into(), "egress".into(), 1),
+                ("reviewed".into(), "ingress".into(), 4),
+            ],
+        );
+        assert_eq!(summary.batch_id.as_deref(), Some("run-1"));
+        assert_eq!(summary.pending, 3);
+        assert_eq!(summary.by_status.pending, 3);
+        assert_eq!(summary.by_status.reviewed, 4);
+        assert_eq!(summary.by_status.replayed, 0);
+        assert_eq!(summary.by_status.purged, 0);
+        assert_eq!(summary.by_direction.ingress, 6);
+        assert_eq!(summary.by_direction.egress, 1);
+        assert_eq!(summary.total, 7);
+        let pending_ingress = summary
+            .by_status_and_direction
+            .iter()
+            .find(|cell| cell.status == "pending" && cell.direction == "ingress")
+            .unwrap();
+        assert_eq!(pending_ingress.count, 2);
+        let purged_egress = summary
+            .by_status_and_direction
+            .iter()
+            .find(|cell| cell.status == "purged" && cell.direction == "egress")
+            .unwrap();
+        assert_eq!(purged_egress.count, 0);
     }
 
     #[test]

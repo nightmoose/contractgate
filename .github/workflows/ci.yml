@@ -686,6 +686,56 @@ jobs:
           fi
           echo "Sentinel A10 OK: drop ledger retains 30 days and purges older buckets (migration 045)."
 
+          # Sentinel A11 — migration 049: quarantine rows can carry a run id,
+          # and the per-contract lookup index exists.
+          BATCH_COL=$(psql "$DATABASE_URL" -Atc \
+            "SELECT COUNT(*) FROM information_schema.columns
+             WHERE table_schema = 'public'
+               AND table_name   = 'quarantine_events'
+               AND column_name  = 'batch_id'")
+          if [[ "$BATCH_COL" != "1" ]]; then
+            echo "::error::Migration 049 sentinel failed — quarantine_events.batch_id column not found."
+            exit 1
+          fi
+          BATCH_IDX=$(psql "$DATABASE_URL" -Atc \
+            "SELECT COUNT(*) FROM pg_indexes
+             WHERE schemaname = 'public'
+               AND indexname  = 'idx_quarantine_events_contract_batch'")
+          if [[ "$BATCH_IDX" != "1" ]]; then
+            echo "::error::Migration 049 sentinel failed — idx_quarantine_events_contract_batch not found."
+            exit 1
+          fi
+          echo "Sentinel A11 OK: quarantine_events.batch_id and its index exist (migration 049)."
+
+          # Sentinel A12 — migration 050 (contract families): tables, RLS, and
+          # the seeded Stripe charges chain in boundary order.
+          FAMILY_TABLES=$(psql "$DATABASE_URL" -Atc \
+            "SELECT COUNT(*) FROM pg_class c
+             JOIN pg_namespace n ON n.oid = c.relnamespace
+             WHERE n.nspname = 'public'
+               AND c.relname IN (
+                 'contract_families',
+                 'contract_family_links',
+                 'public_contract_families',
+                 'public_contract_family_links'
+               )
+               AND c.relrowsecurity")
+          if [[ "$FAMILY_TABLES" != "4" ]]; then
+            echo "::error::Migration 050 sentinel failed — expected 4 family tables with RLS, found $FAMILY_TABLES."
+            exit 1
+          fi
+          CHAIN=$(psql "$DATABASE_URL" -Atc \
+            "SELECT string_agg(c.name || ':' || l.boundary, ',' ORDER BY l.position)
+             FROM public_contract_family_links l
+             JOIN public_contract_families f ON f.id = l.family_id
+             JOIN public_contracts c ON c.id = l.public_contract_id
+             WHERE f.slug = 'stripe-charges-pipeline'")
+          if [[ "$CHAIN" != "stripe_charges_raw:ingest,stripe_charges_staged:stage,revenue_daily_mart:stage,partner_payout_feed:egress" ]]; then
+            echo "::error::Migration 050 sentinel failed — Stripe family chain was '$CHAIN'."
+            exit 1
+          fi
+          echo "Sentinel A12 OK: contract families and the Stripe chain (migration 050)."
+
           # Sentinel B (file count) was removed 2026-08-07. It required a manual
           # bump per migration and asserted nothing about the database — a file
           # could be present, counted, and still unapplied in prod. Coverage now:
@@ -753,6 +803,7 @@ jobs:
           set -o pipefail
           cargo test --bin contractgate-server -- --ignored --exact \
             tests::org_scoping::two_org_get_contract_isolation \
+            tests::org_scoping::two_org_contract_family_isolation \
             tests::org_scoping::two_org_get_version_isolation \
             tests::org_scoping::two_org_quarantine_list_isolation \
             tests::org_scoping::pilot_report_aggregation \
@@ -769,12 +820,13 @@ jobs:
             tests::api_bugfixes::org_wide_replay_redacted_matches_per_contract \
             tests::api_bugfixes::contract_list_effective_store_event_payloads \
             tests::api_bugfixes::contract_get_effective_store_event_payloads \
+            tests::quarantine_batch::summary_counts_one_run \
             2>&1 | tee /tmp/iso_test.out
           # Guard against the silent false-green: `cargo test` exits 0 even when
           # a filter matches zero tests (e.g. a future rename). Assert exactly
           # the expected tests actually ran.
-          if ! grep -qE '17 passed; 0 failed' /tmp/iso_test.out; then
-            echo "::error::Expected '17 passed; 0 failed' from the isolation/readiness/RFC-086 tests — got something else. A test may have been renamed or skipped."
+          if ! grep -qE '19 passed; 0 failed' /tmp/iso_test.out; then
+            echo "::error::Expected '19 passed; 0 failed' from the isolation/readiness/RFC-086 tests — got something else. A test may have been renamed or skipped."
             exit 1
           fi
 

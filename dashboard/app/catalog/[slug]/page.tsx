@@ -27,6 +27,7 @@ import {
 } from "@/lib/catalog";
 import { catalogHeaderAside } from "@/lib/catalog-copy";
 import CatalogDisclaimer from "../CatalogDisclaimer";
+import ContractFamilyChain from "@/components/catalog/ContractFamilyChain";
 import DetailActions from "./DetailActions";
 
 export const dynamic = "force-dynamic";
@@ -66,7 +67,9 @@ export default async function CatalogDetailPage({
   const vendor = detail.vendor ?? detail.name;
   const fields = parseContractFields(detail.contract_yaml);
   const samples = Array.isArray(detail.sample_json) ? detail.sample_json : [];
-  const whoUses = `Validate a client's ${vendor} export at ingest into your warehouse, or with POST /egress before sending the same shape to a partner, reverse ETL, or an AI agent.`;
+  const whoUses = detail.family
+    ? `This contract is one boundary in the ${detail.family.name} chain. Validate the payload at that boundary, then follow the neighbors.`
+    : `Validate a client's ${vendor} export at ingest into your warehouse, or with POST /egress before sending the same shape to a partner, reverse ETL, or an AI agent.`;
 
   const dataset = {
     "@context": "https://schema.org",
@@ -127,6 +130,10 @@ export default async function CatalogDetailPage({
         </p>
       </div>
 
+      {detail.family && detail.family.links.length > 0 ? (
+        <ContractFamilyChain family={detail.family} currentSlug={slug} />
+      ) : null}
+
       {/* Field table */}
       <section className="mb-8">
         <h2 className="text-base font-semibold text-slate-100 mb-3">Fields</h2>
@@ -166,8 +173,9 @@ export default async function CatalogDetailPage({
       <section className="mb-8">
         <h2 className="text-base font-semibold text-slate-100 mb-1">Sample rows</h2>
         <p className="text-xs text-slate-600 mb-3">
-          Three synthetic rows we wrote. They validate against this contract with zero
-          violations. No real customer data.
+          {samples.length === 1
+            ? "One synthetic row we wrote. It validates against this contract with zero violations. No real customer data."
+            : "Three synthetic rows we wrote. They validate against this contract with zero violations. No real customer data."}
         </p>
         <pre className="text-[11px] text-green-300 font-mono bg-[#0a0d12] border border-[#1f2937] rounded-lg p-4 overflow-auto max-h-80 leading-relaxed">
           {JSON.stringify(samples, null, 2)}
