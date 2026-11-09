@@ -1360,8 +1360,36 @@ export interface OpenDataContract {
 export interface OpenDataContractDetail extends OpenDataContract {
   source_url: string | null;
   contract_yaml: string;
-  /** 3 synthetic sample rows; validate against this contract with 0 violations. */
+  /** Synthetic sample rows; they validate against this contract with 0 violations. */
   sample_json: unknown[] | null;
+  /**
+   * Present when this catalog contract is a member of a family. Omitted by
+   * gateways that predate contract families, and for contracts that are not
+   * in a chain.
+   */
+  family?: PublicContractFamily | null;
+}
+
+/** One step in a public catalog family chain. */
+export interface PublicContractFamilyLink {
+  public_contract_id: string;
+  name: string;
+  slug: string | null;
+  derived_from_public_contract_id: string | null;
+  derived_from_name: string | null;
+  derived_from_slug: string | null;
+  /** `ingest`, `stage` (between stages), or `egress`. */
+  boundary: string;
+  position: number;
+}
+
+/** A public catalog family rendered as a chain, root first. */
+export interface PublicContractFamily {
+  id: string;
+  name: string;
+  slug: string;
+  description: string | null;
+  links: PublicContractFamilyLink[];
 }
 
 /** Response from POST /contracts/{id}/fork. */

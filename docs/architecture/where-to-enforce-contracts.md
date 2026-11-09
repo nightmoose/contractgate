@@ -90,7 +90,22 @@ Examples:
 
 - dbt (self-host SQL, `invocation_id`, time window as a fallback): [`examples/dbt/`](../../examples/dbt/)
 - Airflow (Cloud or self-host API, `run_id`, time window as a fallback): [`examples/airflow/`](../../examples/airflow/)
-- Stripe ingest → stage → mart → egress chain (YAML + pass/fail samples): [`examples/contract-chain/stripe/`](../../examples/contract-chain/stripe/)
+- Stripe ingest → stage → mart → egress chain (YAML + pass/fail samples): [`examples/contract-chain/stripe/`](../../examples/contract-chain/stripe/). The same four contracts are the public catalog family `stripe-charges-pipeline`.
+
+## Contract families
+
+A family is how DataContractGate records that several contracts are one dataset changing shape. Each member stores:
+
+| Field | Meaning |
+|---|---|
+| `derived_from` | The previous contract in the chain. Empty on the root. |
+| `boundary` | `ingest`, `stage` (between stages — checkpoints (b) above, including a mart you still check with `POST /v1/ingest`), or `egress` |
+
+The public catalog returns that chain on `GET /public-contracts/{slug}` (`family`) and on `GET /public-contract-families/{slug}`. The catalog page links each neighbor. Private orgs use `POST /contract-families` with the same link shape; every contract must belong to the caller's org.
+
+Checkpoint (c) is unchanged: dbt, Great Expectations, and Soda stay on the modeled table. A mart contract in a family does not replace them.
+
+Reference: [`docs/contract-families-reference.md`](../contract-families-reference.md).
 
 ## Related docs
 

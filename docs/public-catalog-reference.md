@@ -207,7 +207,12 @@ entirely returns all columns and all rows.
 Migration `022_public_catalog.sql` adds the table. Migration `047_public_catalog_expansion.sql`
 publishes the 12 launch rows. Migration `048_public_catalog_seed_refresh.sql` upserts
 those same slugs from `catalog/seeds/` when a seed contract, sample, or citation
-changes. 047 is not rewritten after it has been applied.
+changes. 047 is not rewritten after it has been applied. Migration
+`050_contract_families.sql` adds contract families and seeds the Stripe charges
+pipeline (`stripe-charges-raw` → `stripe-charges-staged` → `revenue-daily-mart` →
+`partner-payout-feed`) as the public family `stripe-charges-pipeline`. Those four
+rows are in addition to the 12 launch slugs, including the existing `stripe-charges`
+contract. See [contract-families-reference.md](contract-families-reference.md).
 
 `022_public_catalog.sql` adds:
 
@@ -216,6 +221,8 @@ changes. 047 is not rewritten after it has been applied.
 | `public_contracts` | TABLE | Curated catalog entries (id, name, source_url, source_format, contract_yaml, version) |
 | `contracts.parent_public_contract_id` | column | UUID FK → `public_contracts.id`; NULL for non-forks |
 | `contracts.fork_filter` | column | JSONB; NULL when no filter |
+| `public_contract_families` | TABLE | A named catalog chain (migration 050) |
+| `public_contract_family_links` | TABLE | `derived_from_public_contract_id`, `boundary` (`ingest`, `stage`, `egress`), `position` |
 
 ---
 
