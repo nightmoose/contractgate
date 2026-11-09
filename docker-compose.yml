@@ -32,7 +32,7 @@ services:
   # Gateway — the validation engine HTTP server
   # ---------------------------------------------------------------------------
   gateway:
-    image: ghcr.io/contractgate/gateway:${TAG:-latest}
+    image: ghcr.io/nightmoose/contractgate-gateway:${TAG:-latest}
     ports:
       - "8080:8080"
     environment:
@@ -171,7 +171,7 @@ services:
   # for 5 minutes.  Exits when done.
   # ---------------------------------------------------------------------------
   demo-seeder:
-    image: ghcr.io/contractgate/gateway:${TAG:-latest}
+    image: ghcr.io/nightmoose/contractgate-gateway:${TAG:-latest}
     # Stable name so smoke scripts can `docker inspect` it without going
     # through `docker compose ps -q`, which has been flaky across compose
     # versions when the service is in a profile.

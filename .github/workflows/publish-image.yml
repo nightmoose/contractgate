@@ -1,7 +1,7 @@
 # Publish the gateway container image to GHCR.
 #
 # Runs on pushes to `main`, on version tags (`v*`), and on manual dispatch —
-# never on PRs or feature branches. This keeps `ghcr.io/contractgate/gateway:latest`
+# never on PRs or feature branches. This keeps `ghcr.io/nightmoose/contractgate-gateway:latest`
 # (and the per-version tags) in step with released code, so the README's
 # `docker run` quickstart and the `docker-compose.yml` `${TAG:-latest}` reference
 # resolve to a real, published image. The manual trigger lets a maintainer
@@ -42,7 +42,11 @@ jobs:
       - name: Compute image tags
         id: tags
         run: |
-          image="ghcr.io/contractgate/gateway"
+          # GHCR namespaces are the GitHub owner (lowercased). There is no
+          # `contractgate` org, so pushing under it fails with
+          # "denied: not_found: owner not found".
+          owner="${GITHUB_REPOSITORY_OWNER,,}"
+          image="ghcr.io/${owner}/contractgate-gateway"
           tags="${image}:latest"
           if [ "${GITHUB_REF_TYPE}" = "tag" ]; then
             version="${GITHUB_REF_NAME#v}"
@@ -56,5 +60,8 @@ jobs:
           context: .
           push: true
           tags: ${{ steps.tags.outputs.tags }}
+          # Links the package to this repo so it inherits repo access.
+          labels: |
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
