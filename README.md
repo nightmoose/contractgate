@@ -243,6 +243,8 @@ repos:
 | Connectors | Kafka Connect, HTTP, batch, Python SDK, CLI |
 | Observability | Prometheus + Grafana |
 
+**Where to put the gate:** [Trust but verify at every boundary](docs/architecture/where-to-enforce-contracts.md) — ingest, between stages, egress, and AISchemaGate for LLM output, plus Airflow/dbt quarantine-check examples under [`examples/airflow/`](examples/airflow/) and [`examples/dbt/`](examples/dbt/).
+
 Full RFCs and design docs live in [`docs/rfcs/`](docs/rfcs/). For a quick shipped-vs-draft view, see [`docs/STATUS.md`](docs/STATUS.md).
 
 ---
