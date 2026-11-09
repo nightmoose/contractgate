@@ -1,0 +1,62 @@
+# Mart / stage-gate contract — daily revenue aggregates (use alongside dbt/GE/Soda).
+# Pipeline stage: Staging → POST /v1/ingest/{contract_id} (or egress if publishing) → Marts
+# Complementary to post-modeling tests; does not replace them.
+# Chain: derived_from stripe_charges_staged
+version: "1.0"
+name: "revenue_daily_mart"
+description: >
+  Daily revenue mart grain: one row per revenue_date × currency × status aggregate
+  built from staged charges. Enforce at a stage gate with POST /v1/ingest (or
+  POST /egress if this mart is published outbound). Keep dbt / Great Expectations /
+  Soda tests on the modeled table — complementary, not either/or.
+  derived_from: stripe_charges_staged (stage gate).
+  chain: stripe_charges_raw → stripe_charges_staged → revenue_daily_mart →
+  partner_payout_feed. Synthetic demo grain; not affiliated with Stripe.
+
+ontology:
+  entities:
+    - name: revenue_date
+      type: string
+      required: true
+      pattern: "^[0-9]{4}-[0-9]{2}-[0-9]{2}$"
+    - name: currency
+      type: string
+      required: true
+      pattern: "^[A-Z]{3}$"
+    - name: status
+      type: string
+      required: true
+      enum: ["succeeded", "pending", "failed"]
+    - name: charge_count
+      type: integer
+      required: true
+      min: 0
+    - name: gross_amount
+      type: number
+      required: true
+      min: 0
+    - name: refunded_amount
+      type: number
+      required: true
+      min: 0
+    - name: net_amount
+      type: number
+      required: true
+    - name: as_of
+      type: string
+      required: true
+      pattern: "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$"
+
+glossary:
+  - field: revenue_date
+    description: "UTC calendar date of the aggregate (from charged_at)."
+    constraints: "YYYY-MM-DD"
+  - field: gross_amount
+    description: "Sum of staged charge amounts for the grain, major currency units."
+    constraints: "non-negative number"
+  - field: net_amount
+    description: "gross_amount minus refunded_amount for the grain."
+    constraints: "number (may be zero)"
+  - field: as_of
+    description: "When this mart row was computed, UTC ISO-8601."
+    constraints: "YYYY-MM-DDTHH:MM:SSZ"

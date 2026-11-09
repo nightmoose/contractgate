@@ -87,6 +87,7 @@ Examples:
 
 - dbt (self-host SQL): [`examples/dbt/`](../../examples/dbt/)
 - Airflow (Cloud or self-host API): [`examples/airflow/`](../../examples/airflow/)
+- Stripe ingest → stage → mart → egress chain (YAML + pass/fail samples): [`examples/contract-chain/stripe/`](../../examples/contract-chain/stripe/)
 
 ## Related docs
 

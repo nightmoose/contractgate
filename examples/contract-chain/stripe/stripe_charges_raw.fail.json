@@ -1,0 +1,11 @@
+{
+  "id": "ch_3Qdemo0001AaBbCcDd",
+  "object": "charge",
+  "amount": -50,
+  "currency": "USD",
+  "customer": "cus_DemoAcme0001",
+  "paid": true,
+  "refunded": false,
+  "status": "refunded",
+  "created": 1735689600
+}
