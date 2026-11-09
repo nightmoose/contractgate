@@ -363,6 +363,8 @@ export interface QuarantinedEvent {
   /** Result of the most recent replay attempt, or null if never replayed. */
   last_replay_passed: boolean | null;
   status?: "pending" | "reviewed" | "replayed" | "purged";
+  /** Run id supplied on ingest or egress. Null when the caller omitted it. */
+  batch_id: string | null;
   replayable?: boolean;
   replay_unavailable_reason?: "plan" | "body_not_stored" | "purged" | null;
 }

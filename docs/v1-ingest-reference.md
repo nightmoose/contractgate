@@ -28,6 +28,8 @@ Idempotency-Key: <opaque_string>        # optional
 | `version` | string  | latest `stable` | Semver pin (e.g. `1.2.0`). Defaults to the latest stable version. |
 | `dry_run` | boolean | `false`         | Validate without persisting to audit log, quarantine, or forward. |
 | `atomic`  | boolean | `false`         | All-or-nothing semantics: if any event fails, nothing is persisted. |
+| `batch_id` | string | — | Optional run id stored on quarantine rows. Alias of `run_id` and of `X-Batch-Id`. Max 255 characters. See [Per-run quarantine](quarantine-batch-reference.md). |
+| `run_id` | string | — | Alias of `batch_id`. |
 
 ### Request headers
 
@@ -35,7 +37,9 @@ Idempotency-Key: <opaque_string>        # optional
 |-------------------|----------|----------------------------------------------------------------------------------------------|
 | `X-Api-Key`       | Yes      | API key in `cg_live_…` format. Must be authorized for the contract's project.               |
 | `Content-Type`    | Yes      | `application/json` or `application/x-ndjson`. Other types (e.g. `text/plain`, `application/xml`) get 415; a missing header is read as JSON. |
-| `Idempotency-Key` | No       | Opaque string (max 255 chars). Guarantees at-most-once processing within the 24-hour window. |
+| `Idempotency-Key` | No       | Opaque string (max 255 chars). Guarantees at-most-once processing within the 24-hour window. Independent of `X-Batch-Id`. |
+| `X-Batch-Id` | No | Optional run id stored on quarantine rows from this call. Preferred over the query form: an Airflow `run_id` contains `+`, which a query string decodes as a space unless percent-encoded. Alias: `X-Run-Id`. When a header and a query parameter are both set, they must match. |
+| `X-Run-Id` | No | Alias of `X-Batch-Id`. |
 
 ### Body formats
 

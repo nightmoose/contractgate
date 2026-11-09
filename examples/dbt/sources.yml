@@ -13,6 +13,7 @@ sources:
         description: >
           Failed validation events. status pending = held, not forwarded.
           created_at is the quarantine time; direction is ingress or egress.
+          batch_id is the optional run id (dbt invocation_id or Airflow run_id).
         columns:
           - name: id
             description: Quarantine row UUID
@@ -24,5 +25,10 @@ sources:
             description: When the row was quarantined
           - name: direction
             description: ingress or egress
+          - name: batch_id
+            description: >
+              Run id from X-Batch-Id (alias run_id) on ingest or egress.
+              Null when the caller omitted it. The singular test filters on
+              this column unless dcg_quarantine_use_time_window is true.
           - name: violation_count
           - name: violation_details

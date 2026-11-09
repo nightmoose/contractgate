@@ -83,6 +83,12 @@ pub struct V1IngestQuery {
     /// `quarantine` (default) or `drop`. Header `X-On-Fail` is the same switch.
     #[serde(default)]
     pub on_fail: Option<String>,
+    /// Run id stored on quarantine rows. Alias of `run_id` and of `X-Batch-Id`.
+    #[serde(default)]
+    pub batch_id: Option<String>,
+    /// Alias of `batch_id`.
+    #[serde(default)]
+    pub run_id: Option<String>,
 }
 
 /// Per-event result returned in the response.
@@ -326,7 +332,35 @@ fn build_openapi() -> String {
                 "name": "Idempotency-Key",
                 "in": "header",
                 "required": false,
-                "description": "Opaque string (max 255 chars). Same key + same body → cached response.",
+                "description": "Opaque string (max 255 chars). Same key + same body → cached response. Independent of X-Batch-Id.",
+                "schema": { "type": "string", "maxLength": 255 }
+              },
+              {
+                "name": "X-Batch-Id",
+                "in": "header",
+                "required": false,
+                "description": "Optional run id stored on quarantine rows from this call. Alias: X-Run-Id, or the batch_id / run_id query parameters. When more than one is set they must match. Max 255 characters. Prefer the header: an Airflow run id contains '+' and a query string decodes '+' as a space unless it is percent-encoded. Omitted leaves batch_id null. Not a substitute for Idempotency-Key.",
+                "schema": { "type": "string", "maxLength": 255 }
+              },
+              {
+                "name": "X-Run-Id",
+                "in": "header",
+                "required": false,
+                "description": "Alias of X-Batch-Id.",
+                "schema": { "type": "string", "maxLength": 255 }
+              },
+              {
+                "name": "batch_id",
+                "in": "query",
+                "required": false,
+                "description": "Alias of X-Batch-Id. Percent-encode '+' as %2B.",
+                "schema": { "type": "string", "maxLength": 255 }
+              },
+              {
+                "name": "run_id",
+                "in": "query",
+                "required": false,
+                "description": "Alias of batch_id.",
                 "schema": { "type": "string", "maxLength": 255 }
               }
             ],
@@ -409,6 +443,34 @@ fn build_openapi() -> String {
                 "in": "header",
                 "required": true,
                 "schema": { "type": "string" }
+              },
+              {
+                "name": "X-Batch-Id",
+                "in": "header",
+                "required": false,
+                "description": "Optional run id stored on egress quarantine rows. Same aliases and rules as POST /v1/ingest/{contract_id}.",
+                "schema": { "type": "string", "maxLength": 255 }
+              },
+              {
+                "name": "X-Run-Id",
+                "in": "header",
+                "required": false,
+                "description": "Alias of X-Batch-Id.",
+                "schema": { "type": "string", "maxLength": 255 }
+              },
+              {
+                "name": "batch_id",
+                "in": "query",
+                "required": false,
+                "description": "Alias of X-Batch-Id. Percent-encode '+' as %2B.",
+                "schema": { "type": "string", "maxLength": 255 }
+              },
+              {
+                "name": "run_id",
+                "in": "query",
+                "required": false,
+                "description": "Alias of batch_id.",
+                "schema": { "type": "string", "maxLength": 255 }
               }
             ],
             "requestBody": {
@@ -567,7 +629,7 @@ fn extra_openapi_paths(paths: &mut serde_json::Map<String, Value>) {
     paths.insert("/contracts/{id}/kinesis-ingress/disable".into(), json!({"delete": {"operationId": "disable_kinesis_ingress", "summary": "Disable Kinesis ingress (owner, any plan)", "parameters": [{"name": "id", "in": "path", "required": true, "schema": {"type": "string", "format": "uuid"}}], "responses": {"204": {"description": "Disabled"}, "401": {"description": "Missing or invalid credentials"}, "404": {"description": "Contract not found or not owned by the caller's org"}, "501": {"description": "kinesis-ingress feature not compiled in"}}, "security": [{"ApiKeyAuth": []}]}}));
     paths.insert("/contracts/{id}/kinesis-ingress/rotate-credentials".into(), json!({"post": {"operationId": "rotate_kinesis_credentials", "summary": "Rotate Kinesis IAM credentials (owner, Enterprise)", "parameters": [{"name": "id", "in": "path", "required": true, "schema": {"type": "string", "format": "uuid"}}], "responses": {"200": {"description": "New credentials; secret shown once"}, "401": {"description": "Missing or invalid credentials"}, "404": {"description": "Contract not found or not owned by the caller's org"}, "403": {"description": "Collaborator grant (owner required), or org below Enterprise: \"Kafka/Kinesis streaming ingress requires the Enterprise plan (available on request)\""}, "501": {"description": "kinesis-ingress feature not compiled in"}}, "security": [{"ApiKeyAuth": []}]}}));
     paths.insert("/contracts/deploy".into(), json!({"post": {"operationId": "deploy_contract", "summary": "Create or update a contract from YAML and promote it to stable", "requestBody": {"required": true, "content": {"application/json": {"schema": {"type": "object", "required": ["name", "yaml_content"], "properties": {"name": {"type": "string"}, "yaml_content": {"type": "string", "description": "Contract YAML; the version is read from it"}, "source": {"type": ["string", "null"]}, "deployed_by": {"type": ["string", "null"]}}}}}}, "responses": {"201": {"description": "Deployed: contract_id, version_id, name, version"}, "400": {"description": "Invalid YAML or request"}, "401": {"description": "Missing or invalid credentials"}, "409": {"description": "Version conflict"}}, "security": [{"ApiKeyAuth": []}]}}));
-    paths.insert("/ingest/{contract_id}".into(), json!({"post": {"operationId": "ingest", "summary": "Validate one event or an array of events (legacy ingest; pin with {contract_id}@{version} or X-Contract-Version)", "parameters": [{"name": "contract_id", "in": "path", "required": true, "description": "Contract UUID, optionally suffixed @version. Pins match exactly first, then by normalised numeric version (1.0.0 matches a stored 1.0).", "schema": {"type": "string"}}, {"name": "X-Contract-Version", "in": "header", "required": false, "schema": {"type": "string"}}, {"name": "dry_run", "in": "query", "required": false, "schema": {"type": "boolean", "default": false}}, {"name": "atomic", "in": "query", "required": false, "schema": {"type": "boolean", "default": false}}, {"name": "on_fail", "in": "query", "required": false, "schema": {"type": "string", "enum": ["quarantine", "drop"]}}, {"name": "X-On-Fail", "in": "header", "required": false, "schema": {"type": "string", "enum": ["quarantine", "drop"]}}], "requestBody": {"required": true, "content": {"application/json": {"schema": {"oneOf": [{"type": "object"}, {"type": "array", "items": {"type": "object"}}]}}}}, "responses": {"200": {"description": "Per-event results"}, "400": {"description": "Invalid contract id or body"}, "401": {"description": "Missing or invalid credentials"}, "404": {"description": "Contract or pinned version not found"}, "409": {"description": "No stable version, or ambiguous version pin"}, "422": {"description": "Pinned version is deprecated (code contract_version_deprecated)"}, "429": {"description": "Plan limit exceeded"}}, "security": [{"ApiKeyAuth": []}]}}));
+    paths.insert("/ingest/{contract_id}".into(), json!({"post": {"operationId": "ingest", "summary": "Validate one event or an array of events (legacy ingest; pin with {contract_id}@{version} or X-Contract-Version)", "parameters": [{"name": "contract_id", "in": "path", "required": true, "description": "Contract UUID, optionally suffixed @version. Pins match exactly first, then by normalised numeric version (1.0.0 matches a stored 1.0).", "schema": {"type": "string"}}, {"name": "X-Contract-Version", "in": "header", "required": false, "schema": {"type": "string"}}, {"name": "dry_run", "in": "query", "required": false, "schema": {"type": "boolean", "default": false}}, {"name": "atomic", "in": "query", "required": false, "schema": {"type": "boolean", "default": false}}, {"name": "on_fail", "in": "query", "required": false, "schema": {"type": "string", "enum": ["quarantine", "drop"]}}, {"name": "X-On-Fail", "in": "header", "required": false, "schema": {"type": "string", "enum": ["quarantine", "drop"]}}, {"name": "X-Batch-Id", "in": "header", "required": false, "description": "Optional run id stored on quarantine rows. Alias of X-Run-Id and of batch_id / run_id. Max 255 characters.", "schema": {"type": "string", "maxLength": 255}}, {"name": "X-Run-Id", "in": "header", "required": false, "description": "Alias of X-Batch-Id.", "schema": {"type": "string", "maxLength": 255}}, {"name": "batch_id", "in": "query", "required": false, "schema": {"type": "string", "maxLength": 255}}, {"name": "run_id", "in": "query", "required": false, "description": "Alias of batch_id.", "schema": {"type": "string", "maxLength": 255}}], "requestBody": {"required": true, "content": {"application/json": {"schema": {"oneOf": [{"type": "object"}, {"type": "array", "items": {"type": "object"}}]}}}}, "responses": {"200": {"description": "Per-event results"}, "400": {"description": "Invalid contract id or body"}, "401": {"description": "Missing or invalid credentials"}, "404": {"description": "Contract or pinned version not found"}, "409": {"description": "No stable version, or ambiguous version pin"}, "422": {"description": "Pinned version is deprecated (code contract_version_deprecated)"}, "429": {"description": "Plan limit exceeded"}}, "security": [{"ApiKeyAuth": []}]}}));
     paths.insert("/contracts/{id}/versions".into(), json!({"get": {"operationId": "list_versions", "summary": "List versions (viewer+)", "parameters": [{"name": "id", "in": "path", "required": true, "schema": {"type": "string", "format": "uuid"}}], "responses": {"200": {"description": "Version summaries"}, "401": {"description": "Missing or invalid credentials"}, "404": {"description": "Contract not found"}}, "security": [{"ApiKeyAuth": []}]}, "post": {"operationId": "create_version", "summary": "Create a draft version", "parameters": [{"name": "id", "in": "path", "required": true, "schema": {"type": "string", "format": "uuid"}}], "requestBody": {"required": true, "content": {"application/json": {"schema": {"type": "object", "required": ["version", "yaml_content"], "properties": {"version": {"type": "string", "description": "e.g. 1.1.0; unique per contract"}, "yaml_content": {"type": "string"}}}}}}, "responses": {"201": {"description": "Draft created"}, "400": {"description": "Invalid YAML"}, "401": {"description": "Missing or invalid credentials"}, "403": {"description": "Caller lacks the required role"}, "404": {"description": "Contract not found"}, "409": {"description": "Version already exists"}}, "security": [{"ApiKeyAuth": []}]}}));
     paths.insert("/contracts".into(), json!({"get": {"operationId": "list_contracts", "summary": "List contracts for the caller's org", "description": "store_event_payloads is the effective value ingest uses: false unless the plan is paid (growth, aisg_pro, enterprise) AND the org master switch is on AND the per-contract override is on. free, aisg_free, and unknown plans report false. A paid plan with the org switch off (the default) also reports false. The columns are not rewritten. Shared by DataContractGate and AISchemaGate.", "responses": {"200": {"description": "Contract summaries. store_event_payloads is boolean and effective for the plan.", "content": {"application/json": {"schema": {"type": "array", "items": {"type": "object", "properties": {"id": {"type": "string", "format": "uuid"}, "name": {"type": "string"}, "store_event_payloads": {"type": "boolean", "description": "True only when ingest will store the body: paid plan, org switch on, per-contract override on."}}}}}}}, "401": {"description": "Missing or invalid credentials"}}, "security": [{"ApiKeyAuth": []}]}}));
     paths.insert("/quarantine/replay".into(), json!({"post": {"operationId": "replay_quarantine", "summary": "Replay quarantined events across the caller's contracts", "description": "Same engine as POST /contracts/{id}/quarantine/replay. A row whose body was not stored is redacted: true (per-contract route: outcome redacted), with passed false and violations empty. Not a validation failure.", "requestBody": {"required": true, "content": {"application/json": {"schema": {"type": "object", "required": ["event_ids"], "properties": {"event_ids": {"type": "array", "items": {"type": "string", "format": "uuid"}}, "version": {"type": "string"}, "contract_id": {"type": "string", "format": "uuid"}}}}}}, "responses": {"200": {"description": "One outcome per event_id, in input order.", "content": {"application/json": {"schema": {"type": "object", "properties": {"replayed": {"type": "integer"}, "outcomes": {"type": "array", "items": {"type": "object", "properties": {"event_id": {"type": "string", "format": "uuid"}, "version": {"type": "string"}, "passed": {"type": "boolean"}, "violations": {"type": "array"}, "replayed_at": {"type": "string", "format": "date-time"}, "redacted": {"type": "boolean", "description": "True when the source body was not stored. Same classification as per-contract outcome=redacted."}}}}}}}}}, "400": {"description": "Empty event_ids, over the 1000 cap, or contract_id assertion failed"}, "401": {"description": "Missing or invalid credentials"}}, "security": [{"ApiKeyAuth": []}]}}));
@@ -973,7 +1035,7 @@ fn more_openapi_paths_tail(
             "security": auth.clone()
         }),
     );
-    let quarantined_event = json!({"type": "object", "properties": {"id": {"type": "string", "format": "uuid"}, "contract_id": {"type": "string", "format": "uuid"}, "contract_version": {"type": ["string", "null"]}, "raw_event": {}, "payload_redacted": {"type": "boolean"}, "violation_details": {}, "violation_count": {"type": "integer"}, "source_ip": {"type": ["string", "null"]}, "quarantined_at": {"type": "string", "format": "date-time"}, "replay_count": {"type": "integer"}, "last_replayed_at": {"type": ["string", "null"], "format": "date-time"}, "last_replay_passed": {"type": ["boolean", "null"]}}});
+    let quarantined_event = json!({"type": "object", "properties": {"id": {"type": "string", "format": "uuid"}, "contract_id": {"type": "string", "format": "uuid"}, "contract_version": {"type": ["string", "null"]}, "raw_event": {}, "payload_redacted": {"type": "boolean"}, "violation_details": {}, "violation_count": {"type": "integer"}, "source_ip": {"type": ["string", "null"]}, "quarantined_at": {"type": "string", "format": "date-time"}, "replay_count": {"type": "integer"}, "last_replayed_at": {"type": ["string", "null"], "format": "date-time"}, "last_replay_passed": {"type": ["boolean", "null"]}, "status": {"type": "string"}, "batch_id": {"type": ["string", "null"], "description": "Run id supplied on ingest or egress. Null when the caller omitted it."}, "replayable": {"type": "boolean"}, "replay_unavailable_reason": {"type": ["string", "null"]}}});
     merge_openapi_op(
         paths,
         "/quarantine",
@@ -983,10 +1045,37 @@ fn more_openapi_paths_tail(
             "summary": "List quarantined events for the caller's org",
             "parameters": [
                 {"name": "contract_id", "in": "query", "required": false, "schema": {"type": "string", "format": "uuid"}},
+                {"name": "batch_id", "in": "query", "required": false, "description": "Only rows stamped with this run id. Alias of run_id.", "schema": {"type": "string", "maxLength": 255}},
+                {"name": "run_id", "in": "query", "required": false, "description": "Alias of batch_id.", "schema": {"type": "string", "maxLength": 255}},
                 {"name": "limit", "in": "query", "required": false, "schema": {"type": "integer", "default": 100, "maximum": 500}},
                 {"name": "offset", "in": "query", "required": false, "schema": {"type": "integer", "default": 0}}
             ],
-            "responses": {"200": {"description": "Quarantine rows. payload_redacted true means raw_event is null.", "content": {"application/json": {"schema": {"type": "array", "items": quarantined_event}}}}, "401": unauthorized.clone()},
+            "responses": {"200": {"description": "Quarantine rows. payload_redacted true means raw_event is null. batch_id is null when the caller did not send a run id.", "content": {"application/json": {"schema": {"type": "array", "items": quarantined_event}}}}, "400": {"description": "batch_id and run_id disagree, or the id is invalid"}, "401": unauthorized.clone()},
+            "security": auth.clone()
+        }),
+    );
+    let count_fields = json!({"pending": {"type": "integer"}, "reviewed": {"type": "integer"}, "replayed": {"type": "integer"}, "purged": {"type": "integer"}});
+    merge_openapi_op(
+        paths,
+        "/quarantine/summary",
+        "get",
+        json!({
+            "operationId": "summarize_quarantine",
+            "summary": "Count quarantine rows by status and direction",
+            "description": "Source rows only (replay children are excluded). Pass batch_id (alias run_id, or X-Batch-Id / X-Run-Id) to count one pipeline run. pending is by_status.pending; an orchestrator fails the run when pending is above zero. Omit batch_id to count every source row for the contract or org. contract_id is optional; together with batch_id it is the indexed lookup.",
+            "parameters": [
+                {"name": "contract_id", "in": "query", "required": false, "schema": {"type": "string", "format": "uuid"}},
+                {"name": "batch_id", "in": "query", "required": false, "description": "Run id stored on the rows. Alias of run_id.", "schema": {"type": "string", "maxLength": 255}},
+                {"name": "run_id", "in": "query", "required": false, "description": "Alias of batch_id.", "schema": {"type": "string", "maxLength": 255}},
+                {"name": "X-Batch-Id", "in": "header", "required": false, "description": "Same value as batch_id. Must match the query when both are set.", "schema": {"type": "string", "maxLength": 255}},
+                {"name": "X-Run-Id", "in": "header", "required": false, "description": "Alias of X-Batch-Id.", "schema": {"type": "string", "maxLength": 255}}
+            ],
+            "responses": {
+                "200": {"description": "Counts. Known statuses and directions are zero when empty.", "content": {"application/json": {"schema": {"type": "object", "required": ["contract_id", "batch_id", "by_status", "by_direction", "by_status_and_direction", "total", "pending"], "properties": {"contract_id": {"type": ["string", "null"], "format": "uuid"}, "batch_id": {"type": ["string", "null"]}, "by_status": {"type": "object", "required": ["pending", "reviewed", "replayed", "purged"], "properties": count_fields}, "by_direction": {"type": "object", "required": ["ingress", "egress"], "properties": {"ingress": {"type": "integer"}, "egress": {"type": "integer"}}}, "by_status_and_direction": {"type": "array", "items": {"type": "object", "required": ["status", "direction", "count"], "properties": {"status": {"type": "string"}, "direction": {"type": "string"}, "count": {"type": "integer"}}}}, "total": {"type": "integer"}, "pending": {"type": "integer", "description": "Same as by_status.pending."}}}}}},
+                "400": {"description": "batch_id and run_id disagree, or the id is invalid"},
+                "401": unauthorized.clone(),
+                "404": {"description": "contract_id is not in the caller's org"}
+            },
             "security": auth.clone()
         }),
     );
@@ -1359,6 +1448,13 @@ pub async fn v1_ingest_handler(
         .and_then(|v| v.to_str().ok())
         .map(|s| s.to_string());
 
+    // Validate the run id before any DB touch. A blank value is "not set".
+    let batch_id = crate::batch_id::resolve_batch_id(
+        query.batch_id.as_deref(),
+        query.run_id.as_deref(),
+        &headers,
+    )?;
+
     // Validate key length before any DB touch.
     if let Some(ref k) = idem_key {
         if k.len() > 255 {
@@ -1501,6 +1597,7 @@ pub async fn v1_ingest_handler(
             &version_row.yaml_content,
             identity.fail_policy.as_ref(),
             query.on_fail.as_deref(),
+            batch_id.as_deref(),
         )
         .await;
     }
@@ -1672,6 +1769,7 @@ pub async fn v1_ingest_handler(
                 replay_of_quarantine_id: None,
                 pre_assigned_id: quarantine_ids[idx], // pre-assigned so we can return it
                 direction: "ingress".to_string(),
+                batch_id: batch_id.clone(),
             })
             .collect();
 
@@ -1935,6 +2033,7 @@ async fn deprecated_quarantine(
     yaml: &str,
     fail_policy: Option<&Value>,
     query_on_fail: Option<&str>,
+    batch_id: Option<&str>,
 ) -> AppResult<Response> {
     let total = events.len();
     let compiled = state.get_compiled(contract_id, pinned_version).await?;
@@ -1992,6 +2091,7 @@ async fn deprecated_quarantine(
                 replay_of_quarantine_id: None,
                 pre_assigned_id: None,
                 direction: "ingress".to_string(),
+                batch_id: batch_id.map(str::to_owned),
             })
             .collect();
         if let Some(org) = org_id {
@@ -2261,6 +2361,44 @@ mod tests {
         let v: Value = serde_json::from_str(&build_openapi()).unwrap();
         assert!(v["paths"]["/v1/ingest/{contract_id}"]["post"].is_object());
         assert!(v["paths"]["/egress/{contract_id}"]["post"].is_object());
+    }
+
+    #[test]
+    fn openapi_documents_quarantine_batch_id() {
+        let v: Value = serde_json::from_str(&build_openapi()).unwrap();
+        for path in [
+            "/v1/ingest/{contract_id}",
+            "/egress/{contract_id}",
+            "/ingest/{contract_id}",
+        ] {
+            let names: Vec<&str> = v["paths"][path]["post"]["parameters"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|p| p["name"].as_str().unwrap())
+                .collect();
+            assert!(names.contains(&"X-Batch-Id"), "{path}: {names:?}");
+            assert!(names.contains(&"batch_id"), "{path}");
+            assert!(names.contains(&"run_id"), "{path}");
+        }
+        let summary = &v["paths"]["/quarantine/summary"]["get"];
+        assert_eq!(summary["operationId"], "summarize_quarantine");
+        let props =
+            &summary["responses"]["200"]["content"]["application/json"]["schema"]["properties"];
+        for field in [
+            "by_status",
+            "by_direction",
+            "by_status_and_direction",
+            "total",
+            "pending",
+            "batch_id",
+        ] {
+            assert!(props[field].is_object(), "{field}");
+        }
+        assert_eq!(
+            props["by_status"]["properties"]["pending"]["type"],
+            "integer"
+        );
     }
 
     #[test]
