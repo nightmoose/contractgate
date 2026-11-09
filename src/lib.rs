@@ -28,3 +28,6 @@ mod yaml_parser;
 
 #[cfg(test)]
 mod catalog_seed_tests;
+
+#[cfg(test)]
+mod contract_chain_tests;

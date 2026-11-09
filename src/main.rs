@@ -47,8 +47,10 @@ use uuid::Uuid;
 pub use contractgate::{contract, drop_mode, transform, validation};
 
 mod api_key_auth;
+mod batch_id;
 mod collaboration;
 mod conformance;
+mod contract_families;
 mod egress;
 mod egress_cache;
 mod error;
@@ -403,7 +405,7 @@ fn effective_payload_flag(
 // 401 if this is None (defense in depth).
 // ---------------------------------------------------------------------------
 
-fn org_id_from_req(req: &axum::extract::Request) -> Option<uuid::Uuid> {
+pub(crate) fn org_id_from_req(req: &axum::extract::Request) -> Option<uuid::Uuid> {
     req.extensions()
         .get::<api_key_auth::ValidatedKey>()
         .map(|k| k.org_id)
@@ -416,7 +418,7 @@ fn org_id_from_req(req: &axum::extract::Request) -> Option<uuid::Uuid> {
 /// dev) the `x-org-id` header is accepted as a convenience; without it the
 /// request is rejected with a 400 naming the header instead of a 500.
 /// Never runs when auth is configured, so RFC-048's spoofing protection holds.
-fn dev_org_fallback(
+pub(crate) fn dev_org_fallback(
     state: &AppState,
     req: &axum::extract::Request,
     org_id: Option<Uuid>,
@@ -1740,6 +1742,10 @@ fn build_router(state: Arc<AppState>) -> Router {
             "/public-contracts",
             get(public_catalog::list_public_contracts_handler),
         )
+        .route(
+            "/public-contract-families",
+            get(contract_families::list_public_families_handler),
+        )
         // User-published contracts catalog (no auth — lists public visibility publications)
         .route("/catalog", get(publication::catalog_handler))
         .layer(middleware::from_fn_with_state(
@@ -1769,6 +1775,14 @@ fn build_router(state: Arc<AppState>) -> Router {
         .route(
             "/public-contracts/{id}/odcs",
             get(public_catalog::get_public_contract_odcs_handler),
+        )
+        .route(
+            "/public-contracts/{id}/family",
+            get(contract_families::get_public_contract_family_handler),
+        )
+        .route(
+            "/public-contract-families/{id}",
+            get(contract_families::get_public_family_handler),
         )
         .merge(public_rate_limited);
 
@@ -1801,6 +1815,23 @@ fn build_router(state: Arc<AppState>) -> Router {
         .route(
             "/contracts",
             get(list_contracts_handler).post(create_contract_handler),
+        )
+        .route(
+            "/contract-families",
+            get(contract_families::list_families_handler)
+                .post(contract_families::create_family_handler),
+        )
+        .route(
+            "/contract-families/{id}",
+            get(contract_families::get_family_handler),
+        )
+        .route(
+            "/contract-families/{id}/links",
+            post(contract_families::add_family_link_handler),
+        )
+        .route(
+            "/contracts/{id}/family",
+            get(contract_families::get_contract_family_handler),
         )
         .route(
             "/contracts/{id}",
@@ -1891,6 +1922,7 @@ fn build_router(state: Arc<AppState>) -> Router {
         // Org-scoped top-level quarantine API (RFC-081) — backs the dashboard
         // Quarantine tab: list, replay-by-event-id, and per-event history.
         .route("/quarantine", get(quarantine::list_quarantine_handler))
+        .route("/quarantine/summary", get(quarantine::run_summary_handler))
         .route("/quarantine/replay", post(quarantine::replay_all_handler))
         .route(
             "/quarantine/replay-history",

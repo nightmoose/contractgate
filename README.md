@@ -49,7 +49,7 @@ Prefer a single container? The gateway image is published to GHCR on every
 release, so you can run just the API without cloning:
 
 ```bash
-docker run --rm -p 3001:3001 ghcr.io/contractgate/gateway:latest
+docker run --rm -p 3001:3001 ghcr.io/nightmoose/contractgate-gateway:latest
 # health check: curl http://localhost:3001/health
 ```
 

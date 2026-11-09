@@ -47,9 +47,9 @@ trap cleanup EXIT
 echo "=== isolation_smoke: building gateway image (tag=$TAG) ==="
 # CI builds the image from the shared layer cache first and sets SKIP_BUILD=1.
 if [[ "${SKIP_BUILD:-}" == "1" ]]; then
-    docker image inspect "ghcr.io/contractgate/gateway:$TAG" >/dev/null
+    docker image inspect "ghcr.io/nightmoose/contractgate-gateway:$TAG" >/dev/null
 else
-    docker build -t "ghcr.io/contractgate/gateway:$TAG" "$ROOT"
+    docker build -t "ghcr.io/nightmoose/contractgate-gateway:$TAG" "$ROOT"
 fi
 
 echo "=== isolation_smoke: starting postgres + auth-on gateway ==="

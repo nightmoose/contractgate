@@ -22,6 +22,18 @@ test("generic CSV copy does not affiliate DataContractGate with itself", () => {
   assert.match(card, /spreadsheet \/ CSV transactions export/);
 });
 
+test("pipeline-stage contracts do not claim a vendor schema", () => {
+  assert.equal(
+    catalogHeaderAside("revenue-daily-mart", "Stripe"),
+    "(daily revenue aggregate between stages; not affiliated with Stripe)"
+  );
+  assert.equal(
+    catalogCardLine("partner-payout-feed", "Stripe"),
+    "partner payout feed at egress"
+  );
+  assert.doesNotMatch(catalogCardLine("stripe-charges-staged", "Stripe"), /documented schema/);
+});
+
 test("vendor contracts keep the shared affiliation line", () => {
   assert.equal(
     catalogHeaderAside("stripe-charges", "Stripe"),

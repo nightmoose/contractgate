@@ -399,6 +399,9 @@ pub async fn replay_for_contract(
                 replay_of_quarantine_id: Some(e.id),
                 pre_assigned_id: None,
                 direction: "ingress".to_string(),
+                // A later replay is not part of the pipeline run that quarantined
+                // the source row.
+                batch_id: None,
             });
             // Response-side: we don't have the new row's DB id since the
             // batch helper uses uuid_generate_v4() server-side.  To keep

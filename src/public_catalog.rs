@@ -126,6 +126,10 @@ pub struct PublicContractDetail {
     pub sample_json: Option<Value>,
     pub license_note: Option<String>,
     pub author_org_id: Option<Uuid>,
+    /// Chain this catalog contract belongs to, when it is a member of one.
+    /// Absent for contracts that are not in a family.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub family: Option<crate::contract_families::PublicFamily>,
 }
 
 #[derive(Serialize)]
@@ -535,6 +539,7 @@ fn row_to_detail(row: PublicContractRow) -> PublicContractDetail {
         sample_json: row.sample_json,
         license_note: row.license_note,
         author_org_id: row.author_org_id,
+        family: None,
     }
 }
 
@@ -545,7 +550,10 @@ pub async fn get_public_contract_handler(
     Path(id_or_slug): Path<String>,
 ) -> AppResult<Json<PublicContractDetail>> {
     let row = db_get_public_contract_by_ref(&state.db, &id_or_slug).await?;
-    Ok(Json(row_to_detail(row)))
+    let family = crate::contract_families::public_family_for_contract(&state.db, row.id).await?;
+    let mut detail = row_to_detail(row);
+    detail.family = family;
+    Ok(Json(detail))
 }
 
 /// `GET /public-contracts/:id_or_slug/yaml` — download the raw DataContractGate
