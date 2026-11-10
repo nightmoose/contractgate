@@ -1,7 +1,7 @@
 # DataContractGate — Production Runbook
 
 **Audience:** operators of the hosted gateway (`contractgate-api` on Fly).  
-**Last updated:** 2026-07-15  
+**Last updated:** 2026-11-10  
 **Related:** [architecture overview](../architecture-overview.md), incident 2026-07-14 JWT (internal record, available on request)
 
 ---
@@ -32,7 +32,7 @@ curl -sS https://api.datacontractgate.com/ready
 
 **Gotcha:** `/health` 200 while JWT path panics → dashboard “CORS”/502. Always check **logs** for panics (see §6).
 
-The pool pings an idle connection before checkout and closes it when the ping errors or exceeds 2 seconds, so a dead socket is replaced instead of wedging every later request. Connections older than `CONTRACTGATE_DB_POOL_MAX_LIFETIME_SECS` (default 30 minutes; acquire timeout stays 8s, idle timeout 60s) are closed even if they stay busy. `fly.toml` probes `GET /ready` every 15s (5s timeout, 30s grace). One failure returns 503 and the service check stops routing to that machine; it does not restart it. Three consecutive failures exit the process. `[[restart]]` `policy = "on-failure"` (10 retries) starts it again. `policy = "always"` is not used: it would fight `auto_stop_machines`.
+The pool pings an idle connection before checkout and closes it when the ping errors or exceeds 2 seconds, so a dead socket is replaced instead of wedging every later request. Connections older than `CONTRACTGATE_DB_POOL_MAX_LIFETIME_SECS` (default 30 minutes; acquire timeout stays 8s, idle timeout 60s) are closed even if they stay busy. `fly.toml` probes `GET /ready` every 15s (5s timeout, 30s grace). One failure returns 503 and the service check stops routing to that machine; it does not restart it. Three consecutive failures exit the process. `[[restart]]` `policy = "on-failure"` (10 retries) starts it again. `policy = "always"` is not used: it would fight `auto_stop_machines` if that were turned back on. Production currently sets `auto_stop_machines = 'off'` with `min_machines_running = 2` (see §5).
 
 ---
 
@@ -64,7 +64,8 @@ Rust release builds with Kafka/Kinesis features commonly take **10–20 minutes*
 
 ```bash
 fly releases -a contractgate-api
-fly deploy -a contractgate-api --image <previous-image-ref>
+# Known-good image (prod v244, released 2026-11-09). Do not run unless rolling back.
+fly deploy -a contractgate-api --image registry.fly.io/contractgate-api:1f10464f9bf37515aa3e5538f6fb3852b0ca4e0d
 # or use Fly dashboard → Activity → redeploy prior release
 ```
 
@@ -79,14 +80,14 @@ Set via `fly secrets set` (never commit).
 | Variable | Required | Purpose |
 |---|---|---|
 | `DATABASE_URL` | Yes | Supabase Postgres (service role for gateway) |
-| `CANONICAL_API_ORIGIN` | Yes | Public API origin. Production must set `https://api.datacontractgate.com`. Staging must set `<staging-api-origin>`. Connect Fivetran returns 500 and mints no key if this is unset. |
+| `CANONICAL_API_ORIGIN` | Yes | Public API origin. Production must set `https://api.datacontractgate.com`. Staging must set `https://contractgate-api-staging.fly.dev`. Connect Fivetran returns 500 and mints no key if this is unset. |
 | `DASHBOARD_ORIGIN` | Yes (prod) | CORS allowlist (comma-separated). Prod carries `https://app.datacontractgate.com,https://aischemagate.com,https://aischemagate.dev` (RFC-096: shared backend serves both DataContractGate and AISchemaGate). |
 | `PORT` | No | Default 3001 (matches `fly.toml`) |
 | `RUST_LOG` | No | e.g. `contractgate=info,tower_http=warn` |
 | `SUPABASE_URL` | If pooler breaks JWKS | Explicit project URL for JWKS fetch |
 | `USAGE_RECONCILE_INTERVAL_SECS` | No | RFC-083 counter reconcile period (default `21600` = 6h, min 300) |
 | `CONTRACTGATE_DB_POOL_MAX_LIFETIME_SECS` | No | Recycle Postgres connections after this many seconds (default `1800`). `0` or non-numeric is ignored. |
-| `CONTRACTGATE_DB_POOL_MAX_CONNECTIONS` | No | Max pooled Postgres connections per machine (default `10`). `0` or non-numeric is ignored. `pool size × machines` must stay under the Supabase pooler limit — see [spike-day runbook](spike-day-runbook.md). |
+| `CONTRACTGATE_DB_POOL_MAX_CONNECTIONS` | No | Max pooled Postgres connections per machine. Code default `10`; `0` or non-numeric is ignored. The live value is a Fly secret **per app**: production **25** (set 2026-11-10 ~1:29 PM America/New_York, previously 70), staging **5**. See the pool budget below. |
 | `CONTRACTGATE_DEV_NO_AUTH` | **Never in prod** | Disables auth when `1` |
 
 Dashboard (Vercel) separately needs Supabase anon/service keys, Stripe, `NEXT_PUBLIC_API_URL`, etc.
@@ -94,6 +95,19 @@ Dashboard (Vercel) separately needs Supabase anon/service keys, Stripe, `NEXT_PU
 ```bash
 fly secrets list -a contractgate-api
 ```
+
+**Pool budget (updated 2026-11-10 ~1:29 PM America/New_York).** Supabase is on
+the Small compute tier: Postgres `max_connections` is **90** (3 reserved) and
+the session-pooler `default_pool_size` is **72**. Both apps use session mode
+on port 5432, so each pooled connection is a backend. Machines ×
+`CONTRACTGATE_DB_POOL_MAX_CONNECTIONS` must stay under **72** with headroom
+for staging, the dashboard, and admin. Production is **25 per machine**
+(2 × 25 = **50** of 72). Staging at 2 × 5 = 10 still fits beside that
+(60 of 72). Do not add production machines or raise the pool without redoing
+the math. To undo the reduction from 70:
+`fly secrets set CONTRACTGATE_DB_POOL_MAX_CONNECTIONS=70 -a contractgate-api`
+(2 × 70 = 140, over the cap). Detail:
+[spike-day runbook](spike-day-runbook.md).
 
 ---
 
@@ -105,9 +119,9 @@ fly status -a contractgate-api
 fly machines list -a contractgate-api
 ```
 
-**Machine size (fly.toml):** shared-cpu-1x, **256 MB** — watch OOM under heavy stream + Kafka consumers.
+**Machine size (production `fly.toml`, confirmed live 2026-11-10):** 2× performance-1x, **2048 MB**, region `iad`. `auto_stop_machines = 'off'`, `auto_start_machines = true`, `min_machines_running = 2`. HTTP concurrency is requests, soft **100** / hard **150**. Machines stay up; the first Show HN burst does not pay a cold start.
 
-**Auto stop:** `auto_stop_machines = 'stop'` with `min_machines_running = 1` — cold starts possible if min drops.
+**Staging** is the small shape: `contractgate-api-staging` is 2× shared-cpu-1x / **256 MB**, `auto_stop_machines = 'stop'`, `min_machines_running = 0` (cold start after idle), concurrency soft **150** / hard **200**. See [Staging](#staging-2026-10-14).
 
 After max restart count, machines stay **stopped** → edge **502** with **no CORS headers** → browsers report CORS. Fix the crash, then start/redeploy.
 
@@ -214,12 +228,15 @@ Customer-facing targets: [Support SLA](../support-sla.md).
 
 - Branch **`staging`** (created from `main`). The dev team may merge PRs into
   `staging` freely; **only the product owner merges to `main`** (production).
-- Production must set `CANONICAL_API_ORIGIN=https://api.datacontractgate.com`. Staging must set `CANONICAL_API_ORIGIN=<staging-api-origin>`.
-- Fly app `<staging-fly-app>` via `fly.staging.toml`: `auto_stop_machines`,
-  `min_machines_running = 0`, `KAFKA_ENABLED=false`. Created 2026-10-14.
+- Production must set `CANONICAL_API_ORIGIN=https://api.datacontractgate.com`. Staging must set `CANONICAL_API_ORIGIN=https://contractgate-api-staging.fly.dev`.
+- Fly app `contractgate-api-staging` via `fly.staging.toml`: `auto_stop_machines = 'stop'`,
+  `min_machines_running = 0`, `auto_start_machines = true`, shared-cpu-1x / 256 MB
+  in `iad`, concurrency soft 150 / hard 200, `KAFKA_ENABLED=false`. Created 2026-10-14.
+  Live pre-flight on 2026-11-10 saw two machines of that size; min stays 0, so
+  they stop when idle.
 - No Stripe live keys, Confluent or AWS secrets on staging.
 - CI: a push to `staging` builds the image, pushes it to
-  `registry.fly.io/<staging-fly-app>:<sha>` (token `FLY_API_TOKEN_STAGING`)
+  `registry.fly.io/contractgate-api-staging:<sha>` (token `FLY_API_TOKEN_STAGING`)
   and `deploy-fly-staging` runs `flyctl deploy -c fly.staging.toml --image …`.
   Prod registry push and `deploy-fly` are guarded to `refs/heads/main`.
 
