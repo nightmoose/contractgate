@@ -85,7 +85,8 @@ the production database — leave ingest off unless the writes are intentional.
 `CONTRACTGATE_DB_POOL_MAX_CONNECTIONS` is set per app via a Fly secret (code
 default 10). Supabase Small: Postgres `max_connections` **90**, session-pool
 `default_pool_size` **72**. Machines × pool max must stay under 72 with
-headroom. Target **20 per production machine** (2 × 20 = 40). Live production
-is 70 per machine (2 × 70 = 140), which is over that cap — do not add machines
-or raise the pool until it is lowered. See
+headroom for staging, the dashboard, and admin. Production is **25 per
+machine** (set 2026-11-10 ~1:29 PM America/New_York, previously 70): 2 × 25 =
+**50** session clients of the 72-slot pool. Do not add machines or raise the
+pool without redoing that math. See
 [`docs/ops/spike-day-runbook.md`](../../docs/ops/spike-day-runbook.md).

@@ -87,7 +87,7 @@ Set via `fly secrets set` (never commit).
 | `SUPABASE_URL` | If pooler breaks JWKS | Explicit project URL for JWKS fetch |
 | `USAGE_RECONCILE_INTERVAL_SECS` | No | RFC-083 counter reconcile period (default `21600` = 6h, min 300) |
 | `CONTRACTGATE_DB_POOL_MAX_LIFETIME_SECS` | No | Recycle Postgres connections after this many seconds (default `1800`). `0` or non-numeric is ignored. |
-| `CONTRACTGATE_DB_POOL_MAX_CONNECTIONS` | No | Max pooled Postgres connections per machine. Code default `10`; `0` or non-numeric is ignored. The live value is a Fly secret **per app** (production **70**, staging **5**), not that default. See the pool budget below. |
+| `CONTRACTGATE_DB_POOL_MAX_CONNECTIONS` | No | Max pooled Postgres connections per machine. Code default `10`; `0` or non-numeric is ignored. The live value is a Fly secret **per app**: production **25** (set 2026-11-10 ~1:29 PM America/New_York, previously 70), staging **5**. See the pool budget below. |
 | `CONTRACTGATE_DEV_NO_AUTH` | **Never in prod** | Disables auth when `1` |
 
 Dashboard (Vercel) separately needs Supabase anon/service keys, Stripe, `NEXT_PUBLIC_API_URL`, etc.
@@ -96,15 +96,17 @@ Dashboard (Vercel) separately needs Supabase anon/service keys, Stripe, `NEXT_PU
 fly secrets list -a contractgate-api
 ```
 
-**Pool budget (checked 2026-11-10).** Supabase is on the Small compute tier:
-Postgres `max_connections` is **90** (3 reserved) and the session-pooler
-`default_pool_size` is **72**. Both apps use session mode on port 5432, so
-each pooled connection is a backend. Machines ×
+**Pool budget (updated 2026-11-10 ~1:29 PM America/New_York).** Supabase is on
+the Small compute tier: Postgres `max_connections` is **90** (3 reserved) and
+the session-pooler `default_pool_size` is **72**. Both apps use session mode
+on port 5432, so each pooled connection is a backend. Machines ×
 `CONTRACTGATE_DB_POOL_MAX_CONNECTIONS` must stay under **72** with headroom
-for Supabase internals and the other app. Production at 2 × 70 = **140** is
-over that cap. Target **20 per production machine** (2 × 20 = 40), which
-leaves room for staging at 2 × 5. Do not add machines or raise the pool until
-the production secret is lowered. Detail:
+for staging, the dashboard, and admin. Production is **25 per machine**
+(2 × 25 = **50** of 72). Staging at 2 × 5 = 10 still fits beside that
+(60 of 72). Do not add production machines or raise the pool without redoing
+the math. To undo the reduction from 70:
+`fly secrets set CONTRACTGATE_DB_POOL_MAX_CONNECTIONS=70 -a contractgate-api`
+(2 × 70 = 140, over the cap). Detail:
 [spike-day runbook](spike-day-runbook.md).
 
 ---
