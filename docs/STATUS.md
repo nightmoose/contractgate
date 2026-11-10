@@ -113,6 +113,7 @@ them by name only.
 | 111 | [Remove the dependency license CI gate](rfcs/111-remove-dependency-license-ci.md) | Accepted |
 | 112 | [Per-run quarantine](rfcs/112-quarantine-batch-id.md) | Accepted |
 | 113 | [Contract families](rfcs/113-contract-families.md) | Accepted |
+| 114 | [Launch: public catalog cache, cheap bad keys, SSR bypass](rfcs/114-launch-catalog-cache-and-auth.md) | Accepted |
 
 ---
 
@@ -129,6 +130,8 @@ them by name only.
 | **Superseded** | Replaced by a later RFC listed in the notes column; kept for design context. |
 
 ---
+
+*2026-11-10 — RFC-114: anonymous public catalog GETs are cached in the API process for 60 seconds and send `Cache-Control: public, max-age=60, s-maxage=300, stale-while-revalidate=600`. Credentialed requests are not cached. A rejected API key is remembered for 60 seconds under its SHA-256 (a key created after that rejection works once the entry expires). Each client IP may fail authentication 30 times a minute; the next failure is HTTP 429. `CONTRACTGATE_TRUSTED_SSR_TOKEN`, when set on the API and the dashboard, lets server-side catalog fetches skip the public per-IP limit. The Python local validator enforces `format: email`, `uuid`, and `uri`/`url`. See `docs/ops/runbook-production.md`.*
 
 *2026-11-09 — RFC-113: contract families. A family is a chain of contracts for one dataset as it changes shape. Each link stores `derived_from` and a boundary of `ingest`, `stage` (between stages), or `egress`. Private families are org-scoped like contract identity. The public catalog seeds the Stripe charges chain (`stripe-charges-pipeline`) and the catalog contract page shows the chain. Migration `050_contract_families.sql`. See `docs/contract-families-reference.md`.*
 

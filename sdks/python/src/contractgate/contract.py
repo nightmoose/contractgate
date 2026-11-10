@@ -125,6 +125,9 @@ class FieldDefinition:
     properties: Optional[List["FieldDefinition"]] = None
     items: Optional["FieldDefinition"] = None
     transform: Optional[Transform] = None
+    # ODCS logicalTypeOptions.format. Enforced for email, uuid, and uri/url
+    # on string values; any other name is metadata and passes.
+    format: Optional[str] = None
 
     @classmethod
     def from_yaml(cls, raw: Any) -> "FieldDefinition":
@@ -158,6 +161,7 @@ class FieldDefinition:
             properties=properties,
             items=items,
             transform=transform,
+            format=_opt_str(raw.get("format")),
         )
 
 

@@ -89,12 +89,30 @@ Set via `fly secrets set` (never commit).
 | `CONTRACTGATE_DB_POOL_MAX_LIFETIME_SECS` | No | Recycle Postgres connections after this many seconds (default `1800`). `0` or non-numeric is ignored. |
 | `CONTRACTGATE_DB_POOL_MAX_CONNECTIONS` | No | Max pooled Postgres connections per machine. Code default `10`; `0` or non-numeric is ignored. The live value is a Fly secret **per app**: production **25** (set 2026-11-10 ~1:29 PM America/New_York, previously 70), staging **5**. See the pool budget below. |
 | `CONTRACTGATE_DEV_NO_AUTH` | **Never in prod** | Disables auth when `1` |
+| `CONTRACTGATE_TRUSTED_SSR_TOKEN` | No | Shared secret with the dashboard. When set, a request whose `X-DCG-SSR-Token` header matches (constant-time compare) skips the public per-IP limiter (30 rps / burst 60 on `/catalog`, `/public-contracts`, `/public-contract-families`, and `/published/{ref}`). Other limits are unchanged. Unset or empty: no bypass. Do not commit the value. See the launch step below. |
 
 Dashboard (Vercel) separately needs Supabase anon/service keys, Stripe, `NEXT_PUBLIC_API_URL`, etc.
 
 ```bash
 fly secrets list -a contractgate-api
 ```
+
+### Launch step: dashboard server-side catalog fetches
+
+The public catalog GETs (`/catalog`, `/public-contracts`, `/public-contract-families`, and `/public-contracts/{slug}` including `/yaml`, `/odcs`, and `/family`) are cached in the API process for 60 seconds and send `Cache-Control: public, max-age=60, s-maxage=300, stale-while-revalidate=600`. Requests that carry `Authorization` or `x-api-key` are not stored and are marked `private, no-store`.
+
+Vercel server renders of the catalog share one egress address, and that address is not stable, so it cannot be allowlisted. A cold minute can 429 the pages on the 30 rps per-IP limit. Set the same secret on both sides before launch:
+
+```bash
+# API (Fly). Staging app is contractgate-api-staging. Do not print the value back.
+fly secrets set CONTRACTGATE_TRUSTED_SSR_TOKEN="$(openssl rand -hex 32)" -a contractgate-api
+```
+
+On the Vercel project, set `CONTRACTGATE_TRUSTED_SSR_TOKEN` to that same value as a server environment variable (Production, and Preview if preview renders should bypass). The dashboard sends it as `X-DCG-SSR-Token` only from server-side catalog fetches (`dashboard/lib/catalog.ts`). It must not be named `NEXT_PUBLIC_*` — that prefix would ship the secret in the browser bundle. With the variable unset on either side, behavior is unchanged.
+
+### Invalid API keys
+
+A rejected API key is remembered for 60 seconds. The cache key is the SHA-256 of the key, not the raw key. Repeating that key does not query Postgres. A key created after it was rejected starts working once that entry expires: within 60 seconds at worst. Valid keys are not counted by the failure limit. Each client IP may fail authentication 30 times per 60 seconds; the next failure is HTTP 429 with `Retry-After`. Those rejections are debug logs, with one warning when an address crosses the limit.
 
 **Pool budget (updated 2026-11-10 ~1:29 PM America/New_York).** Supabase is on
 the Small compute tier: Postgres `max_connections` is **90** (3 reserved) and
