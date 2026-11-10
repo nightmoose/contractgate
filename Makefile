@@ -2,7 +2,7 @@
 
 # ── Demo mode (RFC-023) ───────────────────────────────────────────────────────
 # Zero-auth local experience. No Supabase project, no API keys, no sign-up.
-# First build: ~2-3 min.  Subsequent: instant (layer cache).
+# First cold start: about 1 minute. Later runs reuse the Docker layer cache.
 #
 #   make demo          — boot full zero-auth stack
 #   make demo-down     — stop + wipe volumes

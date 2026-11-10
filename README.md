@@ -6,7 +6,7 @@ Trust but verify at ingest, between stages, and on egress — before your wareho
 
 ## Try it in 10 minutes
 
-No Supabase account. No API keys. No sign-up.
+You need Docker with Compose, and `make`. No Supabase account. No API keys. No sign-up.
 
 ```bash
 git clone https://github.com/nightmoose/contractgate.git
@@ -15,8 +15,8 @@ make demo
 ```
 
 Opens at **http://localhost:3000** — dashboard pre-loaded with three starter
-contracts and a live event stream. First build ~3 min, subsequent runs instant
-(Docker layer cache).
+contracts and a live event stream. A cold start (image pulls plus the dashboard
+image) took about 1 minute. Later runs reuse the Docker layer cache.
 
 ```bash
 make demo-reset   # wipe + reseed (clean slate)
