@@ -1,8 +1,8 @@
 # Staging API Fly app. Deployed from the `staging` branch; scales to zero when
 # idle. CI deploys it on push to `staging`.
 #
-#   fly apps create <staging-app>                     # maintainer, once
-#   fly secrets set -a <staging-app> DATABASE_URL=...
+#   fly apps create contractgate-api-staging          # maintainer, once
+#   fly secrets set -a contractgate-api-staging DATABASE_URL=...
 #   fly deploy -c fly.staging.toml
 #
 # Never put Stripe live keys, Confluent or AWS secrets on staging.
