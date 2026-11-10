@@ -68,16 +68,19 @@ Full walkthrough and tuning knobs: [`demo/README.md`](demo/README.md).
 
 ![Purchase passes the user_events contract; delete is outside the enum and a negative amount is below the minimum](docs/images/validate-terminal.png)
 
-DataContractGate is a high-performance validation gateway that enforces rich semantic data contracts in real time. Built in Rust for sub-millisecond per-event validation (86k+ events/sec/core), it goes far beyond JSON Schema or basic type checks — ontology, glossary, patterns, enums, computed metrics, and automatic inference.
+DataContractGate is a high-performance validation gateway that enforces rich semantic data contracts in real time. Built in Rust, it goes far beyond JSON Schema or basic type checks — ontology, glossary, patterns, enums, computed metrics, and automatic inference. In-process validation of the passing `stripe-charges` catalog samples is p99 0.93 µs and 1,547,368 events/sec on one thread.
 
 The same contract can gate what **leaves** your system. `POST /egress/{contract_id}` runs the identical engine on any outbound payload — a reverse-ETL row, a notebook export, a state object headed to a decision model. Failing records are blocked, declared PII is masked, and the caller forwards only the returned `payload`. See [`docs/egress-validation-reference.md`](docs/egress-validation-reference.md).
 
 **Validating LLM output?** The same engine powers [AISchemaGate](https://aischemagate.com) (`pip install aischemagate` / `npm install @nightmoose/aischemagate`). One-line wrapper over OpenAI / Anthropic / vLLM / Ollama responses — extracts the structured JSON, validates against your contract, optionally re-prompts on violation. Non-streaming only in v1. See [`docs/llm-output-validation.md`](docs/llm-output-validation.md), [`docs/llm-sdk-reference.md`](docs/llm-sdk-reference.md), and the copy-paste guides in [`docs/integrations/`](docs/integrations/) (Vercel AI SDK, structured outputs, LangGraph). Ingest recipes: [`examples/recipes/`](examples/recipes/).
 
-<!-- LATENCY NOTE (measured 2026-05-24): Per-event validation p99 latency is 31 µs server-side,
-     measured with warm compiled-contract cache, leaving ample headroom for transport and
-     storage (network + DB). Low-latency by design — Rust + Axum core with zero-copy contract
-     matching. See ops/bench/ for the reproducible benchmark. -->
+**Measured validation performance** (in-process `validate()` only — not HTTP, auth, or Postgres). Passing samples from [`catalog/seeds/stripe-charges`](catalog/seeds/stripe-charges/), contract compiled once before the timer, one thread: p99 **0.93 µs**, **1,547,368 events/sec**. A one-field failure on the same contract was slower (p99 1.27 µs, 1,153,482 events/sec). Measured 2026-11-10 on an Intel Xeon (family 6 model 207 stepping 2, 2400 MHz, 4 vCPU KVM guest). Those two pass figures are the slower end of three release runs. Reproduce from the repository root:
+
+```bash
+cargo run --release --bin contractgate-bench
+```
+
+How to read the output, the hardware note, and the three runs: [`ops/bench/README.md`](ops/bench/README.md). `make bench` runs the same command.
 
 [![Security](https://img.shields.io/badge/security-hardened-brightgreen)](https://github.com/nightmoose/contractgate/security)
 [![Dependabot](https://img.shields.io/badge/Dependabot-enabled-brightgreen)](https://github.com/nightmoose/contractgate/security/dependabot)
@@ -152,12 +155,12 @@ The comparison table below is the zero-auth demo. With `CONTRACTGATE_SELF_HOSTED
 ## Key Features
 
 - **Semantic YAML Contracts** — entities, types, patterns, enums, required fields, glossary, and computed metrics
-- **Real-time Validation** — at ingestion (Kafka, HTTP, batch) with sub-millisecond per-event validation
+- **Real-time Validation** — at ingestion (Kafka, HTTP, batch). The in-process engine on the recorded host is p99 0.93 µs (see Measured validation performance)
 - **Visual Contract Builder** — intuitive UI + live YAML preview *(Cloud)*
 - **AI-Powered Inference** — paste sample JSON → instantly generates a full contract *(Cloud)*
 - **Quarantine + Replay** — automatically hold and replay violating events *(Cloud)*
 - **Versioned Contracts** — draft → stable → deprecated with compliance mode *(Cloud)*
-- **High Performance** — Rust + Axum core, 86k+ events/sec/core
+- **High Performance** — Rust + Axum core, 1,547,368 events/sec on one thread, in-process (see Measured validation performance)
 - **Polyglot** — Rust engine, Python SDK, CLI, Kafka Connect, Zapier, Next.js dashboard
 
 ---
@@ -237,7 +240,7 @@ repos:
 
 | Layer | Tech |
 |---|---|
-| Validation engine | Rust + Axum (sub-millisecond per-event, see note) |
+| Validation engine | Rust + Axum (in-process p99 0.93 µs, see Measured validation performance) |
 | Dashboard | Next.js 15 + TypeScript + Tailwind |
 | Storage | Supabase (Postgres + Auth) |
 | Connectors | Kafka Connect, HTTP, batch, Python SDK, CLI |
@@ -254,7 +257,7 @@ Full RFCs and design docs live in [`docs/rfcs/`](docs/rfcs/). For a quick shippe
 | Feature | **DataContractGate** | Great Expectations | Soda | Monte Carlo | dbt |
 |---|---|---|---|---|---|
 | Validation timing | **At every boundary (ingest + egress)** | After modeling | Mix (mostly after modeling) | Observability | During dbt runs |
-| Performance | **Sub-ms per-event, 86k+ ev/s** (Rust, see note) | Python-based | Varies | Not a validator | Not real-time |
+| Performance | **p99 0.93 µs, 1,547,368 ev/s** (in-process, one thread; see Measured validation performance) | Python-based | Varies | Not a validator | Not real-time |
 | Semantic depth | **Ontology + glossary + metrics** | Basic expectations | Checks + rules | No contracts | Basic schema |
 | Visual builder | **Yes + live YAML** | Partial | Limited | No | YAML only |
 | Inference from sample data | **One-click JSON → YAML** | Profiler (basic) | Limited | No | No |

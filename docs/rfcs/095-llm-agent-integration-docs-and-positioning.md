@@ -241,7 +241,7 @@ written), **modified** (ships with the change here), or **forbidden**
 
 | Brief copy | Verdict | Authorized text |
 |---|---|---|
-| "Sub-15ms Output Gate: Real-time semantic validation of LLM outputs." | authorized | same (figure matches `/llms.txt`: ~31 µs per-event p99; ~86k events/sec/core). |
+| "Sub-15ms Output Gate: Real-time semantic validation of LLM outputs." | authorized | same (the latency figure must match `docs/llms.txt`, currently in-process p99 0.93 µs and 1,547,368 events/sec on one thread; reproduce with `cargo run --release --bin contractgate-bench`). |
 | "Auto-Infer Contracts: Generate schema contracts automatically from 3 sample JSON outputs." | modified | "Auto-Infer Contracts: Generate schema contracts automatically from 5–20 known-good JSON outputs." (Three under-samples and misses patterns; RFC-093 recommends 5–20.) |
 | "Auto-Repair & Replay: Intercept malformed payloads and run automated micro-fixes or re-prompts." | modified | "Auto-Repair: Re-prompt automatically up to a bounded retry budget when validation fails. Replay quarantined events against a corrected contract version." (Split so each clause is accurate — repair = RFC-094 re-prompt loop, replay = pre-existing RFC-003.) |
 | "Boundary PII Masking: Strip sensitive data before sending prompts out or storing model responses." | authorized | same (RFC-004 covers the storage side; RFC-094 `mask_prompt` covers the prompt side). |

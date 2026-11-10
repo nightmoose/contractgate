@@ -261,7 +261,7 @@ mod inner {
             }
         };
 
-        // 3. Validate — same function the HTTP path calls; low-latency (see benches).
+        // 3. Validate — same function the HTTP path calls (see `ops/bench/README.md`).
         let t0 = std::time::Instant::now();
         let result = validate(&compiled, &event);
         let validation_us = t0.elapsed().as_micros() as i64;
