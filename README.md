@@ -80,7 +80,6 @@ The same contract can gate what **leaves** your system. `POST /egress/{contract_
      matching. See ops/bench/ for the reproducible benchmark. -->
 
 [![Security](https://img.shields.io/badge/security-hardened-brightgreen)](https://github.com/nightmoose/contractgate/security)
-[![Dependabot](https://img.shields.io/badge/Dependabot-enabled-brightgreen)](https://github.com/nightmoose/contractgate/security/dependabot)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 
 **See it run** → [Run the demo locally](#run-the-demo-locally) in Docker, or open the [playground](https://app.datacontractgate.com/playground).
