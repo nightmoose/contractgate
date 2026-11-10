@@ -4,7 +4,7 @@
 > gateway that validates every event against a rich YAML contract (ontology,
 > types, patterns, enums, glossary, computed metrics) and rejects, quarantines,
 > or masks bad data before it reaches a warehouse, lakehouse, or ML pipeline.
-> Per-event validation p99 is ~31 µs; 86k+ events/sec/core. Patent pending.
+> In-process validation of the passing stripe-charges catalog samples: p99 0.93 µs and 1,547,368 events/sec on one thread (measured 2026-11-10; `cargo run --release --bin contractgate-bench`, see ops/bench/README.md). Not HTTP latency. Patent pending.
 
 API base URL: https://api.datacontractgate.com
 Source: https://github.com/nightmoose/contractgate

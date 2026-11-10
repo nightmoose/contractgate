@@ -66,7 +66,7 @@ function HeroBanner() {
             ) : (
               <>
                 Enforce ontology + glossary + metric rules in{" "}
-                <span className="text-green-400">&lt;50µs</span> — before data
+                <span className="text-green-400">0.93µs p99</span> in-process — before data
                 ever lands.
               </>
             )}
@@ -142,10 +142,12 @@ const HEALTHY_BASELINE: IngestionStats = {
   passed_events: 14137,
   failed_events: 245,
   pass_rate: 0.983,
-  avg_validation_us: 38,
-  p50_validation_us: 31,
-  p95_validation_us: 72,
-  p99_validation_us: 114,
+  // Integer microseconds, rounded up from the recorded in-process run
+  // (p99 0.93 µs; ops/bench/README.md) so this demo card is not faster.
+  avg_validation_us: 1,
+  p50_validation_us: 1,
+  p95_validation_us: 1,
+  p99_validation_us: 1,
 };
 
 function DemoContextBanner({

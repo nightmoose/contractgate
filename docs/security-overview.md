@@ -1,6 +1,6 @@
 # DataContractGate — Security Overview
 
-**Last updated:** 2026-07-14
+**Last updated:** 2026-11-10
 **Audience:** prospective customers (security questionnaires), design partners, acquirer diligence.
 **Scope:** hosted DataContractGate (Rust validation gateway + Next.js dashboard + Supabase Postgres).
 
@@ -16,9 +16,14 @@ Producer → (API key / JWT resolves **org**) → per-org **contract** → **val
 (sub-millisecond, panic-free Rust hot path) → **audit** + **quarantine** on
 failure. Bad events are stopped *before* the warehouse.
 
-- Validation engine: Rust (Axum), compile-once / validate-many. Low-latency by
-  design; measured p99 ~31 µs (2026-05-24 perf test). The request path is
-  panic-free by policy (RFC-067 converted latent `unwrap`/`expect` to clean 4xx).
+- Validation engine: Rust (Axum), compile-once / validate-many. In-process
+  p99 on the passing stripe-charges catalog samples is 0.93 µs (1,547,368
+  events/sec on one thread), measured 2026-11-10 on an Intel Xeon (family 6
+  model 207, 4 vCPU KVM guest). Reproduce with
+  `cargo run --release --bin contractgate-bench` from a clone
+  ([`ops/bench/README.md`](../ops/bench/README.md)). That number is `validate()`
+  only, not HTTP. The request path is panic-free by policy (RFC-067 converted
+  latent `unwrap`/`expect` to clean 4xx).
 - Backend hosting: Fly.io (`primary_region = iad`, US East).
 - Data store: Supabase Postgres (project `contract gate`, `us-east-2`, PG 17).
 - Dashboard: Next.js on Vercel.
