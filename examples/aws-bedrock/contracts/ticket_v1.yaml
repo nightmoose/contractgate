@@ -1,0 +1,25 @@
+version: "1"
+name: ticket_v1
+description: Support ticket fields extracted from a short note.
+compliance_mode: true
+ontology:
+  entities:
+    - name: ticket_id
+      type: string
+      required: true
+      min_length: 1
+      max_length: 32
+      pattern: "^[A-Z]{2,6}-[0-9]{1,8}$"
+    - name: priority
+      type: string
+      required: true
+      enum: [low, medium, high]
+    - name: category
+      type: string
+      required: true
+      enum: [billing, access, outage, other]
+    - name: summary
+      type: string
+      required: true
+      min_length: 1
+      max_length: 180

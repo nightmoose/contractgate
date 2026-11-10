@@ -47,6 +47,7 @@ use uuid::Uuid;
 pub use contractgate::{contract, drop_mode, transform, validation};
 
 mod api_key_auth;
+mod auth_fail_limit;
 mod batch_id;
 mod collaboration;
 mod conformance;
@@ -78,6 +79,7 @@ mod odcs;
 mod passed_events;
 mod plan;
 mod public_catalog;
+mod public_read_cache;
 mod publication;
 mod quarantine;
 mod quarantine_actions;
@@ -139,6 +141,13 @@ pub struct AppState {
     pub key_cache: Arc<api_key_auth::ApiKeyCache>,
     /// Per-API-key token-bucket rate limiter (RFC-021).
     pub rate_limiter: Arc<rate_limit::RateLimitState>,
+    /// Anonymous public catalog GETs. See `public_read_cache`.
+    pub public_read_cache: public_read_cache::PublicReadCache,
+    /// Per-IP counter of rejected credentials. Valid keys are not counted.
+    pub auth_fail_limiter: auth_fail_limit::AuthFailLimiter,
+    /// `CONTRACTGATE_TRUSTED_SSR_TOKEN`, trimmed. `None` when unset or empty.
+    /// A matching `X-DCG-SSR-Token` skips the public per-IP limiter only.
+    trusted_ssr_token: Option<String>,
     /// RFC-025: platform-side Kafka consumer pool (one task per enabled contract).
     pub kafka_consumers: kafka_consumer::ConsumerPool,
     /// RFC-026: platform-side Kinesis consumer pool (one task per enabled contract).
@@ -184,6 +193,12 @@ impl AppState {
             ),
             key_cache: Arc::new(api_key_auth::ApiKeyCache::default()),
             rate_limiter: Arc::new(rate_limit::RateLimitState::default()),
+            public_read_cache: public_read_cache::PublicReadCache::default(),
+            auth_fail_limiter: auth_fail_limit::AuthFailLimiter::default(),
+            trusted_ssr_token: std::env::var("CONTRACTGATE_TRUSTED_SSR_TOKEN")
+                .ok()
+                .map(|s| s.trim().to_string())
+                .filter(|s| !s.is_empty()),
             kafka_consumers: kafka_consumer::ConsumerPool::new(),
             kinesis_consumers: kinesis_consumer::ConsumerPool::new(),
             supabase_jwks: Arc::new(ArcSwap::from_pointee(supabase_jwks)),
@@ -1453,6 +1468,10 @@ async fn require_api_key(
         // An API key (cg_live_… / cg_test_…) in the Bearer slot is a common
         // mistake; it can never verify as a JWT, so say where it belongs.
         if bearer.starts_with("cg_") {
+            tracing::debug!("API key presented in the Authorization Bearer slot");
+            if let Some(blocked) = auth_failure_block(&state, request.headers()) {
+                return Err(blocked);
+            }
             return Err(error::AppError::ApiKeyInBearer);
         }
         // RFC-052: load the live JWKS snapshot (lock-free ArcSwap read).
@@ -1503,12 +1522,18 @@ async fn require_api_key(
                     return Ok(with_rate_limit_headers(next.run(request).await, &outcome));
                 }
                 Err(e) => {
-                    tracing::warn!("JWT verification failed: {e}");
+                    tracing::debug!("JWT verification failed: {e}");
+                    if let Some(blocked) = auth_failure_block(&state, request.headers()) {
+                        return Err(blocked);
+                    }
                     return Err(error::AppError::Unauthorized);
                 }
             }
         } else {
-            tracing::warn!("Bearer token received but JWKS not loaded — rejecting");
+            tracing::debug!("Bearer token received but JWKS not loaded — rejecting");
+            if let Some(blocked) = auth_failure_block(&state, request.headers()) {
+                return Err(blocked);
+            }
             return Err(error::AppError::Unauthorized);
         }
     }
@@ -1529,40 +1554,59 @@ async fn require_api_key(
     // DB-backed key: validate via cache (60-second TTL). This is now the only
     // `x-api-key` credential path — the legacy env-var master key was removed
     // in RFC-066.
+    // Definitive rejections are negative-cached inside `validate` for 60s
+    // (keyed by SHA-256, not the raw key). Do not evict: the next repeat
+    // must skip the database. A key created after that rejection works once
+    // the entry expires, within 60s at worst. Transient database errors are
+    // not cached.
     if !provided.is_empty() {
-        match state
+        if let Ok(validated) = state
             .key_cache
             .validate(&provided, &state.db, state.self_hosted)
             .await
         {
-            Ok(validated) => {
-                // P1-1: rate-limit DB-backed keys using per-key overrides.
-                let outcome = state.rate_limiter.check(
-                    validated.api_key_id,
-                    validated.rate_limit_rps,
-                    validated.rate_limit_burst,
-                );
-                if !outcome.allowed {
-                    return Err(error::AppError::RateLimitExceeded(outcome));
-                }
-                // Handlers that report rate-limit headers (v1 ingest) reuse
-                // this outcome; checking again would spend a second token
-                // and halve the key's effective rate.
-                request.extensions_mut().insert(outcome.clone());
-                // Inject the validated key into request extensions so
-                // downstream handlers can scope queries to the correct org.
-                request.extensions_mut().insert(validated);
-                return Ok(with_rate_limit_headers(next.run(request).await, &outcome));
+            // P1-1: rate-limit DB-backed keys using per-key overrides.
+            let outcome = state.rate_limiter.check(
+                validated.api_key_id,
+                validated.rate_limit_rps,
+                validated.rate_limit_burst,
+            );
+            if !outcome.allowed {
+                return Err(error::AppError::RateLimitExceeded(outcome));
             }
-            Err(()) => {
-                // Evict so the next retry re-checks the DB immediately.
-                state.key_cache.evict(&provided);
-            }
+            // Handlers that report rate-limit headers (v1 ingest) reuse
+            // this outcome; checking again would spend a second token
+            // and halve the key's effective rate.
+            request.extensions_mut().insert(outcome.clone());
+            // Inject the validated key into request extensions so
+            // downstream handlers can scope queries to the correct org.
+            request.extensions_mut().insert(validated);
+            return Ok(with_rate_limit_headers(next.run(request).await, &outcome));
         }
     }
 
-    tracing::warn!("Rejected request: missing or invalid x-api-key");
+    tracing::debug!("rejected request: missing or invalid x-api-key");
+    if let Some(blocked) = auth_failure_block(&state, request.headers()) {
+        return Err(blocked);
+    }
     Err(error::AppError::Unauthorized)
+}
+
+/// Count a rejected credential. `Some` means the per-IP failure budget is
+/// spent and the caller must return 429. A credential that already validated
+/// never reaches here, so a valid key is not delayed by other clients' failures
+/// from the same address.
+fn auth_failure_block(
+    state: &AppState,
+    headers: &axum::http::HeaderMap,
+) -> Option<error::AppError> {
+    let decision = state.auth_fail_limiter.record(client_ip_bucket(headers));
+    if decision.warn {
+        tracing::warn!(
+            "rejected credentials exceeded the per-IP failure limit; further failures from this client return 429 until the window resets"
+        );
+    }
+    decision.outcome.map(error::AppError::RateLimitExceeded)
 }
 
 // ---------------------------------------------------------------------------
@@ -1571,9 +1615,9 @@ async fn require_api_key(
 
 /// Sustained per-IP rate (req/sec) for `/published/{ref}`, `/public-contracts`
 /// and `/catalog`. These carry no API key, so one client can only be told
-/// apart by its address. The reads are cheap and cached, so the ceiling is
-/// generous; it exists to stop a single scraper from monopolising the public
-/// surface, not to meter normal browsing.
+/// apart by its address. Catalog GETs are also served from a 60s in-process
+/// cache; the ceiling still applies so one scraper cannot monopolise the
+/// public surface.
 const PUBLIC_IP_RATE_LIMIT_RPS: u32 = 30;
 /// Burst capacity (back-to-back requests) for the same per-IP bucket.
 const PUBLIC_IP_RATE_LIMIT_BURST: u32 = 60;
@@ -1608,13 +1652,20 @@ fn client_ip_bucket(headers: &axum::http::HeaderMap) -> Uuid {
 ///
 /// On exhaustion it returns the standard 429 (with `X-RateLimit-*` +
 /// `Retry-After`). On success the response is returned untouched — in
-/// particular it adds no headers, so `/catalog` keeps whatever cache headers
-/// it carries and stays CDN-cacheable.
+/// particular it adds no headers, so `/catalog` keeps the cache headers the
+/// public-read cache sets and stays CDN-cacheable.
+///
+/// When `CONTRACTGATE_TRUSTED_SSR_TOKEN` is set and `X-DCG-SSR-Token` matches
+/// it (constant-time), this per-IP bucket is skipped. There is no other
+/// limiter on these routes. An unset token leaves the check unchanged.
 async fn public_ip_rate_limit(
     State(state): State<Arc<AppState>>,
     request: Request,
     next: Next,
 ) -> Result<axum::response::Response, error::AppError> {
+    if ssr_token_matches(state.trusted_ssr_token.as_deref(), request.headers()) {
+        return Ok(next.run(request).await);
+    }
     let bucket = client_ip_bucket(request.headers());
     let outcome = state.rate_limiter.check(
         bucket,
@@ -1625,6 +1676,31 @@ async fn public_ip_rate_limit(
         return Err(error::AppError::RateLimitExceeded(outcome));
     }
     Ok(next.run(request).await)
+}
+
+/// True when the server has a trusted SSR token and the request presents it.
+/// The comparison does not short-circuit on the first differing byte.
+fn ssr_token_matches(expected: Option<&str>, headers: &axum::http::HeaderMap) -> bool {
+    let Some(expected) = expected.filter(|s| !s.is_empty()) else {
+        return false;
+    };
+    let Some(presented) = headers
+        .get("x-dcg-ssr-token")
+        .and_then(|v| v.to_str().ok())
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+    else {
+        return false;
+    };
+    publication::constant_time_eq(presented.as_bytes(), expected.as_bytes())
+}
+
+async fn public_catalog_cache(
+    State(state): State<Arc<AppState>>,
+    request: Request,
+    next: Next,
+) -> axum::response::Response {
+    public_read_cache::handle(&state.public_read_cache, request, next).await
 }
 
 // ---------------------------------------------------------------------------
@@ -1729,10 +1805,15 @@ fn build_router(state: Arc<AppState>) -> Router {
     // Public read routes that are unauthenticated and cheap but open to the
     // internet. A per-IP token bucket (reusing the RFC-021 limiter) caps any
     // single address so a scraper can't monopolise them. The guard only reads
-    // headers and 429s; it never rewrites a 2xx, so `/catalog` keeps its cache
-    // headers and stays CDN-cacheable.
+    // headers and 429s; it never rewrites a 2xx, so `/catalog` keeps the
+    // cache headers applied by the inner public-read cache.
+    //
+    // Cache is inside the limiter: a cache hit still spends a per-IP token.
+    // The SSR-token bypass (in the limiter) is what lets the dashboard's
+    // server render through when many distinct paths miss at once.
     let public_rate_limited = Router::new()
-        // RFC-032: public-fetch for published contracts (visibility checked inside handler)
+        // RFC-032: public-fetch for published contracts (visibility checked inside handler).
+        // Not part of the catalog response cache — the handler is link-token aware.
         .route(
             "/published/{publication_ref}",
             get(publication::fetch_published_handler),
@@ -1750,20 +1831,16 @@ fn build_router(state: Arc<AppState>) -> Router {
         .route("/catalog", get(publication::catalog_handler))
         .layer(middleware::from_fn_with_state(
             state.clone(),
+            public_catalog_cache,
+        ))
+        .layer(middleware::from_fn_with_state(
+            state.clone(),
             public_ip_rate_limit,
         ));
 
-    // Public routes — no auth required
-    let public = Router::new()
-        .route("/health", get(health_handler))
-        // RFC-053: readiness probe — SELECT 1 with 2s timeout.
-        // Platform health checks should point here; /health is liveness only.
-        .route("/ready", get(ready_handler))
-        .route("/openapi.json", get(v1_ingest::openapi_handler))
-        // Prometheus metrics scrape endpoint (RFC-016).
-        // Open by default; Bearer-auth gated when METRICS_AUTH_TOKEN is set.
-        // Mounted as public so Prometheus can scrape without an x-api-key.
-        .route("/metrics", get(observability::metrics_handler))
+    // Detail routes were not on the per-IP limiter. They still get the
+    // anonymous response cache. `/published` stays out of that cache.
+    let catalog_details = Router::new()
         .route(
             "/public-contracts/{id}",
             get(public_catalog::get_public_contract_handler),
@@ -1784,6 +1861,23 @@ fn build_router(state: Arc<AppState>) -> Router {
             "/public-contract-families/{id}",
             get(contract_families::get_public_family_handler),
         )
+        .layer(middleware::from_fn_with_state(
+            state.clone(),
+            public_catalog_cache,
+        ));
+
+    // Public routes — no auth required
+    let public = Router::new()
+        .route("/health", get(health_handler))
+        // RFC-053: readiness probe — SELECT 1 with 2s timeout.
+        // Platform health checks should point here; /health is liveness only.
+        .route("/ready", get(ready_handler))
+        .route("/openapi.json", get(v1_ingest::openapi_handler))
+        // Prometheus metrics scrape endpoint (RFC-016).
+        // Open by default; Bearer-auth gated when METRICS_AUTH_TOKEN is set.
+        // Mounted as public so Prometheus can scrape without an x-api-key.
+        .route("/metrics", get(observability::metrics_handler))
+        .merge(catalog_details)
         .merge(public_rate_limited);
 
     // Protected routes — require x-api-key header
@@ -2298,6 +2392,11 @@ async fn main() -> anyhow::Result<()> {
     };
 
     let state = Arc::new(AppState::new(pool, dev_no_auth, supabase_jwks, jwks_url));
+    if state.trusted_ssr_token.is_some() {
+        tracing::info!(
+            "CONTRACTGATE_TRUSTED_SSR_TOKEN is set; a matching X-DCG-SSR-Token skips the public per-IP limit"
+        );
+    }
     if state.self_hosted {
         tracing::info!(
             "CONTRACTGATE_SELF_HOSTED is set — every org has paid features, unlimited events, the paid rate limit, and Enterprise retention"

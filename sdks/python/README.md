@@ -89,6 +89,10 @@ config if contracts live elsewhere.
 
 ## Caveats
 
+- **Local validator enforces `format: email`, `uuid`, and `uri`/`url`**
+  the same way the Rust engine does. Any other `format` name is metadata
+  and passes. `type: date` and `type: timestamp` are still rejected at
+  parse time here; the Rust engine checks those as field types.
 - **Local validator does not run RFC-004 PII transforms** (`mask`,
   `hash`, `drop`, `redact`). The per-contract salt is server-side
   only. The gateway is the single source of truth for the

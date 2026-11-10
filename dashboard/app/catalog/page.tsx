@@ -1,7 +1,7 @@
 /**
  * Public contract catalog — index (RFC public-catalog phase 1).
  *
- * Server-rendered, ISR (~1h), NO AuthGate. Anonymous visitors (and crawlers)
+ * Server-rendered, data revalidated about once a minute, NO AuthGate. Anonymous visitors (and crawlers)
  * get HTTP 200 with HTML including JSON-LD. The signed-in "Browse & Import" +
  * Egress Validator surface moved to /catalog/library.
  */
@@ -11,7 +11,7 @@ import { fetchPublicCatalog, SITE_URL } from "@/lib/catalog";
 import CatalogBrowser from "./CatalogBrowser";
 import CatalogDisclaimer from "./CatalogDisclaimer";
 
-export const revalidate = 3600;
+export const revalidate = 60;
 
 export const metadata: Metadata = {
   title: "Data contract catalog",

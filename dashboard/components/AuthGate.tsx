@@ -73,7 +73,7 @@ export default function AuthGate({ page, children }: AuthGateProps) {
           </Link>
         </div>
         <p className="mt-5 text-xs text-slate-600">
-          No credit card required · Free to start ·{" "}
+          Cloud Free needs no credit card. The Pro trial asks for one at checkout.{" "}
           <Link href="/playground" className="text-green-600 hover:text-green-500">
             Try the live demo first →
           </Link>

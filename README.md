@@ -4,9 +4,9 @@
 
 Trust but verify at ingest, between stages, and on egress — before your warehouse, reverse ETL, partners, or AI agents.
 
-## Try it in 10 minutes (Self-Hosted Free)
+## Try it in 10 minutes
 
-No Supabase account. No API keys. No sign-up.
+You need Docker with Compose, and `make`. No Supabase account. No API keys. No sign-up.
 
 ```bash
 git clone https://github.com/nightmoose/contractgate.git
@@ -15,8 +15,8 @@ make demo
 ```
 
 Opens at **http://localhost:3000** — dashboard pre-loaded with three starter
-contracts and a live event stream. First build ~3 min, subsequent runs instant
-(Docker layer cache).
+contracts and a live event stream. A cold start (image pulls plus the dashboard
+image) took about 1 minute. Later runs reuse the Docker layer cache.
 
 ```bash
 make demo-reset   # wipe + reseed (clean slate)
@@ -24,9 +24,9 @@ make demo-down    # stop and remove volumes
 make demo-logs    # follow all service logs
 ```
 
-> **Self-Hosted Free** (`make demo`) runs the real gateway binary with auth off.
+> `make demo` runs the real gateway binary with auth off.
 > Unlimited local events, full YAML editor, playground, audit log.
-> [Feature comparison below ↓](#self-hosted-free-vs-cloud)
+> That preview is not the [Self-Hosted Free comparison](#self-hosted-free-vs-cloud).
 
 ## Run the demo locally
 
@@ -68,19 +68,21 @@ Full walkthrough and tuning knobs: [`demo/README.md`](demo/README.md).
 
 ![Purchase passes the user_events contract; delete is outside the enum and a negative amount is below the minimum](docs/images/validate-terminal.png)
 
-DataContractGate is a high-performance validation gateway that enforces rich semantic data contracts in real time. Built in Rust for sub-millisecond per-event validation (86k+ events/sec/core), it goes far beyond JSON Schema or basic type checks — ontology, glossary, patterns, enums, computed metrics, and automatic inference.
+DataContractGate is a high-performance validation gateway that enforces rich semantic data contracts in real time. Built in Rust, it goes far beyond JSON Schema or basic type checks — ontology, glossary, patterns, enums, computed metrics, and automatic inference. In-process validation of the passing `stripe-charges` catalog samples is p99 0.93 µs and 1,547,368 events/sec on one thread.
 
 The same contract can gate what **leaves** your system. `POST /egress/{contract_id}` runs the identical engine on any outbound payload — a reverse-ETL row, a notebook export, a state object headed to a decision model. Failing records are blocked, declared PII is masked, and the caller forwards only the returned `payload`. See [`docs/egress-validation-reference.md`](docs/egress-validation-reference.md).
 
 **Validating LLM output?** The same engine powers [AISchemaGate](https://aischemagate.com) (`pip install aischemagate` / `npm install @nightmoose/aischemagate`). One-line wrapper over OpenAI / Anthropic / vLLM / Ollama responses — extracts the structured JSON, validates against your contract, optionally re-prompts on violation. Non-streaming only in v1. See [`docs/llm-output-validation.md`](docs/llm-output-validation.md), [`docs/llm-sdk-reference.md`](docs/llm-sdk-reference.md), and the copy-paste guides in [`docs/integrations/`](docs/integrations/) (Vercel AI SDK, structured outputs, LangGraph). Ingest recipes: [`examples/recipes/`](examples/recipes/).
 
-<!-- LATENCY NOTE (measured 2026-05-24): Per-event validation p99 latency is 31 µs server-side,
-     measured with warm compiled-contract cache, leaving ample headroom for transport and
-     storage (network + DB). Low-latency by design — Rust + Axum core with zero-copy contract
-     matching. See ops/bench/ for the reproducible benchmark. -->
+**Measured validation performance** (in-process `validate()` only — not HTTP, auth, or Postgres). Passing samples from [`catalog/seeds/stripe-charges`](catalog/seeds/stripe-charges/), contract compiled once before the timer, one thread: p99 **0.93 µs**, **1,547,368 events/sec**. A one-field failure on the same contract was slower (p99 1.27 µs, 1,153,482 events/sec). Measured 2026-11-10 on an Intel Xeon (family 6 model 207 stepping 2, 2400 MHz, 4 vCPU KVM guest). Those two pass figures are the slower end of three release runs. Reproduce from the repository root:
+
+```bash
+cargo run --release --bin contractgate-bench
+```
+
+How to read the output, the hardware note, and the three runs: [`ops/bench/README.md`](ops/bench/README.md). `make bench` runs the same command.
 
 [![Security](https://img.shields.io/badge/security-hardened-brightgreen)](https://github.com/nightmoose/contractgate/security)
-[![Dependabot](https://img.shields.io/badge/Dependabot-enabled-brightgreen)](https://github.com/nightmoose/contractgate/security/dependabot)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 
 **See it run** → [Run the demo locally](#run-the-demo-locally) in Docker, or open the [playground](https://app.datacontractgate.com/playground).
@@ -145,41 +147,41 @@ docker compose -f docker-compose.yml -f docker-compose.selfhost.yml up --build
 
 Sign up at http://localhost:3000/auth/signup, then sign in at http://localhost:3000/auth/login. Mail is not configured; confirmation is automatic. Do not combine this with `--profile demo`. First boot generates keys and binds ports to `127.0.0.1`. Exact steps: [`docs/self-host-reference.md`](docs/self-host-reference.md).
 
-The comparison table below is the zero-auth demo. With `CONTRACTGATE_SELF_HOSTED=true` the stored plan stays `free` and paid gates open.
+The comparison table is Self-Hosted Free: real login with `CONTRACTGATE_SELF_HOSTED=true`. The stored plan stays `free` and paid product gates open. SSO and managed hosting stay on hosted Enterprise. `make demo` does not set that flag.
 
 ---
 
 ## Key Features
 
 - **Semantic YAML Contracts** — entities, types, patterns, enums, required fields, glossary, and computed metrics
-- **Real-time Validation** — at ingestion (Kafka, HTTP, batch) with sub-millisecond per-event validation
-- **Visual Contract Builder** — intuitive UI + live YAML preview *(Cloud)*
-- **AI-Powered Inference** — paste sample JSON → instantly generates a full contract *(Cloud)*
-- **Quarantine + Replay** — automatically hold and replay violating events *(Cloud)*
-- **Versioned Contracts** — draft → stable → deprecated with compliance mode *(Cloud)*
-- **High Performance** — Rust + Axum core, 86k+ events/sec/core
+- **Real-time Validation** — at ingestion (Kafka, HTTP, batch). The in-process engine on the recorded host is p99 0.93 µs (see Measured validation performance)
+- **Visual Contract Builder** — intuitive UI + live YAML preview
+- **AI-Powered Inference** — paste sample JSON → instantly generates a full contract
+- **Quarantine + Replay** — automatically hold and replay violating events
+- **Versioned Contracts** — draft → stable → deprecated with compliance mode
+- **High Performance** — Rust + Axum core, 1,547,368 events/sec on one thread, in-process (see Measured validation performance)
 - **Polyglot** — Rust engine, Python SDK, CLI, Kafka Connect, Zapier, Next.js dashboard
 
 ---
 
 ## Self-Hosted Free vs Cloud
 
-| Capability | Self-Hosted Free | Cloud (Free / Pro / Enterprise) |
+| Capability | Self-Hosted Free | Cloud Free / Pro / Enterprise |
 |---|---|---|
 | Validation engine | ✅ Unlimited (local) | ✅ 100K / 25M / Unlimited events/month |
-| Starter contracts | ✅ 3 | ✅ 3 / Unlimited / Unlimited |
+| Contracts | ✅ Unlimited | ✅ 3 / Unlimited / Unlimited |
 | Playground | ✅ | ✅ |
 | Audit log | ✅ Local Postgres | ✅ 7 / 90 / Custom days retention |
 | Live event stream | ✅ | ✅ |
-| Auth & API keys | ❌ | ✅ |
-| Multi-tenancy | ❌ Single org | ✅ |
-| Visual contract builder | ❌ | ✅ Growth+ |
-| AI inference (JSON → YAML) | ❌ | ✅ Growth+ |
-| Quarantine + replay | ❌ | ✅ Growth+ |
-| PII transform rules | ❌ | ✅ Growth+ |
-| Semantic versioning UI | ❌ | ✅ Growth+ |
-| GitHub sync | ❌ | ✅ Growth+ |
-| Team invites & roles | ❌ | ✅ Growth+ |
+| Auth & API keys | ✅ | ✅ |
+| Multi-tenancy | ✅ | ✅ Pro |
+| Visual contract builder | ✅ | ✅ Pro |
+| AI inference (JSON → YAML) | ✅ | ✅ Pro |
+| Quarantine + replay | ✅ | ✅ Pro |
+| PII transform rules | ✅ | ✅ Pro |
+| Semantic versioning UI | ✅ | ✅ Pro |
+| GitHub sync | ✅ | ✅ Pro |
+| Team invites & roles | ✅ | ✅ Pro |
 | SSO / SAML | ❌ | ✅ Enterprise |
 | Managed hosting + SLA | ❌ Self-hosted | ✅ |
 
@@ -195,7 +197,7 @@ The comparison table below is the zero-auth demo. With `CONTRACTGATE_SELF_HOSTED
 docker compose up
 ```
 
-**Python SDK:**
+**Python SDK** (`pip install contractgate` installs this library, not the `contractgate` CLI):
 ```bash
 pip install contractgate
 ```
@@ -205,7 +207,7 @@ client = Client(base_url="http://localhost:8080", api_key="cg_demo_key")
 client.ingest(contract_id="...", events={"user_id": "u1", "event_type": "click"})
 ```
 
-**CLI:**
+**CLI** (`contractgate test` is the Rust binary, installed with Cargo):
 ```bash
 cargo install --git https://github.com/nightmoose/contractgate contractgate
 contractgate test --contract examples/contracts/api/user_events.yaml --data examples/contracts/api/pass.json
@@ -237,7 +239,7 @@ repos:
 
 | Layer | Tech |
 |---|---|
-| Validation engine | Rust + Axum (sub-millisecond per-event, see note) |
+| Validation engine | Rust + Axum (in-process p99 0.93 µs, see Measured validation performance) |
 | Dashboard | Next.js 15 + TypeScript + Tailwind |
 | Storage | Supabase (Postgres + Auth) |
 | Connectors | Kafka Connect, HTTP, batch, Python SDK, CLI |
@@ -254,7 +256,7 @@ Full RFCs and design docs live in [`docs/rfcs/`](docs/rfcs/). For a quick shippe
 | Feature | **DataContractGate** | Great Expectations | Soda | Monte Carlo | dbt |
 |---|---|---|---|---|---|
 | Validation timing | **At every boundary (ingest + egress)** | After modeling | Mix (mostly after modeling) | Observability | During dbt runs |
-| Performance | **Sub-ms per-event, 86k+ ev/s** (Rust, see note) | Python-based | Varies | Not a validator | Not real-time |
+| Performance | **p99 0.93 µs, 1,547,368 ev/s** (in-process, one thread; see Measured validation performance) | Python-based | Varies | Not a validator | Not real-time |
 | Semantic depth | **Ontology + glossary + metrics** | Basic expectations | Checks + rules | No contracts | Basic schema |
 | Visual builder | **Yes + live YAML** | Partial | Limited | No | YAML only |
 | Inference from sample data | **One-click JSON → YAML** | Profiler (basic) | Limited | No | No |
@@ -280,8 +282,10 @@ Active RFCs: [`docs/rfcs/`](docs/rfcs/) · RFC status index: [`docs/STATUS.md`](
 MIT — see [`LICENSE`](LICENSE). Free to use, fork, and build on top (commercial use welcome).
 
 The semantic contract enforcement algorithm is the subject of a pending patent.
-The patent covers the *invention* — your right to use, modify, and distribute the
-*code* under the MIT license is unaffected. See [`NOTICE`](NOTICE) for details.
+The MIT License governs this code. The patent application covers the enforcement
+method as an invention and does not limit anyone's right to use this code under
+the MIT License. Questions about patent scope: hello@datacontractgate.com.
+See [`NOTICE`](NOTICE).
 
 ---
 

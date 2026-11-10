@@ -153,7 +153,7 @@ export const HELP_CATALOG: Record<string, HelpEntry> = {
   "page.pricing": {
     title: "Pricing",
     what: "Feature matrix across Self-Hosted Free, Cloud Free, Pro, and Enterprise.",
-    does: "Shows what each plan includes. Pro unlocks quarantine replay, visual builder, scorecard, and workbench save/deploy.",
+    does: "Shows what each plan includes. Self-Hosted Free opens every paid gate. On Cloud, Pro unlocks quarantine replay, the visual builder, the scorecard, and workbench save/deploy.",
   },
 
   // ── Dashboard ────────────────────────────────────────────────────────────
@@ -175,7 +175,7 @@ export const HELP_CATALOG: Record<string, HelpEntry> = {
   "dashboard.avg-latency": {
     title: "Avg Latency",
     what: "Mean server-side validation time per event, in microseconds.",
-    does: "The engine is low-latency end-to-end (see benches). This card is the validator itself, not network time.",
+    does: "This card is the validator itself, not network time. The recorded in-process bench is p99 0.93 µs on one thread (cargo run --release --bin contractgate-bench; ops/bench in the repo).",
   },
   "dashboard.public-contracts": {
     title: "Public Contracts",

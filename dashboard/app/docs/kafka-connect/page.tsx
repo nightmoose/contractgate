@@ -442,7 +442,7 @@ errors.retry.delay.max.ms=5000`}</Code>
           },
           {
             q: "Does it add latency to my pipeline?",
-            a: "The validation engine itself runs in under 50µs per record. End-to-end latency depends on network topology between your Kafka brokers and the DataContractGate API — for same-datacenter deployments this is typically sub-millisecond. We publish benchmark results as we gather them from production deployments.",
+            a: "The in-process engine, not the network hop, is what the repo measures. On the recorded host (2026-11-10, one thread, passing stripe-charges catalog samples) p99 was 0.93 µs and throughput was 1,547,368 events/sec. Reproduce with cargo run --release --bin contractgate-bench from a clone; see ops/bench/README.md. End-to-end latency also depends on the network between your Kafka brokers and the DataContractGate API, which that command does not include.",
           },
           {
             q: "Can I use it with Confluent Cloud managed connectors?",

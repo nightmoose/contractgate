@@ -35,6 +35,12 @@ required-features = ["demo"]
 name = "demo-seeder"
 path = "src/bin/demo-seeder.rs"
 
+# In-process validation hot path. No server, database, or extra features.
+# Documented command and how to read the output: ops/bench/README.md.
+[[bin]]
+name = "contractgate-bench"
+path = "ops/bench/main.rs"
+
 [features]
 # Default build is lean: just the library + main binary.  The `demo` feature
 # pulls in rdkafka (and its librdkafka build-time deps) and enables the demo
@@ -188,6 +194,9 @@ aws-sdk-kinesis = { version = "1", optional = true, default-features = false, fe
 aws-sdk-iam = { version = "1", optional = true, default-features = false, features = ["rt-tokio", "default-https-client"] }
 aws-config = { version = "1", optional = true, default-features = false, features = ["rt-tokio", "default-https-client", "credentials-process", "sso"] }
 bytes = "1.11.1"
+# Already pulled in by axum. Named here so the public-read cache can buffer
+# a response body (`BodyExt::collect`) without relying on a private re-export.
+http-body-util = "0.1"
 
 # RFC-039: Supabase JWT verification for dashboard browser sessions.
 # `use_pem` — PEM decoding for JWKS keys.

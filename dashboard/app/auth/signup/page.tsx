@@ -139,7 +139,7 @@ function SignupForm() {
         <div className="bg-[#111827] border border-[#1f2937] rounded-xl p-8">
           <h1 className="text-xl font-semibold text-slate-100 mb-2">Create your account</h1>
           <p className="text-sm text-slate-500 mb-6">
-            Free to start. No credit card required.
+            Cloud Free needs no credit card. The Pro trial asks for one at checkout.
           </p>
 
           {/* GitHub OAuth */}

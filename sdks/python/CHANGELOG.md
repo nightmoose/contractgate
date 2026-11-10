@@ -2,6 +2,13 @@
 
 All notable changes to the `contractgate` Python SDK.
 
+## Unreleased
+
+- The local validator enforces `format: email`, `uuid`, and `uri` / `url`
+  with the same rules as the Rust engine. Unknown format names still pass.
+  The package version stays 0.4.1: a release tag must match both
+  `Cargo.toml` and `pyproject.toml`, and this fix does not ship on its own.
+
 ## 0.4.1 — 2026-10-28
 
 Version alignment with DataContractGate 0.4.1. No SDK API changes.

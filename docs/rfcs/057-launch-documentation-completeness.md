@@ -54,6 +54,8 @@ are stale:
    with a measured, reproducible benchmark, or soften it to the verified
    number. An unverifiable public performance claim is a credibility and
    (given "Patent Pending" framing) marketing-accuracy risk.
+   The figure the README cites is the recorded run in
+   [`ops/bench/README.md`](../../ops/bench/README.md), not this old headline.
 
 ---
 

@@ -184,13 +184,13 @@ services:
     # Compose substitutes ${VAR:-default} from the environment that invoked
     # `docker compose up`, so the smoke scripts can override rate/duration
     # via env vars (CI uses a 30s run to keep wall-clock short).
-    # Demo: low rate, no duration → runs forever so dashboard is always live.
-    # CI overrides via env: SEEDER_RATE=50 SEEDER_DURATION=30s.
+    # An empty --duration is rejected by the seeder, so the demo default is
+    # 24h (the stream stays up). CI overrides via SEEDER_RATE / SEEDER_DURATION.
     command:
       - --rate
       - "${SEEDER_RATE:-3}"
       - --duration
-      - "${SEEDER_DURATION:-}"
+      - "${SEEDER_DURATION:-24h}"
     environment:
       GATEWAY_URL: http://gateway:8080
       CONTRACTGATE_API_KEY: ${CONTRACTGATE_API_KEY:-cg_demo_key}

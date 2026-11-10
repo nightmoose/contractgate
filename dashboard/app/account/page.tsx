@@ -1190,7 +1190,7 @@ export default function AccountPage() {
     return (
       <DemoFeatureUnavailable
         feature="API Keys & Account"
-        reason="API key management, GitHub sync, and team invites require a real org. Available in DataContractGate Cloud."
+        reason="API key management, GitHub sync, and team invites need a real org. They are included on Self-Hosted Free and on DataContractGate Cloud."
       />
     );
   }
