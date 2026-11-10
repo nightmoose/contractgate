@@ -11,7 +11,9 @@ post-transform payload).
 
 Per-event order (matches Rust):
     1. Walk ontology fields recursively (required / type / pattern /
-       enum / range / length).
+       format / enum / range / length). ``format`` of ``email``, ``uuid``,
+       and ``uri``/``url`` matches ``string_format_ok`` in
+       ``src/validation.rs``. Other format names pass.
     2. Walk metrics with ``field`` set + ``min``/``max`` bounds.
     3. If ``compliance_mode`` is true, emit ``UNDECLARED_FIELD`` for
        every top-level key not in the declared set.
@@ -19,6 +21,7 @@ Per-event order (matches Rust):
 
 from __future__ import annotations
 
+import re
 import time
 from typing import Any, Dict, List, Optional, Pattern
 
@@ -181,6 +184,23 @@ def _validate_value(
                     kind=ViolationKind.PATTERN_MISMATCH,
                 )
             )
+        # ODCS logicalTypeOptions.format. String fields only; unknown names
+        # pass. The message keeps the contract's spelling; the check folds case.
+        if (
+            f.field_type == FieldType.STRING
+            and f.format
+            and not _string_format_ok(f.format, value)
+        ):
+            violations.append(
+                    Violation(
+                        field=path,
+                        message=(
+                            f"Field '{path}' value {_json_string_debug(value)} "
+                            f"is not a valid {f.format}"
+                        ),
+                        kind=ViolationKind.PATTERN_MISMATCH,
+                    )
+                )
 
     # --- Numeric range checks ---
     n = _numeric_value(value)
@@ -382,6 +402,67 @@ def _json_string_debug(s: str) -> str:
     import json
 
     return json.dumps(s)
+
+
+# Hyphenated UUID, 8-4-4-4-12. Rust accepts this form when
+# ``Uuid::parse_str`` succeeds and the string length is 36. Other UUID
+# spellings (bare hex, URN, braces) are longer or shorter and fail there.
+_UUID_RE = re.compile(
+    r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+)
+
+
+def _string_format_ok(fmt: str, value: str) -> bool:
+    """Mirror ``string_format_ok`` in ``src/validation.rs``.
+
+    Unknown format names return true (they are metadata). The name match is
+    case-insensitive.
+    """
+    kind = fmt.lower()
+    if kind == "email":
+        return _email_ok(value)
+    if kind == "uuid":
+        return _UUID_RE.match(value) is not None
+    if kind in ("uri", "url"):
+        return _uri_ok(value)
+    return True
+
+
+def _email_ok(value: str) -> bool:
+    """Same rules as the Rust ``email`` arm.
+
+    One ``@``, non-empty local part, no whitespace anywhere, and a domain
+    that contains a dot with a non-empty label on each side and does not end
+    in a dot. ``a@b.co`` passes. ``a@b`` and ``a b@c.d`` do not.
+    """
+    if "@" not in value:
+        return False
+    local, domain = value.split("@", 1)
+    if not local or "@" in domain:
+        return False
+    if any(ch.isspace() for ch in value):
+        return False
+    if "." not in domain:
+        return False
+    label, rest = domain.split(".", 1)
+    return bool(label) and bool(rest) and not rest.endswith(".")
+
+
+def _uri_ok(value: str) -> bool:
+    """Same rules as the Rust ``uri`` / ``url`` arm.
+
+    A scheme of ASCII letters, digits, ``+``, ``-``, or ``.``, starting with
+    a letter, then ``:`` and a non-empty remainder. No host check.
+    """
+    if ":" not in value:
+        return False
+    scheme, rest = value.split(":", 1)
+    if not rest or not scheme:
+        return False
+    first = scheme[0]
+    if not (first.isascii() and first.isalpha()):
+        return False
+    return all(c.isascii() and (c.isalnum() or c in "+-.") for c in scheme)
 
 
 def _json_compact(v: Any) -> str:

@@ -6647,6 +6647,118 @@ mod public_ip_rate_limit_tests {
         const { assert!(PUBLIC_IP_RATE_LIMIT_RPS >= 10) };
         const { assert!(PUBLIC_IP_RATE_LIMIT_BURST >= PUBLIC_IP_RATE_LIMIT_RPS) };
     }
+
+    #[test]
+    fn ssr_token_match_is_exact_and_unset_never_matches() {
+        use super::super::ssr_token_matches;
+        assert!(!ssr_token_matches(None, &HeaderMap::new()));
+        assert!(!ssr_token_matches(
+            Some("secret"),
+            &headers(&[("x-dcg-ssr-token", "secret-other")])
+        ));
+        assert!(!ssr_token_matches(
+            Some("secret"),
+            &headers(&[("x-dcg-ssr-token", "secre")])
+        ));
+        assert!(ssr_token_matches(
+            Some("secret"),
+            &headers(&[("x-dcg-ssr-token", " secret ")])
+        ));
+        assert!(!ssr_token_matches(
+            Some(""),
+            &headers(&[("x-dcg-ssr-token", "")])
+        ));
+    }
+}
+
+/// Failed-auth budget and the SSR bypass. Neither test needs a database:
+/// a short `x-api-key` is rejected before the lookup, and the catalog route
+/// in the bypass test is a stub.
+#[cfg(test)]
+mod launch_guard_tests {
+    use std::sync::Arc;
+
+    use axum::http::StatusCode;
+    use axum::middleware;
+    use axum::routing::get;
+    use axum::Router;
+    use axum_test::TestServer;
+
+    use super::super::{
+        auth_fail_limit::AUTH_FAIL_LIMIT, public_catalog_cache, public_ip_rate_limit,
+        PUBLIC_IP_RATE_LIMIT_BURST,
+    };
+
+    fn pool() -> sqlx::PgPool {
+        sqlx::PgPool::connect_lazy("postgres://invalid:5432/none").expect("lazy connect")
+    }
+
+    #[tokio::test]
+    async fn repeated_bad_keys_are_cached_then_429() {
+        let mut state = super::super::AppState::new(pool(), false, None, None);
+        state.trusted_ssr_token = None;
+        let state = Arc::new(state);
+        let app = Router::new()
+            .route("/contracts", get(|| async { "ok" }))
+            .layer(middleware::from_fn_with_state(
+                state.clone(),
+                super::super::require_api_key,
+            ))
+            .with_state(state.clone());
+        let server = TestServer::new(app);
+        let raw = "not-a-key";
+        for i in 0..AUTH_FAIL_LIMIT {
+            let res = server.get("/contracts").add_header("x-api-key", raw).await;
+            assert_eq!(res.status_code(), StatusCode::UNAUTHORIZED, "attempt {i}");
+        }
+        assert!(
+            state.key_cache.cached_outcome(raw).unwrap().is_err(),
+            "the rejection stays cached so the next repeat skips the database"
+        );
+        let blocked = server.get("/contracts").add_header("x-api-key", raw).await;
+        assert_eq!(blocked.status_code(), StatusCode::TOO_MANY_REQUESTS);
+        assert!(blocked.headers().get("retry-after").is_some());
+        // Still cached after the 429. Evicting on 401 would have cleared it.
+        assert!(state.key_cache.cached_outcome(raw).unwrap().is_err());
+    }
+
+    #[tokio::test]
+    async fn ssr_token_skips_only_the_public_ip_limit() {
+        let mut state = super::super::AppState::new(pool(), true, None, None);
+        state.trusted_ssr_token = Some("launch-token".to_owned());
+        let state = Arc::new(state);
+        let app = Router::new()
+            .route("/catalog", get(|| async { "catalog" }))
+            .layer(middleware::from_fn_with_state(
+                state.clone(),
+                public_catalog_cache,
+            ))
+            .layer(middleware::from_fn_with_state(
+                state.clone(),
+                public_ip_rate_limit,
+            ))
+            .with_state(state);
+        let server = TestServer::new(app);
+        for _ in 0..PUBLIC_IP_RATE_LIMIT_BURST {
+            assert_eq!(server.get("/catalog").await.status_code(), StatusCode::OK);
+        }
+        let blocked = server.get("/catalog").await;
+        assert_eq!(blocked.status_code(), StatusCode::TOO_MANY_REQUESTS);
+        let bypass = server
+            .get("/catalog")
+            .add_header("x-dcg-ssr-token", "launch-token")
+            .await;
+        assert_eq!(bypass.status_code(), StatusCode::OK);
+        assert_eq!(
+            bypass.header("cache-control"),
+            super::super::public_read_cache::PUBLIC_CACHE_CONTROL
+        );
+        let wrong = server
+            .get("/catalog")
+            .add_header("x-dcg-ssr-token", "other-token")
+            .await;
+        assert_eq!(wrong.status_code(), StatusCode::TOO_MANY_REQUESTS);
+    }
 }
 
 /// Per-run quarantine counts. Requires a database migrated through 049.

@@ -218,6 +218,83 @@ metrics:
 # ---------------------------------------------------------------------------
 
 
+def _format_contract(fmt: str) -> str:
+    return f"""
+version: "1.0"
+name: "fmt"
+ontology:
+  entities:
+    - name: value
+      type: string
+      required: true
+      format: {fmt}
+"""
+
+
+def test_format_email_matches_rust_engine():
+    cc = Contract.from_yaml(_format_contract("email")).compile()
+    assert cc.validate({"value": "a@b.co"}).passed
+    assert cc.validate({"value": "A@B.CO"}).passed
+    assert cc.validate({"value": "a@b.co.uk"}).passed
+    bad_emails = (
+        "a@b",
+        "a b@c.d",
+        "not-an-email",
+        "@b.co",
+        "a@",
+        "a@.co",
+        "a@b.",
+        "a@b.co.",
+        "a@@b.co",
+    )
+    for bad in bad_emails:
+        result = cc.validate({"value": bad})
+        assert not result.passed, bad
+        assert result.violations[0].kind == ViolationKind.PATTERN_MISMATCH
+        assert result.violations[0].message == (
+            f"Field 'value' value \"{bad}\" is not a valid email"
+        )
+
+
+def test_format_name_match_is_case_insensitive_and_message_keeps_spelling():
+    cc = Contract.from_yaml(_format_contract("Email")).compile()
+    result = cc.validate({"value": "not-an-email"})
+    assert result.violations[0].message == (
+        'Field \'value\' value "not-an-email" is not a valid Email'
+    )
+
+
+def test_format_uuid_and_uri_match_rust_engine():
+    uuid_cc = Contract.from_yaml(_format_contract("uuid")).compile()
+    good_uuid = "123e4567-e89b-12d3-a456-426614174000"
+    assert uuid_cc.validate({"value": good_uuid}).passed
+    bare = "123e4567e89b12d3a456426614174000"
+    uuid_bad = uuid_cc.validate({"value": bare})
+    assert not uuid_bad.passed
+    assert uuid_bad.violations[0].message == (
+        f'Field \'value\' value "{bare}" is not a valid uuid'
+    )
+
+    for fmt in ("uri", "URL"):
+        cc = Contract.from_yaml(_format_contract(fmt)).compile()
+        assert cc.validate({"value": "https://x.y/z"}).passed
+        assert cc.validate({"value": "mailto:user@example.com"}).passed
+        refused = cc.validate({"value": "not a uri"})
+        assert not refused.passed
+        assert f"is not a valid {fmt}" in refused.violations[0].message
+    assert not Contract.from_yaml(_format_contract("uri")).compile().validate(
+        {"value": "http:"}
+    ).passed
+    assert not Contract.from_yaml(_format_contract("uri")).compile().validate(
+        {"value": "1http://x"}
+    ).passed
+
+
+def test_unknown_format_is_metadata():
+    cc = Contract.from_yaml(_format_contract("hostname")).compile()
+    assert cc.validate({"value": "not-an-email"}).passed
+
+
 def test_violation_kind_serializes_to_snake_case():
     # ``ViolationKind`` extends ``str`` so its value IS the snake_case
     # string Rust serializes to. This asserts the contract.

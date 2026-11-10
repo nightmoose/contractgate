@@ -29,7 +29,14 @@
 //! Entries older than `TTL` are evicted by a background sweeper task (spawned
 //! once at startup via `ApiKeyCache::spawn_sweeper`).  The map is bounded to
 //! `MAX_CACHE_ENTRIES`; the sweeper drops the oldest entries when that cap is
-//! hit.  Revocation propagation latency is still ≤ `TTL` (60 s).
+//! hit.  Revocation of a key that was cached as valid still takes up to `TTL`
+//! (60 s).
+//!
+//! A definitive rejection (unknown, revoked, or hash mismatch) is a negative
+//! entry for the same `TTL`. Callers must not evict that entry on the 401 that
+//! follows, or every repeat pays for another query. A key that is created
+//! after it was rejected stays rejected until the negative entry expires:
+//! worst case 60 seconds, then the next request reads the database again.
 
 use base64::{engine::general_purpose::STANDARD as B64, Engine as _};
 use sha2::{Digest, Sha256};
@@ -155,19 +162,16 @@ impl ApiKeyCache {
         db: &PgPool,
         self_hosted: bool,
     ) -> Result<ValidatedKey, ()> {
+        // 1. Fast path: in-cache and not stale. A fresh `None` is a negative
+        //    hit — the caller gets `Err` and does not touch the database.
+        //    A stale entry falls through so a key created during the TTL
+        //    starts working on the next request after it expires.
+        if let Some(cached) = self.cached_outcome(raw_key) {
+            return cached;
+        }
+
         // Compute cache key — SHA-256 hex digest.  No plaintext in the map.
         let cache_key = hex::encode(Sha256::digest(raw_key.as_bytes()));
-
-        // 1. Fast path: in-cache and not stale.
-        {
-            let map = self.lock_cache();
-            if let Some(entry) = map.get(&cache_key) {
-                if entry.inserted_at.elapsed() < TTL {
-                    return entry.result.clone().ok_or(());
-                }
-                // stale — fall through to DB verification
-            }
-        }
 
         // 2. Slow path: query the DB.
         //    Ok(Some) = valid key.
@@ -234,8 +238,23 @@ impl ApiKeyCache {
         }
     }
 
-    /// Immediately evicts a key from the cache (e.g. after a 401 response so
-    /// the next request re-verifies rather than serving a stale miss).
+    /// Fresh cached outcome for `raw_key`, if the entry is still inside `TTL`.
+    ///
+    /// `Some(Err(()))` is a negative hit. `None` means missing or stale: the
+    /// caller queries the database. The map key is the SHA-256 hex digest.
+    pub(crate) fn cached_outcome(&self, raw_key: &str) -> Option<Result<ValidatedKey, ()>> {
+        let cache_key = hex::encode(Sha256::digest(raw_key.as_bytes()));
+        let map = self.lock_cache();
+        let entry = map.get(&cache_key)?;
+        if entry.inserted_at.elapsed() >= TTL {
+            return None;
+        }
+        Some(entry.result.clone().ok_or(()))
+    }
+
+    /// Drop one key from the cache. Not used on the 401 path: a definitive
+    /// rejection must stay cached for `TTL` so repeats skip the database.
+    /// A key created after that rejection works once the entry expires.
     pub fn evict(&self, raw_key: &str) {
         let cache_key = hex::encode(Sha256::digest(raw_key.as_bytes()));
         self.lock_cache().remove(&cache_key);
@@ -335,7 +354,7 @@ async fn verify_against_db(
     let computed_hash = B64.encode(hash_bytes);
 
     if computed_hash != row.key_hash {
-        tracing::warn!(
+        tracing::debug!(
             prefix = key_prefix,
             "api_key prefix matched but hash did not verify"
         );
@@ -553,6 +572,33 @@ mod tests {
         assert!(
             map.contains_key(&cache_key),
             "data must be intact after poison recovery"
+        );
+    }
+
+    /// A fresh negative entry is served as a rejection. The digest is the map
+    /// key, so the raw key is not retained. A key created after this rejection
+    /// is invisible until `TTL` (the stale case below).
+    #[test]
+    fn fresh_negative_entry_rejects_without_a_requery() {
+        let raw = "cg_live_not-a-real-key-0123456789abcdef0123456789abcdef";
+        let cache_key = hex::encode(Sha256::digest(raw.as_bytes()));
+        assert!(
+            !cache_key.contains("cg_live"),
+            "negative-cache key must be a digest"
+        );
+        let cache = cache_with_entry(&cache_key, None, Duration::from_secs(1));
+        assert!(cache.cached_outcome(raw).unwrap().is_err());
+        assert_eq!(TTL.as_secs(), 60);
+    }
+
+    #[test]
+    fn stale_negative_entry_is_not_served() {
+        let raw = "cg_live_not-a-real-key-0123456789abcdef0123456789abcdef";
+        let cache_key = hex::encode(Sha256::digest(raw.as_bytes()));
+        let cache = cache_with_entry(&cache_key, None, TTL + Duration::from_secs(1));
+        assert!(
+            cache.cached_outcome(raw).is_none(),
+            "after TTL a previously rejected key is looked up again"
         );
     }
 }

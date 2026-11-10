@@ -7,7 +7,7 @@
  */
 import { fetchPublicCatalog, SITE_URL } from "@/lib/catalog";
 
-export const revalidate = 3600;
+export const revalidate = 60;
 
 export async function GET() {
   let rows: Awaited<ReturnType<typeof fetchPublicCatalog>> = [];

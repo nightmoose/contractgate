@@ -1,8 +1,8 @@
 import type { MetadataRoute } from "next";
 import { fetchPublicCatalog, SITE_URL } from "@/lib/catalog";
 
-// Regenerate roughly hourly so new catalog entries appear without a redeploy.
-export const revalidate = 3600;
+// Follow the catalog fetch: new entries show up within about a minute.
+export const revalidate = 60;
 
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const base: MetadataRoute.Sitemap = [

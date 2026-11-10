@@ -18,14 +18,32 @@ const API_ORIGIN =
 export const SITE_URL =
   process.env.NEXT_PUBLIC_APP_URL ?? "https://app.datacontractgate.com";
 
-// Revalidate catalog data roughly hourly (ISR).
-const REVALIDATE_SECONDS = 3600;
+// Data-cache lifetime for public catalog fetches. The detail route stays
+// `dynamic = "force-dynamic"` because the root layout reads the brand cookie
+// during metadata generation (static generation threw DYNAMIC_SERVER_USAGE).
+// `revalidate: 60` still opts this fetch into the data cache, so those
+// per-request renders share one upstream response per minute. The payload is
+// anonymous. Aligns with the API's 60s in-process TTL.
+const REVALIDATE_SECONDS = 60;
+
+/**
+ * Header for server-side catalog fetches when the operator set
+ * `CONTRACTGATE_TRUSTED_SSR_TOKEN`. The name is not `NEXT_PUBLIC_`, so Next
+ * does not inline it into the browser bundle. Unset → no header, and the
+ * API's per-IP limit is unchanged.
+ */
+function catalogSsrHeaders(): HeadersInit | undefined {
+  const token = process.env.CONTRACTGATE_TRUSTED_SSR_TOKEN?.trim();
+  if (!token) return undefined;
+  return { "X-DCG-SSR-Token": token };
+}
 
 export { CATALOG_CATEGORIES } from "@/lib/catalog-categories";
 
 /** Only rows that have been published to the public directory (have a slug). */
 export async function fetchPublicCatalog(): Promise<OpenDataContract[]> {
   const res = await fetch(`${API_ORIGIN}/public-contracts`, {
+    headers: catalogSsrHeaders(),
     next: { revalidate: REVALIDATE_SECONDS },
   });
   if (!res.ok) {
@@ -41,7 +59,7 @@ export async function fetchCatalogDetail(
 ): Promise<OpenDataContractDetail | null> {
   const res = await fetch(
     `${API_ORIGIN}/public-contracts/${encodeURIComponent(slug)}`,
-    { next: { revalidate: REVALIDATE_SECONDS } }
+    { headers: catalogSsrHeaders(), next: { revalidate: REVALIDATE_SECONDS } }
   );
   if (res.status === 404) return null;
   if (!res.ok) {

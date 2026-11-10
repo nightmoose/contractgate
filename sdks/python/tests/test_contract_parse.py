@@ -94,6 +94,20 @@ def test_missing_top_level_required_fields():
         Contract.from_yaml("ontology:\n  entities: []\n")  # no version/name
 
 
+def test_format_is_kept_on_the_field():
+    yaml = """
+version: "1.0"
+name: "x"
+ontology:
+  entities:
+    - name: email
+      type: string
+      format: email
+"""
+    field = Contract.from_yaml(yaml).entities[0]
+    assert field.format == "email"
+
+
 def test_glossary_legacy_aliases_accepted():
     yaml = """
 version: "1.0"
