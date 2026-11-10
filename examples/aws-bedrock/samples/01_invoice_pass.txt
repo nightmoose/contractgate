@@ -1,0 +1,1 @@
+Invoice INV-1001 from Northwind Traders. Total 42.50 USD. Status: paid.

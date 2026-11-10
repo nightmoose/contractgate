@@ -1,0 +1,54 @@
+# Egress-gate contract — outbound partner payout feed.
+# Pipeline stage: Marts → POST /egress/{contract_id} → Reverse ETL / partners / APIs
+# Chain: derived_from revenue_daily_mart
+version: "1.0"
+name: "partner_payout_feed"
+description: >
+  Outbound partner payout feed row. Validate with POST /egress/{contract_id} before
+  reverse ETL or partner API delivery; forward only response.payload (default
+  disposition=block omits failing records). derived_from: revenue_daily_mart
+  (mart / stage gate alongside dbt). chain: stripe_charges_raw →
+  stripe_charges_staged → revenue_daily_mart → partner_payout_feed.
+  Demo partner ids are fake; not affiliated with Stripe.
+
+ontology:
+  entities:
+    - name: payout_id
+      type: string
+      required: true
+      pattern: "^po_demo_[A-Za-z0-9_]+$"
+    - name: partner_id
+      type: string
+      required: true
+      pattern: "^ptr_demo_[A-Za-z0-9_]+$"
+    - name: currency
+      type: string
+      required: true
+      pattern: "^[A-Z]{3}$"
+    - name: amount
+      type: number
+      required: true
+      min: 0.01
+    - name: revenue_date
+      type: string
+      required: true
+      pattern: "^[0-9]{4}-[0-9]{2}-[0-9]{2}$"
+    - name: status
+      type: string
+      required: true
+      enum: ["ready", "held", "sent"]
+    - name: generated_at
+      type: string
+      required: true
+      pattern: "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$"
+
+glossary:
+  - field: payout_id
+    description: "Stable id for this outbound payout line (demo prefix po_demo_)."
+    constraints: "po_demo_ + alphanumeric or underscore"
+  - field: amount
+    description: "Payout amount in major currency units derived from mart net_amount."
+    constraints: ">= 0.01"
+  - field: status
+    description: "Outbound lifecycle before/after partner delivery."
+    constraints: "ready | held | sent"

@@ -1,0 +1,141 @@
+{
+  "extractor": "amazon.nova-lite-v1:0",
+  "repairer": "amazon.nova-pro-v1:0",
+  "check": "in-process contractgate validator",
+  "results": [
+    {
+      "sample": "01_invoice_pass",
+      "contract": "invoice_v1",
+      "extracted": {
+        "invoice_id": "INV-1001",
+        "vendor": "Northwind Traders",
+        "currency": "USD",
+        "total": 42.5,
+        "status": "paid"
+      },
+      "violations_first": [],
+      "check_us_first": 58,
+      "outcome": "pass",
+      "final": {
+        "invoice_id": "INV-1001",
+        "vendor": "Northwind Traders",
+        "currency": "USD",
+        "total": 42.5,
+        "status": "paid"
+      }
+    },
+    {
+      "sample": "02_invoice_repair",
+      "contract": "invoice_v1",
+      "extracted": {
+        "invoice_id": "Bill A-9",
+        "vendor": "Acme Corp.",
+        "currency": "€",
+        "total": 1250.0,
+        "status": "past due, second reminder sent"
+      },
+      "violations_first": [
+        [
+          "invoice_id",
+          "pattern_mismatch",
+          "Field 'invoice_id' value \"Bill A-9\" does not match required pattern"
+        ],
+        [
+          "currency",
+          "enum_violation",
+          "Field 'currency' value \"€\" not in allowed set: [\"USD\", \"EUR\", \"GBP\"]"
+        ],
+        [
+          "status",
+          "enum_violation",
+          "Field 'status' value \"past due, second reminder sent\" not in allowed set: [\"open\", \"paid\", \"overdue\"]"
+        ]
+      ],
+      "check_us_first": 71,
+      "repaired": {
+        "invoice_id": "A-9",
+        "vendor": "Acme Corp.",
+        "currency": "EUR",
+        "total": 1250.0,
+        "status": "overdue"
+      },
+      "violations_after_repair": [],
+      "check_us_after_repair": 25,
+      "outcome": "repair",
+      "final": {
+        "invoice_id": "A-9",
+        "vendor": "Acme Corp.",
+        "currency": "EUR",
+        "total": 1250.0,
+        "status": "overdue"
+      }
+    },
+    {
+      "sample": "03_ticket_pass",
+      "contract": "ticket_v1",
+      "extracted": {
+        "ticket_id": "SUP-2231",
+        "priority": "high",
+        "category": "outage",
+        "summary": "checkout page returns 503 for every customer since 9am"
+      },
+      "violations_first": [],
+      "check_us_first": 20,
+      "outcome": "pass",
+      "final": {
+        "ticket_id": "SUP-2231",
+        "priority": "high",
+        "category": "outage",
+        "summary": "checkout page returns 503 for every customer since 9am"
+      }
+    },
+    {
+      "sample": "04_ticket_quarantine",
+      "contract": "ticket_v1",
+      "extracted": {
+        "ticket_id": null,
+        "priority": "High",
+        "category": "Login Issue",
+        "summary": "Customer cannot log in after a password reset. No ticket number was issued yet. They are upset and want access back today."
+      },
+      "violations_first": [
+        [
+          "ticket_id",
+          "type_mismatch",
+          "Field 'ticket_id' expected type String, got null"
+        ],
+        [
+          "priority",
+          "enum_violation",
+          "Field 'priority' value \"High\" not in allowed set: [\"low\", \"medium\", \"high\"]"
+        ],
+        [
+          "category",
+          "enum_violation",
+          "Field 'category' value \"Login Issue\" not in allowed set: [\"billing\", \"access\", \"outage\", \"other\"]"
+        ]
+      ],
+      "check_us_first": 55,
+      "repaired": {
+        "ticket_id": "login_issue_password_reset",
+        "priority": "high",
+        "category": "access",
+        "summary": "Customer cannot log in after a password reset. No ticket number was issued yet. They are upset and want access back today."
+      },
+      "violations_after_repair": [
+        [
+          "ticket_id",
+          "pattern_mismatch",
+          "Field 'ticket_id' value \"login_issue_password_reset\" does not match required pattern"
+        ]
+      ],
+      "check_us_after_repair": 41,
+      "outcome": "quarantine"
+    }
+  ],
+  "tokens": [
+    961,
+    348
+  ],
+  "est_cost_usd": 0.00097664
+}

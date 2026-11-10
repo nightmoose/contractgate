@@ -1,0 +1,91 @@
+# Ingest-gate contract — mirrors catalog/seeds/stripe-charges (Stripe Charge API export).
+# Pipeline stage: Sources / vendor APIs → POST /v1/ingest/{contract_id} → Raw
+# Chain: stripe_charges_raw → stripe_charges_staged → revenue_daily_mart → partner_payout_feed
+# Not affiliated with Stripe. Sample ids are obviously fake.
+version: "1.0"
+name: "stripe_charges_raw"
+description: >
+  Raw Stripe Charge object at ingest (core fields of an exported Stripe charge /
+  webhook-style payload). Compatible with Stripe's API Charge object; not affiliated
+  with Stripe. derived_from: catalog/seeds/stripe-charges (public catalog seed).
+  chain: stripe_charges_raw (ingest) → stripe_charges_staged (stage) →
+  revenue_daily_mart (mart / alongside dbt) → partner_payout_feed (egress).
+
+ontology:
+  entities:
+    - name: id
+      type: string
+      required: true
+      pattern: "^(ch|py)_[A-Za-z0-9]+$"
+    - name: object
+      type: string
+      required: true
+      enum: ["charge"]
+    - name: amount
+      type: integer
+      required: true
+      min: 0
+    - name: amount_captured
+      type: integer
+      required: false
+      min: 0
+    - name: amount_refunded
+      type: integer
+      required: false
+      min: 0
+    - name: currency
+      type: string
+      required: true
+      pattern: "^[a-z]{3}$"
+    - name: customer
+      type: string
+      required: false
+      pattern: "^cus_[A-Za-z0-9]+$"
+    - name: description
+      type: string
+      required: false
+    - name: paid
+      type: boolean
+      required: true
+    - name: refunded
+      type: boolean
+      required: true
+    - name: captured
+      type: boolean
+      required: false
+    - name: status
+      type: string
+      required: true
+      enum: ["succeeded", "pending", "failed"]
+    - name: created
+      type: integer
+      required: true
+      min: 0
+    - name: livemode
+      type: boolean
+      required: false
+    - name: receipt_email
+      type: string
+      required: false
+      format: email
+    - name: payment_intent
+      type: string
+      required: false
+      pattern: "^pi_[A-Za-z0-9]+$"
+
+glossary:
+  - field: id
+    description: "Charge id. Card charges use ch_; some bank-debit / Connect objects use py_."
+    constraints: "ch_ or py_, then alphanumeric"
+  - field: amount
+    description: "Amount intended to be collected, in the smallest currency unit (e.g. cents)."
+    constraints: "non-negative integer"
+  - field: currency
+    description: "Three-letter ISO currency code, lowercase."
+    constraints: "ISO 4217, lowercase"
+  - field: status
+    description: "The status of the payment."
+    constraints: "one of succeeded, pending, failed"
+  - field: created
+    description: "Unix epoch seconds when the object was created."
+    constraints: "non-negative integer"
