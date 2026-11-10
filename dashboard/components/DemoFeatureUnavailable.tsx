@@ -45,7 +45,7 @@ export default function DemoFeatureUnavailable({ feature, reason }: Props) {
       {/* Heading */}
       <h2 className="text-lg font-semibold text-slate-200 mb-2">{feature}</h2>
       <p className="text-sm text-slate-500 mb-1 max-w-sm">
-        Not available in <span className="text-slate-400 font-medium">Self-Hosted Free</span> mode.
+        Not available in this zero-auth demo.
       </p>
       {reason && (
         <p className="text-xs text-slate-600 mb-0 max-w-xs">{reason}</p>
@@ -62,7 +62,7 @@ export default function DemoFeatureUnavailable({ feature, reason }: Props) {
           Upgrade to DataContractGate Cloud →
         </Link>
         <span className="text-xs text-slate-600">
-          Multi-tenancy · SSO · GitHub sync · API key management
+          Included on Self-Hosted Free and DataContractGate Cloud
         </span>
       </div>
     </div>

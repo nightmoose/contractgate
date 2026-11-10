@@ -4,7 +4,7 @@
 
 Trust but verify at ingest, between stages, and on egress — before your warehouse, reverse ETL, partners, or AI agents.
 
-## Try it in 10 minutes (Self-Hosted Free)
+## Try it in 10 minutes
 
 No Supabase account. No API keys. No sign-up.
 
@@ -24,9 +24,9 @@ make demo-down    # stop and remove volumes
 make demo-logs    # follow all service logs
 ```
 
-> **Self-Hosted Free** (`make demo`) runs the real gateway binary with auth off.
+> `make demo` runs the real gateway binary with auth off.
 > Unlimited local events, full YAML editor, playground, audit log.
-> [Feature comparison below ↓](#self-hosted-free-vs-cloud)
+> That preview is not the [Self-Hosted Free comparison](#self-hosted-free-vs-cloud).
 
 ## Run the demo locally
 
@@ -145,7 +145,7 @@ docker compose -f docker-compose.yml -f docker-compose.selfhost.yml up --build
 
 Sign up at http://localhost:3000/auth/signup, then sign in at http://localhost:3000/auth/login. Mail is not configured; confirmation is automatic. Do not combine this with `--profile demo`. First boot generates keys and binds ports to `127.0.0.1`. Exact steps: [`docs/self-host-reference.md`](docs/self-host-reference.md).
 
-The comparison table below is the zero-auth demo. With `CONTRACTGATE_SELF_HOSTED=true` the stored plan stays `free` and paid gates open.
+The comparison table is Self-Hosted Free: real login with `CONTRACTGATE_SELF_HOSTED=true`. The stored plan stays `free` and paid product gates open. SSO and managed hosting stay on hosted Enterprise. `make demo` does not set that flag.
 
 ---
 
@@ -153,10 +153,10 @@ The comparison table below is the zero-auth demo. With `CONTRACTGATE_SELF_HOSTED
 
 - **Semantic YAML Contracts** — entities, types, patterns, enums, required fields, glossary, and computed metrics
 - **Real-time Validation** — at ingestion (Kafka, HTTP, batch) with sub-millisecond per-event validation
-- **Visual Contract Builder** — intuitive UI + live YAML preview *(Cloud)*
-- **AI-Powered Inference** — paste sample JSON → instantly generates a full contract *(Cloud)*
-- **Quarantine + Replay** — automatically hold and replay violating events *(Cloud)*
-- **Versioned Contracts** — draft → stable → deprecated with compliance mode *(Cloud)*
+- **Visual Contract Builder** — intuitive UI + live YAML preview
+- **AI-Powered Inference** — paste sample JSON → instantly generates a full contract
+- **Quarantine + Replay** — automatically hold and replay violating events
+- **Versioned Contracts** — draft → stable → deprecated with compliance mode
 - **High Performance** — Rust + Axum core, 86k+ events/sec/core
 - **Polyglot** — Rust engine, Python SDK, CLI, Kafka Connect, Zapier, Next.js dashboard
 
@@ -164,22 +164,22 @@ The comparison table below is the zero-auth demo. With `CONTRACTGATE_SELF_HOSTED
 
 ## Self-Hosted Free vs Cloud
 
-| Capability | Self-Hosted Free | Cloud (Free / Pro / Enterprise) |
+| Capability | Self-Hosted Free | Cloud Free / Pro / Enterprise |
 |---|---|---|
 | Validation engine | ✅ Unlimited (local) | ✅ 100K / 25M / Unlimited events/month |
-| Starter contracts | ✅ 3 | ✅ 3 / Unlimited / Unlimited |
+| Contracts | ✅ Unlimited | ✅ 3 / Unlimited / Unlimited |
 | Playground | ✅ | ✅ |
 | Audit log | ✅ Local Postgres | ✅ 7 / 90 / Custom days retention |
 | Live event stream | ✅ | ✅ |
-| Auth & API keys | ❌ | ✅ |
-| Multi-tenancy | ❌ Single org | ✅ |
-| Visual contract builder | ❌ | ✅ Growth+ |
-| AI inference (JSON → YAML) | ❌ | ✅ Growth+ |
-| Quarantine + replay | ❌ | ✅ Growth+ |
-| PII transform rules | ❌ | ✅ Growth+ |
-| Semantic versioning UI | ❌ | ✅ Growth+ |
-| GitHub sync | ❌ | ✅ Growth+ |
-| Team invites & roles | ❌ | ✅ Growth+ |
+| Auth & API keys | ✅ | ✅ |
+| Multi-tenancy | ✅ | ✅ Pro |
+| Visual contract builder | ✅ | ✅ Pro |
+| AI inference (JSON → YAML) | ✅ | ✅ Pro |
+| Quarantine + replay | ✅ | ✅ Pro |
+| PII transform rules | ✅ | ✅ Pro |
+| Semantic versioning UI | ✅ | ✅ Pro |
+| GitHub sync | ✅ | ✅ Pro |
+| Team invites & roles | ✅ | ✅ Pro |
 | SSO / SAML | ❌ | ✅ Enterprise |
 | Managed hosting + SLA | ❌ Self-hosted | ✅ |
 
@@ -280,8 +280,10 @@ Active RFCs: [`docs/rfcs/`](docs/rfcs/) · RFC status index: [`docs/STATUS.md`](
 MIT — see [`LICENSE`](LICENSE). Free to use, fork, and build on top (commercial use welcome).
 
 The semantic contract enforcement algorithm is the subject of a pending patent.
-The patent covers the *invention* — your right to use, modify, and distribute the
-*code* under the MIT license is unaffected. See [`NOTICE`](NOTICE) for details.
+The MIT License governs this code. The patent application covers the enforcement
+method as an invention and does not limit anyone's right to use this code under
+the MIT License. Questions about patent scope: hello@datacontractgate.com.
+See [`NOTICE`](NOTICE).
 
 ---
 
