@@ -1,0 +1,65 @@
+# Stage-gate contract — cleaned / typed row after raw landing.
+# Pipeline stage: Raw → POST /v1/ingest/{contract_id} → Staging
+# Chain: derived_from stripe_charges_raw
+version: "1.0"
+name: "stripe_charges_staged"
+description: >
+  Cleaned Stripe charge row after transform out of raw: amount in decimal currency
+  units (not cents), uppercase ISO currency, flattened customer_id, status enum,
+  UTC ISO-8601 charged_at. derived_from: stripe_charges_raw (ingest gate).
+  chain: stripe_charges_raw → stripe_charges_staged → revenue_daily_mart →
+  partner_payout_feed. Not affiliated with Stripe.
+
+ontology:
+  entities:
+    - name: charge_id
+      type: string
+      required: true
+      pattern: "^(ch|py)_[A-Za-z0-9]+$"
+    - name: customer_id
+      type: string
+      required: true
+      pattern: "^cus_[A-Za-z0-9]+$"
+    - name: amount
+      type: number
+      required: true
+      min: 0
+    - name: currency
+      type: string
+      required: true
+      pattern: "^[A-Z]{3}$"
+    - name: status
+      type: string
+      required: true
+      enum: ["succeeded", "pending", "failed"]
+    - name: paid
+      type: boolean
+      required: true
+    - name: refunded
+      type: boolean
+      required: true
+    - name: charged_at
+      type: string
+      required: true
+      pattern: "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$"
+    - name: description
+      type: string
+      required: false
+    - name: payment_intent_id
+      type: string
+      required: false
+      pattern: "^pi_[A-Za-z0-9]+$"
+
+glossary:
+  - field: amount
+    description: "Charge amount in major currency units (e.g. 42.99 USD), not cents."
+    constraints: "non-negative number"
+  - field: currency
+    description: "Normalized three-letter ISO 4217 currency code, uppercase."
+    constraints: "ISO 4217, uppercase"
+  - field: charged_at
+    description: "Charge creation time as UTC ISO-8601 with trailing Z."
+    constraints: "YYYY-MM-DDTHH:MM:SSZ"
+  - field: customer_id
+    description: "Flattened Stripe customer id from the raw customer field."
+    constraints: "starts with cus_"

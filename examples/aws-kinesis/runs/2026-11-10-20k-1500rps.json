@@ -1,0 +1,102 @@
+{
+  "records_produced": 20000,
+  "producer_rate_target": 1500,
+  "produce_seconds": 13.3,
+  "ingest_and_stage_seconds": 13.3,
+  "throughput_rec_per_s": 1500.0,
+  "raw_read": 20000,
+  "ingest_quarantined": 1028,
+  "stage_quarantined": 907,
+  "staged_out": 18065,
+  "staged_read_by_egress": 18065,
+  "payout_rows": 48,
+  "payouts_sent": 36,
+  "payouts_held": 12,
+  "kinesis_arrival_to_gated_ms": {
+    "p50": 151,
+    "p95": 403,
+    "p99": 519
+  },
+  "check_us_per_record": {
+    "p50": 8.7,
+    "p99": 25.1,
+    "mean": 10.9
+  },
+  "produced_labels": {
+    "clean": 18225,
+    "guest_checkout": 556,
+    "unknown_status": 192,
+    "bad_id_prefix": 203,
+    "bad_email": 191,
+    "negative_amount": 205,
+    "uppercase_currency": 203,
+    "missing_created": 225
+  },
+  "violations": {
+    "egress:amount:range_violation": 12,
+    "ingest:amount:range_violation": 205,
+    "ingest:created:missing_required_field": 225,
+    "ingest:currency:pattern_mismatch": 203,
+    "ingest:id:pattern_mismatch": 203,
+    "ingest:status:enum_violation": 192,
+    "stage:charged_at:pattern_mismatch": 358,
+    "stage:customer_id:type_mismatch": 556
+  },
+  "held_examples": [
+    {
+      "payout": {
+        "payout_id": "po_demo_20261107_JPY_acme_revshare",
+        "partner_id": "ptr_demo_acme_revshare",
+        "currency": "JPY",
+        "amount": 0.0,
+        "revenue_date": "2026-11-07",
+        "status": "ready",
+        "generated_at": "2026-11-10T19:36:23Z"
+      },
+      "violations": [
+        {
+          "field": "amount",
+          "kind": "range_violation",
+          "message": "Field 'amount' value 0 is below minimum 0.01"
+        }
+      ]
+    },
+    {
+      "payout": {
+        "payout_id": "po_demo_20261108_JPY_acme_revshare",
+        "partner_id": "ptr_demo_acme_revshare",
+        "currency": "JPY",
+        "amount": 0.0,
+        "revenue_date": "2026-11-08",
+        "status": "ready",
+        "generated_at": "2026-11-10T19:36:23Z"
+      },
+      "violations": [
+        {
+          "field": "amount",
+          "kind": "range_violation",
+          "message": "Field 'amount' value 0 is below minimum 0.01"
+        }
+      ]
+    },
+    {
+      "payout": {
+        "payout_id": "po_demo_20261109_JPY_acme_revshare",
+        "partner_id": "ptr_demo_acme_revshare",
+        "currency": "JPY",
+        "amount": 0.0,
+        "revenue_date": "2026-11-09",
+        "status": "ready",
+        "generated_at": "2026-11-10T19:36:23Z"
+      },
+      "violations": [
+        {
+          "field": "amount",
+          "kind": "range_violation",
+          "message": "Field 'amount' value 0 is below minimum 0.01"
+        }
+      ]
+    }
+  ],
+  "put_retries": 0
+}

@@ -1,0 +1,30 @@
+version: "1"
+name: invoice_v1
+description: Invoice fields extracted from a short note.
+compliance_mode: true
+ontology:
+  entities:
+    - name: invoice_id
+      type: string
+      required: true
+      min_length: 1
+      max_length: 32
+      pattern: "^[A-Z]{1,6}-[0-9]{1,8}$"
+    - name: vendor
+      type: string
+      required: true
+      min_length: 1
+      max_length: 80
+    - name: currency
+      type: string
+      required: true
+      enum: [USD, EUR, GBP]
+    - name: total
+      type: number
+      required: true
+      min: 0
+      max: 100000
+    - name: status
+      type: string
+      required: true
+      enum: [open, paid, overdue]
