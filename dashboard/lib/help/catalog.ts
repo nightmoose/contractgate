@@ -175,7 +175,7 @@ export const HELP_CATALOG: Record<string, HelpEntry> = {
   "dashboard.avg-latency": {
     title: "Avg Latency",
     what: "Mean server-side validation time per event, in microseconds.",
-    does: "The engine is low-latency end-to-end (see benches). This card is the validator itself, not network time.",
+    does: "This card is the validator itself, not network time. The recorded in-process bench is p99 0.93 µs on one thread (cargo run --release --bin contractgate-bench; ops/bench in the repo).",
   },
   "dashboard.public-contracts": {
     title: "Public Contracts",

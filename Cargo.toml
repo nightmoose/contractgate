@@ -35,6 +35,12 @@ required-features = ["demo"]
 name = "demo-seeder"
 path = "src/bin/demo-seeder.rs"
 
+# In-process validation hot path. No server, database, or extra features.
+# Documented command and how to read the output: ops/bench/README.md.
+[[bin]]
+name = "contractgate-bench"
+path = "ops/bench/main.rs"
+
 [features]
 # Default build is lean: just the library + main binary.  The `demo` feature
 # pulls in rdkafka (and its librdkafka build-time deps) and enables the demo

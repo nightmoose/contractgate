@@ -24,7 +24,7 @@ being able to do it in microseconds.
 
 The validation engine (`src/validation.rs`) already does everything needed:
 `validate(&CompiledContract, &Value)` returns a `ValidationResult` with
-per-field, per-kind `Violation` detail, in ~31µs p99. But nothing in the CLI
+per-field, per-kind `Violation` detail (p99 0.93 µs on the recorded bench in [`ops/bench/README.md`](../../ops/bench/README.md)). But nothing in the CLI
 exposes "run this data through that engine":
 
 - **`cg validate`** (`cli/commands/validate.rs`) only parses + compiles contract

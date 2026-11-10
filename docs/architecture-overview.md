@@ -1,7 +1,7 @@
 # DataContractGate — Architecture Overview
 
 **One-pager for security questionnaires and data-room review.**
-Last updated: 2026-07-15.
+Last updated: 2026-11-10.
 
 For pipeline placement (ingest / mid-stream / egress / AISchemaGate) and
 orchestrator quarantine signals, see
@@ -36,7 +36,7 @@ flowchart LR
 
 | Component | Tech | Role |
 |---|---|---|
-| Validation gateway | Rust (Axum), Fly.io `iad` | The engine. Compile-once/validate-many; panic-free hot path; p99 ~31µs measured (low-latency; see benches). |
+| Validation gateway | Rust (Axum), Fly.io `iad` | The engine. Compile-once/validate-many; panic-free hot path. In-process p99 0.93 µs and 1,547,368 events/sec on one thread for the passing stripe-charges samples (2026-11-10, Intel Xeon family 6 model 207, 4 vCPU KVM). Reproduce: `cargo run --release --bin contractgate-bench` ([`ops/bench/README.md`](../ops/bench/README.md)). |
 | Dashboard | Next.js + TS + Tailwind, Vercel | Contracts, quarantine/replay, usage, keys, billing. |
 | Data store | Supabase Postgres (`us-east-2`, PG 17) | Contracts/versions, `audit_log`, `quarantine_events`, `api_keys` (hashed), org/tenancy, usage. |
 | Billing | Stripe Checkout + webhooks | Growth self-serve; plan status on `orgs`. |
