@@ -30,7 +30,7 @@ const TIERS = [
     name: "Self-Hosted Free",
     tagline: "Run it yourself, forever",
     price: { monthly: "Free", annual: "Free" },
-    priceSub: { monthly: "git clone && make demo", annual: "git clone && make demo" },
+    priceSub: { monthly: "you run it; paid gates open", annual: "you run it; paid gates open" },
     cta: "Get the repo",
     ctaHref: "https://github.com/nightmoose/contractgate",
     highlight: false,
@@ -79,37 +79,37 @@ const TIERS = [
 
 const FEATURES: Feature[] = [
   { label: "Events validated / month",         selfHosted: "Unlimited (local)", free: "100K",            growth: "25M",        enterprise: "Unlimited" },
-  { label: "Active contracts",                 selfHosted: "3 (starter)",       free: "3",               growth: "Unlimited",  enterprise: "Unlimited" },
-  { label: "Contract versions",                selfHosted: true,                free: "3 per contract",  growth: "Unlimited",  enterprise: "Unlimited" },
+  { label: "Active contracts",                 selfHosted: "Unlimited",         free: "3",               growth: "Unlimited",  enterprise: "Unlimited" },
+  { label: "Contract versions",                selfHosted: "Unlimited",         free: "3 per contract",  growth: "Unlimited",  enterprise: "Unlimited" },
   { label: "Ingest API",                       selfHosted: true,                free: true,              growth: true,         enterprise: true },
   { label: "Playground (test without save)",   selfHosted: true,                free: true,              growth: true,         enterprise: true },
   { label: "Audit log retention",              selfHosted: "Local Postgres",    free: "7 days",          growth: "90 days",    enterprise: "Custom" },
   { label: "Local Docker demo",                selfHosted: true,                free: true,              growth: true,         enterprise: true },
   { label: "Batch ingest",                     selfHosted: true,                free: false,             growth: true,         enterprise: true },
   { label: "Data-parallel validation (Rayon)", selfHosted: true,                free: false,             growth: true,         enterprise: true },
-  { label: "Auth & API key management",        selfHosted: false,               free: true,              growth: true,         enterprise: true },
-  { label: "Multi-tenancy",                    selfHosted: false,               free: false,             growth: true,         enterprise: true },
-  { label: "PII transform rules",              selfHosted: false,               free: false,             growth: true,         enterprise: true },
+  { label: "Auth & API key management",        selfHosted: true,                free: true,              growth: true,         enterprise: true },
+  { label: "Multi-tenancy",                    selfHosted: true,                free: false,             growth: true,         enterprise: true },
+  { label: "PII transform rules",              selfHosted: true,                free: false,             growth: true,         enterprise: true },
   { label: "Quarantine",                       selfHosted: "Local, no row cap", free: "Failure details, up to 50,000 held, 7 days", growth: "Record bodies, replay and bulk replay, 90 days", enterprise: "Custom retention" },
   { label: "Replay & bulk replay",             selfHosted: true,                free: false,             growth: true,         enterprise: true },
   { label: "Failure reason counts",            selfHosted: true,                free: true,              growth: true,         enterprise: true },
-  { label: "Visual contract builder",          selfHosted: false,               free: false,             growth: true,         enterprise: true },
-  { label: "Contract generator (JSON → YAML)", selfHosted: false,               free: false,             growth: true,         enterprise: true },
-  { label: "Semantic versioning + promotion",  selfHosted: false,               free: false,             growth: true,         enterprise: true },
-  { label: "GitHub sync",                      selfHosted: false,               free: false,             growth: true,         enterprise: true },
-  { label: "Team invites & roles",             selfHosted: false,               free: false,             growth: true,         enterprise: true },
+  { label: "Visual contract builder",          selfHosted: true,                free: false,             growth: true,         enterprise: true },
+  { label: "Contract generator (JSON → YAML)", selfHosted: true,                free: false,             growth: true,         enterprise: true },
+  { label: "Semantic versioning + promotion",  selfHosted: true,                free: false,             growth: true,         enterprise: true },
+  { label: "GitHub sync",                      selfHosted: true,                free: false,             growth: true,         enterprise: true },
+  { label: "Team invites & roles",             selfHosted: true,                free: false,             growth: true,         enterprise: true },
   // RFC-045: features added since original pricing page authoring
-  { label: "CSV → YAML inference",             selfHosted: false,               free: false,             growth: true,         enterprise: true },
-  { label: "Brownfield scaffolder (+ PII)",    selfHosted: false,               free: false,             growth: true,         enterprise: true },
-  { label: "Provider Scorecard",               selfHosted: false,               free: false,             growth: true,         enterprise: true },
+  { label: "CSV → YAML inference",             selfHosted: true,                free: false,             growth: true,         enterprise: true },
+  { label: "Brownfield scaffolder (+ PII)",    selfHosted: true,                free: false,             growth: true,         enterprise: true },
+  { label: "Provider Scorecard",               selfHosted: true,                free: false,             growth: true,         enterprise: true },
   { label: "Egress API (outbound validation)",  selfHosted: true,                free: false,             growth: true,         enterprise: true },
-  { label: "AI Collaborate (contract proposals)", selfHosted: false,            free: false,             growth: true,         enterprise: true },
-  { label: "Kafka / Kinesis streaming",        selfHosted: false,               free: false,             growth: false,        enterprise: "Available on request" },
+  { label: "AI Collaborate (contract proposals)", selfHosted: true,             free: false,             growth: true,         enterprise: true },
+  { label: "Kafka / Kinesis streaming",        selfHosted: true,                free: false,             growth: false,        enterprise: "Available on request" },
   { label: "Open data catalog (browse + fork)", selfHosted: false,              free: true,              growth: true,         enterprise: true },
   { label: "Import by ref — snapshot",         selfHosted: false,               free: true,              growth: true,         enterprise: true },
-  { label: "Import by ref — subscribe (live)", selfHosted: false,               free: false,             growth: true,         enterprise: true },
-  { label: "API Workbench — Try It (1 endpoint)", selfHosted: false,           free: true,              growth: true,         enterprise: true },
-  { label: "API Workbench — full (save / deploy / suite)", selfHosted: false,  free: false,             growth: true,         enterprise: true },
+  { label: "Import by ref — subscribe (live)", selfHosted: true,                free: false,             growth: true,         enterprise: true },
+  { label: "API Workbench — Try It (1 endpoint)", selfHosted: true,            free: true,              growth: true,         enterprise: true },
+  { label: "API Workbench — full (save / deploy / suite)", selfHosted: true,   free: false,             growth: true,         enterprise: true },
   { label: "SSO / SAML",                       selfHosted: false,               free: false,             growth: false,        enterprise: true },
   { label: "Custom SLA",                       selfHosted: false,               free: false,             growth: false,        enterprise: true },
   { label: "Audit log export (S3 / GCS)",      selfHosted: false,               free: false,             growth: false,        enterprise: true },
@@ -347,7 +347,7 @@ export default function PricingPage() {
           },
           {
             q: "Is the Free tier time-limited?",
-            a: "No. The Free tier is permanent. You only need to upgrade when you exceed 100K events/month or need Pro features.",
+            a: "No. Cloud Free is permanent. You only need to upgrade when you exceed 100K events/month or need Pro features.",
           },
           {
             q: "How does Enterprise deployment work?",
@@ -355,15 +355,15 @@ export default function PricingPage() {
           },
           {
             q: "Do you offer a trial?",
-            a: "Pro comes with a 30-day free trial. You add a card at checkout and aren't charged if you cancel before the trial ends. Enterprise prospects get a POC environment on request.",
+            a: "Cloud Free needs no credit card. The Pro trial asks for one at checkout, and you are not charged if you cancel before it ends. Enterprise prospects get a POC environment on request.",
           },
           {
             q: "What does 'patent pending' mean for my stack?",
-            a: "The semantic contract enforcement methodology is patent pending (US filing). Your use is licensed; you are protected from third-party IP claims.",
+            a: "The MIT License governs this code. The patent application covers the enforcement method as an invention and does not limit anyone's right to use this code under the MIT License.",
           },
           {
             q: "What's the difference between Self-Hosted Free and Cloud Free?",
-            a: "Self-Hosted Free runs the full gateway binary on your machine — unlimited local events, no account needed. Cloud Free is the managed SaaS tier with auth, API keys, and cloud retention. Self-Hosted Free has no Cloud features (multi-tenancy, GitHub sync, etc.).",
+            a: "Self-Hosted Free runs the gateway on your machine with auth on. The stored plan stays free, and CONTRACTGATE_SELF_HOSTED opens every paid gate in the product. Cloud Free is the managed 100K-event tier, and those gates stay closed. SSO, a custom SLA, and support stay on hosted Enterprise. make demo is a separate zero-auth preview.",
           },
         ].map((item) => (
           <div key={item.q} className="bg-[#111827] border border-[#1f2937] rounded-xl p-5">
@@ -475,7 +475,8 @@ function GrowthUpgradeButton({ annual, onToggleAnnual }: { annual: boolean; onTo
       <p className="text-[10px] text-slate-400 mt-2 leading-snug">
         Free for 30 days, then{" "}
         {annual ? "$1,992 billed annually ($166/mo)" : "$199 billed monthly"}. Your
-        subscription renews automatically until you cancel. Cancel anytime online from
+        subscription renews automatically until you cancel. A card is required at checkout.
+        Cancel anytime online from
         Account &rarr; Billing; cancel before the trial ends and you won&rsquo;t be charged.
         See our{" "}
         <a href="/terms" className="underline hover:text-slate-300">

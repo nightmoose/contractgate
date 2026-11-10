@@ -3,9 +3,8 @@
 /**
  * DemoBanner — RFC-023 Phase 2.
  *
- * Fixed top bar rendered in demo mode only.  Copy: "Self-Hosted Free" so
- * visitors immediately understand the edition.  Upgrade CTA links to the
- * Cloud landing page.
+ * Fixed top bar rendered in demo mode only. This preview is auth-off.
+ * Self-Hosted Free is the real-login stack (CONTRACTGATE_SELF_HOSTED).
  *
  * Mounted in app/layout.tsx when NEXT_PUBLIC_DEMO_MODE=1.
  * Height: 36px (h-9) — layout.tsx adds pt-9 to <main> to compensate.
@@ -19,11 +18,11 @@ export default function DemoBanner() {
       {/* Left: edition badge */}
       <div className="flex items-center gap-2">
         <span className="text-xs font-semibold text-slate-400 tracking-wide">
-          Self-Hosted Free
+          Local demo
         </span>
         <span className="hidden sm:inline text-slate-700">·</span>
         <span className="hidden sm:inline text-xs text-slate-600">
-          Single tenant · No auth
+          Auth off · not Self-Hosted Free
         </span>
       </div>
 

@@ -39,7 +39,7 @@ First boot builds the gateway and the dashboard. Later boots reuse those images.
 
 Open http://localhost:3000/auth/signup. Create an account (password at least 8 characters). The page says to check email. Mail is not configured. Confirmation is automatic, so sign in at http://localhost:3000/auth/login with the same email and password.
 
-The new org's stored plan is `free`. With the flag on, `GET /v1/me` reports `paid_features: true`, `self_hosted: true`, a null monthly limit, and the paid rate limit (100 requests/second, burst 200) unless a key overrides it. The dashboard opens every paid gate, including Visual Builder, Generate from Sample, From CSV, and Connect Fivetran. Kafka and Kinesis ingress are allowed. Passed-event retention follows the Enterprise window (365 days). The stored `plan` string stays `free`.
+The new org's stored plan is `free`. With the flag on, `GET /v1/me` reports `paid_features: true`, `self_hosted: true`, a null monthly limit, and the paid rate limit (100 requests/second, burst 200) unless a key overrides it. The dashboard opens every paid gate, including the visual builder, sample and CSV inference, quarantine replay, PII transforms, the versioning UI, GitHub sync, and Connect Fivetran. Kafka and Kinesis ingress are allowed. Passed-event retention follows the Enterprise window (365 days). The stored `plan` string stays `free`. The README comparison and the pricing table's Self-Hosted Free column follow this flag. `make demo` does not.
 
 ## What the flag changes
 

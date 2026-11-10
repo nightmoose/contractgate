@@ -44,7 +44,8 @@ const nextConfig: NextConfig = {
   // Keep images unoptimized to avoid requiring a server image optimizer.
   images: { unoptimized: true },
 
-  // Sidebar shows this; package.json is the single source of the dashboard version.
+  // Sidebar and home page show this. Keep it equal to the gateway version
+  // in Cargo.toml, which GET /health reports.
   env: { NEXT_PUBLIC_APP_VERSION: pkg.version },
 
   // RFC-089: the agent-facing docs are copied into public/ by the prebuild

@@ -153,7 +153,7 @@ export const HELP_CATALOG: Record<string, HelpEntry> = {
   "page.pricing": {
     title: "Pricing",
     what: "Feature matrix across Self-Hosted Free, Cloud Free, Pro, and Enterprise.",
-    does: "Shows what each plan includes. Pro unlocks quarantine replay, visual builder, scorecard, and workbench save/deploy.",
+    does: "Shows what each plan includes. Self-Hosted Free opens every paid gate. On Cloud, Pro unlocks quarantine replay, the visual builder, the scorecard, and workbench save/deploy.",
   },
 
   // ── Dashboard ────────────────────────────────────────────────────────────
