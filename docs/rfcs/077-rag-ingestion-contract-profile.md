@@ -22,7 +22,7 @@ The tempting-but-wrong response is to make the engine *understand* unstructured
 content — PDF/Confluence parsers, chunking-strategy suggestions, toxicity /
 readability / "semantic coherence" scoring, embedding-model compatibility,
 synthetic-data hooks. All of that is probabilistic, slow, and ML-heavy. It
-would blow the <15ms p99 budget (measured 31µs today), break determinism, and
+would blow the <15ms p99 budget (in-process p99 0.93 µs on the bench in [`ops/bench/README.md`](../../ops/bench/README.md)), break determinism, and
 turn a focused gateway into five half-products. **That is explicit non-goal
 territory.**
 

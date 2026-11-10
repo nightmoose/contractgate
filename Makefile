@@ -1,4 +1,8 @@
-.PHONY: demo demo-down demo-reset demo-logs stack-up stack-up-demo stack-down demo-ralph demo-ralph-down demo-ralph-smoke demo-ralph-e2e demo-ralph-run demo-ralph-run-mcp connect-package
+.PHONY: demo demo-down demo-reset demo-logs stack-up stack-up-demo stack-down demo-ralph demo-ralph-down demo-ralph-smoke demo-ralph-e2e demo-ralph-run demo-ralph-run-mcp connect-package bench
+
+# In-process validation benchmark (release). Same command as ops/bench/README.md.
+bench:
+	cargo run --release --bin contractgate-bench
 
 # ── Demo mode (RFC-023) ───────────────────────────────────────────────────────
 # Zero-auth local experience. No Supabase project, no API keys, no sign-up.
