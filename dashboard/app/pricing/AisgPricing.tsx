@@ -215,7 +215,7 @@ function ProCta() {
       {error && <p className="text-xs text-red-400 mt-2">{error}</p>}
       <p className="text-[10px] text-slate-400 mt-2 leading-snug">
         Free for 30 days, then {annual ? "$1,992 billed annually ($166/mo)" : "$199 billed monthly"}. Your
-        subscription renews automatically until you cancel. Cancel
+        subscription renews automatically until you cancel. A card is required at checkout. Cancel
         anytime online from Account &rarr; Billing; cancel before the trial ends and you won&rsquo;t be charged. See
         our{" "}
         <a href="/terms" className="underline hover:text-slate-300">
