@@ -194,7 +194,7 @@ The comparison table is Self-Hosted Free: real login with `CONTRACTGATE_SELF_HOS
 docker compose up
 ```
 
-**Python SDK:**
+**Python SDK** (`pip install contractgate` installs this library, not the `contractgate` CLI):
 ```bash
 pip install contractgate
 ```
@@ -204,7 +204,7 @@ client = Client(base_url="http://localhost:8080", api_key="cg_demo_key")
 client.ingest(contract_id="...", events={"user_id": "u1", "event_type": "click"})
 ```
 
-**CLI:**
+**CLI** (`contractgate test` is the Rust binary, installed with Cargo):
 ```bash
 cargo install --git https://github.com/nightmoose/contractgate contractgate
 contractgate test --contract examples/contracts/api/user_events.yaml --data examples/contracts/api/pass.json
