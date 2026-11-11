@@ -381,13 +381,30 @@ fn database_failure(e: &sqlx::Error) -> (StatusCode, String) {
         );
         return (StatusCode::GATEWAY_TIMEOUT, wait.message.to_string());
     }
+    log_database_error("response", crate::request_limits::current_stage(), e);
+    (StatusCode::INTERNAL_SERVER_ERROR, database_error_message(e))
+}
+
+/// Server log for a database failure. The Postgres message, code, detail,
+/// hint, column, and constraint stay here. The HTTP body stays generic
+/// (`database_error_message`) so none of that reaches the client.
+fn log_database_error(op: &str, stage: &str, e: &sqlx::Error) {
+    let pg = e
+        .as_database_error()
+        .and_then(|db| db.try_downcast_ref::<sqlx::postgres::PgDatabaseError>());
     tracing::error!(
         route = %crate::request_limits::current_route(),
-        stage = %crate::request_limits::current_stage(),
-        "Database error: {:?}",
-        e
+        stage,
+        op,
+        db_code = pg.map(|err| err.code()).unwrap_or(""),
+        db_message = pg.map(|err| err.message()).unwrap_or(""),
+        db_detail = pg.and_then(|err| err.detail()).unwrap_or(""),
+        db_hint = pg.and_then(|err| err.hint()).unwrap_or(""),
+        db_column = pg.and_then(|err| err.column()).unwrap_or(""),
+        db_constraint = pg.and_then(|err| err.constraint()).unwrap_or(""),
+        error = %e,
+        "database error"
     );
-    (StatusCode::INTERNAL_SERVER_ERROR, database_error_message(e))
 }
 
 fn database_error_message(e: &sqlx::Error) -> String {
@@ -427,11 +444,7 @@ impl<T> DbOpContext<T> for Result<T, sqlx::Error> {
             let stage = crate::request_limits::db_timeout(&e)
                 .map(|wait| wait.stage)
                 .unwrap_or_else(crate::request_limits::current_stage);
-            tracing::error!(
-                route = %crate::request_limits::current_route(),
-                stage,
-                "Database error during {op}: {e:?}"
-            );
+            log_database_error(op, stage, &e);
             AppError::Database(e)
         })
     }

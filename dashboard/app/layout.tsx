@@ -8,7 +8,10 @@ import { DEMO_MODE } from "@/lib/demo";
 import DemoBanner from "@/components/DemoBanner";
 import HelpProvider from "@/components/help/HelpProvider";
 import BrandProvider from "@/components/BrandProvider";
+import LoggedOutHeader from "@/components/LoggedOutHeader";
+import { VisitorSessionProvider } from "@/components/VisitorSession";
 import { BRAND_COOKIE, brandFromCookie, type Brand } from "@/lib/brand";
+import { resolveVisitor } from "@/lib/visitor-session";
 
 const SITE_URL =
   // Absolute URL is required for og:image — a relative path renders as a blank
@@ -93,22 +96,30 @@ export default async function RootLayout({
   children: React.ReactNode;
 }) {
   const brand = await requestBrand();
+  const visitor = await resolveVisitor();
+  const loggedOut = !DEMO_MODE && !visitor.authed;
+  const mainClass = DEMO_MODE
+    ? "px-4 pb-4 pt-[calc(36px+4rem)] md:px-8 md:pb-8 md:pt-[calc(36px+2rem)]"
+    : loggedOut
+      ? "px-4 pb-4 pt-[calc(3.5rem+3rem)] md:px-8 md:pb-8 md:pt-[calc(3rem+2rem)]"
+      : "px-4 pb-4 pt-16 md:p-8";
   return (
     <html lang="en" className="dark">
       <body className="min-h-screen bg-[#0a0d12] text-slate-200 flex">
         <BrandProvider initial={brand}>
+        <VisitorSessionProvider authed={visitor.authed}>
         <HelpProvider>
         {/* Demo mode: fixed 36px banner at top; main shifts down with pt-9. */}
         {DEMO_MODE && <DemoBanner />}
         <Sidebar />
         <ClientOrgProvider />
-        <main
-          className={`flex-1 min-w-0 ml-0 md:ml-64 min-h-screen ${
-            DEMO_MODE
-              ? "px-4 pb-4 pt-[calc(36px+4rem)] md:px-8 md:pb-8 md:pt-[calc(36px+2rem)]"
-              : "px-4 pb-4 pt-16 md:p-8"
-          }`}
-        >
+        {loggedOut && (
+          <LoggedOutHeader
+            pathname={visitor.pathname}
+            product={brand === "aisg" ? "aischemagate" : null}
+          />
+        )}
+        <main className={`flex-1 min-w-0 ml-0 md:ml-64 min-h-screen ${mainClass}`}>
           {children}
         </main>
         {/* Vercel Web Analytics.
@@ -123,6 +134,7 @@ export default async function RootLayout({
           <Script src="/_vercel/insights/script.js" strategy="afterInteractive" defer />
         )}
         </HelpProvider>
+        </VisitorSessionProvider>
         </BrandProvider>
       </body>
     </html>

@@ -143,12 +143,13 @@ pub async fn recent_audit_entries(
     limit: i64,
     offset: i64,
 ) -> AppResult<Vec<AuditEntry>> {
-    let rows = match (org_id, contract_id) {
+    let mut rows = match (org_id, contract_id) {
         (Some(oid), Some(cid)) => {
             sqlx::query_as::<_, AuditEntry>(
                 r#"
                 SELECT id, contract_id, contract_version, passed, violation_count,
-                       violation_details, raw_event, validation_us, source_ip, created_at
+                       violation_details, raw_event, raw_event_redacted, validation_us,
+                       source_ip, created_at
                 FROM audit_log
                 WHERE org_id = $1 AND contract_id = $2
                 ORDER BY created_at DESC
@@ -166,7 +167,8 @@ pub async fn recent_audit_entries(
             sqlx::query_as::<_, AuditEntry>(
                 r#"
                 SELECT id, contract_id, contract_version, passed, violation_count,
-                       violation_details, raw_event, validation_us, source_ip, created_at
+                       violation_details, raw_event, raw_event_redacted, validation_us,
+                       source_ip, created_at
                 FROM audit_log
                 WHERE org_id = $1
                 ORDER BY created_at DESC
@@ -184,7 +186,8 @@ pub async fn recent_audit_entries(
             sqlx::query_as::<_, AuditEntry>(
                 r#"
                 SELECT id, contract_id, contract_version, passed, violation_count,
-                       violation_details, raw_event, validation_us, source_ip, created_at
+                       violation_details, raw_event, raw_event_redacted, validation_us,
+                       source_ip, created_at
                 FROM audit_log
                 WHERE contract_id = $1
                 ORDER BY created_at DESC
@@ -202,7 +205,8 @@ pub async fn recent_audit_entries(
             sqlx::query_as::<_, AuditEntry>(
                 r#"
                 SELECT id, contract_id, contract_version, passed, violation_count,
-                       violation_details, raw_event, validation_us, source_ip, created_at
+                       violation_details, raw_event, raw_event_redacted, validation_us,
+                       source_ip, created_at
                 FROM audit_log
                 ORDER BY created_at DESC
                 LIMIT $1 OFFSET $2
@@ -215,6 +219,11 @@ pub async fn recent_audit_entries(
         }
     };
 
+    for row in &mut rows {
+        if row.raw_event_redacted {
+            crate::payload_redaction::redact_violation_details(&mut row.violation_details);
+        }
+    }
     Ok(rows)
 }
 
@@ -363,6 +372,10 @@ pub struct AuditEntry {
     pub violation_count: i32,
     pub violation_details: serde_json::Value,
     pub raw_event: serde_json::Value,
+    /// Body was not stored. Omitted from the JSON response. `recent_audit_entries`
+    /// uses it to mask `received` before the row is returned.
+    #[serde(skip)]
+    pub raw_event_redacted: bool,
     pub validation_us: i64,
     pub source_ip: Option<String>,
     pub created_at: chrono::DateTime<chrono::Utc>,
@@ -536,7 +549,12 @@ pub async fn log_audit_entries_batch(
     let violation_counts: Vec<i32> = entries.iter().map(|e| e.violation_count).collect();
     let violation_details: Vec<serde_json::Value> = entries
         .iter()
-        .map(|e| e.violation_details.clone())
+        .map(|e| {
+            crate::payload_redaction::violation_details_for_storage(
+                &e.violation_details,
+                store_payloads,
+            )
+        })
         .collect();
     // RFC-004 §6: extract the underlying JSON only at the SQL bind boundary.
     // RFC-086: when storage is gated off, redact the body to `'{}'` and mark it.
@@ -647,7 +665,12 @@ pub async fn quarantine_events_batch(
     let violation_counts: Vec<i32> = entries.iter().map(|e| e.violation_count).collect();
     let violation_details: Vec<serde_json::Value> = entries
         .iter()
-        .map(|e| e.violation_details.clone())
+        .map(|e| {
+            crate::payload_redaction::violation_details_for_storage(
+                &e.violation_details,
+                store_payloads,
+            )
+        })
         .collect();
     let validation_us: Vec<i64> = entries.iter().map(|e| e.validation_us).collect();
     let source_ips: Vec<String> = entries
