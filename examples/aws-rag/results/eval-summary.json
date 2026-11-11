@@ -1,0 +1,240 @@
+{
+  "n_rows": 240,
+  "n_questions": 60,
+  "slices": {
+    "all": {
+      "n": 240,
+      "n_answerable": 232,
+      "hit@1": 0.6897,
+      "hit@3": 0.8793,
+      "hit@5": 0.9138,
+      "judge_correct": 0.9,
+      "judge_hallucinated": 0.0292,
+      "grounding_intervened": 0.1917,
+      "grounding_score_mean": 0.8448,
+      "relevance_score_mean": 0.9903,
+      "retrieve_latency_s": {
+        "p50": 0.3219,
+        "p95": 0.389
+      },
+      "generate_latency_s": {
+        "p50": 1.1175,
+        "p95": 1.7674
+      }
+    },
+    "kb_fixed": {
+      "n": 120,
+      "n_answerable": 116,
+      "hit@1": 0.7069,
+      "hit@3": 0.8793,
+      "hit@5": 0.9138,
+      "judge_correct": 0.9333,
+      "judge_hallucinated": 0.0083,
+      "grounding_intervened": 0.1417,
+      "grounding_score_mean": 0.881,
+      "relevance_score_mean": 0.9824,
+      "retrieve_latency_s": {
+        "p50": 0.3191,
+        "p95": 0.379
+      },
+      "generate_latency_s": {
+        "p50": 1.1175,
+        "p95": 1.7706
+      }
+    },
+    "kb_semantic": {
+      "n": 120,
+      "n_answerable": 116,
+      "hit@1": 0.6724,
+      "hit@3": 0.8793,
+      "hit@5": 0.9138,
+      "judge_correct": 0.8667,
+      "judge_hallucinated": 0.05,
+      "grounding_intervened": 0.2417,
+      "grounding_score_mean": 0.8085,
+      "relevance_score_mean": 0.9982,
+      "retrieve_latency_s": {
+        "p50": 0.3259,
+        "p95": 0.3914
+      },
+      "generate_latency_s": {
+        "p50": 1.1177,
+        "p95": 1.6542
+      }
+    },
+    "model_lite": {
+      "n": 120,
+      "n_answerable": 116,
+      "hit@1": 0.6897,
+      "hit@3": 0.8793,
+      "hit@5": 0.9138,
+      "judge_correct": 0.9,
+      "judge_hallucinated": 0.0333,
+      "grounding_intervened": 0.2333,
+      "grounding_score_mean": 0.8212,
+      "relevance_score_mean": 0.9909,
+      "retrieve_latency_s": {
+        "p50": 0.3219,
+        "p95": 0.389
+      },
+      "generate_latency_s": {
+        "p50": 1.1357,
+        "p95": 1.9032
+      }
+    },
+    "model_pro": {
+      "n": 120,
+      "n_answerable": 116,
+      "hit@1": 0.6897,
+      "hit@3": 0.8793,
+      "hit@5": 0.9138,
+      "judge_correct": 0.9,
+      "judge_hallucinated": 0.025,
+      "grounding_intervened": 0.15,
+      "grounding_score_mean": 0.8682,
+      "relevance_score_mean": 0.9897,
+      "retrieve_latency_s": {
+        "p50": 0.3219,
+        "p95": 0.389
+      },
+      "generate_latency_s": {
+        "p50": 1.1049,
+        "p95": 1.5608
+      }
+    },
+    "fixed_lite": {
+      "n": 60,
+      "n_answerable": 58,
+      "hit@1": 0.7069,
+      "hit@3": 0.8793,
+      "hit@5": 0.9138,
+      "judge_correct": 0.9167,
+      "judge_hallucinated": 0.0167,
+      "grounding_intervened": 0.15,
+      "grounding_score_mean": 0.8715,
+      "relevance_score_mean": 0.9822,
+      "retrieve_latency_s": {
+        "p50": 0.3191,
+        "p95": 0.379
+      },
+      "generate_latency_s": {
+        "p50": 1.1118,
+        "p95": 1.8544
+      }
+    },
+    "fixed_pro": {
+      "n": 60,
+      "n_answerable": 58,
+      "hit@1": 0.7069,
+      "hit@3": 0.8793,
+      "hit@5": 0.9138,
+      "judge_correct": 0.95,
+      "judge_hallucinated": 0.0,
+      "grounding_intervened": 0.1333,
+      "grounding_score_mean": 0.8905,
+      "relevance_score_mean": 0.9827,
+      "retrieve_latency_s": {
+        "p50": 0.3191,
+        "p95": 0.379
+      },
+      "generate_latency_s": {
+        "p50": 1.1216,
+        "p95": 1.6675
+      }
+    },
+    "semantic_lite": {
+      "n": 60,
+      "n_answerable": 58,
+      "hit@1": 0.6724,
+      "hit@3": 0.8793,
+      "hit@5": 0.9138,
+      "judge_correct": 0.8833,
+      "judge_hallucinated": 0.05,
+      "grounding_intervened": 0.3167,
+      "grounding_score_mean": 0.771,
+      "relevance_score_mean": 0.9997,
+      "retrieve_latency_s": {
+        "p50": 0.3259,
+        "p95": 0.3914
+      },
+      "generate_latency_s": {
+        "p50": 1.1521,
+        "p95": 1.9044
+      }
+    },
+    "semantic_pro": {
+      "n": 60,
+      "n_answerable": 58,
+      "hit@1": 0.6724,
+      "hit@3": 0.8793,
+      "hit@5": 0.9138,
+      "judge_correct": 0.85,
+      "judge_hallucinated": 0.05,
+      "grounding_intervened": 0.1667,
+      "grounding_score_mean": 0.846,
+      "relevance_score_mean": 0.9967,
+      "retrieve_latency_s": {
+        "p50": 0.3259,
+        "p95": 0.3914
+      },
+      "generate_latency_s": {
+        "p50": 1.088,
+        "p95": 1.4767
+      }
+    },
+    "abstain": {
+      "n": 8,
+      "n_answerable": 0,
+      "hit@1": 0.0,
+      "hit@3": 0.0,
+      "hit@5": 0.0,
+      "judge_correct": 1.0,
+      "judge_hallucinated": 0.0,
+      "grounding_intervened": 0.0,
+      "grounding_score_mean": 0.93,
+      "relevance_score_mean": 1.0,
+      "retrieve_latency_s": {
+        "p50": 0.3007,
+        "p95": 0.3355
+      },
+      "generate_latency_s": {
+        "p50": 0.9818,
+        "p95": 1.2431
+      }
+    }
+  },
+  "token_counts": {
+    "lite_in": 328191,
+    "lite_out": 23103,
+    "pro_in": 81079,
+    "pro_out": 7738,
+    "retrieves": 360,
+    "guardrail_units": 849
+  },
+  "embed_tokens_est": 274296,
+  "cost_usd_estimated": {
+    "embeddings_two_kbs": 0.00549,
+    "nova_lite": 0.02524,
+    "nova_pro": 0.08962,
+    "guardrails": 0.12735,
+    "s3_vectors_queries": 0.0009,
+    "s3_vectors_put_and_storage_est": 0.005,
+    "total_estimated": 0.2536,
+    "notes": "Self-managed Knowledge Bases on S3 Vectors have no managed Retrieve fee ($1 per 1k API calls is for managed Knowledge Bases). Embeddings are approx tokens from the 117-file corpus, counted once per KB. Generate and judge tokens are observed when the API returns them, otherwise approximated from text length / 4. Guardrails estimated at $0.15 per 1k contextual-grounding/content units. S3 Vectors: $2.50 per million queries plus about 11 MB of PUTs and storage (408 + 677 vectors). Cost Explorer lags ~24h."
+  },
+  "guardrail_id": "zsbv4nv1picq",
+  "guardrail_version": "1",
+  "kbs": {
+    "fixed": {
+      "knowledge_base_id": "5G4UMSCHFY"
+    },
+    "semantic": {
+      "knowledge_base_id": "B6DBQKPPN2"
+    }
+  },
+  "vector_counts": {
+    "fixed": 408,
+    "semantic": 677,
+    "total": 1085
+  }
+}

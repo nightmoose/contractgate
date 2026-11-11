@@ -44,7 +44,7 @@ use uuid::Uuid;
 // shared with other binaries (e.g. src/bin/demo.rs).  We re-export it here so
 // existing submodules that refer to `crate::contract` / `crate::validation`
 // continue to resolve unchanged.
-pub use contractgate::{contract, drop_mode, transform, validation};
+pub use contractgate::{contract, drop_mode, payload_redaction, transform, validation};
 
 mod api_key_auth;
 mod auth_fail_limit;
@@ -508,13 +508,14 @@ async fn create_contract_handler(
         axum::Json::from_request(req, &state)
             .await
             .map_err(|e| AppError::BadRequest(e.to_string()))?;
-    let (identity, _first_version) = storage::create_contract(
+    let (identity, _first_version) = storage::create_contract_in(
         &state.db,
         &body_req.name,
         body_req.description.as_deref(),
         &body_req.yaml_content,
         body_req.multi_stable_resolution.unwrap_or_default(),
         org_id,
+        state.self_hosted,
     )
     .await?;
 
@@ -700,12 +701,13 @@ async fn create_version_handler(
         collaboration::CallerRole::Editor,
     )
     .await?;
-    let v = storage::create_version(
+    let v = storage::create_version_in(
         &state.db,
         contract_id,
         &req.version,
         &req.yaml_content,
         scope,
+        state.self_hosted,
     )
     .await?;
     // Drafts are cached lazily on first pin — no eager insert.
@@ -818,6 +820,9 @@ async fn deprecate_version_handler(
     // without eviction a just-deprecated pin would keep certifying egress
     // output until the TTL expired.  Drop the contract's egress cache entries.
     state.egress_cache.invalidate_contract_all(contract_id);
+    // A cached GET /published/{ref} for this version would keep serving the
+    // pre-deprecation document for the rest of the TTL.
+    state.public_read_cache.invalidate_publication_views();
     Ok(Json(VersionResponse::from(&v)))
 }
 
@@ -883,13 +888,14 @@ async fn deploy_contract_handler(
         .await
         .map_err(|e| AppError::BadRequest(e.to_string()))?;
 
-    let (version, deprecated_count) = storage::deploy_contract_version(
+    let (version, deprecated_count) = storage::deploy_contract_version_in(
         &state.db,
         &body.name,
         &body.yaml_content,
         body.source.as_deref(),
         body.deployed_by.as_deref(),
         org_id,
+        state.self_hosted,
     )
     .await?;
 
@@ -897,6 +903,10 @@ async fn deploy_contract_handler(
     let _ = state
         .get_compiled(version.contract_id, &version.version)
         .await;
+
+    // Deploy deprecates every previously stable version. Drop published
+    // views so a cached GET /published/{ref} does not outlive that change.
+    state.public_read_cache.invalidate_publication_views();
 
     let deployed_at = version.promoted_at.unwrap_or_else(chrono::Utc::now);
     let resp = DeployContractResponse {
@@ -980,6 +990,7 @@ async fn import_odcs_handler(
             &yaml,
             result.import_source,
             org_id,
+            state.self_hosted,
         )
         .await?;
         return Ok((StatusCode::CREATED, Json(VersionResponse::from(&cv))));
@@ -1003,13 +1014,14 @@ async fn import_odcs_handler(
     let yaml_named = crate::version_pin::set_yaml_name(&result.yaml_content, &name);
 
     // Step 2: create identity + throwaway v1.0.0 draft.
-    let (identity, _) = storage::create_contract(
+    let (identity, _) = storage::create_contract_in(
         &state.db,
         &name,
         name_in_yaml.description.as_deref(),
         &yaml_named,
         Default::default(),
         org_id,
+        state.self_hosted,
     )
     .await?;
 
@@ -1025,6 +1037,7 @@ async fn import_odcs_handler(
         &yaml_named,
         result.import_source,
         org_id,
+        state.self_hosted,
     )
     .await?;
 
@@ -1269,6 +1282,7 @@ const REQUIRED_SCHEMA: &[(&str, &str)] = &[
     ("orgs", "store_event_payloads"),      // migration 034 (RFC-086)
     ("contracts", "store_event_payloads"), // migration 034 (RFC-086)
     ("quarantine_events", "payload_redacted"), // migration 034 (RFC-086)
+    ("quarantine_events", "reviewed_at"),  // migration 051 (review UPDATE)
     ("audit_log", "raw_event_redacted"),   // migration 034 (RFC-086)
 ];
 
@@ -1813,7 +1827,8 @@ fn build_router(state: Arc<AppState>) -> Router {
     // server render through when many distinct paths miss at once.
     let public_rate_limited = Router::new()
         // RFC-032: public-fetch for published contracts (visibility checked inside handler).
-        // Not part of the catalog response cache — the handler is link-token aware.
+        // Cached like the other anonymous GETs. The link token is a query
+        // parameter, so it is part of the cache key; non-200s are not stored.
         .route(
             "/published/{publication_ref}",
             get(publication::fetch_published_handler),
@@ -1838,8 +1853,10 @@ fn build_router(state: Arc<AppState>) -> Router {
             public_ip_rate_limit,
         ));
 
-    // Detail routes were not on the per-IP limiter. They still get the
-    // anonymous response cache. `/published` stays out of that cache.
+    // Slug, YAML, and ODCS share one router. They get the same per-IP
+    // limiter as the list routes (429 + Retry-After, X-DCG-SSR-Token bypass)
+    // and the anonymous response cache inside it, so a cache hit still spends
+    // a token. Family reads stay cached and are not on this limiter.
     let catalog_details = Router::new()
         .route(
             "/public-contracts/{id}",
@@ -1853,6 +1870,16 @@ fn build_router(state: Arc<AppState>) -> Router {
             "/public-contracts/{id}/odcs",
             get(public_catalog::get_public_contract_odcs_handler),
         )
+        .layer(middleware::from_fn_with_state(
+            state.clone(),
+            public_catalog_cache,
+        ))
+        .layer(middleware::from_fn_with_state(
+            state.clone(),
+            public_ip_rate_limit,
+        ));
+
+    let family_details = Router::new()
         .route(
             "/public-contracts/{id}/family",
             get(contract_families::get_public_contract_family_handler),
@@ -1878,6 +1905,7 @@ fn build_router(state: Arc<AppState>) -> Router {
         // Mounted as public so Prometheus can scrape without an x-api-key.
         .route("/metrics", get(observability::metrics_handler))
         .merge(catalog_details)
+        .merge(family_details)
         .merge(public_rate_limited);
 
     // Protected routes — require x-api-key header

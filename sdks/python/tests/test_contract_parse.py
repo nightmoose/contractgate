@@ -94,6 +94,34 @@ def test_missing_top_level_required_fields():
         Contract.from_yaml("ontology:\n  entities: []\n")  # no version/name
 
 
+def test_date_and_timestamp_types_parse():
+    yaml = """
+version: "1.0"
+name: "when"
+ontology:
+  entities:
+    - name: day
+      type: date
+    - name: instant
+      type: timestamp
+"""
+    fields = {f.name: f.field_type for f in Contract.from_yaml(yaml).entities}
+    assert fields == {"day": FieldType.DATE, "instant": FieldType.TIMESTAMP}
+
+
+def test_datetime_is_not_a_field_type_alias():
+    yaml = """
+version: "1.0"
+name: "when"
+ontology:
+  entities:
+    - name: instant
+      type: datetime
+"""
+    with pytest.raises(ContractCompileError, match="unknown field type"):
+        Contract.from_yaml(yaml)
+
+
 def test_format_is_kept_on_the_field():
     yaml = """
 version: "1.0"

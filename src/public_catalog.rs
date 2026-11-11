@@ -211,6 +211,7 @@ async fn db_get_public_contract_by_ref(
 
 /// Create a new fork contract in the caller's org.
 /// Returns (contract_id, created_at).
+#[allow(clippy::too_many_arguments)]
 async fn db_fork_public_contract(
     db: &PgPool,
     public_id: Uuid,
@@ -219,6 +220,7 @@ async fn db_fork_public_contract(
     fork_filter: Option<&ForkFilter>,
     yaml_content: &str,
     org_id: Option<Uuid>,
+    self_hosted: bool,
 ) -> AppResult<(Uuid, DateTime<Utc>)> {
     let filter_json = match fork_filter {
         Some(f) => Some(
@@ -234,6 +236,12 @@ async fn db_fork_public_contract(
         rand::thread_rng().fill_bytes(&mut salt);
         salt
     };
+
+    let mut tx = db
+        .begin()
+        .await
+        .map_err(|e| AppError::Internal(format!("failed to begin fork: {e}")))?;
+    crate::storage::enforce_contract_quota(&mut tx, org_id, self_hosted).await?;
 
     // Insert into contracts (identity table) with the forked YAML as the
     // initial draft version "1.0.0".
@@ -261,9 +269,12 @@ async fn db_fork_public_contract(
     .bind(public_id)
     .bind(filter_json.as_ref())
     .bind(yaml_content)
-    .fetch_one(db)
+    .fetch_one(&mut *tx)
     .await
     .map_err(|e| AppError::Internal(format!("failed to create fork contract: {e}")))?;
+    tx.commit()
+        .await
+        .map_err(|e| AppError::Internal(format!("failed to commit fork contract: {e}")))?;
 
     let contract_id: Uuid = row
         .try_get("id")
@@ -673,6 +684,7 @@ pub async fn fork_public_contract_handler(
         body.fork_filter.as_ref(),
         &parent.contract_yaml,
         org_id,
+        state.self_hosted,
     )
     .await?;
 

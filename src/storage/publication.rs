@@ -297,6 +297,7 @@ pub async fn import_published_contract(
     pub_row: &PublicationRow,
     import_mode: ImportMode,
     org_id: Option<Uuid>,
+    self_hosted: bool,
 ) -> AppResult<ContractVersion> {
     let parsed: Contract = serde_yaml::from_str(&pub_row.yaml_content)
         .map_err(|e| AppError::InvalidContractYaml(e.to_string()))?;
@@ -323,6 +324,7 @@ pub async fn import_published_contract(
     let description = parsed.description.as_deref();
 
     let mut tx = pool.begin().await.db_op("import_published:begin")?;
+    super::contracts::enforce_contract_quota(&mut tx, org_id, self_hosted).await?;
 
     // Insert identity with provenance.
     sqlx::query(

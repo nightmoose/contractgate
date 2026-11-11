@@ -187,8 +187,25 @@ It links to `/pricing` with an "Upgrade to Growth" CTA.
 | Versions per contract | 3 |
 | Audit log retention | 7 days |
 
-These are enforced at the API layer. The dashboard shows limit banners as a UX
-hint before the hard limit is hit.
+`free` and `aisg_free` are capped. Paid plans and `CONTRACTGATE_SELF_HOSTED`
+are not. Only a new contract or version is blocked; rows already over the cap
+stay readable, editable, valid, and deletable. The create returns **402**:
+
+```json
+{
+  "error": "plan_limit",
+  "code": "plan_limit",
+  "resource": "contracts",
+  "limit": 3,
+  "current": 3,
+  "message": "The Free plan allows 3 contracts. Upgrade at https://app.datacontractgate.com/pricing",
+  "upgrade_url": "https://app.datacontractgate.com/pricing",
+  "status": 402
+}
+```
+
+`resource` is `versions` when the per-contract cap is hit. The monthly event
+cap stays **429** `plan_limit_exceeded`. The dashboard shows the `message`.
 
 ---
 

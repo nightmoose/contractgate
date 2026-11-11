@@ -295,6 +295,123 @@ def test_unknown_format_is_metadata():
     assert cc.validate({"value": "not-an-email"}).passed
 
 
+def _typed_contract(type_name: str) -> str:
+    return f"""
+version: "1.0"
+name: "when"
+ontology:
+  entities:
+    - name: when
+      type: {type_name}
+      required: true
+"""
+
+
+# Same accept/reject matrix as ``date_and_timestamp_accept_the_same_values_as_chrono``
+# in ``src/validation.rs``. Chrono 0.4.45 is the Rust engine's parser.
+_DATE_CASES = (
+    ("2024-02-29", True),
+    ("2000-02-29", True),
+    ("2024-01-31", True),
+    ("2024-04-30", True),
+    ("0000-02-29", True),
+    ("0001-01-01", True),
+    ("9999-12-31", True),
+    ("2024-2-29", True),
+    ("2024-02-2", True),
+    (" 2024-02-29", True),
+    ("+10000-01-01", True),
+    ("+262142-12-31", True),
+    ("-262143-01-01", True),
+    ("2023-02-29", False),
+    ("1900-02-29", False),
+    ("2024-02-30", False),
+    ("2024-04-31", False),
+    ("2024-13-01", False),
+    ("2024-00-10", False),
+    ("2024-01-00", False),
+    ("2024-01-01T00:00:00Z", False),
+    ("2024/01/01", False),
+    ("2024-02-29 ", False),
+    ("10000-01-01", False),
+    ("+262143-01-01", False),
+    ("-262144-01-01", False),
+    ("", False),
+)
+
+_TIMESTAMP_CASES = (
+    ("2024-02-29T12:30:00Z", True),
+    ("2024-02-29t12:30:00z", True),
+    ("2024-02-29 12:30:00Z", True),
+    ("2026-10-15T12:00:00+00:00", True),
+    ("2026-10-15T12:00:00-05:00", True),
+    ("2026-10-15T12:00:00+05:30", True),
+    ("2026-10-15T12:00:00+23:59", True),
+    ("2026-10-15T12:00:00-23:59", True),
+    ("2024-02-29T23:59:59.999999999Z", True),
+    ("2024-02-29T00:00:00.1Z", True),
+    ("2024-02-29T00:00:00.1234567890123Z", True),
+    ("2000-02-29T00:00:00+00:00", True),
+    ("0000-02-29T00:00:00Z", True),
+    ("2026-10-15T12:00:00\u221205:00", True),
+    ("2023-02-29T00:00:00Z", False),
+    ("1900-02-29T00:00:00Z", False),
+    ("2024-02-30T00:00:00Z", False),
+    ("2026-10-15T12:00:00", False),
+    ("2026-10-15T12:00:00+24:00", False),
+    ("2026-10-15T12:00:00-24:00", False),
+    ("2026-10-15T12:00:00+05:60", False),
+    ("2026-10-15T12:00:00+0530", False),
+    ("2026-10-15T12:00:00+5:00", False),
+    ("2026-10-15T24:00:00Z", False),
+    ("2016-12-31T23:59:60Z", True),
+    ("2016-12-31T23:59:60.9Z", True),
+    ("2016-12-31T23:59:61Z", False),
+    ("2026-10-15T12:00:00.Z", False),
+    ("2026-10-15T12:00:00Z ", False),
+    ("not-a-timestamp", False),
+    ("", False),
+)
+
+
+def test_date_type_matches_rust_engine():
+    cc = Contract.from_yaml(_typed_contract("date")).compile()
+    for value, ok in _DATE_CASES:
+        result = cc.validate({"when": value})
+        assert result.passed is ok, (value, result.violations)
+        if not ok and value != "":
+            assert result.violations[0].kind.value == "pattern_mismatch"
+            assert result.violations[0].message == (
+                f'Field \'when\' value "{value}" is not a valid calendar date '
+                "(expected YYYY-MM-DD)"
+            )
+    wrong = cc.validate({"when": 20240229})
+    assert not wrong.passed
+    assert wrong.violations[0].kind.value == "type_mismatch"
+    assert "expected type Date" in wrong.violations[0].message
+    assert "got integer" in wrong.violations[0].message
+
+
+def test_timestamp_type_matches_rust_engine():
+    cc = Contract.from_yaml(_typed_contract("timestamp")).compile()
+    for value, ok in _TIMESTAMP_CASES:
+        result = cc.validate({"when": value})
+        assert result.passed is ok, (value, result.violations)
+        if not ok and value != "":
+            assert result.violations[0].kind.value == "pattern_mismatch"
+            assert result.violations[0].message == (
+                f'Field \'when\' value "{value}" is not an RFC 3339 timestamp'
+            )
+    missing_offset = cc.validate({"when": "2026-10-15T12:00:00"})
+    assert missing_offset.violations[0].message == (
+        'Field \'when\' value "2026-10-15T12:00:00" is not an RFC 3339 timestamp'
+    )
+    leap = cc.validate({"when": "2024-02-29T12:00:00+05:30"})
+    assert leap.passed
+    not_leap = cc.validate({"when": "2023-02-29T12:00:00Z"})
+    assert not not_leap.passed
+
+
 def test_violation_kind_serializes_to_snake_case():
     # ``ViolationKind`` extends ``str`` so its value IS the snake_case
     # string Rust serializes to. This asserts the contract.

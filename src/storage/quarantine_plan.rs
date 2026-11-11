@@ -52,6 +52,22 @@ pub async fn org_pending_quarantine_count(pool: &PgPool, org_id: Uuid) -> AppRes
     Ok(count)
 }
 
+/// `reviewed_at` is migration 002, backfilled by 051 where the table predates
+/// that column. `$3::uuid[]` matches `quarantine_events.id`. A `text[]` bind
+/// fails with `operator does not exist: uuid = text`.
+pub const MARK_QUARANTINE_REVIEWED_SQL: &str = r#"
+        UPDATE quarantine_events qe
+        SET status = 'reviewed',
+            reviewed_at = now()
+        FROM contracts c
+        WHERE qe.contract_id = c.id
+          AND qe.contract_id = $1
+          AND ($2::uuid IS NULL OR c.org_id = $2)
+          AND qe.id = ANY($3::uuid[])
+          AND qe.status = 'pending'
+          AND c.deleted_at IS NULL
+        "#;
+
 pub async fn mark_quarantine_reviewed(
     pool: &PgPool,
     org_id: Option<Uuid>,
@@ -61,26 +77,13 @@ pub async fn mark_quarantine_reviewed(
     if ids.is_empty() {
         return Ok(0);
     }
-    let result = sqlx::query(
-        r#"
-        UPDATE quarantine_events qe
-        SET status = 'reviewed',
-            reviewed_at = now()
-        FROM contracts c
-        WHERE qe.contract_id = c.id
-          AND qe.contract_id = $1
-          AND ($2::uuid IS NULL OR c.org_id = $2)
-          AND qe.id = ANY($3)
-          AND qe.status = 'pending'
-          AND c.deleted_at IS NULL
-        "#,
-    )
-    .bind(contract_id)
-    .bind(org_id)
-    .bind(ids)
-    .execute(pool)
-    .await
-    .db_op("mark_quarantine_reviewed")?;
+    let result = sqlx::query(MARK_QUARANTINE_REVIEWED_SQL)
+        .bind(contract_id)
+        .bind(org_id)
+        .bind(ids)
+        .execute(pool)
+        .await
+        .db_op("mark_quarantine_reviewed")?;
     Ok(result.rows_affected())
 }
 
@@ -286,4 +289,19 @@ pub async fn select_bulk_replay_ids(
     .await
     .db_op("select_bulk_replay_ids")?;
     Ok(rows.into_iter().map(|(id,)| id).collect())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::MARK_QUARANTINE_REVIEWED_SQL;
+
+    #[test]
+    fn review_sql_sets_reviewed_at_and_binds_uuid_array() {
+        assert!(MARK_QUARANTINE_REVIEWED_SQL.contains("status = 'reviewed'"));
+        assert!(MARK_QUARANTINE_REVIEWED_SQL.contains("reviewed_at = now()"));
+        assert!(MARK_QUARANTINE_REVIEWED_SQL.contains("qe.id = ANY($3::uuid[])"));
+        assert!(MARK_QUARANTINE_REVIEWED_SQL.contains("c.org_id = $2"));
+        assert!(MARK_QUARANTINE_REVIEWED_SQL.contains("c.deleted_at IS NULL"));
+        assert!(!MARK_QUARANTINE_REVIEWED_SQL.contains("reviewed_by"));
+    }
 }

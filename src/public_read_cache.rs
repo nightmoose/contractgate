@@ -1,16 +1,19 @@
 //! In-process TTL cache for anonymous public catalog reads.
 //!
 //! `GET /catalog`, `GET /public-contracts`, `GET /public-contract-families`,
-//! and `GET /public-contracts/{slug}` (including `/yaml`, `/odcs`, and
-//! `/family`) otherwise query Postgres on every request and send no
-//! `Cache-Control`. This cache stores the successful anonymous response for
-//! [`TTL`] (60s), keyed by path and query string, and stamps
+//! `GET /public-contracts/{slug}` (including `/yaml`, `/odcs`, and `/family`),
+//! and `GET /published/{ref}` otherwise query Postgres on every request and
+//! send no `Cache-Control`. This cache stores the successful anonymous
+//! response for [`TTL`] (60s), keyed by path and query string, and stamps
 //! [`PUBLIC_CACHE_CONTROL`] so a shared cache can hold it longer.
 //!
 //! Requests that carry `Authorization` or `x-api-key` are never stored and
 //! are marked `private, no-store`. The response for those routes does not
 //! depend on the caller, but a credentialed request must not be reused as a
-//! public cache entry.
+//! public cache entry. `GET /published/{ref}` is link-token aware: `?token=`
+//! is part of the cache key, a non-200 (missing or wrong token, unknown or
+//! revoked ref) is not stored, and publish, deprecation, and revoke drop the
+//! published and catalog entries.
 
 use std::collections::HashMap;
 use std::sync::{Mutex, MutexGuard};
@@ -119,15 +122,46 @@ impl PublicReadCache {
             },
         );
     }
+
+    /// Drop cached `GET /published/{ref}` and `GET /catalog` responses.
+    ///
+    /// Publishing adds a catalog row, deprecating a version should not keep
+    /// serving the pre-change published document, and revoking turns a cached
+    /// 200 into a 404. Curated `/public-contracts` rows are a different table
+    /// and stay. Query variants (`?limit=`, `?token=`) go with their path.
+    pub fn invalidate_publication_views(&self) {
+        let mut map = self.lock();
+        map.retain(|key, _| !publication_view_key(key));
+    }
 }
 
-/// True for the anonymous catalog GETs this cache is allowed to store.
+/// True for the anonymous GETs this cache is allowed to store.
 pub fn is_public_catalog_path(path: &str) -> bool {
     path == "/catalog"
         || path == "/public-contracts"
         || path == "/public-contract-families"
         || path.starts_with("/public-contracts/")
         || path.starts_with("/public-contract-families/")
+        || is_published_ref_path(path)
+}
+
+/// `GET /published/{ref}` only. One non-empty segment, so `/published`,
+/// `/published/`, and `/published/ref/extra` stay out of the cache.
+pub fn is_published_ref_path(path: &str) -> bool {
+    let Some(rest) = path.strip_prefix("/published/") else {
+        return false;
+    };
+    !rest.is_empty() && !rest.contains('/')
+}
+
+fn cache_key_path(key: &str) -> &str {
+    key.split_once('?').map(|(path, _)| path).unwrap_or(key)
+}
+
+/// Published-ref and public-catalog list keys, including their query strings.
+fn publication_view_key(key: &str) -> bool {
+    let path = cache_key_path(key);
+    path == "/catalog" || is_published_ref_path(path)
 }
 
 /// Path plus query. `/catalog` and `/catalog?limit=20` are different entries.
@@ -223,9 +257,11 @@ fn response_from_parts(headers: HeaderMap, body: Vec<u8>) -> Response {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::HashMap;
     use std::sync::atomic::{AtomicUsize, Ordering};
     use std::sync::Arc;
 
+    use axum::response::IntoResponse;
     use axum::routing::get;
     use axum::{middleware, Router};
     use axum_test::TestServer;
@@ -262,7 +298,12 @@ mod tests {
             "/public-contract-families/stripe-charges-pipeline"
         ));
         assert!(!is_public_catalog_path("/health"));
-        assert!(!is_public_catalog_path("/published/ref"));
+        assert!(is_public_catalog_path("/published/ref"));
+        assert!(is_published_ref_path("/published/a3f1b2c4d5e6f708"));
+        assert!(!is_public_catalog_path("/published"));
+        assert!(!is_public_catalog_path("/published/"));
+        assert!(!is_public_catalog_path("/published/ref/extra"));
+        assert!(!is_public_catalog_path("/published-extra"));
         assert!(!is_public_catalog_path("/public-contracts-extra"));
         assert!(!is_public_catalog_path("/catalog/library"));
     }
@@ -447,5 +488,137 @@ mod tests {
         let second = server.get("/public-contracts/stripe-charges/yaml").await;
         assert_eq!(second.text(), "contract: true");
         assert_eq!(hits.load(Ordering::SeqCst), 1);
+    }
+
+    fn published_app(cache: Arc<PublicReadCache>, hits: Arc<AtomicUsize>) -> Router {
+        Router::new()
+            .route(
+                "/published/{publication_ref}",
+                get(
+                    move |axum::extract::Query(q): axum::extract::Query<
+                        HashMap<String, String>,
+                    >| {
+                        let hits = hits.clone();
+                        async move {
+                            let n = hits.fetch_add(1, Ordering::SeqCst);
+                            let token = q.get("token").map(String::as_str).unwrap_or("");
+                            if token == "bad" {
+                                return (StatusCode::FORBIDDEN, "link token invalid")
+                                    .into_response();
+                            }
+                            (
+                                StatusCode::OK,
+                                [(header::CONTENT_TYPE, "application/json")],
+                                format!(r#"{{"n":{n},"token":"{token}"}}"#),
+                            )
+                                .into_response()
+                        }
+                    },
+                ),
+            )
+            .layer(middleware::from_fn_with_state(
+                cache,
+                |axum::extract::State(cache): axum::extract::State<Arc<PublicReadCache>>,
+                 request: Request,
+                 next: Next| async move { handle(&cache, request, next).await },
+            ))
+    }
+
+    #[tokio::test]
+    async fn published_ref_is_cached_by_path_and_query() {
+        let cache = Arc::new(PublicReadCache::default());
+        let hits = Arc::new(AtomicUsize::new(0));
+        let server = TestServer::new(published_app(cache.clone(), hits.clone()));
+
+        let first = server.get("/published/abc").await;
+        assert_eq!(first.status_code(), StatusCode::OK);
+        assert_eq!(first.header("cache-control"), PUBLIC_CACHE_CONTROL);
+        assert_eq!(first.header("vary"), "authorization, x-api-key");
+        assert_eq!(first.text(), r#"{"n":0,"token":""}"#);
+        assert_eq!(hits.load(Ordering::SeqCst), 1);
+
+        let cached = server.get("/published/abc").await;
+        assert_eq!(cached.text(), r#"{"n":0,"token":""}"#);
+        assert_eq!(
+            hits.load(Ordering::SeqCst),
+            1,
+            "a second anonymous GET is served from the cache"
+        );
+
+        // The link token is part of the key. A token-gated body must not
+        // satisfy a token-less URL, and two tokens must not share an entry.
+        let with_token = server.get("/published/abc?token=secret").await;
+        assert_eq!(with_token.status_code(), StatusCode::OK);
+        assert_eq!(with_token.text(), r#"{"n":1,"token":"secret"}"#);
+        assert_eq!(hits.load(Ordering::SeqCst), 2);
+        let other_token = server.get("/published/abc?token=other").await;
+        assert_eq!(other_token.text(), r#"{"n":2,"token":"other"}"#);
+        assert_eq!(hits.load(Ordering::SeqCst), 3);
+        let token_cached = server.get("/published/abc?token=secret").await;
+        assert_eq!(token_cached.text(), r#"{"n":1,"token":"secret"}"#);
+        assert_eq!(hits.load(Ordering::SeqCst), 3);
+
+        let still_public = server.get("/published/abc").await;
+        assert_eq!(still_public.text(), r#"{"n":0,"token":""}"#);
+        assert_eq!(hits.load(Ordering::SeqCst), 3);
+
+        let denied = server.get("/published/abc?token=bad").await;
+        assert_eq!(denied.status_code(), StatusCode::FORBIDDEN);
+        let denied_again = server.get("/published/abc?token=bad").await;
+        assert_eq!(denied_again.status_code(), StatusCode::FORBIDDEN);
+        assert_eq!(hits.load(Ordering::SeqCst), 5, "a non-200 is not stored");
+
+        let authed = server
+            .get("/published/abc")
+            .add_header("authorization", "Bearer token")
+            .await;
+        assert_eq!(authed.header("cache-control"), PRIVATE_CACHE_CONTROL);
+        assert_eq!(hits.load(Ordering::SeqCst), 6);
+        let public_again = server.get("/published/abc").await;
+        assert_eq!(public_again.text(), r#"{"n":0,"token":""}"#);
+        assert_eq!(
+            hits.load(Ordering::SeqCst),
+            6,
+            "a credentialed response must not replace the anonymous entry"
+        );
+    }
+
+    #[test]
+    fn publication_invalidation_drops_published_and_catalog_only() {
+        let cache = PublicReadCache::default();
+        let now = Instant::now();
+        for key in [
+            "/published/abc",
+            "/published/abc?token=secret",
+            "/catalog",
+            "/catalog?limit=20",
+            "/public-contracts/stripe-charges",
+            "/public-contracts/stripe-charges/yaml",
+        ] {
+            cache.insert_at(key.to_owned(), HeaderMap::new(), b"{}".to_vec(), now);
+        }
+        cache.invalidate_publication_views();
+        assert!(cache.get("/published/abc").is_none());
+        assert!(cache.get("/published/abc?token=secret").is_none());
+        assert!(cache.get("/catalog").is_none());
+        assert!(cache.get("/catalog?limit=20").is_none());
+        assert!(cache.get("/public-contracts/stripe-charges").is_some());
+        assert!(cache.get("/public-contracts/stripe-charges/yaml").is_some());
+        // A ref prefix must not be treated as a longer ref. `ab` is not `abc`.
+        cache.insert_at(
+            "/published/ab".to_owned(),
+            HeaderMap::new(),
+            b"short".to_vec(),
+            now,
+        );
+        cache.insert_at(
+            "/published/abc".to_owned(),
+            HeaderMap::new(),
+            b"long".to_vec(),
+            now,
+        );
+        cache.invalidate_publication_views();
+        assert!(cache.get("/published/ab").is_none());
+        assert!(cache.get("/published/abc").is_none());
     }
 }

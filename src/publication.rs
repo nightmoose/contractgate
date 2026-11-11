@@ -158,6 +158,11 @@ pub async fn publish_handler(
     )
     .await?;
 
+    // The new ref is not cached yet. Catalog lists are, and a previous
+    // fetch of this ref (404) is not stored, but drop published views so a
+    // public listing cannot stay stale for the rest of the TTL.
+    state.public_read_cache.invalidate_publication_views();
+
     Ok((
         StatusCode::CREATED,
         Json(PublishResponse {
@@ -182,6 +187,9 @@ pub async fn revoke_handler(
 ) -> AppResult<Json<RevokeResponse>> {
     let org_id = crate::org_id_from_req(&req);
     let row = storage::revoke_publication(&state.db, &publication_ref, org_id).await?;
+
+    // A cached 200 for this ref would hide the revoke until the TTL elapsed.
+    state.public_read_cache.invalidate_publication_views();
 
     Ok(Json(RevokeResponse {
         publication_ref: row.publication_ref,
@@ -364,7 +372,14 @@ pub async fn import_published_handler(
         }
     }
 
-    let cv = storage::import_published_contract(&state.db, &pub_row, import_mode, org_id).await?;
+    let cv = storage::import_published_contract(
+        &state.db,
+        &pub_row,
+        import_mode,
+        org_id,
+        state.self_hosted,
+    )
+    .await?;
     let state_str = cv.state.as_str().to_string();
     let message = if state_str == "stable" {
         format!(

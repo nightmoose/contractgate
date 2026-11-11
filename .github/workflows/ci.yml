@@ -184,6 +184,9 @@ jobs:
       - name: TypeScript type-check
         run: npm run type-check
 
+      - name: Unit tests
+        run: npm test
+
       #- name: ESLint
       #  run: npm run lint
 
@@ -821,12 +824,15 @@ jobs:
             tests::api_bugfixes::contract_list_effective_store_event_payloads \
             tests::api_bugfixes::contract_get_effective_store_event_payloads \
             tests::quarantine_batch::summary_counts_one_run \
+            tests::free_plan_limits::free_cap_blocks_new_creates_only \
+            tests::quarantine_privacy::mark_reviewed_sets_status_and_timestamp \
+            tests::quarantine_privacy::redacted_store_drops_received_values \
             2>&1 | tee /tmp/iso_test.out
           # Guard against the silent false-green: `cargo test` exits 0 even when
           # a filter matches zero tests (e.g. a future rename). Assert exactly
           # the expected tests actually ran.
-          if ! grep -qE '19 passed; 0 failed' /tmp/iso_test.out; then
-            echo "::error::Expected '19 passed; 0 failed' from the isolation/readiness/RFC-086 tests — got something else. A test may have been renamed or skipped."
+          if ! grep -qE '22 passed; 0 failed' /tmp/iso_test.out; then
+            echo "::error::Expected '22 passed; 0 failed' from the isolation/readiness/RFC-086 tests — got something else. A test may have been renamed or skipped."
             exit 1
           fi
 

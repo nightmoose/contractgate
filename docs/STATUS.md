@@ -131,6 +131,8 @@ them by name only.
 
 ---
 
+*2026-11-11 — RFC-114 follow-up: `GET /published/{ref}` uses the same 60-second anonymous cache as the other public reads. The link token stays in the cache key. Publish, deprecation, and revoke drop cached published and catalog entries. `GET /public-contracts/{slug}` and its `/yaml` and `/odcs` variants use the public per-IP limiter (429 with `Retry-After`, `X-DCG-SSR-Token` bypass). The Python local validator accepts `type: date` and `type: timestamp` with the Rust engine's calendar and RFC 3339 rules.*
+
 *2026-11-10 — RFC-114: anonymous public catalog GETs are cached in the API process for 60 seconds and send `Cache-Control: public, max-age=60, s-maxage=300, stale-while-revalidate=600`. Credentialed requests are not cached. A rejected API key is remembered for 60 seconds under its SHA-256 (a key created after that rejection works once the entry expires). Each client IP may fail authentication 30 times a minute; the next failure is HTTP 429. `CONTRACTGATE_TRUSTED_SSR_TOKEN`, when set on the API and the dashboard, lets server-side catalog fetches skip the public per-IP limit. The Python local validator enforces `format: email`, `uuid`, and `uri`/`url`. See `docs/ops/runbook-production.md`.*
 
 *2026-11-09 — RFC-113: contract families. A family is a chain of contracts for one dataset as it changes shape. Each link stores `derived_from` and a boundary of `ingest`, `stage` (between stages), or `egress`. Private families are org-scoped like contract identity. The public catalog seeds the Stripe charges chain (`stripe-charges-pipeline`) and the catalog contract page shows the chain. Migration `050_contract_families.sql`. See `docs/contract-families-reference.md`.*

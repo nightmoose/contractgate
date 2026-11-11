@@ -69,6 +69,8 @@ required.
 
 **Response `404 Not Found`:** no catalog entry with this ID.
 
+**Response `429 Too Many Requests`:** the caller's address exceeded the public per-IP limit (30 requests/second, burst 60). The response includes `Retry-After`. `GET /public-contracts/{id}/yaml` and `GET /public-contracts/{id}/odcs` share that limit. A request whose `X-DCG-SSR-Token` matches `CONTRACTGATE_TRUSTED_SSR_TOKEN` skips it. Successful anonymous responses are cached for 60 seconds.
+
 ---
 
 ### `POST /contracts/{id}/fork`
