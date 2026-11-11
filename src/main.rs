@@ -44,7 +44,7 @@ use uuid::Uuid;
 // shared with other binaries (e.g. src/bin/demo.rs).  We re-export it here so
 // existing submodules that refer to `crate::contract` / `crate::validation`
 // continue to resolve unchanged.
-pub use contractgate::{contract, drop_mode, transform, validation};
+pub use contractgate::{contract, drop_mode, payload_redaction, transform, validation};
 
 mod api_key_auth;
 mod auth_fail_limit;
@@ -1276,6 +1276,7 @@ const REQUIRED_SCHEMA: &[(&str, &str)] = &[
     ("orgs", "store_event_payloads"),      // migration 034 (RFC-086)
     ("contracts", "store_event_payloads"), // migration 034 (RFC-086)
     ("quarantine_events", "payload_redacted"), // migration 034 (RFC-086)
+    ("quarantine_events", "reviewed_at"),  // migration 051 (review UPDATE)
     ("audit_log", "raw_event_redacted"),   // migration 034 (RFC-086)
 ];
 

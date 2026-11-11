@@ -7046,3 +7046,308 @@ metrics: []
             .unwrap();
     }
 }
+
+// Review UPDATE against the real table, and violation redaction on the
+// batch insert. Requires DATABASE_URL and migrations through 051.
+#[cfg(test)]
+mod quarantine_privacy {
+    use serde_json::json;
+    use uuid::Uuid;
+
+    use super::super::storage::{self, QuarantineEventInsert};
+    use super::super::transform::TransformedPayload;
+
+    const YAML: &str = r#"
+version: "1.0"
+name: "quarantine_privacy"
+description: "review and redaction"
+ontology:
+  entities:
+    - name: id
+      type: string
+      required: true
+glossary: []
+metrics: []
+"#;
+
+    async fn connect() -> sqlx::PgPool {
+        let db_url = std::env::var("DATABASE_URL").expect("DATABASE_URL must be set");
+        sqlx::PgPool::connect(&db_url).await.unwrap()
+    }
+
+    async fn seed(pool: &sqlx::PgPool) -> (Uuid, Uuid, Uuid) {
+        let org = Uuid::new_v4();
+        let other = Uuid::new_v4();
+        for (id, slug) in [(org, "review-a"), (other, "review-b")] {
+            sqlx::query("INSERT INTO orgs (id, name, slug) VALUES ($1, $2, $3)")
+                .bind(id)
+                .bind("review org")
+                .bind(format!("{slug}-{}", id.simple()))
+                .execute(pool)
+                .await
+                .expect("seed org");
+        }
+        let (identity, _) = storage::create_contract(
+            pool,
+            "quarantine_privacy",
+            Some("review and redaction"),
+            YAML,
+            Default::default(),
+            Some(org),
+        )
+        .await
+        .expect("create contract");
+        (org, other, identity.id)
+    }
+
+    async fn cleanup(pool: &sqlx::PgPool, contract_id: Uuid, org: Uuid, other: Uuid) {
+        sqlx::query("DELETE FROM contracts WHERE id = $1")
+            .bind(contract_id)
+            .execute(pool)
+            .await
+            .unwrap();
+        sqlx::query("DELETE FROM orgs WHERE id = ANY($1)")
+            .bind(vec![org, other])
+            .execute(pool)
+            .await
+            .unwrap();
+    }
+
+    /// The statement the review handler runs. One id and several ids both
+    /// update pending rows, set reviewed_at, and leave another org's row
+    /// pending.
+    #[tokio::test]
+    #[ignore = "requires DATABASE_URL and a live Postgres migrated through 051"]
+    async fn mark_reviewed_sets_status_and_timestamp() {
+        let pool = connect().await;
+        let (org, other, contract_id) = seed(&pool).await;
+        let one = Uuid::new_v4();
+        let two = Uuid::new_v4();
+        let three = Uuid::new_v4();
+        for id in [one, two, three] {
+            sqlx::query(
+                "INSERT INTO quarantine_events \
+                 (id, contract_id, contract_version, payload, payload_redacted, \
+                  violation_count, violation_details, status, direction) \
+                 VALUES ($1, $2, '1.0.0', NULL, true, 1, '[]'::jsonb, 'pending', 'ingress')",
+            )
+            .bind(id)
+            .bind(contract_id)
+            .execute(&pool)
+            .await
+            .expect("insert quarantine row");
+        }
+
+        let wrong_org = storage::mark_quarantine_reviewed(&pool, Some(other), contract_id, &[one])
+            .await
+            .expect("review as the other org");
+        assert_eq!(wrong_org, 0, "another org must not review the row");
+
+        let reviewed = storage::mark_quarantine_reviewed(&pool, Some(org), contract_id, &[one])
+            .await
+            .expect("review one id");
+        assert_eq!(reviewed, 1);
+
+        let (status, reviewed_at_set): (String, bool) = sqlx::query_as(
+            "SELECT status, reviewed_at IS NOT NULL FROM quarantine_events WHERE id = $1",
+        )
+        .bind(one)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(status, "reviewed");
+        assert!(reviewed_at_set, "reviewed_at must be set");
+
+        let again = storage::mark_quarantine_reviewed(&pool, Some(org), contract_id, &[one])
+            .await
+            .unwrap();
+        assert_eq!(again, 0, "a reviewed row is not pending");
+
+        let batch =
+            storage::mark_quarantine_reviewed(&pool, Some(org), contract_id, &[two, three, one])
+                .await
+                .unwrap();
+        assert_eq!(batch, 2, "only the two still-pending ids");
+
+        let pending: i64 = sqlx::query_scalar(
+            "SELECT count(*) FROM quarantine_events \
+             WHERE contract_id = $1 AND status = 'pending'",
+        )
+        .bind(contract_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(pending, 0);
+
+        cleanup(&pool, contract_id, org, other).await;
+    }
+
+    /// New rows written without a body do not keep `received`. A legacy row
+    /// that still has it is masked on the list path. A stored body keeps it.
+    #[tokio::test]
+    #[ignore = "requires DATABASE_URL and a live Postgres migrated through 051"]
+    async fn redacted_store_drops_received_values() {
+        let pool = connect().await;
+        let (org, other, contract_id) = seed(&pool).await;
+
+        let secret = "01/01/2019 00:30";
+        let details = json!([{
+            "field": "pickup_datetime",
+            "kind": "pattern_mismatch",
+            "message": format!("Field 'pickup_datetime' value \"{secret}\" does not match required pattern"),
+            "received": secret,
+            "expected": "match regex"
+        }]);
+        let row = |id: Uuid| QuarantineEventInsert {
+            contract_id,
+            contract_version: "1.0.0".into(),
+            payload: TransformedPayload::from_stored(json!({"pickup_datetime": secret})),
+            violation_count: 1,
+            violation_details: details.clone(),
+            validation_us: 4,
+            source_ip: None,
+            replay_of_quarantine_id: None,
+            pre_assigned_id: Some(id),
+            direction: "ingress".into(),
+            batch_id: None,
+        };
+
+        let redacted_id = Uuid::new_v4();
+        let stored_id = Uuid::new_v4();
+        storage::quarantine_events_batch(&pool, &[row(redacted_id)], false)
+            .await
+            .expect("redacted insert");
+        storage::quarantine_events_batch(&pool, &[row(stored_id)], true)
+            .await
+            .expect("stored insert");
+
+        let stored_details: serde_json::Value =
+            sqlx::query_scalar("SELECT violation_details FROM quarantine_events WHERE id = $1")
+                .bind(redacted_id)
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        assert_eq!(stored_details[0]["received"], "<REDACTED>");
+        assert!(
+            !stored_details.to_string().contains(secret),
+            "stored redacted row still has the value: {stored_details}"
+        );
+        assert_eq!(stored_details[0]["field"], "pickup_datetime");
+        assert_eq!(stored_details[0]["kind"], "pattern_mismatch");
+
+        let kept: serde_json::Value =
+            sqlx::query_scalar("SELECT violation_details FROM quarantine_events WHERE id = $1")
+                .bind(stored_id)
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        assert_eq!(kept[0]["received"], secret);
+
+        let legacy_id = Uuid::new_v4();
+        sqlx::query(
+            "INSERT INTO quarantine_events \
+             (id, contract_id, contract_version, payload, payload_redacted, \
+              violation_count, violation_details, status, direction) \
+             VALUES ($1, $2, '1.0.0', NULL, true, 1, $3, 'pending', 'ingress')",
+        )
+        .bind(legacy_id)
+        .bind(contract_id)
+        .bind(json!([{
+            "field": "passenger_count",
+            "kind": "type_mismatch",
+            "message": "Field 'passenger_count' value \"two\" expected type Integer, got string",
+            "received": "two"
+        }]))
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        let listed =
+            storage::list_quarantine_events(&pool, Some(org), Some(contract_id), None, 20, 0)
+                .await
+                .unwrap();
+        let legacy = listed
+            .iter()
+            .find(|row| row.id == legacy_id)
+            .expect("legacy row");
+        let visible = super::super::quarantine::violation_details_for_list(
+            legacy.payload_redacted,
+            legacy.violation_details.clone(),
+        );
+        assert!(legacy.payload_redacted);
+        assert!(!visible.to_string().contains("two"), "{visible}");
+        assert_eq!(visible[0]["received"], "<REDACTED>");
+        assert_eq!(visible[0]["field"], "passenger_count");
+
+        let audit_details: serde_json::Value = {
+            storage::log_audit_entries_batch(
+                &pool,
+                &[storage::AuditEntryInsert {
+                    contract_id,
+                    org_id: Some(org),
+                    contract_version: "1.0.0".into(),
+                    passed: false,
+                    violation_count: 1,
+                    violation_details: details.clone(),
+                    raw_event: TransformedPayload::from_stored(json!({"pickup_datetime": secret})),
+                    validation_us: 4,
+                    source_ip: None,
+                    source: "http".into(),
+                    pre_assigned_id: None,
+                    replay_of_quarantine_id: None,
+                    direction: "ingress".into(),
+                }],
+                false,
+            )
+            .await
+            .unwrap();
+            sqlx::query_scalar(
+                "SELECT violation_details FROM audit_log \
+                 WHERE contract_id = $1 AND raw_event_redacted = true",
+            )
+            .bind(contract_id)
+            .fetch_one(&pool)
+            .await
+            .unwrap()
+        };
+        assert!(
+            !audit_details.to_string().contains(secret),
+            "{audit_details}"
+        );
+
+        sqlx::query(
+            "INSERT INTO audit_log \
+             (contract_id, org_id, contract_version, passed, violation_count, \
+              violation_details, raw_event, raw_event_redacted) \
+             VALUES ($1, $2, '1.0.0', false, 1, $3, '{}'::jsonb, true)",
+        )
+        .bind(contract_id)
+        .bind(org)
+        .bind(json!([{
+            "field": "email",
+            "kind": "pattern_mismatch",
+            "message": "Field 'email' value \"legacy@example.com\" does not match required pattern",
+            "received": "legacy@example.com"
+        }]))
+        .execute(&pool)
+        .await
+        .unwrap();
+        let audits = storage::recent_audit_entries(&pool, Some(org), Some(contract_id), 20, 0)
+            .await
+            .unwrap();
+        let legacy_audit = audits
+            .iter()
+            .find(|row| row.violation_details.to_string().contains("email"))
+            .expect("legacy audit row");
+        assert!(
+            !legacy_audit
+                .violation_details
+                .to_string()
+                .contains("legacy@example.com"),
+            "{}",
+            legacy_audit.violation_details
+        );
+
+        cleanup(&pool, contract_id, org, other).await;
+    }
+}

@@ -60,7 +60,21 @@ paid/permitted to hold).
 
 When a body is not stored, the row is written with an empty/NULL body and a
 redaction marker (`raw_event_redacted` / `payload_redacted`). `GET /quarantine`
-returns `payload_redacted: true` and `raw_event: null` for such rows.
+returns `payload_redacted: true` and `raw_event: null` for such rows. The same
+rows used to keep the offending value in `violation_details[].received` and,
+for some kinds, inside `message`. When the body is redacted, those fields are
+masked on write and again on read (`GET /quarantine` and `GET /audit`):
+`received` is the string `"<REDACTED>"` (null stays null) and a `value …`
+clause in `message` is replaced with `value <REDACTED>`. Field, kind,
+expected, and suggestion stay. The synchronous ingest response still echoes
+the value to the caller who just submitted it. Counts
+(`GET /quarantine/summary`, `GET /contracts/{id}/quarantine/summary`) and the
+report's field/kind rollup do not include values. Replay of a redacted row
+returns no violations. Rows written before this change still hold the raw
+JSON until an operator cleans them; there is no data migration. A cleanup is
+an `UPDATE` that sets `received` to `"<REDACTED>"` on `violation_details`
+where `payload_redacted` (and `raw_event_redacted` on `audit_log`) is true.
+Read-time masking already covers API responses, including those old rows.
 
 `GET /contracts` and `GET /contracts/{id}` report `store_event_payloads` as the
 **effective** value, not the raw column (neither column is rewritten). It is

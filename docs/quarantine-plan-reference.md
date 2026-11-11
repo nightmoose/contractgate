@@ -4,7 +4,7 @@
 
 DataContractGate and AISchemaGate share one pending quarantine cap on Free. Paid plans and self-host have no cap. The numbers live in `src/plan.rs` (`FREE_QUARANTINE_ORG_CAP` 50,000, `FREE_QUARANTINE_CONTRACT_CAP` 10,000).
 
-Pending rows are `status = 'pending'`. Reviewed, replayed, and purged rows do not count. `POST /contracts/{id}/quarantine/review` marks rows reviewed and frees that space immediately.
+Pending rows are `status = 'pending'`. Reviewed, replayed, and purged rows do not count. `POST /contracts/{id}/quarantine/review` marks rows reviewed (`status = 'reviewed'`, `reviewed_at = now()`) and frees that space immediately. `reviewed_at` is `quarantine_events.reviewed_at` (migration 051 on databases whose table predates that column).
 
 ## When the cap is full
 
