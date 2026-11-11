@@ -131,8 +131,19 @@ def start_one(sfn, arn, batch_id, records, source):
 
 def wait_execution(sfn, arn, timeout=180):
     deadline = time.time() + timeout
+    delay = 0.4
     while time.time() < deadline:
-        d = sfn.describe_execution(executionArn=arn)
+        try:
+            d = sfn.describe_execution(executionArn=arn)
+        except ClientError as e:
+            if e.response.get("Error", {}).get("Code") in (
+                "ThrottlingException",
+                "Throttling",
+            ):
+                time.sleep(delay)
+                delay = min(delay * 2, 5)
+                continue
+            raise
         if d["status"] != "RUNNING":
             return d
         time.sleep(0.4)

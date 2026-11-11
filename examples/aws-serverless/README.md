@@ -115,3 +115,29 @@ The Python `contractgate` validator (0.4.1) does not enforce `format: email`.
 Records with `receipt_email: "billing at example dot com"` pass ingest here
 the same way they did in the Kinesis run. Use the hosted gateway or the
 Rust engine when you depend on `format`.
+
+## Measured run (us-east-1, 2026-11-11)
+
+Driven from the bot box. No S3. The 100k replay uses the same generator and
+seed (42) as the Kinesis demo, so the ingest counts match that run.
+
+| Step | Records | Path | Result |
+|---|---|---|---|
+| [Smoke](runs/20261111T113037-100000recs.json) | 20 + 5 | StartExecution, then PutEvents on `nmb-pipeline` | 19/20 passed (1 `txn_` id); EventBridge 5/5 passed, ledger item appeared within a few seconds |
+| 100k replay | 100,000 in 500 executions of 200 | StartExecution, concurrency 10 | 94,982 passed, 5,018 failed (5.018%). All 500 executions SUCCEEDED. Wall clock 10.81 s (~9,248 records/s). Validate Lambda p50 on the smoke batch was 17.6 µs per record (in-process `contractgate`) |
+| Poison | 10 all-bad rows | StartExecution | 0 passed, 10 failed. After settle, quarantine had 5,029 visible messages (1 smoke + 5,018 + 10), DLQ 0 |
+
+What the 100k run caught at ingest (`stripe_charges_raw`):
+
+| Why | Held back |
+|---|---|
+| negative `amount` | 1,038 |
+| missing `created` | 1,030 |
+| `txn_` id prefix | 989 |
+| upper-case `currency` | 984 |
+| `status: complete` | 977 |
+| `receipt_email` not a real email | 0 (967 produced; Python validator does not check `format`, same gap as the Kinesis demo) |
+
+3,085 guest checkouts (no `customer`) passed ingest, as the contract allows. They would fail a later `stripe_charges_staged` check; this pipeline only enforces the raw ingest contract.
+
+The reject-rate alarm (`nmb-pipeline-reject-rate`, threshold 25%) went to `ALARM` at 6:32:36 AM ET on a 100% reject-rate datapoint from the poison batch (period starting 6:31:00 AM ET). The 100k window at 6:30 AM ET was 5.018% and did not trip it. Metric-filter metrics took about a minute to appear, so a check immediately after the poison batch still saw `OK` (missing treated as not-breaching).
