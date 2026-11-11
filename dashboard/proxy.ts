@@ -2,6 +2,7 @@ import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 import { DEMO_MODE } from "@/lib/demo";
 import { BRAND_COOKIE } from "@/lib/brand";
+import { VISITOR_AUTH_HEADER, VISITOR_PATH_HEADER } from "@/lib/logged-out-cta";
 import { supabaseServerUrl } from "@/lib/supabase/env";
 
 // Routes that don't require authentication at the middleware level.
@@ -70,6 +71,37 @@ function isKnownRoute(pathname: string) {
 
 function isPublic(pathname: string) {
   return PUBLIC_ROUTES.some((r) => pathname === r || pathname.startsWith(r + "/"));
+}
+
+function userlessNeedsLogin(pathname: string) {
+  return !isPublic(pathname) && isKnownRoute(pathname);
+}
+
+function loginRedirect(request: NextRequest) {
+  const url = request.nextUrl.clone();
+  url.pathname = "/auth/login";
+  url.searchParams.set("next", request.nextUrl.pathname);
+  return NextResponse.redirect(url);
+}
+
+// The layout reads these on the forwarded request so a logged-out visitor
+// gets Sign up / Sign in in the first HTML. Overwrites any client-supplied
+// value. Not used to authorize anything.
+function stampVisitor(request: NextRequest, authed: boolean) {
+  const path = encodeURI(request.nextUrl.pathname + request.nextUrl.search);
+  request.headers.set(VISITOR_PATH_HEADER, path);
+  request.headers.set(VISITOR_AUTH_HEADER, authed ? "1" : "0");
+}
+
+// Rebuild the forwarded response after the stamp. Session refresh may already
+// have queued Set-Cookie on `previous`; those strings are copied intact so
+// cookie options survive.
+function nextWithVisitor(request: NextRequest, previous: NextResponse): NextResponse {
+  const response = NextResponse.next({ request });
+  for (const cookie of previous.headers.getSetCookie()) {
+    response.headers.append("set-cookie", cookie);
+  }
+  return response;
 }
 
 // Removed 2026-08-13: an in-memory token bucket (10 req / 5 min per IP) that
@@ -161,6 +193,16 @@ async function route(request: NextRequest): Promise<NextResponse> {
     return NextResponse.next({ request });
   }
 
+  // No Auth project configured: there cannot be a session. Treat the visitor
+  // as logged out (header + the same login redirect) instead of failing the
+  // request inside createServerClient.
+  if (!supabaseServerUrl() || !process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) {
+    stampVisitor(request, false);
+    const { pathname } = request.nextUrl;
+    if (!userlessNeedsLogin(pathname)) return NextResponse.next({ request });
+    return loginRedirect(request);
+  }
+
   let supabaseResponse = NextResponse.next({ request });
 
   const supabase = createServerClient(
@@ -187,14 +229,16 @@ async function route(request: NextRequest): Promise<NextResponse> {
   // Refresh session — MUST be called before any redirect logic
   const { data: { user } } = await supabase.auth.getUser();
 
+  // Stamp after getUser, then rebuild so this request's render sees it.
+  // setAll may already have created supabaseResponse; nextWithVisitor keeps
+  // its Set-Cookie values.
+  stampVisitor(request, !!user);
+
   const { pathname } = request.nextUrl;
 
   // Redirect unauthenticated users to login
-  if (!user && !isPublic(pathname) && isKnownRoute(pathname)) {
-    const url = request.nextUrl.clone();
-    url.pathname = "/auth/login";
-    url.searchParams.set("next", pathname);
-    return NextResponse.redirect(url);
+  if (!user && userlessNeedsLogin(pathname)) {
+    return loginRedirect(request);
   }
 
   // Redirect authenticated users away from auth pages. /auth/reset is exempt:
@@ -214,7 +258,7 @@ async function route(request: NextRequest): Promise<NextResponse> {
     return NextResponse.redirect(url);
   }
 
-  return supabaseResponse;
+  return nextWithVisitor(request, supabaseResponse);
 }
 
 export const config = {
