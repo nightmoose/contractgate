@@ -46,6 +46,10 @@ class FieldType(str, Enum):
     OBJECT = "object"
     ARRAY = "array"
     ANY = "any"
+    # Calendar date. Value is a real ``YYYY-MM-DD`` (Chrono's ``%Y-%m-%d``).
+    DATE = "date"
+    # RFC 3339 date-time, same acceptance as ``DateTime::parse_from_rfc3339``.
+    TIMESTAMP = "timestamp"
 
     @classmethod
     def from_yaml(cls, raw: Any) -> "FieldType":
@@ -394,6 +398,8 @@ def _rust_field_type_repr(ft: FieldType) -> str:
         FieldType.OBJECT: "Object",
         FieldType.ARRAY: "Array",
         FieldType.ANY: "Any",
+        FieldType.DATE: "Date",
+        FieldType.TIMESTAMP: "Timestamp",
     }[ft]
 
 
