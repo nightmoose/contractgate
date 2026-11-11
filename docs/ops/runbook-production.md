@@ -89,7 +89,7 @@ Set via `fly secrets set` (never commit).
 | `CONTRACTGATE_DB_POOL_MAX_LIFETIME_SECS` | No | Recycle Postgres connections after this many seconds (default `1800`). `0` or non-numeric is ignored. |
 | `CONTRACTGATE_DB_POOL_MAX_CONNECTIONS` | No | Max pooled Postgres connections per machine. Code default `10`; `0` or non-numeric is ignored. The live value is a Fly secret **per app**: production **25** (set 2026-11-10 ~1:29 PM America/New_York, previously 70), staging **5**. See the pool budget below. |
 | `CONTRACTGATE_DEV_NO_AUTH` | **Never in prod** | Disables auth when `1` |
-| `CONTRACTGATE_TRUSTED_SSR_TOKEN` | No | Shared secret with the dashboard. When set, a request whose `X-DCG-SSR-Token` header matches (constant-time compare) skips the public per-IP limiter (30 rps / burst 60 on `/catalog`, `/public-contracts`, `/public-contract-families`, and `/published/{ref}`). Other limits are unchanged. Unset or empty: no bypass. Do not commit the value. See the launch step below. |
+| `CONTRACTGATE_TRUSTED_SSR_TOKEN` | No | Shared secret with the dashboard. When set, a request whose `X-DCG-SSR-Token` header matches (constant-time compare) skips the public per-IP limiter (30 rps / burst 60 on `/catalog`, `/public-contracts`, `/public-contracts/{slug}` including `/yaml` and `/odcs`, `/public-contract-families`, and `/published/{ref}`). Other limits are unchanged. Unset or empty: no bypass. Do not commit the value. See the launch step below. |
 
 Dashboard (Vercel) separately needs Supabase anon/service keys, Stripe, `NEXT_PUBLIC_API_URL`, etc.
 
@@ -99,7 +99,7 @@ fly secrets list -a contractgate-api
 
 ### Launch step: dashboard server-side catalog fetches
 
-The public catalog GETs (`/catalog`, `/public-contracts`, `/public-contract-families`, and `/public-contracts/{slug}` including `/yaml`, `/odcs`, and `/family`) are cached in the API process for 60 seconds and send `Cache-Control: public, max-age=60, s-maxage=300, stale-while-revalidate=600`. Requests that carry `Authorization` or `x-api-key` are not stored and are marked `private, no-store`.
+The public catalog GETs (`/catalog`, `/public-contracts`, `/public-contract-families`, `/public-contracts/{slug}` including `/yaml`, `/odcs`, and `/family`, and `/published/{ref}`) are cached in the API process for 60 seconds and send `Cache-Control: public, max-age=60, s-maxage=300, stale-while-revalidate=600`. Requests that carry `Authorization` or `x-api-key` are not stored and are marked `private, no-store`. The cache key is the path plus the query string, so a `?token=` on `/published/{ref}` does not reuse a token-less response. Publishing a version, deprecating a version (including deploy, which deprecates the previous stable versions), and revoking a publication drop the cached `/published/{ref}` and `/catalog` entries. `/public-contracts/{slug}`, `/yaml`, and `/odcs` use the same per-IP limiter as the list routes.
 
 Vercel server renders of the catalog share one egress address, and that address is not stable, so it cannot be allowlisted. A cold minute can 429 the pages on the 30 rps per-IP limit. Set the same secret on both sides before launch:
 
