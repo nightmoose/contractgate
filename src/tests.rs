@@ -7364,7 +7364,6 @@ mod free_plan_limits {
     }
 }
 
-
 // Review UPDATE against the real table, and violation redaction on the
 // batch insert. Requires DATABASE_URL and migrations through 051.
 #[cfg(test)]
