@@ -6759,6 +6759,66 @@ mod launch_guard_tests {
             .await;
         assert_eq!(wrong.status_code(), StatusCode::TOO_MANY_REQUESTS);
     }
+
+    /// `GET /public-contracts/{slug}` and its `/yaml` and `/odcs` variants sit
+    /// on the same per-IP bucket as the list routes. A cache hit would still
+    /// spend a token; these stubs do not need Postgres.
+    #[tokio::test]
+    async fn public_contract_detail_routes_return_429_and_honor_ssr_token() {
+        let mut state = super::super::AppState::new(pool(), true, None, None);
+        state.trusted_ssr_token = Some("launch-token".to_owned());
+        let state = Arc::new(state);
+        let app = Router::new()
+            .route("/public-contracts/{id}", get(|| async { "json" }))
+            .route("/public-contracts/{id}/yaml", get(|| async { "yaml" }))
+            .route("/public-contracts/{id}/odcs", get(|| async { "odcs" }))
+            .layer(middleware::from_fn_with_state(
+                state.clone(),
+                public_catalog_cache,
+            ))
+            .layer(middleware::from_fn_with_state(
+                state.clone(),
+                public_ip_rate_limit,
+            ))
+            .with_state(state);
+        let server = TestServer::new(app);
+        for _ in 0..PUBLIC_IP_RATE_LIMIT_BURST {
+            assert_eq!(
+                server
+                    .get("/public-contracts/stripe-charges")
+                    .await
+                    .status_code(),
+                StatusCode::OK
+            );
+        }
+        let blocked = server.get("/public-contracts/stripe-charges").await;
+        assert_eq!(blocked.status_code(), StatusCode::TOO_MANY_REQUESTS);
+        assert!(blocked.headers().get("retry-after").is_some());
+        let yaml_blocked = server.get("/public-contracts/stripe-charges/yaml").await;
+        assert_eq!(
+            yaml_blocked.status_code(),
+            StatusCode::TOO_MANY_REQUESTS,
+            "yaml shares the per-IP bucket"
+        );
+        assert!(yaml_blocked.headers().get("retry-after").is_some());
+        let odcs_bypass = server
+            .get("/public-contracts/stripe-charges/odcs")
+            .add_header("x-dcg-ssr-token", "launch-token")
+            .await;
+        assert_eq!(odcs_bypass.status_code(), StatusCode::OK);
+        assert_eq!(odcs_bypass.text(), "odcs");
+        let odcs_wrong = server
+            .get("/public-contracts/stripe-charges/odcs")
+            .add_header("x-dcg-ssr-token", "other-token")
+            .await;
+        assert_eq!(odcs_wrong.status_code(), StatusCode::TOO_MANY_REQUESTS);
+        let other_client = server
+            .get("/public-contracts/stripe-charges/yaml")
+            .add_header("fly-client-ip", "203.0.113.50")
+            .await;
+        assert_eq!(other_client.status_code(), StatusCode::OK);
+        assert_eq!(other_client.text(), "yaml");
+    }
 }
 
 /// Per-run quarantine counts. Requires a database migrated through 049.

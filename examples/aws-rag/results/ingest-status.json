@@ -1,0 +1,19 @@
+{
+  "documents": 117,
+  "kbs": {
+    "fixed": {
+      "kb": "fixed",
+      "expected": 117,
+      "listed": 117,
+      "indexed": 117,
+      "failed": []
+    },
+    "semantic": {
+      "kb": "semantic",
+      "expected": 117,
+      "listed": 117,
+      "indexed": 117,
+      "failed": []
+    }
+  }
+}

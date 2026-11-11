@@ -734,7 +734,8 @@ fn more_openapi_paths(paths: &mut serde_json::Map<String, Value>) {
             "parameters": [{"name": "id", "in": "path", "required": true, "schema": {"type": "string", "format": "uuid"}}],
             "responses": {
                 "200": {"description": "Catalog entry", "content": {"application/json": {"schema": {"type": "object", "properties": {"id": {"type": "string", "format": "uuid"}, "name": {"type": "string"}, "description": {"type": ["string", "null"]}, "source_url": {"type": "string"}, "source_format": {"type": "string"}, "contract_yaml": {"type": "string"}, "version": {"type": "string"}, "created_at": {"type": "string", "format": "date-time"}, "updated_at": {"type": "string", "format": "date-time"}}}}}},
-                "404": {"description": "Unknown id"}
+                "404": {"description": "Unknown id"},
+                "429": {"description": "Per-IP rate limit exceeded. The response includes Retry-After. A matching X-DCG-SSR-Token skips this limit when CONTRACTGATE_TRUSTED_SSR_TOKEN is set."}
             }
         }),
     );
@@ -748,7 +749,8 @@ fn more_openapi_paths(paths: &mut serde_json::Map<String, Value>) {
             "parameters": [{"name": "id", "in": "path", "required": true, "schema": {"type": "string"}, "description": "Catalog UUID or slug"}],
             "responses": {
                 "200": {"description": "Contract YAML", "content": {"application/yaml": {"schema": {"type": "string"}}}},
-                "404": {"description": "Unknown id or slug"}
+                "404": {"description": "Unknown id or slug"},
+                "429": {"description": "Per-IP rate limit exceeded. The response includes Retry-After. A matching X-DCG-SSR-Token skips this limit when CONTRACTGATE_TRUSTED_SSR_TOKEN is set."}
             }
         }),
     );
@@ -762,7 +764,8 @@ fn more_openapi_paths(paths: &mut serde_json::Map<String, Value>) {
             "parameters": [{"name": "id", "in": "path", "required": true, "schema": {"type": "string"}, "description": "Catalog UUID or slug"}],
             "responses": {
                 "200": {"description": "ODCS YAML", "content": {"application/yaml": {"schema": {"type": "string"}}}},
-                "404": {"description": "Unknown id or slug"}
+                "404": {"description": "Unknown id or slug"},
+                "429": {"description": "Per-IP rate limit exceeded. The response includes Retry-After. A matching X-DCG-SSR-Token skips this limit when CONTRACTGATE_TRUSTED_SSR_TOKEN is set."}
             }
         }),
     );

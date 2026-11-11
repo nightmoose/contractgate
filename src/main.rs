@@ -818,6 +818,9 @@ async fn deprecate_version_handler(
     // without eviction a just-deprecated pin would keep certifying egress
     // output until the TTL expired.  Drop the contract's egress cache entries.
     state.egress_cache.invalidate_contract_all(contract_id);
+    // A cached GET /published/{ref} for this version would keep serving the
+    // pre-deprecation document for the rest of the TTL.
+    state.public_read_cache.invalidate_publication_views();
     Ok(Json(VersionResponse::from(&v)))
 }
 
@@ -897,6 +900,10 @@ async fn deploy_contract_handler(
     let _ = state
         .get_compiled(version.contract_id, &version.version)
         .await;
+
+    // Deploy deprecates every previously stable version. Drop published
+    // views so a cached GET /published/{ref} does not outlive that change.
+    state.public_read_cache.invalidate_publication_views();
 
     let deployed_at = version.promoted_at.unwrap_or_else(chrono::Utc::now);
     let resp = DeployContractResponse {
@@ -1814,7 +1821,8 @@ fn build_router(state: Arc<AppState>) -> Router {
     // server render through when many distinct paths miss at once.
     let public_rate_limited = Router::new()
         // RFC-032: public-fetch for published contracts (visibility checked inside handler).
-        // Not part of the catalog response cache — the handler is link-token aware.
+        // Cached like the other anonymous GETs. The link token is a query
+        // parameter, so it is part of the cache key; non-200s are not stored.
         .route(
             "/published/{publication_ref}",
             get(publication::fetch_published_handler),
@@ -1839,8 +1847,10 @@ fn build_router(state: Arc<AppState>) -> Router {
             public_ip_rate_limit,
         ));
 
-    // Detail routes were not on the per-IP limiter. They still get the
-    // anonymous response cache. `/published` stays out of that cache.
+    // Slug, YAML, and ODCS share one router. They get the same per-IP
+    // limiter as the list routes (429 + Retry-After, X-DCG-SSR-Token bypass)
+    // and the anonymous response cache inside it, so a cache hit still spends
+    // a token. Family reads stay cached and are not on this limiter.
     let catalog_details = Router::new()
         .route(
             "/public-contracts/{id}",
@@ -1854,6 +1864,16 @@ fn build_router(state: Arc<AppState>) -> Router {
             "/public-contracts/{id}/odcs",
             get(public_catalog::get_public_contract_odcs_handler),
         )
+        .layer(middleware::from_fn_with_state(
+            state.clone(),
+            public_catalog_cache,
+        ))
+        .layer(middleware::from_fn_with_state(
+            state.clone(),
+            public_ip_rate_limit,
+        ));
+
+    let family_details = Router::new()
         .route(
             "/public-contracts/{id}/family",
             get(contract_families::get_public_contract_family_handler),
@@ -1879,6 +1899,7 @@ fn build_router(state: Arc<AppState>) -> Router {
         // Mounted as public so Prometheus can scrape without an x-api-key.
         .route("/metrics", get(observability::metrics_handler))
         .merge(catalog_details)
+        .merge(family_details)
         .merge(public_rate_limited);
 
     // Protected routes — require x-api-key header

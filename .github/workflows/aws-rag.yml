@@ -1,0 +1,110 @@
+name: AWS RAG (P3)
+
+# Plan-only for the examples/aws-rag Terraform root. Never apply, never
+# touch ContractGate prod or Fly. A separate workflow_dispatch job can
+# create the optional docs bucket from GitHub (OIDC) because the bot box
+# VPC endpoint policy denies s3:CreateBucket. Ingestion used in P3 is the
+# CUSTOM document API and does not need that bucket.
+on:
+  pull_request:
+    branches: [staging, main]
+    paths:
+      - "examples/aws-rag/**"
+      - ".github/workflows/aws-rag.yml"
+  push:
+    branches: [staging]
+    paths:
+      - "examples/aws-rag/**"
+      - ".github/workflows/aws-rag.yml"
+  workflow_dispatch:
+    inputs:
+      create_docs_bucket:
+        description: "Also create nmb-rag-docs-065614567889 and upload corpus (optional S3 path)"
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: aws-rag-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  terraform:
+    name: fmt, validate, plan
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    defaults:
+      run:
+        working-directory: examples/aws-rag/terraform
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.17.1
+
+      - name: Terraform fmt
+        run: terraform fmt -check -recursive
+
+      - name: Terraform init
+        run: terraform init -input=false
+
+      - name: Terraform validate
+        run: terraform validate
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::065614567889:role/nmb-terraform-deploy
+          aws-region: us-east-1
+          role-session-name: gha-aws-rag-plan
+
+      - name: Terraform plan
+        # Local backend: CI has no copy of the box state, so plan will show
+        # resources as "to create" even after they exist on the box. Expected.
+        run: terraform plan -input=false -no-color -lock=false
+
+  optional-docs-bucket:
+    if: github.event_name == 'workflow_dispatch' && inputs.create_docs_bucket
+    name: optional S3 docs bucket
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::065614567889:role/nmb-terraform-deploy
+          aws-region: us-east-1
+          role-session-name: gha-aws-rag-docs
+      - name: Create private bucket if missing and upload corpus
+        env:
+          BUCKET: nmb-rag-docs-065614567889
+        run: |
+          set -euo pipefail
+          python3 examples/aws-rag/scripts/collect_corpus.py
+          if ! aws s3api head-bucket --bucket "$BUCKET" 2>/dev/null; then
+            aws s3api create-bucket --bucket "$BUCKET" --region us-east-1
+            aws s3api put-public-access-block --bucket "$BUCKET" \
+              --public-access-block-configuration BlockPublicAcls=true,IgnorePublicAcls=true,BlockPublicPolicy=true,RestrictPublicBuckets=true
+            aws s3api put-bucket-ownership-controls --bucket "$BUCKET" \
+              --ownership-controls 'Rules=[{ObjectOwnership=BucketOwnerEnforced}]'
+            aws s3api put-bucket-versioning --bucket "$BUCKET" \
+              --versioning-configuration Status=Enabled
+            aws s3api put-bucket-tagging --bucket "$BUCKET" --tagging 'TagSet=[
+              {Key=ManagedBy,Value=github-actions},
+              {Key=Environment,Value=sandbox},
+              {Key=nmb:stack,Value=rag},
+              {Key=nmb:project,Value=P3},
+              {Key=nmb:cost-alloc,Value=aws-learning-plan},
+              {Key=nmb:do-not-prod,Value=true}
+            ]'
+          fi
+          aws s3 sync examples/aws-rag/corpus/build "s3://$BUCKET/corpus" --delete --exclude manifest.json
