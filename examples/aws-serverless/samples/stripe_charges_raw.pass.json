@@ -1,0 +1,18 @@
+{
+  "id": "ch_3Qdemo0001AaBbCcDd",
+  "object": "charge",
+  "amount": 4299,
+  "amount_captured": 4299,
+  "amount_refunded": 0,
+  "currency": "usd",
+  "customer": "cus_DemoAcme0001",
+  "description": "Demo invoice INV-DEMO-1001",
+  "paid": true,
+  "refunded": false,
+  "captured": true,
+  "status": "succeeded",
+  "created": 1735689600,
+  "livemode": false,
+  "receipt_email": "billing-demo@example.com",
+  "payment_intent": "pi_3Qdemo0001AaBbCc"
+}
