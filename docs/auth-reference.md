@@ -1,6 +1,6 @@
 # Authentication Reference
 
-**Last updated:** 2026-09-29 (Supabase-enforced Turnstile on signup/login/reset; forgot/reset pages reachable)
+**Last updated:** 2026-11-11 (logged-out header with Sign up and Sign in)
 
 DataContractGate's Rust backend supports two authentication mechanisms for the
 management API: a Supabase Bearer JWT and a DB-backed API key.  The validation
@@ -283,6 +283,22 @@ browser or has expired"). Other failures land on
   carrier/office NAT puts many users on one IP — real availability risk for
   negligible protection. Supabase applies its own server-side rate limits to
   auth endpoints; tune them there (Auth → Rate Limits) if bots return.
+
+## Logged-out dashboard
+
+A visitor with no session sees a header on every app page: **Sign up** (primary)
+and **Sign in** (secondary). Both links include `next` set to the page they
+were on. `next=/` is omitted, because login and the confirmation link already
+return home. On `/auth/*` the links keep the `next` already in the query,
+instead of sending the person back to the form.
+
+The header is part of the server render. `proxy.ts` records the session and
+the request path for the root layout, so the links are in the first HTML and
+a signed-in session does not get the header. Public pages stay public. The
+catalog (`/catalog` and `/catalog/{slug}`) stays server-rendered with no
+AuthGate. The home page and the other AuthGate previews label their
+illustrations as a demo sample, and their own Sign up link carries the same
+`next`.
 
 ## Summary — resolution order
 
