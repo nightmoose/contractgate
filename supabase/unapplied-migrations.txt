@@ -15,8 +15,3 @@
 # An owner applies it, then deletes this line. The self-host compose file
 # applies it on plain Postgres, where the stub would otherwise stay.
 044_auth_uid_jwt_when_stub
-
-# Adds quarantine_events.reviewed_at. Hosted rows were created without it, so
-# POST /contracts/{id}/quarantine/review returns 500 until an owner applies
-# this file. Do not apply it from CI. Delete this line after it is applied.
-051_quarantine_reviewed_at
