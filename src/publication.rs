@@ -372,7 +372,14 @@ pub async fn import_published_handler(
         }
     }
 
-    let cv = storage::import_published_contract(&state.db, &pub_row, import_mode, org_id).await?;
+    let cv = storage::import_published_contract(
+        &state.db,
+        &pub_row,
+        import_mode,
+        org_id,
+        state.self_hosted,
+    )
+    .await?;
     let state_str = cv.state.as_str().to_string();
     let message = if state_str == "stable" {
         format!(

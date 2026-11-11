@@ -20,6 +20,7 @@ pub(crate) fn apply(paths: &mut Map<String, Value>) {
     fill_sharing_and_collab(paths);
     fill_ingress(paths);
     fill_quarantine_plan(paths);
+    fill_free_plan_limits(paths);
 }
 
 /// Replace placeholder `{}` schemas that mean "any JSON value".
@@ -1354,6 +1355,39 @@ fn fill_quarantine_plan(paths: &mut Map<String, Value>) {
             responses.insert("403".into(), plan_required);
         }
     }
+}
+
+fn fill_free_plan_limits(paths: &mut Map<String, Value>) {
+    let schema = plan_limit_schema();
+    let description = "Free plan cap. error and code are plan_limit. resource is contracts (3 non-deleted per org) or versions (3 per contract). Paid plans and self-host are not capped. Reads, validation, edits, and deletes of existing rows still succeed.";
+    for (path, method) in [
+        ("/contracts", "post"),
+        ("/contracts/{id}/versions", "post"),
+        ("/contracts/deploy", "post"),
+        ("/contracts/import", "post"),
+        ("/contracts/import-published", "post"),
+        ("/contracts/{id}/fork", "post"),
+    ] {
+        set_description(paths, path, method, "402", description);
+        put_json(paths, path, method, "402", schema.clone());
+    }
+}
+
+fn plan_limit_schema() -> Value {
+    json!({
+        "type": "object",
+        "required": ["error", "code", "resource", "limit", "current", "message", "upgrade_url", "status"],
+        "properties": {
+            "error": {"type": "string", "const": "plan_limit"},
+            "code": {"type": "string", "const": "plan_limit"},
+            "resource": {"type": "string", "enum": ["contracts", "versions"]},
+            "limit": {"type": "integer", "const": 3},
+            "current": {"type": "integer"},
+            "message": {"type": "string"},
+            "upgrade_url": {"type": "string"},
+            "status": {"type": "integer", "const": 402}
+        }
+    })
 }
 
 fn plan_required_schema() -> Value {

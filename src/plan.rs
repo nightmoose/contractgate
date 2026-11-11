@@ -70,6 +70,71 @@ pub fn is_paid(plan: &str) -> bool {
     PAID_PLANS.contains(&plan)
 }
 
+/// Hosted Free cap on non-deleted contracts per org.
+pub const FREE_CONTRACT_LIMIT: i64 = 3;
+
+/// Hosted Free cap on versions stored for one contract.
+pub const FREE_VERSION_LIMIT: i64 = 3;
+
+/// Pricing page linked from the Free contract and version cap.
+pub const PLAN_LIMIT_UPGRADE_URL: &str = "https://app.datacontractgate.com/pricing";
+
+/// Which Free cap a create hit.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PlanLimitResource {
+    Contracts,
+    Versions,
+}
+
+impl PlanLimitResource {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Contracts => "contracts",
+            Self::Versions => "versions",
+        }
+    }
+
+    pub fn limit(self) -> i64 {
+        match self {
+            Self::Contracts => FREE_CONTRACT_LIMIT,
+            Self::Versions => FREE_VERSION_LIMIT,
+        }
+    }
+}
+
+/// Cap for a new contract or version. `None` means the create is not capped.
+///
+/// Hosted `free` and `aisg_free`, and any unknown plan string, use the Free
+/// cap (same fallback as [`monthly_event_limit`]). Paid plans are uncapped.
+/// `self_hosted` is uncapped for every stored plan. `plan == None` (no org
+/// row, or no org on the request) is uncapped.
+pub fn free_resource_limit(
+    self_hosted: bool,
+    plan: Option<&str>,
+    resource: PlanLimitResource,
+) -> Option<i64> {
+    if self_hosted {
+        return None;
+    }
+    let plan = plan?;
+    if is_paid(plan) {
+        return None;
+    }
+    Some(resource.limit())
+}
+
+/// Upgrade sentence for a Free cap. The URL is [`PLAN_LIMIT_UPGRADE_URL`].
+pub fn plan_limit_message(resource: PlanLimitResource) -> String {
+    match resource {
+        PlanLimitResource::Contracts => format!(
+            "The Free plan allows {FREE_CONTRACT_LIMIT} contracts. Upgrade at {PLAN_LIMIT_UPGRADE_URL}"
+        ),
+        PlanLimitResource::Versions => format!(
+            "The Free plan allows {FREE_VERSION_LIMIT} versions per contract. Upgrade at {PLAN_LIMIT_UPGRADE_URL}"
+        ),
+    }
+}
+
 /// Explicit opt-in that marks this process as a self-hosted deployment.
 /// Hosted production and staging leave it unset. A missing Stripe key is not
 /// this signal.
@@ -592,6 +657,26 @@ mod tests {
         assert!(!streaming_allowed_for(false, "growth"));
         assert!(streaming_allowed_for(false, "enterprise"));
         assert!(!is_paid("free"));
+    }
+
+    #[test]
+    fn free_contract_and_version_caps() {
+        for resource in [PlanLimitResource::Contracts, PlanLimitResource::Versions] {
+            assert_eq!(resource.limit(), 3);
+            for plan in ["free", "aisg_free", "bogus"] {
+                assert_eq!(free_resource_limit(false, Some(plan), resource), Some(3));
+                assert_eq!(free_resource_limit(true, Some(plan), resource), None);
+            }
+            for plan in ["growth", "aisg_pro", "enterprise"] {
+                assert_eq!(free_resource_limit(false, Some(plan), resource), None);
+            }
+            assert_eq!(free_resource_limit(false, None, resource), None);
+        }
+        let msg = plan_limit_message(PlanLimitResource::Contracts);
+        assert!(msg.contains("The Free plan allows 3 contracts"));
+        assert!(msg.contains(PLAN_LIMIT_UPGRADE_URL));
+        assert!(!msg.contains("ContractGate"));
+        assert!(plan_limit_message(PlanLimitResource::Versions).contains("3 versions per contract"));
     }
 
     #[test]
