@@ -1,0 +1,11 @@
+.venv/
+__pycache__/
+*.pyc
+corpus/build/
+terraform/.terraform/
+terraform/terraform.tfstate
+terraform/terraform.tfstate.*
+terraform/tfplan
+terraform/crash.log
+terraform/.terraform.tfstate.lock.info
+results/*.tmp.jsonl
