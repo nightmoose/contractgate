@@ -7046,3 +7046,625 @@ metrics: []
             .unwrap();
     }
 }
+
+#[cfg(test)]
+mod free_plan_limits {
+    use axum::http::StatusCode;
+    use axum::routing::{get, post};
+    use axum_test::TestServer;
+    use serde_json::{json, Value};
+    use std::sync::Arc;
+    use uuid::Uuid;
+
+    use super::super::{
+        api_key_auth::ValidatedKey, create_contract_handler, create_version_handler,
+        delete_contract_handler, deploy_contract_handler, get_contract_handler,
+        import_odcs_handler, list_contracts_handler, patch_contract_handler,
+        promote_version_handler, public_catalog, publication, v1_ingest, AppState,
+    };
+
+    fn yaml(name: &str, version: &str) -> String {
+        format!(
+            "version: \"{version}\"\nname: \"{name}\"\nontology:\n  entities:\n    - name: id\n      type: string\n      required: true\nglossary: []\nmetrics: []\n"
+        )
+    }
+
+    fn odcs(name: &str, version: &str) -> String {
+        format!(
+            "apiVersion: v3.1.0\nkind: DataContract\nid: \"x\"\nversion: \"{version}\"\nstatus: active\ndataProduct: {name}\nschema:\n  - name: {name}\n    properties:\n      - name: id\n        logicalType: string\n        required: true\n"
+        )
+    }
+
+    fn server(state: Arc<AppState>, org: Uuid) -> TestServer {
+        let app = axum::Router::new()
+            .route(
+                "/contracts",
+                get(list_contracts_handler).post(create_contract_handler),
+            )
+            .route(
+                "/contracts/{id}",
+                get(get_contract_handler)
+                    .patch(patch_contract_handler)
+                    .delete(delete_contract_handler),
+            )
+            .route("/contracts/{id}/versions", post(create_version_handler))
+            .route(
+                "/contracts/{id}/versions/{version}/promote",
+                post(promote_version_handler),
+            )
+            .route(
+                "/contracts/{id}/versions/{version}/publish",
+                post(publication::publish_handler),
+            )
+            .route("/contracts/deploy", post(deploy_contract_handler))
+            .route("/contracts/import", post(import_odcs_handler))
+            .route(
+                "/contracts/import-published",
+                post(publication::import_published_handler),
+            )
+            .route(
+                "/contracts/{id}/fork",
+                post(public_catalog::fork_public_contract_handler),
+            )
+            .route(
+                "/v1/ingest/{contract_id}",
+                post(v1_ingest::v1_ingest_handler),
+            )
+            .layer(axum::middleware::from_fn(
+                move |mut req: axum::extract::Request, next: axum::middleware::Next| async move {
+                    req.extensions_mut().insert(ValidatedKey {
+                        api_key_id: Uuid::new_v4(),
+                        user_id: Uuid::new_v4(),
+                        org_id: org,
+                        allowed_contract_ids: None,
+                        rate_limit_rps: None,
+                        rate_limit_burst: None,
+                    });
+                    next.run(req).await
+                },
+            ))
+            .with_state(state);
+        TestServer::new(app)
+    }
+
+    fn body(resp: axum_test::TestResponse) -> (StatusCode, Value) {
+        let status = resp.status_code();
+        let text = resp.text();
+        let parsed = if text.is_empty() {
+            Value::Null
+        } else {
+            serde_json::from_str(&text).unwrap_or(json!({ "raw": text }))
+        };
+        (status, parsed)
+    }
+
+    fn assert_limit(status: StatusCode, value: &Value, resource: &str, current: i64) {
+        assert_eq!(status, StatusCode::PAYMENT_REQUIRED, "{value}");
+        assert_eq!(value["error"], "plan_limit");
+        assert_eq!(value["code"], "plan_limit");
+        assert_eq!(value["resource"], resource);
+        assert_eq!(value["limit"], 3);
+        assert_eq!(value["current"], current);
+        assert_eq!(value["status"], 402);
+        assert_eq!(
+            value["upgrade_url"],
+            "https://app.datacontractgate.com/pricing"
+        );
+        let message = value["message"].as_str().unwrap();
+        assert!(message.contains("https://app.datacontractgate.com/pricing"));
+        assert!(message.contains("Free plan"));
+        assert!(!message.contains("ContractGate"));
+    }
+
+    async fn seed(pool: &sqlx::PgPool, plan: &str) -> Uuid {
+        let org = Uuid::new_v4();
+        sqlx::query("INSERT INTO orgs (id, name, slug, plan) VALUES ($1, $2, $3, $4)")
+            .bind(org)
+            .bind(format!("free cap {plan}"))
+            .bind(format!("free-cap-{plan}-{}", org.simple()))
+            .bind(plan)
+            .execute(pool)
+            .await
+            .unwrap();
+        org
+    }
+
+    async fn create(http: &TestServer, name: &str) -> (StatusCode, Value) {
+        body(
+            http.post("/contracts")
+                .json(&json!({ "name": name, "yaml_content": yaml(name, "1.0.0") }))
+                .await,
+        )
+    }
+
+    /// Free stops at 3 contracts and 3 versions. Paid and self-host do not.
+    /// Rows inserted past the cap stay readable and valid.
+    #[tokio::test]
+    #[ignore = "requires DATABASE_URL and a live Supabase/Postgres instance"]
+    async fn free_cap_blocks_new_creates_only() {
+        let db_url = std::env::var("DATABASE_URL").expect("DATABASE_URL must be set");
+        let pool = sqlx::PgPool::connect(&db_url).await.unwrap();
+        let state = Arc::new(AppState::new(pool.clone(), false, None, None));
+        let org = seed(&pool, "free").await;
+        let http = server(state.clone(), org);
+        let tag = org.simple().to_string();
+        let public_id: Uuid =
+            sqlx::query_scalar("SELECT id FROM public_contracts ORDER BY created_at LIMIT 1")
+                .fetch_one(&pool)
+                .await
+                .expect("public catalog seed");
+
+        let mut ids = Vec::new();
+        for n in 1..=3 {
+            let (status, value) = create(&http, &format!("cap-{n}-{tag}")).await;
+            assert_eq!(status, StatusCode::CREATED, "{value}");
+            ids.push(value["id"].as_str().unwrap().parse::<Uuid>().unwrap());
+        }
+        let (status, value) = create(&http, &format!("cap-4-{tag}")).await;
+        assert_limit(status, &value, "contracts", 3);
+
+        let name1 = format!("cap-1-{tag}");
+        let (status, value) = body(
+            http.post("/contracts/deploy")
+                .json(&json!({
+                    "name": format!("cap-deploy-{tag}"),
+                    "yaml_content": yaml(&format!("cap-deploy-{tag}"), "1.0.0"),
+                }))
+                .await,
+        );
+        assert_limit(status, &value, "contracts", 3);
+        let (status, value) = body(
+            http.post("/contracts/import")
+                .json(&json!({
+                    "odcs_yaml": odcs(&format!("cap_odcs_{tag}"), "1.0.0"),
+                    "name_override": format!("cap-odcs-{tag}"),
+                }))
+                .await,
+        );
+        assert_limit(status, &value, "contracts", 3);
+        let (status, value) = body(
+            http.post(&format!("/contracts/{public_id}/fork"))
+                .json(&json!({ "name": format!("cap-fork-{tag}") }))
+                .await,
+        );
+        assert_limit(status, &value, "contracts", 3);
+
+        let (status, published) = body(
+            http.post(&format!("/contracts/{}/versions/1.0.0/publish", ids[0]))
+                .json(&json!({ "visibility": "public" }))
+                .await,
+        );
+        assert_eq!(status, StatusCode::CREATED, "{published}");
+        let (status, value) = body(
+            http.post("/contracts/import-published")
+                .json(&json!({
+                    "publication_ref": published["publication_ref"],
+                    "import_mode": "snapshot",
+                }))
+                .await,
+        );
+        assert_limit(status, &value, "contracts", 3);
+
+        for version in ["1.1.0", "1.2.0"] {
+            let (status, value) = body(
+                http.post(&format!("/contracts/{}/versions", ids[0]))
+                    .json(&json!({
+                        "version": version,
+                        "yaml_content": yaml(&name1, version),
+                    }))
+                    .await,
+            );
+            assert_eq!(status, StatusCode::CREATED, "{value}");
+        }
+        let (status, value) = body(
+            http.post(&format!("/contracts/{}/versions", ids[0]))
+                .json(&json!({
+                    "version": "1.3.0",
+                    "yaml_content": yaml(&name1, "1.3.0"),
+                }))
+                .await,
+        );
+        assert_limit(status, &value, "versions", 3);
+
+        let (status, listed) = body(http.get("/contracts").await);
+        assert_eq!(status, StatusCode::OK, "{listed}");
+        assert_eq!(listed.as_array().unwrap().len(), 3);
+        let (status, one) = body(http.get(&format!("/contracts/{}", ids[0])).await);
+        assert_eq!(status, StatusCode::OK, "{one}");
+        let (status, patched) = body(
+            http.patch(&format!("/contracts/{}", ids[0]))
+                .json(&json!({ "description": "kept" }))
+                .await,
+        );
+        assert_eq!(status, StatusCode::OK, "{patched}");
+        let (status, promoted) = body(
+            http.post(&format!("/contracts/{}/versions/1.0.0/promote", ids[0]))
+                .await,
+        );
+        assert_eq!(status, StatusCode::OK, "{promoted}");
+        let (status, ingested) = body(
+            http.post(&format!("/v1/ingest/{}", ids[0]))
+                .json(&json!({ "id": "ok" }))
+                .await,
+        );
+        assert_eq!(status, StatusCode::OK, "{ingested}");
+        assert_eq!(ingested["passed"], 1, "{ingested}");
+
+        let (status, _) = body(http.delete(&format!("/contracts/{}", ids[1])).await);
+        assert_eq!(status, StatusCode::NO_CONTENT);
+        let (status, value) = create(&http, &format!("cap-5-{tag}")).await;
+        assert_eq!(status, StatusCode::CREATED, "{value}");
+        let (status, value) = create(&http, &format!("cap-6-{tag}")).await;
+        assert_limit(status, &value, "contracts", 3);
+
+        let growth = seed(&pool, "growth").await;
+        let paid = server(state.clone(), growth);
+        for n in 1..=4 {
+            let (status, value) = create(&paid, &format!("paid-{n}-{}", growth.simple())).await;
+            assert_eq!(status, StatusCode::CREATED, "{value}");
+        }
+
+        let mut hosted = AppState::new(pool.clone(), false, None, None);
+        hosted.self_hosted = true;
+        let self_org = seed(&pool, "free").await;
+        let self_http = server(Arc::new(hosted), self_org);
+        for n in 1..=4 {
+            let (status, value) =
+                create(&self_http, &format!("self-{n}-{}", self_org.simple())).await;
+            assert_eq!(status, StatusCode::CREATED, "{value}");
+        }
+
+        let over = seed(&pool, "free").await;
+        let over_http = server(state, over);
+        let doc = yaml("over", "1.0.0");
+        let mut over_ids = Vec::new();
+        for n in 0..4 {
+            let id = Uuid::new_v4();
+            sqlx::query(
+                "INSERT INTO contracts (id, org_id, name, multi_stable_resolution) \
+                 VALUES ($1, $2, $3, 'strict')",
+            )
+            .bind(id)
+            .bind(over)
+            .bind(format!("over-{n}"))
+            .execute(&pool)
+            .await
+            .unwrap();
+            sqlx::query(
+                "INSERT INTO contract_versions \
+                    (id, contract_id, version, state, yaml_content, promoted_at, \
+                     compliance_mode, egress_leakage_mode, import_source, requires_review, \
+                     on_fail, on_fail_locked) \
+                 VALUES ($1, $2, '1.0.0', 'stable', $3, NOW(), false, 'off', 'native', \
+                         FALSE, 'quarantine', FALSE)",
+            )
+            .bind(Uuid::new_v4())
+            .bind(id)
+            .bind(&doc)
+            .execute(&pool)
+            .await
+            .unwrap();
+            over_ids.push(id);
+        }
+        let (status, listed) = body(over_http.get("/contracts").await);
+        assert_eq!(status, StatusCode::OK, "{listed}");
+        assert_eq!(listed.as_array().unwrap().len(), 4);
+        let (status, one) = body(over_http.get(&format!("/contracts/{}", over_ids[0])).await);
+        assert_eq!(status, StatusCode::OK, "{one}");
+        let (status, ingested) = body(
+            over_http
+                .post(&format!("/v1/ingest/{}", over_ids[0]))
+                .json(&json!({ "id": "ok" }))
+                .await,
+        );
+        assert_eq!(status, StatusCode::OK, "{ingested}");
+        assert_eq!(ingested["passed"], 1, "{ingested}");
+        let (status, value) = create(&over_http, "over-new").await;
+        assert_limit(status, &value, "contracts", 4);
+    }
+}
+
+// Review UPDATE against the real table, and violation redaction on the
+// batch insert. Requires DATABASE_URL and migrations through 051.
+#[cfg(test)]
+mod quarantine_privacy {
+    use serde_json::json;
+    use uuid::Uuid;
+
+    use super::super::storage::{self, QuarantineEventInsert};
+    use super::super::transform::TransformedPayload;
+
+    const YAML: &str = r#"
+version: "1.0"
+name: "quarantine_privacy"
+description: "review and redaction"
+ontology:
+  entities:
+    - name: id
+      type: string
+      required: true
+glossary: []
+metrics: []
+"#;
+
+    async fn connect() -> sqlx::PgPool {
+        let db_url = std::env::var("DATABASE_URL").expect("DATABASE_URL must be set");
+        sqlx::PgPool::connect(&db_url).await.unwrap()
+    }
+
+    async fn seed(pool: &sqlx::PgPool) -> (Uuid, Uuid, Uuid) {
+        let org = Uuid::new_v4();
+        let other = Uuid::new_v4();
+        for (id, slug) in [(org, "review-a"), (other, "review-b")] {
+            sqlx::query("INSERT INTO orgs (id, name, slug) VALUES ($1, $2, $3)")
+                .bind(id)
+                .bind("review org")
+                .bind(format!("{slug}-{}", id.simple()))
+                .execute(pool)
+                .await
+                .expect("seed org");
+        }
+        let (identity, _) = storage::create_contract(
+            pool,
+            "quarantine_privacy",
+            Some("review and redaction"),
+            YAML,
+            Default::default(),
+            Some(org),
+        )
+        .await
+        .expect("create contract");
+        (org, other, identity.id)
+    }
+
+    async fn cleanup(pool: &sqlx::PgPool, contract_id: Uuid, org: Uuid, other: Uuid) {
+        sqlx::query("DELETE FROM contracts WHERE id = $1")
+            .bind(contract_id)
+            .execute(pool)
+            .await
+            .unwrap();
+        sqlx::query("DELETE FROM orgs WHERE id = ANY($1)")
+            .bind(vec![org, other])
+            .execute(pool)
+            .await
+            .unwrap();
+    }
+
+    /// The statement the review handler runs. One id and several ids both
+    /// update pending rows, set reviewed_at, and leave another org's row
+    /// pending.
+    #[tokio::test]
+    #[ignore = "requires DATABASE_URL and a live Postgres migrated through 051"]
+    async fn mark_reviewed_sets_status_and_timestamp() {
+        let pool = connect().await;
+        let (org, other, contract_id) = seed(&pool).await;
+        let one = Uuid::new_v4();
+        let two = Uuid::new_v4();
+        let three = Uuid::new_v4();
+        for id in [one, two, three] {
+            sqlx::query(
+                "INSERT INTO quarantine_events \
+                 (id, contract_id, contract_version, payload, payload_redacted, \
+                  violation_count, violation_details, status, direction) \
+                 VALUES ($1, $2, '1.0.0', NULL, true, 1, '[]'::jsonb, 'pending', 'ingress')",
+            )
+            .bind(id)
+            .bind(contract_id)
+            .execute(&pool)
+            .await
+            .expect("insert quarantine row");
+        }
+
+        let wrong_org = storage::mark_quarantine_reviewed(&pool, Some(other), contract_id, &[one])
+            .await
+            .expect("review as the other org");
+        assert_eq!(wrong_org, 0, "another org must not review the row");
+
+        let reviewed = storage::mark_quarantine_reviewed(&pool, Some(org), contract_id, &[one])
+            .await
+            .expect("review one id");
+        assert_eq!(reviewed, 1);
+
+        let (status, reviewed_at_set): (String, bool) = sqlx::query_as(
+            "SELECT status, reviewed_at IS NOT NULL FROM quarantine_events WHERE id = $1",
+        )
+        .bind(one)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(status, "reviewed");
+        assert!(reviewed_at_set, "reviewed_at must be set");
+
+        let again = storage::mark_quarantine_reviewed(&pool, Some(org), contract_id, &[one])
+            .await
+            .unwrap();
+        assert_eq!(again, 0, "a reviewed row is not pending");
+
+        let batch =
+            storage::mark_quarantine_reviewed(&pool, Some(org), contract_id, &[two, three, one])
+                .await
+                .unwrap();
+        assert_eq!(batch, 2, "only the two still-pending ids");
+
+        let pending: i64 = sqlx::query_scalar(
+            "SELECT count(*) FROM quarantine_events \
+             WHERE contract_id = $1 AND status = 'pending'",
+        )
+        .bind(contract_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(pending, 0);
+
+        cleanup(&pool, contract_id, org, other).await;
+    }
+
+    /// New rows written without a body do not keep `received`. A legacy row
+    /// that still has it is masked on the list path. A stored body keeps it.
+    #[tokio::test]
+    #[ignore = "requires DATABASE_URL and a live Postgres migrated through 051"]
+    async fn redacted_store_drops_received_values() {
+        let pool = connect().await;
+        let (org, other, contract_id) = seed(&pool).await;
+
+        let secret = "01/01/2019 00:30";
+        let details = json!([{
+            "field": "pickup_datetime",
+            "kind": "pattern_mismatch",
+            "message": format!("Field 'pickup_datetime' value \"{secret}\" does not match required pattern"),
+            "received": secret,
+            "expected": "match regex"
+        }]);
+        let row = |id: Uuid| QuarantineEventInsert {
+            contract_id,
+            contract_version: "1.0.0".into(),
+            payload: TransformedPayload::from_stored(json!({"pickup_datetime": secret})),
+            violation_count: 1,
+            violation_details: details.clone(),
+            validation_us: 4,
+            source_ip: None,
+            replay_of_quarantine_id: None,
+            pre_assigned_id: Some(id),
+            direction: "ingress".into(),
+            batch_id: None,
+        };
+
+        let redacted_id = Uuid::new_v4();
+        let stored_id = Uuid::new_v4();
+        storage::quarantine_events_batch(&pool, &[row(redacted_id)], false)
+            .await
+            .expect("redacted insert");
+        storage::quarantine_events_batch(&pool, &[row(stored_id)], true)
+            .await
+            .expect("stored insert");
+
+        let stored_details: serde_json::Value =
+            sqlx::query_scalar("SELECT violation_details FROM quarantine_events WHERE id = $1")
+                .bind(redacted_id)
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        assert_eq!(stored_details[0]["received"], "<REDACTED>");
+        assert!(
+            !stored_details.to_string().contains(secret),
+            "stored redacted row still has the value: {stored_details}"
+        );
+        assert_eq!(stored_details[0]["field"], "pickup_datetime");
+        assert_eq!(stored_details[0]["kind"], "pattern_mismatch");
+
+        let kept: serde_json::Value =
+            sqlx::query_scalar("SELECT violation_details FROM quarantine_events WHERE id = $1")
+                .bind(stored_id)
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        assert_eq!(kept[0]["received"], secret);
+
+        let legacy_id = Uuid::new_v4();
+        sqlx::query(
+            "INSERT INTO quarantine_events \
+             (id, contract_id, contract_version, payload, payload_redacted, \
+              violation_count, violation_details, status, direction) \
+             VALUES ($1, $2, '1.0.0', NULL, true, 1, $3, 'pending', 'ingress')",
+        )
+        .bind(legacy_id)
+        .bind(contract_id)
+        .bind(json!([{
+            "field": "passenger_count",
+            "kind": "type_mismatch",
+            "message": "Field 'passenger_count' value \"two\" expected type Integer, got string",
+            "received": "two"
+        }]))
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        let listed =
+            storage::list_quarantine_events(&pool, Some(org), Some(contract_id), None, 20, 0)
+                .await
+                .unwrap();
+        let legacy = listed
+            .iter()
+            .find(|row| row.id == legacy_id)
+            .expect("legacy row");
+        let visible = super::super::quarantine::violation_details_for_list(
+            legacy.payload_redacted,
+            legacy.violation_details.clone(),
+        );
+        assert!(legacy.payload_redacted);
+        assert!(!visible.to_string().contains("two"), "{visible}");
+        assert_eq!(visible[0]["received"], "<REDACTED>");
+        assert_eq!(visible[0]["field"], "passenger_count");
+
+        let audit_details: serde_json::Value = {
+            storage::log_audit_entries_batch(
+                &pool,
+                &[storage::AuditEntryInsert {
+                    contract_id,
+                    org_id: Some(org),
+                    contract_version: "1.0.0".into(),
+                    passed: false,
+                    violation_count: 1,
+                    violation_details: details.clone(),
+                    raw_event: TransformedPayload::from_stored(json!({"pickup_datetime": secret})),
+                    validation_us: 4,
+                    source_ip: None,
+                    source: "http".into(),
+                    pre_assigned_id: None,
+                    replay_of_quarantine_id: None,
+                    direction: "ingress".into(),
+                }],
+                false,
+            )
+            .await
+            .unwrap();
+            sqlx::query_scalar(
+                "SELECT violation_details FROM audit_log \
+                 WHERE contract_id = $1 AND raw_event_redacted = true",
+            )
+            .bind(contract_id)
+            .fetch_one(&pool)
+            .await
+            .unwrap()
+        };
+        assert!(
+            !audit_details.to_string().contains(secret),
+            "{audit_details}"
+        );
+
+        sqlx::query(
+            "INSERT INTO audit_log \
+             (contract_id, org_id, contract_version, passed, violation_count, \
+              violation_details, raw_event, raw_event_redacted) \
+             VALUES ($1, $2, '1.0.0', false, 1, $3, '{}'::jsonb, true)",
+        )
+        .bind(contract_id)
+        .bind(org)
+        .bind(json!([{
+            "field": "email",
+            "kind": "pattern_mismatch",
+            "message": "Field 'email' value \"legacy@example.com\" does not match required pattern",
+            "received": "legacy@example.com"
+        }]))
+        .execute(&pool)
+        .await
+        .unwrap();
+        let audits = storage::recent_audit_entries(&pool, Some(org), Some(contract_id), 20, 0)
+            .await
+            .unwrap();
+        let legacy_audit = audits
+            .iter()
+            .find(|row| row.violation_details.to_string().contains("email"))
+            .expect("legacy audit row");
+        assert!(
+            !legacy_audit
+                .violation_details
+                .to_string()
+                .contains("legacy@example.com"),
+            "{}",
+            legacy_audit.violation_details
+        );
+
+        cleanup(&pool, contract_id, org, other).await;
+    }
+}

@@ -44,7 +44,7 @@ use uuid::Uuid;
 // shared with other binaries (e.g. src/bin/demo.rs).  We re-export it here so
 // existing submodules that refer to `crate::contract` / `crate::validation`
 // continue to resolve unchanged.
-pub use contractgate::{contract, drop_mode, transform, validation};
+pub use contractgate::{contract, drop_mode, payload_redaction, transform, validation};
 
 mod api_key_auth;
 mod auth_fail_limit;
@@ -508,13 +508,14 @@ async fn create_contract_handler(
         axum::Json::from_request(req, &state)
             .await
             .map_err(|e| AppError::BadRequest(e.to_string()))?;
-    let (identity, _first_version) = storage::create_contract(
+    let (identity, _first_version) = storage::create_contract_in(
         &state.db,
         &body_req.name,
         body_req.description.as_deref(),
         &body_req.yaml_content,
         body_req.multi_stable_resolution.unwrap_or_default(),
         org_id,
+        state.self_hosted,
     )
     .await?;
 
@@ -700,12 +701,13 @@ async fn create_version_handler(
         collaboration::CallerRole::Editor,
     )
     .await?;
-    let v = storage::create_version(
+    let v = storage::create_version_in(
         &state.db,
         contract_id,
         &req.version,
         &req.yaml_content,
         scope,
+        state.self_hosted,
     )
     .await?;
     // Drafts are cached lazily on first pin — no eager insert.
@@ -886,13 +888,14 @@ async fn deploy_contract_handler(
         .await
         .map_err(|e| AppError::BadRequest(e.to_string()))?;
 
-    let (version, deprecated_count) = storage::deploy_contract_version(
+    let (version, deprecated_count) = storage::deploy_contract_version_in(
         &state.db,
         &body.name,
         &body.yaml_content,
         body.source.as_deref(),
         body.deployed_by.as_deref(),
         org_id,
+        state.self_hosted,
     )
     .await?;
 
@@ -987,6 +990,7 @@ async fn import_odcs_handler(
             &yaml,
             result.import_source,
             org_id,
+            state.self_hosted,
         )
         .await?;
         return Ok((StatusCode::CREATED, Json(VersionResponse::from(&cv))));
@@ -1010,13 +1014,14 @@ async fn import_odcs_handler(
     let yaml_named = crate::version_pin::set_yaml_name(&result.yaml_content, &name);
 
     // Step 2: create identity + throwaway v1.0.0 draft.
-    let (identity, _) = storage::create_contract(
+    let (identity, _) = storage::create_contract_in(
         &state.db,
         &name,
         name_in_yaml.description.as_deref(),
         &yaml_named,
         Default::default(),
         org_id,
+        state.self_hosted,
     )
     .await?;
 
@@ -1032,6 +1037,7 @@ async fn import_odcs_handler(
         &yaml_named,
         result.import_source,
         org_id,
+        state.self_hosted,
     )
     .await?;
 
@@ -1276,6 +1282,7 @@ const REQUIRED_SCHEMA: &[(&str, &str)] = &[
     ("orgs", "store_event_payloads"),      // migration 034 (RFC-086)
     ("contracts", "store_event_payloads"), // migration 034 (RFC-086)
     ("quarantine_events", "payload_redacted"), // migration 034 (RFC-086)
+    ("quarantine_events", "reviewed_at"),  // migration 051 (review UPDATE)
     ("audit_log", "raw_event_redacted"),   // migration 034 (RFC-086)
 ];
 

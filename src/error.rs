@@ -151,6 +151,17 @@ pub enum AppError {
         message: &'static str,
     },
 
+    /// Hosted Free contract or version cap. 402. `error` and `code` are `plan_limit`.
+    /// `resource` is `contracts` or `versions`. Existing rows stay; only the
+    /// create that would pass the cap returns this.
+    #[error("{message}")]
+    PlanResourceLimit {
+        resource: &'static str,
+        limit: i64,
+        current: i64,
+        message: String,
+    },
+
     /// Fivetran rejected the API key or secret. 401. The message is fixed
     /// and never includes the key, the secret, or the minted DataContractGate key.
     #[error("Fivetran rejected the API key")]
@@ -282,6 +293,24 @@ impl IntoResponse for AppError {
                 }));
                 return (StatusCode::FORBIDDEN, body).into_response();
             }
+            AppError::PlanResourceLimit {
+                resource,
+                limit,
+                current,
+                message,
+            } => {
+                let body = Json(json!({
+                    "error": "plan_limit",
+                    "code": "plan_limit",
+                    "resource": resource,
+                    "limit": limit,
+                    "current": current,
+                    "message": message,
+                    "upgrade_url": "https://app.datacontractgate.com/pricing",
+                    "status": 402,
+                }));
+                return (StatusCode::PAYMENT_REQUIRED, body).into_response();
+            }
             AppError::FivetranUnauthorized => (StatusCode::UNAUTHORIZED, self.to_string()),
             AppError::FivetranUpstream(_) => (StatusCode::BAD_GATEWAY, self.to_string()),
             AppError::Gone(_) => (StatusCode::GONE, self.to_string()),
@@ -352,13 +381,30 @@ fn database_failure(e: &sqlx::Error) -> (StatusCode, String) {
         );
         return (StatusCode::GATEWAY_TIMEOUT, wait.message.to_string());
     }
+    log_database_error("response", crate::request_limits::current_stage(), e);
+    (StatusCode::INTERNAL_SERVER_ERROR, database_error_message(e))
+}
+
+/// Server log for a database failure. The Postgres message, code, detail,
+/// hint, column, and constraint stay here. The HTTP body stays generic
+/// (`database_error_message`) so none of that reaches the client.
+fn log_database_error(op: &str, stage: &str, e: &sqlx::Error) {
+    let pg = e
+        .as_database_error()
+        .and_then(|db| db.try_downcast_ref::<sqlx::postgres::PgDatabaseError>());
     tracing::error!(
         route = %crate::request_limits::current_route(),
-        stage = %crate::request_limits::current_stage(),
-        "Database error: {:?}",
-        e
+        stage,
+        op,
+        db_code = pg.map(|err| err.code()).unwrap_or(""),
+        db_message = pg.map(|err| err.message()).unwrap_or(""),
+        db_detail = pg.and_then(|err| err.detail()).unwrap_or(""),
+        db_hint = pg.and_then(|err| err.hint()).unwrap_or(""),
+        db_column = pg.and_then(|err| err.column()).unwrap_or(""),
+        db_constraint = pg.and_then(|err| err.constraint()).unwrap_or(""),
+        error = %e,
+        "database error"
     );
-    (StatusCode::INTERNAL_SERVER_ERROR, database_error_message(e))
 }
 
 fn database_error_message(e: &sqlx::Error) -> String {
@@ -398,11 +444,7 @@ impl<T> DbOpContext<T> for Result<T, sqlx::Error> {
             let stage = crate::request_limits::db_timeout(&e)
                 .map(|wait| wait.stage)
                 .unwrap_or_else(crate::request_limits::current_stage);
-            tracing::error!(
-                route = %crate::request_limits::current_route(),
-                stage,
-                "Database error during {op}: {e:?}"
-            );
+            log_database_error(op, stage, &e);
             AppError::Database(e)
         })
     }
@@ -432,6 +474,27 @@ mod tests {
         assert!(body["message"].as_str().unwrap().contains("Pro"));
         assert!(!body["message"].as_str().unwrap().contains("ContractGate"));
         assert_eq!(body["upgrade_url"], PLAN_REQUIRED_UPGRADE_URL);
+    }
+
+    #[tokio::test]
+    async fn plan_resource_limit_is_402() {
+        let resp = AppError::PlanResourceLimit {
+            resource: "contracts",
+            limit: 3,
+            current: 3,
+            message: "The Free plan allows 3 contracts. Upgrade at https://app.datacontractgate.com/pricing".into(),
+        }
+        .into_response();
+        assert_eq!(resp.status(), StatusCode::PAYMENT_REQUIRED);
+        let bytes = to_bytes(resp.into_body(), 4096).await.unwrap();
+        let body: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+        assert_eq!(body["error"], "plan_limit");
+        assert_eq!(body["code"], "plan_limit");
+        assert_eq!(body["resource"], "contracts");
+        assert_eq!(body["limit"], 3);
+        assert_eq!(body["current"], 3);
+        assert_eq!(body["status"], 402);
+        assert!(body["message"].as_str().unwrap().contains("3 contracts"));
     }
 
     /// RFC-103: every `AppError::RateLimitExceeded` 429 must carry the full

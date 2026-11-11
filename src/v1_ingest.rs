@@ -2519,6 +2519,27 @@ mod tests {
         assert_eq!(v["openapi"], "3.1.0");
     }
 
+    #[test]
+    fn openapi_create_routes_document_plan_limit() {
+        let v: Value = serde_json::from_str(&build_openapi()).unwrap();
+        for (path, method) in [
+            ("/contracts", "post"),
+            ("/contracts/{id}/versions", "post"),
+            ("/contracts/deploy", "post"),
+            ("/contracts/import", "post"),
+            ("/contracts/import-published", "post"),
+            ("/contracts/{id}/fork", "post"),
+        ] {
+            let schema = &v["paths"][path][method]["responses"]["402"]["content"]
+                ["application/json"]["schema"];
+            assert_eq!(
+                schema["properties"]["code"]["const"], "plan_limit",
+                "{path}"
+            );
+            assert_eq!(schema["properties"]["status"]["const"], 402, "{path}");
+        }
+    }
+
     // contractgate.io is an unrelated company's product; clients and codegen
     // read this URL, so it must be ours.
     #[test]

@@ -20,6 +20,7 @@ const TIERS = [
       "Python & TypeScript LLMGate SDKs",
       "Hosted Rust validation engine (low-latency)",
       "Up to 3 schema contracts",
+      "Up to 3 versions per schema contract",
       "PII masking",
       "7-day validation log",
       "Quarantine with failure details (up to 50,000 held, 7 days)",

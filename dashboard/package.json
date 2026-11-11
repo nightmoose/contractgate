@@ -9,7 +9,8 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "type-check": "tsc --noEmit"
+    "type-check": "tsc --noEmit",
+    "test": "node --import ./scripts/register-test-hooks.mjs --test lib/*.test.ts lib/org/*.test.ts app/api/early-access/route.test.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.135.0",
