@@ -115,6 +115,8 @@ access control).
 
 Revoked publications return **404**.
 
+Anonymous `200` responses are cached in the API process for 60 seconds (`Cache-Control: public, max-age=60, s-maxage=300, stale-while-revalidate=600`). The cache key is the path plus the query string, so `?token=` does not share an entry with a token-less fetch, and a non-200 is not stored. Requests with `Authorization` or `x-api-key` are not stored. Publishing a version, deprecating a version, and revoking a publication drop cached `/published/{ref}` and `/catalog` responses. This route also uses the public per-IP limit (429 with `Retry-After`).
+
 ---
 
 ### Import a published contract
