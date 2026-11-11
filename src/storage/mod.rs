@@ -31,6 +31,7 @@ mod usage;
 
 pub use audit::*;
 pub use collaboration::*;
+pub(crate) use contracts::enforce_contract_quota;
 pub use contracts::*;
 pub use drops::*;
 pub use publication::*;

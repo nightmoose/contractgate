@@ -7046,3 +7046,320 @@ metrics: []
             .unwrap();
     }
 }
+
+#[cfg(test)]
+mod free_plan_limits {
+    use axum::http::StatusCode;
+    use axum::routing::{get, post};
+    use axum_test::TestServer;
+    use serde_json::{json, Value};
+    use std::sync::Arc;
+    use uuid::Uuid;
+
+    use super::super::{
+        api_key_auth::ValidatedKey, create_contract_handler, create_version_handler,
+        delete_contract_handler, deploy_contract_handler, get_contract_handler,
+        import_odcs_handler, list_contracts_handler, patch_contract_handler,
+        promote_version_handler, public_catalog, publication, v1_ingest, AppState,
+    };
+
+    fn yaml(name: &str, version: &str) -> String {
+        format!(
+            "version: \"{version}\"\nname: \"{name}\"\nontology:\n  entities:\n    - name: id\n      type: string\n      required: true\nglossary: []\nmetrics: []\n"
+        )
+    }
+
+    fn odcs(name: &str, version: &str) -> String {
+        format!(
+            "apiVersion: v3.1.0\nkind: DataContract\nid: \"x\"\nversion: \"{version}\"\nstatus: active\ndataProduct: {name}\nschema:\n  - name: {name}\n    properties:\n      - name: id\n        logicalType: string\n        required: true\n"
+        )
+    }
+
+    fn server(state: Arc<AppState>, org: Uuid) -> TestServer {
+        let app = axum::Router::new()
+            .route(
+                "/contracts",
+                get(list_contracts_handler).post(create_contract_handler),
+            )
+            .route(
+                "/contracts/{id}",
+                get(get_contract_handler)
+                    .patch(patch_contract_handler)
+                    .delete(delete_contract_handler),
+            )
+            .route("/contracts/{id}/versions", post(create_version_handler))
+            .route(
+                "/contracts/{id}/versions/{version}/promote",
+                post(promote_version_handler),
+            )
+            .route(
+                "/contracts/{id}/versions/{version}/publish",
+                post(publication::publish_handler),
+            )
+            .route("/contracts/deploy", post(deploy_contract_handler))
+            .route("/contracts/import", post(import_odcs_handler))
+            .route(
+                "/contracts/import-published",
+                post(publication::import_published_handler),
+            )
+            .route(
+                "/contracts/{id}/fork",
+                post(public_catalog::fork_public_contract_handler),
+            )
+            .route(
+                "/v1/ingest/{contract_id}",
+                post(v1_ingest::v1_ingest_handler),
+            )
+            .layer(axum::middleware::from_fn(
+                move |mut req: axum::extract::Request, next: axum::middleware::Next| async move {
+                    req.extensions_mut().insert(ValidatedKey {
+                        api_key_id: Uuid::new_v4(),
+                        user_id: Uuid::new_v4(),
+                        org_id: org,
+                        allowed_contract_ids: None,
+                        rate_limit_rps: None,
+                        rate_limit_burst: None,
+                    });
+                    next.run(req).await
+                },
+            ))
+            .with_state(state);
+        TestServer::new(app)
+    }
+
+    fn body(resp: axum_test::TestResponse) -> (StatusCode, Value) {
+        let status = resp.status_code();
+        let text = resp.text();
+        let parsed = if text.is_empty() {
+            Value::Null
+        } else {
+            serde_json::from_str(&text).unwrap_or(json!({ "raw": text }))
+        };
+        (status, parsed)
+    }
+
+    fn assert_limit(status: StatusCode, value: &Value, resource: &str, current: i64) {
+        assert_eq!(status, StatusCode::PAYMENT_REQUIRED, "{value}");
+        assert_eq!(value["error"], "plan_limit");
+        assert_eq!(value["code"], "plan_limit");
+        assert_eq!(value["resource"], resource);
+        assert_eq!(value["limit"], 3);
+        assert_eq!(value["current"], current);
+        assert_eq!(value["status"], 402);
+        assert_eq!(
+            value["upgrade_url"],
+            "https://app.datacontractgate.com/pricing"
+        );
+        let message = value["message"].as_str().unwrap();
+        assert!(message.contains("https://app.datacontractgate.com/pricing"));
+        assert!(message.contains("Free plan"));
+        assert!(!message.contains("ContractGate"));
+    }
+
+    async fn seed(pool: &sqlx::PgPool, plan: &str) -> Uuid {
+        let org = Uuid::new_v4();
+        sqlx::query("INSERT INTO orgs (id, name, slug, plan) VALUES ($1, $2, $3, $4)")
+            .bind(org)
+            .bind(format!("free cap {plan}"))
+            .bind(format!("free-cap-{plan}-{}", org.simple()))
+            .bind(plan)
+            .execute(pool)
+            .await
+            .unwrap();
+        org
+    }
+
+    async fn create(http: &TestServer, name: &str) -> (StatusCode, Value) {
+        body(
+            http.post("/contracts")
+                .json(&json!({ "name": name, "yaml_content": yaml(name, "1.0.0") }))
+                .await,
+        )
+    }
+
+    /// Free stops at 3 contracts and 3 versions. Paid and self-host do not.
+    /// Rows inserted past the cap stay readable and valid.
+    #[tokio::test]
+    #[ignore = "requires DATABASE_URL and a live Supabase/Postgres instance"]
+    async fn free_cap_blocks_new_creates_only() {
+        let db_url = std::env::var("DATABASE_URL").expect("DATABASE_URL must be set");
+        let pool = sqlx::PgPool::connect(&db_url).await.unwrap();
+        let state = Arc::new(AppState::new(pool.clone(), false, None, None));
+        let org = seed(&pool, "free").await;
+        let http = server(state.clone(), org);
+        let tag = org.simple().to_string();
+        let public_id: Uuid =
+            sqlx::query_scalar("SELECT id FROM public_contracts ORDER BY created_at LIMIT 1")
+                .fetch_one(&pool)
+                .await
+                .expect("public catalog seed");
+
+        let mut ids = Vec::new();
+        for n in 1..=3 {
+            let (status, value) = create(&http, &format!("cap-{n}-{tag}")).await;
+            assert_eq!(status, StatusCode::CREATED, "{value}");
+            ids.push(value["id"].as_str().unwrap().parse::<Uuid>().unwrap());
+        }
+        let (status, value) = create(&http, &format!("cap-4-{tag}")).await;
+        assert_limit(status, &value, "contracts", 3);
+
+        let name1 = format!("cap-1-{tag}");
+        let (status, value) = body(
+            http.post("/contracts/deploy")
+                .json(&json!({
+                    "name": format!("cap-deploy-{tag}"),
+                    "yaml_content": yaml(&format!("cap-deploy-{tag}"), "1.0.0"),
+                }))
+                .await,
+        );
+        assert_limit(status, &value, "contracts", 3);
+        let (status, value) = body(
+            http.post("/contracts/import")
+                .json(&json!({
+                    "odcs_yaml": odcs(&format!("cap_odcs_{tag}"), "1.0.0"),
+                    "name_override": format!("cap-odcs-{tag}"),
+                }))
+                .await,
+        );
+        assert_limit(status, &value, "contracts", 3);
+        let (status, value) = body(
+            http.post(&format!("/contracts/{public_id}/fork"))
+                .json(&json!({ "name": format!("cap-fork-{tag}") }))
+                .await,
+        );
+        assert_limit(status, &value, "contracts", 3);
+
+        let (status, published) = body(
+            http.post(&format!("/contracts/{}/versions/1.0.0/publish", ids[0]))
+                .json(&json!({ "visibility": "public" }))
+                .await,
+        );
+        assert_eq!(status, StatusCode::CREATED, "{published}");
+        let (status, value) = body(
+            http.post("/contracts/import-published")
+                .json(&json!({
+                    "publication_ref": published["publication_ref"],
+                    "import_mode": "snapshot",
+                }))
+                .await,
+        );
+        assert_limit(status, &value, "contracts", 3);
+
+        for version in ["1.1.0", "1.2.0"] {
+            let (status, value) = body(
+                http.post(&format!("/contracts/{}/versions", ids[0]))
+                    .json(&json!({
+                        "version": version,
+                        "yaml_content": yaml(&name1, version),
+                    }))
+                    .await,
+            );
+            assert_eq!(status, StatusCode::CREATED, "{value}");
+        }
+        let (status, value) = body(
+            http.post(&format!("/contracts/{}/versions", ids[0]))
+                .json(&json!({
+                    "version": "1.3.0",
+                    "yaml_content": yaml(&name1, "1.3.0"),
+                }))
+                .await,
+        );
+        assert_limit(status, &value, "versions", 3);
+
+        let (status, listed) = body(http.get("/contracts").await);
+        assert_eq!(status, StatusCode::OK, "{listed}");
+        assert_eq!(listed.as_array().unwrap().len(), 3);
+        let (status, one) = body(http.get(&format!("/contracts/{}", ids[0])).await);
+        assert_eq!(status, StatusCode::OK, "{one}");
+        let (status, patched) = body(
+            http.patch(&format!("/contracts/{}", ids[0]))
+                .json(&json!({ "description": "kept" }))
+                .await,
+        );
+        assert_eq!(status, StatusCode::OK, "{patched}");
+        let (status, promoted) = body(
+            http.post(&format!("/contracts/{}/versions/1.0.0/promote", ids[0]))
+                .await,
+        );
+        assert_eq!(status, StatusCode::OK, "{promoted}");
+        let (status, ingested) = body(
+            http.post(&format!("/v1/ingest/{}", ids[0]))
+                .json(&json!({ "id": "ok" }))
+                .await,
+        );
+        assert_eq!(status, StatusCode::OK, "{ingested}");
+        assert_eq!(ingested["passed"], 1, "{ingested}");
+
+        let (status, _) = body(http.delete(&format!("/contracts/{}", ids[1])).await);
+        assert_eq!(status, StatusCode::NO_CONTENT);
+        let (status, value) = create(&http, &format!("cap-5-{tag}")).await;
+        assert_eq!(status, StatusCode::CREATED, "{value}");
+        let (status, value) = create(&http, &format!("cap-6-{tag}")).await;
+        assert_limit(status, &value, "contracts", 3);
+
+        let growth = seed(&pool, "growth").await;
+        let paid = server(state.clone(), growth);
+        for n in 1..=4 {
+            let (status, value) = create(&paid, &format!("paid-{n}-{}", growth.simple())).await;
+            assert_eq!(status, StatusCode::CREATED, "{value}");
+        }
+
+        let mut hosted = AppState::new(pool.clone(), false, None, None);
+        hosted.self_hosted = true;
+        let self_org = seed(&pool, "free").await;
+        let self_http = server(Arc::new(hosted), self_org);
+        for n in 1..=4 {
+            let (status, value) =
+                create(&self_http, &format!("self-{n}-{}", self_org.simple())).await;
+            assert_eq!(status, StatusCode::CREATED, "{value}");
+        }
+
+        let over = seed(&pool, "free").await;
+        let over_http = server(state, over);
+        let doc = yaml("over", "1.0.0");
+        let mut over_ids = Vec::new();
+        for n in 0..4 {
+            let id = Uuid::new_v4();
+            sqlx::query(
+                "INSERT INTO contracts (id, org_id, name, multi_stable_resolution) \
+                 VALUES ($1, $2, $3, 'strict')",
+            )
+            .bind(id)
+            .bind(over)
+            .bind(format!("over-{n}"))
+            .execute(&pool)
+            .await
+            .unwrap();
+            sqlx::query(
+                "INSERT INTO contract_versions \
+                    (id, contract_id, version, state, yaml_content, promoted_at, \
+                     compliance_mode, egress_leakage_mode, import_source, requires_review, \
+                     on_fail, on_fail_locked) \
+                 VALUES ($1, $2, '1.0.0', 'stable', $3, NOW(), false, 'off', 'native', \
+                         FALSE, 'quarantine', FALSE)",
+            )
+            .bind(Uuid::new_v4())
+            .bind(id)
+            .bind(&doc)
+            .execute(&pool)
+            .await
+            .unwrap();
+            over_ids.push(id);
+        }
+        let (status, listed) = body(over_http.get("/contracts").await);
+        assert_eq!(status, StatusCode::OK, "{listed}");
+        assert_eq!(listed.as_array().unwrap().len(), 4);
+        let (status, one) = body(over_http.get(&format!("/contracts/{}", over_ids[0])).await);
+        assert_eq!(status, StatusCode::OK, "{one}");
+        let (status, ingested) = body(
+            over_http
+                .post(&format!("/v1/ingest/{}", over_ids[0]))
+                .json(&json!({ "id": "ok" }))
+                .await,
+        );
+        assert_eq!(status, StatusCode::OK, "{ingested}");
+        assert_eq!(ingested["passed"], 1, "{ingested}");
+        let (status, value) = create(&over_http, "over-new").await;
+        assert_limit(status, &value, "contracts", 4);
+    }
+}

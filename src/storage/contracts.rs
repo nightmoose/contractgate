@@ -151,6 +151,128 @@ impl ContractSummaryRow {
 // operate only on identity rows.
 // ---------------------------------------------------------------------------
 
+fn quota_error(resource: crate::plan::PlanLimitResource, current: i64) -> AppError {
+    AppError::PlanResourceLimit {
+        resource: resource.as_str(),
+        limit: resource.limit(),
+        current,
+        message: crate::plan::plan_limit_message(resource),
+    }
+}
+
+/// Lock the org and refuse a new contract when hosted Free is already at the cap.
+/// The lock is held until the caller's transaction commits. Soft-deleted rows
+/// do not count. Paid plans, self-host, and a missing org are not capped.
+pub(crate) async fn enforce_contract_quota(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    org_id: Option<Uuid>,
+    self_hosted: bool,
+) -> AppResult<()> {
+    let Some(org_id) = org_id else {
+        return Ok(());
+    };
+    if self_hosted {
+        return Ok(());
+    }
+    // `&mut **tx` is the connection. sqlx 0.8 only implements Executor for a
+    // transaction reference whose lifetime matches the transaction itself.
+    let plan: Option<String> = sqlx::query_scalar("SELECT plan FROM orgs WHERE id = $1 FOR UPDATE")
+        .bind(org_id)
+        .fetch_optional(&mut **tx)
+        .await
+        .db_op("plan_limit:lock_org")?;
+    let Some(limit) = plan.as_deref().and_then(|p| {
+        crate::plan::free_resource_limit(false, Some(p), crate::plan::PlanLimitResource::Contracts)
+    }) else {
+        return Ok(());
+    };
+    let count: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM contracts WHERE org_id = $1 AND deleted_at IS NULL",
+    )
+    .bind(org_id)
+    .fetch_one(&mut **tx)
+    .await
+    .db_op("plan_limit:count_contracts")?;
+    if count >= limit {
+        return Err(quota_error(
+            crate::plan::PlanLimitResource::Contracts,
+            count,
+        ));
+    }
+    Ok(())
+}
+
+async fn lock_live_contract(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    contract_id: Uuid,
+) -> AppResult<()> {
+    let found: Option<Uuid> = sqlx::query_scalar(
+        "SELECT id FROM contracts WHERE id = $1 AND deleted_at IS NULL FOR UPDATE",
+    )
+    .bind(contract_id)
+    .fetch_optional(&mut **tx)
+    .await
+    .db_op("plan_limit:lock_contract")?;
+    found
+        .map(|_| ())
+        .ok_or(AppError::ContractNotFound(contract_id))
+}
+
+/// Refuse a new version when the owning org is hosted Free and the contract
+/// already has [`crate::plan::FREE_VERSION_LIMIT`] versions. Caller holds the
+/// contract row lock. Every stored version counts.
+async fn enforce_version_quota(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    contract_id: Uuid,
+    self_hosted: bool,
+) -> AppResult<()> {
+    if self_hosted {
+        return Ok(());
+    }
+    let org_id: Option<Uuid> =
+        sqlx::query_scalar("SELECT org_id FROM contracts WHERE id = $1 AND deleted_at IS NULL")
+            .bind(contract_id)
+            .fetch_optional(&mut **tx)
+            .await
+            .db_op("plan_limit:contract_org")?;
+    let Some(org_id) = org_id else {
+        return Err(AppError::ContractNotFound(contract_id));
+    };
+    let plan: Option<String> = sqlx::query_scalar("SELECT plan FROM orgs WHERE id = $1")
+        .bind(org_id)
+        .fetch_optional(&mut **tx)
+        .await
+        .db_op("plan_limit:org_plan")?;
+    let Some(limit) = plan.as_deref().and_then(|p| {
+        crate::plan::free_resource_limit(false, Some(p), crate::plan::PlanLimitResource::Versions)
+    }) else {
+        return Ok(());
+    };
+    let count: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM contract_versions WHERE contract_id = $1")
+            .bind(contract_id)
+            .fetch_one(&mut **tx)
+            .await
+            .db_op("plan_limit:count_versions")?;
+    if count >= limit {
+        return Err(quota_error(crate::plan::PlanLimitResource::Versions, count));
+    }
+    Ok(())
+}
+
+async fn begin_new_version(
+    pool: &PgPool,
+    contract_id: Uuid,
+    version: &str,
+    self_hosted: bool,
+) -> AppResult<sqlx::Transaction<'static, sqlx::Postgres>> {
+    let mut tx = pool.begin().await.db_op("version_insert:begin")?;
+    lock_live_contract(&mut tx, contract_id).await?;
+    ensure_no_equivalent_version(&mut *tx, contract_id, version).await?;
+    enforce_version_quota(&mut tx, contract_id, self_hosted).await?;
+    Ok(tx)
+}
+
 /// Create a new contract identity AND an initial `v1.0.0` draft from the
 /// submitted YAML, all in one transaction.  The YAML is parsed first to
 /// reject invalid contracts before any write hits the DB.
@@ -159,6 +281,9 @@ impl ContractSummaryRow {
 /// (no auth configured) to skip org assignment — fine for local testing.
 ///
 /// Returns the identity + the freshly created draft version.
+///
+/// Hosted plan rules. HTTP handlers use [`create_contract_in`].
+#[cfg_attr(not(test), allow(dead_code))]
 pub async fn create_contract(
     pool: &PgPool,
     name: &str,
@@ -166,6 +291,28 @@ pub async fn create_contract(
     yaml_content: &str,
     resolution: MultiStableResolution,
     org_id: Option<Uuid>,
+) -> AppResult<(ContractIdentity, ContractVersion)> {
+    create_contract_in(
+        pool,
+        name,
+        description,
+        yaml_content,
+        resolution,
+        org_id,
+        false,
+    )
+    .await
+}
+
+/// [`create_contract`] with the process self-host flag.
+pub async fn create_contract_in(
+    pool: &PgPool,
+    name: &str,
+    description: Option<&str>,
+    yaml_content: &str,
+    resolution: MultiStableResolution,
+    org_id: Option<Uuid>,
+    self_hosted: bool,
 ) -> AppResult<(ContractIdentity, ContractVersion)> {
     // Parse first — reject invalid YAML before touching the DB.  We also
     // extract `compliance_mode` so the column stays in sync with the YAML
@@ -185,6 +332,7 @@ pub async fn create_contract(
     let version_id = Uuid::new_v4();
 
     let mut tx = pool.begin().await.db_op("create_contract:begin")?;
+    enforce_contract_quota(&mut tx, org_id, self_hosted).await?;
 
     let identity_row = sqlx::query_as::<_, ContractIdentityRow>(
         r#"
@@ -521,12 +669,27 @@ pub async fn delete_contract(pool: &PgPool, id: Uuid, org_id: Option<Uuid>) -> A
 /// first so invalid contracts never land in the DB.
 ///
 /// `org_id` — org-scope guard (RFC-047).  Pass `None` only in dev mode.
+///
+/// Hosted plan rules. HTTP handlers use [`create_version_in`].
+#[cfg_attr(not(test), allow(dead_code))]
 pub async fn create_version(
     pool: &PgPool,
     contract_id: Uuid,
     version: &str,
     yaml_content: &str,
     org_id: Option<Uuid>,
+) -> AppResult<ContractVersion> {
+    create_version_in(pool, contract_id, version, yaml_content, org_id, false).await
+}
+
+/// [`create_version`] with the process self-host flag.
+pub async fn create_version_in(
+    pool: &PgPool,
+    contract_id: Uuid,
+    version: &str,
+    yaml_content: &str,
+    org_id: Option<Uuid>,
+    self_hosted: bool,
 ) -> AppResult<ContractVersion> {
     // The stored YAML's `version:` always matches the version row.
     let yaml_owned = crate::version_pin::set_yaml_version(yaml_content, version);
@@ -541,8 +704,7 @@ pub async fn create_version(
     // Ensure the contract exists and belongs to the caller's org (RFC-047).
     let _ = get_contract_identity(pool, contract_id, org_id).await?;
 
-    ensure_no_equivalent_version(pool, contract_id, version).await?;
-
+    let mut tx = begin_new_version(pool, contract_id, version, self_hosted).await?;
     let id = Uuid::new_v4();
 
     let row = sqlx::query_as::<_, ContractVersionRow>(
@@ -564,7 +726,7 @@ pub async fn create_version(
     .bind(egress_leakage_mode)
     .bind(on_fail)
     .bind(on_fail_locked)
-    .fetch_one(pool)
+    .fetch_one(&mut *tx)
     .await
     .map_err(|e| match &e {
         sqlx::Error::Database(db) if db.code().as_deref() == Some("23505") => {
@@ -577,6 +739,7 @@ pub async fn create_version(
         _ => AppError::from(e),
     })?;
 
+    tx.commit().await.db_op("create_version:commit")?;
     row.into_version()
 }
 
@@ -731,6 +894,9 @@ pub async fn deprecate_version(
 /// Returns the new version row and the count of versions deprecated.
 ///
 /// Admin-only at the API layer — this function does not enforce roles itself.
+///
+/// Hosted plan rules. HTTP handlers use [`deploy_contract_version_in`].
+#[cfg_attr(not(test), allow(dead_code))]
 pub async fn deploy_contract_version(
     pool: &PgPool,
     name: &str,
@@ -738,6 +904,19 @@ pub async fn deploy_contract_version(
     source: Option<&str>,
     deployed_by: Option<&str>,
     org_id: Option<Uuid>,
+) -> AppResult<(ContractVersion, i64)> {
+    deploy_contract_version_in(pool, name, yaml_content, source, deployed_by, org_id, false).await
+}
+
+/// [`deploy_contract_version`] with the process self-host flag.
+pub async fn deploy_contract_version_in(
+    pool: &PgPool,
+    name: &str,
+    yaml_content: &str,
+    source: Option<&str>,
+    deployed_by: Option<&str>,
+    org_id: Option<Uuid>,
+    self_hosted: bool,
 ) -> AppResult<(ContractVersion, i64)> {
     // Parse YAML and extract version — fail fast before touching the DB.
     let parsed: crate::contract::Contract = serde_yaml::from_str(yaml_content)
@@ -779,6 +958,7 @@ pub async fn deploy_contract_version(
     let contract_id = match maybe_identity {
         Some(row) => row.id,
         None => {
+            enforce_contract_quota(&mut tx, org_id, self_hosted).await?;
             // Create a new contract identity.  pii_salt uses DB default gen_random_bytes(32).
             let id = Uuid::new_v4();
             sqlx::query(
@@ -796,6 +976,9 @@ pub async fn deploy_contract_version(
             id
         }
     };
+
+    lock_live_contract(&mut tx, contract_id).await?;
+    enforce_version_quota(&mut tx, contract_id, self_hosted).await?;
 
     // ── 2. Quarantine guard — refuse if pending events exist ──────────────────
     let pending_count: i64 = sqlx::query_scalar(
@@ -1151,6 +1334,7 @@ pub async fn load_all_non_draft_versions(pool: &PgPool) -> AppResult<Vec<Contrac
 /// `requires_review` when the source is `odcs_stripped` (D-002).
 ///
 /// `org_id` — org-scope guard (RFC-047).  Pass `None` only in dev mode.
+/// `self_hosted` skips the Free version cap.
 pub async fn create_version_from_import(
     pool: &PgPool,
     contract_id: Uuid,
@@ -1158,6 +1342,7 @@ pub async fn create_version_from_import(
     yaml_content: &str,
     import_source: ImportSource,
     org_id: Option<Uuid>,
+    self_hosted: bool,
 ) -> AppResult<ContractVersion> {
     // The stored YAML's `version:` always matches the version row.
     let yaml_owned = crate::version_pin::set_yaml_version(yaml_content, version);
@@ -1172,8 +1357,7 @@ pub async fn create_version_from_import(
 
     let _ = get_contract_identity(pool, contract_id, org_id).await?;
 
-    ensure_no_equivalent_version(pool, contract_id, version).await?;
-
+    let mut tx = begin_new_version(pool, contract_id, version, self_hosted).await?;
     let id = Uuid::new_v4();
 
     let row = sqlx::query_as::<_, ContractVersionRow>(
@@ -1197,7 +1381,7 @@ pub async fn create_version_from_import(
     .bind(requires_review)
     .bind(on_fail)
     .bind(on_fail_locked)
-    .fetch_one(pool)
+    .fetch_one(&mut *tx)
     .await
     .map_err(|e| match &e {
         sqlx::Error::Database(db) if db.code().as_deref() == Some("23505") => {
@@ -1209,6 +1393,9 @@ pub async fn create_version_from_import(
         _ => AppError::from(e),
     })?;
 
+    tx.commit()
+        .await
+        .db_op("create_version_from_import:commit")?;
     row.into_version()
 }
 

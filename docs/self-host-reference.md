@@ -50,6 +50,7 @@ Hosted behavior is unchanged when the variable is unset: free plans stay capped,
 On a self-hosted process the flag grants the Enterprise entitlement without rewriting `orgs.plan`:
 
 - unlimited monthly events (usage is still counted)
+- unlimited contracts and versions (hosted Free stops at 3 of each)
 - paid default rate limit, 100 / 200, unless the key sets its own
 - 365-day passed-event cursor window
 - payload storage, passed-event export, and Connect Fivetran

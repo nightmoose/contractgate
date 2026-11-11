@@ -151,6 +151,17 @@ pub enum AppError {
         message: &'static str,
     },
 
+    /// Hosted Free contract or version cap. 402. `error` and `code` are `plan_limit`.
+    /// `resource` is `contracts` or `versions`. Existing rows stay; only the
+    /// create that would pass the cap returns this.
+    #[error("{message}")]
+    PlanResourceLimit {
+        resource: &'static str,
+        limit: i64,
+        current: i64,
+        message: String,
+    },
+
     /// Fivetran rejected the API key or secret. 401. The message is fixed
     /// and never includes the key, the secret, or the minted DataContractGate key.
     #[error("Fivetran rejected the API key")]
@@ -281,6 +292,24 @@ impl IntoResponse for AppError {
                     "status": 403,
                 }));
                 return (StatusCode::FORBIDDEN, body).into_response();
+            }
+            AppError::PlanResourceLimit {
+                resource,
+                limit,
+                current,
+                message,
+            } => {
+                let body = Json(json!({
+                    "error": "plan_limit",
+                    "code": "plan_limit",
+                    "resource": resource,
+                    "limit": limit,
+                    "current": current,
+                    "message": message,
+                    "upgrade_url": "https://app.datacontractgate.com/pricing",
+                    "status": 402,
+                }));
+                return (StatusCode::PAYMENT_REQUIRED, body).into_response();
             }
             AppError::FivetranUnauthorized => (StatusCode::UNAUTHORIZED, self.to_string()),
             AppError::FivetranUpstream(_) => (StatusCode::BAD_GATEWAY, self.to_string()),
@@ -432,6 +461,27 @@ mod tests {
         assert!(body["message"].as_str().unwrap().contains("Pro"));
         assert!(!body["message"].as_str().unwrap().contains("ContractGate"));
         assert_eq!(body["upgrade_url"], PLAN_REQUIRED_UPGRADE_URL);
+    }
+
+    #[tokio::test]
+    async fn plan_resource_limit_is_402() {
+        let resp = AppError::PlanResourceLimit {
+            resource: "contracts",
+            limit: 3,
+            current: 3,
+            message: "The Free plan allows 3 contracts. Upgrade at https://app.datacontractgate.com/pricing".into(),
+        }
+        .into_response();
+        assert_eq!(resp.status(), StatusCode::PAYMENT_REQUIRED);
+        let bytes = to_bytes(resp.into_body(), 4096).await.unwrap();
+        let body: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+        assert_eq!(body["error"], "plan_limit");
+        assert_eq!(body["code"], "plan_limit");
+        assert_eq!(body["resource"], "contracts");
+        assert_eq!(body["limit"], 3);
+        assert_eq!(body["current"], 3);
+        assert_eq!(body["status"], 402);
+        assert!(body["message"].as_str().unwrap().contains("3 contracts"));
     }
 
     /// RFC-103: every `AppError::RateLimitExceeded` 429 must carry the full

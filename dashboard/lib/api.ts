@@ -60,7 +60,10 @@ async function extractErrorMessage(res: Response): Promise<string> {
   try {
     const body = await res.clone().json();
     if (body && typeof body === "object") {
-      if (body.error === "plan_required" && typeof body.message === "string") {
+      if (
+        (body.error === "plan_required" || body.error === "plan_limit") &&
+        typeof body.message === "string"
+      ) {
         return body.message;
       }
       if (typeof body.error === "string") return body.error;
