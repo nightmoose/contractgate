@@ -110,13 +110,15 @@ pub async fn list_quarantine_handler(
             let missing = r.payload.is_none();
             let (replayable, reason) =
                 replay_availability(replay_allowed, &r.status, r.payload_redacted, missing);
+            let violation_details =
+                violation_details_for_list(r.payload_redacted, r.violation_details);
             QuarantinedEventOut {
                 id: r.id,
                 contract_id: r.contract_id,
                 contract_version: r.contract_version,
                 raw_event: r.payload.unwrap_or(serde_json::Value::Null),
                 payload_redacted: r.payload_redacted,
-                violation_details: r.violation_details,
+                violation_details,
                 violation_count: r.violation_count,
                 source_ip: r.source_ip,
                 quarantined_at: r.created_at,
@@ -147,6 +149,18 @@ async fn replay_allowed(state: &AppState, org_id: Option<Uuid>) -> AppResult<boo
             Ok(true)
         }
     }
+}
+
+/// List and detail rows. A redacted body also drops offending values from
+/// `violation_details`. An unredacted row is returned unchanged.
+pub(crate) fn violation_details_for_list(
+    payload_redacted: bool,
+    mut details: serde_json::Value,
+) -> serde_json::Value {
+    if payload_redacted {
+        crate::payload_redaction::redact_violation_details(&mut details);
+    }
+    details
 }
 
 pub fn replay_availability(
@@ -619,6 +633,31 @@ mod tests {
             .find(|cell| cell.status == "purged" && cell.direction == "egress")
             .unwrap();
         assert_eq!(purged_egress.count, 0);
+    }
+
+    #[test]
+    fn redacted_list_row_drops_received_and_keeps_the_shape() {
+        let details = violation_details_for_list(
+            true,
+            serde_json::json!([{
+                "field": "passenger_count",
+                "kind": "type_mismatch",
+                "message": "Field 'passenger_count' expected type Integer, got string",
+                "received": "two",
+                "expected": "integer"
+            }]),
+        );
+        assert_eq!(details[0]["field"], "passenger_count");
+        assert_eq!(details[0]["kind"], "type_mismatch");
+        assert_eq!(details[0]["expected"], "integer");
+        assert_eq!(details[0]["received"], "<REDACTED>");
+        assert!(!details.to_string().contains("two"));
+
+        let kept = violation_details_for_list(
+            false,
+            serde_json::json!([{"field": "fare_amount", "received": -5}]),
+        );
+        assert_eq!(kept[0]["received"], -5);
     }
 
     #[test]
