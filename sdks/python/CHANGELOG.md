@@ -8,6 +8,9 @@ All notable changes to the `contractgate` Python SDK.
   with the same rules as the Rust engine. Unknown format names still pass.
   The package version stays 0.4.1: a release tag must match both
   `Cargo.toml` and `pyproject.toml`, and this fix does not ship on its own.
+- `type: date` and `type: timestamp` parse and validate with the same rules
+  as the Rust engine (`YYYY-MM-DD` calendar dates, RFC 3339 date-times,
+  including offsets and leap days). The package version stays 0.4.1.
 
 ## 0.4.1 — 2026-10-28
 

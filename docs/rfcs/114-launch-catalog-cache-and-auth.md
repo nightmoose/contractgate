@@ -25,15 +25,16 @@ The Python local validator ignores `format: email`. The Rust engine rejects valu
 
 5. **Python `format`.** The local validator parses `format` and applies the Rust rules for `email`, `uuid`, and `uri`/`url` (case-insensitive name, original spelling in the message). Any other format name passes.
 
-## Remaining Python gaps
+## Follow-up
 
-These are field types, not `format` values. The Rust engine enforces them; the Python parser still rejects the type name:
+The three items left open above are done:
 
-- `type: date` — real `YYYY-MM-DD` calendar date
-- `type: timestamp` — RFC 3339 date-time
+1. **`GET /published/{ref}`** uses the same 60-second anonymous cache, key (path plus query string), and `Cache-Control` as the catalog reads. `?token=` is part of the key, so a link-gated body is not served for a different token or for a token-less URL. Non-200 responses are not stored. Publish, deprecation (including deploy, which deprecates the previous stable versions), and revoke drop cached `/published/{ref}` and `/catalog` entries. Curated `/public-contracts` rows are a different table and stay.
+2. **`GET /public-contracts/{slug}`**, **`/yaml`**, and **`/odcs`** use the same per-IP limiter as the list routes: 30 requests/second, burst 60, HTTP 429 with `Retry-After`. `X-DCG-SSR-Token` skips that limiter when `CONTRACTGATE_TRUSTED_SSR_TOKEN` matches. The cache stays inside the limiter, so a hit still spends a token. Family detail routes stay cached and are not on this limiter.
+3. **Python `type: date` and `type: timestamp`.** The local parser accepts those type names. Values follow Chrono's `%Y-%m-%d` calendar parse and `DateTime::parse_from_rfc3339` (offsets, leap days, and the same rejections). The package version stays 0.4.1.
 
 ## Non-goals
 
-- Caching `/published/{ref}` or any authenticated route.
-- Changing the 60-second positive cache (revocation is still visible within 60 seconds).
+- Caching any authenticated route.
+- Changing the 60-second positive cache TTL.
 - Publishing a new Python package. Release tags require `pyproject.toml` to match `Cargo.toml`, so the SDK version stays 0.4.1.

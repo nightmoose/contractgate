@@ -1726,4 +1726,136 @@ mod tests {
             .iter()
             .any(|v| v.field == "pagination.total" && v.kind == ViolationKind::TypeMismatch));
     }
+
+    /// The Python validator mirrors these two calls. Keep the matrix in sync
+    /// with `sdks/python/tests/test_validator.py`.
+    #[test]
+    fn date_and_timestamp_accept_the_same_values_as_chrono() {
+        let dates = [
+            ("2024-02-29", true),
+            ("2000-02-29", true),
+            ("2024-01-31", true),
+            ("2024-04-30", true),
+            ("0000-02-29", true),
+            ("0001-01-01", true),
+            ("9999-12-31", true),
+            ("2024-2-29", true),
+            ("2024-02-2", true),
+            (" 2024-02-29", true),
+            ("+10000-01-01", true),
+            ("+262142-12-31", true),
+            ("-262143-01-01", true),
+            ("2023-02-29", false),
+            ("1900-02-29", false),
+            ("2024-02-30", false),
+            ("2024-04-31", false),
+            ("2024-13-01", false),
+            ("2024-00-10", false),
+            ("2024-01-00", false),
+            ("2024-01-01T00:00:00Z", false),
+            ("2024/01/01", false),
+            ("2024-02-29 ", false),
+            ("10000-01-01", false),
+            ("+262143-01-01", false),
+            ("-262144-01-01", false),
+            ("", false),
+        ];
+        for (value, ok) in dates {
+            assert_eq!(
+                chrono::NaiveDate::parse_from_str(value, "%Y-%m-%d").is_ok(),
+                ok,
+                "date {value:?}"
+            );
+        }
+
+        let timestamps = [
+            ("2024-02-29T12:30:00Z", true),
+            ("2024-02-29t12:30:00z", true),
+            ("2024-02-29 12:30:00Z", true),
+            ("2026-10-15T12:00:00+00:00", true),
+            ("2026-10-15T12:00:00-05:00", true),
+            ("2026-10-15T12:00:00+05:30", true),
+            ("2026-10-15T12:00:00+23:59", true),
+            ("2026-10-15T12:00:00-23:59", true),
+            ("2024-02-29T23:59:59.999999999Z", true),
+            ("2024-02-29T00:00:00.1Z", true),
+            ("2024-02-29T00:00:00.1234567890123Z", true),
+            ("2000-02-29T00:00:00+00:00", true),
+            ("0000-02-29T00:00:00Z", true),
+            ("2026-10-15T12:00:00−05:00", true),
+            ("2023-02-29T00:00:00Z", false),
+            ("1900-02-29T00:00:00Z", false),
+            ("2024-02-30T00:00:00Z", false),
+            ("2026-10-15T12:00:00", false),
+            ("2026-10-15T12:00:00+24:00", false),
+            ("2026-10-15T12:00:00-24:00", false),
+            ("2026-10-15T12:00:00+05:60", false),
+            ("2026-10-15T12:00:00+0530", false),
+            ("2026-10-15T12:00:00+5:00", false),
+            ("2026-10-15T24:00:00Z", false),
+            // Chrono rewrites `:60` to second 59 plus 1e9 nanos, which
+            // `from_hms_nano_opt` accepts as a leap second. `:61` does not.
+            ("2016-12-31T23:59:60Z", true),
+            ("2016-12-31T23:59:60.9Z", true),
+            ("2016-12-31T23:59:61Z", false),
+            ("2026-10-15T12:00:00.Z", false),
+            ("2026-10-15T12:00:00Z ", false),
+            ("not-a-timestamp", false),
+            ("", false),
+        ];
+        for (value, ok) in timestamps {
+            assert_eq!(
+                chrono::DateTime::parse_from_rfc3339(value).is_ok(),
+                ok,
+                "timestamp {value:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn date_and_timestamp_fields_use_pattern_mismatch() {
+        let date_yaml = r#"
+version: "1.0"
+name: "dates"
+ontology:
+  entities:
+    - name: when
+      type: date
+      required: true
+"#;
+        let date_cc = CompiledContract::compile(serde_yaml::from_str(date_yaml).unwrap()).unwrap();
+        let ok = validate(&date_cc, &json!({"when": "2024-02-29"}));
+        assert!(ok.passed, "{:?}", ok.violations);
+        let bad = validate(&date_cc, &json!({"when": "2023-02-29"}));
+        assert_eq!(bad.violations.len(), 1);
+        assert_eq!(bad.violations[0].kind, ViolationKind::PatternMismatch);
+        assert_eq!(
+            bad.violations[0].message,
+            "Field 'when' value \"2023-02-29\" is not a valid calendar date (expected YYYY-MM-DD)"
+        );
+        let wrong_type = validate(&date_cc, &json!({"when": 20240229}));
+        assert_eq!(wrong_type.violations[0].kind, ViolationKind::TypeMismatch);
+        assert!(wrong_type.violations[0]
+            .message
+            .contains("expected type Date"));
+
+        let ts_yaml = r#"
+version: "1.0"
+name: "times"
+ontology:
+  entities:
+    - name: when
+      type: timestamp
+      required: true
+"#;
+        let ts_cc = CompiledContract::compile(serde_yaml::from_str(ts_yaml).unwrap()).unwrap();
+        let ok = validate(&ts_cc, &json!({"when": "2026-10-15T12:00:00-05:00"}));
+        assert!(ok.passed, "{:?}", ok.violations);
+        let bad = validate(&ts_cc, &json!({"when": "2026-10-15T12:00:00"}));
+        assert_eq!(bad.violations[0].kind, ViolationKind::PatternMismatch);
+        assert_eq!(
+            bad.violations[0].message,
+            "Field 'when' value \"2026-10-15T12:00:00\" is not an RFC 3339 timestamp"
+        );
+    }
 }
