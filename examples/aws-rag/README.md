@@ -60,6 +60,13 @@ abstain) with gold answers and source paths. `scripts/eval_rag.py` reports
 retrieval hit@1/3/5, Guardrails grounding/relevance, a Nova Lite judge,
 p50/p95 latency, and an estimated USD cost.
 
+Results from the 2026-11-11 us-east-1 run are in [`results/RESULTS.md`](results/RESULTS.md).
+Headline: hit@5 91.4%, judge correct 90% overall and 95% for fixed chunking +
+Nova Pro (0 judged hallucinations). Retrieve p50 0.32 s, generate p50 1.12 s.
+Estimated spend about $0.25. Fixed-size chunking beat semantic chunking on
+answer quality for this corpus.
+
+
 ```bash
 make eval
 # results/eval-summary.json and results/eval-results.jsonl

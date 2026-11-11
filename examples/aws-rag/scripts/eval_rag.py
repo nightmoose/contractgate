@@ -19,7 +19,6 @@ import sys
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
-from statistics import median
 
 import boto3
 from botocore.exceptions import ClientError
@@ -38,9 +37,10 @@ PRICE = {
     "nova_lite_out_per_m": 0.24,
     "nova_pro_in_per_m": 0.80,
     "nova_pro_out_per_m": 3.20,
-    "kb_retrieve_per_query": 0.002,  # Bedrock Knowledge Base Retrieve (per query)
+    # Managed KB "Standard Retrieve" ($1/1k) does not apply to self-managed S3 Vectors KBs.
+    "kb_retrieve_per_query": 0.0,
     "guardrail_content_per_1k_units": 0.15,
-    "s3vectors_query_per_1k": 0.0025,  # order-of-magnitude; storage is extra
+    "s3vectors_query_per_million": 2.50,
 }
 
 JUDGE_MODEL = "us.amazon.nova-lite-v1:0"
@@ -232,7 +232,7 @@ def estimate_cost(summary_counts: dict, embed_tokens: int) -> dict:
     retrieve = retrieves * PRICE["kb_retrieve_per_query"]
     # RetrieveAndGenerate also retrieves; count those too (already in retrieves if we add them)
     guard = (ground_units / 1000) * PRICE["guardrail_content_per_1k_units"]
-    s3v = (retrieves / 1000) * PRICE["s3vectors_query_per_1k"]
+    s3v = (retrieves / 1_000_000) * PRICE["s3vectors_query_per_million"]
     parts = {
         "embeddings_two_kbs": round(embed, 5),
         "nova_lite": round(lite, 5),
