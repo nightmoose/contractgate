@@ -13,7 +13,9 @@ Per-event order (matches Rust):
     1. Walk ontology fields recursively (required / type / pattern /
        format / enum / range / length). ``format`` of ``email``, ``uuid``,
        and ``uri``/``url`` matches ``string_format_ok`` in
-       ``src/validation.rs``. Other format names pass.
+       ``src/validation.rs``. Other format names pass. ``type: date`` and
+       ``type: timestamp`` match ``NaiveDate::parse_from_str("%Y-%m-%d")``
+       and ``DateTime::parse_from_rfc3339`` in that file.
     2. Walk metrics with ``field`` set + ``min``/``max`` bounds.
     3. If ``compliance_mode`` is true, emit ``UNDECLARED_FIELD`` for
        every top-level key not in the declared set.
@@ -201,6 +203,31 @@ def _validate_value(
                         kind=ViolationKind.PATTERN_MISMATCH,
                     )
                 )
+        # Timestamp fields: chrono's ``DateTime::parse_from_rfc3339``.
+        if f.field_type == FieldType.TIMESTAMP and not _rfc3339_ok(value):
+            violations.append(
+                Violation(
+                    field=path,
+                    message=(
+                        f"Field '{path}' value {_json_string_debug(value)} "
+                        "is not an RFC 3339 timestamp"
+                    ),
+                    kind=ViolationKind.PATTERN_MISMATCH,
+                )
+            )
+        # RFC-044: calendar date. Chrono's ``NaiveDate::parse_from_str``
+        # with ``%Y-%m-%d``, which is padding-agnostic and proleptic Gregorian.
+        if f.field_type == FieldType.DATE and not _calendar_date_ok(value):
+            violations.append(
+                Violation(
+                    field=path,
+                    message=(
+                        f"Field '{path}' value {_json_string_debug(value)} "
+                        "is not a valid calendar date (expected YYYY-MM-DD)"
+                    ),
+                    kind=ViolationKind.PATTERN_MISMATCH,
+                )
+            )
 
     # --- Numeric range checks ---
     n = _numeric_value(value)
@@ -329,6 +356,8 @@ def _type_matches(ft: FieldType, value: Any) -> bool:
         return isinstance(value, dict)
     if ft == FieldType.ARRAY:
         return isinstance(value, list)
+    if ft in (FieldType.DATE, FieldType.TIMESTAMP):
+        return isinstance(value, str)
     return False
 
 
@@ -381,6 +410,8 @@ def _rust_field_type_repr(ft: FieldType) -> str:
         FieldType.OBJECT: "Object",
         FieldType.ARRAY: "Array",
         FieldType.ANY: "Any",
+        FieldType.DATE: "Date",
+        FieldType.TIMESTAMP: "Timestamp",
     }[ft]
 
 
@@ -463,6 +494,182 @@ def _uri_ok(value: str) -> bool:
     if not (first.isascii() and first.isalpha()):
         return False
     return all(c.isascii() and (c.isalnum() or c in "+-.") for c in scheme)
+
+
+# Chrono ``NaiveDate`` year bounds (``MIN_YEAR`` / ``MAX_YEAR`` in 0.4.45).
+_YEAR_MIN = -262143
+_YEAR_MAX = 262142
+_I64_MAX = 9223372036854775807
+_NANO_SCALE = (
+    0,
+    100_000_000,
+    10_000_000,
+    1_000_000,
+    100_000,
+    10_000,
+    1_000,
+    100,
+    10,
+    1,
+)
+
+
+def _calendar_date_ok(value: str) -> bool:
+    """Mirror ``chrono::NaiveDate::parse_from_str(s, "%Y-%m-%d")``.
+
+    The generic Chrono parser trims whitespace before each number, accepts a
+    leading ``+`` or ``-`` on the year (then any number of digits), and
+    otherwise reads 1–4 year digits and 1–2 month and day digits. The whole
+    string must be consumed. The date must be a real proleptic Gregorian day
+    inside Chrono's year range, so ``2024-02-29`` passes and ``2023-02-29``
+    and ``1900-02-29`` do not.
+    """
+    year, rest = _signed_year(value)
+    if year is None or not rest.startswith("-"):
+        return False
+    rest = rest[1:].lstrip()
+    month, rest = _take_digits(rest, 1, 2)
+    if month is None or not rest.startswith("-"):
+        return False
+    rest = rest[1:].lstrip()
+    day, rest = _take_digits(rest, 1, 2)
+    if day is None or rest != "":
+        return False
+    return _real_ymd(year, month, day)
+
+
+def _signed_year(value: str) -> tuple[Optional[int], str]:
+    rest = value.lstrip()
+    if not rest:
+        return None, rest
+    sign = 1
+    if rest[0] in "+-":
+        sign = -1 if rest[0] == "-" else 1
+        year, rest = _take_digits(rest[1:], 1, None)
+    else:
+        year, rest = _take_digits(rest, 1, 4)
+    if year is None:
+        return None, rest
+    return sign * year, rest
+
+
+def _take_digits(
+    value: str, minimum: int, maximum: Optional[int]
+) -> tuple[Optional[int], str]:
+    """Read ``minimum``..``maximum`` digits. ``None`` maximum stops at ``i64``."""
+    number = 0
+    count = 0
+    index = 0
+    cap = maximum if maximum is not None else len(value)
+    while index < len(value) and count < cap and value[index].isascii() and value[index].isdigit():
+        digit = ord(value[index]) - 48
+        if number > (_I64_MAX - digit) // 10:
+            return None, value
+        number = number * 10 + digit
+        index += 1
+        count += 1
+    if count < minimum:
+        return None, value
+    return number, value[index:]
+
+
+def _real_ymd(year: int, month: int, day: int) -> bool:
+    if year < _YEAR_MIN or year > _YEAR_MAX:
+        return False
+    if month < 1 or month > 12 or day < 1:
+        return False
+    lengths = (0, 31, 29 if _is_leap(year) else 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31)
+    return day <= lengths[month]
+
+
+def _is_leap(year: int) -> bool:
+    return year % 4 == 0 and (year % 100 != 0 or year % 400 == 0)
+
+
+def _rfc3339_ok(value: str) -> bool:
+    """Mirror ``chrono::DateTime::parse_from_rfc3339`` (Chrono 0.4.45).
+
+    Four-digit year, two-digit month and day, ``T`` / ``t`` / space, two-digit
+    hour, minute, and second, optional fractional seconds (extra digits past
+    nine are skipped), then ``Z`` / ``z`` or ``±HH:MM`` in ``-23:59``..``+23:59``.
+    A Unicode minus (U+2212) is accepted. ``:60`` is a leap second: Chrono
+    rewrites it to second 59 plus ``1_000_000_000`` nanos, which
+    ``NaiveTime::from_hms_nano_opt`` accepts. ``:61`` is rejected. The
+    calendar is the same proleptic Gregorian check as ``type: date``.
+    """
+    raw = value.encode("utf-8")
+    if len(raw) < 19:
+        return False
+    fixed = raw[:19]
+    if fixed[4:5] != b"-" or fixed[7:8] != b"-" or fixed[13:14] != b":" or fixed[16:17] != b":":
+        return False
+    if fixed[10:11] not in (b"T", b"t", b" "):
+        return False
+    parts = []
+    for start, end in ((0, 4), (5, 7), (8, 10), (11, 13), (14, 16), (17, 19)):
+        chunk = fixed[start:end]
+        if not chunk.isdigit():
+            return False
+        parts.append(int(chunk))
+    year, month, day, hour, minute, sec = parts
+    if not _real_ymd(year, month, day):
+        return False
+    if hour > 23 or minute > 59 or sec > 60:
+        return False
+    try:
+        rest = raw[19:].decode("utf-8")
+    except UnicodeDecodeError:
+        return False
+    if rest.startswith("."):
+        parsed = _fractional_nanos(rest[1:])
+        if parsed is None:
+            return False
+        rest, _nanos = parsed
+    return _timezone_offset_ok(rest)
+
+
+def _fractional_nanos(value: str) -> Optional[tuple[str, int]]:
+    number, rest = _take_digits(value, 1, 9)
+    if number is None:
+        return None
+    consumed = len(value) - len(rest)
+    nanos = number * _NANO_SCALE[consumed]
+    while rest[:1].isdigit():
+        rest = rest[1:]
+    return rest, nanos
+
+
+def _timezone_offset_ok(value: str) -> bool:
+    if not value:
+        return False
+    if value[0] in "Zz":
+        return value[1:] == ""
+    if value[0] == "+":
+        negative = False
+        rest = value[1:]
+    elif value[0] in ("-", "\u2212"):
+        negative = True
+        rest = value[1:]
+    else:
+        return False
+    if len(rest) < 2 or not rest[:2].isdigit():
+        return False
+    hours = int(rest[:2])
+    rest = rest[2:]
+    if not rest.startswith(":"):
+        return False
+    rest = rest[1:]
+    if len(rest) < 2 or not rest[:2].isdigit():
+        return False
+    if rest[0] > "5":
+        return False
+    minutes = int(rest[:2])
+    if rest[2:] != "":
+        return False
+    seconds = hours * 3600 + minutes * 60
+    if negative:
+        seconds = -seconds
+    return -86400 < seconds < 86400
 
 
 def _json_compact(v: Any) -> str:
