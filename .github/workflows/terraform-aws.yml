@@ -1,0 +1,65 @@
+name: Terraform AWS plan
+
+# Plan-only. Never apply. Does not deploy ContractGate, touch Fly, or
+# change application runtime config.
+on:
+  pull_request:
+    branches: [staging, main]
+    paths:
+      - "infra/aws/**"
+      - ".github/workflows/terraform-aws.yml"
+  push:
+    branches: [staging]
+    paths:
+      - "infra/aws/**"
+      - ".github/workflows/terraform-aws.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: terraform-aws-plan-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  terraform:
+    name: fmt, validate, plan
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    defaults:
+      run:
+        working-directory: infra/aws
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.17.1
+
+      - name: Terraform fmt
+        run: terraform fmt -check -recursive
+
+      - name: Terraform init
+        run: terraform init -input=false
+
+      - name: Terraform validate
+        run: terraform validate
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::065614567889:role/nmb-terraform-deploy
+          aws-region: us-east-1
+          role-session-name: gha-terraform-plan
+
+      - name: Terraform plan
+        # Local backend: CI has no copy of the box's state file, so plan
+        # will show the seven roles as "to create" even after they exist.
+        # That is expected until state is migrated to S3 (see infra/aws/README.md).
+        # -lock=false avoids a no-op lock on a per-runner local state file.
+        run: terraform plan -input=false -no-color -lock=false
