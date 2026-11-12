@@ -6,7 +6,13 @@
 
 **Status:** Available (RFC-025)
 
-DataContractGate can consume events directly from Confluent Cloud on your behalf.
+DataContractGate can consume events from a Kafka cluster on your behalf.
+The hosted deployment uses Confluent Cloud as that cluster. Bootstrap servers
+and SASL/PLAIN are ordinary Kafka settings; the client does not require a
+Confluent account or license key. The broker must be Apache Kafka 4.0 or
+newer (Confluent Cloud and Amazon MSK 4.x included) because consumer groups
+use the KIP-848 protocol.
+
 You produce to an input topic; DataContractGate validates each message against your
 contract and routes it to either a clean output topic or a quarantine topic —
 no consumer code required on your side.

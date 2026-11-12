@@ -21,11 +21,10 @@ path = "src/bin/contractgate.rs"
 # Volume / speed demo binary — Kafka-backed end-to-end pipeline with a live
 # HTML dashboard.  See `demo/README.md` for setup and usage.
 #
-# Gated behind the `demo` feature because rdkafka pulls in librdkafka (which
-# needs cmake + a C compiler + curl headers at build time).  Keeping it off by
-# default means `cargo check` / `cargo build` / `cargo test` work on any host
-# that has Rust installed, with no system deps.  Build the demo explicitly with
-# `cargo build --features demo --bin demo`.
+# Gated behind the `demo` feature because the Kafka client is optional.
+# Keeping it off by default means `cargo check` / `cargo build` / `cargo test`
+# work on any host that has Rust installed, with no Kafka toolchain.  Build
+# the demo explicitly with `cargo build --features demo --bin demo`.
 [[bin]]
 name = "demo"
 path = "src/bin/demo.rs"
@@ -43,19 +42,17 @@ path = "ops/bench/main.rs"
 
 [features]
 # Default build is lean: just the library + main binary.  The `demo` feature
-# pulls in rdkafka (and its librdkafka build-time deps) and enables the demo
-# binary.  See the `[[bin]] name = "demo"` stanza above for rationale.
+# pulls in the Kafka client and enables the demo binary.  See the
+# `[[bin]] name = "demo"` stanza above for rationale.
 #
 # The `scaffold` feature enables live Kafka topic sampling for `cg scaffold
-# <topic>`.  It also bundles librdkafka.  The `--from-file` scaffold path
-# works without this feature.
+# <topic>`.  The `--from-file` scaffold path works without this feature.
 default = []
-demo = ["rdkafka"]
-scaffold = ["rdkafka"]
+demo = ["dep:confluent-kafka"]
+scaffold = ["dep:confluent-kafka"]
 # kafka-ingress: platform-side consumer pool for RFC-025.
-# Pulls in rdkafka (librdkafka) — needs cmake + C compiler at build time.
-# Not in default so `cargo check` / `cargo test` work without system deps.
-kafka-ingress = ["rdkafka", "aes-gcm"]
+# Not in default so `cargo check` / `cargo test` stay free of the Kafka client.
+kafka-ingress = ["dep:confluent-kafka", "aes-gcm"]
 
 # kinesis-ingress: platform-side consumer loop for RFC-026.
 # Pure-Rust AWS SDK crates — no system deps beyond tokio.
@@ -172,11 +169,22 @@ hdrhistogram = "7"
 metrics = "0.24"
 metrics-exporter-prometheus = { version = "=0.18.3", default-features = false, features = ["http-listener"] }
 
-# Kafka transport (bundles librdkafka via cmake — needs cmake + a C compiler
-# available on the build host).  Used by the `demo` binary and the
-# `kafka-ingress` consumer pool (RFC-025).  Gated behind feature flags so
-# `cargo check` / `cargo build` work on any host without system deps.
-rdkafka = { version = "0.39", features = ["tokio", "sasl", "cmake-build"], optional = true }
+# Apache Kafka client. `confluent-kafka` 1.0 is Apache-2.0, speaks the Kafka
+# protocol directly, and does not bundle librdkafka or require cmake.
+# Confluent Cloud is one cluster it can reach (SASL_SSL/PLAIN); Apache Kafka
+# 4.0+ is the broker the integration test uses. Consumer groups use KIP-848
+# (`group.protocol=consumer`), so the broker must be Kafka 4.0 or newer.
+#
+# `webpki-roots` turns on rustls with the aws-lc-rs provider, which compiles
+# bundled C. `zstd` does the same. Neither needs a system Kafka library.
+# lz4, gzip, and snappy stay so produced and fetched batches keep working.
+confluent-kafka = { version = "=1.0.0", optional = true, default-features = false, features = [
+    "gzip",
+    "snappy",
+    "lz4",
+    "zstd",
+    "webpki-roots",
+] }
 
 # AES-256-GCM encryption for secrets at rest (RFC-025 Confluent, RFC-026 IAM).
 # Pure-Rust, no system deps. `getrandom` enables Nonce::generate() (0.11 API).

@@ -25,7 +25,7 @@ always drafts until a human promotes them.
 | Requirement | Notes |
 |-------------|-------|
 | `cg` CLI ≥ MVP release | Build with `cargo build --features scaffold` |
-| Kafka broker access | PLAINTEXT or SASL/PLAIN for MVP; mTLS / SCRAM in Phase 2 |
+| Kafka broker access | Apache Kafka 4.0+ (KIP-848). PLAINTEXT, SASL/PLAIN, or PEM SSL. SASL/SCRAM is not supported |
 | Schema Registry (optional) | Required for Avro/Protobuf schema-driven inference |
 | `$CG_KAFKA_BROKER` env var | Default broker address; overridden with `--broker` |
 | `$CG_SR_URL` env var | Default Schema Registry URL; overridden with `--schema-registry` |
@@ -92,7 +92,7 @@ the topic.
 cg scaffold <topic>
     --broker <host:port>            (default: $CG_KAFKA_BROKER)
     --schema-registry <url>         (default: $CG_SR_URL; omit for SR-less mode)
-    --auth <plaintext|sasl-plain>   (default: plaintext; mTLS/SCRAM in Phase 2)
+    --auth <plaintext|sasl-plain>   (default: plaintext; SASL/SCRAM is not supported)
     --records <N>                   (default: 1000)
     --wall-clock <seconds>          (default: 30)
     --output <file.yaml>            (default: stdout)

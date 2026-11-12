@@ -59,7 +59,7 @@ a live dashboard at **http://localhost:8088**. This is the local replacement for
 the old hosted stream demo:
 
 ```bash
-docker compose -f docker-compose.kafka-demo.yml up -d   # Redpanda (Kafka)
+docker compose -f docker-compose.kafka-demo.yml up -d   # Apache Kafka 4.1
 cargo run --release --features demo --bin demo          # start the demo
 # open http://localhost:8088
 ```

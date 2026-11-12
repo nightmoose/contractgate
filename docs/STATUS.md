@@ -114,6 +114,7 @@ them by name only.
 | 112 | [Per-run quarantine](rfcs/112-quarantine-batch-id.md) | Accepted |
 | 113 | [Contract families](rfcs/113-contract-families.md) | Accepted |
 | 114 | [Launch: public catalog cache, cheap bad keys, SSR bypass](rfcs/114-launch-catalog-cache-and-auth.md) | Accepted |
+| 115 | [Native Kafka client](rfcs/115-native-kafka-client.md) | Shipped |
 
 ---
 
@@ -130,6 +131,8 @@ them by name only.
 | **Superseded** | Replaced by a later RFC listed in the notes column; kept for design context. |
 
 ---
+
+*2026-11-12 — RFC-115: Kafka uses `confluent-kafka` 1.0.0 (Apache-2.0) instead of `rdkafka` / librdkafka. No license key. Consumer groups need Apache Kafka 4.0 or newer (KIP-848). The speed-demo broker is Apache Kafka 4.1. SASL/SCRAM is not supported. See `docs/rfcs/115-native-kafka-client.md`.*
 
 *2026-11-11 — RFC-114 follow-up: `GET /published/{ref}` uses the same 60-second anonymous cache as the other public reads. The link token stays in the cache key. Publish, deprecation, and revoke drop cached published and catalog entries. `GET /public-contracts/{slug}` and its `/yaml` and `/odcs` variants use the public per-IP limiter (429 with `Retry-After`, `X-DCG-SSR-Token` bypass). The Python local validator accepts `type: date` and `type: timestamp` with the Rust engine's calendar and RFC 3339 rules.*
 

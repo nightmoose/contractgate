@@ -1,7 +1,7 @@
 //! DataContractGate speed-demo binary.
 //!
-//! Runs three pipelines sharing one Kafka cluster (Redpanda via
-//! `docker-compose.yml`):
+//! Runs three pipelines sharing one Kafka cluster (Apache Kafka via
+//! `docker-compose.kafka-demo.yml`):
 //!
 //! ```
 //!     [event generator]                                      ┌─► demo.events.valid
@@ -20,8 +20,8 @@
 //!
 //! ### Run
 //! ```bash
-//! docker compose up -d                  # start Redpanda
-//! cargo run --release --bin demo        # start the demo
+//! docker compose -f docker-compose.kafka-demo.yml up -d   # Apache Kafka 4.x
+//! cargo run --release --features demo --bin demo
 //! # open http://localhost:8088
 //! ```
 
@@ -45,6 +45,11 @@ use axum::{
     Json, Router,
 };
 use clap::Parser;
+use confluent_kafka::common::serialization::{
+    ByteArrayDeserializer, ByteArraySerializer, StringSerializer,
+};
+use confluent_kafka::consumer::{Consumer, ConsumerConfig, KafkaConsumer};
+use confluent_kafka::producer::{KafkaProducer, Producer, ProducerConfig, ProducerRecord};
 use contractgate::{
     contract::Contract,
     validation::{validate, CompiledContract},
@@ -52,17 +57,6 @@ use contractgate::{
 use futures_util::stream::Stream;
 use hdrhistogram::Histogram;
 use rand::{rngs::SmallRng, Rng, SeedableRng};
-use rdkafka::{
-    admin::{AdminClient, AdminOptions, NewTopic, TopicReplication},
-    client::DefaultClientContext,
-    config::ClientConfig,
-    consumer::{Consumer, StreamConsumer},
-    // `Producer` is the trait that provides `flush`; bringing it into scope
-    // lets us call `producer.flush(...)` on our FutureProducer.
-    producer::{FutureProducer, FutureRecord, Producer},
-    util::Timeout,
-    Message,
-};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use tokio::sync::{broadcast, Mutex, RwLock};
@@ -88,6 +82,9 @@ const TOPIC_COPY: &str = "demo.events.copy";
 // event on the input topic.
 const GROUP_VALIDATOR: &str = "contractgate-validator";
 const GROUP_COPY: &str = "contractgate-copy-baseline";
+
+type DemoProducer = KafkaProducer<String, Vec<u8>>;
+type DemoConsumer = KafkaConsumer<Vec<u8>, Vec<u8>>;
 
 // ---------------------------------------------------------------------------
 // CLI
@@ -226,7 +223,7 @@ pub struct LaneSnapshot {
 
 pub struct DemoState {
     pub cli: Cli,
-    pub producer: FutureProducer,
+    pub producer: DemoProducer,
 
     /// Compiled contracts keyed by scenario name.
     pub contracts: RwLock<std::collections::HashMap<String, Arc<CompiledContract>>>,
@@ -271,22 +268,17 @@ async fn main() -> anyhow::Result<()> {
     tracing_subscriber::fmt()
         .with_env_filter(
             tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| "demo=info,rdkafka=warn".into()),
+                .unwrap_or_else(|_| "demo=info".into()),
         )
         .init();
 
     let cli = Cli::parse();
 
-    // --- Build the shared FutureProducer used by generator + both lanes ---
-    let producer: FutureProducer = ClientConfig::new()
-        .set("bootstrap.servers", &cli.brokers)
-        // Aggressive batching — we want to showcase speed, not per-message durability
-        .set("queue.buffering.max.messages", "2000000")
-        .set("queue.buffering.max.ms", "5")
-        .set("compression.type", "lz4")
-        .set("acks", "1")
-        .create()
-        .context("failed to build Kafka producer (is Redpanda running on localhost:9092?)")?;
+    // --- Build the shared producer used by generator + both lanes ---
+    // librdkafka queue.buffering.max.ms is Java linger.ms. acks=1 needs
+    // idempotence off (Java's default idempotence requires acks=all).
+    let producer = build_producer(&cli.brokers)
+        .context("failed to build Kafka producer (is Kafka running on localhost:9092?)")?;
 
     // --- Ensure topics exist with 1 partition / replication 1 ---
     ensure_topics(&cli.brokers).await?;
@@ -348,32 +340,39 @@ async fn main() -> anyhow::Result<()> {
 // ---------------------------------------------------------------------------
 
 async fn ensure_topics(brokers: &str) -> anyhow::Result<()> {
-    let admin: AdminClient<DefaultClientContext> = ClientConfig::new()
-        .set("bootstrap.servers", brokers)
-        .create()
-        .context("failed to build Kafka admin client")?;
-
-    let topics = [TOPIC_IN, TOPIC_VALID, TOPIC_QUARANTINE, TOPIC_COPY];
-    let new_topics: Vec<NewTopic> = topics
-        .iter()
-        .map(|t| NewTopic::new(t, 1, TopicReplication::Fixed(1)))
-        .collect();
-
-    let opts = AdminOptions::new();
-    // Best-effort: "already exists" is fine, anything else we log but don't fail on
-    // so the demo still runs against clusters with auto-create enabled.
-    match admin.create_topics(new_topics.iter(), &opts).await {
+    let props = contractgate::kafka_wire::bootstrap_props(brokers);
+    let specs = [
+        (TOPIC_IN, 1, 1i16),
+        (TOPIC_VALID, 1, 1i16),
+        (TOPIC_QUARANTINE, 1, 1i16),
+        (TOPIC_COPY, 1, 1i16),
+    ];
+    // Best-effort: "already exists" is success inside create_topics. Anything
+    // else is logged so the demo still runs against clusters with auto-create.
+    match contractgate::kafka_wire::create_topics(&props, &specs, 10_000).await {
         Ok(results) => {
-            for r in results {
-                match r {
-                    Ok(t) => tracing::info!(topic = %t, "created topic"),
-                    Err((t, e)) => tracing::debug!(topic = %t, error = ?e, "topic create skipped"),
+            for (topic, status) in results {
+                match status {
+                    Ok(()) => tracing::info!(topic = %topic, "topic ready"),
+                    Err(e) => tracing::debug!(topic = %topic, error = %e, "topic create skipped"),
                 }
             }
         }
         Err(e) => tracing::warn!("admin create_topics failed (continuing anyway): {:?}", e),
     }
     Ok(())
+}
+
+fn build_producer(brokers: &str) -> anyhow::Result<DemoProducer> {
+    let mut props = contractgate::kafka_wire::bootstrap_props(brokers);
+    props.insert("linger.ms".into(), "5".into());
+    props.insert("compression.type".into(), "lz4".into());
+    props.insert("acks".into(), "1".into());
+    props.insert("enable.idempotence".into(), "false".into());
+    props.insert("max.block.ms".into(), "5000".into());
+    let config = ProducerConfig::new(&props).context("invalid producer config")?;
+    KafkaProducer::new(config, StringSerializer::new(), ByteArraySerializer::new())
+        .context("producer client")
 }
 
 // ---------------------------------------------------------------------------
@@ -529,20 +528,13 @@ async fn producer_loop(state: Arc<DemoState>, cfg: RunConfig) {
         };
         let payload = serde_json::to_vec(&payload_obj).unwrap();
 
-        // Fire and forget — we await the queue (not the broker ack) so we stay fast
         let key = format!("k{}", state.producer_sent.load(Ordering::Relaxed));
-        let record = FutureRecord::to(TOPIC_IN).payload(&payload).key(&key);
-        match state
-            .producer
-            .send(record, Timeout::After(Duration::from_secs(5)))
-            .await
-        {
-            Ok(_) => {
+        match send_bytes(&state.producer, TOPIC_IN, Some(key), &payload).await {
+            Ok(()) => {
                 state.producer_sent.fetch_add(1, Ordering::Relaxed);
             }
-            Err((e, _)) => {
+            Err(e) => {
                 tracing::warn!("producer send failed: {}", e);
-                // Back off briefly on error
                 tokio::time::sleep(Duration::from_millis(20)).await;
             }
         }
@@ -562,7 +554,7 @@ async fn producer_loop(state: Arc<DemoState>, cfg: RunConfig) {
     }
 
     // Flush + mark run as finished
-    let _ = state.producer.flush(Timeout::After(Duration::from_secs(5)));
+    let _ = state.producer.flush().await;
     state.running.store(false, Ordering::Release);
     tracing::info!("producer loop exit");
 }
@@ -572,132 +564,125 @@ async fn producer_loop(state: Arc<DemoState>, cfg: RunConfig) {
 // ---------------------------------------------------------------------------
 
 async fn validator_lane(state: Arc<DemoState>) {
-    let consumer = match build_consumer(&state.cli.brokers, GROUP_VALIDATOR) {
+    let mut consumer = match build_consumer(&state.cli.brokers, GROUP_VALIDATOR, "latest").await {
         Ok(c) => c,
         Err(e) => {
             tracing::error!("validator consumer build failed: {:?}", e);
             return;
         }
     };
-    if let Err(e) = consumer.subscribe(&[TOPIC_IN]) {
+    if let Err(e) = consumer
+        .subscribe_with_topics(vec![TOPIC_IN.to_string()])
+        .await
+    {
         tracing::error!("validator subscribe failed: {:?}", e);
         return;
     }
 
     loop {
-        match consumer.recv().await {
+        let batch = match consumer.poll(Duration::from_millis(50)).await {
+            Ok(batch) => batch,
             Err(e) => {
-                tracing::warn!("validator consumer recv error: {:?}", e);
+                tracing::warn!("validator consumer poll error: {:?}", e);
                 tokio::time::sleep(Duration::from_millis(50)).await;
+                continue;
             }
-            Ok(msg) => {
-                if !state.running.load(Ordering::Acquire) {
-                    continue; // drain but don't count when not running
+        };
+        for msg in batch {
+            if !state.running.load(Ordering::Acquire) {
+                continue; // drain but don't count when not running
+            }
+
+            let Some(payload) = msg.value() else { continue };
+            state
+                .validator
+                .bytes_in
+                .fetch_add(payload.len() as u64, Ordering::Relaxed);
+
+            // First-consume marker
+            {
+                let mut s = state.validator.started_at.lock().await;
+                if s.is_none() {
+                    *s = Some(Instant::now());
                 }
+            }
 
-                let payload = match msg.payload() {
-                    Some(p) => p,
-                    None => continue,
-                };
-                state
-                    .validator
-                    .bytes_in
-                    .fetch_add(payload.len() as u64, Ordering::Relaxed);
-
-                // First-consume marker
-                {
-                    let mut s = state.validator.started_at.lock().await;
-                    if s.is_none() {
-                        *s = Some(Instant::now());
-                    }
-                }
-
-                let event: Value = match serde_json::from_slice(payload) {
-                    Ok(v) => v,
-                    Err(_) => {
-                        state.validator.failed.fetch_add(1, Ordering::Relaxed);
-                        continue;
-                    }
-                };
-
-                // Capture the producer timestamp *before* we potentially move
-                // `event` into the quarantine JSON below.
-                let produced_at_ns = event.get("_produced_at_ns").and_then(|v| v.as_u64());
-
-                // Pick the contract from the current run config
-                let scenario = {
-                    let cfg = state.run_config.read().await;
-                    cfg.as_ref().map(|c| c.scenario.clone()).unwrap_or_default()
-                };
-                let compiled = state.contracts.read().await.get(&scenario).cloned();
-                let compiled = match compiled {
-                    Some(c) => c,
-                    None => continue,
-                };
-
-                let result = validate(&compiled, &event);
-
-                if result.passed {
-                    state.validator.passed.fetch_add(1, Ordering::Relaxed);
-                    // Forward to valid topic — re-use the original payload bytes.
-                    // Turbofish pins K=() (rdkafka provides `impl ToBytes for ()`)
-                    // so inference succeeds without needing a real key.
-                    let record = FutureRecord::<(), [u8]>::to(TOPIC_VALID).payload(payload);
-                    if state
-                        .producer
-                        .send(record, Timeout::After(Duration::from_secs(1)))
-                        .await
-                        .is_ok()
-                    {
-                        state
-                            .validator
-                            .produced_downstream
-                            .fetch_add(1, Ordering::Relaxed);
-                    }
-                } else {
+            let event: Value = match serde_json::from_slice(payload) {
+                Ok(v) => v,
+                Err(_) => {
                     state.validator.failed.fetch_add(1, Ordering::Relaxed);
-                    // Forward to quarantine topic with the violation list attached
-                    let quarantined = json!({
-                        "event": event,
-                        "violations": result.violations,
-                        "validation_us": result.validation_us,
-                    });
-                    let bytes = serde_json::to_vec(&quarantined).unwrap_or_default();
-                    let record = FutureRecord::<(), [u8]>::to(TOPIC_QUARANTINE).payload(&bytes);
-                    if state
-                        .producer
-                        .send(record, Timeout::After(Duration::from_secs(1)))
-                        .await
-                        .is_ok()
-                    {
-                        state
-                            .validator
-                            .produced_downstream
-                            .fetch_add(1, Ordering::Relaxed);
-                    }
+                    continue;
                 }
+            };
 
-                state.validator.consumed.fetch_add(1, Ordering::Relaxed);
+            // Capture the producer timestamp *before* we potentially move
+            // `event` into the quarantine JSON below.
+            let produced_at_ns = event.get("_produced_at_ns").and_then(|v| v.as_u64());
 
-                // End-to-end latency (producer_wall_clock → now)
-                if let Some(produced_at_ns) = produced_at_ns {
-                    if let Ok(now_ns) = SystemTime::now()
-                        .duration_since(UNIX_EPOCH)
-                        .map(|d| d.as_nanos() as u64)
-                    {
-                        if now_ns > produced_at_ns {
-                            let delta_us = (now_ns - produced_at_ns) / 1_000;
-                            // Sample roughly 1-in-8 records for the histogram to keep
-                            // contention down at very high rates.
-                            if state
-                                .validator
-                                .consumed
-                                .load(Ordering::Relaxed)
-                                .is_multiple_of(8)
-                            {
-                                let mut hist = state.validator.latency_hist_us.lock().await;
-                                let _ = hist.record(delta_us.min(60_000_000));
-                            }
+            // Pick the contract from the current run config
+            let scenario = {
+                let cfg = state.run_config.read().await;
+                cfg.as_ref().map(|c| c.scenario.clone()).unwrap_or_default()
+            };
+            let compiled = state.contracts.read().await.get(&scenario).cloned();
+            let compiled = match compiled {
+                Some(c) => c,
+                None => continue,
+            };
+
+            let result = validate(&compiled, &event);
+
+            if result.passed {
+                state.validator.passed.fetch_add(1, Ordering::Relaxed);
+                if send_bytes(&state.producer, TOPIC_VALID, None, payload)
+                    .await
+                    .is_ok()
+                {
+                    state
+                        .validator
+                        .produced_downstream
+                        .fetch_add(1, Ordering::Relaxed);
+                }
+            } else {
+                state.validator.failed.fetch_add(1, Ordering::Relaxed);
+                // Forward to quarantine topic with the violation list attached
+                let quarantined = json!({
+                    "event": event,
+                    "violations": result.violations,
+                    "validation_us": result.validation_us,
+                });
+                let bytes = serde_json::to_vec(&quarantined).unwrap_or_default();
+                if send_bytes(&state.producer, TOPIC_QUARANTINE, None, &bytes)
+                    .await
+                    .is_ok()
+                {
+                    state
+                        .validator
+                        .produced_downstream
+                        .fetch_add(1, Ordering::Relaxed);
+                }
+            }
+
+            state.validator.consumed.fetch_add(1, Ordering::Relaxed);
+
+            // End-to-end latency (producer_wall_clock → now)
+            if let Some(produced_at_ns) = produced_at_ns {
+                if let Ok(now_ns) = SystemTime::now()
+                    .duration_since(UNIX_EPOCH)
+                    .map(|d| d.as_nanos() as u64)
+                {
+                    if now_ns > produced_at_ns {
+                        let delta_us = (now_ns - produced_at_ns) / 1_000;
+                        // Sample roughly 1-in-8 records for the histogram to keep
+                        // contention down at very high rates.
+                        if state
+                            .validator
+                            .consumed
+                            .load(Ordering::Relaxed)
+                            .is_multiple_of(8)
+                        {
+                            let mut hist = state.validator.latency_hist_us.lock().await;
+                            let _ = hist.record(delta_us.min(60_000_000));
                         }
                     }
                 }
@@ -711,80 +696,78 @@ async fn validator_lane(state: Arc<DemoState>) {
 // ---------------------------------------------------------------------------
 
 async fn copy_lane(state: Arc<DemoState>) {
-    let consumer = match build_consumer(&state.cli.brokers, GROUP_COPY) {
+    let mut consumer = match build_consumer(&state.cli.brokers, GROUP_COPY, "latest").await {
         Ok(c) => c,
         Err(e) => {
             tracing::error!("copy consumer build failed: {:?}", e);
             return;
         }
     };
-    if let Err(e) = consumer.subscribe(&[TOPIC_IN]) {
+    if let Err(e) = consumer
+        .subscribe_with_topics(vec![TOPIC_IN.to_string()])
+        .await
+    {
         tracing::error!("copy subscribe failed: {:?}", e);
         return;
     }
 
     loop {
-        match consumer.recv().await {
+        let batch = match consumer.poll(Duration::from_millis(50)).await {
+            Ok(batch) => batch,
             Err(e) => {
-                tracing::warn!("copy consumer recv error: {:?}", e);
+                tracing::warn!("copy consumer poll error: {:?}", e);
                 tokio::time::sleep(Duration::from_millis(50)).await;
+                continue;
             }
-            Ok(msg) => {
-                if !state.running.load(Ordering::Acquire) {
-                    continue;
+        };
+        for msg in batch {
+            if !state.running.load(Ordering::Acquire) {
+                continue;
+            }
+            let Some(payload) = msg.value() else { continue };
+            state
+                .copy
+                .bytes_in
+                .fetch_add(payload.len() as u64, Ordering::Relaxed);
+
+            {
+                let mut s = state.copy.started_at.lock().await;
+                if s.is_none() {
+                    *s = Some(Instant::now());
                 }
-                let payload = match msg.payload() {
-                    Some(p) => p,
-                    None => continue,
-                };
+            }
+
+            // Re-emit unchanged — the baseline doesn't validate, doesn't parse.
+            // It deliberately represents "just move bytes through".
+            if send_bytes(&state.producer, TOPIC_COPY, None, payload)
+                .await
+                .is_ok()
+            {
                 state
                     .copy
-                    .bytes_in
-                    .fetch_add(payload.len() as u64, Ordering::Relaxed);
+                    .produced_downstream
+                    .fetch_add(1, Ordering::Relaxed);
+            }
 
+            state.copy.consumed.fetch_add(1, Ordering::Relaxed);
+
+            // End-to-end latency — parse the produced-at timestamp cheaply
+            // without a full JSON parse when possible.
+            if let Some(produced_at_ns) = extract_produced_at_ns(payload) {
+                if let Ok(now_ns) = SystemTime::now()
+                    .duration_since(UNIX_EPOCH)
+                    .map(|d| d.as_nanos() as u64)
                 {
-                    let mut s = state.copy.started_at.lock().await;
-                    if s.is_none() {
-                        *s = Some(Instant::now());
-                    }
-                }
-
-                // Re-emit unchanged — the baseline doesn't validate, doesn't parse.
-                // It deliberately represents "just move bytes through".
-                let record = FutureRecord::<(), [u8]>::to(TOPIC_COPY).payload(payload);
-                // `payload` borrows `msg`; `msg` lives through this match arm.
-                if state
-                    .producer
-                    .send(record, Timeout::After(Duration::from_secs(1)))
-                    .await
-                    .is_ok()
-                {
-                    state
-                        .copy
-                        .produced_downstream
-                        .fetch_add(1, Ordering::Relaxed);
-                }
-
-                state.copy.consumed.fetch_add(1, Ordering::Relaxed);
-
-                // End-to-end latency — parse the produced-at timestamp cheaply
-                // without a full JSON parse when possible.
-                if let Some(produced_at_ns) = extract_produced_at_ns(payload) {
-                    if let Ok(now_ns) = SystemTime::now()
-                        .duration_since(UNIX_EPOCH)
-                        .map(|d| d.as_nanos() as u64)
-                    {
-                        if now_ns > produced_at_ns {
-                            let delta_us = (now_ns - produced_at_ns) / 1_000;
-                            if state
-                                .copy
-                                .consumed
-                                .load(Ordering::Relaxed)
-                                .is_multiple_of(8)
-                            {
-                                let mut hist = state.copy.latency_hist_us.lock().await;
-                                let _ = hist.record(delta_us.min(60_000_000));
-                            }
+                    if now_ns > produced_at_ns {
+                        let delta_us = (now_ns - produced_at_ns) / 1_000;
+                        if state
+                            .copy
+                            .consumed
+                            .load(Ordering::Relaxed)
+                            .is_multiple_of(8)
+                        {
+                            let mut hist = state.copy.latency_hist_us.lock().await;
+                            let _ = hist.record(delta_us.min(60_000_000));
                         }
                     }
                 }
@@ -814,20 +797,48 @@ fn extract_produced_at_ns(bytes: &[u8]) -> Option<u64> {
 // Kafka helpers
 // ---------------------------------------------------------------------------
 
-fn build_consumer(brokers: &str, group: &str) -> anyhow::Result<StreamConsumer> {
-    let c: StreamConsumer = ClientConfig::new()
-        .set("bootstrap.servers", brokers)
-        .set("group.id", group)
-        .set("enable.auto.commit", "true")
-        .set("auto.commit.interval.ms", "1000")
-        // "latest" — when a fresh run starts, don't replay backlog from prior runs
-        .set("auto.offset.reset", "latest")
-        .set("fetch.min.bytes", "1")
-        .set("fetch.wait.max.ms", "5")
-        .set("session.timeout.ms", "15000")
-        .create()
-        .map_err(|e| anyhow!("consumer create failed: {e}"))?;
-    Ok(c)
+async fn build_consumer(
+    brokers: &str,
+    group: &str,
+    auto_offset_reset: &str,
+) -> anyhow::Result<DemoConsumer> {
+    let mut props = contractgate::kafka_wire::bootstrap_props(brokers);
+    contractgate::kafka_wire::insert_consumer_group(&mut props, group);
+    props.insert("enable.auto.commit".into(), "true".into());
+    props.insert("auto.commit.interval.ms".into(), "1000".into());
+    // "latest" — when a fresh run starts, don't replay backlog from prior runs.
+    // KIP-848 ignores session.timeout.ms; the broker owns that timer.
+    props.insert("auto.offset.reset".into(), auto_offset_reset.into());
+    props.insert("fetch.min.bytes".into(), "1".into());
+    props.insert("fetch.max.wait.ms".into(), "5".into());
+    let config = ConsumerConfig::new(&props).map_err(|e| anyhow!("consumer config: {e}"))?;
+    KafkaConsumer::new(
+        config,
+        ByteArrayDeserializer::new(),
+        ByteArrayDeserializer::new(),
+    )
+    .map_err(|e| anyhow!("consumer create failed: {e}"))
+}
+
+async fn send_bytes(
+    producer: &DemoProducer,
+    topic: &str,
+    key: Option<String>,
+    payload: &[u8],
+) -> anyhow::Result<()> {
+    let record = match key {
+        Some(k) => ProducerRecord::with_key(topic.to_string(), Some(k), Some(payload.to_vec())),
+        None => ProducerRecord::new(topic.to_string(), Some(payload.to_vec())),
+    };
+    let delivery = producer
+        .send(record)
+        .await
+        .map_err(|e| anyhow!("enqueue {topic}: {e}"))?;
+    delivery
+        .get()
+        .await
+        .map_err(|e| anyhow!("deliver {topic}: {e}"))?;
+    Ok(())
 }
 
 // ---------------------------------------------------------------------------
@@ -1092,4 +1103,148 @@ fn generate_nested_event(rng: &mut SmallRng, fail: bool) -> Value {
     }
 
     event
+}
+
+/// Broker-backed check: a passing event lands on the clean topic and a
+/// failing event lands on the quarantine topic. The validator lane is the
+/// same code the dashboard runs.
+///
+/// ```text
+/// KAFKA_BROKERS=127.0.0.1:9092 cargo test --features demo --bin demo -- \
+///   --ignored kafka_pipeline_pass_and_quarantine
+/// ```
+///
+/// The broker must be Apache Kafka 4.0 or newer (KIP-848 consumer groups).
+#[cfg(test)]
+mod kafka_pipeline {
+    use super::*;
+
+    #[tokio::test]
+    #[ignore = "requires Apache Kafka 4.0+ at $KAFKA_BROKERS"]
+    async fn kafka_pipeline_pass_and_quarantine() {
+        let _ = tracing_subscriber::fmt()
+            .with_env_filter("demo=info,confluent_kafka=warn")
+            .try_init();
+        let brokers = std::env::var("KAFKA_BROKERS")
+            .expect("set KAFKA_BROKERS to a PLAINTEXT Apache Kafka 4.0+ listener");
+        ensure_topics(&brokers).await.expect("create demo topics");
+
+        let producer = build_producer(&brokers).expect("producer");
+        let parsed: Contract = serde_yaml::from_str(SCENARIO_SIMPLE).expect("simple scenario yaml");
+        let compiled = Arc::new(CompiledContract::compile(parsed).expect("compile"));
+        let mut contracts = std::collections::HashMap::new();
+        contracts.insert("simple".to_string(), compiled);
+        let (tx, _rx) = broadcast::channel::<String>(16);
+        let state = Arc::new(DemoState {
+            cli: Cli {
+                brokers: brokers.clone(),
+                port: 0,
+                snapshot_interval_ms: 1_000,
+            },
+            producer,
+            contracts: RwLock::new(contracts),
+            running: AtomicBool::new(true),
+            run_started_at: Mutex::new(Some(Instant::now())),
+            run_config: RwLock::new(Some(RunConfig {
+                scenario: "simple".into(),
+                fail_ratio: 0.0,
+                target_rate: None,
+                duration_secs: 0,
+            })),
+            producer_sent: AtomicU64::new(0),
+            validator: LaneStats::new("validator"),
+            copy: LaneStats::new("copy"),
+            updates: tx,
+        });
+        tokio::spawn(validator_lane(state.clone()));
+
+        let pass_id = format!("u_{:08x}", 0xA11CEu32);
+        let fail_id = format!("u_{:08x}", 0xFA11u32);
+        let pass = json!({
+            "user_id": pass_id,
+            "event_type": "click",
+            "timestamp": 1_700_000_000u64,
+            "session_id": "0123456789abcdef0123456789abcdef",
+            "_produced_at_ns": 1u64,
+        });
+        let fail = json!({
+            "user_id": fail_id,
+            "event_type": "not-an-event",
+            "timestamp": 1_700_000_000u64,
+            "session_id": "0123456789abcdef0123456789abcdef",
+            "_produced_at_ns": 1u64,
+        });
+
+        // Give the KIP-848 group a moment to join before the first produce.
+        tokio::time::sleep(Duration::from_secs(2)).await;
+        send_bytes(
+            &state.producer,
+            TOPIC_IN,
+            Some("pass".into()),
+            &serde_json::to_vec(&pass).unwrap(),
+        )
+        .await
+        .expect("produce passing event");
+        send_bytes(
+            &state.producer,
+            TOPIC_IN,
+            Some("fail".into()),
+            &serde_json::to_vec(&fail).unwrap(),
+        )
+        .await
+        .expect("produce failing event");
+
+        let mut reader = build_consumer(&brokers, "it-check", "earliest")
+            .await
+            .expect("output consumer");
+        reader
+            .subscribe_with_topics(vec![TOPIC_VALID.to_string(), TOPIC_QUARANTINE.to_string()])
+            .await
+            .expect("subscribe outputs");
+
+        let deadline = Instant::now() + Duration::from_secs(40);
+        let mut saw_pass = false;
+        let mut saw_fail = false;
+        while Instant::now() < deadline && !(saw_pass && saw_fail) {
+            let _ = send_bytes(
+                &state.producer,
+                TOPIC_IN,
+                Some("pass".into()),
+                &serde_json::to_vec(&pass).unwrap(),
+            )
+            .await;
+            let _ = send_bytes(
+                &state.producer,
+                TOPIC_IN,
+                Some("fail".into()),
+                &serde_json::to_vec(&fail).unwrap(),
+            )
+            .await;
+            let batch = reader
+                .poll(Duration::from_millis(500))
+                .await
+                .expect("poll outputs");
+            for rec in batch {
+                let Some(blob) = rec.value() else { continue };
+                let text = String::from_utf8_lossy(blob);
+                if text.contains(&pass_id) && !text.contains("violations") {
+                    saw_pass = true;
+                }
+                if text.contains(&fail_id) && text.contains("violations") {
+                    saw_fail = true;
+                }
+            }
+        }
+        let consumed = state.validator.consumed.load(Ordering::Relaxed);
+        let passed = state.validator.passed.load(Ordering::Relaxed);
+        let failed = state.validator.failed.load(Ordering::Relaxed);
+        assert!(
+            saw_pass,
+            "passing event did not reach {TOPIC_VALID} (consumed={consumed} passed={passed} failed={failed})"
+        );
+        assert!(
+            saw_fail,
+            "failing event did not reach {TOPIC_QUARANTINE} (consumed={consumed} passed={passed} failed={failed})"
+        );
+    }
 }

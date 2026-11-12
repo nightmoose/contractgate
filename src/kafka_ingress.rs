@@ -212,63 +212,39 @@ fn topic_quarantine(contract_id: Uuid) -> String {
 
 #[cfg(feature = "kafka-ingress")]
 fn confluent_create_topics(contract_id: Uuid, partition_count: i32) -> anyhow::Result<()> {
-    use rdkafka::admin::{AdminClient, AdminOptions, NewTopic, TopicReplication};
-    use rdkafka::client::DefaultClientContext;
-    use rdkafka::config::ClientConfig;
-    use tokio::runtime::Handle;
-
     let bootstrap = confluent_bootstrap();
     if bootstrap.is_empty() {
         anyhow::bail!("CONFLUENT_BOOTSTRAP_SERVERS is not set");
     }
 
-    let mut config = ClientConfig::new();
-    config
-        .set("bootstrap.servers", &bootstrap)
-        .set("security.protocol", "SASL_SSL")
-        .set("sasl.mechanisms", "PLAIN")
-        .set("sasl.username", confluent_api_key())
-        .set("sasl.password", confluent_api_secret());
-
-    let admin: AdminClient<DefaultClientContext> = config
-        .create()
-        .map_err(|e| anyhow::anyhow!("Failed to create Kafka admin client: {e}"))?;
+    let mut props = contractgate::kafka_wire::bootstrap_props(&bootstrap);
+    contractgate::kafka_wire::insert_sasl_plain(
+        &mut props,
+        "SASL_SSL",
+        &confluent_api_key(),
+        &confluent_api_secret(),
+    );
 
     let topic_raw_name = topic_raw(contract_id);
     let topic_clean_name = topic_clean(contract_id);
     let topic_quarantine_name = topic_quarantine(contract_id);
-
-    let topics = vec![
-        NewTopic::new(&topic_raw_name, partition_count, TopicReplication::Fixed(3)),
-        NewTopic::new(
-            &topic_clean_name,
-            partition_count,
-            TopicReplication::Fixed(3),
-        ),
-        NewTopic::new(
-            &topic_quarantine_name,
-            partition_count,
-            TopicReplication::Fixed(3),
-        ),
+    let specs = [
+        (topic_raw_name.as_str(), partition_count, 3i16),
+        (topic_clean_name.as_str(), partition_count, 3i16),
+        (topic_quarantine_name.as_str(), partition_count, 3i16),
     ];
 
     // 10 s — well under the router's 30 s request timeout so we return a clean
-    // error instead of racing to a 504.
-    let opts = AdminOptions::new().request_timeout(Some(std::time::Duration::from_secs(10)));
-
-    let results = Handle::current()
-        .block_on(admin.create_topics(&topics, &opts))
-        .map_err(|e| anyhow::anyhow!("Failed to create topics: {e}"))?;
-
-    for result in results {
-        if let Err((topic, err)) = result {
-            let err_str = err.to_string();
-            if !err_str.contains("40002") && !err_str.contains("already exists") {
-                anyhow::bail!("Failed to create topic {}: {}", topic, err);
-            }
+    // error instead of racing to a 504. Replication factor 3 matches the
+    // hosted cluster default; a single-broker Apache Kafka needs 1.
+    let results = contractgate::kafka_wire::block_on(contractgate::kafka_wire::create_topics(
+        &props, &specs, 10_000,
+    ))?;
+    for (topic, status) in results {
+        if let Err(err) = status {
+            anyhow::bail!("Failed to create topic {topic}: {err}");
         }
     }
-
     Ok(())
 }
 

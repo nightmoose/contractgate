@@ -1,23 +1,25 @@
 //! Kafka topic sampler for the brownfield scaffolder (RFC-024 §B).
 //!
-//! Compiled only when the `scaffold` feature is enabled (pulls in rdkafka /
-//! librdkafka).  The `--from-file` path in mod.rs never reaches this module.
+//! Compiled only when the `scaffold` feature is enabled. The `--from-file`
+//! path in mod.rs never reaches this module.
 //!
 //! Key invariants (RFC-024):
 //!   - Consumer group ID = "contractgate-scaffold-{uuid4}" — ephemeral, never reused.
 //!   - enable.auto.commit = false — read-only, never touches prod offsets.
 //!   - Sampling stops at min(records_limit, wall_clock_secs), whichever first.
+//!   - Manual assignment seeks to the recent tail. That path does not commit
+//!     offsets. The client still requires `group.protocol=consumer` (KIP-848),
+//!     so the broker must be Apache Kafka 4.0 or newer.
+//!
+//! SASL/PLAIN and SSL with PEM certificates are supported. SASL/SCRAM is not:
+//! this client only authenticates with PLAIN.
 //!
 //! Developer tooling — not part of the patent-core validation engine.
 
 use anyhow::{anyhow, Context, Result};
-use rdkafka::{
-    config::ClientConfig,
-    consumer::{BaseConsumer, Consumer},
-    message::Message,
-    topic_partition_list::{Offset, TopicPartitionList},
-    util::Timeout,
-};
+use confluent_kafka::common::serialization::ByteArrayDeserializer;
+use confluent_kafka::common::TopicPartition;
+use confluent_kafka::consumer::{Consumer, ConsumerConfig, KafkaConsumer};
 use std::time::{Duration, Instant};
 use uuid::Uuid;
 
@@ -90,6 +92,8 @@ pub enum WireFormat {
 /// elapses — whichever comes first.
 ///
 /// Uses an ephemeral consumer group so prod offsets are never committed.
+/// Assignment is manual: each partition is seeked to
+/// `high_watermark - records_per_partition`.
 pub fn sample_topic(
     topic: &str,
     config: &KafkaConfig,
@@ -97,42 +101,64 @@ pub fn sample_topic(
     wall_clock_secs: u64,
 ) -> Result<SampleResult> {
     let group_id = format!("contractgate-scaffold-{}", Uuid::new_v4());
-    let consumer = build_consumer(config, &group_id).context("failed to create Kafka consumer")?;
+    crate::kafka_wire::block_on(sample_topic_async(
+        topic,
+        config,
+        &group_id,
+        records_limit,
+        wall_clock_secs,
+    ))
+}
 
-    // Discover partitions and seek to (high_watermark - records_per_partition)
-    // so we sample recent data rather than replaying the entire backlog.
-    let metadata = consumer
-        .fetch_metadata(Some(topic), Timeout::After(Duration::from_secs(10)))
+async fn sample_topic_async(
+    topic: &str,
+    config: &KafkaConfig,
+    group_id: &str,
+    records_limit: usize,
+    wall_clock_secs: u64,
+) -> Result<SampleResult> {
+    let mut consumer = build_consumer(config, group_id)
+        .await
+        .context("failed to create Kafka consumer")?;
+
+    let parts = consumer
+        .partitions_for_with_timeout(topic, Duration::from_secs(10))
+        .await
         .context("failed to fetch topic metadata")?;
-
-    let topic_meta = metadata
-        .topics()
-        .iter()
-        .find(|t| t.name() == topic)
-        .ok_or_else(|| anyhow!("topic '{topic}' not found in broker metadata"))?;
-
-    if topic_meta.partitions().is_empty() {
-        return Err(anyhow!("topic '{topic}' has no partitions"));
+    if parts.is_empty() {
+        return Err(anyhow!("topic '{topic}' not found in broker metadata"));
     }
 
-    let n_partitions = topic_meta.partitions().len();
+    let n_partitions = parts.len();
     let records_per_partition = (records_limit / n_partitions).max(1) as i64;
+    let assigned: Vec<TopicPartition> = parts
+        .iter()
+        .map(|p| TopicPartition::new(topic, p.partition()))
+        .collect();
 
-    // Build assignment with offset = high_watermark - records_per_partition.
-    let mut tpl = TopicPartitionList::new();
-    for p in topic_meta.partitions() {
-        let pid = p.id();
-        let (low, high) = consumer
-            .fetch_watermarks(topic, pid, Timeout::After(Duration::from_secs(5)))
-            .unwrap_or((0, 0));
+    consumer
+        .assign(assigned.clone())
+        .await
+        .context("consumer assign failed")?;
+
+    let ends = consumer
+        .end_offsets_with_timeout(&assigned, Duration::from_secs(5))
+        .await
+        .unwrap_or_default();
+    let begins = consumer
+        .beginning_offsets_with_timeout(&assigned, Duration::from_secs(5))
+        .await
+        .unwrap_or_default();
+    for tp in &assigned {
+        let high = ends.get(tp).copied().unwrap_or(0);
+        let low = begins.get(tp).copied().unwrap_or(0);
         let start = (high - records_per_partition).max(low);
-        tpl.add_partition_offset(topic, pid, Offset::Offset(start))
-            .context("add_partition_offset failed")?;
+        consumer
+            .seek_with_offset(tp.clone(), start)
+            .await
+            .context("seek failed")?;
     }
 
-    consumer.assign(&tpl).context("consumer assign failed")?;
-
-    // --- Sampling loop ---
     let deadline = Instant::now() + Duration::from_secs(wall_clock_secs);
     let mut records: Vec<serde_json::Value> = Vec::with_capacity(records_limit);
     let mut raw_bytes: u64 = 0;
@@ -140,35 +166,28 @@ pub fn sample_topic(
     let mut detected_format = WireFormat::Unknown;
 
     while records.len() < records_limit && Instant::now() < deadline {
-        let msg = match consumer.poll(Timeout::After(Duration::from_millis(200))) {
-            None => continue,
-            Some(Err(e)) => {
+        let batch = match consumer.poll(Duration::from_millis(200)).await {
+            Ok(batch) => batch,
+            Err(e) if e.is_retriable_error() => continue,
+            Err(e) => {
                 tracing::warn!("kafka consumer error: {e}");
                 continue;
             }
-            Some(Ok(m)) => m,
         };
-
-        let payload = match msg.payload() {
-            Some(p) => p,
-            None => continue,
-        };
-
-        raw_bytes += payload.len() as u64;
-
-        // Format detection on first message.
-        if detected_format == WireFormat::Unknown {
-            detected_format = detect_wire_format(payload);
-        }
-
-        // Decode failure — skip the record.
-        if let Some(v) = decode_payload(payload, &detected_format, config, &mut sr_unavailable) {
-            records.push(v);
+        for msg in batch {
+            let Some(payload) = msg.value() else { continue };
+            raw_bytes += payload.len() as u64;
+            if detected_format == WireFormat::Unknown {
+                detected_format = detect_wire_format(payload);
+            }
+            if let Some(v) = decode_payload(payload, &detected_format, config, &mut sr_unavailable)
+            {
+                records.push(v);
+            }
         }
     }
 
     let elapsed = Instant::now().duration_since(deadline - Duration::from_secs(wall_clock_secs));
-
     Ok(SampleResult {
         records,
         raw_bytes,
@@ -320,70 +339,56 @@ fn decode_avro_to_json(data: &[u8], schema: &serde_json::Value) -> Result<serde_
 // Consumer builder
 // ---------------------------------------------------------------------------
 
-fn build_consumer(config: &KafkaConfig, group_id: &str) -> Result<BaseConsumer> {
-    let mut cfg = ClientConfig::new();
-    cfg.set("bootstrap.servers", &config.broker)
-        .set("group.id", group_id)
-        .set("enable.auto.commit", "false")
-        .set("auto.offset.reset", "earliest")
-        .set("fetch.max.bytes", "10485760")
-        .set("session.timeout.ms", "10000")
-        .set("max.poll.interval.ms", "30000");
+async fn build_consumer(
+    config: &KafkaConfig,
+    group_id: &str,
+) -> Result<KafkaConsumer<Vec<u8>, Vec<u8>>> {
+    let mut props = crate::kafka_wire::bootstrap_props(&config.broker);
+    crate::kafka_wire::insert_consumer_group(&mut props, group_id);
+    props.insert("enable.auto.commit".to_string(), "false".to_string());
+    props.insert("auto.offset.reset".to_string(), "earliest".to_string());
+    props.insert("fetch.max.bytes".to_string(), "10485760".to_string());
+    // KIP-848 owns session timeout on the broker. max.poll.interval.ms still
+    // bounds how long a paused poll may run before the member is removed.
+    props.insert("max.poll.interval.ms".to_string(), "30000".to_string());
 
     match config.auth {
         KafkaAuth::Plaintext => {
-            cfg.set("security.protocol", "PLAINTEXT");
+            props.insert("security.protocol".to_string(), "PLAINTEXT".to_string());
         }
         KafkaAuth::SaslPlain => {
-            cfg.set("security.protocol", "SASL_PLAINTEXT")
-                .set("sasl.mechanism", "PLAIN");
-            if let Some(ref u) = config.sasl_username {
-                cfg.set("sasl.username", u);
-            }
-            if let Some(ref p) = config.sasl_password {
-                cfg.set("sasl.password", p);
-            }
+            let user = config.sasl_username.as_deref().unwrap_or("");
+            let pass = config.sasl_password.as_deref().unwrap_or("");
+            crate::kafka_wire::insert_sasl_plain(&mut props, "SASL_PLAINTEXT", user, pass);
         }
-        KafkaAuth::SaslScram256 => {
-            cfg.set("security.protocol", "SASL_SSL")
-                .set("sasl.mechanism", "SCRAM-SHA-256");
-            if let Some(ref u) = config.sasl_username {
-                cfg.set("sasl.username", u);
-            }
-            if let Some(ref p) = config.sasl_password {
-                cfg.set("sasl.password", p);
-            }
-            if let Some(ref ca) = config.ssl_ca_location {
-                cfg.set("ssl.ca.location", ca);
-            }
-        }
-        KafkaAuth::SaslScram512 => {
-            cfg.set("security.protocol", "SASL_SSL")
-                .set("sasl.mechanism", "SCRAM-SHA-512");
-            if let Some(ref u) = config.sasl_username {
-                cfg.set("sasl.username", u);
-            }
-            if let Some(ref p) = config.sasl_password {
-                cfg.set("sasl.password", p);
-            }
-            if let Some(ref ca) = config.ssl_ca_location {
-                cfg.set("ssl.ca.location", ca);
-            }
+        KafkaAuth::SaslScram256 | KafkaAuth::SaslScram512 => {
+            return Err(anyhow!(
+                "SASL/SCRAM is not supported by the native Kafka client (SASL/PLAIN and PEM SSL only)"
+            ));
         }
         KafkaAuth::Mtls => {
-            cfg.set("security.protocol", "SSL");
+            props.insert("security.protocol".to_string(), "SSL".to_string());
+            props.insert("ssl.truststore.type".to_string(), "PEM".to_string());
+            props.insert("ssl.keystore.type".to_string(), "PEM".to_string());
             if let Some(ref ca) = config.ssl_ca_location {
-                cfg.set("ssl.ca.location", ca);
+                props.insert("ssl.truststore.location".to_string(), ca.clone());
             }
             if let Some(ref cert) = config.ssl_cert_location {
-                cfg.set("ssl.certificate.location", cert);
+                let chain = crate::kafka_wire::read_pem(cert)?;
+                props.insert("ssl.keystore.certificate.chain".to_string(), chain);
             }
             if let Some(ref key) = config.ssl_key_location {
-                cfg.set("ssl.key.location", key);
+                let pem = crate::kafka_wire::read_pem(key)?;
+                props.insert("ssl.keystore.key".to_string(), pem);
             }
         }
     }
 
-    cfg.create::<BaseConsumer>()
-        .context("failed to create rdkafka BaseConsumer")
+    let parsed = ConsumerConfig::new(&props).context("invalid Kafka consumer config")?;
+    KafkaConsumer::new(
+        parsed,
+        ByteArrayDeserializer::new(),
+        ByteArrayDeserializer::new(),
+    )
+    .context("failed to create Kafka consumer")
 }

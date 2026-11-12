@@ -104,6 +104,39 @@ jobs:
       - name: cargo test
         run: cargo test
 
+  # ── Kafka pipeline (native client, vanilla Apache Kafka) ──
+  kafka-pipeline:
+    name: Kafka — ingest, validate, route
+    needs: changes
+    if: ${{ needs.changes.outputs.heavy == 'true' }}
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # v1
+        with:
+          toolchain: stable
+          components: clippy, rustfmt
+
+      - name: C toolchain for aws-lc and zstd
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends build-essential cmake pkg-config
+
+      - name: Cache cargo registry + build artefacts
+        uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-kafka-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-kafka-cargo-
+
+      - name: Pipeline against Apache Kafka
+        run: bash scripts/kafka-pipeline.sh
+
   # ── Coverage ratchet gate (RFC-071) ───────────────────────
   # Measures unit-test line coverage with cargo-llvm-cov and compares it to
   # the committed baseline (coverage-baseline.txt). Ratchet semantics: fails

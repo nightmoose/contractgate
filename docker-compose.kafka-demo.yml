@@ -1,82 +1,44 @@
 # Self-contained Kafka transport for the DataContractGate speed demo.
 #
-# Uses Redpanda (Kafka wire-protocol compatible, single-binary, no ZooKeeper).
-# Bring it up before running `cargo run --features demo --bin demo`:
+# Apache Kafka 4.x in KRaft mode. The native client uses the KIP-848
+# consumer group protocol, which this broker provides. Redpanda 24.x does
+# not. Bring it up before running `cargo run --features demo --bin demo`:
 #
 #     docker compose -f docker-compose.kafka-demo.yml up -d
 #
-# The demo connects to `localhost:9092` by default.  Shut it down with
-# `docker compose -f docker-compose.kafka-demo.yml down` — all state is held
-# in the named volume `redpanda-data` so re-runs start from a clean slate if
-# you `docker compose -f docker-compose.kafka-demo.yml down -v`.
+# The demo connects to `127.0.0.1:9092` by default. Shut it down with
+# `docker compose -f docker-compose.kafka-demo.yml down`.
 #
 # NOTE: this file was renamed from `docker-compose.yml` (2026-04-28) when
 # RFC-017 introduced the full gateway stack at `docker-compose.yml`.
-# See README for both compose files.
 
 services:
-  redpanda:
-    image: redpandadata/redpanda:v24.2.4
-    container_name: contractgate-redpanda
-    # Two listeners:
-    #  - `external` on :9092 advertises `localhost:9092` for clients on the host
-    #    (the demo binary connects here).
-    #  - `internal` on :29092 advertises `redpanda:29092` for sidecar containers
-    #    (Redpanda Console uses it).
-    command:
-      - redpanda
-      - start
-      - --kafka-addr
-      - internal://0.0.0.0:29092,external://0.0.0.0:9092
-      # NOTE: advertise 127.0.0.1 (not localhost) — macOS resolves `localhost`
-      # to both ::1 and 127.0.0.1, and Docker Desktop on Mac advertises a v6
-      # listener it can't actually forward.  Pinning to the v4 literal here
-      # means librdkafka's post-bootstrap reconnect uses the address that
-      # actually works.
-      - --advertise-kafka-addr
-      - internal://redpanda:29092,external://127.0.0.1:9092
-      - --pandaproxy-addr
-      - internal://0.0.0.0:8082,external://0.0.0.0:18082
-      - --advertise-pandaproxy-addr
-      - internal://redpanda:8082,external://localhost:18082
-      - --schema-registry-addr
-      - internal://0.0.0.0:8081,external://0.0.0.0:18081
-      - --rpc-addr
-      - redpanda:33145
-      - --advertise-rpc-addr
-      - redpanda:33145
-      - --mode
-      - dev-container
-      - --smp
-      - "1"
-      - --default-log-level=info
-    ports:
-      - "9092:9092"        # Kafka API — external listener, reachable from host as localhost:9092
-      - "18081:18081"      # Schema registry
-      - "18082:18082"      # HTTP proxy
-      - "9644:9644"        # Admin API
-    volumes:
-      - redpanda-data:/var/lib/redpanda/data
-    healthcheck:
-      test: ["CMD-SHELL", "rpk cluster health | grep -q 'Healthy:.*true'"]
-      interval: 3s
-      timeout: 3s
-      retries: 20
-      start_period: 10s
-
-  # Optional: a lightweight web UI for inspecting topics while the demo is
-  # running.  Browse http://localhost:8080 after bringing the stack up.
-  redpanda-console:
-    image: redpandadata/console:v2.7.2
-    container_name: contractgate-redpanda-console
-    depends_on:
-      redpanda:
-        condition: service_healthy
+  kafka:
+    image: apache/kafka:4.1.0
+    container_name: contractgate-kafka
+    # Two client listeners:
+    #  - EXTERNAL on :9092 advertises 127.0.0.1:9092 for the demo on the host.
+    #  - INTERNAL on :29092 advertises kafka:29092 for other containers.
     environment:
-      KAFKA_BROKERS: "redpanda:29092"
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_LISTENERS: INTERNAL://0.0.0.0:29092,EXTERNAL://0.0.0.0:9092,CONTROLLER://0.0.0.0:9093
+      KAFKA_ADVERTISED_LISTENERS: INTERNAL://kafka:29092,EXTERNAL://127.0.0.1:9092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,INTERNAL:PLAINTEXT,EXTERNAL:PLAINTEXT
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_INTER_BROKER_LISTENER_NAME: INTERNAL
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      KAFKA_NUM_PARTITIONS: 1
+      CLUSTER_ID: MkU3OEVBNTcwNTJENDM2Qk
     ports:
-      - "8080:8080"
-    restart: unless-stopped
-
-volumes:
-  redpanda-data:
+      - "9092:9092"
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/kafka/bin/kafka-broker-api-versions.sh --bootstrap-server localhost:9092 >/dev/null 2>&1"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 15s

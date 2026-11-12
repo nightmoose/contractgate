@@ -5,8 +5,8 @@ throughput at volume, side-by-side with a zero-validation baseline.
 
 ## What it does
 
-The demo spins up three concurrent pipelines sharing a single Kafka cluster
-(Redpanda running in Docker):
+The demo spins up three concurrent pipelines sharing a single Apache Kafka
+cluster (Docker):
 
 ```
                                         ┌─► demo.events.valid
@@ -42,17 +42,18 @@ The embedded web dashboard (`http://localhost:8088`) shows live:
 
 ## Prerequisites
 
-- **Docker** (to run Redpanda via `docker compose`)
-- **Rust toolchain** (`rustup` — stable)
-- **CMake + a C compiler** — required by `rdkafka`'s bundled `librdkafka`
-  build. On macOS: `xcode-select --install` + `brew install cmake`. On
-  Debian/Ubuntu: `sudo apt install build-essential cmake`.
+- **Docker** (to run Apache Kafka 4.1 via `docker compose`)
+- **Rust toolchain** (`rustup` — 1.95 or newer; this repo pins 1.98)
+- **A C compiler and CMake** — not for a Kafka C library. TLS in the client
+  uses aws-lc-rs, and zstd compression compiles bundled C. On macOS:
+  `xcode-select --install` (CMake via `brew install cmake` if `cmake` is
+  missing). On Debian/Ubuntu: `sudo apt install build-essential cmake`.
 
 ## Run it
 
 ```bash
-# 1. Start Redpanda (Kafka-compatible, single container, no ZooKeeper)
-docker compose up -d
+# 1. Start Apache Kafka 4.1 (KRaft, no ZooKeeper)
+docker compose -f docker-compose.kafka-demo.yml up -d
 
 # 2. Build + run the demo (release mode matters — validation is that fast)
 cargo demo
@@ -63,20 +64,22 @@ open http://localhost:8088
 
 > `cargo demo` is a project-local alias (defined in `.cargo/config.toml`) for
 > `cargo run --release --features demo --bin demo --`.  The `demo` feature
-> gates `rdkafka` so that default builds don't need cmake / libcurl / libssl
-> installed — only the demo itself pulls those in.  If you're invoking cargo
-> directly (e.g. from a script that doesn't pick up the alias), use
-> `cargo run --release --features demo --bin demo`.
+> pulls in the Kafka client so default builds stay free of it.  If you're
+> invoking cargo directly (e.g. from a script that doesn't pick up the alias),
+> use `cargo run --release --features demo --bin demo`.
 
 Pick a scenario, set a fail ratio, optionally cap the producer rate, and hit
 **Start**. Stop any time with **Stop** or let the duration expire.
 
-### Optional: Kafka inspection UI
+### Inspect topics
 
-`docker-compose.yml` also starts **Redpanda Console** at
-`http://localhost:8080`. It lets you browse the `demo.events.*` topics live
-while the demo runs — handy for verifying that pass events really are
-landing on `demo.events.valid` and fail events on `demo.events.quarantine`.
+The broker image includes the console consumer. Pass events land on
+`demo.events.valid` and fail events on `demo.events.quarantine`:
+
+```bash
+docker exec contractgate-kafka /opt/kafka/bin/kafka-console-consumer.sh \
+  --bootstrap-server localhost:9092 --topic demo.events.valid --from-beginning --max-messages 1
+```
 
 ## What to look at
 
@@ -127,8 +130,8 @@ Also honours `KAFKA_BROKERS` via environment.
 ## Tearing down
 
 ```bash
-docker compose down        # keeps the named volume — subsequent runs reuse state
-docker compose down -v     # wipes everything
+docker compose -f docker-compose.kafka-demo.yml down
+docker compose -f docker-compose.kafka-demo.yml down -v
 ```
 
 ## Architecture notes
@@ -136,9 +139,8 @@ docker compose down -v     # wipes everything
 - **Single process, three tasks.** The binary runs the producer loop, both
   consumer lanes, and the HTTP server inside one Tokio runtime. No external
   orchestration needed.
-- **Shared `FutureProducer`.** All three Kafka-side callers share one
-  `rdkafka` producer with aggressive batching (`queue.buffering.max.ms=5`,
-  `compression.type=lz4`, `acks=1`).
+- **Shared producer.** All three Kafka-side callers share one producer
+  with short batches (`linger.ms=5`, `compression.type=lz4`, `acks=1`).
 - **Consumer groups.** `contractgate-validator` and `contractgate-copy-baseline`
   are two distinct groups on the same input topic, so each lane gets every
   record independently.

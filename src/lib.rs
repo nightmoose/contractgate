@@ -21,6 +21,9 @@ pub mod payload_redaction;
 pub mod rate_limit;
 pub mod request_limits;
 pub mod scaffold;
+
+#[cfg(any(feature = "demo", feature = "scaffold", feature = "kafka-ingress"))]
+pub mod kafka_wire;
 pub mod transform;
 pub mod validation;
 

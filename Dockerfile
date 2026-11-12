@@ -9,21 +9,13 @@ FROM rust:slim-bookworm AS builder
 
 WORKDIR /app
 
-# sqlx + reqwest both use runtime-tokio-rustls / rustls-tls (pure Rust TLS).
-# No OpenSSL headers needed — libssl-dev is intentionally absent.
-# pkg-config kept for any transitive crate that probes for system libs at
-# build time; it's a no-op if nothing uses it.
+# sqlx + reqwest use rustls. The Kafka client does too (no librdkafka, no
+# libsasl, no libssl-dev). aws-lc-rs, the TLS provider, and the zstd codec
+# still compile bundled C, so the builder keeps a C toolchain and cmake.
+# Those are not a system Kafka library.
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
     curl \
-    libssl3 \
-    libssl-dev \
-    libsasl2-dev \
-    libcurl4-openssl-dev \
-    zlib1g-dev \
-    libzstd-dev \
-    liblz4-dev \
-    libsnappy-dev \
     cmake \
     build-essential \
     pkg-config \

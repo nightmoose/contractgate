@@ -1,24 +1,28 @@
 //! RFC-025: Platform-side Kafka consumer pool.
 //!
-//! One `rdkafka` `StreamConsumer` group per enabled contract, subscribed to
+//! One consumer group per enabled contract, subscribed to
 //! `cg-{contract_id}-raw`.  Each message is validated by the existing
-//! `validate_event()` engine; the result is routed to either the clean or
+//! `validate()` engine; the result is routed to either the clean or
 //! quarantine output topic, and an `audit_log` row is written with
 //! `source = 'kafka'`. A failure that resolves to drop — contract `on_fail`,
 //! an enforcing safety cap, or the Free quarantine cap — is counted in
 //! `dropped_event_counts` and is not published. Passing records still go to
 //! the clean topic.
 //!
-//! **Feature gate**: the rdkafka consumer loop is compiled only with
+//! **Feature gate**: the consumer loop is compiled only with
 //! `--features kafka-ingress`.  A zero-cost stub is always present so
 //! `AppState` compiles without the feature.
 //!
+//! The client speaks the Kafka protocol (`SASL_SSL` / `PLAIN`). Consumer
+//! groups use KIP-848, so the cluster must be Apache Kafka 4.0 or newer
+//! (Confluent Cloud and MSK 4.x included). Offsets are committed by the
+//! client's auto-commit (`enable.auto.commit=true`), same as before.
+//!
 //! ## Scaling model
 //!
-//! Each contract gets one Tokio task driving a `StreamConsumer`.  The consumer
-//! is assigned `partition_count` (default 3) partitions by the broker.  Idle
-//! polls yield the thread naturally — `StreamConsumer::recv()` is async and
-//! wakes only when a message arrives.
+//! Each contract gets one Tokio task driving a consumer.  The broker assigns
+//! `partition_count` (default 3) partitions.  `poll` is async and wakes when
+//! a record arrives or the timeout elapses.
 //!
 //! A `ConsumerPool` wraps a `DashMap<Uuid, JoinHandle<()>>` so the enable/
 //! disable handlers can start and stop individual contract consumers without
@@ -31,13 +35,15 @@ mod inner {
     use std::sync::Arc;
     use std::time::Duration;
 
-    use dashmap::DashMap;
-    use rdkafka::{
-        config::ClientConfig,
-        consumer::{Consumer, StreamConsumer},
-        message::{Header, Message, OwnedHeaders},
-        producer::{FutureProducer, FutureRecord},
+    use std::collections::HashMap;
+
+    use confluent_kafka::common::header::{Headers, RecordHeaders};
+    use confluent_kafka::common::serialization::{
+        ByteArrayDeserializer, ByteArraySerializer, StringSerializer,
     };
+    use confluent_kafka::consumer::{Consumer, ConsumerConfig, KafkaConsumer};
+    use confluent_kafka::producer::{KafkaProducer, Producer, ProducerConfig, ProducerRecord};
+    use dashmap::DashMap;
     use serde_json::Value;
     use tokio::task::JoinHandle;
     use uuid::Uuid;
@@ -136,17 +142,26 @@ mod inner {
             let raw_topic = format!("cg-{}-raw", contract_id);
             let group_id = format!("cg-consumer-{}", contract_id);
 
-            let consumer: StreamConsumer = match ClientConfig::new()
-                .set("bootstrap.servers", &row.confluent_bootstrap)
-                .set("security.protocol", "SASL_SSL")
-                .set("sasl.mechanisms", "PLAIN")
-                .set("sasl.username", &row.confluent_api_key)
-                .set("sasl.password", &api_secret)
-                .set("group.id", &group_id)
-                .set("auto.offset.reset", "earliest")
-                .set("enable.auto.commit", "true")
-                .create()
-            {
+            let mut consumer_props = sasl_props(
+                &row.confluent_bootstrap,
+                &row.confluent_api_key,
+                &api_secret,
+            );
+            contractgate::kafka_wire::insert_consumer_group(&mut consumer_props, &group_id);
+            consumer_props.insert("auto.offset.reset".into(), "earliest".into());
+            consumer_props.insert("enable.auto.commit".into(), "true".into());
+            consumer_props.insert("auto.commit.interval.ms".into(), "5000".into());
+
+            let mut consumer: KafkaConsumer<Vec<u8>, Vec<u8>> = match ConsumerConfig::new(
+                &consumer_props,
+            )
+            .and_then(|cfg| {
+                KafkaConsumer::new(
+                    cfg,
+                    ByteArrayDeserializer::new(),
+                    ByteArrayDeserializer::new(),
+                )
+            }) {
                 Ok(c) => c,
                 Err(e) => {
                     tracing::error!(contract_id = %contract_id, "consumer create error: {e}; retry in 30s");
@@ -155,21 +170,32 @@ mod inner {
                 }
             };
 
-            if let Err(e) = consumer.subscribe(&[raw_topic.as_str()]) {
+            if let Err(e) = consumer
+                .subscribe_with_topics(vec![raw_topic.clone()])
+                .await
+            {
                 tracing::error!(contract_id = %contract_id, "subscribe error: {e}; retry in 30s");
                 tokio::time::sleep(Duration::from_secs(30)).await;
                 continue;
             }
 
-            let producer: FutureProducer = match ClientConfig::new()
-                .set("bootstrap.servers", &row.confluent_bootstrap)
-                .set("security.protocol", "SASL_SSL")
-                .set("sasl.mechanisms", "PLAIN")
-                .set("sasl.username", &row.confluent_api_key)
-                .set("sasl.password", &api_secret)
-                .set("message.timeout.ms", "5000")
-                .create()
-            {
+            let mut producer_props = sasl_props(
+                &row.confluent_bootstrap,
+                &row.confluent_api_key,
+                &api_secret,
+            );
+            // librdkafka `message.timeout.ms` is Java `delivery.timeout.ms`.
+            // Idempotence stays off so retries match the previous producer.
+            producer_props.insert("delivery.timeout.ms".into(), "5000".into());
+            producer_props.insert("enable.idempotence".into(), "false".into());
+            producer_props.insert("acks".into(), "all".into());
+
+            let producer: KafkaProducer<String, Vec<u8>> = match ProducerConfig::new(
+                &producer_props,
+            )
+            .and_then(|cfg| {
+                KafkaProducer::new(cfg, StringSerializer::new(), ByteArraySerializer::new())
+            }) {
                 Ok(p) => p,
                 Err(e) => {
                     tracing::error!(contract_id = %contract_id, "producer create error: {e}; retry in 30s");
@@ -193,30 +219,44 @@ mod inner {
             tracing::info!(contract_id = %contract_id, topic = %raw_topic, "consumer polling");
 
             loop {
-                match consumer.recv().await {
+                match consumer.poll(Duration::from_secs(1)).await {
+                    Err(e) if e.is_retriable_error() => continue,
                     Err(e) => {
-                        tracing::warn!(contract_id = %contract_id, "recv error: {e}; reconnecting in 10s");
+                        tracing::warn!(contract_id = %contract_id, "poll error: {e}; reconnecting in 10s");
                         tokio::time::sleep(Duration::from_secs(10)).await;
                         break; // outer loop reconnects with fresh credentials
                     }
-                    Ok(msg) => {
-                        let payload_bytes = match msg.payload() {
-                            Some(b) => b.to_vec(),
-                            None => continue,
-                        };
-                        process_message(&state, &producer, contract_id, meter_org, payload_bytes)
+                    Ok(batch) => {
+                        for msg in batch {
+                            let Some(payload_bytes) = msg.value().cloned() else {
+                                continue;
+                            };
+                            process_message(
+                                &state,
+                                &producer,
+                                contract_id,
+                                meter_org,
+                                payload_bytes,
+                            )
                             .await;
+                        }
                     }
                 }
             }
         }
     }
 
+    fn sasl_props(bootstrap: &str, username: &str, password: &str) -> HashMap<String, String> {
+        let mut props = contractgate::kafka_wire::bootstrap_props(bootstrap);
+        contractgate::kafka_wire::insert_sasl_plain(&mut props, "SASL_SSL", username, password);
+        props
+    }
+
     // ── Message processing ───────────────────────────────────────────────────
 
     async fn process_message(
         state: &AppState,
-        producer: &FutureProducer,
+        producer: &KafkaProducer<String, Vec<u8>>,
         contract_id: Uuid,
         meter_org: Option<Uuid>,
         payload_bytes: Vec<u8>,
@@ -363,7 +403,7 @@ mod inner {
 
     async fn route_parse_failure(
         state: &AppState,
-        producer: &FutureProducer,
+        producer: &KafkaProducer<String, Vec<u8>>,
         contract_id: Uuid,
         meter_org: Option<Uuid>,
         payload_bytes: &[u8],
@@ -471,60 +511,55 @@ mod inner {
     }
 
     async fn publish_kafka(
-        producer: &FutureProducer,
+        producer: &KafkaProducer<String, Vec<u8>>,
         topic: &str,
         payload: &[u8],
         version: &str,
         contract_id: Uuid,
         violation_json: Option<&[u8]>,
     ) {
-        let mut headers = OwnedHeaders::new()
-            .insert(Header {
-                key: "cg-contract-id",
-                value: Some(contract_id.to_string().as_bytes()),
-            })
-            .insert(Header {
-                key: "cg-contract-version",
-                value: Some(version.as_bytes()),
-            });
+        let contract = contract_id.to_string();
+        let mut headers = RecordHeaders::new();
+        let _ = headers.add_with_key_value("cg-contract-id", Some(contract.as_bytes()));
+        let _ = headers.add_with_key_value("cg-contract-version", Some(version.as_bytes()));
         if let Some(violation_json) = violation_json {
-            headers = headers.insert(Header {
-                key: "cg-violation-reason",
-                value: Some(violation_json),
-            });
+            let _ = headers.add_with_key_value("cg-violation-reason", Some(violation_json));
         }
-        let _ = producer
-            .send(
-                FutureRecord::to(topic)
-                    .payload(payload)
-                    .key("")
-                    .headers(headers),
-                Duration::from_secs(5),
-            )
-            .await;
+        send_with_headers(producer, topic, payload, headers).await;
     }
 
     /// Route raw (unparseable) bytes to quarantine with a cg-violation-reason header.
     async fn route_to_quarantine_raw(
-        producer: &FutureProducer,
+        producer: &KafkaProducer<String, Vec<u8>>,
         contract_id: Uuid,
         payload_bytes: &[u8],
         reason: &str,
     ) {
         let topic = format!("cg-{}-quarantine", contract_id);
-        let headers = OwnedHeaders::new().insert(Header {
-            key: "cg-violation-reason",
-            value: Some(reason.as_bytes()),
-        });
-        let _ = producer
-            .send(
-                FutureRecord::to(&topic)
-                    .payload(payload_bytes)
-                    .key("")
-                    .headers(headers),
-                Duration::from_secs(5),
-            )
-            .await;
+        let mut headers = RecordHeaders::new();
+        let _ = headers.add_with_key_value("cg-violation-reason", Some(reason.as_bytes()));
+        send_with_headers(producer, &topic, payload_bytes, headers).await;
+    }
+
+    async fn send_with_headers(
+        producer: &KafkaProducer<String, Vec<u8>>,
+        topic: &str,
+        payload: &[u8],
+        headers: RecordHeaders,
+    ) {
+        let Ok(record) = ProducerRecord::with_partition_key_headers(
+            topic.to_string(),
+            None,
+            Some(String::new()),
+            Some(payload.to_vec()),
+            headers,
+        ) else {
+            return;
+        };
+        // Await delivery. Dropping the returned future cancels the send.
+        if let Ok(delivery) = producer.send(record).await {
+            let _ = delivery.get().await;
+        }
     }
 }
 
@@ -536,7 +571,7 @@ mod inner {
     use std::sync::Arc;
     use uuid::Uuid;
 
-    /// Zero-cost stub — compiles without rdkafka.
+    /// Zero-cost stub — compiles without the Kafka client.
     #[derive(Default, Clone)]
     pub struct ConsumerPool;
 
