@@ -357,8 +357,9 @@ async fn build_consumer(
             props.insert("security.protocol".to_string(), "PLAINTEXT".to_string());
         }
         KafkaAuth::SaslPlain => {
-            let user = config.sasl_username.as_deref().unwrap_or("");
-            let pass = config.sasl_password.as_deref().unwrap_or("");
+            let (Some(user), Some(pass)) = (&config.sasl_username, &config.sasl_password) else {
+                return Err(anyhow!("SASL/PLAIN requires a username and password"));
+            };
             crate::kafka_wire::insert_sasl_plain(&mut props, "SASL_PLAINTEXT", user, pass);
         }
         KafkaAuth::SaslScram256 | KafkaAuth::SaslScram512 => {

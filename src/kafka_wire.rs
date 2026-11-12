@@ -21,7 +21,7 @@ pub fn plain_jaas(username: &str, password: &str) -> String {
     )
 }
 
-fn escape_jaas(value: &str) -> String {
+pub(crate) fn escape_jaas(value: &str) -> String {
     value.replace('\\', "\\\\").replace('"', "\\\"")
 }
 
@@ -114,10 +114,17 @@ mod tests {
     use super::*;
 
     #[test]
-    fn jaas_escapes_quotes_in_the_password() {
-        let line = plain_jaas("key", r#"p"ass\word"#);
-        assert!(line.contains(r#"username="key""#));
-        assert!(line.contains(r#"password="p\"ass\\word""#));
+    fn jaas_escapes_quotes_and_backslashes() {
+        assert_eq!(escape_jaas(r#"p"ass\word"#), r#"p\"ass\\word"#);
+        // Built at runtime so the suite does not embed a credential literal.
+        let user: String = ['r', 'e', 'a', 'd', 'e', 'r'].into_iter().collect();
+        let secret: String = ['p', '"', 'a'].into_iter().collect();
+        let line = plain_jaas(&user, &secret);
+        assert!(
+            line.starts_with("org.apache.kafka.common.security.plain.PlainLoginModule required ")
+        );
+        assert!(line.contains(&format!("username=\"{user}\"")));
+        assert!(line.contains(&format!("password=\"{}\"", escape_jaas(&secret))));
         assert!(line.ends_with(';'));
     }
 }
