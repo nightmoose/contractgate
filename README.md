@@ -169,8 +169,8 @@ The comparison table is Self-Hosted Free: real login with `CONTRACTGATE_SELF_HOS
 | Capability | Self-Hosted Free | Cloud Free / Pro / Enterprise |
 |---|---|---|
 | Validation engine | ✅ Unlimited (local) | ✅ 100K / 25M / Unlimited events/month |
-| Contracts | ✅ Unlimited | ✅ 3 / Unlimited / Unlimited |
-| Contract versions | ✅ Unlimited | ✅ 3 per contract / Unlimited / Unlimited |
+| Contracts | ✅ Unlimited | ✅ 3 / Unlimited (fair use) / Unlimited |
+| Contract versions | ✅ Unlimited | ✅ 3 per contract / Unlimited (fair use) / Unlimited |
 | Playground | ✅ | ✅ |
 | Audit log | ✅ Local Postgres | ✅ 7 / 90 / Custom days retention |
 | Live event stream | ✅ | ✅ |

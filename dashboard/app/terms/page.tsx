@@ -12,7 +12,7 @@ export default function TermsPage() {
     <div className="min-h-screen bg-[#0a0d12] flex flex-col items-center justify-center px-4 py-24">
       <div className="max-w-2xl w-full">
         <h1 className="text-2xl font-bold text-slate-100 mb-2">Terms of Service</h1>
-        <p className="text-slate-500 text-sm mb-10">Last updated: October 2026</p>
+        <p className="text-slate-500 text-sm mb-10">Last updated: November 2026</p>
 
         <div className="space-y-6 text-sm text-slate-400 leading-relaxed">
           <p>
@@ -104,7 +104,23 @@ export default function TermsPage() {
           </section>
 
           <section>
-            <h2 className="text-slate-200 font-semibold mb-2">5. Limitation of Liability</h2>
+            <h2 className="text-slate-200 font-semibold mb-2">5. Fair Use &amp; Service Limits</h2>
+            <p>
+              The hosted Free and Pro plans run on shared infrastructure. Each plan is
+              subject to its published limits, such as monthly events and API rate limits.
+              Features described as &ldquo;unlimited&rdquo;, such as Pro contracts and
+              versions, have no fixed cap but are subject to fair use. If your usage
+              degrades the Service for other customers or exceeds what is reasonable for
+              your plan, we may rate-limit, throttle, queue, or temporarily suspend it. We
+              will try to contact you first, except where immediate action is needed to
+              protect the Service. Sustained high-volume or high-concurrency workloads may
+              need an Enterprise plan or a dedicated deployment. Time spent throttled or
+              rate-limited under this section does not count against any uptime target.
+            </p>
+          </section>
+
+          <section>
+            <h2 className="text-slate-200 font-semibold mb-2">6. Limitation of Liability</h2>
             <p>
               To the maximum extent permitted by law, NightMoose shall not be liable
               for any indirect, incidental, special, consequential, or punitive damages
@@ -113,7 +129,7 @@ export default function TermsPage() {
           </section>
 
           <section>
-            <h2 className="text-slate-200 font-semibold mb-2">6. Changes</h2>
+            <h2 className="text-slate-200 font-semibold mb-2">7. Changes</h2>
             <p>
               We reserve the right to modify these Terms at any time. We will provide
               notice of significant changes by updating the date at the top of this
@@ -123,7 +139,7 @@ export default function TermsPage() {
           </section>
 
           <section>
-            <h2 className="text-slate-200 font-semibold mb-2">7. Contact</h2>
+            <h2 className="text-slate-200 font-semibold mb-2">8. Contact</h2>
             <p>
               Questions about these Terms? Email us at{" "}
               <a
