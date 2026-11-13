@@ -1,0 +1,15 @@
+name: schema_drift_orders
+version: "1.0.0"
+profile: schema_drift_orders
+
+model-paths: ["models"]
+test-paths: ["tests"]
+target-path: target
+clean-targets:
+  - target
+  - dbt_packages
+  - logs
+
+models:
+  schema_drift_orders:
+    +materialized: view

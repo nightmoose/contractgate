@@ -1,0 +1,7 @@
+schema_drift_orders:
+  target: dev
+  outputs:
+    dev:
+      type: duckdb
+      path: target/orders.duckdb
+      threads: 1

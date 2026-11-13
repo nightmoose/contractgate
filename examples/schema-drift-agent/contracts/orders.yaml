@@ -1,0 +1,41 @@
+version: "1.0"
+name: orders
+description: "Upstream orders feed. amount is US dollars. ordered_at is unix seconds."
+compliance_mode: true
+
+ontology:
+  entities:
+    - name: order_id
+      type: string
+      required: true
+      pattern: "^ord_[0-9]+$"
+    - name: customer_id
+      type: string
+      required: true
+    - name: status
+      type: string
+      required: true
+      enum: ["pending", "paid", "shipped", "cancelled"]
+    - name: amount
+      type: number
+      required: true
+      min: 0
+      max: 300
+    - name: currency
+      type: string
+      required: true
+      enum: ["USD"]
+    - name: ordered_at
+      type: integer
+      required: true
+      min: 1577836800
+      max: 1893456000
+
+glossary:
+  - field: amount
+    description: Order total in US dollars, not cents.
+    synonyms: ["order_total", "total", "amt"]
+  - field: ordered_at
+    description: Unix timestamp in seconds, not milliseconds.
+  - field: customer_id
+    description: Buyer id. The orders dashboard joins on this.

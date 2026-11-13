@@ -1,0 +1,20 @@
+version: 2
+
+models:
+  - name: fct_orders
+    description: One row per order for the orders dashboard.
+    columns:
+      - name: order_id
+        data_tests: [unique, not_null]
+      - name: customer_id
+        data_tests: [not_null]
+      - name: amount
+        data_tests: [not_null]
+  - name: fct_revenue
+    description: Daily revenue. Breaks if amount is cents or ordered_at is not unix seconds.
+    columns:
+      - name: revenue_day
+        data_tests: [not_null]
+      - name: revenue_usd
+        description: Sum of order amount in US dollars.
+        data_tests: [not_null]
