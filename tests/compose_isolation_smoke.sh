@@ -62,7 +62,8 @@ until curl -sf "$BASE/ready" > /dev/null; do
     attempt=$((attempt + 1))
     if [[ $attempt -ge $max_attempts ]]; then
         echo "ERROR: auth-on gateway did not become ready"
-        "${COMPOSE[@]}" logs gateway-authon
+        "${COMPOSE[@]}" ps -a || true
+        "${COMPOSE[@]}" logs --no-color gateway-authon || true
         exit 1
     fi
     echo "  ... waiting ($attempt/${max_attempts})"
