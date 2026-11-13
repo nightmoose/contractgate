@@ -1,0 +1,48 @@
+[
+  {
+    "order_id": "ord_1001",
+    "customer_id": "cus_11",
+    "status": "paid",
+    "amount": 49.99,
+    "currency": "USD",
+    "ordered_at": 1731369600
+  },
+  {
+    "order_id": "ord_2001",
+    "status": "paid",
+    "order_total": 4999,
+    "currency": "USD",
+    "ordered_at": "2024-11-12T00:00:00Z"
+  },
+  {
+    "order_id": "ord_2002",
+    "status": "shipped",
+    "order_total": 12000,
+    "currency": "USD",
+    "ordered_at": "2024-11-13T00:00:00Z"
+  },
+  {
+    "order_id": "ord_2003",
+    "customer_id": "cus_33",
+    "status": "paid",
+    "amount": 1550,
+    "currency": "USD",
+    "ordered_at": 1731456000000
+  },
+  {
+    "order_id": "ord_2004",
+    "customer_id": "cus_44",
+    "status": "pending",
+    "amount": 25000,
+    "currency": "USD",
+    "ordered_at": 1731542400
+  },
+  {
+    "order_id": "ord_2005",
+    "customer_id": "cus_55",
+    "status": "paid",
+    "amount": 15.5,
+    "currency": "USD",
+    "ordered_at": "2024-11-15T00:00:00Z"
+  }
+]
