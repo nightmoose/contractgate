@@ -1,0 +1,27 @@
+# dbt-databricks target for an Azure Databricks workspace.
+# Not used by `make demo`. dbt-databricks is not installed here, and this
+# file was not compiled against a workspace.
+#
+#   pip install dbt-databricks
+#   export DATABRICKS_HOST=adb-0000000000000000.0.azuredatabricks.net
+#   export DATABRICKS_HTTP_PATH=/sql/1.0/warehouses/your_warehouse_id
+#   export DATABRICKS_TOKEN=dapi...
+#   export DATABRICKS_CATALOG=main
+#   dbt compile --project-dir ../../dbt --profiles-dir . --target databricks
+#
+# The host is the workspace URL with no https:// prefix. http_path is the
+# SQL warehouse path from the Azure Databricks SQL connection details.
+# Point drift_agent.py --dbt-project at ../../dbt after that compile.
+# The manifest walker does not read the adapter name.
+
+schema_drift_orders:
+  target: databricks
+  outputs:
+    databricks:
+      type: databricks
+      catalog: "{{ env_var('DATABRICKS_CATALOG', 'main') }}"
+      schema: orders
+      host: "{{ env_var('DATABRICKS_HOST') }}"
+      http_path: "{{ env_var('DATABRICKS_HTTP_PATH') }}"
+      token: "{{ env_var('DATABRICKS_TOKEN') }}"
+      threads: 4

@@ -1,3 +1,6 @@
+# Default target for `make demo`. Databricks and Redshift targets live in
+# stacks/ and are not loaded by this file, so a DuckDB compile does not
+# require those adapters or credentials.
 schema_drift_orders:
   target: dev
   outputs:

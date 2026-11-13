@@ -16,6 +16,7 @@ An optional OpenAI-compatible chat call rewrites the pull-request text when
 from __future__ import annotations
 
 import argparse
+import copy
 import difflib
 import hashlib
 import json
@@ -122,7 +123,9 @@ def main(argv: list[str] | None = None) -> None:
     if fingerprint(source_files(args)) != watched:
         raise SystemExit("demo check failed: the agent modified a source file")
 
+    run_stack_self_checks()
     if is_bundled(args):
+        assert_lineage_adapter_neutral(args, manifest, rules, impact_md)
         assert_bundled(
             args,
             good,
@@ -1495,6 +1498,64 @@ def git_apply_check(patch: Path) -> None:
     )
     if proc.returncode != 0:
         raise SystemExit(f"demo check failed: git apply --check rejected the patch:\n{proc.stderr}")
+
+
+def arrow_lines(report: str) -> list[str]:
+    return [line for line in report.splitlines() if line.startswith("- `")]
+
+
+def assert_lineage_adapter_neutral(
+    args: argparse.Namespace, manifest: dict, rules: Rules, duckdb_report: str
+) -> None:
+    """The impact report reads manifest names and child_map, not the warehouse.
+
+    `make demo` compiles with dbt-duckdb. This check rewrites that manifest
+    as if dbt-databricks or dbt-redshift had produced it and requires the
+    same arrow lines. It does not connect to either warehouse.
+    """
+    baseline = arrow_lines(duckdb_report)
+    expect(baseline, "duckdb impact report has no arrow lines")
+    for adapter, database, schema in (
+        ("databricks", "prod_catalog", "orders"),
+        ("redshift", "warehouse", "analytics"),
+    ):
+        altered = copy.deepcopy(manifest)
+        meta = dict(altered.get("metadata") or {})
+        meta["adapter_type"] = adapter
+        altered["metadata"] = meta
+        for bucket in ("nodes", "sources", "exposures"):
+            for node in (altered.get(bucket) or {}).values():
+                if isinstance(node, dict):
+                    node["database"] = database
+                    node["schema"] = schema
+        report, _impact = render_impact(args, altered, rules)
+        expect(
+            arrow_lines(report) == baseline,
+            f"lineage changed when the manifest was labeled {adapter}",
+        )
+    print(
+        "Lineage arrows are unchanged when the same manifest is labeled "
+        "databricks or redshift. No warehouse connection was opened."
+    )
+
+
+def run_stack_self_checks() -> None:
+    scripts = (
+        ROOT / "stacks" / "databricks" / "foreach_batch.py",
+        ROOT / "stacks" / "glue_redshift" / "before_load.py",
+    )
+    for script in scripts:
+        proc = subprocess.run(
+            [sys.executable, str(script), "--self-check"],
+            text=True,
+            capture_output=True,
+        )
+        if proc.returncode != 0:
+            raise SystemExit(
+                f"demo check failed: {script.relative_to(ROOT)} --self-check\n"
+                f"{proc.stdout}\n{proc.stderr}"
+            )
+        print(proc.stdout.strip())
 
 
 def assert_bundled(

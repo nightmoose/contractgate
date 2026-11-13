@@ -1,0 +1,27 @@
+# dbt-redshift target for the warehouse behind a Glue ETL job.
+# Not used by `make demo`. dbt-redshift is not installed here, and this
+# file was not compiled against a cluster.
+#
+#   pip install dbt-redshift
+#   export REDSHIFT_HOST=your-cluster.region.redshift.amazonaws.com
+#   export REDSHIFT_USER=...
+#   export REDSHIFT_PASSWORD=...
+#   export REDSHIFT_DB=analytics
+#   dbt compile --project-dir ../../dbt --profiles-dir . --target redshift
+#
+# Run the gate inside the Glue job (before_load.py) before this project
+# reads the loaded table. The manifest walker does not read the adapter name.
+
+schema_drift_orders:
+  target: redshift
+  outputs:
+    redshift:
+      type: redshift
+      host: "{{ env_var('REDSHIFT_HOST') }}"
+      port: 5439
+      user: "{{ env_var('REDSHIFT_USER') }}"
+      password: "{{ env_var('REDSHIFT_PASSWORD') }}"
+      dbname: "{{ env_var('REDSHIFT_DB', 'analytics') }}"
+      schema: orders
+      threads: 4
+      sslmode: require

@@ -27,6 +27,64 @@ On Debian or Ubuntu, if `python3 -m venv` says `ensurepip is not available`, ins
 
 Generated files live under `out/` and `dbt/target/`. Both are gitignored. The contract and the dbt models are not modified.
 
+## Run it on your stack
+
+`make demo` is the DuckDB path. It is the only path that was executed in this repo. There are no Databricks or AWS credentials here, so the Azure Databricks and Glue/Redshift files were not compiled against those systems and were not run there.
+
+| Path | What was executed | What was not executed |
+| --- | --- | --- |
+| DuckDB (default) | `dbt compile` with dbt-duckdb, `contractgate test`, and the draft SQL in local DuckDB | A remote warehouse |
+| Databricks on Azure | `--self-check` on the ingest split, and the manifest walker with `adapter_type` rewritten to `databricks` | Spark, Auto Loader, Delta, a workspace, `dbt-databricks` |
+| Glue + Redshift | `--self-check` on the ingest split, and the same walker labeled `redshift` | Glue, S3, Redshift, `dbt-redshift` |
+
+The draft staging SQL from `make demo` uses DuckDB. Do not paste it into a Databricks or Redshift model unchanged.
+
+### DuckDB
+
+```bash
+cd examples/schema-drift-agent
+make demo
+```
+
+`dbt/profiles.yml` selects target `dev` (`type: duckdb`). That is what the demo compiles.
+
+### Databricks on Azure
+
+The gate sits on the ingest micro-batch, before the Delta write. dbt runs after that, on the table that only received passing rows. Lineage is still `target/manifest.json`.
+
+1. Install `dbt-databricks` in the environment that can reach the workspace. This demo's `.venv` does not have it.
+2. Fill in [`stacks/databricks/profiles.yml`](stacks/databricks/profiles.yml). `host` is the workspace host (`adb-….azuredatabricks.net`) with no scheme. `http_path` is the SQL warehouse path. `catalog` is the Unity Catalog catalog.
+3. Compile the same project:
+
+```bash
+dbt compile --project-dir dbt --profiles-dir stacks/databricks --target databricks
+```
+
+4. Point the agent at that project (`--dbt-project dbt`). The impact report does not look at the adapter. `make demo` checks this by relabeling the DuckDB manifest as `databricks` and requiring the same arrow lines, including `amount` → `stg_orders` → `fct_revenue` → exposure `Revenue dashboard`.
+
+The Auto Loader hook is [`stacks/databricks/foreach_batch.py`](stacks/databricks/foreach_batch.py). `foreach_batch` POSTs the micro-batch to `POST /v1/ingest/{contract_id}` in chunks of 1000, appends passing rows to the landing Delta table, and appends failures only to the quarantine Delta table. `make demo` runs:
+
+```bash
+python stacks/databricks/foreach_batch.py --self-check
+```
+
+That asserts a canned response: `ord_1001` would land and `ord_2004` (amount 25000, over the dollar max) would be quarantined. The HTTP function and `foreach_batch` itself were not called.
+
+### Glue and Redshift
+
+The gate sits in the Glue job after the source read and before the Redshift write. dbt-redshift is the warehouse project that reads what the job loaded.
+
+[`stacks/glue_redshift/before_load.py`](stacks/glue_redshift/before_load.py) shows that order: catalog read, `POST /v1/ingest/{contract_id}`, failures to `s3://…/quarantine/orders/`, and `write_dynamic_frame` to Redshift with only the passing rows. [`stacks/glue_redshift/profiles.yml`](stacks/glue_redshift/profiles.yml) is the `dbt-redshift` target (`sslmode: require`, port 5439).
+
+`make demo` runs `before_load.py --self-check` on a canned response (`ord_1001` lands, `ord_2003` is held back). It does not start Glue or open Redshift. After a real compile:
+
+```bash
+pip install dbt-redshift
+dbt compile --project-dir dbt --profiles-dir stacks/glue_redshift --target redshift
+```
+
+the same `drift_agent.py --dbt-project dbt` command reads that manifest. The arrow lines do not change with the adapter.
+
 ## Sample output
 
 This is the report from a successful `make demo` (the CLI timing line is not part of the report).
@@ -268,8 +326,8 @@ Failures then land in `quarantine_events`. The reference is [docs/v1-ingest-refe
 - `--staged-contract` is the contract your marts already assume. The agent normalizes the drifted rows with the draft rules and checks them against this file. Use the current ingest contract here if staging is supposed to preserve today's meaning.
 - `--dbt-project` must `dbt compile`. If `profiles.yml` sits in that directory, it is used (this example ships a DuckDB profile). Otherwise dbt uses `~/.dbt/profiles.yml`.
 - `--staging-model` is a path relative to the dbt project. Bare select items named `amount` and `ordered_at` are rewritten. If the select item is not a bare column, the proposed expression is left as a SQL comment at the top of the draft file.
-- The column scan reads model SQL, schema column names, and test `column_name`, then walks `child_map` to exposures of the models that named the column. dbt Core does not store warehouse column lineage. A model that selects the column under a new name, and never writes the old name, will not be linked.
-- The generated cast uses DuckDB (`try_cast`, `epoch`, `typeof` is not required). Read it before pasting into Snowflake or BigQuery.
+- The generated cast uses DuckDB (`try_cast`, `epoch`). On Databricks the equivalent is `unix_timestamp` / `try_cast`; on Redshift it is `extract(epoch from ...)`. The draft from `make demo` is DuckDB SQL. Rewrite it before applying it on another engine.
+- The column scan reads model SQL, schema column names, and test `column_name`, then walks `child_map` to exposures of the models that named the column. It does not read the adapter name, catalog, or schema, so the same manifest from dbt-duckdb, dbt-databricks, or dbt-redshift produces the same arrow lines. dbt Core does not store warehouse column lineage. A model that selects the column under a new name, and never writes the old name, will not be linked.
 - The fixture-specific checks (exact order ids, the revenue-dashboard line) run only for this folder's bundled paths. Your files still get the three reports.
 
 ## Optional LLM rewrite
