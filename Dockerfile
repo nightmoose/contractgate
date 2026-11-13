@@ -64,7 +64,9 @@ COPY vendor/fivetran-connector ./vendor/fivetran-connector
 COPY src ./src
 # Build the web server and demo-seeder binaries in one invocation with the
 # same args as the dependency layer, so only this crate compiles here.
-RUN cargo build $CARGO_BUILD_ARGS
+# `--locked` also busts a GHA cache entry that was serving a binary which
+# exited immediately and never opened port 8080 (compose smoke, 2026-11-13).
+RUN cargo build $CARGO_BUILD_ARGS --locked
 
 # ── Stage 2: runtime ────────────────────────────────────────
 FROM debian:bookworm-slim AS runtime
