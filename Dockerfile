@@ -64,18 +64,11 @@ COPY vendor/fivetran-connector ./vendor/fivetran-connector
 COPY src ./src
 # Build the web server and demo-seeder binaries in one invocation with the
 # same args as the dependency layer, so only this crate compiles here.
-# The dependency layer deletes these artifacts, but a cached layer can still
-# leave Cargo treating the stub `fn main() {}` binary as fresh (it then
-# exits immediately and compose never sees port 8080). Delete them again in
-# this step and refuse a tiny binary.
-RUN rm -rf target/release/incremental \
-        target/release/.fingerprint/contractgate-* \
-        target/release/.fingerprint/demo-seeder-* \
-        target/release/deps/contractgate* \
-        target/release/deps/libcontractgate* \
-        target/release/deps/demo_seeder* \
-        target/release/contractgate-server \
-        target/release/demo-seeder \
+# `cargo clean -p` is required: deleting fingerprint globs by hand left Cargo
+# treating the stub `fn main() {}` binary as fresh, so the image exited
+# before it listened and compose smoke never saw port 8080.
+RUN grep -q "DataContractGate core library" src/lib.rs \
+    && cargo clean -p contractgate --release \
     && cargo build $CARGO_BUILD_ARGS --locked \
     && test "$(stat -c%s target/release/contractgate-server)" -gt 5000000
 
