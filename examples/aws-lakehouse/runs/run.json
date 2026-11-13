@@ -1,0 +1,163 @@
+{
+  "project": "P8",
+  "ts": "2026-11-11T11:45:42Z",
+  "region": "us-east-1",
+  "account": "065614567889",
+  "caller_arn": "arn:aws:sts::065614567889:assumed-role/nmb-terraform-deploy/gha-p8-lakehouse",
+  "bucket": "nmb-lakehouse-065614567889",
+  "database": "nmb_lakehouse",
+  "workgroup": "nmb-lakehouse",
+  "contract": "stripe_charges_raw",
+  "records": 10000,
+  "seed": 42,
+  "passed": 9495,
+  "failed": 505,
+  "reject_rate": 0.0505,
+  "produced_labels": {
+    "clean": 9110,
+    "guest_checkout": 290,
+    "unknown_status": 106,
+    "bad_id_prefix": 89,
+    "bad_email": 95,
+    "negative_amount": 104,
+    "uppercase_currency": 102,
+    "missing_created": 104
+  },
+  "violation_kinds": {
+    "status:enum_violation": 106,
+    "id:pattern_mismatch": 89,
+    "amount:range_violation": 104,
+    "currency:pattern_mismatch": 102,
+    "created:missing_required_field": 104
+  },
+  "check_ns_p50": 11237,
+  "elapsed_s": 39.36,
+  "insert": {
+    "passed": {
+      "data_scanned_bytes": 3367431,
+      "engine_execution_ms": 1722,
+      "total_execution_ms": 1995
+    },
+    "failed": {
+      "data_scanned_bytes": 177252,
+      "engine_execution_ms": 1674,
+      "total_execution_ms": 1983
+    }
+  },
+  "athena_bytes_scanned_dq": 107640,
+  "counts_match": true,
+  "leaks_in_passed_iceberg": {
+    "negative_amount": 0,
+    "bad_currency": 0,
+    "bad_status": 0,
+    "missing_created": 0,
+    "bad_id": 0
+  },
+  "dq": {
+    "passed_count": [
+      {
+        "n": "9495"
+      }
+    ],
+    "quarantine_count": [
+      {
+        "n": "505"
+      }
+    ],
+    "passed_negative_amount": [
+      {
+        "n": "0"
+      }
+    ],
+    "passed_bad_currency": [
+      {
+        "n": "0"
+      }
+    ],
+    "passed_bad_status": [
+      {
+        "n": "0"
+      }
+    ],
+    "passed_missing_created": [
+      {
+        "n": "0"
+      }
+    ],
+    "passed_bad_id": [
+      {
+        "n": "0"
+      }
+    ],
+    "currency_drift": [
+      {
+        "currency": "usd",
+        "n": "7580"
+      },
+      {
+        "currency": "eur",
+        "n": "1152"
+      },
+      {
+        "currency": "gbp",
+        "n": "667"
+      },
+      {
+        "currency": "jpy",
+        "n": "96"
+      }
+    ],
+    "status_drift": [
+      {
+        "status": "succeeded",
+        "n": "8469"
+      },
+      {
+        "status": "failed",
+        "n": "560"
+      },
+      {
+        "status": "pending",
+        "n": "466"
+      }
+    ],
+    "amount_stats": [
+      {
+        "min_amount": "202",
+        "max_amount": "49984",
+        "avg_amount": "25340.334070563455"
+      }
+    ],
+    "null_customer_passed": [
+      {
+        "n": "290"
+      }
+    ],
+    "quarantine_status": [
+      {
+        "status": "succeeded",
+        "n": "358"
+      },
+      {
+        "status": "complete",
+        "n": "106"
+      },
+      {
+        "status": "pending",
+        "n": "21"
+      },
+      {
+        "status": "failed",
+        "n": "20"
+      }
+    ],
+    "_expected_passed": 9495,
+    "_expected_failed": 505
+  },
+  "notes": [
+    "Write-time validation used the in-process contractgate package, not the staging or prod API.",
+    "Python contractgate 0.4.x does not enforce format:email, so bad_email rows may pass ingest.",
+    "Guest checkouts (no customer) are allowed by stripe_charges_raw and land in charges_raw.",
+    "Glue Data Quality (R12 nmb-glue) was not used; no nmb-glue role exists, and Athena SQL covered the checks."
+  ]
+}
