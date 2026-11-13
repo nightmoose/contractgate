@@ -206,7 +206,7 @@ export function FreeLimitBanner({ current, max, resource }: FreeLimitBannerProps
         <Link href="/pricing" className="underline hover:text-amber-200 transition-colors">
           Upgrade to {upgradePlanName(org.plan)}
         </Link>{" "}
-        for unlimited {resource}.
+        for unlimited {resource} (fair use).
       </p>
     </div>
   );

@@ -169,8 +169,8 @@ The comparison table is Self-Hosted Free: real login with `CONTRACTGATE_SELF_HOS
 | Capability | Self-Hosted Free | Cloud Free / Pro / Enterprise |
 |---|---|---|
 | Validation engine | ✅ Unlimited (local) | ✅ 100K / 25M / Unlimited events/month |
-| Contracts | ✅ Unlimited | ✅ 3 / Unlimited / Unlimited |
-| Contract versions | ✅ Unlimited | ✅ 3 per contract / Unlimited / Unlimited |
+| Contracts | ✅ Unlimited | ✅ 3 / Unlimited (fair use) / Unlimited |
+| Contract versions | ✅ Unlimited | ✅ 3 per contract / Unlimited (fair use) / Unlimited |
 | Playground | ✅ | ✅ |
 | Audit log | ✅ Local Postgres | ✅ 7 / 90 / Custom days retention |
 | Live event stream | ✅ | ✅ |
@@ -246,7 +246,7 @@ repos:
 | Connectors | Kafka Connect, HTTP, batch, Python SDK, CLI |
 | Observability | Prometheus + Grafana |
 
-**Where to put the gate:** [Trust but verify at every boundary](docs/architecture/where-to-enforce-contracts.md) — ingest, between stages, egress, and AISchemaGate for LLM output, plus Airflow/dbt quarantine-check examples under [`examples/airflow/`](examples/airflow/) and [`examples/dbt/`](examples/dbt/).
+**Where to put the gate:** [Trust but verify at every boundary](docs/architecture/where-to-enforce-contracts.md) — ingest, between stages, egress, and AISchemaGate for LLM output, plus Airflow/dbt quarantine-check examples under [`examples/airflow/`](examples/airflow/) and [`examples/dbt/`](examples/dbt/). A local schema-drift walkthrough (catch at the contract, flag dbt impact, draft a fix for review) is [`examples/schema-drift-agent/`](examples/schema-drift-agent/).
 
 Full RFCs and design docs live in [`docs/rfcs/`](docs/rfcs/). For a quick shipped-vs-draft view, see [`docs/STATUS.md`](docs/STATUS.md).
 

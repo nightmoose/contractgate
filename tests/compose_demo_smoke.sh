@@ -45,10 +45,15 @@ fi
 echo "=== compose_demo_smoke: starting stack + demo profile ==="
 # Override seeder flags via the command in the Compose service is not directly
 # supported, so we set env vars that the seeder binary reads.
-TAG="$TAG" \
+if ! TAG="$TAG" \
 SEEDER_RATE="$SEEDER_RATE" \
 SEEDER_DURATION="$SEEDER_DURATION" \
-docker compose -f "$ROOT/docker-compose.yml" --profile demo up -d
+docker compose -f "$ROOT/docker-compose.yml" --profile demo up -d; then
+    echo "ERROR: compose up failed"
+    docker compose -f "$ROOT/docker-compose.yml" --profile demo ps -a || true
+    docker compose -f "$ROOT/docker-compose.yml" --profile demo logs --no-color gateway || true
+    exit 1
+fi
 
 echo "=== compose_demo_smoke: waiting for gateway /health ==="
 max_attempts=30

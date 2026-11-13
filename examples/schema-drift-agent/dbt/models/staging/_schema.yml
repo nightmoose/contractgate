@@ -1,0 +1,38 @@
+version: 2
+
+sources:
+  - name: orders_feed
+    description: Orders that passed the ingest contract.
+    tables:
+      - name: orders
+        description: One row per order. amount is US dollars. ordered_at is unix seconds.
+        columns:
+          - name: order_id
+          - name: customer_id
+          - name: status
+          - name: amount
+            description: Order total in US dollars.
+          - name: currency
+          - name: ordered_at
+            description: Unix timestamp in seconds.
+
+models:
+  - name: stg_orders
+    description: Pass-through staging. Marts expect dollars and unix seconds.
+    columns:
+      - name: order_id
+        data_tests: [unique, not_null]
+      - name: customer_id
+        data_tests: [not_null]
+      - name: status
+        data_tests:
+          - accepted_values:
+              values: ["pending", "paid", "shipped", "cancelled"]
+      - name: amount
+        description: Order total in US dollars.
+        data_tests: [not_null]
+      - name: currency
+        data_tests: [not_null]
+      - name: ordered_at
+        description: Unix timestamp in seconds.
+        data_tests: [not_null]

@@ -64,7 +64,13 @@ COPY vendor/fivetran-connector ./vendor/fivetran-connector
 COPY src ./src
 # Build the web server and demo-seeder binaries in one invocation with the
 # same args as the dependency layer, so only this crate compiles here.
-RUN cargo build $CARGO_BUILD_ARGS
+# `cargo clean -p` is required: deleting fingerprint globs by hand left Cargo
+# treating the stub `fn main() {}` binary as fresh, so the image exited
+# before it listened and compose smoke never saw port 8080.
+RUN grep -q "DataContractGate core library" src/lib.rs \
+    && cargo clean -p contractgate --release \
+    && cargo build $CARGO_BUILD_ARGS --locked \
+    && test "$(stat -c%s target/release/contractgate-server)" -gt 5000000
 
 # ── Stage 2: runtime ────────────────────────────────────────
 FROM debian:bookworm-slim AS runtime

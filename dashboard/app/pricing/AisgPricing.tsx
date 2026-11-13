@@ -36,7 +36,7 @@ const TIERS = [
     priceSub: "per month, or $166/mo billed annually ($1,992/yr)",
     features: [
       "25,000,000 validations / month",
-      "Unlimited schema contracts",
+      "Unlimited schema contracts (fair use)",
       "Auto-repair re-prompt loop",
       "Quarantine with record bodies, replay and bulk replay (90 days)",
       "90-day validation log",

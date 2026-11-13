@@ -77,10 +77,13 @@ const TIERS = [
   },
 ];
 
+// Suffix on Pro's "unlimited" values: no fixed cap, shared capacity (see the FAQ).
+const FAIR_USE = "(fair use)";
+
 const FEATURES: Feature[] = [
   { label: "Events validated / month",         selfHosted: "Unlimited (local)", free: "100K",            growth: "25M",        enterprise: "Unlimited" },
-  { label: "Active contracts",                 selfHosted: "Unlimited",         free: "3",               growth: "Unlimited",  enterprise: "Unlimited" },
-  { label: "Contract versions",                selfHosted: "Unlimited",         free: "3 per contract",  growth: "Unlimited",  enterprise: "Unlimited" },
+  { label: "Active contracts",                 selfHosted: "Unlimited",         free: "3",               growth: "Unlimited (fair use)", enterprise: "Unlimited" },
+  { label: "Contract versions",                selfHosted: "Unlimited",         free: "3 per contract",  growth: "Unlimited (fair use)", enterprise: "Unlimited" },
   { label: "Ingest API",                       selfHosted: true,                free: true,              growth: true,         enterprise: true },
   { label: "Playground (test without save)",   selfHosted: true,                free: true,              growth: true,         enterprise: true },
   { label: "Audit log retention",              selfHosted: "Local Postgres",    free: "7 days",          growth: "90 days",    enterprise: "Custom" },
@@ -283,7 +286,12 @@ export default function PricingPage() {
                     <span className="mt-0.5 shrink-0"><CheckIcon size={14} /></span>
                     <span>
                       {typeof val === "string" && val !== "true" ? (
-                        <><span className="text-slate-200 font-medium">{val}</span> {f.label.replace(/^[0-9M]+\s*/, "")}</>
+                        // "Unlimited (fair use)" reads as "Unlimited Active contracts (fair use)".
+                        val.endsWith(FAIR_USE) ? (
+                          <><span className="text-slate-200 font-medium">{val.slice(0, -FAIR_USE.length).trim()}</span> {f.label} <span className="text-slate-500">{FAIR_USE}</span></>
+                        ) : (
+                          <><span className="text-slate-200 font-medium">{val}</span> {f.label.replace(/^[0-9M]+\s*/, "")}</>
+                        )
                       ) : f.label}
                     </span>
                   </li>
@@ -348,6 +356,10 @@ export default function PricingPage() {
           {
             q: "Is the Free tier time-limited?",
             a: "No. Cloud Free is permanent. You only need to upgrade when you exceed 100K events/month or need Pro features.",
+          },
+          {
+            q: "Is Pro really unlimited?",
+            a: "Pro has no fixed cap on contracts or versions, but it runs on shared infrastructure under a fair-use policy, alongside the 25M events/month limit and documented API rate limits. If a workload starts affecting other customers, we may rate-limit or throttle it, and we'll reach out first where we can. Sustained heavy load belongs on Enterprise or a dedicated deployment. See the Terms of Service for details.",
           },
           {
             q: "How does Enterprise deployment work?",

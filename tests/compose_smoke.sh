@@ -42,7 +42,8 @@ until curl -sf "http://localhost:8080/health" > /dev/null; do
     attempt=$((attempt + 1))
     if [[ $attempt -ge $max_attempts ]]; then
         echo "ERROR: gateway did not become healthy after ${max_attempts} attempts"
-        docker compose -f "$ROOT/docker-compose.yml" logs gateway
+        docker compose -f "$ROOT/docker-compose.yml" ps -a || true
+        docker compose -f "$ROOT/docker-compose.yml" logs --no-color gateway || true
         exit 1
     fi
     echo "  ... waiting ($attempt/${max_attempts})"
