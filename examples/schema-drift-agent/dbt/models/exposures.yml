@@ -1,0 +1,19 @@
+version: 2
+
+exposures:
+  - name: revenue_dashboard
+    type: dashboard
+    description: Revenue dashboard
+    owner:
+      name: Finance
+      email: finance@example.com
+    depends_on:
+      - ref('fct_revenue')
+  - name: orders_dashboard
+    type: dashboard
+    description: Orders dashboard
+    owner:
+      name: Operations
+      email: ops@example.com
+    depends_on:
+      - ref('fct_orders')
