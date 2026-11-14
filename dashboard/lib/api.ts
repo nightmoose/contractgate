@@ -256,8 +256,12 @@ export interface ValidationResult {
  * `compliance_mode` is off, this is byte-for-byte identical to the
  * request body.
  */
+export type PlaygroundDisposition = "pass" | "quarantine" | "drop";
+
 export interface PlaygroundResponse extends ValidationResult {
   transformed_event: unknown;
+  /** What ingest would do. Absent on a gateway that predates the public route. */
+  disposition?: PlaygroundDisposition;
 }
 
 export interface IngestEventResult extends ValidationResult {
@@ -834,6 +838,29 @@ export const playgroundValidate = (
       ...(opts?.atomic != null ? { atomic: opts.atomic } : {}),
     }),
   });
+
+/**
+ * Anonymous playground. No session, no API key, no stored contract.
+ * The gateway compiles the YAML, validates one event, and writes nothing.
+ */
+export async function publicPlaygroundValidate(
+  yaml_content: string,
+  event: unknown
+): Promise<PlaygroundResponse> {
+  const res = await fetch(`${BASE}/public/playground/validate`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Accept: "application/json",
+    },
+    cache: "no-store",
+    body: JSON.stringify({ yaml_content, event }),
+  });
+  if (!res.ok) {
+    throw new Error(await extractErrorMessage(res));
+  }
+  return (await res.json()) as PlaygroundResponse;
+}
 
 // ---------------------------------------------------------------------------
 // ODCS — import, export, approve-import, conformance

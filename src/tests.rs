@@ -7937,3 +7937,224 @@ metrics: []
         cleanup(&pool, contract_id, org, other).await;
     }
 }
+
+/// Anonymous playground: `POST /public/playground/validate`.
+///
+/// The pool DSN is not a database. A handler that queried Postgres would fail
+/// the request. These tests also pin the per-IP ceiling, including that the
+/// SSR token does not skip it.
+#[cfg(test)]
+mod public_playground_tests {
+    use std::sync::Arc;
+
+    use axum::http::StatusCode;
+    use axum_test::TestServer;
+    use serde_json::json;
+
+    use axum::middleware;
+    use axum::routing::post;
+    use axum::Router;
+
+    use super::super::{
+        playground_handler, public_playground_rate_limit, PUBLIC_PLAYGROUND_MAX_BODY,
+        PUBLIC_PLAYGROUND_RATE_LIMIT_BURST, PUBLIC_PLAYGROUND_RATE_LIMIT_RPS,
+    };
+
+    const YAML: &str = r#"
+version: "1.0"
+name: user_events
+ontology:
+  entities:
+    - name: user_id
+      type: string
+      required: true
+    - name: event_type
+      type: string
+      required: true
+      enum: ["click", "view", "purchase"]
+"#;
+
+    fn server(ssr_token: Option<&str>) -> TestServer {
+        let mut state = super::super::AppState::new(
+            sqlx::PgPool::connect_lazy("postgres://invalid:5432/none").expect("lazy connect"),
+            false,
+            None,
+            None,
+        );
+        state.trusted_ssr_token = ssr_token.map(str::to_owned);
+        let state = Arc::new(state);
+        let app = Router::new()
+            .route("/public/playground/validate", post(playground_handler))
+            .layer(tower_http::limit::RequestBodyLimitLayer::new(
+                PUBLIC_PLAYGROUND_MAX_BODY,
+            ))
+            .layer(middleware::from_fn_with_state(
+                state.clone(),
+                public_playground_rate_limit,
+            ))
+            .layer(middleware::from_fn(super::super::error::json_error_bodies))
+            .with_state(state);
+        TestServer::new(app)
+    }
+
+    fn body_of(res: &axum_test::TestResponse) -> serde_json::Value {
+        serde_json::from_str(res.text().as_str()).unwrap_or(serde_json::Value::Null)
+    }
+
+    #[test]
+    fn limits_are_tighter_than_the_catalog_reads() {
+        const { assert!(PUBLIC_PLAYGROUND_RATE_LIMIT_RPS >= 1) };
+        const { assert!(PUBLIC_PLAYGROUND_RATE_LIMIT_BURST >= PUBLIC_PLAYGROUND_RATE_LIMIT_RPS) };
+        const { assert!(PUBLIC_PLAYGROUND_RATE_LIMIT_BURST < super::super::PUBLIC_IP_RATE_LIMIT_BURST) };
+        const { assert!(PUBLIC_PLAYGROUND_MAX_BODY == 64 * 1024) };
+    }
+
+    #[tokio::test]
+    async fn pass_quarantine_and_drop_store_nothing() {
+        let server = server(None);
+        let pass = server
+            .post("/public/playground/validate")
+            .add_header("fly-client-ip", "203.0.113.10")
+            .json(&json!({
+                "yaml_content": YAML,
+                "event": {"user_id": "alice", "event_type": "click"}
+            }))
+            .await;
+        assert_eq!(pass.status_code(), StatusCode::OK, "{}", pass.text());
+        let body = body_of(&pass);
+        assert_eq!(body["passed"], true);
+        assert_eq!(body["disposition"], "pass");
+        assert_eq!(body["violations"], json!([]));
+        assert_eq!(body["transformed_event"]["user_id"], "alice");
+
+        let fail = server
+            .post("/public/playground/validate")
+            .add_header("fly-client-ip", "203.0.113.10")
+            .json(&json!({
+                "yaml_content": YAML,
+                "event": {"event_type": "nope"}
+            }))
+            .await;
+        assert_eq!(fail.status_code(), StatusCode::OK, "{}", fail.text());
+        let body = body_of(&fail);
+        assert_eq!(body["passed"], false);
+        assert_eq!(body["disposition"], "quarantine");
+        let kinds: Vec<&str> = body["violations"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|v| v["kind"].as_str().unwrap())
+            .collect();
+        assert!(kinds.contains(&"missing_required_field"), "{kinds:?}");
+        assert!(kinds.contains(&"enum_violation"), "{kinds:?}");
+
+        let drop_yaml = format!("on_fail: drop\n{YAML}");
+        let dropped = server
+            .post("/public/playground/validate")
+            .add_header("fly-client-ip", "203.0.113.10")
+            .json(&json!({
+                "yaml_content": drop_yaml,
+                "event": {"user_id": "alice", "event_type": "nope"}
+            }))
+            .await;
+        assert_eq!(dropped.status_code(), StatusCode::OK, "{}", dropped.text());
+        assert_eq!(body_of(&dropped)["disposition"], "drop");
+        assert_eq!(body_of(&dropped)["passed"], false);
+    }
+
+    #[tokio::test]
+    async fn invalid_yaml_is_422_and_oversized_body_is_413() {
+        let server = server(None);
+        let bad = server
+            .post("/public/playground/validate")
+            .add_header("fly-client-ip", "203.0.113.11")
+            .json(&json!({"yaml_content": ":\n  - [", "event": {}}))
+            .await;
+        assert_eq!(
+            bad.status_code(),
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "{}",
+            bad.text()
+        );
+        assert!(body_of(&bad)["error"]
+            .as_str()
+            .unwrap()
+            .contains("Invalid contract YAML"));
+
+        let huge = "a".repeat(PUBLIC_PLAYGROUND_MAX_BODY);
+        let too_big = server
+            .post("/public/playground/validate")
+            .add_header("fly-client-ip", "203.0.113.11")
+            .json(&json!({"yaml_content": huge, "event": {}}))
+            .await;
+        assert_eq!(
+            too_big.status_code(),
+            StatusCode::PAYLOAD_TOO_LARGE,
+            "{}",
+            too_big.text()
+        );
+        assert_eq!(body_of(&too_big)["status"], 413);
+    }
+
+    #[tokio::test]
+    async fn rate_limit_is_per_ip_and_ignores_the_ssr_token() {
+        // The token matches. Catalog reads would skip their limiter. This route must not.
+        let server = server(Some("launch-token"));
+
+        for i in 0..PUBLIC_PLAYGROUND_RATE_LIMIT_BURST {
+            let res = server
+                .post("/public/playground/validate")
+                .add_header("fly-client-ip", "203.0.113.20")
+                .add_header("x-forwarded-for", &format!("1.2.3.{i}"))
+                .add_header("x-dcg-ssr-token", "launch-token")
+                .json(&json!({
+                    "yaml_content": YAML,
+                    "event": {"user_id": "alice", "event_type": "click"}
+                }))
+                .await;
+            assert_eq!(
+                res.status_code(),
+                StatusCode::OK,
+                "within burst {i}: {}",
+                res.text()
+            );
+        }
+
+        let blocked = server
+            .post("/public/playground/validate")
+            .add_header("fly-client-ip", "203.0.113.20")
+            .add_header("x-forwarded-for", "9.9.9.9")
+            .add_header("x-dcg-ssr-token", "launch-token")
+            .json(&json!({
+                "yaml_content": YAML,
+                "event": {"user_id": "alice", "event_type": "click"}
+            }))
+            .await;
+        assert_eq!(
+            blocked.status_code(),
+            StatusCode::TOO_MANY_REQUESTS,
+            "{}",
+            blocked.text()
+        );
+        assert!(blocked.headers().get("retry-after").is_some());
+        assert!(blocked.headers().get("x-ratelimit-limit").is_some());
+        assert!(blocked.headers().get("x-ratelimit-remaining").is_some());
+        assert!(blocked.headers().get("x-ratelimit-reset").is_some());
+        assert_eq!(body_of(&blocked)["status"], 429);
+
+        let other = server
+            .post("/public/playground/validate")
+            .add_header("fly-client-ip", "203.0.113.21")
+            .json(&json!({
+                "yaml_content": YAML,
+                "event": {"user_id": "alice", "event_type": "click"}
+            }))
+            .await;
+        assert_eq!(
+            other.status_code(),
+            StatusCode::OK,
+            "a second address is its own bucket: {}",
+            other.text()
+        );
+    }
+}

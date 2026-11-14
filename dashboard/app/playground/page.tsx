@@ -1,12 +1,16 @@
 "use client";
 
 import { useState, useEffect, useMemo } from "react";
+import Link from "next/link";
+import { usePathname } from "next/navigation";
 import useSWR from "swr";
 import * as yaml from "js-yaml";
-import { playgroundValidate, listContracts, getLatestStableVersion, listVersions, getVersion } from "@/lib/api";
-import type { PlaygroundResponse, ContractSummary, Violation } from "@/lib/api";
+import { playgroundValidate, publicPlaygroundValidate, listContracts, getLatestStableVersion, listVersions, getVersion } from "@/lib/api";
+import type { PlaygroundResponse, PlaygroundDisposition, ContractSummary, Violation } from "@/lib/api";
 import clsx from "clsx";
-import AuthGate from "@/components/AuthGate";
+import { useBrand } from "@/components/BrandProvider";
+import { useVisitorAuthed } from "@/components/VisitorSession";
+import { loggedOutAuthHrefs } from "@/lib/logged-out-cta";
 import { useOrg } from "@/lib/org";
 import { HelpTarget } from "@/components/help/HelpTarget";
 import {
@@ -536,7 +540,69 @@ function TransformPreviewPanel({
 // Page
 // ---------------------------------------------------------------------------
 
+function outcomeCopy(result: PlaygroundResponse): {
+  disposition: PlaygroundDisposition;
+  headline: string;
+  detail: string;
+} {
+  const disposition = result.disposition ?? (result.passed ? "pass" : "quarantine");
+  if (disposition === "pass") {
+    return {
+      disposition,
+      headline: "PASSED",
+      detail: "This event passed validation and would be accepted.",
+    };
+  }
+  if (disposition === "drop") {
+    return {
+      disposition,
+      headline: "DROPPED",
+      detail: "This event failed validation and would be dropped. Nothing would be stored.",
+    };
+  }
+  return {
+    disposition: "quarantine",
+    headline: "QUARANTINED",
+    detail: "This event failed validation and would be quarantined.",
+  };
+}
+
+function ResultBanner({ result }: { result: PlaygroundResponse }) {
+  const outcome = outcomeCopy(result);
+  const ok = outcome.disposition === "pass";
+  return (
+    <div
+      className={clsx(
+        "flex items-center gap-3 rounded-lg p-4 mb-6",
+        ok
+          ? "bg-green-900/30 border border-green-700/50"
+          : "bg-red-900/30 border border-red-700/50"
+      )}
+    >
+      <span className="text-2xl">{ok ? "✅" : "❌"}</span>
+      <div>
+        <p className={clsx("text-lg font-bold", ok ? "text-green-400" : "text-red-400")}>
+          {outcome.headline}
+        </p>
+        <p className="text-xs text-slate-400">{outcome.detail}</p>
+        <p className="text-xs text-slate-500">
+          Validated in {result.validation_us}µs
+          {result.violations.length > 0 &&
+            ` — ${result.violations.length} violation${result.violations.length > 1 ? "s" : ""}`}
+        </p>
+      </div>
+    </div>
+  );
+}
+
 function PlaygroundContent() {
+  const authed = useVisitorAuthed() === true;
+  const pathname = usePathname() || "/playground";
+  const brand = useBrand();
+  const { signUpHref } = loggedOutAuthHrefs(
+    pathname,
+    brand === "aisg" ? "aischemagate" : null,
+  );
   const [yaml_, setYaml] = useState(DEFAULT_YAML);
   const [eventJson, setEventJson] = useState(DEFAULT_EVENT);
   const [atomic, setAtomic] = useState(false);
@@ -645,7 +711,9 @@ function PlaygroundContent() {
 
     setLoading(true);
     try {
-      const r = await playgroundValidate(yaml_, parsed, { atomic });
+      const r = authed
+        ? await playgroundValidate(yaml_, parsed, { atomic })
+        : await publicPlaygroundValidate(yaml_, parsed);
       setResult(r);
       setSubmittedEvent(parsed);
     } catch (e: unknown) {
@@ -662,7 +730,8 @@ function PlaygroundContent() {
           <h1 className="text-2xl font-bold">Playground</h1>
         </HelpTarget>
         <p className="text-sm text-slate-500 mt-1">
-          Test a contract YAML against a sample JSON event — no ingestion, no storage
+          Test a contract YAML against a sample JSON event. Nothing is ingested or stored.
+          {!authed && " No account needed."}
         </p>
       </div>
 
@@ -799,32 +868,7 @@ function PlaygroundContent() {
 
             {result ? (
               <div>
-                {/* Pass / fail banner */}
-                <div
-                  className={clsx(
-                    "flex items-center gap-3 rounded-lg p-4 mb-6",
-                    result.passed
-                      ? "bg-green-900/30 border border-green-700/50"
-                      : "bg-red-900/30 border border-red-700/50"
-                  )}
-                >
-                  <span className="text-2xl">{result.passed ? "✅" : "❌"}</span>
-                  <div>
-                    <p
-                      className={clsx(
-                        "text-lg font-bold",
-                        result.passed ? "text-green-400" : "text-red-400"
-                      )}
-                    >
-                      {result.passed ? "PASSED" : "FAILED"}
-                    </p>
-                    <p className="text-xs text-slate-500">
-                      Validated in {result.validation_us}µs
-                      {result.violations.length > 0 &&
-                        ` — ${result.violations.length} violation${result.violations.length > 1 ? "s" : ""}`}
-                    </p>
-                  </div>
-                </div>
+                <ResultBanner result={result} />
 
                 {/* Violations list */}
                 {result.violations.length > 0 && (
@@ -850,6 +894,20 @@ function PlaygroundContent() {
                         </li>
                       ))}
                     </ul>
+                  </div>
+                )}
+
+                {!authed && (
+                  <div className="mt-6 rounded-lg border border-[#1f2937] bg-[#0a0d12] p-4">
+                    <p className="text-sm text-slate-300 mb-3">
+                      This run stayed on this page. Sign up to save the contract and quarantine real events.
+                    </p>
+                    <Link
+                      href={signUpHref}
+                      className="inline-flex px-4 py-2 bg-green-600 hover:bg-green-500 text-white rounded-lg text-sm font-medium transition-colors"
+                    >
+                      Sign up
+                    </Link>
                   </div>
                 )}
               </div>
@@ -884,9 +942,5 @@ function PlaygroundContent() {
 }
 
 export default function PlaygroundPage() {
-  return (
-    <AuthGate page="playground">
-      <PlaygroundContent />
-    </AuthGate>
-  );
+  return <PlaygroundContent />;
 }

@@ -1435,6 +1435,23 @@ fn more_openapi_paths_tail(
             "security": auth.clone()
         }),
     );
+    merge_openapi_op(
+        paths,
+        "/public/playground/validate",
+        "post",
+        json!({
+            "operationId": "public_playground_validate",
+            "summary": "Validate one event against unsaved YAML with no account",
+            "description": "Stateless. Stores nothing and reads no tenant data. Rate-limited per client IP. The authenticated POST /playground/validate remains for signed-in sessions.",
+            "requestBody": {"required": true, "content": {"application/json": {"schema": {"type": "object", "required": ["yaml_content", "event"], "properties": {"yaml_content": {"type": "string"}, "event": {}}}}}},
+            "responses": {
+                "200": {"description": "Validation result. disposition is pass, quarantine, or drop.", "content": {"application/json": {"schema": {"type": "object", "properties": {"passed": {"type": "boolean"}, "disposition": {"type": "string", "enum": ["pass", "quarantine", "drop"]}, "violations": {"type": "array", "items": {"type": "object", "properties": {"field": {"type": "string"}, "message": {"type": "string"}, "kind": {"type": "string"}}}}, "validation_us": {"type": "integer"}, "transformed_event": {}}}}}},
+                "413": {"description": "Body larger than 64 KiB"},
+                "422": {"description": "Invalid contract YAML"},
+                "429": {"description": "Per-IP rate limit"}
+            }
+        }),
+    );
     let infer_ok = json!({"type": "object", "properties": {"yaml_content": {"type": "string"}, "field_count": {"type": "integer"}, "sample_count": {"type": "integer"}}});
     merge_openapi_op(
         paths,

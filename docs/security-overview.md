@@ -103,7 +103,9 @@ per-contract `pii_salt`. Detail: [`docs/pii-masking-reference.md`](./pii-masking
 - **CORS (RFC-050):** authenticated surface returns `Access-Control-Allow-Origin`
   only for origins in the `DASHBOARD_ORIGIN` allowlist (Fly secret, not committed).
   Public, tenant-free routes (`/health`, `/metrics`, `/openapi.json`, `/catalog`,
-  `/published/*`) use wildcard by design.
+  `/published/*`, `POST /public/playground/validate`) use wildcard by design.
+  The anonymous playground compiles posted YAML only, stores nothing, and is
+  rate-limited per client IP. See `docs/public-playground-reference.md`.
 - **Idempotency:** replayed ingest is deduped via an idempotency key with a TTL
   sweep (Supabase scheduled function); prevents double-processing without
   unbounded key growth.

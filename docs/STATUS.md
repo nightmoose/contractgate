@@ -114,6 +114,7 @@ them by name only.
 | 112 | [Per-run quarantine](rfcs/112-quarantine-batch-id.md) | Accepted |
 | 113 | [Contract families](rfcs/113-contract-families.md) | Accepted |
 | 114 | [Launch: public catalog cache, cheap bad keys, SSR bypass](rfcs/114-launch-catalog-cache-and-auth.md) | Accepted |
+| 115 | [Anonymous playground](rfcs/115-anonymous-playground.md) | Accepted |
 
 ---
 
@@ -130,6 +131,8 @@ them by name only.
 | **Superseded** | Replaced by a later RFC listed in the notes column; kept for design context. |
 
 ---
+
+*2026-11-14 — RFC-115: logged-out visitors can run the playground. `POST /public/playground/validate` compiles the posted YAML, validates one event, and writes nothing. It is limited to 1 request/second per client IP with a burst of 8 and a 64 KiB body. The dashboard playground no longer shows the sample preview to anonymous visitors. See `docs/public-playground-reference.md`.*
 
 *2026-11-14 — RFC-113 follow-up: `POST /public-contract-families/{id}/fork` copies a public family into the caller's org in one transaction (one private contract per link, `parent_public_contract_id` set, private family with the same chain). Hosted Free that would pass the 3-contract cap gets `402 plan_limit` and no rows. The catalog family page has Fork this pipeline (signed-out visitors go to sign-up). The dashboard lists private families, shows the chain, and can add the next contract. Migration `052_shopify_and_ga4_contract_families.sql` seeds `shopify-orders-pipeline` and `ga4-events-pipeline`. 050 is unchanged. See `docs/contract-families-reference.md`.*
 

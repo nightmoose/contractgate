@@ -5,6 +5,7 @@ import test from "node:test";
 import { fileURLToPath } from "node:url";
 import {
   decodeVisitorPath,
+  liveDemoHref,
   loggedOutAuthHrefs,
   VISITOR_AUTH_HEADER,
   VISITOR_PATH_HEADER,
@@ -76,6 +77,20 @@ test("public catalog pages stay server-rendered and do not mount AuthGate", () =
     assert.equal(/<AuthGate[\s>]/.test(source), false, rel);
     assert.equal(/^["']use client["']/m.test(source), false, rel);
   }
+});
+
+test("the live demo link points at the playground and is omitted on that page", () => {
+  assert.equal(liveDemoHref("/contracts"), "/playground");
+  assert.equal(liveDemoHref("/audit?range=24h"), "/playground");
+  assert.equal(liveDemoHref("/playground"), null);
+  assert.equal(liveDemoHref("/playground?contract=user_events"), null);
+  assert.equal(liveDemoHref("/playground/"), null);
+  const gate = readFileSync(join(here, "../components/AuthGate.tsx"), "utf8");
+  assert.equal(gate.includes('href="/playground"'), false);
+  assert.equal(gate.includes("liveDemoHref"), true);
+  const playground = readFileSync(join(here, "../app/playground/page.tsx"), "utf8");
+  assert.equal(/<AuthGate[\s>]/.test(playground), false);
+  assert.equal(playground.includes("publicPlaygroundValidate"), true);
 });
 
 test("the root layout renders the logged-out header from the server session", () => {
