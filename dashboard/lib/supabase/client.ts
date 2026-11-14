@@ -43,8 +43,10 @@ export function createClient(): SupabaseClient {
       });
     _client = {
       auth: {
-        getSession: async () => ({ data: { session: null }, error: null }),
         getUser: async () => ({ data: { user: null }, error: null }),
+        // OrgProvider and apiFetch read the session on every page. A missing
+        // method threw and the error boundary replaced the page.
+        getSession: async () => ({ data: { session: null }, error: null }),
         signOut: async () => ({ error: null }),
         signInWithPassword: async () => ({ data: { user: null, session: null }, error: null }),
         signUp: async () => ({ data: { user: null, session: null }, error: null }),

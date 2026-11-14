@@ -1,0 +1,57 @@
+# Ingest-gate contract — mirrors catalog/seeds/shopify-orders (orders CSV export).
+# Pipeline stage: Sources → POST /v1/ingest/{contract_id} → Raw
+# Chain: shopify_orders_raw → shopify_orders_staged → shopify_fulfillment_notice
+# Not affiliated with Shopify. Sample order names are fake.
+version: "1.0"
+name: "shopify_orders_raw"
+description: >
+  Raw Shopify orders export row at ingest (core columns of the Store admin
+  Orders CSV). Compatible with Shopify's documented orders export; not
+  affiliated with Shopify. derived_from: catalog/seeds/shopify-orders.
+  chain: shopify_orders_raw (ingest) → shopify_orders_staged (stage) →
+  shopify_fulfillment_notice (egress).
+
+ontology:
+  entities:
+    - name: Name
+      type: string
+      required: true
+      pattern: "^#?[A-Za-z_-]{0,20}[0-9]{1,12}[A-Za-z0-9_-]{0,20}$"
+    - name: Email
+      type: string
+      required: true
+      format: email
+    - name: Financial Status
+      type: string
+      required: true
+      enum:
+        - "pending"
+        - "authorized"
+        - "paid"
+        - "partially_paid"
+        - "refunded"
+        - "voided"
+        - "partially_refunded"
+        - "expired"
+    - name: Currency
+      type: string
+      required: true
+      pattern: "^[A-Z]{3}$"
+    - name: Total
+      type: string
+      required: true
+      pattern: "^[0-9]+(\\.[0-9]{1,2})?$"
+    - name: Created at
+      type: string
+      required: false
+
+glossary:
+  - field: Name
+    description: "Order name as shown in the Shopify admin, for example #1001."
+    constraints: "optional leading #, a letter prefix, and at least one digit"
+  - field: Total
+    description: "Order total in the order currency, as a decimal string from the CSV."
+    constraints: "non-negative decimal string"
+  - field: Financial Status
+    description: "Admin payment status."
+    constraints: "pending, authorized, paid, partially_paid, partially_refunded, refunded, voided, or expired"

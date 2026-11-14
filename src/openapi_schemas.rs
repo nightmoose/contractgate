@@ -1367,6 +1367,7 @@ fn fill_free_plan_limits(paths: &mut Map<String, Value>) {
         ("/contracts/import", "post"),
         ("/contracts/import-published", "post"),
         ("/contracts/{id}/fork", "post"),
+        ("/public-contract-families/{id}/fork", "post"),
     ] {
         set_description(paths, path, method, "402", description);
         put_json(paths, path, method, "402", schema.clone());

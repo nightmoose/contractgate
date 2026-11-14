@@ -57,6 +57,12 @@ export const HELP_CATALOG: Record<string, HelpEntry> = {
     does: "Create, version, promote, and inspect contracts. Failures against a stable version land in Quarantine.",
     when: "Start here if you have no contracts yet.",
   },
+  "nav.families": {
+    title: "Families",
+    what: "A chain of contracts for one dataset as it moves from ingest, through the stages in between, to egress.",
+    does: "Lists this org's families. Open one to see the chain and add the next contract.",
+    href: "/contracts/families",
+  },
   "nav.catalog": {
     title: "Catalog",
     what: "Public and community contracts you can fork or import, plus the egress validator.",

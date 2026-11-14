@@ -1,0 +1,53 @@
+# Stage-gate contract — typed order after the CSV landing.
+# Pipeline stage: Raw → POST /v1/ingest/{contract_id} → Staging
+# Chain: derived_from shopify_orders_raw
+version: "1.0"
+name: "shopify_orders_staged"
+description: >
+  Cleaned Shopify order after the CSV landing: money as a number, uppercase
+  currency, and ordered_at in UTC. derived_from: shopify_orders_raw (ingest).
+  chain: shopify_orders_raw → shopify_orders_staged →
+  shopify_fulfillment_notice. Not affiliated with Shopify.
+
+ontology:
+  entities:
+    - name: order_name
+      type: string
+      required: true
+      pattern: "^#?[A-Za-z_-]{0,20}[0-9]{1,12}[A-Za-z0-9_-]{0,20}$"
+    - name: email
+      type: string
+      required: true
+      format: email
+    - name: financial_status
+      type: string
+      required: true
+      enum:
+        - "pending"
+        - "authorized"
+        - "paid"
+        - "partially_paid"
+        - "refunded"
+        - "voided"
+        - "partially_refunded"
+        - "expired"
+    - name: currency
+      type: string
+      required: true
+      pattern: "^[A-Z]{3}$"
+    - name: total
+      type: number
+      required: true
+      min: 0
+    - name: ordered_at
+      type: string
+      required: true
+      pattern: "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$"
+
+glossary:
+  - field: total
+    description: "Order total in major currency units, parsed from the CSV decimal string."
+    constraints: ">= 0"
+  - field: ordered_at
+    description: "Order created time in UTC."
+    constraints: "YYYY-MM-DDTHH:MM:SSZ"

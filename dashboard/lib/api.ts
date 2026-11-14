@@ -1457,6 +1457,117 @@ export const forkPublicContract = (
     body: JSON.stringify(body),
   });
 
+// ---------------------------------------------------------------------------
+// Contract families (RFC-113)
+// ---------------------------------------------------------------------------
+
+/** One step in a private family, root first. */
+export interface ContractFamilyLink {
+  contract_id: string;
+  name: string;
+  derived_from_contract_id: string | null;
+  derived_from_name: string | null;
+  /** `ingest`, `stage` (between stages), or `egress`. */
+  boundary: string;
+  position: number;
+}
+
+/** A private family and its chain. */
+export interface ContractFamily {
+  id: string;
+  org_id: string;
+  name: string;
+  description: string | null;
+  created_at: string;
+  updated_at: string;
+  links: ContractFamilyLink[];
+}
+
+/** One row from GET /contract-families. */
+export interface ContractFamilySummary {
+  id: string;
+  org_id: string;
+  name: string;
+  description: string | null;
+  created_at: string;
+  updated_at: string;
+  link_count: number;
+}
+
+/** One contract created by POST /public-contract-families/{id}/fork. */
+export interface ForkedFamilyContract {
+  contract_id: string;
+  name: string;
+  parent_public_contract_id: string;
+  boundary: string;
+  position: number;
+  created_at: string;
+}
+
+export interface ForkFamilyResponse {
+  family: ContractFamily;
+  contracts: ForkedFamilyContract[];
+}
+
+export const listContractFamilies = () =>
+  apiFetch<ContractFamilySummary[]>("/contract-families");
+
+export const getContractFamily = (id: string) =>
+  apiFetch<ContractFamily>(`/contract-families/${encodeURIComponent(id)}`);
+
+export const createContractFamily = (body: {
+  name: string;
+  description?: string;
+  links?: {
+    contract_id: string;
+    derived_from_contract_id?: string;
+    boundary: string;
+  }[];
+}) =>
+  apiFetch<ContractFamily>("/contract-families", {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+
+export const addContractFamilyLink = (
+  familyId: string,
+  body: {
+    contract_id: string;
+    derived_from_contract_id?: string;
+    boundary: string;
+  }
+) =>
+  apiFetch<ContractFamily>(`/contract-families/${encodeURIComponent(familyId)}/links`, {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+
+/**
+ * The family that contains this contract, or null when it is not in one.
+ * A missing route (a gateway that predates families) is also null so the
+ * contract page still opens.
+ */
+export async function familyForContract(contractId: string): Promise<ContractFamily | null> {
+  try {
+    return await apiFetch<ContractFamily>(`/contracts/${encodeURIComponent(contractId)}/family`);
+  } catch {
+    return null;
+  }
+}
+
+/** Copy a public catalog family into the caller's org. Send `{}` to keep the catalog name. */
+export const forkPublicFamily = (
+  idOrSlug: string,
+  body: { name?: string } = {}
+): Promise<ForkFamilyResponse> =>
+  apiFetch<ForkFamilyResponse>(
+    `/public-contract-families/${encodeURIComponent(idOrSlug)}/fork`,
+    {
+      method: "POST",
+      body: JSON.stringify(body),
+    }
+  );
+
 /**
  * Fetch a published contract by ref.  Public visibility needs only the ref;
  * link visibility requires `token` to match the link_token returned on publish.

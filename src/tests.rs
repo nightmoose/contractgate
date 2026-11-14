@@ -3016,6 +3016,275 @@ metrics: []
             .unwrap();
     }
 
+    /// Forking a public family copies every link and builds a private family
+    /// with the same chain. Hosted Free that cannot hold the whole copy
+    /// writes nothing. Another org gets 404 on the private family.
+    #[tokio::test]
+    #[ignore = "requires DATABASE_URL and a live Postgres migrated through 050"]
+    async fn family_fork_copies_the_chain_respects_the_cap_and_hides_cross_org() {
+        use axum::http::StatusCode;
+        use axum::routing::{get, post};
+        use axum_test::TestServer;
+        use serde_json::{json, Value};
+        use std::sync::Arc;
+        use uuid::Uuid;
+
+        use super::super::api_key_auth::ValidatedKey;
+        use super::super::contract_families::{
+            fork_public_family_handler, get_contract_family_handler, get_family_handler,
+        };
+        use super::super::AppState;
+
+        let db_url = std::env::var("DATABASE_URL").expect("DATABASE_URL must be set");
+        let pool = sqlx::PgPool::connect(&db_url).await.unwrap();
+        let state = Arc::new(AppState::new(pool.clone(), false, None, None));
+
+        fn server(state: Arc<AppState>, org: Uuid) -> TestServer {
+            let app = axum::Router::new()
+                .route(
+                    "/public-contract-families/{id}/fork",
+                    post(fork_public_family_handler),
+                )
+                .route("/contract-families/{id}", get(get_family_handler))
+                .route("/contracts/{id}/family", get(get_contract_family_handler))
+                .layer(axum::middleware::from_fn(
+                    move |mut req: axum::extract::Request, next: axum::middleware::Next| async move {
+                        req.extensions_mut().insert(ValidatedKey {
+                            api_key_id: Uuid::new_v4(),
+                            user_id: Uuid::new_v4(),
+                            org_id: org,
+                            allowed_contract_ids: None,
+                            rate_limit_rps: None,
+                            rate_limit_burst: None,
+                        });
+                        next.run(req).await
+                    },
+                ))
+                .with_state(state);
+            TestServer::new(app)
+        }
+
+        fn body(resp: axum_test::TestResponse) -> (StatusCode, Value) {
+            let status = resp.status_code();
+            let text = resp.text();
+            let parsed = if text.is_empty() {
+                Value::Null
+            } else {
+                serde_json::from_str(&text).unwrap_or(json!({ "raw": text }))
+            };
+            (status, parsed)
+        }
+
+        let growth = Uuid::new_v4();
+        let free = Uuid::new_v4();
+        let other = Uuid::new_v4();
+        for (org, plan, slug) in [
+            (growth, "growth", "fork-growth"),
+            (free, "free", "fork-free"),
+            (other, "growth", "fork-other"),
+        ] {
+            sqlx::query("INSERT INTO orgs (id, name, slug, plan) VALUES ($1, $2, $3, $4)")
+                .bind(org)
+                .bind("family fork org")
+                .bind(format!("{slug}-{}", org.simple()))
+                .bind(plan)
+                .execute(&pool)
+                .await
+                .expect("seed org");
+        }
+
+        let yaml = r#"
+version: "1.0"
+name: "family_fork_filler"
+description: "Occupies one Free contract slot"
+ontology:
+  entities:
+    - name: id
+      type: string
+      required: true
+glossary: []
+metrics: []
+"#;
+        let (filler, _) = super::super::storage::create_contract(
+            &pool,
+            "family_fork_filler",
+            Some("already here"),
+            yaml,
+            Default::default(),
+            Some(free),
+        )
+        .await
+        .expect("free org already has one contract");
+
+        let http_growth = server(state.clone(), growth);
+        let http_free = server(state.clone(), free);
+        let http_other = server(state.clone(), other);
+
+        let (status, forked) = body(
+            http_growth
+                .post("/public-contract-families/stripe-charges-pipeline/fork")
+                .json(&json!({}))
+                .await,
+        );
+        assert_eq!(status, StatusCode::CREATED, "{forked}");
+        assert_eq!(forked["family"]["name"], "Stripe charges pipeline");
+        assert_eq!(forked["family"]["org_id"], growth.to_string());
+        let links = forked["family"]["links"].as_array().expect("links");
+        let created = forked["contracts"].as_array().expect("contracts");
+        assert_eq!(links.len(), 4, "{forked}");
+        assert_eq!(created.len(), 4, "{forked}");
+        let boundaries = ["ingest", "stage", "stage", "egress"];
+        let public_names: Vec<String> = sqlx::query_scalar(
+            "SELECT child.name \
+             FROM public_contract_family_links l \
+             JOIN public_contract_families f ON f.id = l.family_id \
+             JOIN public_contracts child ON child.id = l.public_contract_id \
+             WHERE f.slug = 'stripe-charges-pipeline' \
+             ORDER BY l.position",
+        )
+        .fetch_all(&pool)
+        .await
+        .unwrap();
+        assert_eq!(public_names.len(), 4);
+        for (i, link) in links.iter().enumerate() {
+            assert_eq!(link["boundary"], boundaries[i], "{link}");
+            assert_eq!(link["position"], i as i64, "{link}");
+            assert_eq!(link["name"], public_names[i], "{link}");
+            assert_eq!(created[i]["contract_id"], link["contract_id"]);
+            assert_eq!(created[i]["name"], public_names[i]);
+            assert_eq!(created[i]["boundary"], boundaries[i]);
+            if i == 0 {
+                assert!(link["derived_from_contract_id"].is_null(), "{link}");
+            } else {
+                assert_eq!(
+                    link["derived_from_contract_id"],
+                    links[i - 1]["contract_id"],
+                    "{link}"
+                );
+            }
+        }
+        let yaml_matches: bool = sqlx::query_scalar(
+            "SELECT bool_and(cv.yaml_content = pc.contract_yaml) \
+             FROM contracts c \
+             JOIN contract_versions cv ON cv.contract_id = c.id \
+             JOIN public_contracts pc ON pc.id = c.parent_public_contract_id \
+             WHERE c.org_id = $1 AND c.deleted_at IS NULL",
+        )
+        .bind(growth)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert!(yaml_matches, "forked YAML must be the catalog YAML");
+        let parents: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM contracts \
+             WHERE org_id = $1 AND parent_public_contract_id IS NOT NULL AND deleted_at IS NULL",
+        )
+        .bind(growth)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(parents, 4);
+
+        let family_id = forked["family"]["id"].as_str().unwrap();
+        let contract_id = links[0]["contract_id"].as_str().unwrap();
+        let (status, hidden) = body(
+            http_other
+                .get(&format!("/contract-families/{family_id}"))
+                .await,
+        );
+        assert_eq!(status, StatusCode::NOT_FOUND, "{hidden}");
+        let (status, hidden_contract) = body(
+            http_other
+                .get(&format!("/contracts/{contract_id}/family"))
+                .await,
+        );
+        assert_eq!(status, StatusCode::NOT_FOUND, "{hidden_contract}");
+        let (status, visible) = body(
+            http_growth
+                .get(&format!("/contract-families/{family_id}"))
+                .await,
+        );
+        assert_eq!(status, StatusCode::OK, "{visible}");
+
+        let before_families: i64 =
+            sqlx::query_scalar("SELECT COUNT(*) FROM contract_families WHERE org_id = $1")
+                .bind(free)
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        assert_eq!(before_families, 0);
+        let (status, denied) = body(
+            http_free
+                .post("/public-contract-families/stripe-charges-pipeline/fork")
+                .json(&json!({}))
+                .await,
+        );
+        assert_eq!(status, StatusCode::PAYMENT_REQUIRED, "{denied}");
+        assert_eq!(denied["error"], "plan_limit");
+        assert_eq!(denied["code"], "plan_limit");
+        assert_eq!(denied["resource"], "contracts");
+        assert_eq!(denied["limit"], 3);
+        assert_eq!(denied["current"], 1);
+        let message = denied["message"].as_str().unwrap();
+        assert!(message.contains("creates 4 contracts"), "{message}");
+        assert!(message.contains("already has 1"), "{message}");
+        assert!(
+            message.contains("https://app.datacontractgate.com/pricing"),
+            "{message}"
+        );
+        let free_contracts: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM contracts WHERE org_id = $1 AND deleted_at IS NULL",
+        )
+        .bind(free)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(
+            free_contracts, 1,
+            "cap failure must not leave a partial fork"
+        );
+        let free_forks: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM contracts \
+             WHERE org_id = $1 AND parent_public_contract_id IS NOT NULL",
+        )
+        .bind(free)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(free_forks, 0);
+        let free_families: i64 =
+            sqlx::query_scalar("SELECT COUNT(*) FROM contract_families WHERE org_id = $1")
+                .bind(free)
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        assert_eq!(free_families, 0);
+        let filler_still: i64 =
+            sqlx::query_scalar("SELECT COUNT(*) FROM contracts WHERE id = $1 AND org_id = $2")
+                .bind(filler.id)
+                .bind(free)
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        assert_eq!(filler_still, 1);
+
+        sqlx::query("DELETE FROM contract_families WHERE org_id = ANY($1)")
+            .bind(vec![growth, free, other])
+            .execute(&pool)
+            .await
+            .unwrap();
+        sqlx::query("DELETE FROM contracts WHERE org_id = ANY($1)")
+            .bind(vec![growth, free, other])
+            .execute(&pool)
+            .await
+            .unwrap();
+        sqlx::query("DELETE FROM orgs WHERE id = ANY($1)")
+            .bind(vec![growth, free, other])
+            .execute(&pool)
+            .await
+            .unwrap();
+    }
+
     /// RFC-081: the org-scoped quarantine LIST + id-resolution helpers never
     /// surface another org's quarantine rows. Org B must not see or resolve org
     /// A's quarantined event; dev mode (org_id=None) sees all.
