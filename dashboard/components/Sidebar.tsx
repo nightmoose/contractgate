@@ -34,6 +34,7 @@ const PUBLIC_NAV = [
 const ACCOUNT_NAV = [
   { href: "/",           label: "Dashboard",  icon: "⬡", helpId: "nav.dashboard" },
   { href: "/contracts",  label: "Contracts",  icon: "📋", helpId: "nav.contracts" },
+  { href: "/contracts/families", label: "Families", icon: "🪢", helpId: "nav.families" },
   { href: "/catalog",    label: "Catalog",    icon: "📥", helpId: "nav.catalog" },
   { href: "/scorecard",  label: "Scorecard",  icon: "📊", helpId: "nav.scorecard" },
   { href: "/audit",      label: "Audit Log",  icon: "🔍", helpId: "nav.audit" },
@@ -57,7 +58,10 @@ function NavLink({
   onNavigate?: () => void;
 }) {
   const pathname = usePathname();
-  const active = pathname === href;
+  const active =
+    href === "/contracts/families"
+      ? pathname === href || pathname.startsWith(`${href}/`)
+      : pathname === href;
   return (
     <HelpTarget id={helpId}>
       <Link

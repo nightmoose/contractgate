@@ -7,7 +7,7 @@
  */
 import type { Metadata } from "next";
 import Link from "next/link";
-import { fetchPublicCatalog, SITE_URL } from "@/lib/catalog";
+import { fetchPublicCatalog, fetchPublicFamilies, SITE_URL } from "@/lib/catalog";
 import CatalogBrowser from "./CatalogBrowser";
 import CatalogDisclaimer from "./CatalogDisclaimer";
 
@@ -29,12 +29,18 @@ export const metadata: Metadata = {
 
 export default async function CatalogIndexPage() {
   let contracts: Awaited<ReturnType<typeof fetchPublicCatalog>> = [];
+  let families: Awaited<ReturnType<typeof fetchPublicFamilies>> = [];
   try {
     contracts = await fetchPublicCatalog();
   } catch {
     // The API may be unreachable at build time; ISR revalidation will fill this
     // in. Render the shell with an empty list rather than failing the build.
     contracts = [];
+  }
+  try {
+    families = await fetchPublicFamilies();
+  } catch {
+    families = [];
   }
 
   const itemList = {
@@ -77,6 +83,35 @@ export default async function CatalogIndexPage() {
           </a>
         </div>
       </div>
+
+      {families.length > 0 ? (
+        <section className="mb-8" aria-labelledby="catalog-pipelines-heading">
+          <h2 id="catalog-pipelines-heading" className="text-base font-semibold text-slate-100 mb-1">
+            Pipelines
+          </h2>
+          <p className="text-sm text-slate-500 mb-3">
+            A family is the same data at each boundary. Fork the whole chain into your org in one step.
+          </p>
+          <ul className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            {families.map((family) => (
+              <li key={family.id}>
+                <Link
+                  href={`/catalog/families/${family.slug}`}
+                  className="block bg-[#111827] border border-[#1f2937] rounded-xl p-4 hover:border-teal-700/50 transition-colors"
+                >
+                  <p className="text-sm font-semibold text-slate-100">{family.name}</p>
+                  <p className="text-xs text-slate-500 mt-1 line-clamp-2">
+                    {family.description ?? "Ingest, then between stages, then egress."}
+                  </p>
+                  <p className="text-[10px] uppercase tracking-wider text-teal-400 mt-2">
+                    {family.links.length} contract{family.links.length === 1 ? "" : "s"}
+                  </p>
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </section>
+      ) : null}
 
       <CatalogBrowser contracts={contracts} />
 

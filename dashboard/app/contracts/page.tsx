@@ -87,6 +87,7 @@ import clsx from "clsx";
 import { HelpTarget } from "@/components/help/HelpTarget";
 import { FirstRunLoop } from "@/components/help/FirstRun";
 import ConnectFivetran from "@/components/contracts/ConnectFivetran";
+import ContractFamilyNote from "@/components/contracts/ContractFamilyNote";
 
 // ---------------------------------------------------------------------------
 // Edit Contract Modal
@@ -351,14 +352,17 @@ function EditContractModal({
               {loading ? "Loading…" : contract?.name ?? "Contract"}
             </h2>
             {contract && (
-              <p className="text-xs text-slate-500 font-mono mt-1">
-                {contract.id}
-                {contract.latest_stable_version && (
-                  <span className="ml-2 text-slate-600">
-                    · latest stable v{contract.latest_stable_version}
-                  </span>
-                )}
-              </p>
+              <>
+                <p className="text-xs text-slate-500 font-mono mt-1">
+                  {contract.id}
+                  {contract.latest_stable_version && (
+                    <span className="ml-2 text-slate-600">
+                      · latest stable v{contract.latest_stable_version}
+                    </span>
+                  )}
+                </p>
+                <ContractFamilyNote contractId={contract.id} />
+              </>
             )}
           </div>
           <button
@@ -1920,6 +1924,12 @@ function ContractsContent() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [fivetranOpen, setFivetranOpen] = useState(false);
 
+  // Family pages link here with ?contract=<id> so a chain step opens this contract.
+  useEffect(() => {
+    const id = new URLSearchParams(window.location.search).get("contract");
+    if (id) setEditingId(id);
+  }, []);
+
   // RFC-028: search + source filter
   const [query, setQuery] = useState("");
   const [sourceFilter, setSourceFilter] = useState<string>("all");
@@ -1976,7 +1986,11 @@ function ContractsContent() {
             <h1 className="text-2xl font-bold">Contracts</h1>
           </HelpTarget>
           <p className="text-sm text-slate-500 mt-1">
-            Create and manage versioned semantic contracts
+            Create and manage versioned semantic contracts.{" "}
+            <Link href="/contracts/families" className="text-green-400 hover:text-green-300">
+              Families
+            </Link>{" "}
+            group a chain from ingest through egress.
           </p>
         </div>
         <div className="flex gap-2 flex-wrap">

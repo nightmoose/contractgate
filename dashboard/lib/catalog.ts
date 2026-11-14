@@ -6,7 +6,7 @@
  * helpers hit the Rust gateway directly with plain `fetch` + ISR revalidation.
  */
 import * as yaml from "js-yaml";
-import type { OpenDataContract, OpenDataContractDetail } from "@/lib/api";
+import type { OpenDataContract, OpenDataContractDetail, PublicContractFamily } from "@/lib/api";
 
 // Server-side origin for the Rust gateway. NEXT_PUBLIC_API_URL is the value the
 // browser client already uses; CONTRACTGATE_API_ORIGIN mirrors proxy.ts.
@@ -51,6 +51,29 @@ export async function fetchPublicCatalog(): Promise<OpenDataContract[]> {
   }
   const all = (await res.json()) as OpenDataContract[];
   return all.filter((c) => !!c.slug);
+}
+
+/** Public catalog families, root-first chains. Empty when the API is unreachable. */
+export async function fetchPublicFamilies(): Promise<PublicContractFamily[]> {
+  const res = await fetch(`${API_ORIGIN}/public-contract-families`, {
+    headers: catalogSsrHeaders(),
+    next: { revalidate: REVALIDATE_SECONDS },
+  });
+  if (!res.ok) return [];
+  return (await res.json()) as PublicContractFamily[];
+}
+
+/** One public family by slug, or null when it is not in the catalog. */
+export async function fetchPublicFamily(
+  slug: string
+): Promise<PublicContractFamily | null> {
+  const res = await fetch(
+    `${API_ORIGIN}/public-contract-families/${encodeURIComponent(slug)}`,
+    { headers: catalogSsrHeaders(), next: { revalidate: REVALIDATE_SECONDS } }
+  );
+  if (res.status === 404) return null;
+  if (!res.ok) return null;
+  return (await res.json()) as PublicContractFamily;
 }
 
 /** Full detail (YAML + samples) for one slug, or null if not found/unpublished. */

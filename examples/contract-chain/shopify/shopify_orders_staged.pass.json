@@ -1,0 +1,8 @@
+{
+  "order_name": "#1001",
+  "email": "shopper@example.com",
+  "financial_status": "paid",
+  "currency": "USD",
+  "total": 50.36,
+  "ordered_at": "2026-01-15T14:30:00Z"
+}
