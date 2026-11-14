@@ -1898,7 +1898,7 @@ fn build_router(state: Arc<AppState>) -> Router {
             "/published/{publication_ref}",
             get(publication::fetch_published_handler),
         )
-        // Curated open-data public contracts (no auth — readable by anyone)
+        // Curated open-data public contracts (no auth — the dashboard catalog).
         .route(
             "/public-contracts",
             get(public_catalog::list_public_contracts_handler),
@@ -1907,7 +1907,8 @@ fn build_router(state: Arc<AppState>) -> Router {
             "/public-contract-families",
             get(contract_families::list_public_families_handler),
         )
-        // User-published contracts catalog (no auth — lists public visibility publications)
+        // Org publications with visibility public. Empty on the hosted API.
+        // The curated catalog is /public-contracts.
         .route("/catalog", get(publication::catalog_handler))
         .layer(middleware::from_fn_with_state(
             state.clone(),

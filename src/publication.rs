@@ -254,7 +254,9 @@ pub async fn fetch_published_handler(
 }
 
 // ---------------------------------------------------------------------------
-// GET /catalog  — public route, no auth; lists public non-revoked publications
+// GET /catalog — public route, no auth. Lists non-revoked publications whose
+// visibility is public (org publications). The curated catalog is
+// GET /public-contracts. On the hosted API this list is empty.
 // ---------------------------------------------------------------------------
 
 #[derive(Serialize)]

@@ -8,9 +8,9 @@
  * Canonical source is docs/ at the repo root. The copies in public/ are
  * gitignored so the repo file can never drift from what is served.
  *
- * llms-full.txt is a concatenation of the integration playbook plus every
- * reference doc linked from llms.txt. Large-context agents (Claude, Gemini)
- * can ingest it in one HTTP round-trip instead of following links.
+ * llms-full.txt leads with the anonymous playground, then the integration
+ * playbook, then the reference docs linked from llms.txt. Large-context
+ * agents (Claude, Gemini) can ingest it in one HTTP round-trip.
  *
  * The Docker demo image builds with context ./dashboard, so ../docs does not
  * exist there. That build is allowed to proceed without the copies; a Vercel
@@ -33,9 +33,11 @@ const FILES = [
   "llm-sdk-reference.md",
 ];
 
-// Order matches the "Reference" section of llms.txt. Playbook first so agents
-// hit the executable flow before the deep reference material.
+// Anonymous playground first, then the deploy playbook, then the reference
+// docs linked from llms.txt. Agents that ingest the bundle see the no-key
+// path before the steps that need an API key.
 const FULL_BUNDLE = [
+  "public-playground-reference.md",
   "llm-integration.md",
   "mcp-reference.md",
   "llm-output-validation.md",
@@ -72,9 +74,27 @@ for (const f of FILES) {
 
 const bundleHeader = `# DataContractGate — Full LLM Documentation Bundle
 
-> One-shot ingestion for large-context agents. Concatenates the integration
-> playbook and every reference doc linked from llms.txt in the order an agent
-> is likely to need them. For a lightweight index, use llms.txt instead.
+> Try a contract with no API key. Page: https://app.datacontractgate.com/playground
+> POST https://api.datacontractgate.com/public/playground/validate
+> Body: yaml_content (contract YAML) and event (one object). No Authorization
+> and no x-api-key. 200 returns passed, violations, and disposition
+> (pass, quarantine, or drop). 422 invalid YAML. 413 body over 64 KiB.
+> 429 is the per-IP limit: 1 request/second, burst 8, with Retry-After.
+> Nothing is stored.
+>
+> Curated contracts (the dashboard catalog): GET https://api.datacontractgate.com/public-contracts
+> and GET https://api.datacontractgate.com/public-contract-families.
+> GET https://api.datacontractgate.com/catalog lists org publications with
+> public visibility and returns [] on the hosted API.
+>
+> Forking a family needs an API key from https://app.datacontractgate.com/account:
+> POST https://api.datacontractgate.com/public-contract-families/{id}/fork
+>
+> MCP registry name: io.github.nightmoose/contractgate
+> npx -y @nightmoose/contractgate-mcp-server
+>
+> Sections below start with the anonymous playground, then the deploy playbook
+> and the reference docs. Short index: https://app.datacontractgate.com/llms.txt
 
 Source of each section: https://github.com/nightmoose/contractgate/blob/main/docs/<file>
 

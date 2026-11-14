@@ -14,6 +14,11 @@ reconstruction, no spec drift.
 A published contract is **immutable**.  The publication ref is stable; revocation
 is a soft-delete that consumers can detect via `import-status`.
 
+`GET /catalog` lists publications whose visibility is `public`. The curated
+dashboard catalog is a separate table, `GET /public-contracts` (see
+[public-catalog-reference.md](public-catalog-reference.md)). On the hosted API,
+`GET /catalog` returns `[]`.
+
 ---
 
 ## Endpoints
