@@ -1360,13 +1360,28 @@ struct PlaygroundResponse {
     /// the request body was literal JSON `null`; every other shape round-
     /// trips through `apply_transforms`.
     transformed_event: serde_json::Value,
+    /// What ingest would do with this event. `pass` when validation
+    /// succeeds. Otherwise the contract's `on_fail` (`quarantine` or `drop`).
+    /// Nothing is written either way: this handler has no database handle.
+    disposition: &'static str,
 }
 
-async fn playground_handler(
-    Json(req): Json<PlaygroundRequest>,
-) -> AppResult<Json<PlaygroundResponse>> {
+fn playground_disposition(passed: bool, on_fail: contract::OnFailMode) -> &'static str {
+    if passed {
+        "pass"
+    } else {
+        on_fail.as_str()
+    }
+}
+
+/// Compile the posted YAML and validate one event. No `State`, no pool, no
+/// audit or quarantine write. The authenticated route and the anonymous
+/// route both call this.
+fn run_playground(req: PlaygroundRequest) -> AppResult<PlaygroundResponse> {
     let contract: contract::Contract = serde_yaml::from_str(&req.yaml_content)
         .map_err(|e| AppError::InvalidContractYaml(e.to_string()))?;
+    // Copied before `compile` moves the contract. `OnFailMode` is `Copy`.
+    let on_fail = contract.on_fail;
 
     let compiled = CompiledContract::compile(contract)
         .map_err(|e| AppError::InvalidContractYaml(e.to_string()))?;
@@ -1377,10 +1392,17 @@ async fn playground_handler(
     // about to write to quarantine").
     let transformed_event = transform::apply_transforms(&compiled, req.event.clone()).into_inner();
 
-    Ok(Json(PlaygroundResponse {
+    Ok(PlaygroundResponse {
+        disposition: playground_disposition(validation.passed, on_fail),
         validation,
         transformed_event,
-    }))
+    })
+}
+
+async fn playground_handler(
+    Json(req): Json<PlaygroundRequest>,
+) -> AppResult<Json<PlaygroundResponse>> {
+    Ok(Json(run_playground(req)?))
 }
 
 // ---------------------------------------------------------------------------
@@ -1636,6 +1658,28 @@ const PUBLIC_IP_RATE_LIMIT_RPS: u32 = 30;
 /// Burst capacity (back-to-back requests) for the same per-IP bucket.
 const PUBLIC_IP_RATE_LIMIT_BURST: u32 = 60;
 
+/// Anonymous playground ceiling. Validation compiles the posted contract, so
+/// this is tighter than the catalog reads: eight back-to-back checks, then
+/// one per second. The bucket is namespaced so it does not share tokens with
+/// those reads, and the SSR token does not skip it.
+const PUBLIC_PLAYGROUND_RATE_LIMIT_RPS: u32 = 1;
+const PUBLIC_PLAYGROUND_RATE_LIMIT_BURST: u32 = 8;
+/// A sample contract plus one event. The authenticated playground stays on
+/// the 1 MB protected limit.
+const PUBLIC_PLAYGROUND_MAX_BODY: usize = 64 * 1024;
+
+/// Client address used as a rate-limit key. See [`client_ip_bucket`].
+fn client_ip_label(headers: &axum::http::HeaderMap) -> String {
+    headers
+        .get("fly-client-ip")
+        .or_else(|| headers.get("x-forwarded-for"))
+        .or_else(|| headers.get("x-real-ip"))
+        .and_then(|v| v.to_str().ok())
+        .map(|s| s.split(',').next().unwrap_or(s).trim().to_string())
+        .filter(|s| !s.is_empty())
+        .unwrap_or_else(|| "unknown".to_string())
+}
+
 /// Token-bucket key for an unauthenticated caller: a stable v5 UUID derived
 /// from the client IP.
 ///
@@ -1651,15 +1695,14 @@ const PUBLIC_IP_RATE_LIMIT_BURST: u32 = 60;
 /// `"unknown"` bucket. The derived UUID lets these routes reuse the RFC-021
 /// `RateLimitState` unchanged.
 fn client_ip_bucket(headers: &axum::http::HeaderMap) -> Uuid {
-    let ip = headers
-        .get("fly-client-ip")
-        .or_else(|| headers.get("x-forwarded-for"))
-        .or_else(|| headers.get("x-real-ip"))
-        .and_then(|v| v.to_str().ok())
-        .map(|s| s.split(',').next().unwrap_or(s).trim())
-        .filter(|s| !s.is_empty())
-        .unwrap_or("unknown");
-    Uuid::new_v5(&Uuid::NAMESPACE_OID, ip.as_bytes())
+    Uuid::new_v5(&Uuid::NAMESPACE_OID, client_ip_label(headers).as_bytes())
+}
+
+/// Separate bucket from catalog reads. Same address, different UUID, so a
+/// scrape of `/catalog` cannot drain the playground allowance (or the reverse).
+fn public_playground_ip_bucket(headers: &axum::http::HeaderMap) -> Uuid {
+    let key = format!("public-playground:{}", client_ip_label(headers));
+    Uuid::new_v5(&Uuid::NAMESPACE_OID, key.as_bytes())
 }
 
 /// Per-IP token-bucket guard for the public, unauthenticated read routes.
@@ -1690,6 +1733,28 @@ async fn public_ip_rate_limit(
         return Err(error::AppError::RateLimitExceeded(outcome));
     }
     Ok(next.run(request).await)
+}
+
+/// Per-IP ceiling for `POST /public/playground/validate`.
+///
+/// Unlike [`public_ip_rate_limit`], a matching `X-DCG-SSR-Token` does not
+/// skip this check. The route compiles caller-supplied YAML. The dashboard
+/// calls it from the browser, so the visitor's own address is the key.
+async fn public_playground_rate_limit(
+    State(state): State<Arc<AppState>>,
+    request: Request,
+    next: Next,
+) -> Result<axum::response::Response, error::AppError> {
+    let bucket = public_playground_ip_bucket(request.headers());
+    let outcome = state.rate_limiter.check(
+        bucket,
+        Some(PUBLIC_PLAYGROUND_RATE_LIMIT_RPS),
+        Some(PUBLIC_PLAYGROUND_RATE_LIMIT_BURST),
+    );
+    if !outcome.allowed {
+        return Err(error::AppError::RateLimitExceeded(outcome));
+    }
+    Ok(with_rate_limit_headers(next.run(request).await, &outcome))
 }
 
 /// True when the server has a trusted SSR token and the request presents it.
@@ -1907,6 +1972,22 @@ fn build_router(state: Arc<AppState>) -> Router {
         .merge(catalog_details)
         .merge(family_details)
         .merge(public_rate_limited);
+
+    // Anonymous playground. No API key and no database. The body cap and the
+    // per-IP limiter are on this router only; the handler does not take State.
+    let public_playground = Router::new()
+        .route("/public/playground/validate", post(playground_handler))
+        .layer(tower_http::limit::RequestBodyLimitLayer::new(
+            PUBLIC_PLAYGROUND_MAX_BODY,
+        ))
+        .layer(middleware::from_fn_with_state(
+            state.clone(),
+            public_playground_rate_limit,
+        ));
+
+    // The public router is assembled above. Merge the playground after so the
+    // route table in this function stays the source the OpenAPI check reads.
+    let public = public.merge(public_playground);
 
     // Protected routes — require x-api-key header
     let protected = Router::new()
@@ -2141,6 +2222,10 @@ fn build_router(state: Arc<AppState>) -> Router {
             post(public_catalog::fork_public_contract_handler),
         )
         .route(
+            "/public-contract-families/{id}/fork",
+            post(contract_families::fork_public_family_handler),
+        )
+        .route(
             "/contracts/{id}/export",
             post(public_catalog::export_fork_handler),
         )
@@ -2189,9 +2274,8 @@ fn build_router(state: Arc<AppState>) -> Router {
         // Audit + stats
         .route("/audit", get(audit_log_handler))
         .route("/stats", get(global_stats_handler))
-        // P1-3: playground now requires auth (moved from public router).
-        // Previously unauthenticated + unlimited; now gated + capped at 1 MB
-        // along with the rest of the protected surface.
+        // Saved-account playground. The anonymous twin is
+        // POST /public/playground/validate (no key, no database, tighter cap).
         .route("/playground/validate", post(playground_handler))
         // P1-2: 1 MB body limit on all protected routes.
         // /contracts/infer/* is carved out below with a 10 MB cap (RFC-043 fix-2).

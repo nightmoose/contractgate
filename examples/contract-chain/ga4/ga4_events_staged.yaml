@@ -1,0 +1,43 @@
+# Stage-gate contract — cleaned GA4 event after the raw export landing.
+# Pipeline stage: Raw → POST /v1/ingest/{contract_id} → Staging
+# Chain: derived_from ga4_events_raw
+version: "1.0"
+name: "ga4_events_staged"
+description: >
+  Cleaned GA4 event: event_date as an ISO date, platform in lowercase, and
+  event_at as UTC RFC 3339 parsed from the microsecond timestamp.
+  derived_from: ga4_events_raw (ingest).
+  chain: ga4_events_raw → ga4_events_staged → ga4_audience_export.
+  Not affiliated with Google.
+
+ontology:
+  entities:
+    - name: event_date
+      type: string
+      required: true
+      pattern: "^[0-9]{4}-[0-9]{2}-[0-9]{2}$"
+    - name: event_name
+      type: string
+      required: true
+    - name: platform
+      type: string
+      required: true
+      enum: ["web", "android", "ios"]
+    - name: event_at
+      type: string
+      required: true
+      pattern: "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$"
+    - name: user_pseudo_id
+      type: string
+      required: false
+
+glossary:
+  - field: event_date
+    description: "Reporting date as an ISO calendar date."
+    constraints: "YYYY-MM-DD"
+  - field: platform
+    description: "Stream platform, lowercased from the export's WEB / ANDROID / IOS."
+    constraints: "web, android, or ios"
+  - field: event_at
+    description: "Event time in UTC, converted from the microsecond timestamp."
+    constraints: "YYYY-MM-DDTHH:MM:SSZ"

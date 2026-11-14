@@ -117,12 +117,16 @@ Allowed headers: `Authorization, Content-Type, Accept, x-api-key`.
 > before changing CORS config.
 
 **Public surface** (`/health`, `/metrics`, `/openapi.json`,
-`/public-contracts`, `/catalog`, `/published/*`): wildcard `*` — these routes
+`/public-contracts`, `/catalog`, `/published/*`,
+`POST /public/playground/validate`): wildcard `*` — these routes
 expose no tenant data and are safe to embed from any origin. The
 unauthenticated read routes `/published/*`, `/public-contracts` and `/catalog`
 carry no API key, so they are rate-limited per client IP (30 req/s, burst 60);
 `/catalog` stays CDN-cacheable because the limiter never rewrites a successful
-response.
+response. `POST /public/playground/validate` is a separate, tighter bucket
+(1 req/s, burst 8, 64 KiB body). It compiles the posted YAML and writes
+nothing. The SSR token does not skip that bucket. `POST /playground/validate`
+stays on the authenticated surface.
 
 ### `DASHBOARD_ORIGIN` environment variable
 

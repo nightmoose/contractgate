@@ -1,0 +1,8 @@
+{
+  "event_date": "20260115",
+  "event_timestamp": 1768491000000000,
+  "event_name": "page_view",
+  "user_pseudo_id": "1234567890.0987654321",
+  "platform": "WEB",
+  "stream_id": "1234567"
+}

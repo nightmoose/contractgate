@@ -1,0 +1,48 @@
+# Ingest-gate contract — mirrors catalog/seeds/ga4-bigquery-events (daily events_ export).
+# Pipeline stage: Sources → POST /v1/ingest/{contract_id} → Raw
+# Chain: ga4_events_raw → ga4_events_staged → ga4_audience_export
+# Not affiliated with Google. Sample ids are fake.
+version: "1.0"
+name: "ga4_events_raw"
+description: >
+  Raw GA4 BigQuery Export event at ingest (core scalar columns of the daily
+  events_ table). Compatible with Google Analytics 4's documented BigQuery
+  export; not affiliated with Google. Nested RECORD columns are omitted.
+  derived_from: catalog/seeds/ga4-bigquery-events.
+  chain: ga4_events_raw (ingest) → ga4_events_staged (stage) →
+  ga4_audience_export (egress).
+
+ontology:
+  entities:
+    - name: event_date
+      type: string
+      required: true
+      pattern: "^[0-9]{8}$"
+    - name: event_timestamp
+      type: integer
+      required: true
+      min: 0
+    - name: event_name
+      type: string
+      required: true
+    - name: user_pseudo_id
+      type: string
+      required: false
+    - name: platform
+      type: string
+      required: true
+      enum: ["WEB", "ANDROID", "IOS"]
+    - name: stream_id
+      type: string
+      required: false
+
+glossary:
+  - field: event_date
+    description: "Date the event was logged, YYYYMMDD in the property's reporting time zone."
+    constraints: "8-digit date string"
+  - field: event_timestamp
+    description: "Client time in microseconds UTC."
+    constraints: "non-negative integer"
+  - field: platform
+    description: "Data stream platform from the BigQuery export."
+    constraints: "WEB, ANDROID, or IOS"

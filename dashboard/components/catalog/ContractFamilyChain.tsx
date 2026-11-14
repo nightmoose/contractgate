@@ -1,6 +1,7 @@
 import Link from "next/link";
 import type { PublicContractFamily } from "@/lib/api";
 import { boundaryLabel } from "@/lib/contract-family";
+import ForkPipelineButton from "@/components/catalog/ForkPipelineButton";
 
 /**
  * The public catalog chain for one contract: root → leaf, with a link to
@@ -68,8 +69,17 @@ export default function ContractFamilyChain({
               </span>
             </li>
           );
-        })}
+          })}
       </ol>
+      <div className="mt-3 flex flex-wrap items-center gap-3">
+        <Link
+          href={`/catalog/families/${family.slug}`}
+          className="text-sm text-teal-300 hover:text-teal-200"
+        >
+          View pipeline
+        </Link>
+        <ForkPipelineButton slug={family.slug} />
+      </div>
     </section>
   );
 }

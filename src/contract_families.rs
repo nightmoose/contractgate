@@ -11,8 +11,9 @@
 //!
 //! Private families are org-scoped the same way as contract identity: the
 //! caller's API key org owns the family and every contract in it. A missing
-//! or other-org id is 404. Public catalog families are read-only here; the
-//! Stripe charges chain is seeded by migration 050.
+//! or other-org id is 404. Public catalog families are seeded (migrations 050
+//! and 052). `POST /public-contract-families/{id}/fork` copies one into the
+//! caller's org.
 //!
 //! ## Routes
 //!
@@ -25,6 +26,7 @@
 //! | GET | `/contracts/{id}/family` | API key |
 //! | GET | `/public-contract-families` | none |
 //! | GET | `/public-contract-families/{id}` | none (uuid or slug) |
+//! | POST | `/public-contract-families/{id}/fork` | API key (uuid or slug) |
 //! | GET | `/public-contracts/{id}/family` | none (uuid or slug) |
 
 use std::collections::{HashMap, HashSet};
@@ -36,7 +38,7 @@ use axum::{
 };
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
-use sqlx::{PgPool, Postgres, Transaction};
+use sqlx::{PgPool, Postgres, Row, Transaction};
 use uuid::Uuid;
 
 use crate::error::{AppError, AppResult};
@@ -297,6 +299,33 @@ pub struct PublicFamily {
     pub slug: String,
     pub description: Option<String>,
     pub links: Vec<PublicFamilyLink>,
+}
+
+/// Optional rename for the private family. Omit `name` (send `{}`) to keep
+/// the catalog family's name. Each forked contract keeps the catalog contract's
+/// name. `fork_filter` is not set.
+#[derive(Debug, Deserialize)]
+pub struct ForkFamilyRequest {
+    #[serde(default)]
+    pub name: Option<String>,
+}
+
+/// One private contract created by a family fork.
+#[derive(Debug, Serialize)]
+pub struct ForkedFamilyContract {
+    pub contract_id: Uuid,
+    pub name: String,
+    pub parent_public_contract_id: Uuid,
+    pub boundary: PipelineBoundary,
+    pub position: i32,
+    pub created_at: DateTime<Utc>,
+}
+
+/// `POST /public-contract-families/{id}/fork`.
+#[derive(Debug, Serialize)]
+pub struct ForkFamilyResponse {
+    pub family: FamilyDetail,
+    pub contracts: Vec<ForkedFamilyContract>,
 }
 
 // ---------------------------------------------------------------------------
@@ -818,6 +847,229 @@ pub(crate) async fn public_family_for_ref(
 }
 
 // ---------------------------------------------------------------------------
+// Fork a public family into the caller's org
+// ---------------------------------------------------------------------------
+
+#[derive(sqlx::FromRow)]
+struct PublicContractCopy {
+    id: Uuid,
+    name: String,
+    description: Option<String>,
+    contract_yaml: String,
+}
+
+fn family_fork_cap_error(needed: i64, count: i64, limit: i64) -> AppError {
+    AppError::PlanResourceLimit {
+        resource: "contracts",
+        limit,
+        current: count,
+        message: format!(
+            "Forking this pipeline creates {needed} contracts. The Free plan allows {limit} contracts and this org already has {count}. Upgrade at {}",
+            crate::plan::PLAN_LIMIT_UPGRADE_URL
+        ),
+    }
+}
+
+async fn insert_forked_contract(
+    tx: &mut Transaction<'_, Postgres>,
+    name: &str,
+    description: Option<&str>,
+    yaml: &str,
+    org_id: Uuid,
+    public_id: Uuid,
+) -> AppResult<(Uuid, DateTime<Utc>)> {
+    let salt: Vec<u8> = {
+        use rand::RngCore;
+        let mut salt = vec![0u8; 32];
+        rand::thread_rng().fill_bytes(&mut salt);
+        salt
+    };
+    // Same row shape as a single public-contract fork: identity plus a
+    // draft 1.0.0 whose YAML is the catalog copy. parent_public_contract_id
+    // records the source. fork_filter stays null.
+    let row = sqlx::query(
+        r#"WITH ins_contract AS (
+               INSERT INTO contracts (name, description, pii_salt, org_id,
+                                      parent_public_contract_id, fork_filter)
+               VALUES ($1, $2, $3, $4, $5, NULL)
+               RETURNING id, created_at
+           ),
+           ins_version AS (
+               INSERT INTO contract_versions
+                   (contract_id, version, state, yaml_content,
+                    compliance_mode, egress_leakage_mode)
+               SELECT id, '1.0.0', 'draft', $6, false, 'off'
+               FROM ins_contract
+               RETURNING contract_id
+           )
+           SELECT id, created_at FROM ins_contract"#,
+    )
+    .bind(name)
+    .bind(description)
+    .bind(&salt)
+    .bind(org_id)
+    .bind(public_id)
+    .bind(yaml)
+    .fetch_one(&mut **tx)
+    .await
+    .map_err(AppError::from)?;
+    let contract_id: Uuid = row
+        .try_get("id")
+        .map_err(|err| AppError::Internal(format!("missing id from family fork insert: {err}")))?;
+    let created_at: DateTime<Utc> = row.try_get("created_at").map_err(|err| {
+        AppError::Internal(format!("missing created_at from family fork insert: {err}"))
+    })?;
+    Ok((contract_id, created_at))
+}
+
+/// Copy every contract in a public family into `org_id` and create a private
+/// family with the same chain, in one transaction.
+///
+/// Hosted Free is refused before any insert when `existing + links` would
+/// pass [`crate::plan::FREE_CONTRACT_LIMIT`]. The org row lock is held until
+/// commit, so a refused fork writes nothing.
+pub(crate) async fn fork_public_family(
+    pool: &PgPool,
+    id_or_slug: &str,
+    org_id: Uuid,
+    name_override: Option<&str>,
+    self_hosted: bool,
+) -> AppResult<ForkFamilyResponse> {
+    let public_family = get_public_family(pool, id_or_slug).await?;
+    let mut links = public_family.links.clone();
+    links.sort_by_key(|link| link.position);
+    if links.is_empty() {
+        return Err(AppError::BadRequest(
+            "this catalog family has no contracts to fork".into(),
+        ));
+    }
+    if links.len() > MAX_LINKS {
+        return Err(AppError::BadRequest(format!(
+            "a family has at most {MAX_LINKS} contracts"
+        )));
+    }
+
+    let family_name = match name_override {
+        Some(name) => clean_name(name)?,
+        None => clean_name(&public_family.name)?,
+    };
+    let family_description = clean_description(public_family.description.as_deref())?;
+
+    let ids: Vec<Uuid> = links.iter().map(|link| link.public_contract_id).collect();
+    let copies: Vec<PublicContractCopy> = sqlx::query_as(
+        "SELECT id, name, description, contract_yaml \
+         FROM public_contracts WHERE id = ANY($1::uuid[])",
+    )
+    .bind(&ids)
+    .fetch_all(pool)
+    .await
+    .map_err(|err| db_err("load public contracts for family fork", err))?;
+    if copies.len() != links.len() {
+        return Err(AppError::Internal(
+            "public family is missing a catalog contract".into(),
+        ));
+    }
+    let by_id: HashMap<Uuid, PublicContractCopy> =
+        copies.into_iter().map(|row| (row.id, row)).collect();
+
+    let mut prepared = Vec::with_capacity(links.len());
+    for link in &links {
+        let source = by_id.get(&link.public_contract_id).ok_or_else(|| {
+            AppError::Internal("public family is missing a catalog contract".into())
+        })?;
+        prepared.push((
+            link.clone(),
+            clean_name(&source.name)?,
+            clean_description(source.description.as_deref())?,
+            source.contract_yaml.clone(),
+        ));
+    }
+
+    let mut tx = pool
+        .begin()
+        .await
+        .map_err(|err| db_err("begin family fork", err))?;
+
+    if let Some((count, limit)) =
+        crate::storage::contract_quota_snapshot(&mut tx, Some(org_id), self_hosted).await?
+    {
+        let needed = i64::try_from(prepared.len()).unwrap_or(i64::MAX);
+        if count.saturating_add(needed) > limit {
+            return Err(family_fork_cap_error(needed, count, limit));
+        }
+    }
+
+    let mut created = Vec::with_capacity(prepared.len());
+    let mut id_map: HashMap<Uuid, Uuid> = HashMap::with_capacity(prepared.len());
+    for (link, name, description, yaml) in &prepared {
+        let (contract_id, created_at) = insert_forked_contract(
+            &mut tx,
+            name,
+            description.as_deref(),
+            yaml,
+            org_id,
+            link.public_contract_id,
+        )
+        .await?;
+        id_map.insert(link.public_contract_id, contract_id);
+        created.push(ForkedFamilyContract {
+            contract_id,
+            name: name.clone(),
+            parent_public_contract_id: link.public_contract_id,
+            boundary: link.boundary,
+            position: link.position,
+            created_at,
+        });
+    }
+
+    let ordered = prepared
+        .iter()
+        .map(|(link, _, _, _)| {
+            let contract_id = id_map[&link.public_contract_id];
+            let derived_from_contract_id = link
+                .derived_from_public_contract_id
+                .map(|parent| {
+                    id_map.get(&parent).copied().ok_or_else(|| {
+                        AppError::Internal(
+                            "public family derived_from is not a member of the chain".into(),
+                        )
+                    })
+                })
+                .transpose()?;
+            Ok(OrderedFamilyLink {
+                contract_id,
+                derived_from_contract_id,
+                boundary: link.boundary,
+                position: link.position,
+            })
+        })
+        .collect::<AppResult<Vec<_>>>()?;
+
+    let family_row: FamilyRow = sqlx::query_as(
+        "INSERT INTO contract_families (org_id, name, description) \
+         VALUES ($1, $2, $3) \
+         RETURNING id, org_id, name, description, created_at, updated_at",
+    )
+    .bind(org_id)
+    .bind(&family_name)
+    .bind(&family_description)
+    .fetch_one(&mut *tx)
+    .await
+    .map_err(|err| db_err("insert forked family", err))?;
+    insert_links(&mut tx, family_row.id, &ordered).await?;
+    let family_id = family_row.id;
+    tx.commit()
+        .await
+        .map_err(|err| db_err("commit family fork", err))?;
+
+    let family = get_family(pool, family_id, Some(org_id)).await?;
+    Ok(ForkFamilyResponse {
+        family,
+        contracts: created,
+    })
+}
+
+// ---------------------------------------------------------------------------
 // Handlers
 // ---------------------------------------------------------------------------
 
@@ -900,6 +1152,32 @@ pub(crate) async fn get_public_family_handler(
     Path(id_or_slug): Path<String>,
 ) -> AppResult<Json<PublicFamily>> {
     Ok(Json(get_public_family(&state.db, &id_or_slug).await?))
+}
+
+/// `POST /public-contract-families/{id}/fork` — copy the chain into the caller's org.
+pub(crate) async fn fork_public_family_handler(
+    State(state): State<std::sync::Arc<AppState>>,
+    Path(id_or_slug): Path<String>,
+    req: axum::extract::Request,
+) -> AppResult<(StatusCode, Json<ForkFamilyResponse>)> {
+    let org_id = crate::org_id_from_req(&req);
+    let org_id = crate::dev_org_fallback(&state, &req, org_id)?;
+    let org_id = require_caller_org(&state, org_id)?
+        .ok_or_else(|| AppError::BadRequest("no org context".into()))?;
+
+    let Json(body): Json<ForkFamilyRequest> = Json::from_request(req, &state)
+        .await
+        .map_err(|err| AppError::BadRequest(err.to_string()))?;
+
+    let forked = fork_public_family(
+        &state.db,
+        &id_or_slug,
+        org_id,
+        body.name.as_deref(),
+        state.self_hosted,
+    )
+    .await?;
+    Ok((StatusCode::CREATED, Json(forked)))
 }
 
 pub(crate) async fn get_public_contract_family_handler(

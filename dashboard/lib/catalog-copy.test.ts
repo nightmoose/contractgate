@@ -32,6 +32,15 @@ test("pipeline-stage contracts do not claim a vendor schema", () => {
     "partner payout feed at egress"
   );
   assert.doesNotMatch(catalogCardLine("stripe-charges-staged", "Stripe"), /documented schema/);
+  assert.equal(
+    catalogHeaderAside("shopify-orders-raw", "Shopify"),
+    "(raw Shopify orders CSV at ingest; not affiliated with Shopify)"
+  );
+  assert.equal(
+    catalogCardLine("ga4-audience-export", "Google Analytics 4"),
+    "GA4 audience export at egress"
+  );
+  assert.doesNotMatch(catalogHeaderAside("ga4-events-raw", "Google Analytics 4"), /documented schema/);
 });
 
 test("vendor contracts keep the shared affiliation line", () => {

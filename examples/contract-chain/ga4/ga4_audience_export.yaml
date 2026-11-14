@@ -1,0 +1,45 @@
+# Egress-gate contract — audience row sent to an ads or reverse-ETL destination.
+# Pipeline stage: Staging → POST /egress/{contract_id} → Partner / ads API
+# Chain: derived_from ga4_events_staged
+version: "1.0"
+name: "ga4_audience_export"
+description: >
+  Outbound audience row built from a cleaned GA4 event. Validate with
+  POST /egress/{contract_id} before sending it to an ads partner or reverse
+  ETL; forward only the conforming payload. derived_from: ga4_events_staged
+  (stage). chain: ga4_events_raw → ga4_events_staged → ga4_audience_export.
+  Not affiliated with Google. Sample ids are fake.
+
+ontology:
+  entities:
+    - name: export_id
+      type: string
+      required: true
+      pattern: "^aud_demo_[A-Za-z0-9_]+$"
+    - name: event_date
+      type: string
+      required: true
+      pattern: "^[0-9]{4}-[0-9]{2}-[0-9]{2}$"
+    - name: event_name
+      type: string
+      required: true
+    - name: platform
+      type: string
+      required: true
+      enum: ["web", "android", "ios"]
+    - name: status
+      type: string
+      required: true
+      enum: ["ready", "held", "sent"]
+    - name: generated_at
+      type: string
+      required: true
+      pattern: "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$"
+
+glossary:
+  - field: export_id
+    description: "Stable id for this outbound audience row (demo prefix aud_demo_)."
+    constraints: "aud_demo_ plus alphanumeric or underscore"
+  - field: status
+    description: "Whether the row is ready to send, held, or already sent."
+    constraints: "ready | held | sent"

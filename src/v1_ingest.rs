@@ -854,6 +854,26 @@ fn more_openapi_paths(paths: &mut serde_json::Map<String, Value>) {
     });
     merge_openapi_op(
         paths,
+        "/public-contract-families/{id}/fork",
+        "post",
+        json!({
+            "operationId": "fork_public_contract_family",
+            "summary": "Fork a public catalog family into the caller's org",
+            "description": "Creates one private contract per link (parent_public_contract_id set to the catalog contract, draft version 1.0.0 copied from the catalog YAML) and one private family with the same chain and boundaries. One transaction: a Free contract cap that the copy would exceed fails with no rows written. An optional name renames the private family; omitted, the catalog name is kept. A second fork with the same name is 409.",
+            "parameters": [{"name": "id", "in": "path", "required": true, "schema": {"type": "string"}, "description": "Family UUID or slug"}],
+            "requestBody": {"required": true, "content": {"application/json": {"schema": {"type": "object", "properties": {"name": {"type": "string", "description": "Private family name. Omit to keep the catalog family's name."}}}}}},
+            "responses": {
+                "201": {"description": "Private family and the contracts created for it", "content": {"application/json": {"schema": {"type": "object", "properties": {"family": private_family_schema.clone(), "contracts": {"type": "array", "items": {"type": "object", "properties": {"contract_id": {"type": "string", "format": "uuid"}, "name": {"type": "string"}, "parent_public_contract_id": {"type": "string", "format": "uuid"}, "boundary": {"type": "string", "enum": ["ingest", "stage", "egress"]}, "position": {"type": "integer"}, "created_at": {"type": "string", "format": "date-time"}}}}}}}}},
+                "400": {"description": "The family has no contracts, or the name is empty"},
+                "401": {"description": "Missing or invalid credentials"},
+                "404": {"description": "Unknown public family"},
+                "409": {"description": "This org already has a family with that name"}
+            },
+            "security": [{"ApiKeyAuth": []}]
+        }),
+    );
+    merge_openapi_op(
+        paths,
         "/contract-families",
         "get",
         json!({
@@ -1413,6 +1433,23 @@ fn more_openapi_paths_tail(
                 "401": unauthorized.clone()
             },
             "security": auth.clone()
+        }),
+    );
+    merge_openapi_op(
+        paths,
+        "/public/playground/validate",
+        "post",
+        json!({
+            "operationId": "public_playground_validate",
+            "summary": "Validate one event against unsaved YAML with no account",
+            "description": "Stateless. Stores nothing and reads no tenant data. Rate-limited per client IP. The authenticated POST /playground/validate remains for signed-in sessions.",
+            "requestBody": {"required": true, "content": {"application/json": {"schema": {"type": "object", "required": ["yaml_content", "event"], "properties": {"yaml_content": {"type": "string"}, "event": {}}}}}},
+            "responses": {
+                "200": {"description": "Validation result. disposition is pass, quarantine, or drop.", "content": {"application/json": {"schema": {"type": "object", "properties": {"passed": {"type": "boolean"}, "disposition": {"type": "string", "enum": ["pass", "quarantine", "drop"]}, "violations": {"type": "array", "items": {"type": "object", "properties": {"field": {"type": "string"}, "message": {"type": "string"}, "kind": {"type": "string"}}}}, "validation_us": {"type": "integer"}, "transformed_event": {}}}}}},
+                "413": {"description": "Body larger than 64 KiB"},
+                "422": {"description": "Invalid contract YAML"},
+                "429": {"description": "Per-IP rate limit"}
+            }
         }),
     );
     let infer_ok = json!({"type": "object", "properties": {"yaml_content": {"type": "string"}, "field_count": {"type": "integer"}, "sample_count": {"type": "integer"}}});
@@ -2529,6 +2566,7 @@ mod tests {
             ("/contracts/import", "post"),
             ("/contracts/import-published", "post"),
             ("/contracts/{id}/fork", "post"),
+            ("/public-contract-families/{id}/fork", "post"),
         ] {
             let schema = &v["paths"][path][method]["responses"]["402"]["content"]
                 ["application/json"]["schema"];

@@ -1,0 +1,8 @@
+{
+  "notice_id": "notice-1001",
+  "order_name": "#1001",
+  "currency": "USD",
+  "total": 50.36,
+  "status": "queued",
+  "generated_at": "2026-01-15T15:00:00Z"
+}

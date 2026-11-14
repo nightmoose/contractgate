@@ -1,7 +1,7 @@
 # Contract families — API reference
 
 **RFC:** 113
-**Migration:** `supabase/migrations/050_contract_families.sql`
+**Migrations:** `supabase/migrations/050_contract_families.sql`, `supabase/migrations/052_shopify_and_ga4_contract_families.sql`
 
 A family relates contracts that describe the same data as it changes shape through a pipeline. Each link says which contract this one is derived from and which boundary it sits at.
 
@@ -64,13 +64,18 @@ The family that contains this contract. `404` when the contract is not in the ca
 
 No API key.
 
-| Method | Path |
-|---|---|
-| `GET` | `/public-contract-families` |
-| `GET` | `/public-contract-families/{id}` |
-| `GET` | `/public-contracts/{id}/family` |
+| Method | Path | Auth |
+|---|---|---|
+| `GET` | `/public-contract-families` | none |
+| `GET` | `/public-contract-families/{id}` | none |
+| `POST` | `/public-contract-families/{id}/fork` | API key |
+| `GET` | `/public-contracts/{id}/family` | none |
 
 `{id}` is a UUID or a slug. Each family includes `links` ordered from the root. `GET /public-contracts/{id}` includes the same object as `family` when the contract is in a chain, and omits `family` otherwise.
+
+Seeded families:
+
+### `stripe-charges-pipeline`
 
 The seeded family is `stripe-charges-pipeline`:
 
@@ -83,7 +88,39 @@ The seeded family is `stripe-charges-pipeline`:
 
 The YAML and the one synthetic sample on each row come from `examples/contract-chain/stripe/`. Not affiliated with Stripe. Sample ids are fake. These rows are in addition to the existing `stripe-charges` catalog contract.
 
-The catalog contract page shows the chain and links to the neighbors.
+### `shopify-orders-pipeline`
+
+Migration 052. YAML and the passing sample come from `examples/contract-chain/shopify/`. The raw contract mirrors `catalog/seeds/shopify-orders`. Not affiliated with Shopify.
+
+| Position | Contract | Slug | Boundary | Derived from |
+|---|---|---|---|---|
+| 0 | `shopify_orders_raw` | `shopify-orders-raw` | ingest | — |
+| 1 | `shopify_orders_staged` | `shopify-orders-staged` | stage | `shopify_orders_raw` |
+| 2 | `shopify_fulfillment_notice` | `shopify-fulfillment-notice` | egress | `shopify_orders_staged` |
+
+### `ga4-events-pipeline`
+
+Migration 052. YAML and the passing sample come from `examples/contract-chain/ga4/`. The raw contract mirrors `catalog/seeds/ga4-bigquery-events`. Not affiliated with Google.
+
+| Position | Contract | Slug | Boundary | Derived from |
+|---|---|---|---|---|
+| 0 | `ga4_events_raw` | `ga4-events-raw` | ingest | — |
+| 1 | `ga4_events_staged` | `ga4-events-staged` | stage | `ga4_events_raw` |
+| 2 | `ga4_audience_export` | `ga4-audience-export` | egress | `ga4_events_staged` |
+
+The catalog contract page shows the chain and links to the neighbors. The family page is `/catalog/families/{slug}`.
+
+### `POST /public-contract-families/{id}/fork`
+
+Copy the chain into the caller's org. Auth matches the private family routes (`X-Api-Key`, or a dashboard session). `{id}` is a UUID or a slug.
+
+The body may be `{}`. `name`, when present, is the private family's name. Omitted, the catalog family's name is kept. Each new contract keeps the catalog contract's name and description. Its draft `1.0.0` is a copy of the catalog YAML, and `parent_public_contract_id` points at that catalog row. `fork_filter` is null. The private family has the same boundaries and the same parent links, with positions unchanged.
+
+All of that is one transaction. Hosted Free allows 3 non-deleted contracts. If this org's current count plus the number of links would pass that cap, the response is `402` with `error` and `code` `plan_limit`, `resource` `contracts`, and no rows are written. Paid plans and self-host are not capped. A second fork that reuses the family name is `409`.
+
+`201` returns the private family (`links` ordered root to leaf) and `contracts`, one object per new contract: `contract_id`, `name`, `parent_public_contract_id`, `boundary`, `position`, `created_at`.
+
+Logged-out visitors on the catalog family page are sent to sign up, then to this call.
 
 ## Database
 
@@ -105,3 +142,9 @@ Hosted production is applied by the product owner, not by this repository's depl
 Self-host applies the file through `ops/postgres/selfhost-apply.sh`, which records the filename itself.
 
 A gateway deployed before the migration will fail `GET /public-contracts/{slug}` with a missing-relation error, because that response loads the family. Apply the file first.
+
+## Applying migration 052
+
+Apply `supabase/migrations/052_shopify_and_ga4_contract_families.sql` after 050 and 051. It does not change 050. It adds six catalog contracts and two families: `shopify-orders-pipeline` and `ga4-events-pipeline`. Existing slugs, including `shopify-orders` and `ga4-bigquery-events`, are unchanged.
+
+Record it the same way as 050. `name` is `052_shopify_and_ga4_contract_families`. `version` sorts after the `051_quarantine_reviewed_at` row. Self-host applies the file through `ops/postgres/selfhost-apply.sh`.
