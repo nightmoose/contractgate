@@ -72,9 +72,10 @@ Routes that are intentionally unscoped (use their own scoping mechanism):
 | `POST /ingest/{id}` | key's `allowed_contract_ids` |
 | `POST /v1/ingest/{id}` | key's `allowed_contract_ids` |
 | `POST /egress/{id}` | key's `allowed_contract_ids` |
+| `GET /public-contracts` | public — curated catalog (the dashboard list). No auth. |
 | `GET /public-contracts/*` | public — no auth |
 | `GET /published/{ref}` | public or link-token |
-| `GET /catalog` | public |
+| `GET /catalog` | public — org publications with visibility `public`. The hosted API returns `[]`. |
 
 ---
 
@@ -120,8 +121,9 @@ Allowed headers: `Authorization, Content-Type, Accept, x-api-key`.
 `/public-contracts`, `/catalog`, `/published/*`,
 `POST /public/playground/validate`): wildcard `*` — these routes
 expose no tenant data and are safe to embed from any origin. The
-unauthenticated read routes `/published/*`, `/public-contracts` and `/catalog`
-carry no API key, so they are rate-limited per client IP (30 req/s, burst 60);
+unauthenticated read routes `/published/*`, `/public-contracts` (the curated
+catalog) and `/catalog` (org publications with public visibility; `[]` on the
+hosted API) carry no API key, so they are rate-limited per client IP (30 req/s, burst 60);
 `/catalog` stays CDN-cacheable because the limiter never rewrites a successful
 response. `POST /public/playground/validate` is a separate, tighter bucket
 (1 req/s, burst 8, 64 KiB body). It compiles the posted YAML and writes

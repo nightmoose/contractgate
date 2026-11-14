@@ -35,6 +35,7 @@ Add this to the host's MCP config (`~/.cursor/mcp.json`, Claude Desktop
 The package is published at
 <https://www.npmjs.com/package/@nightmoose/contractgate-mcp-server>. `npx -y`
 fetches the latest release on first use, so no separate install step is needed.
+Official MCP Registry name: `io.github.nightmoose/contractgate`.
 
 Restart the host after editing the config.
 

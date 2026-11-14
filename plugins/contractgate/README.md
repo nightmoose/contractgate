@@ -5,9 +5,11 @@ DataContractGate rejects events that are schema-valid but wrong, such as a missp
 ## What's included
 
 - **Skill** (`skills/contractgate`): the procedure the agent follows to wire contracts into a repo.
-- **MCP server** (`@nightmoose/contractgate-mcp-server@0.2.0`, run with `npx`): six tools — `infer_contract`, `validate_events`, `deploy_contract`, `get_quarantine`, `list_contracts`, and `egress_validate`.
+- **MCP server** (`@nightmoose/contractgate-mcp-server`, run with `npx -y`, unpinned so it tracks the current npm release; 0.4.1 as of 2026-11-14): six tools — `infer_contract`, `validate_events`, `deploy_contract`, `get_quarantine`, `list_contracts`, and `egress_validate`.
 
 ## Setup
+
+Validate one sample with no key at https://app.datacontractgate.com/playground (`POST https://api.datacontractgate.com/public/playground/validate`). The MCP tools need a key.
 
 1. Create an API key at https://app.datacontractgate.com/account.
 2. Install the plugin.
@@ -16,7 +18,7 @@ DataContractGate rejects events that are schema-valid but wrong, such as a missp
 
 ## What it sends and where
 
-The MCP server calls the DataContractGate API at `https://app.datacontractgate.com` (or the base URL you configure) with your API key. It sends only what the tools are given: sample events for inference, events for validation, and contract YAML for deployment. Validation defaults to a dry run, which records nothing. Nothing else leaves your machine, and the plugin has no hooks or background processes.
+The MCP server calls the DataContractGate gateway at `https://api.datacontractgate.com` (override with `CONTRACTGATE_BASE_URL`) with your API key. Create the key and read the docs at `https://app.datacontractgate.com`. The server sends only what the tools are given: sample events for inference, events for validation, and contract YAML for deployment. Validation defaults to a dry run, which records nothing. Nothing else leaves your machine, and the plugin has no hooks or background processes.
 
 Full playbook: https://app.datacontractgate.com/llm-integration.md. Tool reference: https://app.datacontractgate.com/mcp-reference.md.
 

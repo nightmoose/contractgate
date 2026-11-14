@@ -517,11 +517,12 @@ fn build_openapi() -> String {
         "/catalog": {
           "get": {
             "operationId": "list_public_catalog",
-            "summary": "List public publications (no API key)",
+            "summary": "List org publications with public visibility (no API key)",
+            "description": "Contracts that customer orgs published with visibility public, newest first (publication_ref, contract_name, contract_version, published_by, published_at). The hosted API returns an empty array. Curated contracts on the dashboard catalog are GET /public-contracts.",
             "parameters": [
               { "name": "limit", "in": "query", "required": false, "schema": { "type": "integer", "default": 20, "maximum": 100 } }
             ],
-            "responses": { "200": { "description": "Newest-first list with publication_ref, contract_name, contract_version, published_by, published_at" } }
+            "responses": { "200": { "description": "Org publications with public visibility. An empty array when none exist, which is the hosted API today." } }
           }
         },
         "/contracts/publications": {
@@ -720,7 +721,8 @@ fn more_openapi_paths(paths: &mut serde_json::Map<String, Value>) {
         json!({
             "operationId": "list_public_contracts",
             "summary": "List curated public-catalog contracts (no API key)",
-            "responses": {"200": {"description": "Catalog summaries", "content": {"application/json": {"schema": {"type": "array", "items": {"type": "object", "properties": {"id": {"type": "string", "format": "uuid"}, "name": {"type": "string"}, "description": {"type": ["string", "null"]}, "source_format": {"type": "string"}, "version": {"type": "string"}, "created_at": {"type": "string", "format": "date-time"}, "updated_at": {"type": "string", "format": "date-time"}}}}}}}}
+            "description": "The contracts the dashboard catalog lists (https://app.datacontractgate.com/catalog). No API key. GET /catalog is the org-publication list and returns an empty array on the hosted API. Forking a contract or a family needs an API key.",
+            "responses": {"200": {"description": "Curated catalog summaries. This is the list agents should use.", "content": {"application/json": {"schema": {"type": "array", "items": {"type": "object", "properties": {"id": {"type": "string", "format": "uuid"}, "name": {"type": "string"}, "description": {"type": ["string", "null"]}, "source_format": {"type": "string"}, "version": {"type": "string"}, "created_at": {"type": "string", "format": "date-time"}, "updated_at": {"type": "string", "format": "date-time"}}}}}}}}
         }),
     );
     merge_openapi_op(
@@ -2686,6 +2688,34 @@ mod tests {
         ] {
             assert!(v["paths"][path].is_object(), "openapi missing path {path}");
         }
+        let catalog = &v["paths"]["/catalog"]["get"];
+        let catalog_text = format!(
+            "{} {}",
+            catalog["summary"].as_str().unwrap_or(""),
+            catalog["description"].as_str().unwrap_or("")
+        );
+        assert!(
+            catalog_text.contains("GET /public-contracts"),
+            "GET /catalog must point agents at the curated list: {catalog_text}"
+        );
+        assert!(
+            catalog_text.contains("empty array"),
+            "GET /catalog must say the hosted list is empty: {catalog_text}"
+        );
+        let curated = &v["paths"]["/public-contracts"]["get"];
+        let curated_text = format!(
+            "{} {}",
+            curated["summary"].as_str().unwrap_or(""),
+            curated["description"].as_str().unwrap_or("")
+        );
+        assert!(
+            curated_text.contains("curated"),
+            "GET /public-contracts must name the curated catalog: {curated_text}"
+        );
+        assert!(
+            curated_text.contains("GET /catalog"),
+            "GET /public-contracts must name the org-publication route: {curated_text}"
+        );
     }
 
     /// Org-wide replay gained `redacted`; contract list documents the effective

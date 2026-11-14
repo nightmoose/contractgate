@@ -13,6 +13,8 @@ We take security seriously. Please report vulnerabilities privately.
 - Potential impact
 - Suggested fix (if any)
 
+The same contact is published for automated discovery at <https://app.datacontractgate.com/.well-known/security.txt> ([RFC 9116](https://www.rfc-editor.org/rfc/rfc9116)).
+
 We aim to acknowledge reports within 48 hours and provide a fix timeline within 7 days.
 
 ## Disclosure Policy

@@ -56,8 +56,8 @@ On the servers page, **Add MCP Server** asks for these fields:
 `https://cursor.directory/mcp/new` redirects to
 `https://cursor.directory/plugins/new`. Use the **Manual** tab. An auto scan
 of this monorepo reads the root `.mcp.json` (a different server) and
-`plugins/contractgate/.mcp.json`, which still pins
-`@nightmoose/contractgate-mcp-server@0.2.0`.
+`plugins/contractgate/.mcp.json`, which runs
+`npx -y @nightmoose/contractgate-mcp-server` with no version pin.
 
 - **Name:** AISchemaGate and DataContractGate
 - **Description:** AISchemaGate validates and repairs structured LLM output against a contract, plus DataContractGate data contracts. Repair uses the violation fields from that check (min, max, pattern, enum, compliance_mode). The contract checks values a JSON Schema or Pydantic validation can leave open. DataContractGate infers and deploys contracts, validates ingest, including ODCS v3.1.0 and v3.2.0, and lists quarantine.

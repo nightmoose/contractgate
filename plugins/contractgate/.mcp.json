@@ -2,7 +2,7 @@
   "mcpServers": {
     "contractgate": {
       "command": "npx",
-      "args": ["-y", "@nightmoose/contractgate-mcp-server@0.2.0"],
+      "args": ["-y", "@nightmoose/contractgate-mcp-server"],
       "env": {
         "CONTRACTGATE_API_KEY": "${user_config.api_key}"
       }
