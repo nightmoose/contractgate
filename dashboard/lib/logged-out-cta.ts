@@ -26,6 +26,16 @@ export function loggedOutAuthHrefs(
   };
 }
 
+// Logged-out preview pages offer the playground. The playground itself is the
+// live demo, so the link is omitted there instead of pointing at the current page.
+export function liveDemoHref(current: string | null | undefined): string | null {
+  const value = (current ?? "").trim();
+  const q = value.indexOf("?");
+  const path = q === -1 ? value : value.slice(0, q);
+  if (path === "/playground" || path.startsWith("/playground/")) return null;
+  return "/playground";
+}
+
 // proxy.ts percent-encodes the path so the header value stays ASCII.
 export function decodeVisitorPath(raw: string | null | undefined): string {
   if (!raw) return "/";

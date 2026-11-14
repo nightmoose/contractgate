@@ -43,6 +43,7 @@ export function createClient(): SupabaseClient {
       });
     _client = {
       auth: {
+        getSession: async () => ({ data: { session: null }, error: null }),
         getUser: async () => ({ data: { user: null }, error: null }),
         signOut: async () => ({ error: null }),
         signInWithPassword: async () => ({ data: { user: null, session: null }, error: null }),

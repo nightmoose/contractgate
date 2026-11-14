@@ -58,8 +58,17 @@ test.describe("Public website surfaces", () => {
     }
   });
 
+  test("the playground validates without an account", async ({ page }) => {
+    await page.goto("/playground");
+    await expect(page.getByRole("heading", { name: "Playground" })).toBeVisible();
+    await expect(page.getByRole("button", { name: /Validate Event/i })).toBeVisible();
+    const body = (await page.locator("body").innerText()).toLowerCase();
+    expect(body).not.toContain("demo preview");
+    expect(body).not.toContain("these figures are a sample");
+  });
+
   test("protected routes redirect unauthenticated users to login", async ({ page }) => {
-    for (const path of ["/contracts", "/playground", "/audit", "/scorecard"]) {
+    for (const path of ["/contracts", "/audit", "/scorecard"]) {
       await page.goto(path);
       // Auth gate may redirect immediately or show a login wall
       await page.waitForTimeout(1500);

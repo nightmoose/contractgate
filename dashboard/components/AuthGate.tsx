@@ -5,7 +5,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { DEMO_MODE } from "@/lib/demo";
-import { loggedOutAuthHrefs } from "@/lib/logged-out-cta";
+import { liveDemoHref, loggedOutAuthHrefs } from "@/lib/logged-out-cta";
 import { PREVIEWS } from "@/lib/previews";
 import { useBrand } from "@/components/BrandProvider";
 import { useVisitorAuthed } from "@/components/VisitorSession";
@@ -66,6 +66,7 @@ export default function AuthGate({ page, children }: AuthGateProps) {
   const preview = PREVIEWS[page];
   const product = brand === "aisg" ? "aischemagate" : null;
   const { signUpHref, signInHref } = loggedOutAuthHrefs(pathname, product);
+  const demoHref = liveDemoHref(pathname);
   return (
     <div className="max-w-2xl mx-auto py-8 px-4">
       <div className="mb-6 rounded-xl border border-amber-700/40 bg-amber-950/30 px-4 py-3 text-center">
@@ -94,10 +95,15 @@ export default function AuthGate({ page, children }: AuthGateProps) {
           </Link>
         </div>
         <p className="mt-5 text-xs text-slate-600">
-          Cloud Free needs no credit card. The Pro trial asks for one at checkout.{" "}
-          <Link href="/playground" className="text-green-600 hover:text-green-500">
-            Try the live demo first →
-          </Link>
+          Cloud Free needs no credit card. The Pro trial asks for one at checkout.
+          {demoHref && (
+            <>
+              {" "}
+              <Link href={demoHref} className="text-green-600 hover:text-green-500">
+                Try the live demo first →
+              </Link>
+            </>
+          )}
         </p>
       </div>
 
