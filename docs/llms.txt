@@ -7,14 +7,42 @@
 > In-process validation of the passing stripe-charges catalog samples: p99 0.93 µs and 1,547,368 events/sec on one thread (measured 2026-11-10; `cargo run --release --bin contractgate-bench`, see ops/bench/README.md). Not HTTP latency. Patent pending.
 
 API base URL: https://api.datacontractgate.com
+Dashboard: https://app.datacontractgate.com
 Source: https://github.com/nightmoose/contractgate
+
+## Try it with no API key
+
+Validate one event against contract YAML with no account and no API key. The check compiles the YAML, runs the same engine as ingest, and stores nothing.
+
+- Page: https://app.datacontractgate.com/playground
+- `POST https://api.datacontractgate.com/public/playground/validate`
+  Request JSON: `yaml_content` (contract YAML) and `event` (one object). No `Authorization` header and no `x-api-key`.
+  `200`: `passed`, `violations`, `disposition` (`pass`, `quarantine`, or `drop`), plus `validation_us` and `transformed_event`.
+  `422` invalid YAML. `413` body over 64 KiB. `429` over the per-IP limit, with `Retry-After`.
+  Limit: 1 request per second per IP, burst 8.
+  Reference: https://github.com/nightmoose/contractgate/blob/main/docs/public-playground-reference.md
+
+Curated public contracts (22 on the hosted API, checked 2026-11-14). These are the contracts on the dashboard catalog. No API key.
+
+- `GET https://api.datacontractgate.com/public-contracts`
+- `GET https://api.datacontractgate.com/public-contracts/{id_or_slug}` plus `/yaml` and `/odcs`
+- `GET https://api.datacontractgate.com/public-contract-families`
+- `GET https://api.datacontractgate.com/public-contract-families/{id}`
+
+`GET https://api.datacontractgate.com/catalog` lists contracts that customer orgs published with public visibility. On the hosted API that response is `[]`. It is a different list from `GET /public-contracts`.
+
+Forking a family into an org needs an API key from https://app.datacontractgate.com/account (`POST https://api.datacontractgate.com/public-contract-families/{id}/fork`). Reading the catalog and running the playground do not.
+
+## MCP
+
+Official MCP Registry name: `io.github.nightmoose/contractgate`. The server is stdio. Install it with `npx -y @nightmoose/contractgate-mcp-server` (current npm release 0.4.1; the command tracks the latest published package). Tools and auth: https://app.datacontractgate.com/mcp-reference.md.
 
 ## Start here
 
-- [Integration playbook for coding agents](https://app.datacontractgate.com/llm-integration.md): Paste this into Claude, Cursor, or Codex. End-to-end, executable: get a key, infer a contract from real samples, write and deploy the contract YAML, wire the producer to POST /v1/ingest, verify with a dry run.
+- [Integration playbook for coding agents](https://app.datacontractgate.com/llm-integration.md): Paste this into Claude, Cursor, or Codex when the job is to deploy. It infers a contract from real samples, writes the YAML, and wires the producer to POST /v1/ingest. Deploying needs an API key. Trying a sample does not — use the playground above.
 - [LLM output validation playbook](https://app.datacontractgate.com/llm-output-validation.md): Paste this when the job is to validate an LLM's JSON output (OpenAI / Anthropic / vLLM / Ollama / LangChain / CrewAI / MCP). Picks up where the integration playbook leaves off — same backend, different entry point.
 - [MCP server](https://app.datacontractgate.com/mcp-reference.md): Official stdio MCP package (`npx -y @nightmoose/contractgate-mcp-server`) — infer, dry-run, deploy, and list quarantine as typed tools.
-- [Full documentation bundle](https://app.datacontractgate.com/llms-full.txt): One-shot ingestion for large-context agents — the playbook and every reference doc below, concatenated. Skip the per-link round-trips.
+- [Full documentation bundle](https://app.datacontractgate.com/llms-full.txt): One-shot ingestion for large-context agents. It leads with the anonymous playground, then the deploy playbook and the reference docs below. Skip the per-link round-trips.
 
 ## Reference
 
@@ -40,7 +68,7 @@ Source: https://github.com/nightmoose/contractgate
 
 ## Contract catalog
 
-Ready-to-use data contracts for common client exports. Pick a source, fork the contract, validate the client's file the same day. Full listing: https://app.datacontractgate.com/catalog.md — directory: https://app.datacontractgate.com/catalog
+Ready-to-use data contracts for common client exports. Pick a source, fork the contract, validate the client's file the same day. Machine-readable list: `GET https://api.datacontractgate.com/public-contracts`. Full listing: https://app.datacontractgate.com/catalog.md — directory: https://app.datacontractgate.com/catalog. `GET https://api.datacontractgate.com/catalog` is org publications and returns `[]` on the hosted API.
 
 - [Stripe Charges](https://app.datacontractgate.com/catalog/stripe-charges): Validate a client's Stripe charges export before it hits your warehouse.
 - [Stripe charges pipeline](https://app.datacontractgate.com/catalog/families/stripe-charges-pipeline): One family, four contracts — raw ingest, cleaned stage, daily revenue mart, partner payout egress. Fork the whole chain with `POST /public-contract-families/stripe-charges-pipeline/fork`. Not affiliated with Stripe.

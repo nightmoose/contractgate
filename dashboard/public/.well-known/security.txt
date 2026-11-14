@@ -1,0 +1,8 @@
+# DataContractGate security contact (RFC 9116)
+# https://www.rfc-editor.org/rfc/rfc9116
+Contact: mailto:security@datacontractgate.com
+Contact: https://github.com/nightmoose/contractgate/security/advisories/new
+Expires: 2027-11-14T23:59:59Z
+Preferred-Languages: en
+Canonical: https://app.datacontractgate.com/.well-known/security.txt
+Policy: https://github.com/nightmoose/contractgate/blob/main/SECURITY.md

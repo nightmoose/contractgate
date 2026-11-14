@@ -55,6 +55,13 @@ const nextConfig: NextConfig = {
     return [
       { source: "/:path*", headers: SECURITY_HEADERS },
       {
+        source: "/.well-known/security.txt",
+        headers: [
+          { key: "Content-Type", value: "text/plain; charset=utf-8" },
+          { key: "Cache-Control", value: "public, max-age=86400" },
+        ],
+      },
+      {
         source: "/:path(llms.txt|llms-full.txt|llm-integration.md|mcp-reference.md|llm-output-validation.md|llm-sdk-reference.md)",
         headers: [
           { key: "Content-Type", value: "text/plain; charset=utf-8" },

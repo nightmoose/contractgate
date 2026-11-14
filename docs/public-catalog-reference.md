@@ -17,11 +17,17 @@ upstream data filtered through their fork's rules as a CSV file.
 
 ---
 
+## Which list to call
+
+`GET /public-contracts` is this catalog: the curated contracts the dashboard lists. No API key.
+
+`GET /catalog` lists contracts that customer orgs published with visibility `public`. The hosted API returns `[]`. Agents that want the curated contracts call `GET /public-contracts`.
+
 ## Endpoints
 
 ### `GET /public-contracts`
 
-List all catalog entries. No authentication required.
+List all curated catalog entries. No authentication required. This is the list behind `https://app.datacontractgate.com/catalog`. `GET /catalog` is the org-publication list described above.
 
 **Response `200 OK`:**
 

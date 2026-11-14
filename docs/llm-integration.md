@@ -15,6 +15,28 @@ documentation.
 deployed as a `stable` version, and their event producer calling the validation
 gateway — verified with a dry run before anything writes.
 
+**Try one event before you ask for a key.** The anonymous playground compiles
+YAML and validates one event. It stores nothing: no contract row, no audit
+row, no quarantine row. A key is required for the deploy and live-ingest
+steps below. It is not required to validate a sample or to read the curated
+catalog.
+
+- Page: <https://app.datacontractgate.com/playground>
+- `POST /public/playground/validate` with JSON `yaml_content` (the contract)
+  and `event` (one object). No `Authorization` header and no `x-api-key`.
+  `200` returns `passed`, `violations`, and `disposition` (`pass`,
+  `quarantine`, or `drop`). `422` is invalid YAML. `413` is a body over
+  64 KiB. `429` is the per-IP limit (1 request/second, burst 8) and includes
+  `Retry-After`.
+- Curated contracts: `GET /public-contracts` and
+  `GET /public-contract-families` (one family: `GET /public-contract-families/{id}`).
+  `GET /catalog` lists org publications with public visibility. The hosted
+  API returns an empty array. The dashboard catalog reads `/public-contracts`.
+- Forking a family into an org, `POST /public-contract-families/{id}/fork`,
+  needs an API key from <https://app.datacontractgate.com/account>.
+
+Reference: <https://github.com/nightmoose/contractgate/blob/main/docs/public-playground-reference.md>.
+
 > **Claude plugin.** If the host supports Claude Code / Cursor plugins:
 >
 > ```
@@ -39,7 +61,8 @@ gateway — verified with a dry run before anything writes.
 
 ## §0 — Preconditions
 
-1. The user needs an API key. If they don't have one:
+1. Deploying and live ingest need an API key. Validating a sample does not
+   (see above). When the job is to deploy and the user has no key:
    sign in at <https://app.datacontractgate.com>, then
    **Account → API keys → Create key**. Keys look like `cg_live_` + 48 hex chars.
 2. The key must be in the environment, never in the repo:
@@ -52,8 +75,10 @@ gateway — verified with a dry run before anything writes.
 
 - **Never** write the raw key into source, config, `.env` that is tracked, a
   commit message, or a chat message. Read it from `CONTRACTGATE_API_KEY`.
-- If `CONTRACTGATE_API_KEY` is unset, stop and ask the user for it. Do not
-  invent a key, and do not fall back to the self-hosted path silently.
+- If `CONTRACTGATE_API_KEY` is unset and the task deploys or calls an
+  authenticated route, stop and ask the user for it. Do not invent a key,
+  and do not fall back to the self-hosted path silently. `GET /public-contracts`
+  and `POST /public/playground/validate` do not need the key.
 - Add `.env` / `.env.local` to `.gitignore` if the user's project stores it there.
 
 Every request below sends the key as the `X-Api-Key` header. (MCP tools read
@@ -468,8 +493,10 @@ At <https://app.datacontractgate.com> → **Contracts → your contract**:
   and ask which side is wrong — the contract or the producer.
 - **Do not commit API keys**, or interpolate one into a code sample, README, or
   chat message.
-- **Do not use `POST /playground/validate`** for production wiring — that is the
-  dashboard's scratchpad endpoint.
+- **Do not use `POST /playground/validate` or `POST /public/playground/validate`**
+  for production wiring. The first is the signed-in scratchpad. The second is
+  the anonymous try-it route (no key, nothing stored). Production traffic is
+  `POST /v1/ingest/{contract_id}`.
 - **Do not edit a deployed version in place** — deploy a new `version:`.
 - **Do not skip §6.** Dry-run first is the only reason a mistake here is
   reversible.
