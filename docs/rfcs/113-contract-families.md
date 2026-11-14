@@ -22,6 +22,8 @@ Private families live on `contract_families` and `contract_family_links`, scoped
 
 The contract YAML schema does not gain a field. `derived_from` in a description stays prose.
 
+Forking a public family is one request. It creates one private contract per link, with `parent_public_contract_id` set the same way as a single fork, and one private family with the same chain and boundaries. That write is one transaction. If the Free contract cap would be exceeded, the request fails and writes nothing.
+
 ## Non-goals
 
 - Community publishing and author rewards. Seeded catalog rows keep `author_org_id` null.

@@ -24,6 +24,18 @@ const PIPELINE_ASIDE: Record<string, string> = {
     "(daily revenue aggregate between stages; not affiliated with Stripe)",
   "partner-payout-feed":
     "(outbound partner payout feed at egress; not affiliated with Stripe)",
+  "shopify-orders-raw":
+    "(raw Shopify orders CSV at ingest; not affiliated with Shopify)",
+  "shopify-orders-staged":
+    "(typed Shopify order between stages; not affiliated with Shopify)",
+  "shopify-fulfillment-notice":
+    "(warehouse fulfillment notice at egress; not affiliated with Shopify)",
+  "ga4-events-raw":
+    "(raw GA4 BigQuery event at ingest; not affiliated with Google)",
+  "ga4-events-staged":
+    "(cleaned GA4 event between stages; not affiliated with Google)",
+  "ga4-audience-export":
+    "(audience export at egress; not affiliated with Google)",
 };
 
 const PIPELINE_CARD: Record<string, string> = {
@@ -31,6 +43,12 @@ const PIPELINE_CARD: Record<string, string> = {
   "stripe-charges-staged": "cleaned Stripe charges between stages",
   "revenue-daily-mart": "daily revenue mart between stages",
   "partner-payout-feed": "partner payout feed at egress",
+  "shopify-orders-raw": "raw Shopify orders at ingest",
+  "shopify-orders-staged": "typed Shopify orders between stages",
+  "shopify-fulfillment-notice": "fulfillment notice at egress",
+  "ga4-events-raw": "raw GA4 events at ingest",
+  "ga4-events-staged": "cleaned GA4 events between stages",
+  "ga4-audience-export": "GA4 audience export at egress",
 };
 
 /** Parenthetical under the detail-page title. Includes the wrapping parentheses. */

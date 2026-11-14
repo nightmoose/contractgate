@@ -122,6 +122,18 @@ optional `fork_filter`.
 The returned `contract_id` is the UUID of the new contract in the caller's org.
 Use it with the standard contracts API to promote, edit versions, or set up ingest.
 
+Hosted Free allows 3 non-deleted contracts. A fork that would pass that cap returns `402` `plan_limit` and writes nothing.
+
+---
+
+### `POST /public-contract-families/{id}/fork`
+
+Fork a whole public catalog family into the caller's org. `{id}` is the family UUID or slug (`stripe-charges-pipeline`, `shopify-orders-pipeline`, `ga4-events-pipeline`).
+
+One transaction creates one private contract per link — the same mechanics as `POST /contracts/{id}/fork`, including `parent_public_contract_id` — and one private family with the same chain and boundaries. The body may be `{}`. Optional `name` renames the private family.
+
+If the Free contract cap would be exceeded, the response is `402` `plan_limit` and nothing is written. See [contract-families-reference.md](contract-families-reference.md).
+
 ---
 
 ### `POST /contracts/{id}/export`
@@ -214,7 +226,12 @@ changes. 047 is not rewritten after it has been applied. Migration
 pipeline (`stripe-charges-raw` → `stripe-charges-staged` → `revenue-daily-mart` →
 `partner-payout-feed`) as the public family `stripe-charges-pipeline`. Those four
 rows are in addition to the 12 launch slugs, including the existing `stripe-charges`
-contract. See [contract-families-reference.md](contract-families-reference.md).
+contract. `052_shopify_and_ga4_contract_families.sql` adds `shopify-orders-pipeline`
+(raw CSV → typed order → fulfillment notice) and `ga4-events-pipeline` (raw event →
+cleaned event → audience export). Those six rows are in addition to `shopify-orders`
+and `ga4-bigquery-events`. 050 is not rewritten. See [contract-families-reference.md](contract-families-reference.md).
+
+`POST /public-contract-families/{id}/fork` copies a family into the caller's org.
 
 `022_public_catalog.sql` adds:
 

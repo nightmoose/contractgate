@@ -160,19 +160,22 @@ fn quota_error(resource: crate::plan::PlanLimitResource, current: i64) -> AppErr
     }
 }
 
-/// Lock the org and refuse a new contract when hosted Free is already at the cap.
-/// The lock is held until the caller's transaction commits. Soft-deleted rows
-/// do not count. Paid plans, self-host, and a missing org are not capped.
-pub(crate) async fn enforce_contract_quota(
+/// Lock the org and report the hosted Free contract count and cap.
+///
+/// `Ok(None)` when this create is not capped: no org, self-host, or a paid
+/// plan. `Ok(Some((count, limit)))` when hosted Free applies. The org row
+/// stays locked until the caller's transaction commits. Soft-deleted rows
+/// do not count.
+pub(crate) async fn contract_quota_snapshot(
     tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
     org_id: Option<Uuid>,
     self_hosted: bool,
-) -> AppResult<()> {
+) -> AppResult<Option<(i64, i64)>> {
     let Some(org_id) = org_id else {
-        return Ok(());
+        return Ok(None);
     };
     if self_hosted {
-        return Ok(());
+        return Ok(None);
     }
     // `&mut **tx` is the connection. sqlx 0.8 only implements Executor for a
     // transaction reference whose lifetime matches the transaction itself.
@@ -184,7 +187,7 @@ pub(crate) async fn enforce_contract_quota(
     let Some(limit) = plan.as_deref().and_then(|p| {
         crate::plan::free_resource_limit(false, Some(p), crate::plan::PlanLimitResource::Contracts)
     }) else {
-        return Ok(());
+        return Ok(None);
     };
     let count: i64 = sqlx::query_scalar(
         "SELECT COUNT(*) FROM contracts WHERE org_id = $1 AND deleted_at IS NULL",
@@ -193,6 +196,20 @@ pub(crate) async fn enforce_contract_quota(
     .fetch_one(&mut **tx)
     .await
     .db_op("plan_limit:count_contracts")?;
+    Ok(Some((count, limit)))
+}
+
+/// Lock the org and refuse a new contract when hosted Free is already at the cap.
+/// The lock is held until the caller's transaction commits. Soft-deleted rows
+/// do not count. Paid plans, self-host, and a missing org are not capped.
+pub(crate) async fn enforce_contract_quota(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    org_id: Option<Uuid>,
+    self_hosted: bool,
+) -> AppResult<()> {
+    let Some((count, limit)) = contract_quota_snapshot(tx, org_id, self_hosted).await? else {
+        return Ok(());
+    };
     if count >= limit {
         return Err(quota_error(
             crate::plan::PlanLimitResource::Contracts,

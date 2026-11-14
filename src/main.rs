@@ -2141,6 +2141,10 @@ fn build_router(state: Arc<AppState>) -> Router {
             post(public_catalog::fork_public_contract_handler),
         )
         .route(
+            "/public-contract-families/{id}/fork",
+            post(contract_families::fork_public_family_handler),
+        )
+        .route(
             "/contracts/{id}/export",
             post(public_catalog::export_fork_handler),
         )

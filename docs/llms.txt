@@ -33,7 +33,7 @@ Source: https://github.com/nightmoose/contractgate
 - [Quarantine and replay](https://github.com/nightmoose/contractgate/blob/main/docs/quarantine-replay-reference.md): Review rejected events and replay them against a corrected contract version.
 - [Per-run quarantine](https://github.com/nightmoose/contractgate/blob/main/docs/quarantine-batch-reference.md): Optional `X-Batch-Id` (alias `run_id`) on `POST /v1/ingest/{contract_id}` and `POST /egress/{contract_id}`. `GET /quarantine/summary?contract_id=&batch_id=` counts that run. dbt sends `invocation_id`. Airflow sends `run_id`. Fail the task when `pending` is above zero.
 - [Where to enforce contracts](https://github.com/nightmoose/contractgate/blob/main/docs/architecture/where-to-enforce-contracts.md): Trust but verify at every boundary — ingest, mid-stream, egress, AISchemaGate; Airflow/dbt quarantine-check examples.
-- [Contract families](https://github.com/nightmoose/contractgate/blob/main/docs/contract-families-reference.md): Relate contracts for the same data as it moves ingest → between stages → egress. Each link records `derived_from` and the boundary. The public catalog shows a family as a chain.
+- [Contract families](https://github.com/nightmoose/contractgate/blob/main/docs/contract-families-reference.md): Relate contracts for the same data as it moves ingest → between stages → egress. Each link records `derived_from` and the boundary. `POST /public-contract-families/{id}/fork` copies a public chain into the caller's org in one transaction. The Free contract cap applies to the whole copy.
 - [Drop mode](https://github.com/nightmoose/contractgate/blob/main/docs/drop-mode-reference.md): Count a failing record and store nothing. Quarantine stays the default. The safety cap is watch-only until enforcement is enabled.
 - [PII masking](https://github.com/nightmoose/contractgate/blob/main/docs/pii-masking-reference.md): Declarative `transform:` rules — mask or hash string fields after validation, before storage.
 - [OpenAPI spec](https://api.datacontractgate.com/openapi.json): Machine-readable route inventory for the whole gateway.
@@ -43,7 +43,9 @@ Source: https://github.com/nightmoose/contractgate
 Ready-to-use data contracts for common client exports. Pick a source, fork the contract, validate the client's file the same day. Full listing: https://app.datacontractgate.com/catalog.md — directory: https://app.datacontractgate.com/catalog
 
 - [Stripe Charges](https://app.datacontractgate.com/catalog/stripe-charges): Validate a client's Stripe charges export before it hits your warehouse.
-- [Stripe charges pipeline](https://app.datacontractgate.com/catalog/stripe-charges-raw): One family, four contracts — raw ingest, cleaned stage, daily revenue mart, partner payout egress. Not affiliated with Stripe.
+- [Stripe charges pipeline](https://app.datacontractgate.com/catalog/families/stripe-charges-pipeline): One family, four contracts — raw ingest, cleaned stage, daily revenue mart, partner payout egress. Fork the whole chain with `POST /public-contract-families/stripe-charges-pipeline/fork`. Not affiliated with Stripe.
+- [Shopify orders pipeline](https://app.datacontractgate.com/catalog/families/shopify-orders-pipeline): Raw orders CSV, typed order, warehouse fulfillment notice. Not affiliated with Shopify.
+- [GA4 events pipeline](https://app.datacontractgate.com/catalog/families/ga4-events-pipeline): Raw BigQuery event, cleaned event, audience export. Not affiliated with Google.
 - [Stripe Customers](https://app.datacontractgate.com/catalog/stripe-customers): Validate a client's Stripe customer export before syncing it.
 - [Shopify Orders CSV](https://app.datacontractgate.com/catalog/shopify-orders): Validate a client's Shopify orders CSV export before loading it.
 - [QuickBooks Online Invoices](https://app.datacontractgate.com/catalog/quickbooks-invoices): Validate a client's QuickBooks Online invoice export before reconciling it.
