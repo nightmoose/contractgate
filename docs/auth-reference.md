@@ -153,12 +153,16 @@ For local development with `docker compose`, leave `DASHBOARD_ORIGIN` unset
 
 ## Signup abuse protection (2026-07-22)
 
-An audit found 50 of 57 `auth.users` rows were automated signup-bot noise:
-zero logins ever, and a random-token `display_name` (e.g.
-`MyOHfgDwwVJmHXxrHs`) instead of a real name. See
-`supabase/migrations/035_bot_signup_cleanup.sql` for the removal (not applied
-automatically — run it via `supabase db push` when ready). Three defenses now
-sit in front of `/auth/signup`:
+An audit on 2026-07-22 found 50 of 57 `auth.users` rows were automated
+signup-bot noise: zero logins ever, and a random-token `display_name` (e.g.
+`MyOHfgDwwVJmHXxrHs`) instead of a real name. `035_bot_signup_cleanup.sql`
+was never applied. Bots kept signing up through 2026-09-08; when the
+unconfirmed users were later purged, `org_memberships` cascaded but the
+orgs stayed. A 2026-11-16 audit deleted 354 leftover bot orgs (backed up in
+schema `cleanup_20261116`) and left the 6 member orgs and 4 memberless test
+orgs in place.
+
+Four defenses now sit in front of `/auth/signup`:
 
 > **Revised 2026-08-13.** Two of the three original defenses were removed after
 > the captcha caused a six-day signup outage (2026-08-07 → 08-13). See
@@ -178,6 +182,11 @@ sit in front of `/auth/signup`:
 
 2. **Email confirmation** — an account is unusable until the link in the
    confirmation email is clicked, so an unconfirmed row grants no access.
+   Migration 053 also delays org provisioning until `email_confirmed_at` is
+   set (GitHub OAuth still provisions on insert because the email is already
+   confirmed). A `BEFORE DELETE` trigger on `auth.users` deletes any org for
+   which that user is the only member, so a later unconfirmed-user purge
+   cannot leave another empty org.
 
 3. **Cloudflare Turnstile, verified by Supabase Auth (2026-09-29).** Bots were
    calling Supabase's signup API directly (≈380 signups Jul–Sep, zero logins,
