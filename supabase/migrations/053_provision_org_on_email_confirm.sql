@@ -20,6 +20,13 @@
 -- Existing confirmed users and their orgs are untouched. Trigger-only:
 -- execute is revoked from public, anon, and authenticated.
 
+-- Local/CI stub (migration 006) omits columns that exist on hosted
+-- auth.users. Add any column this migration reads so compose and self-host
+-- apply cleanly. No-op on hosted Supabase, where the column already exists.
+alter table auth.users
+    add column if not exists email_confirmed_at timestamptz;
+
+
 create or replace function public.provision_org_for_confirmed_user(
     p_id uuid,
     p_email text,
