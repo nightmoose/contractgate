@@ -433,10 +433,12 @@ def test_completion_auto_repair_passes_on_second_try():
     assert llm.chat.completions.create.call_count == 2
     assert transport.hits == 2
     assert len(result.repair_hints) == 1
-    # Second call must have received the hint appended as a user message.
+    # Second call must have received the hint folded into the user turn, so
+    # roles keep alternating (no two user messages in a row).
     second_call_messages = llm.chat.completions.create.call_args_list[1].kwargs["messages"]
-    assert len(second_call_messages) == 2
+    assert len(second_call_messages) == 1
     assert second_call_messages[-1]["role"] == "user"
+    assert second_call_messages[-1]["content"].startswith("extract: the amount is 10\n\n")
     assert "amount" in second_call_messages[-1]["content"]
 
 

@@ -4,6 +4,11 @@ All notable changes to the `contractgate` Python SDK.
 
 ## Unreleased
 
+- Fix: repair hints no longer create two user messages in a row. When the
+  conversation ends with a user turn, `LLMGate` / `AsyncLLMGate` fold the
+  hint into that turn (string content or an extra text content part), so
+  roles keep alternating. Chat templates such as Gemma's rejected the old
+  shape with "Conversation roles must alternate".
 - `LLMGate` / `AsyncLLMGate` check repaired output for invented values.
   After a repair attempt passes the contract, identifier and amount fields
   whose value does not occur in the source text are set to `null` (or left

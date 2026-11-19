@@ -326,7 +326,26 @@ def _require_llm(llm: Any) -> None:
 
 
 def _append_user_message(messages: List[Dict[str, Any]], hint: str) -> List[Dict[str, Any]]:
-    return list(messages) + [{"role": "user", "content": hint}]
+    """Add a repair hint as user text while keeping user/assistant turns alternating.
+
+    If the conversation already ends with a user turn, the hint is folded into
+    that turn (string content gets a blank line and the hint; a list of content
+    parts gets an extra text part). Two consecutive user messages are rejected
+    by some chat templates (Gemma: "Conversation roles must alternate").
+    Otherwise the hint becomes a new user message. The caller's list and dicts
+    are never mutated.
+    """
+    out = list(messages)
+    if out and isinstance(out[-1], dict) and out[-1].get("role") == "user":
+        content = out[-1].get("content")
+        if isinstance(content, str):
+            out[-1] = {**out[-1], "content": f"{content}\n\n{hint}" if content else hint}
+            return out
+        if isinstance(content, list):
+            out[-1] = {**out[-1], "content": list(content) + [{"type": "text", "text": hint}]}
+            return out
+    out.append({"role": "user", "content": hint})
+    return out
 
 
 def _cleared_candidates(

@@ -160,8 +160,11 @@ const result = await gate.completion({
 });
 ```
 
-The repair hint is appended as a new **user** message, never injected
-into the system role. Default formatter lists each `field: message`
+The repair hint is sent as **user** text, never injected into the
+system role. The Python SDK folds it into the last user turn when the
+conversation already ends with one, so user and assistant turns keep
+alternating (some chat templates, such as Gemma's, reject two user
+messages in a row). The TypeScript SDK appends it as a new user message. Default formatter lists each `field: message`
 pair; override via the `repair_prompt` / `repairPrompt` constructor
 option.
 

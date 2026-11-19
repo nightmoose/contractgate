@@ -335,3 +335,51 @@ def test_async_gate_mirrors_sync():
     assert result.ok is True
     assert "invoice_id" not in result.payload
     assert result.provenance[0].action == "removed"
+
+
+# --------------------------------------------------------------------------
+# Repair hints keep user/assistant turns alternating
+# --------------------------------------------------------------------------
+
+
+def _assert_alternating(messages):
+    roles = [m["role"] for m in messages if m["role"] != "system"]
+    assert all(a != b for a, b in zip(roles, roles[1:])), roles
+
+
+def test_repair_hints_keep_roles_alternating_over_all_attempts():
+    invented = {"vendor": "Oscorp", "total": 0.0, "status": "open"}
+    msgs = [{"role": "system", "content": "sys"},
+            {"role": "user", "content": "Vendor Oscorp. Total: TBD. Status: open."}]
+    llm = _LLM([BAD_FIRST, invented, invented])
+    _gate(llm).completion(model="m", messages=msgs, auto_repair=True)
+    assert len(llm.calls) == 3
+    for call in llm.calls:
+        _assert_alternating(call)
+        assert len(call) == 2  # system + one user turn
+    last_user = llm.calls[2][-1]["content"]
+    assert last_user.startswith("Vendor Oscorp. Total: TBD. Status: open.\n\n")
+    assert "status" in last_user  # contract-violation hint from attempt 1
+    assert "not found in the source text" in last_user  # provenance hint from attempt 2
+    # The caller's messages are untouched.
+    assert msgs[-1]["content"] == "Vendor Oscorp. Total: TBD. Status: open."
+
+
+def test_repair_hint_folds_into_content_parts():
+    from contractgate.llm import _append_user_message
+
+    parts = [{"type": "text", "text": "note"}]
+    out = _append_user_message([{"role": "user", "content": parts}], "hint")
+    assert out == [{"role": "user", "content": [{"type": "text", "text": "note"},
+                                                 {"type": "text", "text": "hint"}]}]
+    assert parts == [{"type": "text", "text": "note"}]
+
+
+def test_repair_hint_after_assistant_turn_is_new_user_message():
+    from contractgate.llm import _append_user_message
+
+    msgs = [{"role": "user", "content": "q"}, {"role": "assistant", "content": "a"}]
+    out = _append_user_message(msgs, "hint")
+    assert out[-1] == {"role": "user", "content": "hint"}
+    _assert_alternating(out)
+    assert len(msgs) == 2
