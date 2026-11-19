@@ -1213,7 +1213,7 @@ fn join_asset_names(names: &[String]) -> String {
 /// GET recomputes these so existing rows do not keep calling the initial
 /// fields breaking.
 fn stale_first_version_report(report: &Value) -> bool {
-    let no_base = report.get("base_version").map_or(true, Value::is_null);
+    let no_base = report.get("base_version").is_none_or(Value::is_null);
     let changes =
         report["breaking_count"].as_i64().unwrap_or(0) + report["safe_count"].as_i64().unwrap_or(0);
     no_base && changes > 0
