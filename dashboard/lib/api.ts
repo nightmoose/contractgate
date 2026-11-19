@@ -1973,10 +1973,14 @@ export async function getVersionImpact(
 }
 
 /** Recompute impact from the current lineage. */
-export async function recomputeVersionImpact(contractId: string, version: string): Promise<ImpactResult> {
+export async function recomputeVersionImpact(
+  contractId: string,
+  version: string,
+  signal?: AbortSignal,
+): Promise<ImpactResult> {
   const { status, body } = await impactFetch(
     `/contracts/${contractId}/versions/${encodeURIComponent(version)}/impact`,
-    { method: "POST" }
+    { method: "POST", signal },
   );
   return impactFromStatus(status, body);
 }
