@@ -160,8 +160,11 @@ const result = await gate.completion({
 });
 ```
 
-The repair hint is appended as a new **user** message, never injected
-into the system role. Default formatter lists each `field: message`
+The repair hint is sent as **user** text, never injected into the
+system role. The Python SDK folds it into the last user turn when the
+conversation already ends with one, so user and assistant turns keep
+alternating (some chat templates, such as Gemma's, reject two user
+messages in a row). The TypeScript SDK appends it as a new user message. Default formatter lists each `field: message`
 pair; override via the `repair_prompt` / `repairPrompt` constructor
 option.
 
@@ -169,6 +172,50 @@ option.
 `result.payload` — surface to a human / log and move on. The sanitized
 payload is still well-formed, which is misleading if you treat it as
 authoritative.
+
+### §3.1 Provenance check on repaired output (Python SDK)
+
+A repair re-prompt can make the contract pass by inventing a value: an
+`invoice_id` of `"INV001"` for a note with no invoice number, or a
+`total` of `0.0` for a total written as "TBD". The Python `LLMGate`
+checks repaired answers for this. It is on by default.
+
+After a repaired answer passes the contract, each identifier field (name
+ending in `id`, `ref`, `number`, `no`, `uuid`, `sku`, ...) and amount
+field (`amount`, `total`, `price`, `fee`, `tax`, ...) is compared with
+the source text. A value that does not occur there is cleared: set to
+`null`, or left out if the contract rejects `null` for that field. The
+cleared payload is validated again. If the contract still fails (the
+field is required), the attempt fails with a `provenance_violation`
+violation and, if retries remain, the model is re-prompted. An invented
+value is never passed through silently.
+
+```python
+from contractgate.llm import LLMGate, ProvenanceCheck
+
+gate = LLMGate(
+    api_key=..., contract_id=..., llm=client,
+    provenance=ProvenanceCheck(
+        on_unsupported="null",   # or "fail": never clear, always fail
+        scope="repair",          # or "all": check first answers too
+        fields=None,             # or an explicit list of field names
+    ),
+)
+result = gate.completion(
+    model="gpt-4o-mini",
+    messages=messages,
+    auto_repair=True,
+    source_text=note,            # default: the text of the user messages
+)
+for f in result.provenance:      # what was cleared or rejected, per attempt
+    print(f.field, f.action, f.attempt)
+```
+
+Pass `source_text=` when your user message contains more than the source
+(a schema summary, examples, numeric ranges): numbers in it would
+otherwise count as supported. Numbers must appear in digits (`1,250.00`,
+`980,40` and `3.2k` are understood); numbers written in words count as
+unsupported. Turn the check off with `provenance=False`.
 
 ## §4 Mask the prompt (optional)
 
