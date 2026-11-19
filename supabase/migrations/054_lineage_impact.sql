@@ -7,9 +7,11 @@
 -- for an entitled org until the tables exist. Free orgs are rejected
 -- with 402 before those tables are read.
 --
--- Adds the stored plan value `impact` (the Impact tier). Pricing pages
--- are unchanged. Which plans may use the feature, and the asset and edge
--- caps, live in src/plan.rs so they can be edited without another migration.
+-- Adds the stored plan value `impact` (Pro + Impact). It is a superset of
+-- Pro: the same event cap, rate limit, 90-day retention, and paid gates,
+-- plus downstream impact analysis. Pricing pages are unchanged. Which
+-- plans may use impact analysis, and the asset and edge caps, live in
+-- src/plan.rs so they can be edited without another migration.
 --
 -- Graph direction: an edge points downstream (upstream asset feeds the
 -- downstream asset). Impact is a recursive walk along those edges.
@@ -23,8 +25,8 @@ alter table public.orgs
 
 comment on column public.orgs.plan is
     'Billing plan: free | growth | enterprise | aisg_free | aisg_pro | impact. '
-    'impact is the downstream impact-analysis tier. Feature membership and '
-    'caps are constants in the gateway, not in this check.';
+    'impact is Pro + Impact: every Pro gate, plus downstream impact analysis. '
+    'Feature membership and caps are constants in the gateway, not in this check.';
 
 create table if not exists public.lineage_assets (
     id           uuid        primary key default gen_random_uuid(),
@@ -106,3 +108,36 @@ create index if not exists contract_impact_reports_lookup_idx
 alter table public.lineage_assets enable row level security;
 alter table public.lineage_edges enable row level security;
 alter table public.contract_impact_reports enable row level security;
+
+-- Pro + Impact uses the Pro retention window. Migration 037 left `impact`
+-- on the Free default (7 days) because the plan value did not exist yet.
+create or replace function public.log_retention_days(p_plan text)
+returns integer
+language sql
+immutable
+as $$
+    select case
+        when p_plan in ('growth', 'aisg_pro', 'impact') then 90
+        when p_plan = 'enterprise' then 365
+        else 7
+    end
+$$;
+
+-- Leaving Pro + Impact for Free schedules the same 30-day body grace as
+-- leaving Pro. Returning to Pro + Impact clears a pending redaction.
+create or replace function public.orgs_schedule_payload_redaction()
+returns trigger
+language plpgsql
+as $$
+begin
+    if new.plan is distinct from old.plan then
+        if old.plan in ('growth', 'aisg_pro', 'enterprise', 'impact')
+           and new.plan in ('free', 'aisg_free') then
+            new.payload_redact_after := now() + interval '30 days';
+        elsif new.plan in ('growth', 'aisg_pro', 'enterprise', 'impact') then
+            new.payload_redact_after := null;
+        end if;
+    end if;
+    return new;
+end;
+$$;

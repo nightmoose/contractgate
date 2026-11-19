@@ -36,7 +36,7 @@ const TIER_LABEL: Record<PlanTier, string> = {
   enterprise: "Enterprise",
   aisg_free: "Developer",
   aisg_pro: "Pro",
-  impact: "Impact",
+  impact: "Pro + Impact",
 };
 
 const TIER_COLOR: Record<PlanTier, string> = {

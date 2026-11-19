@@ -28,10 +28,9 @@ export const PLAN_ORDER: PlanTier[] = ["free", "growth", "enterprise"];
 const PLAN_RANK: Record<PlanTier, number> = {
   free: 0,
   aisg_free: 0,
-  // Impact analysis is its own entitlement, checked by the API. It does not
-  // unlock Pro features in the dashboard.
-  impact: 0,
   growth: 1,
+  // Pro + Impact meets every Pro dashboard gate, and the API adds impact analysis.
+  impact: 1,
   aisg_pro: 1,
   enterprise: 2,
 };
@@ -55,9 +54,9 @@ export function isFreePlan(plan: PlanTier): boolean {
 
 /**
  * Plans for which `isPaidPlan` is true. `paidPlansPhrase` is built from this
- * same list (DataContractGate Pro, AISchemaGate Pro, Enterprise).
+ * same list (DataContractGate Pro, Pro + Impact, AISchemaGate Pro, Enterprise).
  */
-const PAID_PLANS: readonly PlanTier[] = ["growth", "aisg_pro", "enterprise"];
+const PAID_PLANS: readonly PlanTier[] = ["growth", "impact", "aisg_pro", "enterprise"];
 
 /** True for plans billed through Stripe or managed (enterprise). */
 export function isPaidPlan(plan: PlanTier): boolean {
@@ -72,7 +71,7 @@ export function planDisplayName(plan: PlanTier): string {
     case "enterprise": return "Enterprise";
     case "aisg_free": return "Free";
     case "aisg_pro": return "AISchemaGate Pro";
-    case "impact": return "Impact";
+    case "impact": return "Pro + Impact";
   }
 }
 

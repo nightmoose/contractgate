@@ -27,7 +27,7 @@ use crate::contract::{Contract, FieldDefinition, FieldType};
 use crate::error::{AppError, AppResult};
 use crate::plan::{
     impact_analysis_allowed, impact_asset_limit, impact_edge_limit, impact_quota_message,
-    impact_upgrade_message, IMPACT_LLM_URL_ENV, IMPACT_MAX_HOPS,
+    IMPACT_LLM_URL_ENV, IMPACT_MAX_HOPS,
 };
 use crate::AppState;
 
@@ -1240,16 +1240,8 @@ async fn ensure_entitled(pool: &PgPool, self_hosted: bool, org_id: Uuid) -> AppR
     let plan = crate::storage::get_org_plan(pool, org_id)
         .await?
         .unwrap_or_else(|| "free".to_string());
-    if impact_analysis_allowed(self_hosted, &plan) {
-        Ok(plan)
-    } else {
-        Err(AppError::PlanResourceLimit {
-            resource: "impact_analysis",
-            limit: 0,
-            current: 0,
-            message: impact_upgrade_message(),
-        })
-    }
+    crate::plan::require_impact_analysis(self_hosted, &plan)?;
+    Ok(plan)
 }
 
 async fn load_downstream(
@@ -2546,7 +2538,8 @@ edges:
         assert!(body.get("affected").is_none());
         assert!(body.get("assets").is_none());
         let message = body["message"].as_str().unwrap();
-        assert!(message.contains("Impact plan"));
+        assert!(message.contains("Pro + Impact"));
+        assert!(message.contains("Enterprise"));
         assert!(!message.contains("stg"));
         assert!(!message.contains("Revenue"));
         let import_denied = import_checked(&pool, free, false, &document, "edges").await;

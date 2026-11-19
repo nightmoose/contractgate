@@ -6,18 +6,18 @@ The graph lives in Postgres (`lineage_assets`, `lineage_edges`). Nothing in this
 
 ## Plans
 
-The stored plan value is `impact` (migration `054_lineage_impact.sql`). Enterprise includes the feature. Pro (`growth`, `aisg_pro`) does not, until the constant below is edited. Self-host (`CONTRACTGATE_SELF_HOSTED`) includes it for every stored plan. Free and AISchemaGate Free receive HTTP 402 and no asset names.
+The stored plan value is `impact`, shown to customers as Pro + Impact (migration `054_lineage_impact.sql`). It is a superset of Pro: the 25 million monthly events, the Pro rate limit, 90-day retention, replay, payload storage, Connect Fivetran, and every other `is_paid` gate, plus impact analysis. Enterprise includes impact analysis and is not capped on assets or edges. Pro (`growth`, `aisg_pro`) does not include impact analysis. Self-host (`CONTRACTGATE_SELF_HOSTED`) includes it for every stored plan. Free and AISchemaGate Free receive HTTP 402 and no asset names.
 
 | Constant | Default | Meaning |
 |---|---|---|
 | `IMPACT_PLAN` | `impact` | Stored `orgs.plan` value |
+| `IMPACT_PLAN_NAME` | Pro + Impact | Name in the upgrade message |
 | `IMPACT_ANALYSIS_PLANS` | `impact`, `enterprise` | Plans that may import lineage and read impact |
-| `IMPACT_ASSET_LIMIT` | 2000 | Assets on the Impact plan. Enterprise is uncapped |
-| `IMPACT_EDGE_LIMIT` | 20000 | Edges on the Impact plan. Enterprise is uncapped |
+| `IMPACT_ASSET_LIMIT` | 2000 | Assets on Pro + Impact. Enterprise is uncapped |
+| `IMPACT_EDGE_LIMIT` | 20000 | Edges on Pro + Impact. Enterprise is uncapped |
 | `IMPACT_MAX_HOPS` | 8 | Downstream hops, including the first |
-| `IMPACT_MONTHLY_EVENT_LIMIT` | 100000 | Event cap for the Impact plan until a price is set |
 
-All of these are in `src/plan.rs`. The public pricing page is not changed by this feature. Stripe checkout does not sell the Impact plan; set `orgs.plan` directly until billing is wired.
+Pro + Impact uses the Pro monthly event cap (25,000,000). There is no separate event cap. All of the constants above are in `src/plan.rs`. Retention for `impact` is 90 days, set in `log_retention_days` by migration 054. The public pricing page is not changed by this feature. Stripe checkout does not sell Pro + Impact; set `orgs.plan` to `impact` directly until billing is wired.
 
 A plan that is not entitled gets:
 
@@ -28,7 +28,7 @@ A plan that is not entitled gets:
   "resource": "impact_analysis",
   "limit": 0,
   "current": 0,
-  "message": "Downstream impact analysis is included with the Impact plan. Upgrade at https://app.datacontractgate.com/pricing"
+  "message": "Downstream impact analysis is included with Pro + Impact and Enterprise. Upgrade at https://app.datacontractgate.com/pricing"
 }
 ```
 
