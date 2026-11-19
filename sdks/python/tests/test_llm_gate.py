@@ -422,7 +422,9 @@ def test_completion_auto_repair_passes_on_second_try():
     gate = LLMGate(api_key="k", contract_id="11111111-1111-4111-8111-111111111111", llm=llm, client=client, max_retries=2)
     result = gate.completion(
         model="gpt-4o-mini",
-        messages=[{"role": "user", "content": "extract"}],
+        # The repaired amount (10) is in the source text, so the provenance
+        # check (on by default) keeps it without an extra egress call.
+        messages=[{"role": "user", "content": "extract: the amount is 10"}],
         auto_repair=True,
     )
 

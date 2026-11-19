@@ -22,12 +22,20 @@ import json
 import re
 import warnings
 from dataclasses import dataclass, field
-from typing import Any, Awaitable, Callable, Dict, List, Optional
+from typing import Any, Awaitable, Callable, Dict, List, Optional, Tuple, Union
 
 from contractgate.async_client import AsyncClient
 from contractgate.client import Client
 from contractgate.exceptions import ContractGateError, ValidationFailedError
-from contractgate.models import ContractResponse, EgressResponse, Violation
+from contractgate.models import ContractResponse, EgressResponse, Violation, ViolationKind
+from contractgate.provenance import (
+    ProvenanceCheck,
+    ProvenanceFinding,
+    coerce_config,
+    provenance_hint,
+    source_text_from_messages,
+    unsupported_fields,
+)
 
 _UUID_RE = re.compile(
     r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$", re.IGNORECASE
@@ -96,6 +104,7 @@ class LLMGateResult:
     attempts: int
     raw_response: Any
     repair_hints: List[str] = field(default_factory=list)
+    provenance: List[ProvenanceFinding] = field(default_factory=list)
 
 
 # ---------------------------------------------------------------------------
@@ -320,6 +329,52 @@ def _append_user_message(messages: List[Dict[str, Any]], hint: str) -> List[Dict
     return list(messages) + [{"role": "user", "content": hint}]
 
 
+def _cleared_candidates(
+    payload: Dict[str, Any], found: List[Tuple[str, Any]]
+) -> List[Tuple[str, Dict[str, Any]]]:
+    """Payloads to try, in order, with the unsupported values cleared.
+
+    First the fields set to ``null``; then, for contracts that reject an
+    explicit ``null`` on an optional field, the fields left out. Whichever
+    the contract accepts is kept; if neither passes, the attempt fails.
+    """
+    names = {name for name, _value in found}
+    nulled = {k: (None if k in names else v) for k, v in payload.items()}
+    removed = {k: v for k, v in payload.items() if k not in names}
+    return [("nulled", nulled), ("removed", removed)]
+
+
+def _provenance_failure(
+    last: LLMGateResult,
+    found: List[Tuple[str, Any]],
+    findings: List[ProvenanceFinding],
+) -> LLMGateResult:
+    extra = [
+        Violation(
+            field=name,
+            message=(
+                f"Field '{name}' holds a value that does not appear in the source text "
+                "(provenance check); it was not passed through."
+            ),
+            kind=ViolationKind.PROVENANCE_VIOLATION,
+        )
+        for name, _value in found
+    ]
+    return LLMGateResult(
+        ok=False,
+        payload=last.payload,
+        violations=list(last.violations) + extra,
+        attempts=last.attempts,
+        raw_response=last.raw_response,
+        repair_hints=list(last.repair_hints),
+        provenance=list(findings),
+    )
+
+
+def _provenance_applies(config: ProvenanceCheck, attempt: int) -> bool:
+    return config.enabled and (config.scope == "all" or attempt > 1)
+
+
 # ---------------------------------------------------------------------------
 # Sync gate
 # ---------------------------------------------------------------------------
@@ -347,6 +402,7 @@ class LLMGate:
         max_retries: int = _DEFAULT_MAX_RETRIES,
         repair_prompt: Optional[Callable[[List[Violation]], str]] = None,
         client: Optional[Client] = None,
+        provenance: Union[bool, ProvenanceCheck, None] = True,
     ) -> None:
         self._llm = llm
         self._contract_id = contract_id
@@ -356,6 +412,7 @@ class LLMGate:
         self._on_fail = on_fail
         self._max_retries = _clamp_retries(max_retries)
         self._repair_prompt = repair_prompt or _default_repair_prompt
+        self._provenance = coerce_config(provenance)
         if client is None:
             self._client = Client(base_url=base_url, api_key=api_key)
             self._owns_client = True
@@ -383,6 +440,7 @@ class LLMGate:
         model: str,
         messages: List[Dict[str, Any]],
         auto_repair: bool = False,
+        source_text: Optional[str] = None,
         **provider_kwargs: Any,
     ) -> LLMGateResult:
         """OpenAI-protocol wrapper. Calls ``llm.chat.completions.create``.
@@ -397,7 +455,7 @@ class LLMGate:
                 model=model, messages=current, **provider_kwargs
             )
 
-        return self._run_loop(messages, call, auto_repair=auto_repair)
+        return self._run_loop(messages, call, auto_repair=auto_repair, source_text=source_text)
 
     def message(
         self,
@@ -406,6 +464,7 @@ class LLMGate:
         messages: List[Dict[str, Any]],
         max_tokens: int = 1024,
         auto_repair: bool = False,
+        source_text: Optional[str] = None,
         **provider_kwargs: Any,
     ) -> LLMGateResult:
         """Anthropic-protocol wrapper. Calls ``llm.messages.create``."""
@@ -420,7 +479,7 @@ class LLMGate:
                 **provider_kwargs,
             )
 
-        return self._run_loop(messages, call, auto_repair=auto_repair)
+        return self._run_loop(messages, call, auto_repair=auto_repair, source_text=source_text)
 
     def _resolve(self, contract_id: str) -> str:
         if _is_uuid(contract_id):
@@ -490,9 +549,12 @@ class LLMGate:
         call: Callable[[List[Dict[str, Any]]], Any],
         *,
         auto_repair: bool,
+        source_text: Optional[str] = None,
     ) -> LLMGateResult:
         current = list(messages)
         hints: List[str] = []
+        source = source_text if source_text is not None else source_text_from_messages(messages)
+        findings: List[ProvenanceFinding] = []
         last: Optional[LLMGateResult] = None
         total_attempts = self._max_retries + 1 if auto_repair else 1
         for attempt in range(1, total_attempts + 1):
@@ -512,6 +574,30 @@ class LLMGate:
                 continue
             egress = self._egress(payload)
             last = _result_from_egress(egress, raw_response=resp, attempts=attempt, hints=hints)
+            if egress.failed == 0 and _provenance_applies(self._provenance, attempt):
+                found = unsupported_fields(payload, source, self._provenance)
+                if found:
+                    if self._provenance.on_unsupported == "null":
+                        for action, candidate in _cleared_candidates(payload, found):
+                            cleared = self._egress(candidate)
+                            if cleared.failed == 0:
+                                findings += [
+                                    ProvenanceFinding(n, v, action, attempt) for n, v in found
+                                ]
+                                kept = _result_from_egress(
+                                    cleared, raw_response=resp, attempts=attempt, hints=hints
+                                )
+                                kept.provenance = list(findings)
+                                return kept
+                    findings += [ProvenanceFinding(n, v, "failed", attempt) for n, v in found]
+                    last = _provenance_failure(last, found, findings)
+                    if not auto_repair or attempt >= total_attempts:
+                        return last
+                    hint = provenance_hint(found)
+                    hints.append(hint)
+                    current = _append_user_message(current, hint)
+                    continue
+            last.provenance = list(findings)
             if egress.failed == 0 or not auto_repair or attempt >= total_attempts:
                 return last
             hint = self._repair_prompt(last.violations)
@@ -542,6 +628,7 @@ class AsyncLLMGate:
         max_retries: int = _DEFAULT_MAX_RETRIES,
         repair_prompt: Optional[Callable[[List[Violation]], str]] = None,
         client: Optional[AsyncClient] = None,
+        provenance: Union[bool, ProvenanceCheck, None] = True,
     ) -> None:
         self._llm = llm
         self._contract_id = contract_id
@@ -551,6 +638,7 @@ class AsyncLLMGate:
         self._on_fail = on_fail
         self._max_retries = _clamp_retries(max_retries)
         self._repair_prompt = repair_prompt or _default_repair_prompt
+        self._provenance = coerce_config(provenance)
         if client is None:
             self._client = AsyncClient(base_url=base_url, api_key=api_key)
             self._owns_client = True
@@ -574,6 +662,7 @@ class AsyncLLMGate:
         model: str,
         messages: List[Dict[str, Any]],
         auto_repair: bool = False,
+        source_text: Optional[str] = None,
         **provider_kwargs: Any,
     ) -> LLMGateResult:
         LLMGate._reject_stream_kwarg(provider_kwargs)
@@ -584,7 +673,9 @@ class AsyncLLMGate:
                 model=model, messages=current, **provider_kwargs
             )
 
-        return await self._run_loop(messages, call, auto_repair=auto_repair)
+        return await self._run_loop(
+            messages, call, auto_repair=auto_repair, source_text=source_text
+        )
 
     async def message(
         self,
@@ -593,6 +684,7 @@ class AsyncLLMGate:
         messages: List[Dict[str, Any]],
         max_tokens: int = 1024,
         auto_repair: bool = False,
+        source_text: Optional[str] = None,
         **provider_kwargs: Any,
     ) -> LLMGateResult:
         LLMGate._reject_stream_kwarg(provider_kwargs)
@@ -606,7 +698,9 @@ class AsyncLLMGate:
                 **provider_kwargs,
             )
 
-        return await self._run_loop(messages, call, auto_repair=auto_repair)
+        return await self._run_loop(
+            messages, call, auto_repair=auto_repair, source_text=source_text
+        )
 
     async def _resolve(self, contract_id: str) -> str:
         if _is_uuid(contract_id):
@@ -661,9 +755,12 @@ class AsyncLLMGate:
         call: Callable[[List[Dict[str, Any]]], Awaitable[Any]],
         *,
         auto_repair: bool,
+        source_text: Optional[str] = None,
     ) -> LLMGateResult:
         current = list(messages)
         hints: List[str] = []
+        source = source_text if source_text is not None else source_text_from_messages(messages)
+        findings: List[ProvenanceFinding] = []
         last: Optional[LLMGateResult] = None
         total_attempts = self._max_retries + 1 if auto_repair else 1
         for attempt in range(1, total_attempts + 1):
@@ -683,6 +780,30 @@ class AsyncLLMGate:
                 continue
             egress = await self._egress(payload)
             last = _result_from_egress(egress, raw_response=resp, attempts=attempt, hints=hints)
+            if egress.failed == 0 and _provenance_applies(self._provenance, attempt):
+                found = unsupported_fields(payload, source, self._provenance)
+                if found:
+                    if self._provenance.on_unsupported == "null":
+                        for action, candidate in _cleared_candidates(payload, found):
+                            cleared = await self._egress(candidate)
+                            if cleared.failed == 0:
+                                findings += [
+                                    ProvenanceFinding(n, v, action, attempt) for n, v in found
+                                ]
+                                kept = _result_from_egress(
+                                    cleared, raw_response=resp, attempts=attempt, hints=hints
+                                )
+                                kept.provenance = list(findings)
+                                return kept
+                    findings += [ProvenanceFinding(n, v, "failed", attempt) for n, v in found]
+                    last = _provenance_failure(last, found, findings)
+                    if not auto_repair or attempt >= total_attempts:
+                        return last
+                    hint = provenance_hint(found)
+                    hints.append(hint)
+                    current = _append_user_message(current, hint)
+                    continue
+            last.provenance = list(findings)
             if egress.failed == 0 or not auto_repair or attempt >= total_attempts:
                 return last
             hint = self._repair_prompt(last.violations)
@@ -699,4 +820,6 @@ __all__ = [
     "LLMResponseError",
     "extract_json",
     "MAX_RETRIES_CAP",
+    "ProvenanceCheck",
+    "ProvenanceFinding",
 ]
