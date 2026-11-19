@@ -1199,7 +1199,6 @@ async fn rewrite_summary(url: &str, summary: &str) -> Option<String> {
 // Persistence
 // ---------------------------------------------------------------------------
 
-#[derive(sqlx::FromRow)]
 struct DownRow {
     external_key: String,
     kind: String,
@@ -1244,6 +1243,15 @@ async fn ensure_entitled(pool: &PgPool, self_hosted: bool, org_id: Uuid) -> AppR
     Ok(plan)
 }
 
+/// Breadth-first downstream walk, one query per hop.
+///
+/// Each asset is visited once (global visited set), so the work is linear
+/// in assets plus edges no matter how many paths reach an asset. An
+/// earlier recursive CTE enumerated every simple path and only
+/// deduplicated at the end, which grows combinatorially on diamond-shaped
+/// lineage. The first time an asset is reached is a shortest path, which
+/// is the row kept. Field scoping applies at every hop: an unscoped edge
+/// carries every change, a scoped edge only its field.
 async fn load_downstream(
     pool: &PgPool,
     org_id: Uuid,
@@ -1252,60 +1260,91 @@ async fn load_downstream(
     include_all: bool,
 ) -> AppResult<Vec<DownRow>> {
     let kinds: Vec<String> = EDGE_KINDS_WALK.iter().map(|s| (*s).to_string()).collect();
-    let rows = sqlx::query_as::<_, DownRow>(DOWNSTREAM_SQL)
-        .bind(org_id)
-        .bind(contract_id)
-        .bind(&kinds)
-        .bind(include_all)
-        .bind(changed_fields)
-        .bind(IMPACT_MAX_HOPS)
-        .fetch_all(pool)
-        .await?;
-    Ok(rows)
+    let starts: Vec<(Uuid, String)> = sqlx::query_as(
+        "SELECT id, name FROM lineage_assets \
+         WHERE org_id = $1 AND contract_id = $2 ORDER BY external_key",
+    )
+    .bind(org_id)
+    .bind(contract_id)
+    .fetch_all(pool)
+    .await?;
+    // Path state for each visited asset: (name_path, fields).
+    let mut state: HashMap<Uuid, (Vec<String>, Vec<String>)> = HashMap::new();
+    let mut frontier: Vec<Uuid> = Vec::new();
+    for (id, name) in starts {
+        if state.insert(id, (vec![name], Vec::new())).is_none() {
+            frontier.push(id);
+        }
+    }
+    let mut found = Vec::new();
+    let mut depth = 0;
+    while !frontier.is_empty() && depth < IMPACT_MAX_HOPS {
+        depth += 1;
+        let hops = sqlx::query_as::<_, HopRow>(HOP_SQL)
+            .bind(org_id)
+            .bind(&frontier)
+            .bind(&kinds)
+            .bind(include_all)
+            .bind(changed_fields)
+            .fetch_all(pool)
+            .await?;
+        let mut next = Vec::new();
+        for hop in hops {
+            if state.contains_key(&hop.to_id) {
+                continue;
+            }
+            let Some((parent_names, parent_fields)) = state.get(&hop.from_id) else {
+                continue;
+            };
+            let mut name_path = parent_names.clone();
+            name_path.push(hop.name.clone());
+            let mut fields = parent_fields.clone();
+            fields.push(hop.field);
+            found.push(DownRow {
+                external_key: hop.external_key,
+                kind: hop.kind,
+                name: hop.name,
+                owner: hop.owner,
+                depth,
+                name_path: name_path.clone(),
+                fields: fields.clone(),
+            });
+            state.insert(hop.to_id, (name_path, fields));
+            next.push(hop.to_id);
+        }
+        frontier = next;
+    }
+    Ok(found)
 }
 
-const DOWNSTREAM_SQL: &str = r#"
-WITH RECURSIVE walk AS (
-    SELECT
-        e.to_asset_id AS asset_id,
-        1 AS depth,
-        ARRAY[src.id, dst.id]::uuid[] AS id_path,
-        ARRAY[src.name, dst.name]::text[] AS name_path,
-        ARRAY[coalesce(e.field_name, '')]::text[] AS fields
-    FROM lineage_edges e
-    JOIN lineage_assets src ON src.id = e.from_asset_id
-    JOIN lineage_assets dst ON dst.id = e.to_asset_id
-    WHERE e.org_id = $1
-      AND src.contract_id = $2
-      AND e.edge_kind = ANY($3)
-      AND ($4::bool OR e.field_name IS NULL OR e.field_name = ANY($5))
-    UNION ALL
-    SELECT
-        e.to_asset_id,
-        w.depth + 1,
-        w.id_path || e.to_asset_id,
-        w.name_path || dst.name,
-        w.fields || coalesce(e.field_name, '')
-    FROM lineage_edges e
-    JOIN walk w ON e.from_asset_id = w.asset_id
-    JOIN lineage_assets dst ON dst.id = e.to_asset_id
-    WHERE e.org_id = $1
-      AND e.edge_kind = ANY($3)
-      AND w.depth < $6
-      AND NOT e.to_asset_id = ANY(w.id_path)
-      AND ($4::bool OR e.field_name IS NULL OR e.field_name = ANY($5))
-)
-SELECT DISTINCT ON (w.asset_id)
-    a.external_key,
-    a.kind,
-    a.name,
-    a.owner,
-    w.depth,
-    w.name_path,
-    w.fields
-FROM walk w
-JOIN lineage_assets a ON a.id = w.asset_id
-ORDER BY w.asset_id, w.depth
+#[derive(sqlx::FromRow)]
+struct HopRow {
+    from_id: Uuid,
+    to_id: Uuid,
+    field: String,
+    external_key: String,
+    kind: String,
+    name: String,
+    owner: Option<String>,
+}
+
+/// One hop out of the frontier. Both ends are pinned to the org.
+const HOP_SQL: &str = r#"
+SELECT
+    e.from_asset_id AS from_id,
+    e.to_asset_id AS to_id,
+    coalesce(e.field_name, '') AS field,
+    dst.external_key,
+    dst.kind,
+    dst.name,
+    dst.owner
+FROM lineage_edges e
+JOIN lineage_assets dst ON dst.id = e.to_asset_id AND dst.org_id = $1
+WHERE e.org_id = $1
+  AND e.from_asset_id = ANY($2)
+  AND e.edge_kind = ANY($3)
+  AND ($4::bool OR e.field_name IS NULL OR e.field_name = ANY($5))
+ORDER BY e.from_asset_id, dst.external_key, coalesce(e.field_name, '')
 "#;
 
 struct BuiltReport {
@@ -1596,7 +1635,11 @@ async fn replace_lineage(
                 asset.contract_ref = Some(id.to_string());
                 asset.name = name;
             }
-            None => unlinked.push(contract_ref),
+            None => {
+                // Never store a ref that is not one of this org's contracts.
+                asset.contract_ref = None;
+                unlinked.push(contract_ref);
+            }
         }
     }
     let mut edges = parsed.edges;
@@ -2143,6 +2186,18 @@ ontology:
       required: false
 "#;
 
+    /// With no narrator URL configured (the default, and the self-host
+    /// default), the summary stays the template and nothing is called.
+    #[tokio::test]
+    async fn summary_uses_template_without_a_narrator_url() {
+        if std::env::var(IMPACT_LLM_URL_ENV).is_ok() {
+            return;
+        }
+        let (text, source) = maybe_rewrite_summary("1 breaking change.".into()).await;
+        assert_eq!(source, "template");
+        assert_eq!(text, "1 breaking change.");
+    }
+
     fn kinds(changes: &[FieldChange]) -> Vec<String> {
         changes
             .iter()
@@ -2561,6 +2616,156 @@ edges:
         sqlx::query("DELETE FROM orgs WHERE id = $1 OR id = $2")
             .bind(org)
             .bind(free)
+            .execute(&pool)
+            .await
+            .unwrap();
+    }
+
+    /// Diamond lattice (8 layers of 6, fully connected layer to layer) has
+    /// 6^7 simple paths. The walk must visit each asset once, stay fast,
+    /// and match the reference walk. Also covers field scoping several
+    /// hops down and a foreign contract id in an import.
+    #[tokio::test]
+    #[ignore = "requires DATABASE_URL and migration 054"]
+    async fn sql_walk_dedupes_diamonds_scopes_fields_and_drops_foreign_contracts() {
+        let db_url = std::env::var("DATABASE_URL").expect("DATABASE_URL must be set");
+        let pool = sqlx::PgPool::connect(&db_url).await.unwrap();
+        let org = Uuid::new_v4();
+        let other = Uuid::new_v4();
+        for (id, plan) in [(org, "impact"), (other, "impact")] {
+            sqlx::query("INSERT INTO orgs (id, name, slug, plan) VALUES ($1, $2, $3, $4)")
+                .bind(id)
+                .bind("impact walk test")
+                .bind(format!("impact-walk-{}", id.simple()))
+                .bind(plan)
+                .execute(&pool)
+                .await
+                .unwrap();
+        }
+        let (mine, _) = crate::storage::create_contract(
+            &pool,
+            "orders",
+            None,
+            V1,
+            Default::default(),
+            Some(org),
+        )
+        .await
+        .unwrap();
+        let (theirs, _) = crate::storage::create_contract(
+            &pool,
+            "orders",
+            None,
+            V1,
+            Default::default(),
+            Some(other),
+        )
+        .await
+        .unwrap();
+        let mine = mine.id;
+        let theirs = theirs.id;
+
+        let mut doc = String::from("edges:\n");
+        for j in 0..6 {
+            doc.push_str(&format!(
+                "  - upstream: contract:{mine}\n    downstream: model:l0n{j}\n"
+            ));
+        }
+        for layer in 0..7 {
+            for i in 0..6 {
+                for j in 0..6 {
+                    doc.push_str(&format!(
+                        "  - upstream: model:l{layer}n{i}\n    downstream: model:l{}n{j}\n",
+                        layer + 1
+                    ));
+                }
+            }
+        }
+        // Field scoping three hops down: only `amount` passes.
+        doc.push_str(
+            "  - upstream: model:l1n0\n    downstream: model:deep_amount\n    field: amount\n",
+        );
+        doc.push_str(
+            "  - upstream: model:l1n0\n    downstream: model:deep_region\n    field: region\n",
+        );
+        // A contract id from another org must not be linked.
+        doc.push_str(&format!(
+            "  - upstream: contract:{theirs}\n    downstream: model:foreign_child\n"
+        ));
+
+        let parsed = parse_lineage_document(&doc, "edges").unwrap();
+        let walk_edges: Vec<WalkEdge> = parsed
+            .edges
+            .iter()
+            .map(|e| WalkEdge {
+                from: e.from_key.clone(),
+                to: e.to_key.clone(),
+                field: e.field_name.clone(),
+            })
+            .collect();
+        let stats = replace_lineage(&pool, org, "impact", false, parsed)
+            .await
+            .unwrap();
+        assert!(
+            stats.unlinked_contracts.contains(&theirs.to_string()),
+            "{stats:?}"
+        );
+        let foreign: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM lineage_assets WHERE org_id = $1 AND contract_id = $2",
+        )
+        .bind(org)
+        .bind(theirs)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(foreign, 0, "a foreign contract id was stored as a link");
+
+        let started = std::time::Instant::now();
+        let rows = load_downstream(&pool, org, mine, &["amount".into()], false)
+            .await
+            .unwrap();
+        let elapsed = started.elapsed();
+        assert!(elapsed.as_secs() < 5, "walk took {elapsed:?}");
+        let mut from_sql: Vec<Reached> = rows
+            .iter()
+            .map(|r| Reached {
+                key: r.external_key.clone(),
+                depth: r.depth,
+            })
+            .collect();
+        from_sql.sort_by(|a, b| a.key.cmp(&b.key));
+        let mut from_walk = reference_walk(
+            &walk_edges,
+            &[format!("contract:{mine}")],
+            &["amount".to_string()],
+            false,
+            IMPACT_MAX_HOPS,
+        );
+        from_walk.sort_by(|a, b| a.key.cmp(&b.key));
+        assert_eq!(from_sql, from_walk);
+        // 8 layers x 6 assets, plus deep_amount. Each asset once.
+        assert_eq!(from_sql.len(), 49, "{from_sql:?}");
+        assert!(from_sql
+            .iter()
+            .any(|r| r.key == "model:deep_amount" && r.depth == 3));
+        assert!(!from_sql.iter().any(|r| r.key == "model:deep_region"));
+        assert!(!from_sql.iter().any(|r| r.key == "model:foreign_child"));
+        let deep = rows
+            .iter()
+            .find(|r| r.external_key == "model:deep_amount")
+            .unwrap();
+        assert_eq!(deep.name_path.len(), 4, "{:?}", deep.name_path);
+        assert_eq!(deep.fields.last().map(String::as_str), Some("amount"));
+
+        sqlx::query("DELETE FROM contracts WHERE org_id = $1 OR org_id = $2")
+            .bind(org)
+            .bind(other)
+            .execute(&pool)
+            .await
+            .unwrap();
+        sqlx::query("DELETE FROM orgs WHERE id = $1 OR id = $2")
+            .bind(org)
+            .bind(other)
             .execute(&pool)
             .await
             .unwrap();

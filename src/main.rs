@@ -2024,11 +2024,8 @@ fn build_router(state: Arc<AppState>) -> Router {
         )
         // Evolution diff summarizer (RFC-006)
         .route("/contracts/diff", post(infer_diff::diff_handler))
-        // Downstream lineage and impact analysis.
-        .route(
-            "/lineage",
-            get(impact::list_lineage_handler).post(impact::import_lineage_handler),
-        )
+        // Downstream impact analysis. `/lineage` import has its own router
+        // below (10 MB), because dbt manifest.json files often exceed 1 MB.
         .route(
             "/contracts/{id}/versions/{version}/impact",
             get(impact::impact_get_handler).post(impact::impact_recompute_handler),
@@ -2342,6 +2339,21 @@ fn build_router(state: Arc<AppState>) -> Router {
             require_api_key,
         ));
 
+    // Lineage import: real dbt manifest.json files are often several MB.
+    // The org's asset and edge caps still bound what is stored.
+    let lineage = Router::new()
+        .route(
+            "/lineage",
+            get(impact::list_lineage_handler).post(impact::import_lineage_handler),
+        )
+        .layer(tower_http::limit::RequestBodyLimitLayer::new(
+            10 * 1024 * 1024, // 10 MB
+        ))
+        .layer(middleware::from_fn_with_state(
+            state.clone(),
+            require_api_key,
+        ));
+
     // v1 ingest: own sub-router so the 10 MB RequestBodyLimitLayer is scoped
     // to this route only and does not affect other routes.  Auth middleware
     // must be applied here too (not just on `protected`) because Axum merges
@@ -2379,6 +2391,7 @@ fn build_router(state: Arc<AppState>) -> Router {
     let auth_router = Router::new()
         .merge(protected)
         .merge(infer)
+        .merge(lineage)
         .merge(v1)
         .layer(protected_cors);
 

@@ -18,6 +18,11 @@
 -- Service role / table owner bypasses RLS. anon and authenticated have
 -- no policy, so the dashboard cannot read lineage around the plan gate.
 
+-- Fail fast instead of queueing behind a long transaction on orgs. The
+-- constraint swap below needs a brief ACCESS EXCLUSIVE lock on orgs (one row
+-- per organization), the same swap migrations 026 and 036 made.
+select set_config('lock_timeout', '5s', true);
+
 alter table public.orgs drop constraint if exists orgs_plan_valid;
 alter table public.orgs
     add constraint orgs_plan_valid
@@ -81,6 +86,10 @@ create unique index if not exists lineage_edges_unique
 create index if not exists lineage_edges_from_idx
     on public.lineage_edges (org_id, from_asset_id);
 
+-- Serves the ON DELETE CASCADE from lineage_assets on the downstream end.
+create index if not exists lineage_edges_to_idx
+    on public.lineage_edges (to_asset_id);
+
 create table if not exists public.contract_impact_reports (
     id              uuid        primary key default gen_random_uuid(),
     org_id          uuid        not null references public.orgs(id) on delete cascade,
@@ -104,6 +113,13 @@ comment on table public.contract_impact_reports is
 
 create index if not exists contract_impact_reports_lookup_idx
     on public.contract_impact_reports (contract_id, version, created_at desc);
+
+-- Serve the ON DELETE CASCADE from contract_versions and orgs.
+create index if not exists contract_impact_reports_version_idx
+    on public.contract_impact_reports (version_id);
+
+create index if not exists contract_impact_reports_org_idx
+    on public.contract_impact_reports (org_id);
 
 alter table public.lineage_assets enable row level security;
 alter table public.lineage_edges enable row level security;
