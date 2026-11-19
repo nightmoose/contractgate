@@ -114,15 +114,18 @@ export function ImpactPanel({ contractId, versions }: ImpactPanelProps) {
       setMessage(note);
       const target = versionRef.current;
       if (target) {
+        // Supersede any in-flight GET for this panel; the recompute below is
+        // now the request whose answer the panel shows.
+        controllerRef.current?.abort();
         const requestId = trackerRef.current.start();
         const refreshed = await recomputeVersionImpact(contractId, target);
         if (!trackerRef.current.isCurrent(requestId)) {
           // The user picked a different version while the recompute was in
-          // flight: don't show this version's report under that label,
-          // just reload whichever version is selected now.
-          void load(versionRef.current);
+          // flight. That selection already started its own load, which owns
+          // the report and the loading flag, so drop this result.
           return;
         }
+        setLoading(false);
         if (refreshed.status === "error") {
           setMessage(`${note} ${refreshed.message}`);
         } else {
