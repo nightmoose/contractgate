@@ -99,16 +99,20 @@ impl FieldChange {
 }
 
 /// Classify field changes between two contract YAML documents.
-/// `before` is `None` for the first version of a contract.
+/// `before` is `None` for the first version of a contract, in which case
+/// the result is empty: the initial fields are not diffed against an empty
+/// baseline and are not labelled breaking.
 pub fn classify_yaml(before: Option<&str>, after: &str) -> Result<Vec<FieldChange>, String> {
+    // Parse `after` even when there is no base, so invalid first-version YAML
+    // still surfaces as an error.
     let after_contract = parse_contract(after)?;
-    let before_contract = match before {
-        Some(yaml) => Some(parse_contract(yaml)?),
-        None => None,
+    let Some(before_yaml) = before else {
+        return Ok(Vec::new());
     };
+    let before_contract = parse_contract(before_yaml)?;
     let renames = collect_renames(after);
     Ok(classify_contracts(
-        before_contract.as_ref(),
+        Some(&before_contract),
         &after_contract,
         &renames,
     ))
@@ -160,13 +164,12 @@ fn classify_contracts(
     after: &Contract,
     renames: &HashMap<String, String>,
 ) -> Vec<FieldChange> {
+    let Some(before) = before else {
+        return Vec::new();
+    };
     let mut changes = Vec::new();
-    let empty = Vec::new();
-    let before_fields = before
-        .map(|c| c.ontology.entities.as_slice())
-        .unwrap_or(&empty);
     diff_fields(
-        before_fields,
+        &before.ontology.entities,
         &after.ontology.entities,
         "",
         renames,
@@ -1088,6 +1091,7 @@ fn explain_asset(
     hops: i32,
     path: &[String],
     changes: &[&FieldChange],
+    first_version: bool,
 ) -> String {
     let owner_bit = match owner.map(str::trim).filter(|s| !s.is_empty()) {
         Some(owner) => format!(", owned by {owner}"),
@@ -1113,9 +1117,15 @@ fn explain_asset(
         .filter(|c| c.severity == "safe")
         .collect();
     if breaking.is_empty() && safe.is_empty() {
-        text.push_str(
-            " The contract version has no field changes, so this asset is not affected by a schema change.",
-        );
+        if first_version {
+            text.push_str(
+                " This is the first version of the contract, so this asset is registered downstream but is not affected by a schema change.",
+            );
+        } else {
+            text.push_str(
+                " The contract version has no field changes, so this asset is not affected by a schema change.",
+            );
+        }
     } else if breaking.is_empty() {
         text.push_str(" Nothing breaking reaches this asset.");
         if !safe.is_empty() {
@@ -1141,8 +1151,27 @@ fn join_sentences(changes: &[&FieldChange]) -> String {
         .join(" ")
 }
 
-fn summary_sentence(breaking: usize, safe: usize, affected: usize) -> String {
+fn summary_sentence(
+    breaking: usize,
+    safe: usize,
+    affected: usize,
+    first_version: bool,
+    asset_names: &[String],
+) -> String {
     let assets = if affected == 1 { "asset" } else { "assets" };
+    if first_version {
+        let registered = if asset_names.is_empty() {
+            "No downstream assets are registered.".to_string()
+        } else {
+            format!(
+                "{affected} downstream {assets} registered: {}.",
+                join_asset_names(asset_names)
+            )
+        };
+        return format!(
+            "This is the first version of the contract, so there are no field changes to compare. {registered}"
+        );
+    }
     if breaking == 0 && safe == 0 {
         return format!(
             "No field changes. {affected} downstream {assets} registered on this contract."
@@ -1153,6 +1182,41 @@ fn summary_sentence(breaking: usize, safe: usize, affected: usize) -> String {
     format!(
         "{breaking} breaking {breaking_word} and {safe} safe {safe_word}. {affected} downstream {assets} affected."
     )
+}
+
+/// How many downstream asset names the first-version summary lists before
+/// switching to "and N more". The full set is still in `affected`.
+const FIRST_VERSION_NAMED_ASSETS: usize = 8;
+
+fn join_asset_names(names: &[String]) -> String {
+    if names.is_empty() {
+        return String::new();
+    }
+    if names.len() > FIRST_VERSION_NAMED_ASSETS {
+        let rest = names.len() - FIRST_VERSION_NAMED_ASSETS;
+        return format!(
+            "{} and {rest} more",
+            names[..FIRST_VERSION_NAMED_ASSETS].join(", ")
+        );
+    }
+    match names {
+        [one] => one.clone(),
+        [a, b] => format!("{a} and {b}"),
+        _ => {
+            let (last, rest) = names.split_last().unwrap();
+            format!("{} and {last}", rest.join(", "))
+        }
+    }
+}
+
+/// A stored first-version report computed before the empty-baseline fix.
+/// GET recomputes these so existing rows do not keep calling the initial
+/// fields breaking.
+fn stale_first_version_report(report: &Value) -> bool {
+    let no_base = report.get("base_version").map_or(true, Value::is_null);
+    let changes =
+        report["breaking_count"].as_i64().unwrap_or(0) + report["safe_count"].as_i64().unwrap_or(0);
+    no_base && changes > 0
 }
 
 async fn maybe_rewrite_summary(summary: String) -> (String, &'static str) {
@@ -1381,6 +1445,7 @@ async fn build_report(
             row.depth,
             &row.name_path,
             &relevant,
+            base.is_none(),
         );
         affected.push(json!({
             "key": row.external_key,
@@ -1398,7 +1463,12 @@ async fn build_report(
     });
     let breaking = changes.iter().filter(|c| c.severity == "breaking").count();
     let safe = changes.len() - breaking;
-    let summary = summary_sentence(breaking, safe, affected.len());
+    let first_version = base.is_none();
+    let asset_names: Vec<String> = affected
+        .iter()
+        .filter_map(|asset| asset["name"].as_str().map(str::to_string))
+        .collect();
+    let summary = summary_sentence(breaking, safe, affected.len(), first_version, &asset_names);
     let (summary, summary_source) = maybe_rewrite_summary(summary).await;
     let change_json: Vec<Value> = changes
         .iter()
@@ -1987,7 +2057,9 @@ pub async fn impact_get_handler(
         return Err(missing_schema());
     }
     if let Some(report) = load_stored(&state.db, contract_id, &version).await? {
-        return Ok(Json(report));
+        if !stale_first_version_report(&report) {
+            return Ok(Json(report));
+        }
     }
     let report = compute_and_store(&state.db, owner, contract_id, &version, "recompute").await?;
     Ok(Json(report))
@@ -2244,6 +2316,98 @@ ontology:
         assert!(added.sentence().contains("Optional field"));
     }
 
+    /// The first version of a contract has no base to compare, so required
+    /// fields are not reported as breaking additions against an empty schema.
+    #[test]
+    fn first_version_has_no_field_changes() {
+        let changes = classify_yaml(None, V1).unwrap();
+        assert!(changes.is_empty(), "{changes:?}");
+        let first = r#"
+version: "1.0.0"
+name: customers
+ontology:
+  entities:
+    - name: id
+      type: integer
+      required: true
+    - name: email
+      type: string
+      required: true
+"#;
+        let changes = classify_yaml(None, first).unwrap();
+        assert!(changes.is_empty(), "{changes:?}");
+        assert!(classify_yaml(None, "not: [yaml").is_err());
+    }
+
+    #[test]
+    fn first_version_summary_names_downstream_assets_without_calling_fields_breaking() {
+        let summary = summary_sentence(0, 0, 2, true, &["stg_orders".into(), "Revenue".into()]);
+        assert!(summary.contains("first version"), "{summary}");
+        assert!(summary.contains("stg_orders"), "{summary}");
+        assert!(summary.contains("Revenue"), "{summary}");
+        assert!(!summary.contains("breaking"), "{summary}");
+        assert!(!summary.to_lowercase().contains("required"), "{summary}");
+        let empty = summary_sentence(0, 0, 0, true, &[]);
+        assert!(empty.contains("first version"), "{empty}");
+        assert!(empty.contains("No downstream assets"), "{empty}");
+        assert!(!empty.contains("breaking"), "{empty}");
+        let later = summary_sentence(0, 0, 2, false, &["stg_orders".into()]);
+        assert!(later.contains("No field changes"), "{later}");
+        assert!(!later.contains("first version"), "{later}");
+    }
+
+    #[test]
+    fn first_version_asset_explanation_does_not_call_fields_breaking() {
+        let text = explain_asset(
+            "Revenue",
+            "dashboard",
+            Some("bi@example.com"),
+            1,
+            &["Revenue".into()],
+            &[],
+            true,
+        );
+        assert!(text.contains("first version"), "{text}");
+        assert!(!text.contains("Breaking"), "{text}");
+        assert!(!text.contains("required"), "{text}");
+    }
+
+    #[test]
+    fn first_version_summary_truncates_a_long_asset_list() {
+        let names: Vec<String> = (1..=10).map(|i| format!("asset{i}")).collect();
+        let summary = summary_sentence(0, 0, names.len(), true, &names);
+        assert!(
+            summary.contains("10 downstream assets registered"),
+            "{summary}"
+        );
+        assert!(summary.contains("asset1"), "{summary}");
+        assert!(summary.contains("and 2 more"), "{summary}");
+        assert!(!summary.contains("asset9"), "{summary}");
+        assert!(!summary.contains("breaking"), "{summary}");
+    }
+
+    #[test]
+    fn stale_first_version_report_detects_the_empty_baseline_bug() {
+        let stale = serde_json::json!({
+            "base_version": null,
+            "breaking_count": 2,
+            "safe_count": 0
+        });
+        assert!(stale_first_version_report(&stale));
+        let first = serde_json::json!({
+            "base_version": null,
+            "breaking_count": 0,
+            "safe_count": 0
+        });
+        assert!(!stale_first_version_report(&first));
+        let later = serde_json::json!({
+            "base_version": "1.0.0",
+            "breaking_count": 2,
+            "safe_count": 0
+        });
+        assert!(!stale_first_version_report(&later));
+    }
+
     #[test]
     fn rename_is_breaking_and_not_a_remove_plus_add() {
         let renamed = r#"
@@ -2448,6 +2612,7 @@ edges:
             2,
             &["orders".into(), "stg_orders".into(), "Revenue".into()],
             &changes.iter().collect::<Vec<_>>(),
+            false,
         );
         assert!(text.contains("Revenue (dashboard)"));
         assert!(text.contains("owned by bi@example.com"));
