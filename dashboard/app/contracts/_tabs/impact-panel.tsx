@@ -14,6 +14,7 @@ import {
   type ImpactReport,
   type VersionSummary,
 } from "@/lib/api";
+import { localUpgradeMessage } from "@/lib/impact-upgrade";
 
 interface ImpactPanelProps {
   contractId: string;
@@ -25,7 +26,6 @@ export function ImpactPanel({ contractId, versions }: ImpactPanelProps) {
   const [version, setVersion] = useState(newest?.version ?? "");
   const [report, setReport] = useState<ImpactReport | null>(null);
   const [upgrade, setUpgrade] = useState<string | null>(null);
-  const [upgradeUrl, setUpgradeUrl] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [importing, setImporting] = useState(false);
@@ -42,8 +42,7 @@ export function ImpactPanel({ contractId, versions }: ImpactPanelProps) {
       const result = await getVersionImpact(contractId, selected);
       if (result.status === "upgrade") {
         setReport(null);
-        setUpgrade(result.message);
-        setUpgradeUrl(result.upgrade_url ?? "/pricing");
+        setUpgrade(localUpgradeMessage(result.message));
         return;
       }
       setUpgrade(null);
@@ -74,8 +73,7 @@ export function ImpactPanel({ contractId, versions }: ImpactPanelProps) {
       const imported = await importLineage(text, "auto", contractId);
       if (imported.status === "upgrade") {
         setReport(null);
-        setUpgrade(imported.message);
-        setUpgradeUrl(imported.upgrade_url ?? "/pricing");
+        setUpgrade(localUpgradeMessage(imported.message));
         return;
       }
       if (imported.status !== "ok") {
@@ -88,8 +86,7 @@ export function ImpactPanel({ contractId, versions }: ImpactPanelProps) {
         const refreshed = await recomputeVersionImpact(contractId, version);
         if (refreshed.status === "upgrade") {
           setReport(null);
-          setUpgrade(refreshed.message);
-          setUpgradeUrl(refreshed.upgrade_url ?? "/pricing");
+          setUpgrade(localUpgradeMessage(refreshed.message));
         } else if (refreshed.status === "ok") {
           setUpgrade(null);
           setReport(refreshed.report);
@@ -156,7 +153,7 @@ export function ImpactPanel({ contractId, versions }: ImpactPanelProps) {
           className="rounded-lg border border-amber-700/40 bg-amber-900/20 px-4 py-3 space-y-2"
         >
           <p className="text-sm text-amber-200">{upgrade}</p>
-          <Link href={upgradeUrl ?? "/pricing"} className="text-sm text-amber-300 underline">
+          <Link href="/pricing" className="text-sm text-amber-300 underline">
             Upgrade to Pro + Impact
           </Link>
         </div>
@@ -174,8 +171,9 @@ export function ImpactPanel({ contractId, versions }: ImpactPanelProps) {
         <div className="space-y-3" data-testid="impact-report">
           <p className="text-sm text-slate-200">{report.summary}</p>
           <p className="text-[11px] text-slate-500">
-            {report.breaking_count} breaking, {report.safe_count} safe
-            {report.base_version ? ` compared with v${report.base_version}` : ""}.
+            {report.base_version
+              ? `${report.breaking_count} breaking, ${report.safe_count} safe compared with v${report.base_version}.`
+              : "First version; no previous version to compare."}
           </p>
           {report.changes.length > 0 && (
             <ul className="space-y-1">

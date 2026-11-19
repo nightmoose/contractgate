@@ -49,7 +49,7 @@ The gateway writes a report synchronously, in the request that changed the contr
 
 `GET /contracts/{id}/versions/{version}/impact` returns the newest stored report. If none exists, it computes one (`recompute`). A failure to store the report does not fail the version write. If the migration is missing, the version write still succeeds and the impact routes return 503 for an entitled org.
 
-The comparison base is the previous version by creation time. A publish compares to the previous stable version when one exists.
+The comparison base is the previous version by creation time. A publish compares to the previous stable version when one exists. The first version has no base (`base_version` is null): the report records zero field changes and names the registered downstream assets without treating the initial fields as breaking. GET recomputes a stored first-version report if it still lists field changes from the old empty-baseline comparison.
 
 ## Lineage import
 
@@ -89,7 +89,7 @@ Safe kinds include `field_added_optional`, `type_widened` (integer to float, or 
 
 ## Dashboard
 
-The contract version view has a Downstream impact section. It imports a manifest or an edge list and shows the report for the selected version. A 402 renders the upgrade message and does not render assets.
+The contract version view has a Downstream impact section. It imports a manifest or an edge list and shows the report for the selected version. A 402 renders the upgrade message and does not render assets. The Upgrade link is a relative `/pricing` path so it stays on the current host; the API may still return the production pricing URL in `upgrade_url` for existing clients. The dashboard rewrites that production URL in the message text to `/pricing`.
 
 ## Migration
 
