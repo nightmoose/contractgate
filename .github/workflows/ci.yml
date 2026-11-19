@@ -842,12 +842,13 @@ jobs:
             tests::quarantine_privacy::redacted_store_drops_received_values \
             impact::tests::sql_downstream_matches_reference_walk \
             impact::tests::sql_walk_dedupes_diamonds_scopes_fields_and_drops_foreign_contracts \
+            impact::tests::impact_get_recomputes_after_lineage_reimport \
             2>&1 | tee /tmp/iso_test.out
           # Guard against the silent false-green: `cargo test` exits 0 even when
           # a filter matches zero tests (e.g. a future rename). Assert exactly
           # the expected tests actually ran.
-          if ! grep -qE '25 passed; 0 failed' /tmp/iso_test.out; then
-            echo "::error::Expected '25 passed; 0 failed' from the isolation/readiness/RFC-086/impact tests — got something else. A test may have been renamed or skipped."
+          if ! grep -qE '26 passed; 0 failed' /tmp/iso_test.out; then
+            echo "::error::Expected '26 passed; 0 failed' from the isolation/readiness/RFC-086/impact tests — got something else. A test may have been renamed or skipped."
             exit 1
           fi
 

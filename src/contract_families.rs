@@ -32,12 +32,14 @@
 use std::collections::{HashMap, HashSet};
 
 use axum::{
-    extract::{FromRequest, Path, State},
+    extract::{FromRequest, Path, Query, State},
     http::StatusCode,
+    response::{IntoResponse, Response},
     Json,
 };
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use sqlx::{PgPool, Postgres, Row, Transaction};
 use uuid::Uuid;
 
@@ -1132,13 +1134,32 @@ pub(crate) async fn add_family_link_handler(
     Ok((StatusCode::CREATED, Json(family)))
 }
 
+/// `?optional=true` turns "contract exists but is not in a family" into a
+/// 200 with a `null` body instead of a 404, for callers (the dashboard)
+/// that treat that case as routine rather than exceptional. An unknown or
+/// foreign contract id is still a 404 either way. Default behaviour is
+/// unchanged so existing API-key clients and the documented 404 keep
+/// working, and a client built against the new API still works talking to
+/// an older gateway that ignores the query parameter (it just gets the
+/// documented 404 back, which callers already handle).
+#[derive(Debug, Default, Deserialize)]
+pub(crate) struct FamilyForContractQuery {
+    #[serde(default)]
+    pub optional: bool,
+}
+
 pub(crate) async fn get_contract_family_handler(
     State(state): State<std::sync::Arc<AppState>>,
     crate::OrgId(org_id): crate::OrgId,
     Path(id): Path<Uuid>,
-) -> AppResult<Json<FamilyDetail>> {
+    Query(query): Query<FamilyForContractQuery>,
+) -> AppResult<Response> {
     let org_id = require_caller_org(&state, org_id)?;
-    Ok(Json(family_for_contract(&state.db, id, org_id).await?))
+    match family_for_contract(&state.db, id, org_id).await {
+        Ok(family) => Ok(Json(family).into_response()),
+        Err(AppError::NotFound(_)) if query.optional => Ok(Json(Value::Null).into_response()),
+        Err(err) => Err(err),
+    }
 }
 
 pub(crate) async fn list_public_families_handler(

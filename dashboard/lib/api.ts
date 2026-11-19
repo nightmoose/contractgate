@@ -1549,7 +1549,14 @@ export const addContractFamilyLink = (
  */
 export async function familyForContract(contractId: string): Promise<ContractFamily | null> {
   try {
-    return await apiFetch<ContractFamily>(`/contracts/${encodeURIComponent(contractId)}/family`);
+    // optional=true: a contract with no family is the common case, not an
+    // error, so ask the API for 200 null instead of a 404 that shows up as
+    // a failed request in the browser console on every contract page.
+    // Harmless against an older gateway that ignores the param — it 404s
+    // the same as before, which the catch below already turns into null.
+    return await apiFetch<ContractFamily | null>(
+      `/contracts/${encodeURIComponent(contractId)}/family?optional=true`
+    );
   } catch {
     return null;
   }
@@ -1953,9 +1960,14 @@ export async function importLineage(
 }
 
 /** Stored impact for a version, computed on the spot when none is stored. */
-export async function getVersionImpact(contractId: string, version: string): Promise<ImpactResult> {
+export async function getVersionImpact(
+  contractId: string,
+  version: string,
+  signal?: AbortSignal,
+): Promise<ImpactResult> {
   const { status, body } = await impactFetch(
-    `/contracts/${contractId}/versions/${encodeURIComponent(version)}/impact`
+    `/contracts/${contractId}/versions/${encodeURIComponent(version)}/impact`,
+    { signal }
   );
   return impactFromStatus(status, body);
 }

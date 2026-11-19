@@ -60,6 +60,8 @@ The first link on an empty family must be the root (`derived_from_contract_id` o
 
 The family that contains this contract. `404` when the contract is not in the caller's org, or is not in a family.
 
+`?optional=true` turns the "contract exists but is not in a family" case into `200` with a `null` body, for callers that treat a contract with no family as routine rather than exceptional (the dashboard sends this). The contract-not-found case is unaffected and is still `404` either way.
+
 ## Public catalog
 
 No API key.

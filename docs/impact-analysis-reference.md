@@ -49,7 +49,7 @@ The gateway writes a report synchronously, in the request that changed the contr
 
 `GET /contracts/{id}/versions/{version}/impact` returns the newest stored report. If none exists, it computes one (`recompute`). A failure to store the report does not fail the version write. If the migration is missing, the version write still succeeds and the impact routes return 503 for an entitled org.
 
-The comparison base is the previous version by creation time. A publish compares to the previous stable version when one exists. The first version has no base (`base_version` is null): the report records zero field changes and names the registered downstream assets without treating the initial fields as breaking. GET recomputes a stored first-version report if it still lists field changes from the old empty-baseline comparison.
+The comparison base is the previous version by creation time. A publish compares to the previous stable version when one exists. The first version has no base (`base_version` is null): the report records zero field changes and names the registered downstream assets without treating the initial fields as breaking. GET recomputes a stored first-version report if it still lists field changes from the old empty-baseline comparison. GET also recomputes a stored report when the organization's lineage has been re-imported since that report was computed, so every version reflects the current graph, not only the version selected at import time. Each report carries a `lineage_fingerprint` identifying the graph it was computed against.
 
 ## Lineage import
 

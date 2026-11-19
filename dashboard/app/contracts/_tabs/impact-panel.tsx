@@ -5,20 +5,26 @@
  * The API is the gate: a Free org gets an upgrade message and no asset list.
  */
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import {
   getVersionImpact,
   importLineage,
   recomputeVersionImpact,
+  type ImpactResult,
   type ImpactReport,
   type VersionSummary,
 } from "@/lib/api";
 import { localUpgradeMessage } from "@/lib/impact-upgrade";
+import { createLatestRequestTracker } from "@/lib/latest-request";
 
 interface ImpactPanelProps {
   contractId: string;
   versions: VersionSummary[];
+}
+
+function isAbortError(err: unknown): boolean {
+  return err instanceof Error && err.name === "AbortError";
 }
 
 export function ImpactPanel({ contractId, versions }: ImpactPanelProps) {
@@ -30,36 +36,60 @@ export function ImpactPanel({ contractId, versions }: ImpactPanelProps) {
   const [loading, setLoading] = useState(false);
   const [importing, setImporting] = useState(false);
 
+  // The selected version changes faster than its request can resolve
+  // (picking v1.0.0 then v1.0.1 quickly). These track which request is the
+  // latest so an out-of-order response never overwrites a newer selection.
+  const trackerRef = useRef(createLatestRequestTracker());
+  const controllerRef = useRef<AbortController | null>(null);
+  const versionRef = useRef(version);
+  useEffect(() => {
+    versionRef.current = version;
+  }, [version]);
+
+  const applyResult = useCallback((result: ImpactResult) => {
+    if (result.status === "upgrade") {
+      setReport(null);
+      setUpgrade(localUpgradeMessage(result.message));
+      return;
+    }
+    setUpgrade(null);
+    if (result.status === "ok") {
+      setReport(result.report);
+      return;
+    }
+    setReport(null);
+    setMessage(result.message);
+  }, []);
+
   useEffect(() => {
     if (!version && newest) setVersion(newest.version);
   }, [newest, version]);
 
   const load = useCallback(async (selected: string) => {
     if (!selected) return;
-    setLoading(true);
+    controllerRef.current?.abort();
+    const controller = new AbortController();
+    controllerRef.current = controller;
+    const requestId = trackerRef.current.start();
+    // Clear the old report immediately so it never sits under the newly
+    // selected version's label while the new request is in flight.
+    setReport(null);
+    setUpgrade(null);
     setMessage(null);
+    setLoading(true);
     try {
-      const result = await getVersionImpact(contractId, selected);
-      if (result.status === "upgrade") {
-        setReport(null);
-        setUpgrade(localUpgradeMessage(result.message));
-        return;
-      }
-      setUpgrade(null);
-      if (result.status === "ok") {
-        setReport(result.report);
-        return;
-      }
-      setReport(null);
-      setMessage(result.message);
+      const result = await getVersionImpact(contractId, selected, controller.signal);
+      if (!trackerRef.current.isCurrent(requestId)) return;
+      applyResult(result);
     } catch (err) {
+      if (!trackerRef.current.isCurrent(requestId) || isAbortError(err)) return;
       setReport(null);
       setUpgrade(null);
       setMessage(err instanceof Error ? err.message : "Impact request failed");
     } finally {
-      setLoading(false);
+      if (trackerRef.current.isCurrent(requestId)) setLoading(false);
     }
-  }, [contractId]);
+  }, [contractId, applyResult]);
 
   useEffect(() => {
     if (version) void load(version);
@@ -82,16 +112,24 @@ export function ImpactPanel({ contractId, versions }: ImpactPanelProps) {
       }
       const note = `Imported ${imported.imported.assets} assets and ${imported.imported.edges} edges.`;
       setMessage(note);
-      if (version) {
-        const refreshed = await recomputeVersionImpact(contractId, version);
-        if (refreshed.status === "upgrade") {
-          setReport(null);
-          setUpgrade(localUpgradeMessage(refreshed.message));
-        } else if (refreshed.status === "ok") {
-          setUpgrade(null);
-          setReport(refreshed.report);
-        } else {
+      const target = versionRef.current;
+      if (target) {
+        // Supersede any in-flight GET for this panel; the recompute below is
+        // now the request whose answer the panel shows.
+        controllerRef.current?.abort();
+        const requestId = trackerRef.current.start();
+        const refreshed = await recomputeVersionImpact(contractId, target);
+        if (!trackerRef.current.isCurrent(requestId)) {
+          // The user picked a different version while the recompute was in
+          // flight. That selection already started its own load, which owns
+          // the report and the loading flag, so drop this result.
+          return;
+        }
+        setLoading(false);
+        if (refreshed.status === "error") {
           setMessage(`${note} ${refreshed.message}`);
+        } else {
+          applyResult(refreshed);
         }
       }
     } catch (err) {
