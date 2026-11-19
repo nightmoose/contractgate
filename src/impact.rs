@@ -1219,6 +1219,19 @@ fn stale_first_version_report(report: &Value) -> bool {
     no_base && changes > 0
 }
 
+/// A stored report is stale when it predates lineage fingerprinting, or an
+/// import since it was computed changed the org's lineage graph. Either way
+/// `affected` was walked against a graph that no longer exists.
+fn report_is_stale(report: &Value, current_fingerprint: &str) -> bool {
+    if stale_first_version_report(report) {
+        return true;
+    }
+    match report.get("lineage_fingerprint").and_then(Value::as_str) {
+        Some(stored) => stored != current_fingerprint,
+        None => true,
+    }
+}
+
 async fn maybe_rewrite_summary(summary: String) -> (String, &'static str) {
     let Ok(url) = std::env::var(IMPACT_LLM_URL_ENV) else {
         return (summary, "template");
@@ -1305,6 +1318,30 @@ async fn ensure_entitled(pool: &PgPool, self_hosted: bool, org_id: Uuid) -> AppR
         .unwrap_or_else(|| "free".to_string());
     crate::plan::require_impact_analysis(self_hosted, &plan)?;
     Ok(plan)
+}
+
+/// A cheap stand-in for "which lineage graph is this". `replace_lineage`
+/// deletes and re-inserts every asset and edge for the org in one
+/// transaction, so the asset count, the latest asset `created_at`, and the
+/// edge count all change on any import — including one that empties the
+/// graph. A single statement reads all three under one snapshot, so a
+/// concurrent import either hasn't started (old fingerprint) or has already
+/// committed (new fingerprint); it cannot be read half-applied.
+async fn lineage_fingerprint(pool: &PgPool, org_id: Uuid) -> AppResult<String> {
+    let (assets, max_created, edges): (i64, Option<chrono::DateTime<chrono::Utc>>, i64) =
+        sqlx::query_as(
+            "SELECT \
+                (SELECT count(*) FROM lineage_assets WHERE org_id = $1), \
+                (SELECT max(created_at) FROM lineage_assets WHERE org_id = $1), \
+                (SELECT count(*) FROM lineage_edges WHERE org_id = $1)",
+        )
+        .bind(org_id)
+        .fetch_one(pool)
+        .await?;
+    let stamp = max_created
+        .map(|t| t.timestamp_micros().to_string())
+        .unwrap_or_else(|| "none".to_string());
+    Ok(format!("{assets}:{stamp}:{edges}"))
 }
 
 /// Breadth-first downstream walk, one query per hop.
@@ -1433,6 +1470,9 @@ async fn build_report(
         .map_err(AppError::BadRequest)?;
     let changed = changed_top_fields(&changes);
     let include_all = changes.is_empty();
+    // Read before the walk: a concurrent import then makes this report look
+    // stale (fingerprint no longer matches) rather than fresh.
+    let fingerprint = lineage_fingerprint(pool, org_id).await?;
     let downstream = load_downstream(pool, org_id, contract_id, &changed, include_all).await?;
     let mut affected = Vec::new();
     for row in &downstream {
@@ -1495,6 +1535,7 @@ async fn build_report(
         "affected_count": affected.len(),
         "changes": change_json,
         "affected": affected,
+        "lineage_fingerprint": fingerprint,
     });
     Ok(BuiltReport { body })
 }
@@ -1607,6 +1648,24 @@ async fn load_stored(pool: &PgPool, contract_id: Uuid, version: &str) -> AppResu
     .fetch_optional(pool)
     .await?;
     Ok(row.map(|(report,)| report))
+}
+
+/// The GET path: serve the stored report unless it is stale, in which case
+/// recompute and store a fresh one. `owner` is the contract's owning org,
+/// which is what lineage import and `build_report` are scoped to.
+async fn load_or_recompute(
+    pool: &PgPool,
+    owner: Uuid,
+    contract_id: Uuid,
+    version: &str,
+) -> AppResult<Value> {
+    if let Some(report) = load_stored(pool, contract_id, version).await? {
+        let fingerprint = lineage_fingerprint(pool, owner).await?;
+        if !report_is_stale(&report, &fingerprint) {
+            return Ok(report);
+        }
+    }
+    compute_and_store(pool, owner, contract_id, version, "recompute").await
 }
 
 /// Called after a version is proposed or published. Failures are logged.
@@ -2056,12 +2115,7 @@ pub async fn impact_get_handler(
     if !schema_ready(&state.db).await? {
         return Err(missing_schema());
     }
-    if let Some(report) = load_stored(&state.db, contract_id, &version).await? {
-        if !stale_first_version_report(&report) {
-            return Ok(Json(report));
-        }
-    }
-    let report = compute_and_store(&state.db, owner, contract_id, &version, "recompute").await?;
+    let report = load_or_recompute(&state.db, owner, contract_id, &version).await?;
     Ok(Json(report))
 }
 
@@ -2406,6 +2460,39 @@ ontology:
             "safe_count": 0
         });
         assert!(!stale_first_version_report(&later));
+    }
+
+    #[test]
+    fn report_is_stale_detects_missing_or_mismatched_fingerprint() {
+        let fresh = serde_json::json!({
+            "base_version": "1.0.0",
+            "breaking_count": 1,
+            "safe_count": 0,
+            "lineage_fingerprint": "3:100:2",
+        });
+        assert!(!report_is_stale(&fresh, "3:100:2"));
+        assert!(report_is_stale(&fresh, "4:200:3"));
+
+        let no_fingerprint = serde_json::json!({
+            "base_version": "1.0.0",
+            "breaking_count": 1,
+            "safe_count": 0,
+        });
+        assert!(
+            report_is_stale(&no_fingerprint, "3:100:2"),
+            "a pre-fingerprint row must be recomputed once"
+        );
+
+        let stale_first_version = serde_json::json!({
+            "base_version": null,
+            "breaking_count": 1,
+            "safe_count": 0,
+            "lineage_fingerprint": "3:100:2",
+        });
+        assert!(
+            report_is_stale(&stale_first_version, "3:100:2"),
+            "the empty-baseline bug takes priority even with a matching fingerprint"
+        );
     }
 
     #[test]
@@ -2931,6 +3018,119 @@ edges:
         sqlx::query("DELETE FROM orgs WHERE id = $1 OR id = $2")
             .bind(org)
             .bind(other)
+            .execute(&pool)
+            .await
+            .unwrap();
+    }
+
+    /// Reproduces the bug: a stored report for one version keeps citing
+    /// assets from an old lineage graph after a later import replaces it.
+    /// `load_or_recompute` is the function `impact_get_handler` calls, so
+    /// this exercises the same staleness decision the GET route makes.
+    #[tokio::test]
+    #[ignore = "requires DATABASE_URL and migration 054"]
+    async fn impact_get_recomputes_after_lineage_reimport() {
+        let db_url = std::env::var("DATABASE_URL").expect("DATABASE_URL must be set");
+        let pool = sqlx::PgPool::connect(&db_url).await.unwrap();
+        let org = Uuid::new_v4();
+        sqlx::query("INSERT INTO orgs (id, name, slug, plan) VALUES ($1, $2, $3, 'impact')")
+            .bind(org)
+            .bind("impact stale test")
+            .bind(format!("impact-stale-{}", org.simple()))
+            .execute(&pool)
+            .await
+            .unwrap();
+        let (identity, _) = crate::storage::create_contract(
+            &pool,
+            "orders",
+            None,
+            V1,
+            Default::default(),
+            Some(org),
+        )
+        .await
+        .unwrap();
+        let contract_id = identity.id;
+        crate::storage::create_version(&pool, contract_id, "1.1.0", V2, Some(org))
+            .await
+            .unwrap();
+
+        let graph_a = format!(
+            "edges:\n  - upstream: contract:{contract_id}\n    downstream: model:graph_a_model\n    downstream_name: graph a model\n"
+        );
+        let parsed_a = parse_lineage_document(&graph_a, "edges").unwrap();
+        replace_lineage(&pool, org, "impact", false, parsed_a)
+            .await
+            .unwrap();
+
+        let report_v1 = compute_and_store(&pool, org, contract_id, "1.0.0", "recompute")
+            .await
+            .unwrap();
+        let report_v2 = compute_and_store(&pool, org, contract_id, "1.1.0", "recompute")
+            .await
+            .unwrap();
+        for report in [&report_v1, &report_v2] {
+            let affected = report["affected"].as_array().unwrap();
+            assert!(
+                affected.iter().any(|a| a["key"] == "model:graph_a_model"),
+                "{affected:?}"
+            );
+        }
+
+        // An import replaces the whole org graph: graph A's asset is gone,
+        // graph B's asset takes its place.
+        let graph_b = format!(
+            "edges:\n  - upstream: contract:{contract_id}\n    downstream: model:graph_b_model\n    downstream_name: graph b model\n"
+        );
+        let parsed_b = parse_lineage_document(&graph_b, "edges").unwrap();
+        replace_lineage(&pool, org, "impact", false, parsed_b)
+            .await
+            .unwrap();
+
+        // v2 was never requested again, so its stored row is untouched and
+        // still carries graph A's fingerprint -- exactly what makes it stale.
+        let stored_v1 = load_stored(&pool, contract_id, "1.0.0")
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            stored_v1["lineage_fingerprint"], report_v1["lineage_fingerprint"],
+            "the stored row predates the reimport"
+        );
+
+        // This is the GET-path call: v1's stored report was computed against
+        // graph A, so it must be detected stale and recomputed against B.
+        let refreshed_v1 = load_or_recompute(&pool, org, contract_id, "1.0.0")
+            .await
+            .unwrap();
+        assert_ne!(
+            refreshed_v1["lineage_fingerprint"], stored_v1["lineage_fingerprint"],
+            "recompute must stamp the new graph's fingerprint"
+        );
+        let affected = refreshed_v1["affected"].as_array().unwrap();
+        assert!(
+            affected.iter().any(|a| a["key"] == "model:graph_b_model"),
+            "{affected:?}"
+        );
+        assert!(
+            affected.iter().all(|a| a["key"] != "model:graph_a_model"),
+            "{affected:?}"
+        );
+
+        // A second call is now a cache hit: the stored row matches the
+        // current graph, so it is served as-is rather than recomputed again.
+        let cached_v1 = load_or_recompute(&pool, org, contract_id, "1.0.0")
+            .await
+            .unwrap();
+        assert_eq!(cached_v1, refreshed_v1);
+
+        sqlx::query("DELETE FROM contracts WHERE org_id = $1")
+            .bind(org)
+            .execute(&pool)
+            .await
+            .unwrap();
+        sqlx::query("DELETE FROM orgs WHERE id = $1")
+            .bind(org)
             .execute(&pool)
             .await
             .unwrap();
