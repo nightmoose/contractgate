@@ -59,6 +59,7 @@ mod fail_policy;
 mod fivetran;
 mod fork_filter;
 mod idempotency;
+mod impact;
 mod infer;
 mod infer_avro;
 mod infer_csv;
@@ -527,6 +528,7 @@ async fn create_contract_handler(
         effective_payload_flag(state.self_hosted, decision.as_ref(), stored),
     )
     .await?;
+    impact::record_version_impact(&state, org_id, resp.id, "1.0.0", "version_created").await;
     Ok((StatusCode::CREATED, Json(resp)))
 }
 
@@ -710,6 +712,8 @@ async fn create_version_handler(
         state.self_hosted,
     )
     .await?;
+    impact::record_version_impact(&state, org_id, contract_id, &req.version, "version_created")
+        .await;
     // Drafts are cached lazily on first pin — no eager insert.
     Ok((StatusCode::CREATED, Json(VersionResponse::from(&v))))
 }
@@ -779,6 +783,7 @@ async fn patch_version_handler(
         .await?,
     )
     .await?;
+    impact::record_version_impact(&state, org_id, contract_id, &version, "version_created").await;
     // Evict: a draft edit changes its compiled form.
     state.invalidate_version(contract_id, &version);
     Ok(Json(VersionResponse::from(&v)))
@@ -794,6 +799,7 @@ async fn promote_version_handler(
     }
     require_owner(&state, contract_id, org_id).await?;
     let v = storage::promote_version(&state.db, contract_id, &version, org_id).await?;
+    impact::record_version_impact(&state, org_id, contract_id, &version, "version_published").await;
     // Version is now stable and frozen.  Pre-warm the cache so the first
     // ingest request doesn't take the slow path.
     let _ = state.get_compiled(contract_id, &version).await;
@@ -908,6 +914,14 @@ async fn deploy_contract_handler(
     // views so a cached GET /published/{ref} does not outlive that change.
     state.public_read_cache.invalidate_publication_views();
 
+    impact::record_version_impact(
+        &state,
+        org_id,
+        version.contract_id,
+        &version.version,
+        "version_published",
+    )
+    .await;
     let deployed_at = version.promoted_at.unwrap_or_else(chrono::Utc::now);
     let resp = DeployContractResponse {
         contract_id: version.contract_id,
@@ -2010,6 +2024,15 @@ fn build_router(state: Arc<AppState>) -> Router {
         )
         // Evolution diff summarizer (RFC-006)
         .route("/contracts/diff", post(infer_diff::diff_handler))
+        // Downstream lineage and impact analysis.
+        .route(
+            "/lineage",
+            get(impact::list_lineage_handler).post(impact::import_lineage_handler),
+        )
+        .route(
+            "/contracts/{id}/versions/{version}/impact",
+            get(impact::impact_get_handler).post(impact::impact_recompute_handler),
+        )
         // Brownfield contract scaffolder (RFC-024)
         .route(
             "/contracts/scaffold",

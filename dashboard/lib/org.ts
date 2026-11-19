@@ -20,7 +20,7 @@ import { DEMO_MODE, DEMO_ORG_UUID, DEMO_ORG_NAME } from "@/lib/demo";
  * `aisg_*` are AISchemaGate's plans (migration 036): same tenant and backend,
  * its own tiers. For feature gating they rank alongside free and growth.
  */
-export type PlanTier = "free" | "growth" | "enterprise" | "aisg_free" | "aisg_pro";
+export type PlanTier = "free" | "growth" | "enterprise" | "aisg_free" | "aisg_pro" | "impact";
 
 /** Ordered list used for tier comparisons — index = capability rank. */
 export const PLAN_ORDER: PlanTier[] = ["free", "growth", "enterprise"];
@@ -28,6 +28,9 @@ export const PLAN_ORDER: PlanTier[] = ["free", "growth", "enterprise"];
 const PLAN_RANK: Record<PlanTier, number> = {
   free: 0,
   aisg_free: 0,
+  // Impact analysis is its own entitlement, checked by the API. It does not
+  // unlock Pro features in the dashboard.
+  impact: 0,
   growth: 1,
   aisg_pro: 1,
   enterprise: 2,
@@ -69,6 +72,7 @@ export function planDisplayName(plan: PlanTier): string {
     case "enterprise": return "Enterprise";
     case "aisg_free": return "Free";
     case "aisg_pro": return "AISchemaGate Pro";
+    case "impact": return "Impact";
   }
 }
 

@@ -15,6 +15,9 @@ pub fn monthly_event_limit(plan: &str) -> Option<i64> {
         "free" | "aisg_free" => Some(100_000),
         "growth" | "aisg_pro" => Some(25_000_000),
         "enterprise" => None,
+        // Dedicated impact-analysis tier. Same event cap as Free until pricing
+        // is set. Change IMPACT_MONTHLY_EVENT_LIMIT, not the pricing page.
+        IMPACT_PLAN => Some(IMPACT_MONTHLY_EVENT_LIMIT),
         _ => Some(100_000),
     }
 }
@@ -79,6 +82,72 @@ pub const FREE_VERSION_LIMIT: i64 = 3;
 /// Pricing page linked from the Free contract and version cap.
 pub const PLAN_LIMIT_UPGRADE_URL: &str = "https://app.datacontractgate.com/pricing";
 
+/// Stored `orgs.plan` value for the downstream impact-analysis tier.
+/// Allowed by migration 054. The public pricing page does not list it.
+pub const IMPACT_PLAN: &str = "impact";
+
+/// Plans that may register lineage and read downstream impact.
+///
+/// Edit this slice to move the feature. `impact` is the dedicated tier.
+/// Enterprise includes it. Pro (`growth`, `aisg_pro`) does not, until this
+/// list says so. Self-host is allowed for every stored plan via
+/// [`impact_analysis_allowed`].
+pub const IMPACT_ANALYSIS_PLANS: &[&str] = &["impact", "enterprise"];
+
+/// Monthly events for [`IMPACT_PLAN`] until a price is chosen.
+pub const IMPACT_MONTHLY_EVENT_LIMIT: i64 = 100_000;
+
+/// Lineage assets one Impact-tier org may store. Enterprise and self-host
+/// are uncapped (`None` from [`impact_asset_limit`]).
+pub const IMPACT_ASSET_LIMIT: i64 = 2_000;
+
+/// Lineage edges one Impact-tier org may store.
+pub const IMPACT_EDGE_LIMIT: i64 = 20_000;
+
+/// Downstream hops, including the first hop off the contract. Matches the
+/// depth the lineage walk was designed around.
+pub const IMPACT_MAX_HOPS: i32 = 8;
+
+/// Optional narrator. Unset means explanations stay the deterministic
+/// templates. No secret is required for the feature to run.
+pub const IMPACT_LLM_URL_ENV: &str = "CONTRACTGATE_IMPACT_LLM_URL";
+
+/// `true` when this org may use downstream impact analysis.
+pub fn impact_analysis_allowed(self_hosted: bool, plan: &str) -> bool {
+    self_hosted || IMPACT_ANALYSIS_PLANS.contains(&plan)
+}
+
+/// Asset cap. `None` means uncapped.
+pub fn impact_asset_limit(self_hosted: bool, plan: &str) -> Option<i64> {
+    if self_hosted || plan == "enterprise" {
+        None
+    } else {
+        Some(IMPACT_ASSET_LIMIT)
+    }
+}
+
+/// Edge cap. `None` means uncapped.
+pub fn impact_edge_limit(self_hosted: bool, plan: &str) -> Option<i64> {
+    if self_hosted || plan == "enterprise" {
+        None
+    } else {
+        Some(IMPACT_EDGE_LIMIT)
+    }
+}
+
+/// 402 body for a plan that does not include impact analysis.
+/// The sentence does not name downstream assets.
+pub fn impact_upgrade_message() -> String {
+    format!(
+        "Downstream impact analysis is included with the Impact plan. Upgrade at {PLAN_LIMIT_UPGRADE_URL}"
+    )
+}
+
+/// 402 body when an entitled import exceeds an Impact-tier cap.
+pub fn impact_quota_message(what: &str, limit: i64) -> String {
+    format!("The Impact plan allows {limit} {what}. This import is over that cap.")
+}
+
 /// Which Free cap a create hit.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PlanLimitResource {
@@ -117,7 +186,9 @@ pub fn free_resource_limit(
         return None;
     }
     let plan = plan?;
-    if is_paid(plan) {
+    // Paid plans, and any plan in IMPACT_ANALYSIS_PLANS (the Impact tier),
+    // are not on the Free contract/version cap.
+    if is_paid(plan) || IMPACT_ANALYSIS_PLANS.contains(&plan) {
         return None;
     }
     Some(resource.limit())
@@ -667,7 +738,7 @@ mod tests {
                 assert_eq!(free_resource_limit(false, Some(plan), resource), Some(3));
                 assert_eq!(free_resource_limit(true, Some(plan), resource), None);
             }
-            for plan in ["growth", "aisg_pro", "enterprise"] {
+            for plan in ["growth", "aisg_pro", "enterprise", IMPACT_PLAN] {
                 assert_eq!(free_resource_limit(false, Some(plan), resource), None);
             }
             assert_eq!(free_resource_limit(false, None, resource), None);
@@ -776,6 +847,36 @@ mod tests {
         let counts = crate::storage::PENDING_QUARANTINE_COUNTS_SQL;
         assert!(counts.contains("status = 'pending'"));
         assert!(!counts.to_ascii_lowercase().contains("direction"));
+    }
+
+    #[test]
+    fn impact_tier_is_separate_from_pro() {
+        assert!(impact_analysis_allowed(false, IMPACT_PLAN));
+        assert!(impact_analysis_allowed(false, "enterprise"));
+        assert!(impact_analysis_allowed(true, "free"));
+        for plan in ["free", "aisg_free", "growth", "aisg_pro", "bogus"] {
+            assert!(!impact_analysis_allowed(false, plan), "{plan}");
+        }
+        assert!(!is_paid(IMPACT_PLAN));
+        assert_eq!(
+            monthly_event_limit(IMPACT_PLAN),
+            Some(IMPACT_MONTHLY_EVENT_LIMIT)
+        );
+        assert_eq!(
+            impact_asset_limit(false, IMPACT_PLAN),
+            Some(IMPACT_ASSET_LIMIT)
+        );
+        assert_eq!(
+            impact_edge_limit(false, IMPACT_PLAN),
+            Some(IMPACT_EDGE_LIMIT)
+        );
+        assert_eq!(impact_asset_limit(false, "enterprise"), None);
+        assert_eq!(impact_asset_limit(true, "free"), None);
+        let msg = impact_upgrade_message();
+        assert!(msg.contains("Impact plan"));
+        assert!(msg.contains(PLAN_LIMIT_UPGRADE_URL));
+        assert!(!msg.contains("ContractGate"));
+        assert!(!msg.contains("affected"));
     }
 
     fn section<'a>(sql: &'a str, start: &str, end: &str) -> &'a str {

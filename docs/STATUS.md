@@ -115,6 +115,7 @@ them by name only.
 | 113 | [Contract families](rfcs/113-contract-families.md) | Accepted |
 | 114 | [Launch: public catalog cache, cheap bad keys, SSR bypass](rfcs/114-launch-catalog-cache-and-auth.md) | Accepted |
 | 115 | [Anonymous playground](rfcs/115-anonymous-playground.md) | Accepted |
+| 116 | [Downstream impact analysis](rfcs/116-lineage-impact.md) | Accepted |
 
 ---
 
@@ -131,6 +132,8 @@ them by name only.
 | **Superseded** | Replaced by a later RFC listed in the notes column; kept for design context. |
 
 ---
+
+*2026-11-19 — RFC-116: downstream impact analysis. An org registers lineage (dbt `manifest.json` or an edge list). Proposing or publishing a contract version stores which downstream assets are affected and which field changes are breaking, with a plain-English sentence per asset. The graph is Postgres. Free orgs get HTTP 402 and no asset data. The Impact plan and Enterprise are entitled; the lists and caps are constants in `src/plan.rs`. Migration `054_lineage_impact.sql` must be applied before the feature serves data. The gateway still boots without it. See `docs/impact-analysis-reference.md`.*
 
 *2026-11-14 — RFC-115: logged-out visitors can run the playground. `POST /public/playground/validate` compiles the posted YAML, validates one event, and writes nothing. It is limited to 1 request/second per client IP with a burst of 8 and a 64 KiB body. The dashboard playground no longer shows the sample preview to anonymous visitors. See `docs/public-playground-reference.md`.*
 

@@ -9,6 +9,7 @@
 import { useState, useCallback, useEffect } from "react";
 import clsx from "clsx";
 import { getVersion, exportOdcs, approveImport, getConformanceReport, diffContracts } from "@/lib/api";
+import { ImpactPanel } from "./impact-panel";
 import type { ContractResponse, VersionSummary, VersionResponse, NameHistoryEntry, ConformanceReport, DiffResponse } from "@/lib/api";
 import { ConfirmActionModal, TooltipWrap } from "../_lib";
 import { HelpTarget } from "@/components/help/HelpTarget";
@@ -208,6 +209,8 @@ export function VersionsTab({
           onClose={() => { setDiffDrawerOpen(false); setDiffResult(null); setDiffError(null); }}
         />
       )}
+
+      <ImpactPanel contractId={contractId} versions={versions} />
 
       {/* Latest-stable resolver badge */}
       <div className="flex items-center gap-3 bg-[#0a0d12] border border-[#1f2937] rounded-xl px-4 py-3">
