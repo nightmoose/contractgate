@@ -202,6 +202,11 @@ pub enum AppError {
     /// Response is structurally valid but contains no inferable records.  422.
     #[error("Unprocessable: {0}")]
     UnprocessableEntity(String),
+
+    /// A route exists but its database tables are not present yet. 503.
+    /// Used when migration 054 has not been applied. The process still boots.
+    #[error("{0}")]
+    Unavailable(String),
 }
 
 // Preserve ergonomic `?` conversion from anyhow::Error (previously handled by
@@ -343,6 +348,14 @@ impl IntoResponse for AppError {
             AppError::GatewayTimeout(_) => (StatusCode::GATEWAY_TIMEOUT, self.to_string()),
             AppError::UnprocessableEntity(_) => {
                 (StatusCode::UNPROCESSABLE_ENTITY, self.to_string())
+            }
+            AppError::Unavailable(message) => {
+                let body = Json(json!({
+                    "error": "schema_missing",
+                    "message": message,
+                    "status": 503,
+                }));
+                return (StatusCode::SERVICE_UNAVAILABLE, body).into_response();
             }
         };
 
