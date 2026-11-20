@@ -709,7 +709,7 @@ function ImpactUpgradeButton({
       </button>
       <p className="text-[10px] text-slate-400 mt-2 leading-snug">
         Free for 30 days, then{" "}
-        {annual ? "$4,990 billed annually" : "$499 billed monthly"}. Your subscription renews
+        {annual ? "$4,990 billed annually ($416/mo)" : "$499 billed monthly"}. Your subscription renews
         automatically until you cancel. A card is required at checkout. Cancel anytime online from
         Account &rarr; Billing; cancel before the trial ends and you won&rsquo;t be charged. See our{" "}
         <a href="/terms" className="underline hover:text-slate-300">
