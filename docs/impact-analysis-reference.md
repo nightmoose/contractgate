@@ -17,7 +17,7 @@ The stored plan value is `impact`, shown to customers as Pro + Impact (migration
 | `IMPACT_EDGE_LIMIT` | 20000 | Edges on Pro + Impact. Enterprise is uncapped |
 | `IMPACT_MAX_HOPS` | 8 | Downstream hops, including the first |
 
-Pro + Impact uses the Pro monthly event cap (25,000,000). There is no separate event cap. All of the constants above are in `src/plan.rs`. Retention for `impact` is 90 days, set in `log_retention_days` by migration 054. The public pricing page is not changed by this feature. Stripe checkout does not sell Pro + Impact; set `orgs.plan` to `impact` directly until billing is wired.
+Pro + Impact uses the Pro monthly event cap (25,000,000). There is no separate event cap. All of the constants above are in `src/plan.rs`. Retention for `impact` is 90 days, set in `log_retention_days` by migration 054. The dashboard pricing page shows a Pro + Impact card ($499/month or $4,990/year). Stripe Checkout sells it once `STRIPE_PRICE_IMPACT_MONTHLY` and `STRIPE_PRICE_IMPACT_ANNUAL` are set on the dashboard deployment; until then the card shows "Talk to us". The webhook sets `orgs.plan` to `impact` for those prices. See `docs/stripe-billing-reference.md`.
 
 A plan that is not entitled gets:
 

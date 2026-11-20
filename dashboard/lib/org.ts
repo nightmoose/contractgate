@@ -23,16 +23,17 @@ import { DEMO_MODE, DEMO_ORG_UUID, DEMO_ORG_NAME } from "@/lib/demo";
 export type PlanTier = "free" | "growth" | "enterprise" | "aisg_free" | "aisg_pro" | "impact";
 
 /** Ordered list used for tier comparisons — index = capability rank. */
-export const PLAN_ORDER: PlanTier[] = ["free", "growth", "enterprise"];
+export const PLAN_ORDER: PlanTier[] = ["free", "growth", "impact", "enterprise"];
 
 const PLAN_RANK: Record<PlanTier, number> = {
   free: 0,
   aisg_free: 0,
   growth: 1,
-  // Pro + Impact meets every Pro dashboard gate, and the API adds impact analysis.
-  impact: 1,
   aisg_pro: 1,
-  enterprise: 2,
+  // Pro + Impact meets every Pro dashboard gate and adds impact analysis, so
+  // it ranks above Pro (Pro does not meet an "impact" gate) and below Enterprise.
+  impact: 2,
+  enterprise: 3,
 };
 
 const KNOWN_PLANS = Object.keys(PLAN_RANK) as PlanTier[];
