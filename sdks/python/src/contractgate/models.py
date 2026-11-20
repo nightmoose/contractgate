@@ -29,6 +29,9 @@ class ViolationKind(str, Enum):
     METRIC_RANGE_VIOLATION = "metric_range_violation"
     UNKNOWN_FIELD = "unknown_field"
     UNDECLARED_FIELD = "undeclared_field"
+    # Client-side only: raised by the LLMGate repair-loop provenance check
+    # (``contractgate.provenance``), never returned by the gateway.
+    PROVENANCE_VIOLATION = "provenance_violation"
 
 
 @dataclass(frozen=True)

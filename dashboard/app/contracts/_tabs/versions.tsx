@@ -9,9 +9,11 @@
 import { useState, useCallback, useEffect } from "react";
 import clsx from "clsx";
 import { getVersion, exportOdcs, approveImport, getConformanceReport, diffContracts } from "@/lib/api";
+import { ImpactPanel } from "./impact-panel";
 import type { ContractResponse, VersionSummary, VersionResponse, NameHistoryEntry, ConformanceReport, DiffResponse } from "@/lib/api";
 import { ConfirmActionModal, TooltipWrap } from "../_lib";
 import { HelpTarget } from "@/components/help/HelpTarget";
+import { routingStatus } from "@/lib/routing-status";
 
 // ---------------------------------------------------------------------------
 // VersionsTab
@@ -118,7 +120,8 @@ export function VersionsTab({
   );
 
   // Latest stable for the resolver badge
-  const latestStable = contract?.latest_stable_version;
+  const routing = routingStatus(contract);
+  const latestStable = routing.version;
 
   // ---------------------------------------------------------------------------
   // Helpers
@@ -209,22 +212,22 @@ export function VersionsTab({
         />
       )}
 
+      <ImpactPanel contractId={contractId} versions={versions} />
+
       {/* Latest-stable resolver badge */}
       <div className="flex items-center gap-3 bg-[#0a0d12] border border-[#1f2937] rounded-xl px-4 py-3">
         <span className="text-xs text-slate-500 uppercase tracking-wider shrink-0">Routing</span>
-        {latestStable ? (
-          <HelpTarget
-            id={contract?.multi_stable_resolution === "fallback" ? "term.fallback" : "term.strict"}
-          >
+        {routing.hasStable ? (
+          <HelpTarget id={routing.resolution === "fallback" ? "term.fallback" : "term.strict"}>
             <span className="text-xs font-mono text-green-400 cursor-default">
-              → v{latestStable}
+              → v{routing.version}
               <span className={clsx(
                 "ml-2 px-1.5 py-0.5 rounded text-[10px] uppercase tracking-wider",
-                contract?.multi_stable_resolution === "fallback"
+                routing.resolution === "fallback"
                   ? "bg-indigo-900/40 text-indigo-300"
                   : "bg-slate-800 text-slate-400"
               )}>
-                {contract?.multi_stable_resolution ?? "strict"}
+                {routing.resolution}
               </span>
             </span>
           </HelpTarget>

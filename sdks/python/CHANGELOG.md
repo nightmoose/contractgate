@@ -4,6 +4,22 @@ All notable changes to the `contractgate` Python SDK.
 
 ## Unreleased
 
+- Fix: repair hints no longer create two user messages in a row. When the
+  conversation ends with a user turn, `LLMGate` / `AsyncLLMGate` fold the
+  hint into that turn (string content or an extra text content part), so
+  roles keep alternating. Chat templates such as Gemma's rejected the old
+  shape with "Conversation roles must alternate".
+- `LLMGate` / `AsyncLLMGate` check repaired output for invented values.
+  After a repair attempt passes the contract, identifier and amount fields
+  whose value does not occur in the source text are set to `null` (or left
+  out, if the contract rejects `null`) and the payload is validated again.
+  If the contract still fails, the attempt fails with the new client-side
+  violation kind `provenance_violation` and the model is re-prompted while
+  retries remain. On by default; configure with
+  `provenance=ProvenanceCheck(...)` or turn off with `provenance=False`.
+  `completion` / `message` accept `source_text=` (default: the user
+  messages). Findings are on `LLMGateResult.provenance`. The package
+  version stays 0.4.1.
 - The local validator enforces `format: email`, `uuid`, and `uri` / `url`
   with the same rules as the Rust engine. Unknown format names still pass.
   The package version stays 0.4.1: a release tag must match both

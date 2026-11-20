@@ -191,6 +191,30 @@ function EditContractModal({
     return vs;
   };
 
+  // Promote/deprecate can change which version is latest_stable_version,
+  // which lives on the contract, not the version list. refreshVersions
+  // alone leaves the routing badge and header stale until the modal is
+  // reopened.
+  const refreshContract = async () => {
+    const c = await getContract(contractId);
+    setContract(c);
+    return c;
+  };
+
+  // Approve-import changes contract.latest_stable_version too, but its
+  // button lives in VersionsTab, a sibling of this state. It signals the
+  // change with this event instead of a prop callback.
+  useEffect(() => {
+    function onVersionsChanged(e: Event) {
+      const detail = (e as CustomEvent<{ contractId: string }>).detail;
+      if (detail?.contractId !== contractId) return;
+      void refreshVersions();
+      void refreshContract();
+    }
+    window.addEventListener("contractgate:versions-changed", onVersionsChanged);
+    return () => window.removeEventListener("contractgate:versions-changed", onVersionsChanged);
+  }, [contractId]);
+
   const handleSaveDraft = async () => {
     if (!currentVersion || currentVersion.state !== "draft") return;
     setSaving(true); setError(null);
@@ -225,7 +249,7 @@ function EditContractModal({
     try {
       const v = await promoteVersion(contractId, currentVersion.version);
       setCurrentVersion(v); setYamlDraft(v.yaml_content);
-      await refreshVersions(); await mutate("contracts");
+      await refreshVersions(); await refreshContract(); await mutate("contracts");
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : String(e));
     } finally { setSaving(false); }
@@ -237,7 +261,7 @@ function EditContractModal({
     try {
       const v = await deprecateVersion(contractId, currentVersion.version);
       setCurrentVersion(v); setYamlDraft(v.yaml_content);
-      await refreshVersions(); await mutate("contracts");
+      await refreshVersions(); await refreshContract(); await mutate("contracts");
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : String(e));
     } finally { setSaving(false); }
@@ -321,7 +345,7 @@ function EditContractModal({
     try {
       const v = await promoteVersion(contractId, version);
       if (currentVersion?.version === version) { setCurrentVersion(v); setYamlDraft(v.yaml_content); }
-      await refreshVersions(); await mutate("contracts");
+      await refreshVersions(); await refreshContract(); await mutate("contracts");
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : String(e));
     } finally { setSaving(false); }
@@ -333,7 +357,7 @@ function EditContractModal({
     try {
       const v = await deprecateVersion(contractId, version);
       if (currentVersion?.version === version) { setCurrentVersion(v); setYamlDraft(v.yaml_content); }
-      await refreshVersions(); await mutate("contracts");
+      await refreshVersions(); await refreshContract(); await mutate("contracts");
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : String(e));
     } finally { setSaving(false); }

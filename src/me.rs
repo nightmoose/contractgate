@@ -40,6 +40,7 @@ pub fn plan_display(plan: &str) -> &'static str {
         "aisg_free" => "AISchemaGate Developer",
         "growth" | "pro" => "Pro",
         "aisg_pro" => "AISchemaGate Pro",
+        "impact" => crate::plan::IMPACT_PLAN_NAME,
         "enterprise" => "Enterprise",
         _ => "Unknown",
     }
@@ -113,6 +114,13 @@ mod tests {
         assert_eq!(me.api_key_id, Some(id));
         assert_eq!(me.plan_display, "Pro");
         assert_eq!(me.org_name.as_deref(), Some("acme"));
+    }
+
+    #[test]
+    fn impact_plan_has_a_display_name() {
+        let me = build(&key(Uuid::new_v4()), "acme".into(), "impact".into(), false);
+        assert_eq!(me.plan_display, "Pro + Impact");
+        assert!(me.paid_features);
     }
 
     #[test]

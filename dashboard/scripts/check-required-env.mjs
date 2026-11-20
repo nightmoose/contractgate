@@ -31,6 +31,8 @@ const RECOMMENDED_SERVER = [
   ["STRIPE_WEBHOOK_SECRET", "subscription state sync"],
   ["STRIPE_PRICE_PRO_MONTHLY", "monthly Pro checkout", "STRIPE_PRICE_GROWTH_MONTHLY"],
   ["STRIPE_PRICE_PRO_ANNUAL", "annual Pro checkout", "STRIPE_PRICE_GROWTH_ANNUAL"],
+  ["STRIPE_PRICE_IMPACT_MONTHLY", "monthly Pro + Impact checkout"],
+  ["STRIPE_PRICE_IMPACT_ANNUAL", "annual Pro + Impact checkout"],
   ["SLACK_BOT_TOKEN", "the Slack lead-intake bot posting any reply at all"],
 ];
 

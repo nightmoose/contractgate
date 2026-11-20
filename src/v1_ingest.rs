@@ -661,6 +661,7 @@ fn merge_openapi_op(
 /// Routes registered in `build_router` that were not in the original `json!`
 /// document. Schemas match the handler request and response types.
 fn more_openapi_paths(paths: &mut serde_json::Map<String, Value>) {
+    crate::impact::merge_openapi(paths);
     let upgrade = crate::plan::payload_storage_upgrade_message();
     let paid = crate::plan::paid_plans_phrase();
     let auth = json!([{"ApiKeyAuth": []}]);
@@ -950,11 +951,15 @@ fn more_openapi_paths(paths: &mut serde_json::Map<String, Value>) {
         json!({
             "operationId": "get_family_for_contract",
             "summary": "Read the family a private contract belongs to",
-            "parameters": [{"name": "id", "in": "path", "required": true, "schema": {"type": "string", "format": "uuid"}}],
+            "description": "By default, a contract that exists but is not in a family is 404, the same as an unknown contract. Pass optional=true to get 200 null instead for that case; an unknown or foreign contract id is still 404 either way.",
+            "parameters": [
+                {"name": "id", "in": "path", "required": true, "schema": {"type": "string", "format": "uuid"}},
+                {"name": "optional", "in": "query", "required": false, "schema": {"type": "boolean", "default": false}, "description": "When true, a contract with no family returns 200 null instead of 404."}
+            ],
             "responses": {
-                "200": {"description": "The family chain", "content": {"application/json": {"schema": private_family_schema.clone()}}},
+                "200": {"description": "The family chain, or null when optional=true and the contract has no family", "content": {"application/json": {"schema": {"oneOf": [private_family_schema.clone(), {"type": "null"}]}}}},
                 "401": {"description": "Missing or invalid credentials"},
-                "404": {"description": "Contract not found in this org, or the contract is not in a family"}
+                "404": {"description": "Contract not found in this org, or the contract is not in a family (unless optional=true)"}
             },
             "security": [{"ApiKeyAuth": []}]
         }),

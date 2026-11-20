@@ -3199,6 +3199,28 @@ metrics: []
                 .await,
         );
         assert_eq!(status, StatusCode::NOT_FOUND, "{hidden_contract}");
+        // A cross-org id is still 404 with ?optional=true: only "exists but
+        // has no family" becomes 200 null, never "not found".
+        let (status, hidden_contract_optional) = body(
+            http_other
+                .get(&format!("/contracts/{contract_id}/family?optional=true"))
+                .await,
+        );
+        assert_eq!(status, StatusCode::NOT_FOUND, "{hidden_contract_optional}");
+        // `filler` is in the `free` org and was never added to a family.
+        let (status, no_family_default) = body(
+            http_free
+                .get(&format!("/contracts/{}/family", filler.id))
+                .await,
+        );
+        assert_eq!(status, StatusCode::NOT_FOUND, "{no_family_default}");
+        let (status, no_family_optional) = body(
+            http_free
+                .get(&format!("/contracts/{}/family?optional=true", filler.id))
+                .await,
+        );
+        assert_eq!(status, StatusCode::OK, "{no_family_optional}");
+        assert!(no_family_optional.is_null(), "{no_family_optional}");
         let (status, visible) = body(
             http_growth
                 .get(&format!("/contract-families/{family_id}"))

@@ -34,6 +34,8 @@ ignore = [
     # (see the jsonwebtoken note in Cargo.toml). Revisit when jsonwebtoken
     # moves to elliptic-curve 0.14.
     "RUSTSEC-2026-0387",
+    # chrono unmaintained, no patched release (direct dep + sqlx 0.8); suppressed 2026-11-19, revisit 2027-02-19.
+    "RUSTSEC-2026-0543",
 ]
 
 [bans]

@@ -34,7 +34,15 @@ export function createClient(): SupabaseClient {
     const chain = (): Record<string, unknown> =>
       new Proxy({} as Record<string, unknown>, {
         get(_, prop) {
-          if (prop === "then") return undefined; // not a Promise
+          // Query builders are thenable. useDeployMeta calls `.then` directly.
+          // Resolving an empty result keeps demo mode on the page instead of
+          // the error boundary.
+          if (prop === "then") {
+            return (
+              resolve?: (value: { data: null; error: null }) => unknown,
+              reject?: (reason: unknown) => unknown
+            ) => Promise.resolve({ data: null, error: null }).then(resolve, reject);
+          }
           const s = String(prop);
           const chainable = ["select","insert","update","delete","upsert","eq","neq","is","gt","lt","gte","lte","order","limit","single","maybeSingle","not","in"];
           if (chainable.includes(s)) return () => chain();

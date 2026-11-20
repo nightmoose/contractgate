@@ -1549,7 +1549,14 @@ export const addContractFamilyLink = (
  */
 export async function familyForContract(contractId: string): Promise<ContractFamily | null> {
   try {
-    return await apiFetch<ContractFamily>(`/contracts/${encodeURIComponent(contractId)}/family`);
+    // optional=true: a contract with no family is the common case, not an
+    // error, so ask the API for 200 null instead of a 404 that shows up as
+    // a failed request in the browser console on every contract page.
+    // Harmless against an older gateway that ignores the param — it 404s
+    // the same as before, which the catch below already turns into null.
+    return await apiFetch<ContractFamily | null>(
+      `/contracts/${encodeURIComponent(contractId)}/family?optional=true`
+    );
   } catch {
     return null;
   }
@@ -1815,6 +1822,168 @@ export const connectFivetran = (body: FivetranConnectRequest) =>
     method: "POST",
     body: JSON.stringify(body),
   });
+
+// ---------------------------------------------------------------------------
+// Downstream impact analysis
+// ---------------------------------------------------------------------------
+
+export interface ImpactChange {
+  field: string;
+  kind: string;
+  severity: "breaking" | "safe" | string;
+  detail: string;
+  explanation: string;
+}
+
+export interface ImpactAsset {
+  key: string;
+  kind: string;
+  name: string;
+  owner: string | null;
+  hops: number;
+  path: string[];
+  explanation: string;
+}
+
+export interface ImpactReport {
+  contract_id?: string;
+  version: string;
+  base_version: string | null;
+  trigger: string;
+  summary: string;
+  summary_source: "template" | "llm" | string;
+  explanation_source: string;
+  breaking_count: number;
+  safe_count: number;
+  affected_count: number;
+  changes: ImpactChange[];
+  affected: ImpactAsset[];
+}
+
+export interface LineageImportResult {
+  format: string;
+  assets: number;
+  edges: number;
+  contracts_linked: number;
+  unlinked_contracts: string[];
+}
+
+export type ImpactResult =
+  | { status: "ok"; report: ImpactReport }
+  | { status: "upgrade"; message: string; upgrade_url?: string }
+  | { status: "unavailable"; message: string }
+  | { status: "error"; message: string };
+
+async function impactFetch(path: string, init?: RequestInit): Promise<{ status: number; body: Record<string, unknown> | null }> {
+  if (!_apiSession && typeof window !== "undefined") {
+    try {
+      const { data: { session } } = await createClient().auth.getSession();
+      if (session?.access_token) _apiSession = session.access_token;
+    } catch {
+      // The request still goes out. The API returns 401 if a session is required.
+    }
+  }
+  const headers: Record<string, string> = { "Content-Type": "application/json" };
+  if (_apiSession) headers.authorization = `Bearer ${_apiSession}`;
+  else if (API_KEY) headers["x-api-key"] = API_KEY;
+  if (init?.headers) {
+    new Headers(init.headers).forEach((v, k) => {
+      headers[k] = v;
+    });
+  }
+  const res = await fetch(`${BASE}${path}`, { ...init, headers });
+  let body: Record<string, unknown> | null = null;
+  try {
+    body = (await res.json()) as Record<string, unknown>;
+  } catch {
+    body = null;
+  }
+  return { status: res.status, body };
+}
+
+function impactFromStatus(status: number, body: Record<string, unknown> | null): ImpactResult {
+  if (status === 402) {
+    return {
+      status: "upgrade",
+      message: typeof body?.message === "string"
+        ? body.message
+        : "Downstream impact analysis is included with the Impact plan.",
+      upgrade_url: typeof body?.upgrade_url === "string" ? body.upgrade_url : undefined,
+    };
+  }
+  if (status === 503) {
+    return {
+      status: "unavailable",
+      message: typeof body?.message === "string"
+        ? body.message
+        : "Downstream impact analysis is not available yet.",
+    };
+  }
+  if (status < 200 || status >= 300 || !body) {
+    const message = typeof body?.message === "string"
+      ? body.message
+      : typeof body?.error === "string"
+        ? body.error
+        : `Request failed: ${status}`;
+    return { status: "error", message };
+  }
+  return { status: "ok", report: body as unknown as ImpactReport };
+}
+
+export type LineageImportResponse =
+  | { status: "ok"; imported: LineageImportResult }
+  | { status: "upgrade"; message: string; upgrade_url?: string }
+  | { status: "unavailable"; message: string }
+  | { status: "error"; message: string };
+
+/** Replace the org lineage graph from a dbt manifest or an edge list. */
+export async function importLineage(
+  document: string,
+  format = "auto",
+  contractId?: string,
+): Promise<LineageImportResponse> {
+  const { status, body } = await impactFetch("/lineage", {
+    method: "POST",
+    body: JSON.stringify({
+      document,
+      format,
+      ...(contractId ? { contract_id: contractId } : {}),
+    }),
+  });
+  const result = impactFromStatus(status, body);
+  if (result.status !== "ok" || !body) {
+    return result.status === "ok"
+      ? { status: "error", message: "Lineage import returned an empty body." }
+      : result;
+  }
+  return { status: "ok", imported: body as unknown as LineageImportResult };
+}
+
+/** Stored impact for a version, computed on the spot when none is stored. */
+export async function getVersionImpact(
+  contractId: string,
+  version: string,
+  signal?: AbortSignal,
+): Promise<ImpactResult> {
+  const { status, body } = await impactFetch(
+    `/contracts/${contractId}/versions/${encodeURIComponent(version)}/impact`,
+    { signal }
+  );
+  return impactFromStatus(status, body);
+}
+
+/** Recompute impact from the current lineage. */
+export async function recomputeVersionImpact(
+  contractId: string,
+  version: string,
+  signal?: AbortSignal,
+): Promise<ImpactResult> {
+  const { status, body } = await impactFetch(
+    `/contracts/${contractId}/versions/${encodeURIComponent(version)}/impact`,
+    { method: "POST", signal },
+  );
+  return impactFromStatus(status, body);
+}
 
 // ---------------------------------------------------------------------------
 // Helpers

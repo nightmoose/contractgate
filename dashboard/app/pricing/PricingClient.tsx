@@ -1,0 +1,723 @@
+"use client";
+
+import { useEffect, useState } from "react";
+import clsx from "clsx";
+import { useOrg, isPaidPlan, isAisgPlan } from "@/lib/org";
+import { withAuthReturn } from "@/lib/auth-email-link";
+import { useSelfHosted } from "@/lib/use-paid-features";
+import { useBrand } from "@/components/BrandProvider";
+import AisgPricing from "./AisgPricing";
+import { HelpTarget } from "@/components/help/HelpTarget";
+
+// ---------------------------------------------------------------------------
+// Types
+// ---------------------------------------------------------------------------
+
+interface Feature {
+  label: string;
+  selfHosted: string | boolean;
+  free: string | boolean;
+  growth: string | boolean;
+  /** Pro + Impact. Omitted rows inherit the Pro value (it is a superset of Pro). */
+  impact?: string | boolean;
+  enterprise: string | boolean;
+}
+
+type TierKey = "selfHosted" | "free" | "growth" | "impact" | "enterprise";
+
+function featureValue(f: Feature, key: TierKey): string | boolean {
+  if (key === "impact") return f.impact ?? f.growth;
+  return f[key];
+}
+
+/** Which Pro + Impact billing periods have a Stripe price configured. */
+export interface ImpactCheckout {
+  monthly: boolean;
+  annual: boolean;
+}
+
+const IMPACT_CONTACT_HREF =
+  "mailto:hello@datacontractgate.com?subject=" + encodeURIComponent("DataContractGate Pro + Impact");
+
+// ---------------------------------------------------------------------------
+// Pricing data
+// ---------------------------------------------------------------------------
+
+interface Tier {
+  key: TierKey;
+  name: string;
+  tagline: string;
+  price: { monthly: string; annual: string };
+  priceSub?: { monthly: string; annual: string };
+  cta: string;
+  ctaHref: string;
+  highlight: boolean;
+  color: string;
+  badge: string | null;
+  /** Card bullets in place of the first rows of the feature table. */
+  bullets?: string[];
+}
+
+const TIERS: Tier[] = [
+  {
+    key: "selfHosted",
+    name: "Self-Hosted Free",
+    tagline: "Run it yourself, forever",
+    price: { monthly: "Free", annual: "Free" },
+    priceSub: { monthly: "you run it; paid gates open", annual: "you run it; paid gates open" },
+    cta: "Get the repo",
+    ctaHref: "https://github.com/nightmoose/contractgate",
+    highlight: false,
+    color: "border-[#1f2937]",
+    badge: "OSS",
+  },
+  {
+    key: "free",
+    name: "Cloud Free",
+    tagline: "Explore & prototype",
+    price: { monthly: "$0", annual: "$0" },
+    cta: "Start free",
+    ctaHref: "https://app.datacontractgate.com/auth/signup",
+    highlight: false,
+    color: "border-[#1f2937]",
+    badge: null,
+  },
+  {
+    key: "growth",
+    name: "Pro",
+    tagline: "Production workloads",
+    price: { monthly: "$199", annual: "$166" },
+    priceSub: {
+      monthly: "per month, or $166/mo billed annually ($1,992/yr)",
+      annual: "per month, billed annually ($1,992/yr)",
+    },
+    cta: "Upgrade to Pro",
+    ctaHref: "#upgrade", // handled by onClick when logged in
+    highlight: true,
+    color: "border-green-700/60",
+    badge: "Most popular",
+  },
+  {
+    key: "impact",
+    name: "Pro + Impact",
+    tagline: "Know what breaks downstream",
+    price: { monthly: "$499", annual: "$416" },
+    priceSub: {
+      monthly: "per month, or $416/mo billed annually ($4,990/yr)",
+      annual: "per month, billed annually ($4,990/yr)",
+    },
+    cta: "Upgrade to Pro + Impact",
+    ctaHref: "#upgrade", // handled by ImpactUpgradeButton
+    highlight: false,
+    color: "border-sky-700/60",
+    badge: "New",
+    bullets: [
+      "Everything in Pro",
+      "Downstream impact analysis for every contract version",
+      "Lineage import from a dbt manifest.json or an edge list",
+      "Affected downstream assets and their owners, per version",
+      "Breaking vs. safe field changes, up to 8 hops downstream",
+      "Up to 2,000 lineage assets and 20,000 edges",
+    ],
+  },
+  {
+    key: "enterprise",
+    name: "Enterprise",
+    tagline: "Scale without limits",
+    price: { monthly: "Custom", annual: "Custom" },
+    priceSub: { monthly: "contact us", annual: "contact us" },
+    cta: "Talk to us",
+    ctaHref: "mailto:hello@datacontractgate.com",
+    highlight: false,
+    color: "border-[#1f2937]",
+    badge: null,
+  },
+];
+
+// Suffix on Pro's "unlimited" values: no fixed cap, shared capacity (see the FAQ).
+const FAIR_USE = "(fair use)";
+
+const FEATURES: Feature[] = [
+  { label: "Events validated / month",         selfHosted: "Unlimited (local)", free: "100K",            growth: "25M",        enterprise: "Unlimited" },
+  { label: "Active contracts",                 selfHosted: "Unlimited",         free: "3",               growth: "Unlimited (fair use)", enterprise: "Unlimited" },
+  { label: "Contract versions",                selfHosted: "Unlimited",         free: "3 per contract",  growth: "Unlimited (fair use)", enterprise: "Unlimited" },
+  { label: "Ingest API",                       selfHosted: true,                free: true,              growth: true,         enterprise: true },
+  { label: "Playground (test without save)",   selfHosted: true,                free: true,              growth: true,         enterprise: true },
+  { label: "Audit log retention",              selfHosted: "Local Postgres",    free: "7 days",          growth: "90 days",    enterprise: "Custom" },
+  { label: "Local Docker demo",                selfHosted: true,                free: true,              growth: true,         enterprise: true },
+  { label: "Batch ingest",                     selfHosted: true,                free: false,             growth: true,         enterprise: true },
+  { label: "Data-parallel validation (Rayon)", selfHosted: true,                free: false,             growth: true,         enterprise: true },
+  { label: "Auth & API key management",        selfHosted: true,                free: true,              growth: true,         enterprise: true },
+  { label: "Multi-tenancy",                    selfHosted: true,                free: false,             growth: true,         enterprise: true },
+  { label: "PII transform rules",              selfHosted: true,                free: false,             growth: true,         enterprise: true },
+  { label: "Quarantine",                       selfHosted: "Local, no row cap", free: "Failure details, up to 50,000 held, 7 days", growth: "Record bodies, replay and bulk replay, 90 days", enterprise: "Custom retention" },
+  { label: "Replay & bulk replay",             selfHosted: true,                free: false,             growth: true,         enterprise: true },
+  { label: "Failure reason counts",            selfHosted: true,                free: true,              growth: true,         enterprise: true },
+  { label: "Visual contract builder",          selfHosted: true,                free: false,             growth: true,         enterprise: true },
+  { label: "Contract generator (JSON → YAML)", selfHosted: true,                free: false,             growth: true,         enterprise: true },
+  { label: "Semantic versioning + promotion",  selfHosted: true,                free: false,             growth: true,         enterprise: true },
+  { label: "GitHub sync",                      selfHosted: true,                free: false,             growth: true,         enterprise: true },
+  { label: "Team invites & roles",             selfHosted: true,                free: false,             growth: true,         enterprise: true },
+  // RFC-045: features added since original pricing page authoring
+  { label: "CSV → YAML inference",             selfHosted: true,                free: false,             growth: true,         enterprise: true },
+  { label: "Brownfield scaffolder (+ PII)",    selfHosted: true,                free: false,             growth: true,         enterprise: true },
+  { label: "Provider Scorecard",               selfHosted: true,                free: false,             growth: true,         enterprise: true },
+  { label: "Egress API (outbound validation)",  selfHosted: true,                free: false,             growth: true,         enterprise: true },
+  { label: "AI Collaborate (contract proposals)", selfHosted: true,             free: false,             growth: true,         enterprise: true },
+  { label: "Kafka / Kinesis streaming",        selfHosted: true,                free: false,             growth: false,        enterprise: "Available on request" },
+  { label: "Open data catalog (browse + fork)", selfHosted: false,              free: true,              growth: true,         enterprise: true },
+  { label: "Import by ref — snapshot",         selfHosted: false,               free: true,              growth: true,         enterprise: true },
+  { label: "Import by ref — subscribe (live)", selfHosted: true,                free: false,             growth: true,         enterprise: true },
+  { label: "API Workbench — Try It (1 endpoint)", selfHosted: true,            free: true,              growth: true,         enterprise: true },
+  { label: "API Workbench — full (save / deploy / suite)", selfHosted: true,   free: false,             growth: true,         enterprise: true },
+  { label: "Downstream impact analysis",       selfHosted: true,                free: false,             growth: false,        impact: true,         enterprise: true },
+  { label: "Lineage import (dbt manifest or edge list)", selfHosted: true,      free: false,             growth: false,        impact: "2,000 assets / 20,000 edges", enterprise: "Unlimited" },
+  { label: "Affected assets + owners per contract version", selfHosted: true,   free: false,             growth: false,        impact: true,         enterprise: true },
+  { label: "SSO / SAML",                       selfHosted: false,               free: false,             growth: false,        enterprise: true },
+  { label: "Custom SLA",                       selfHosted: false,               free: false,             growth: false,        enterprise: true },
+  { label: "Audit log export (S3 / GCS)",      selfHosted: false,               free: false,             growth: false,        enterprise: true },
+  { label: "Dedicated deployment",             selfHosted: false,               free: false,             growth: false,        enterprise: true },
+  { label: "Priority support + SRE on-call",   selfHosted: false,               free: false,             growth: false,        enterprise: true },
+  { label: "Custom contract templates",        selfHosted: false,               free: false,             growth: false,        enterprise: true },
+];
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+function CheckIcon({ size = 16 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 16 16" fill="none" aria-hidden>
+      <circle cx="8" cy="8" r="8" fill="rgba(61,220,132,0.15)" />
+      <path d="M4.5 8l2.5 2.5 4.5-4.5" stroke="#3ddc84" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+function CrossIcon({ size = 16 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 16 16" fill="none" aria-hidden>
+      <circle cx="8" cy="8" r="8" fill="rgba(255,255,255,0.04)" />
+      <path d="M5.5 5.5l5 5M10.5 5.5l-5 5" stroke="#374151" strokeWidth="1.5" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+function FeatureCell({ value }: { value: string | boolean }) {
+  if (value === true)  return <div className="flex justify-center"><CheckIcon /></div>;
+  if (value === false) return <div className="flex justify-center"><CrossIcon /></div>;
+  return <div className="text-center text-xs text-slate-300 font-medium">{value}</div>;
+}
+
+// ---------------------------------------------------------------------------
+// Page
+// ---------------------------------------------------------------------------
+
+export default function PricingClient({ impactCheckout }: { impactCheckout: ImpactCheckout }) {
+  const [annual, setAnnual] = useState(false);
+  // /pricing?plan=impact (the dashboard's impact upgrade link) lands on the card.
+  useEffect(() => {
+    if (new URLSearchParams(window.location.search).get("plan") === "impact") {
+      document.getElementById("pro-impact")?.scrollIntoView({ block: "center" });
+    }
+  }, []);
+  // AISchemaGate tiers for AISchemaGate accounts and visitors from
+  // aischemagate.com. The brand comes from the request cookie, so the server
+  // render already shows the right page (no DataContractGate flash).
+  const brand = useBrand();
+  if (brand === "aisg") return <AisgPricing />;
+
+  return (
+    <div className="space-y-12 pb-16">
+      {/* Header */}
+      <div className="text-center pt-4">
+        <div className="inline-flex items-center gap-2 bg-green-900/30 border border-green-700/40 rounded-full px-3 py-1 text-xs text-green-400 font-medium mb-4">
+          <span className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse" />
+          Patent Pending · Rust-native · low-latency
+        </div>
+        <HelpTarget id="page.pricing">
+          <h1 className="text-4xl font-bold tracking-tight">
+            Simple, transparent pricing
+          </h1>
+        </HelpTarget>
+        <p className="mt-3 text-slate-400 text-lg max-w-xl mx-auto">
+          Start free. Scale without surprises. Enterprise teams get dedicated deployments and custom SLAs.
+        </p>
+
+        {/* Annual toggle */}
+        <div className="flex items-center justify-center gap-3 mt-6">
+          <span className={clsx("text-sm", !annual ? "text-slate-200" : "text-slate-500")}>Monthly</span>
+          <button
+            onClick={() => setAnnual((a) => !a)}
+            className={clsx(
+              "relative w-11 h-6 rounded-full transition-colors",
+              annual ? "bg-green-600" : "bg-slate-700"
+            )}
+            aria-label="Toggle annual billing"
+          >
+            <span className={clsx(
+              "absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white transition-transform",
+              annual && "translate-x-5"
+            )} />
+          </button>
+          <span className={clsx("text-sm", annual ? "text-slate-200" : "text-slate-500")}>
+            Annual
+            <span className="ml-1.5 text-xs bg-green-900/40 text-green-400 border border-green-700/40 px-1.5 py-0.5 rounded-full font-medium">
+              Save 17%
+            </span>
+          </span>
+        </div>
+      </div>
+
+      {/* Edition labels */}
+      <div className="flex items-center gap-4 -mb-6">
+        <div className="flex items-center gap-2">
+          <span className="w-2.5 h-2.5 rounded-full bg-slate-600" />
+          <span className="text-xs text-slate-500 font-medium uppercase tracking-wider">Self-Hosted</span>
+        </div>
+        <div className="flex-1 border-t border-dashed border-[#1f2937]" />
+        <div className="flex items-center gap-2">
+          <span className="w-2.5 h-2.5 rounded-full bg-green-600" />
+          <span className="text-xs text-slate-500 font-medium uppercase tracking-wider">Cloud</span>
+        </div>
+      </div>
+
+      {/* Tier cards */}
+      <div className="grid grid-cols-1 md:grid-cols-3 xl:grid-cols-5 gap-5">
+        {TIERS.map((tier) => (
+          <div
+            key={tier.key}
+            id={tier.key === "impact" ? "pro-impact" : undefined}
+            className={clsx(
+              "relative bg-[#111827] border rounded-2xl p-7 flex flex-col",
+              tier.color,
+              tier.highlight && "ring-1 ring-green-700/40"
+            )}
+          >
+            {tier.badge === "OSS" && (
+              <div className="absolute -top-3 left-1/2 -translate-x-1/2">
+                <span className="bg-[#1f2937] border border-[#374151] text-slate-300 text-xs font-semibold px-3 py-1 rounded-full shadow">
+                  Open Source
+                </span>
+              </div>
+            )}
+            {tier.badge && tier.badge !== "OSS" && (
+              <div className="absolute -top-3 left-1/2 -translate-x-1/2">
+                <span className={clsx(
+                  "text-white text-xs font-semibold px-3 py-1 rounded-full shadow",
+                  tier.key === "impact" ? "bg-sky-600" : "bg-green-600"
+                )}>
+                  {tier.badge}
+                </span>
+              </div>
+            )}
+
+            <div className="mb-6">
+              <h2 className="text-lg font-semibold">{tier.name}</h2>
+              <p className="text-sm text-slate-500 mt-0.5">{tier.tagline}</p>
+            </div>
+
+            <div className="mb-6">
+              <div className="flex items-end gap-1">
+                <span className="text-4xl font-bold">
+                  {annual ? tier.price.annual : tier.price.monthly}
+                </span>
+              </div>
+              {tier.priceSub && (
+                <p className="text-xs text-slate-500 mt-1">
+                  {annual ? tier.priceSub.annual : tier.priceSub.monthly}
+                </p>
+              )}
+            </div>
+
+            {tier.key === "growth" ? (
+              <GrowthUpgradeButton annual={annual} onToggleAnnual={setAnnual} />
+            ) : tier.key === "impact" ? (
+              <ImpactUpgradeButton annual={annual} onToggleAnnual={setAnnual} checkout={impactCheckout} />
+            ) : (
+              <a
+                href={tier.ctaHref}
+                className={clsx(
+                  "block text-center py-2.5 rounded-lg text-sm font-semibold transition-colors mb-6",
+                  tier.highlight
+                    ? "bg-green-600 hover:bg-green-500 text-white"
+                    : "bg-[#1f2937] hover:bg-[#2a3449] text-slate-200"
+                )}
+              >
+                {tier.cta}
+              </a>
+            )}
+
+            {/* Quick feature list for card */}
+            <ul className="space-y-2.5 text-sm flex-1">
+              {tier.bullets?.map((b) => (
+                <li key={b} className="flex items-start gap-2 text-slate-400">
+                  <span className="mt-0.5 shrink-0"><CheckIcon size={14} /></span>
+                  <span className={b === "Everything in Pro" ? "text-slate-200 font-medium" : undefined}>{b}</span>
+                </li>
+              ))}
+              {!tier.bullets && FEATURES.slice(0, 8).map((f) => {
+                const val = featureValue(f, tier.key);
+                if (val === false) return null;
+                return (
+                  <li key={f.label} className="flex items-start gap-2 text-slate-400">
+                    <span className="mt-0.5 shrink-0"><CheckIcon size={14} /></span>
+                    <span>
+                      {typeof val === "string" && val !== "true" ? (
+                        // "Unlimited (fair use)" reads as "Unlimited Active contracts (fair use)".
+                        val.endsWith(FAIR_USE) ? (
+                          <><span className="text-slate-200 font-medium">{val.slice(0, -FAIR_USE.length).trim()}</span> {f.label} <span className="text-slate-500">{FAIR_USE}</span></>
+                        ) : (
+                          <><span className="text-slate-200 font-medium">{val}</span> {f.label.replace(/^[0-9M]+\s*/, "")}</>
+                        )
+                      ) : f.label}
+                    </span>
+                  </li>
+                );
+              })}
+            </ul>
+          </div>
+        ))}
+      </div>
+
+      {/* Full feature comparison table */}
+      <div>
+        <h2 className="text-xl font-semibold mb-6 text-center text-slate-300">Full feature comparison</h2>
+        <div className="bg-[#111827] border border-[#1f2937] rounded-2xl overflow-hidden">
+          {/* Table header */}
+          <div className="grid grid-cols-6 border-b border-[#1f2937]">
+            <div className="px-5 py-4 text-xs text-slate-500 uppercase tracking-wider">Feature</div>
+            {TIERS.map((t) => (
+              <div key={t.key} className={clsx("px-4 py-4 text-center", t.highlight && "bg-green-900/10")}>
+                <p className="text-sm font-semibold">{t.name}</p>
+                {t.key === "selfHosted" && (
+                  <span className="inline-block mt-1 text-xs text-slate-500">self-hosted</span>
+                )}
+                {t.key !== "selfHosted" && (
+                  <span className="inline-block mt-1 text-xs text-slate-500">cloud</span>
+                )}
+              </div>
+            ))}
+          </div>
+
+          {/* Table rows */}
+          {FEATURES.map((f, i) => (
+            <div
+              key={f.label}
+              className={clsx(
+                "grid grid-cols-6 border-b border-[#1f2937]/50 last:border-0",
+                i % 2 === 1 && "bg-[#0a0d12]/40"
+              )}
+            >
+              <div className="px-5 py-3.5 text-sm text-slate-400">{f.label}</div>
+              {TIERS.map((t) => (
+                <div key={t.key} className={clsx("px-4 py-3.5 flex items-center justify-center", t.highlight && "bg-green-900/5")}>
+                  <FeatureCell value={featureValue(f, t.key)} />
+                </div>
+              ))}
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* FAQ strip */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+        {[
+          {
+            q: "What counts as an event?",
+            a: "Any JSON object submitted to POST /ingest/{contract_id} (inbound) or POST /egress/{contract_id} (outbound). Batch calls count each item individually.",
+          },
+          {
+            q: "Can I switch plans mid-month?",
+            a: "Yes. Upgrades take effect immediately (prorated). Downgrades apply at the start of your next billing cycle.",
+          },
+          {
+            q: "Is the Free tier time-limited?",
+            a: "No. Cloud Free is permanent. You only need to upgrade when you exceed 100K events/month or need Pro features.",
+          },
+          {
+            q: "Is Pro really unlimited?",
+            a: "Pro has no fixed cap on contracts or versions, but it runs on shared infrastructure under a fair-use policy, alongside the 25M events/month limit and documented API rate limits. If a workload starts affecting other customers, we may rate-limit or throttle it, and we'll reach out first where we can. Sustained heavy load belongs on Enterprise or a dedicated deployment. See the Terms of Service for details.",
+          },
+          {
+            q: "What does Pro + Impact add?",
+            a: "Everything in Pro, plus downstream impact analysis. Import lineage from a dbt manifest.json or an edge list, and each proposed or published contract version lists the downstream assets it affects, their owners, and which field changes are breaking. It covers up to 2,000 assets and 20,000 edges; Enterprise is uncapped.",
+          },
+          {
+            q: "How does Enterprise deployment work?",
+            a: "We support dedicated cloud (VPC), on-prem (Kubernetes), and air-gapped deployments. Contact us for architecture details.",
+          },
+          {
+            q: "Do you offer a trial?",
+            a: "Cloud Free needs no credit card. The Pro trial asks for one at checkout, and you are not charged if you cancel before it ends. Enterprise prospects get a POC environment on request.",
+          },
+          {
+            q: "What does 'patent pending' mean for my stack?",
+            a: "The MIT License governs this code. The patent application covers the enforcement method as an invention and does not limit anyone's right to use this code under the MIT License.",
+          },
+          {
+            q: "What's the difference between Self-Hosted Free and Cloud Free?",
+            a: "Self-Hosted Free runs the gateway on your machine with auth on. The stored plan stays free, and CONTRACTGATE_SELF_HOSTED opens every paid gate in the product. Cloud Free is the managed 100K-event tier, and those gates stay closed. SSO, a custom SLA, and support stay on hosted Enterprise. make demo is a separate zero-auth preview.",
+          },
+        ].map((item) => (
+          <div key={item.q} className="bg-[#111827] border border-[#1f2937] rounded-xl p-5">
+            <p className="text-sm font-semibold text-slate-200 mb-1.5">{item.q}</p>
+            <p className="text-sm text-slate-500 leading-relaxed">{item.a}</p>
+          </div>
+        ))}
+      </div>
+
+      {/* Enterprise CTA */}
+      <div className="bg-gradient-to-br from-[#0d1f2d] to-[#111827] border border-[#1f2937] rounded-2xl p-8 text-center">
+        <div className="text-2xl mb-2">🏢</div>
+        <h3 className="text-xl font-bold mb-2">Building something large-scale?</h3>
+        <p className="text-slate-400 text-sm mb-5 max-w-md mx-auto">
+          Enterprises get custom event volumes, dedicated deployments, SSO, audit export, and a
+          named SRE. We&apos;ll scope your POC in one call.
+        </p>
+        <a
+          href="mailto:hello@datacontractgate.com"
+          className="inline-block bg-green-600 hover:bg-green-500 text-white font-semibold text-sm px-6 py-3 rounded-lg transition-colors"
+        >
+          Talk to sales →
+        </a>
+      </div>
+    </div>
+  );
+}
+
+// Client component for the in-app Pro upgrade flow (uses the new /api/stripe/create-checkout-session).
+// `annual` is driven by the page-level billing toggle so the CTA and the displayed price stay in sync.
+function GrowthUpgradeButton({ annual, onToggleAnnual }: { annual: boolean; onToggleAnnual: (v: boolean) => void }) {
+  const { org, loading } = useOrg();
+  const selfHosted = useSelfHosted();
+  const [loadingUpgrade, setLoadingUpgrade] = useState(false);
+
+  const isPaid = org && (isPaidPlan(org.plan) || selfHosted === true);
+
+  async function startUpgrade(annual: boolean) {
+    if (!org) {
+      // Not logged in or no org — send to the public marketing site to start signup.
+      // (Pro upgrades for authenticated users use the in-app Stripe Checkout flow below.)
+      window.location.href = 'https://datacontractgate.com/#pricing';
+      return;
+    }
+    setLoadingUpgrade(true);
+    try {
+      const res = await fetch('/api/stripe/create-checkout-session', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ annual }),
+      });
+      const data = await res.json();
+      if (data.url) {
+        window.location.href = data.url;
+      } else {
+        alert(data.error || 'Could not start checkout. Please try the website or contact support.');
+      }
+    } catch (e) {
+      alert('Network error starting checkout. Please try again or use the marketing site links.');
+    } finally {
+      setLoadingUpgrade(false);
+    }
+  }
+
+  if (loading) {
+    // Same button, disabled until the account loads: no "Loading…" text in
+    // the server-rendered page.
+    return (
+      <div className="mb-6">
+        <button
+          disabled
+          className="w-full py-2.5 rounded-lg text-sm font-semibold bg-green-600 text-white opacity-60"
+        >
+          Start 30-day trial
+        </button>
+      </div>
+    );
+  }
+
+  if (isPaid) {
+    return (
+      <a
+        href="/account"
+        className="block text-center py-2.5 rounded-lg text-sm font-semibold transition-colors mb-6 bg-[#1f2937] hover:bg-[#2a3449] text-slate-200"
+      >
+        Manage subscription
+      </a>
+    );
+  }
+
+  return (
+    <div className="mb-6">
+      <button
+        onClick={() => startUpgrade(annual)}
+        disabled={loadingUpgrade}
+        className="w-full py-2.5 rounded-lg text-sm font-semibold transition-colors bg-green-600 hover:bg-green-500 text-white disabled:opacity-60"
+      >
+        {loadingUpgrade
+          ? 'Starting checkout…'
+          : `Start 30-day trial (${annual ? 'annual' : 'monthly'})`}
+      </button>
+      <button
+        onClick={() => onToggleAnnual(!annual)}
+        disabled={loadingUpgrade}
+        className="w-full mt-2 py-1.5 text-xs rounded-lg text-green-400 hover:text-green-300 underline disabled:opacity-60"
+      >
+        {annual ? 'or switch to monthly billing' : 'or annual billing (save 17%)'}
+      </button>
+      <p className="text-[10px] text-slate-400 mt-2 leading-snug">
+        Free for 30 days, then{" "}
+        {annual ? "$1,992 billed annually ($166/mo)" : "$199 billed monthly"}. Your
+        subscription renews automatically until you cancel. A card is required at checkout.
+        Cancel anytime online from
+        Account &rarr; Billing; cancel before the trial ends and you won&rsquo;t be charged.
+        See our{" "}
+        <a href="/terms" className="underline hover:text-slate-300">
+          Terms
+        </a>
+        .
+      </p>
+      <p className="text-[10px] text-slate-500 mt-1">You will be redirected to Stripe Checkout.</p>
+    </div>
+  );
+}
+
+// Pro + Impact checkout. Same flow as Pro, with plan "impact". When the
+// deployment has no Stripe price for the selected billing period, the card
+// still renders and the button becomes "Talk to us" (never an error).
+function ImpactUpgradeButton({
+  annual,
+  onToggleAnnual,
+  checkout,
+}: {
+  annual: boolean;
+  onToggleAnnual: (v: boolean) => void;
+  checkout: ImpactCheckout;
+}) {
+  const { org, loading } = useOrg();
+  const selfHosted = useSelfHosted();
+  const [loadingUpgrade, setLoadingUpgrade] = useState(false);
+  const available = annual ? checkout.annual : checkout.monthly;
+
+  const talkToUs = (note: string) => (
+    <div className="mb-6">
+      <a
+        href={IMPACT_CONTACT_HREF}
+        data-testid="impact-cta"
+        className="block text-center py-2.5 rounded-lg text-sm font-semibold transition-colors bg-sky-700 hover:bg-sky-600 text-white"
+      >
+        Talk to us
+      </a>
+      <p className="text-[10px] text-slate-400 mt-2 leading-snug">{note}</p>
+    </div>
+  );
+
+  async function startUpgrade() {
+    setLoadingUpgrade(true);
+    try {
+      const res = await fetch("/api/stripe/create-checkout-session", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ plan: "impact", annual }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (data.url) {
+        window.location.href = data.url;
+      } else {
+        alert(data.error || "Could not start checkout. Email hello@datacontractgate.com and we will set you up.");
+      }
+    } catch {
+      alert("Network error starting checkout. Please try again or email hello@datacontractgate.com.");
+    } finally {
+      setLoadingUpgrade(false);
+    }
+  }
+
+  if (loading) {
+    return (
+      <div className="mb-6">
+        <button disabled className="w-full py-2.5 rounded-lg text-sm font-semibold bg-sky-700 text-white opacity-60">
+          {available ? "Start 30-day trial" : "Talk to us"}
+        </button>
+      </div>
+    );
+  }
+
+  if (selfHosted === true) {
+    return talkToUs("Impact analysis is already open on a self-hosted gateway. Talk to us about hosted Pro + Impact.");
+  }
+
+  if (org?.plan === "impact" || org?.plan === "enterprise") {
+    return (
+      <div className="mb-6">
+        <a
+          href="/account"
+          data-testid="impact-cta"
+          className="block text-center py-2.5 rounded-lg text-sm font-semibold transition-colors bg-[#1f2937] hover:bg-[#2a3449] text-slate-200"
+        >
+          {org.plan === "impact" ? "Manage subscription" : "Included in Enterprise"}
+        </a>
+      </div>
+    );
+  }
+
+  if (org && (isPaidPlan(org.plan) || isAisgPlan(org.plan))) {
+    // Already on Pro (or an AISchemaGate plan): no second subscription.
+    return talkToUs(
+      isAisgPlan(org.plan)
+        ? "Pro + Impact is a DataContractGate plan. Email us and we will set it up."
+        : "You are on Pro. Email us and we will move your subscription to Pro + Impact."
+    );
+  }
+
+  if (!available) {
+    return talkToUs("Self-serve checkout for Pro + Impact opens soon. Email us and we will set up your account.");
+  }
+
+  if (!org) {
+    // Signed out: sign up, then come back to this card.
+    return (
+      <div className="mb-6">
+        <a
+          href={withAuthReturn("/auth/signup", "/pricing?plan=impact", null)}
+          data-testid="impact-cta"
+          className="block text-center py-2.5 rounded-lg text-sm font-semibold transition-colors bg-sky-700 hover:bg-sky-600 text-white"
+        >
+          Start free, then upgrade
+        </a>
+      </div>
+    );
+  }
+
+  return (
+    <div className="mb-6">
+      <button
+        onClick={startUpgrade}
+        disabled={loadingUpgrade}
+        data-testid="impact-cta"
+        className="w-full py-2.5 rounded-lg text-sm font-semibold transition-colors bg-sky-700 hover:bg-sky-600 text-white disabled:opacity-60"
+      >
+        {loadingUpgrade ? "Starting checkout…" : `Start 30-day trial (${annual ? "annual" : "monthly"})`}
+      </button>
+      <button
+        onClick={() => onToggleAnnual(!annual)}
+        disabled={loadingUpgrade}
+        className="w-full mt-2 py-1.5 text-xs rounded-lg text-sky-400 hover:text-sky-300 underline disabled:opacity-60"
+      >
+        {annual ? "or switch to monthly billing" : "or annual billing (save 17%)"}
+      </button>
+      <p className="text-[10px] text-slate-400 mt-2 leading-snug">
+        Free for 30 days, then{" "}
+        {annual ? "$4,990 billed annually ($416/mo)" : "$499 billed monthly"}. Your subscription renews
+        automatically until you cancel. A card is required at checkout. Cancel anytime online from
+        Account &rarr; Billing; cancel before the trial ends and you won&rsquo;t be charged. See our{" "}
+        <a href="/terms" className="underline hover:text-slate-300">
+          Terms
+        </a>
+        .
+      </p>
+      <p className="text-[10px] text-slate-500 mt-1">You will be redirected to Stripe Checkout.</p>
+    </div>
+  );
+}

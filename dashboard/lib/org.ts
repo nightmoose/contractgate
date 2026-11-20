@@ -20,17 +20,20 @@ import { DEMO_MODE, DEMO_ORG_UUID, DEMO_ORG_NAME } from "@/lib/demo";
  * `aisg_*` are AISchemaGate's plans (migration 036): same tenant and backend,
  * its own tiers. For feature gating they rank alongside free and growth.
  */
-export type PlanTier = "free" | "growth" | "enterprise" | "aisg_free" | "aisg_pro";
+export type PlanTier = "free" | "growth" | "enterprise" | "aisg_free" | "aisg_pro" | "impact";
 
 /** Ordered list used for tier comparisons — index = capability rank. */
-export const PLAN_ORDER: PlanTier[] = ["free", "growth", "enterprise"];
+export const PLAN_ORDER: PlanTier[] = ["free", "growth", "impact", "enterprise"];
 
 const PLAN_RANK: Record<PlanTier, number> = {
   free: 0,
   aisg_free: 0,
   growth: 1,
   aisg_pro: 1,
-  enterprise: 2,
+  // Pro + Impact meets every Pro dashboard gate and adds impact analysis, so
+  // it ranks above Pro (Pro does not meet an "impact" gate) and below Enterprise.
+  impact: 2,
+  enterprise: 3,
 };
 
 const KNOWN_PLANS = Object.keys(PLAN_RANK) as PlanTier[];
@@ -52,9 +55,9 @@ export function isFreePlan(plan: PlanTier): boolean {
 
 /**
  * Plans for which `isPaidPlan` is true. `paidPlansPhrase` is built from this
- * same list (DataContractGate Pro, AISchemaGate Pro, Enterprise).
+ * same list (DataContractGate Pro, Pro + Impact, AISchemaGate Pro, Enterprise).
  */
-const PAID_PLANS: readonly PlanTier[] = ["growth", "aisg_pro", "enterprise"];
+const PAID_PLANS: readonly PlanTier[] = ["growth", "impact", "aisg_pro", "enterprise"];
 
 /** True for plans billed through Stripe or managed (enterprise). */
 export function isPaidPlan(plan: PlanTier): boolean {
@@ -69,6 +72,7 @@ export function planDisplayName(plan: PlanTier): string {
     case "enterprise": return "Enterprise";
     case "aisg_free": return "Free";
     case "aisg_pro": return "AISchemaGate Pro";
+    case "impact": return "Pro + Impact";
   }
 }
 
