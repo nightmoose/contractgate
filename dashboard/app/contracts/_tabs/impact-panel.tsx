@@ -115,21 +115,39 @@ export function ImpactPanel({ contractId, versions }: ImpactPanelProps) {
       const target = versionRef.current;
       if (target) {
         // Supersede any in-flight GET for this panel; the recompute below is
-        // now the request whose answer the panel shows.
+        // now the request whose answer the panel shows. Clear the pre-import
+        // report immediately so it cannot sit under the import note while
+        // the recompute (which may wait on a summary rewrite) is in flight.
         controllerRef.current?.abort();
+        const controller = new AbortController();
+        controllerRef.current = controller;
         const requestId = trackerRef.current.start();
-        const refreshed = await recomputeVersionImpact(contractId, target);
-        if (!trackerRef.current.isCurrent(requestId)) {
-          // The user picked a different version while the recompute was in
-          // flight. That selection already started its own load, which owns
-          // the report and the loading flag, so drop this result.
-          return;
-        }
-        setLoading(false);
-        if (refreshed.status === "error") {
-          setMessage(`${note} ${refreshed.message}`);
-        } else {
-          applyResult(refreshed);
+        setReport(null);
+        setUpgrade(null);
+        setLoading(true);
+        try {
+          const refreshed = await recomputeVersionImpact(
+            contractId,
+            target,
+            controller.signal,
+          );
+          if (!trackerRef.current.isCurrent(requestId)) {
+            // The user picked a different version while the recompute was in
+            // flight. That selection already started its own load, which owns
+            // the report and the loading flag, so drop this result.
+            return;
+          }
+          setLoading(false);
+          if (refreshed.status === "error") {
+            setMessage(`${note} ${refreshed.message}`);
+          } else {
+            applyResult(refreshed);
+          }
+        } catch (err) {
+          if (!trackerRef.current.isCurrent(requestId) || isAbortError(err)) return;
+          setReport(null);
+          setLoading(false);
+          setMessage(`${note} ${err instanceof Error ? err.message : "Impact recompute failed"}`);
         }
       }
     } catch (err) {

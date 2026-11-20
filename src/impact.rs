@@ -1219,6 +1219,20 @@ fn stale_first_version_report(report: &Value) -> bool {
     no_base && changes > 0
 }
 
+/// True when a stored report's `base_version` was not created before the
+/// target. That is the shape left behind by the pre-fix lookup that picked
+/// `ORDER BY created_at DESC` across every other version. A missing base
+/// row is also treated as stale so GET recomputes instead of serving it.
+fn stored_baseline_is_not_earlier(
+    target_created_at: chrono::DateTime<chrono::Utc>,
+    baseline_created_at: Option<chrono::DateTime<chrono::Utc>>,
+) -> bool {
+    match baseline_created_at {
+        None => true,
+        Some(baseline_created_at) => baseline_created_at >= target_created_at,
+    }
+}
+
 /// A stored report is stale when it predates lineage fingerprinting, or an
 /// import since it was computed changed the org's lineage graph. Either way
 /// `affected` was walked against a graph that no longer exists.
@@ -1540,36 +1554,99 @@ async fn build_report(
     Ok(BuiltReport { body })
 }
 
+/// Another version of the same contract that could be a comparison baseline.
+#[derive(Debug, Clone, sqlx::FromRow)]
+struct BaselineCandidate {
+    id: Uuid,
+    version: String,
+    yaml_content: String,
+    created_at: chrono::DateTime<chrono::Utc>,
+    promoted_at: Option<chrono::DateTime<chrono::Utc>>,
+    state: String,
+}
+
+/// True when `candidate` was created before the target version.
+///
+/// `created_at` is the primary order. When two rows share a timestamp
+/// (Postgres `now()` is constant for a transaction), `id` is a stable
+/// tie-break so a version is never compared with itself and exactly one
+/// of a same-timestamp pair is treated as earlier.
+fn is_created_before(
+    candidate: &BaselineCandidate,
+    target_id: Uuid,
+    target_created_at: chrono::DateTime<chrono::Utc>,
+) -> bool {
+    if candidate.id == target_id {
+        return false;
+    }
+    candidate.created_at < target_created_at
+        || (candidate.created_at == target_created_at && candidate.id < target_id)
+}
+
+/// Pick the version a report should compare against.
+///
+/// The baseline must have been created before the target. A version with
+/// no earlier sibling is a first version (`None`).
+///
+/// `version_published` prefers the most recently promoted *earlier*
+/// stable version and never a stable version created after the target.
+/// If none exists, it falls through to previous-by-created_at.
+fn select_baseline<'a>(
+    target_id: Uuid,
+    target_created_at: chrono::DateTime<chrono::Utc>,
+    trigger: &str,
+    candidates: &'a [BaselineCandidate],
+) -> Option<&'a BaselineCandidate> {
+    if trigger == "version_published" {
+        if let Some(stable) = candidates
+            .iter()
+            .filter(|c| is_created_before(c, target_id, target_created_at) && c.state == "stable")
+            .max_by(|a, b| {
+                a.promoted_at
+                    .cmp(&b.promoted_at)
+                    .then_with(|| a.created_at.cmp(&b.created_at))
+                    .then_with(|| a.id.cmp(&b.id))
+            })
+        {
+            return Some(stable);
+        }
+    }
+    candidates
+        .iter()
+        .filter(|c| is_created_before(c, target_id, target_created_at))
+        .max_by(|a, b| {
+            a.created_at
+                .cmp(&b.created_at)
+                .then_with(|| a.id.cmp(&b.id))
+        })
+}
+
 async fn base_version(
     pool: &PgPool,
     contract_id: Uuid,
     version_id: Uuid,
     trigger: &str,
 ) -> AppResult<Option<(String, String)>> {
-    if trigger == "version_published" {
-        let stable: Option<(String, String)> = sqlx::query_as(
-            "SELECT version, yaml_content FROM contract_versions \
-             WHERE contract_id = $1 AND id <> $2 AND state = 'stable' \
-             ORDER BY promoted_at DESC NULLS LAST LIMIT 1",
-        )
-        .bind(contract_id)
-        .bind(version_id)
-        .fetch_optional(pool)
-        .await?;
-        if stable.is_some() {
-            return Ok(stable);
-        }
-    }
-    let previous: Option<(String, String)> = sqlx::query_as(
-        "SELECT version, yaml_content FROM contract_versions \
-         WHERE contract_id = $1 AND id <> $2 \
-         ORDER BY created_at DESC LIMIT 1",
+    let target_created_at: Option<(chrono::DateTime<chrono::Utc>,)> =
+        sqlx::query_as("SELECT created_at FROM contract_versions WHERE id = $1")
+            .bind(version_id)
+            .fetch_optional(pool)
+            .await?;
+    let Some((target_created_at,)) = target_created_at else {
+        return Ok(None);
+    };
+    let candidates: Vec<BaselineCandidate> = sqlx::query_as(
+        r#"SELECT id, version, yaml_content, created_at, promoted_at, state
+           FROM contract_versions WHERE contract_id = $1 AND id <> $2"#,
     )
     .bind(contract_id)
     .bind(version_id)
-    .fetch_optional(pool)
+    .fetch_all(pool)
     .await?;
-    Ok(previous)
+    Ok(
+        select_baseline(version_id, target_created_at, trigger, &candidates)
+            .map(|c| (c.version.clone(), c.yaml_content.clone())),
+    )
 }
 
 async fn store_report(
@@ -1653,6 +1730,41 @@ async fn load_stored(pool: &PgPool, contract_id: Uuid, version: &str) -> AppResu
 /// The GET path: serve the stored report unless it is stale, in which case
 /// recompute and store a fresh one. `owner` is the contract's owning org,
 /// which is what lineage import and `build_report` are scoped to.
+async fn stored_baseline_created_after_target(
+    pool: &PgPool,
+    contract_id: Uuid,
+    version: &str,
+    report: &Value,
+) -> AppResult<bool> {
+    let Some(base) = report.get("base_version").and_then(Value::as_str) else {
+        return Ok(false);
+    };
+    if base.is_empty() {
+        return Ok(false);
+    }
+    let row: Option<(
+        chrono::DateTime<chrono::Utc>,
+        Option<chrono::DateTime<chrono::Utc>>,
+    )> = sqlx::query_as(
+        r#"SELECT t.created_at, b.created_at
+           FROM contract_versions t
+           LEFT JOIN contract_versions b
+             ON b.contract_id = t.contract_id AND b.version = $3
+           WHERE t.contract_id = $1 AND t.version = $2"#,
+    )
+    .bind(contract_id)
+    .bind(version)
+    .bind(base)
+    .fetch_optional(pool)
+    .await?;
+    Ok(match row {
+        None => true,
+        Some((target_created_at, baseline_created_at)) => {
+            stored_baseline_is_not_earlier(target_created_at, baseline_created_at)
+        }
+    })
+}
+
 async fn load_or_recompute(
     pool: &PgPool,
     owner: Uuid,
@@ -1661,7 +1773,9 @@ async fn load_or_recompute(
 ) -> AppResult<Value> {
     if let Some(report) = load_stored(pool, contract_id, version).await? {
         let fingerprint = lineage_fingerprint(pool, owner).await?;
-        if !report_is_stale(&report, &fingerprint) {
+        if !report_is_stale(&report, &fingerprint)
+            && !stored_baseline_created_after_target(pool, contract_id, version, &report).await?
+        {
             return Ok(report);
         }
     }
@@ -2440,6 +2554,142 @@ ontology:
         assert!(!summary.contains("breaking"), "{summary}");
     }
 
+    fn baseline_id(n: u8) -> Uuid {
+        Uuid::from_bytes([0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, n])
+    }
+
+    fn ts(s: &str) -> chrono::DateTime<chrono::Utc> {
+        chrono::DateTime::parse_from_rfc3339(s)
+            .unwrap()
+            .with_timezone(&chrono::Utc)
+    }
+
+    fn candidate(
+        n: u8,
+        version: &str,
+        created_at: &str,
+        promoted_at: Option<&str>,
+        state: &str,
+    ) -> BaselineCandidate {
+        BaselineCandidate {
+            id: baseline_id(n),
+            version: version.into(),
+            yaml_content: format!("version: \"{version}\"\n"),
+            created_at: ts(created_at),
+            promoted_at: promoted_at.map(ts),
+            state: state.into(),
+        }
+    }
+
+    fn picked_version(
+        target: u8,
+        target_created_at: &str,
+        trigger: &str,
+        candidates: &[BaselineCandidate],
+    ) -> Option<String> {
+        select_baseline(
+            baseline_id(target),
+            ts(target_created_at),
+            trigger,
+            candidates,
+        )
+        .map(|c| c.version.clone())
+    }
+
+    #[test]
+    fn select_baseline_treats_the_oldest_version_as_first() {
+        let v1 = candidate(1, "1.0.0", "2026-01-01T00:00:00Z", None, "stable");
+        let v2 = candidate(2, "1.0.1", "2026-01-02T00:00:00Z", None, "draft");
+        let all = [v1, v2];
+        assert_eq!(
+            picked_version(1, "2026-01-01T00:00:00Z", "recompute", &all),
+            None,
+            "an older version must not be compared with a newer one"
+        );
+        assert_eq!(
+            picked_version(2, "2026-01-02T00:00:00Z", "recompute", &all).as_deref(),
+            Some("1.0.0")
+        );
+    }
+
+    #[test]
+    fn select_baseline_has_no_base_when_the_contract_has_one_version() {
+        assert_eq!(
+            picked_version(1, "2026-01-01T00:00:00Z", "recompute", &[]),
+            None
+        );
+    }
+
+    #[test]
+    fn select_baseline_publish_never_picks_a_later_stable() {
+        let v1 = candidate(
+            1,
+            "1.0.0",
+            "2026-01-01T00:00:00Z",
+            Some("2026-01-01T01:00:00Z"),
+            "stable",
+        );
+        let v2 = candidate(
+            2,
+            "1.0.1",
+            "2026-01-02T00:00:00Z",
+            Some("2026-01-03T00:00:00Z"),
+            "stable",
+        );
+        let all = [v1, v2];
+        // v2 was promoted more recently, which is what the old
+        // ORDER BY promoted_at DESC query used, incorrectly, for v1.
+        assert_eq!(
+            picked_version(1, "2026-01-01T00:00:00Z", "version_published", &all),
+            None,
+            "a published older version must not compare with a later stable"
+        );
+        assert_eq!(
+            picked_version(2, "2026-01-02T00:00:00Z", "version_published", &all).as_deref(),
+            Some("1.0.0")
+        );
+    }
+
+    #[test]
+    fn select_baseline_publish_skips_a_later_stable_when_an_earlier_one_exists() {
+        let v1 = candidate(
+            1,
+            "1.0.0",
+            "2026-01-01T00:00:00Z",
+            Some("2026-01-01T01:00:00Z"),
+            "stable",
+        );
+        let v2 = candidate(2, "1.0.1", "2026-01-02T00:00:00Z", None, "draft");
+        let v3 = candidate(
+            3,
+            "1.1.0",
+            "2026-01-03T00:00:00Z",
+            Some("2026-01-04T00:00:00Z"),
+            "stable",
+        );
+        let all = [v1, v2, v3];
+        assert_eq!(
+            picked_version(2, "2026-01-02T00:00:00Z", "version_published", &all).as_deref(),
+            Some("1.0.0"),
+            "publish must not skip back to a stable created after the target"
+        );
+    }
+
+    #[test]
+    fn select_baseline_tie_breaks_equal_created_at_by_id() {
+        let earlier_id = candidate(1, "1.0.0", "2026-01-01T00:00:00Z", None, "draft");
+        let later_id = candidate(2, "1.0.1", "2026-01-01T00:00:00Z", None, "draft");
+        let all = [earlier_id, later_id];
+        assert_eq!(
+            picked_version(2, "2026-01-01T00:00:00Z", "recompute", &all).as_deref(),
+            Some("1.0.0")
+        );
+        assert_eq!(
+            picked_version(1, "2026-01-01T00:00:00Z", "recompute", &all),
+            None
+        );
+    }
+
     #[test]
     fn stale_first_version_report_detects_the_empty_baseline_bug() {
         let stale = serde_json::json!({
@@ -2460,6 +2710,16 @@ ontology:
             "safe_count": 0
         });
         assert!(!stale_first_version_report(&later));
+    }
+
+    #[test]
+    fn stored_baseline_is_not_earlier_detects_a_later_or_missing_base() {
+        let earlier = ts("2026-01-01T00:00:00Z");
+        let later = ts("2026-01-02T00:00:00Z");
+        assert!(stored_baseline_is_not_earlier(earlier, Some(later)));
+        assert!(stored_baseline_is_not_earlier(earlier, Some(earlier)));
+        assert!(stored_baseline_is_not_earlier(earlier, None));
+        assert!(!stored_baseline_is_not_earlier(later, Some(earlier)));
     }
 
     #[test]
@@ -3123,6 +3383,140 @@ edges:
             .await
             .unwrap();
         assert_eq!(cached_v1, refreshed_v1);
+
+        sqlx::query("DELETE FROM contracts WHERE org_id = $1")
+            .bind(org)
+            .execute(&pool)
+            .await
+            .unwrap();
+        sqlx::query("DELETE FROM orgs WHERE id = $1")
+            .bind(org)
+            .execute(&pool)
+            .await
+            .unwrap();
+    }
+
+    /// An older version must compare with nothing (first version), not with a
+    /// newer sibling. The previous lookup picked `ORDER BY created_at DESC`
+    /// across every other version, so recomputing v1.0.0 after v1.0.1 existed
+    /// treated v1.0.1 as the baseline.
+    #[tokio::test]
+    #[ignore = "requires DATABASE_URL and migration 054"]
+    async fn older_version_is_not_compared_with_a_newer_one() {
+        let db_url = std::env::var("DATABASE_URL").expect("DATABASE_URL must be set");
+        let pool = sqlx::PgPool::connect(&db_url).await.unwrap();
+        let org = Uuid::new_v4();
+        sqlx::query("INSERT INTO orgs (id, name, slug, plan) VALUES ($1, $2, $3, 'impact')")
+            .bind(org)
+            .bind("impact baseline test")
+            .bind(format!("impact-base-{}", org.simple()))
+            .execute(&pool)
+            .await
+            .unwrap();
+        let (identity, _) = crate::storage::create_contract(
+            &pool,
+            "orders",
+            None,
+            V1,
+            Default::default(),
+            Some(org),
+        )
+        .await
+        .unwrap();
+        let contract_id = identity.id;
+        crate::storage::create_version(&pool, contract_id, "1.1.0", V2, Some(org))
+            .await
+            .unwrap();
+
+        // If both rows landed in the same timestamp (rare, but cheap to
+        // fix), push the newer draft forward so the test exercises the
+        // created_at < target rule rather than the id tie-break.
+        let stamps: Vec<(String, chrono::DateTime<chrono::Utc>)> = sqlx::query_as(
+            "SELECT version, created_at FROM contract_versions WHERE contract_id = $1",
+        )
+        .bind(contract_id)
+        .fetch_all(&pool)
+        .await
+        .unwrap();
+        let t1 = stamps.iter().find(|(v, _)| v == "1.0.0").map(|(_, t)| *t);
+        let t2 = stamps.iter().find(|(v, _)| v == "1.1.0").map(|(_, t)| *t);
+        if let (Some(t1), Some(t2)) = (t1, t2) {
+            if t2 <= t1 {
+                sqlx::query(
+                    "UPDATE contract_versions SET created_at = $1 WHERE contract_id = $2 AND version = '1.1.0'",
+                )
+                .bind(t1 + chrono::Duration::seconds(1))
+                .bind(contract_id)
+                .execute(&pool)
+                .await
+                .unwrap();
+            }
+        }
+
+        let first = compute_and_store(&pool, org, contract_id, "1.0.0", "recompute")
+            .await
+            .unwrap();
+        assert!(
+            first["base_version"].is_null(),
+            "older version must be first, got {first}"
+        );
+        assert_eq!(first["breaking_count"].as_i64().unwrap(), 0, "{first}");
+        let summary = first["summary"].as_str().unwrap();
+        assert!(
+            summary.contains("first version"),
+            "older version must get the first-version report, got {summary}"
+        );
+
+        let later = compute_and_store(&pool, org, contract_id, "1.1.0", "recompute")
+            .await
+            .unwrap();
+        assert_eq!(
+            later["base_version"].as_str(),
+            Some("1.0.0"),
+            "newer version must compare with the older one, got {later}"
+        );
+        assert!(
+            later["breaking_count"].as_i64().unwrap() >= 1,
+            "v1.1.0 vs v1.0.0 should be breaking, got {later}"
+        );
+
+        // A report already stored by the old lookup (v1.0.0 compared with
+        // v1.1.0) must be treated stale on GET even when the fingerprint
+        // still matches, otherwise it would be served until the next import.
+        let (v1_id,): (Uuid,) = sqlx::query_as(
+            "SELECT id FROM contract_versions WHERE contract_id = $1 AND version = '1.0.0'",
+        )
+        .bind(contract_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        let mut poisoned = first.clone();
+        poisoned["base_version"] = serde_json::json!("1.1.0");
+        poisoned["breaking_count"] = serde_json::json!(1);
+        poisoned["summary"] = serde_json::json!(
+            "1 breaking change and 0 safe changes. 0 downstream assets affected."
+        );
+        store_report(&pool, org, contract_id, v1_id, &poisoned)
+            .await
+            .unwrap();
+        let healed = load_or_recompute(&pool, org, contract_id, "1.0.0")
+            .await
+            .unwrap();
+        assert!(
+            healed["base_version"].is_null(),
+            "GET must recompute a later-baseline report, got {healed}"
+        );
+        assert!(
+            healed["summary"]
+                .as_str()
+                .unwrap()
+                .contains("first version"),
+            "{healed}"
+        );
+
+        // version_published's "ignore a later stable" rule is covered by the
+        // unit tests on select_baseline. Promoting here would leave stable
+        // rows that the delete guard refuses to clean up.
 
         sqlx::query("DELETE FROM contracts WHERE org_id = $1")
             .bind(org)
