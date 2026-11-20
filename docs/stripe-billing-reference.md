@@ -10,6 +10,7 @@ paid `plan` directly.
 |-------------|---------------------------------------------|--------------|
 | Free        | Default for every org                       | `free`       |
 | Growth      | Self-serve via in-app Stripe Checkout       | `growth`     |
+| Pro + Impact | Self-serve via in-app Stripe Checkout (`plan: "impact"`) | `impact` |
 | Enterprise  | Sales-managed, set manually                 | `enterprise` |
 
 Enterprise is never auto-downgraded by webhooks.
@@ -38,7 +39,14 @@ Body (optional):
 
 - `annual` selects `STRIPE_PRICE_GROWTH_ANNUAL` vs `STRIPE_PRICE_GROWTH_MONTHLY`.
 - `priceId` overrides the env price (rarely needed).
-- Rejects with 400 if the org is already on `growth`/`enterprise`.
+- `plan: "impact"` buys Pro + Impact with `STRIPE_PRICE_IMPACT_MONTHLY` or
+  `STRIPE_PRICE_IMPACT_ANNUAL`. The client cannot pass a price id for it, and a
+  Pro-path `priceId` that equals an Impact price is rejected (400). When the
+  selected period's Impact price is unset the route returns 503
+  `{ "code": "impact_price_unconfigured" }`; the pricing card shows "Talk to us"
+  in that state instead of calling the route. AISchemaGate orgs get 400.
+- Rejects with 400 if the org is already on `growth`/`aisg_pro`/`impact`/`enterprise`
+  (Pro to Pro + Impact is a manual subscription change for now).
 - Sets a 30-day trial and stamps `metadata.orgId` on both session and subscription.
 
 Returns `{ "url": "<checkout-url>" }`.
@@ -60,8 +68,8 @@ Handled events:
 
 | Event                           | Effect |
 |---------------------------------|--------|
-| `checkout.session.completed`    | Validates price, resolves org from `metadata.orgId` (deterministic; no email fallback), sets `plan=growth`, `plan_status` from the live subscription, stores customer + subscription ids. |
-| `customer.subscription.updated` | Maps Stripe status → `plan` (`growth` for active/trialing/past_due, `free` for canceled/unpaid). Enterprise untouched. Mirrors status to `plan_status`. |
+| `checkout.session.completed`    | Validates price, resolves org from `metadata.orgId` (deterministic; no email fallback), sets `plan=impact` for a configured Impact price, otherwise `growth`/`aisg_pro` (Pro rule unchanged), `plan_status` from the live subscription, stores customer + subscription ids. |
+| `customer.subscription.updated` | Maps Stripe status → `plan`. For active/trialing/past_due, a configured Impact price gives `impact`, a configured Pro price gives `growth`/`aisg_pro`, and an unknown price keeps the org's own paid plan (`impact` stays `impact`). `free`/`aisg_free` for canceled/unpaid. Enterprise untouched. Mirrors status to `plan_status`. |
 | `customer.subscription.deleted` | Downgrades org to `free`, clears `stripe_subscription_id`. |
 | `invoice.payment_failed`        | Sets `plan_status=past_due`. |
 
@@ -101,6 +109,8 @@ Set in the dashboard deployment (see `dashboard/.env.example`). Use the
 | `STRIPE_WEBHOOK_SECRET`        | Signing secret (`whsec_…`) for the webhook endpoint. |
 | `STRIPE_PRICE_GROWTH_MONTHLY`  | Price id (`price_…`) for monthly Growth. |
 | `STRIPE_PRICE_GROWTH_ANNUAL`   | Price id (`price_…`) for annual Growth. |
+| `STRIPE_PRICE_IMPACT_MONTHLY`  | Price id for monthly Pro + Impact ($499/mo). Optional: unset means the card shows "Talk to us". |
+| `STRIPE_PRICE_IMPACT_ANNUAL`   | Price id for annual Pro + Impact ($4,990/yr). Optional, same fallback. |
 | `NEXT_PUBLIC_APP_URL`          | Base URL for success/cancel/portal redirects (no trailing slash). |
 | `NEXT_PUBLIC_SUPABASE_URL`     | Used by the webhook's service-role client. |
 | `SUPABASE_SERVICE_ROLE_KEY`    | Service-role key; webhook writes bypass RLS. |

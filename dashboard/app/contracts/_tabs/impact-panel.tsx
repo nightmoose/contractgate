@@ -209,7 +209,7 @@ export function ImpactPanel({ contractId, versions }: ImpactPanelProps) {
           className="rounded-lg border border-amber-700/40 bg-amber-900/20 px-4 py-3 space-y-2"
         >
           <p className="text-sm text-amber-200">{upgrade}</p>
-          <Link href="/pricing" className="text-sm text-amber-300 underline">
+          <Link href="/pricing?plan=impact" className="text-sm text-amber-300 underline">
             Upgrade to Pro + Impact
           </Link>
         </div>

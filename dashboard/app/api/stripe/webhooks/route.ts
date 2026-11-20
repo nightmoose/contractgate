@@ -2,7 +2,14 @@ import { NextRequest, NextResponse } from 'next/server';
 import Stripe from 'stripe';
 import { createClient as createServiceClient } from '@supabase/supabase-js';
 import { supabaseServerUrl } from '@/lib/supabase/env';
-import { proPriceAnnual, proPriceMonthly } from '@/lib/stripe-prices';
+import { configuredPrices } from '@/lib/stripe-prices';
+import {
+  freePlanFor,
+  isAisgPlan,
+  paidPlanForSubscription,
+  planForCheckout,
+  type PaidStripePlan,
+} from '@/lib/billing-plan';
 
 // This route must run per-request; never statically collected at build time.
 export const dynamic = 'force-dynamic';
@@ -163,17 +170,9 @@ export async function POST(req: NextRequest) {
   return NextResponse.json({ received: true });
 }
 
-// AISchemaGate plans (migration 036) live in the same orgs table. A
-// subscription change keeps an org on its own product line.
-function isAisgPlan(plan: string | null | undefined): boolean {
-  return plan === 'aisg_free' || plan === 'aisg_pro';
-}
-function paidPlanFor(plan: string | null | undefined): 'growth' | 'aisg_pro' {
-  return isAisgPlan(plan) ? 'aisg_pro' : 'growth';
-}
-function freePlanFor(plan: string | null | undefined): 'free' | 'aisg_free' {
-  return isAisgPlan(plan) ? 'aisg_free' : 'free';
-}
+// AISchemaGate plans (migration 036) live in the same orgs table. Plan and
+// price mapping (including Pro + Impact, stored plan 'impact') lives in
+// lib/billing-plan.ts so it is unit-tested.
 
 // Returns true if the org was upgraded (event should be marked processed),
 // false if it was a no-op (unresolved org / wrong price) so the event stays replayable.
@@ -206,18 +205,14 @@ async function handleCheckoutCompleted(event: Stripe.Event, session: Stripe.Chec
   });
   const priceId = expanded.line_items?.data?.[0]?.price?.id as string | undefined;
 
-  // One set of Pro prices serves both products; the product line comes from
-  // checkout metadata (set by create-checkout-session) or the org's current
-  // plan, so an AISchemaGate account becomes 'aisg_pro', others 'growth'.
-  const proPrices = [proPriceMonthly(), proPriceAnnual()];
-  const priceOk = !priceId || proPrices.some((p) => !p) || proPrices.includes(priceId);
-
-  let newPlan: 'growth' | 'aisg_pro' | null = null;
-  if (priceOk) {
-    const { data: current } = await supabaseAdmin.from('orgs').select('plan').eq('id', targetOrgId).single();
-    newPlan =
-      session.metadata?.product === 'aischemagate' || isAisgPlan(current?.plan) ? 'aisg_pro' : 'growth';
-  }
+  // The price decides the plan: a configured Pro + Impact price grants
+  // 'impact'. One set of Pro prices serves both products; the product line
+  // comes from checkout metadata (set by create-checkout-session) or the org's
+  // current plan, so an AISchemaGate account becomes 'aisg_pro', others 'growth'.
+  const { data: current } = await supabaseAdmin.from('orgs').select('plan').eq('id', targetOrgId).single();
+  const newPlan: PaidStripePlan | null = planForCheckout(priceId, configuredPrices(), {
+    aisg: session.metadata?.product === 'aischemagate' || isAisgPlan(current?.plan),
+  });
 
   if (newPlan === null) {
     await recordFailure(
@@ -282,12 +277,15 @@ async function handleSubscriptionUpdated(subscription: Stripe.Subscription): Pro
 
   // Enterprise is managed manually (not self-serve); never auto-downgrade it.
   // Otherwise stay on the org's product line (DataContractGate or AISchemaGate).
+  // A known price follows a plan switch made in Stripe (Pro <-> Pro + Impact);
+  // otherwise the org keeps its own paid plan ('impact' stays 'impact').
   let newPlan = org.plan;
   if (org.plan !== 'enterprise') {
     if (status === 'canceled' || status === 'unpaid') {
       newPlan = freePlanFor(org.plan);
     } else if (['active', 'trialing', 'past_due'].includes(status)) {
-      newPlan = paidPlanFor(org.plan);
+      const priceId = subscription.items?.data?.[0]?.price?.id;
+      newPlan = paidPlanForSubscription(org.plan, priceId, configuredPrices());
     }
   }
 
