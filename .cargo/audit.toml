@@ -15,7 +15,6 @@ ignore = [
     # sqlx 0.8.x and reqwest 0.12.x both pull rustls-webpki transitively.
     # No upstream patch available yet for the pinned versions we use.
     # Suppressed: 2026-05-02. Revisit: when sqlx or reqwest bumps webpki.
-    "RUSTSEC-2026-0104",
     "RUSTSEC-2026-0098",
     "RUSTSEC-2026-0099",
 
