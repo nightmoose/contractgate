@@ -53,7 +53,7 @@ The comparison base is the previous version by creation time, never a version cr
 
 ## Lineage import
 
-`POST /lineage` replaces the caller's lineage.
+`POST /lineage` replaces the caller's lineage. Importing replaces all lineage for your organization, not just this contract.
 
 Edge list (JSON or YAML):
 
@@ -70,6 +70,8 @@ edges:
 ```
 
 `edge` is `feeds` (the default), `displays`, `refreshes`, or `owned_by`. `field` limits that edge to one contract field. Kinds are `contract`, `dataset`, `table`, `model`, `dashboard`, `consumer`, and `job`.
+
+Each endpoint can be given either form: a flat `kind:key` string (`upstream: contract:<contract-uuid-or-name>`), or an object with a bare key (`{ kind: contract, key: <contract-uuid-or-name> }`). An object key prefixed with its own kind (`{ kind: contract, key: "contract:<contract-uuid-or-name>" }`) is also accepted; the duplicate prefix is stripped so the node still links.
 
 dbt `manifest.json`: models, seeds, snapshots, and sources become assets. `depends_on.nodes` becomes `feeds` edges (upstream to downstream). Exposures of type `dashboard` become dashboards with `displays` edges; other exposures become consumers. `meta.owner` or `config.meta.owner` is the owner. `meta.contract_id` or `meta.datacontractgate_contract` (or the same keys under `config.meta`) links the node to a contract in this org. Send the file text as `document`, or send the manifest object itself. `format` is `auto`, `edges`, or `dbt_manifest`.
 
