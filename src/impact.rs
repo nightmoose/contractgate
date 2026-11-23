@@ -33,6 +33,11 @@ use crate::AppState;
 
 const EDGE_KINDS_WALK: &[&str] = &["feeds", "displays", "refreshes"];
 const SCHEMA_MISSING: &str = "Downstream impact analysis is not available until migration 054_lineage_impact.sql is applied.";
+/// Bump when `changed_top_fields`, `changes_for`, or the walk's scoping
+/// rule changes, so stored reports recompute under the new semantics even
+/// though the lineage graph and contract are unchanged. Folded into
+/// `lineage_fingerprint`, so this needs no database migration.
+const IMPACT_ALGO_VERSION: &str = "2";
 
 // ---------------------------------------------------------------------------
 // Field-change classification
@@ -44,6 +49,9 @@ pub struct FieldChange {
     pub kind: String,
     pub severity: String,
     pub detail: String,
+    /// The pre-rename path, set only for `field_renamed`. Lineage edges
+    /// scoped to the old name must still match this change.
+    pub old_field: Option<String>,
 }
 
 impl FieldChange {
@@ -53,6 +61,17 @@ impl FieldChange {
             kind: kind.to_string(),
             severity: "breaking".into(),
             detail: detail.into(),
+            old_field: None,
+        }
+    }
+
+    fn renamed(new_field: impl Into<String>, old_field: impl Into<String>, detail: impl Into<String>) -> Self {
+        Self {
+            field: new_field.into(),
+            kind: "field_renamed".to_string(),
+            severity: "breaking".into(),
+            detail: detail.into(),
+            old_field: Some(old_field.into()),
         }
     }
 
@@ -62,6 +81,7 @@ impl FieldChange {
             kind: kind.to_string(),
             severity: "safe".into(),
             detail: detail.into(),
+            old_field: None,
         }
     }
 
@@ -207,9 +227,9 @@ fn diff_fields(
         let Some(old_field) = a_map.get(old_name) else {
             continue;
         };
-        out.push(FieldChange::breaking(
+        out.push(FieldChange::renamed(
             new_path.clone(),
-            "field_renamed",
+            old_path.clone(),
             format!("`{old_name}` was renamed to `{new_name}`"),
         ));
         diff_one(old_field, new_field, &new_path, renames, out);
@@ -512,25 +532,46 @@ fn len_text(value: Option<usize>) -> String {
         .unwrap_or_else(|| "none".to_string())
 }
 
+/// Top-level names a change can be matched by. A rename matches both the
+/// old name (what existing lineage edges may still be scoped to) and the
+/// new one.
+fn change_top_names(change: &FieldChange) -> Vec<&str> {
+    let mut names = vec![top_field(&change.field)];
+    if let Some(old) = change.old_field.as_deref() {
+        let old_top = top_field(old);
+        if old_top != names[0] {
+            names.push(old_top);
+        }
+    }
+    names
+}
+
 pub fn changed_top_fields(changes: &[FieldChange]) -> Vec<String> {
     let mut names: Vec<String> = changes
         .iter()
-        .map(|c| top_field(&c.field).to_string())
+        .flat_map(change_top_names)
+        .map(str::to_string)
         .collect();
     names.sort();
     names.dedup();
     names
 }
 
+/// Narrow `changes` down to the ones relevant at the end of a lineage path.
+/// An unscoped hop (empty field) passes through whatever set it received;
+/// a scoped hop intersects that set with changes touching its field. So the
+/// result can shrink to nothing partway down a path even though the walk
+/// itself used the org-wide changed-field set to decide whether to follow
+/// each edge.
 fn changes_for<'a>(changes: &'a [FieldChange], path_fields: &[String]) -> Vec<&'a FieldChange> {
-    if path_fields.iter().any(|field| field.is_empty()) {
-        return changes.iter().collect();
+    let mut relevant: Vec<&FieldChange> = changes.iter().collect();
+    for field in path_fields {
+        if field.is_empty() {
+            continue;
+        }
+        relevant.retain(|change| change_top_names(change).contains(&field.as_str()));
     }
-    let labels: HashSet<&str> = path_fields.iter().map(String::as_str).collect();
-    changes
-        .iter()
-        .filter(|change| labels.contains(top_field(&change.field)))
-        .collect()
+    relevant
 }
 
 // ---------------------------------------------------------------------------
@@ -828,6 +869,11 @@ fn endpoint_object(node: &Value) -> Result<Endpoint, String> {
     if key.is_empty() {
         return Err("lineage node key is empty".into());
     }
+    // `{ kind: contract, key: "contract:<uuid>" }` is a natural shape to
+    // send (it mirrors the flat `kind:key` form), but taken literally it
+    // doubles up to `contract:contract:<uuid>` below and silently fails to
+    // link. Strip a leading `<kind>:` that duplicates the already-known kind.
+    let key = strip_kind_prefix(kind, key);
     let name = node
         .get("name")
         .and_then(|v| v.as_str())
@@ -856,6 +902,16 @@ fn split_typed_key(raw: &str) -> Result<(&str, &str), String> {
         return Err(format!("lineage key '{raw}' is missing a name"));
     }
     Ok((kind, key))
+}
+
+/// Strip a leading `<kind>:` from `key` when it repeats the already-known
+/// kind (case-insensitive), e.g. `("contract", "contract:abc")` -> `"abc"`.
+/// Any other prefix, or no prefix at all, is left untouched.
+fn strip_kind_prefix<'a>(kind: &str, key: &'a str) -> &'a str {
+    match key.split_once(':') {
+        Some((prefix, rest)) if prefix.eq_ignore_ascii_case(kind) && !rest.is_empty() => rest,
+        _ => key,
+    }
 }
 
 fn validate_kind(kind: &str) -> Result<(), String> {
@@ -1341,6 +1397,11 @@ async fn ensure_entitled(pool: &PgPool, self_hosted: bool, org_id: Uuid) -> AppR
 /// graph. A single statement reads all three under one snapshot, so a
 /// concurrent import either hasn't started (old fingerprint) or has already
 /// committed (new fingerprint); it cannot be read half-applied.
+///
+/// Prefixed with `IMPACT_ALGO_VERSION` so a change to classification or
+/// scoping semantics (not the graph itself) also invalidates stored
+/// reports, without a migration: old rows simply carry a fingerprint
+/// string that can no longer match a freshly computed one.
 async fn lineage_fingerprint(pool: &PgPool, org_id: Uuid) -> AppResult<String> {
     let (assets, max_created, edges): (i64, Option<chrono::DateTime<chrono::Utc>>, i64) =
         sqlx::query_as(
@@ -1355,7 +1416,7 @@ async fn lineage_fingerprint(pool: &PgPool, org_id: Uuid) -> AppResult<String> {
     let stamp = max_created
         .map(|t| t.timestamp_micros().to_string())
         .unwrap_or_else(|| "none".to_string());
-    Ok(format!("{assets}:{stamp}:{edges}"))
+    Ok(format!("{IMPACT_ALGO_VERSION}:{assets}:{stamp}:{edges}"))
 }
 
 /// Breadth-first downstream walk, one query per hop.
@@ -1491,6 +1552,12 @@ async fn build_report(
     let mut affected = Vec::new();
     for row in &downstream {
         let relevant = changes_for(&changes, &row.fields);
+        if relevant.is_empty() && !changes.is_empty() {
+            // Scoped hops narrowed the path to nothing: this asset is on
+            // the graph but not actually touched by this change, so it is
+            // not reported as affected.
+            continue;
+        }
         let owner = row.owner.as_deref();
         let explanation = explain_asset(
             &row.name,
@@ -2786,6 +2853,99 @@ ontology:
         let rename = changes.iter().find(|c| c.kind == "field_renamed").unwrap();
         assert_eq!(rename.severity, "breaking");
         assert!(rename.sentence().contains("renamed"));
+    }
+
+    /// Demo shape: v2 renames `amount` to `amount_usd`. Existing lineage can
+    /// still be scoped to the old name, so a rename must match on both.
+    #[test]
+    fn changed_top_fields_includes_both_the_old_and_new_name_for_a_rename() {
+        let renamed = r#"
+version: "2.0.0"
+name: orders
+ontology:
+  entities:
+    - name: amount_usd
+      type: number
+      required: true
+      renamed_from: amount
+    - name: currency
+      type: string
+      required: false
+"#;
+        let changes = classify_yaml(Some(V1), renamed).unwrap();
+        let names = changed_top_fields(&changes);
+        assert!(names.contains(&"amount".to_string()), "{names:?}");
+        assert!(names.contains(&"amount_usd".to_string()), "{names:?}");
+    }
+
+    #[test]
+    fn changes_for_matches_a_rename_change_by_old_or_new_name() {
+        let renamed = FieldChange::renamed("amount_usd", "amount", "`amount` was renamed to `amount_usd`");
+        let changes = vec![renamed];
+        assert_eq!(changes_for(&changes, &["amount".into()]).len(), 1);
+        assert_eq!(changes_for(&changes, &["amount_usd".into()]).len(), 1);
+        assert_eq!(changes_for(&changes, &["currency".into()]).len(), 0);
+    }
+
+    /// contract -> stg_orders (unscoped) -> Ops Order Status Board (scoped to
+    /// `status`): the set of relevant changes must narrow at the scoped hop,
+    /// not stay at "every change" just because an earlier hop was unscoped.
+    #[test]
+    fn changes_for_narrows_at_a_later_scoped_hop_after_an_unscoped_one() {
+        let changes = vec![
+            FieldChange::breaking("status", "field_removed", "removed"),
+            FieldChange::breaking("amount", "type_narrowed", "narrowed"),
+        ];
+        let narrowed = changes_for(&changes, &[String::new(), "status".into()]);
+        assert_eq!(narrowed.len(), 1);
+        assert_eq!(narrowed[0].field, "status");
+
+        // Scoping on the first hop still works as before (FX reconciliation,
+        // Shipping ETA): a scoped-then-unscoped path keeps the first hop's
+        // narrowing because the unscoped hop passes through, not resets.
+        let first_hop_scoped = changes_for(&changes, &["amount".into(), String::new()]);
+        assert_eq!(first_hop_scoped.len(), 1);
+        assert_eq!(first_hop_scoped[0].field, "amount");
+
+        // Every hop unscoped: nothing is filtered out.
+        let all_unscoped = changes_for(&changes, &[String::new(), String::new()]);
+        assert_eq!(all_unscoped.len(), 2);
+
+        // Two scoped hops on different fields intersect to nothing.
+        let empty = changes_for(&changes, &["amount".into(), "status".into()]);
+        assert!(empty.is_empty());
+    }
+
+    #[test]
+    fn strip_kind_prefix_removes_only_a_duplicate_leading_kind() {
+        assert_eq!(strip_kind_prefix("contract", "contract:abc-123"), "abc-123");
+        assert_eq!(strip_kind_prefix("Contract", "CONTRACT:abc-123"), "abc-123");
+        assert_eq!(strip_kind_prefix("contract", "abc-123"), "abc-123");
+        assert_eq!(strip_kind_prefix("contract", "model:abc-123"), "model:abc-123");
+        assert_eq!(strip_kind_prefix("contract", "contract:"), "contract:");
+    }
+
+    /// `{ kind: contract, key: "contract:<uuid>" }` is a natural shape to
+    /// send and must link, not silently become `contract:contract:<uuid>`.
+    #[test]
+    fn object_form_edge_with_a_prefixed_key_still_links() {
+        let yaml = r#"
+edges:
+  - from: { kind: contract, key: "contract:orders-uuid" }
+    to: { kind: model, key: stg_orders, name: stg_orders }
+"#;
+        let parsed = parse_lineage_document(yaml, "auto").unwrap();
+        let contract_asset = parsed
+            .assets
+            .iter()
+            .find(|a| a.kind == "contract")
+            .expect("contract asset parsed");
+        assert_eq!(contract_asset.external_key, "contract:orders-uuid");
+        assert_eq!(contract_asset.contract_ref.as_deref(), Some("orders-uuid"));
+        assert!(parsed
+            .edges
+            .iter()
+            .any(|e| e.from_key == "contract:orders-uuid" && e.to_key == "model:stg_orders"));
     }
 
     #[test]
