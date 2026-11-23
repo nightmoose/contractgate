@@ -202,6 +202,9 @@ export function ImpactPanel({ contractId, versions }: ImpactPanelProps) {
       <p className="text-xs text-slate-500">
         DataContractGate reads a dbt manifest.json or an edge list and, when a version is proposed or published, names the downstream assets and which field changes are breaking.
       </p>
+      <p className="text-xs text-amber-500">
+        Importing replaces all lineage for your organization, not just this contract.
+      </p>
 
       {upgrade && (
         <div
