@@ -65,7 +65,11 @@ impl FieldChange {
         }
     }
 
-    fn renamed(new_field: impl Into<String>, old_field: impl Into<String>, detail: impl Into<String>) -> Self {
+    fn renamed(
+        new_field: impl Into<String>,
+        old_field: impl Into<String>,
+        detail: impl Into<String>,
+    ) -> Self {
         Self {
             field: new_field.into(),
             kind: "field_renamed".to_string(),
@@ -2880,7 +2884,11 @@ ontology:
 
     #[test]
     fn changes_for_matches_a_rename_change_by_old_or_new_name() {
-        let renamed = FieldChange::renamed("amount_usd", "amount", "`amount` was renamed to `amount_usd`");
+        let renamed = FieldChange::renamed(
+            "amount_usd",
+            "amount",
+            "`amount` was renamed to `amount_usd`",
+        );
         let changes = vec![renamed];
         assert_eq!(changes_for(&changes, &["amount".into()]).len(), 1);
         assert_eq!(changes_for(&changes, &["amount_usd".into()]).len(), 1);
@@ -2921,7 +2929,10 @@ ontology:
         assert_eq!(strip_kind_prefix("contract", "contract:abc-123"), "abc-123");
         assert_eq!(strip_kind_prefix("Contract", "CONTRACT:abc-123"), "abc-123");
         assert_eq!(strip_kind_prefix("contract", "abc-123"), "abc-123");
-        assert_eq!(strip_kind_prefix("contract", "model:abc-123"), "model:abc-123");
+        assert_eq!(
+            strip_kind_prefix("contract", "model:abc-123"),
+            "model:abc-123"
+        );
         assert_eq!(strip_kind_prefix("contract", "contract:"), "contract:");
     }
 
