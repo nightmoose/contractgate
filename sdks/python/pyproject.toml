@@ -4,8 +4,8 @@ build-backend = "hatchling.build"
 
 [project]
 name = "contractgate"
-version = "0.4.1"
-description = "Python SDK for DataContractGate — high-performance semantic contract enforcement gateway."
+version = "0.4.2"
+description = "Python SDK for DataContractGate: high-performance semantic contract enforcement gateway."
 readme = "README.md"
 requires-python = ">=3.9"
 license = { text = "MIT" }
@@ -35,6 +35,11 @@ dev = [
   "mypy>=1.8",
   "ruff>=0.5",
 ]
+
+[project.scripts]
+# Not "contractgate": that name belongs to the Rust CLI binary. Also runs as
+# `python -m contractgate`.
+contractgate-py = "contractgate.cli:main_exit"
 
 [project.urls]
 Homepage = "https://datacontractgate.com"

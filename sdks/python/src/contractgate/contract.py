@@ -257,6 +257,9 @@ class Contract:
     entities: List[FieldDefinition]
     glossary: List[GlossaryEntry] = field(default_factory=list)
     metrics: List[MetricDefinition] = field(default_factory=list)
+    quality: List["QualityRule"] = field(default_factory=list)
+    cross_field: List["CrossFieldRule"] = field(default_factory=list)
+    null_as_absent: bool = False
 
     @classmethod
     def from_yaml(cls, source: str) -> "Contract":
@@ -285,6 +288,8 @@ class Contract:
 
         glossary = [GlossaryEntry.from_yaml(g) for g in (raw.get("glossary") or [])]
         metrics = [MetricDefinition.from_yaml(m) for m in (raw.get("metrics") or [])]
+        quality = [QualityRule.from_yaml(q) for q in (raw.get("quality") or [])]
+        cross_field = [CrossFieldRule.from_yaml(c) for c in (raw.get("cross_field") or [])]
 
         return cls(
             version=version,
@@ -294,6 +299,9 @@ class Contract:
             entities=entities,
             glossary=glossary,
             metrics=metrics,
+            quality=quality,
+            cross_field=cross_field,
+            null_as_absent=bool(raw.get("null_as_absent", False)),
         )
 
     def compile(self) -> "CompiledContract":
@@ -305,6 +313,8 @@ class Contract:
         patterns: Dict[str, Pattern[str]] = {}
         _compile_field_patterns(self.entities, "", patterns)
         _validate_transform_types(self.entities, "")
+        for rule in self.cross_field:
+            rule.check_shape()
 
         declared: Set[str] = set()
         if self.compliance_mode:
@@ -329,10 +339,13 @@ class CompiledContract:
     patterns: Dict[str, Pattern[str]]
     declared_top_level_fields: Set[str]
 
-    def validate(self, event: Any) -> "ValidationResult":  # noqa: F821 — forward ref
+    def validate(
+        self, event: Any, *, now: Optional[float] = None
+    ) -> "ValidationResult":  # noqa: F821 (forward ref)
         """Validate ``event`` against the compiled contract.
 
-        Always returns a ``ValidationResult`` — never raises.
+        ``now`` (Unix seconds) pins the clock for freshness rules; default
+        is the current time. Always returns a ``ValidationResult``, never raises.
         """
         # Local import avoids a circular reference between
         # ``contract.py`` (defines ``CompiledContract``) and
@@ -340,7 +353,154 @@ class CompiledContract:
         # callable straight off the compiled object.
         from contractgate.validator import validate as _validate
 
-        return _validate(self, event)
+        return _validate(self, event, now=now)
+
+
+# ---------------------------------------------------------------------------
+# Quality and cross-field rules
+# ---------------------------------------------------------------------------
+
+
+class QualityRuleType(str, Enum):
+    COMPLETENESS = "completeness"
+    UNIQUENESS = "uniqueness"
+    VALIDITY = "validity"
+    FRESHNESS = "freshness"
+
+
+@dataclass(frozen=True)
+class QualityRule:
+    """A ``quality:`` entry. Completeness and freshness are checked per event
+    by the local validator; uniqueness is batch-level and validity is
+    declarative, as in Rust."""
+
+    field: str
+    rule_type: QualityRuleType
+    max_age_seconds: Optional[int] = None
+
+    @classmethod
+    def from_yaml(cls, raw: Any) -> "QualityRule":
+        if not isinstance(raw, dict) or not isinstance(raw.get("field"), str):
+            raise ContractCompileError("quality rule needs a string `field`")
+        try:
+            kind = QualityRuleType(raw.get("type"))
+        except ValueError as e:
+            raise ContractCompileError(f"unknown quality rule type: {raw.get('type')!r}") from e
+        age = raw.get("max_age_seconds")
+        return cls(field=raw["field"], rule_type=kind, max_age_seconds=age)
+
+
+class CompareOp(str, Enum):
+    LT = "lt"
+    LTE = "lte"
+    GT = "gt"
+    GTE = "gte"
+    EQ = "eq"
+    NE = "ne"
+
+    @property
+    def symbol(self) -> str:
+        return {"lt": "<", "lte": "<=", "gt": ">", "gte": ">=", "eq": "==", "ne": "!="}[
+            self.value
+        ]
+
+
+_MISSING = object()
+
+
+@dataclass(frozen=True)
+class CrossFieldRule:
+    """A ``cross_field:`` entry (RFC-118). Either ``op`` + ``other``, or
+    ``required_if`` (a ``(field, equals)`` pair)."""
+
+    field: str
+    op: Optional[CompareOp] = None
+    other: Optional[str] = None
+    required_if_field: Optional[str] = None
+    required_if_equals: Any = _MISSING
+    description: Optional[str] = None
+
+    @classmethod
+    def from_yaml(cls, raw: Any) -> "CrossFieldRule":
+        if not isinstance(raw, dict) or not isinstance(raw.get("field"), str):
+            raise ContractCompileError("cross_field rule needs a string `field`")
+        op = None
+        if raw.get("op") is not None:
+            try:
+                op = CompareOp(raw["op"])
+            except ValueError as e:
+                raise ContractCompileError(f"unknown cross_field op: {raw['op']!r}") from e
+        cond = raw.get("required_if")
+        cf, ce = None, _MISSING
+        if cond is not None:
+            if not isinstance(cond, dict) or "field" not in cond or "equals" not in cond:
+                raise ContractCompileError("cross_field `required_if` needs `field` and `equals`")
+            cf, ce = cond["field"], cond["equals"]
+        return cls(
+            field=raw["field"],
+            op=op,
+            other=raw.get("other"),
+            required_if_field=cf,
+            required_if_equals=ce,
+            description=_opt_str(raw.get("description")),
+        )
+
+    def paths(self) -> List[str]:
+        out = [self.field]
+        if self.other is not None:
+            out.append(self.other)
+        if self.required_if_field is not None:
+            out.append(self.required_if_field)
+        return out
+
+    def wildcard_array(self) -> Optional[str]:
+        for p in self.paths():
+            i = p.find("[]")
+            if i >= 0:
+                return p[:i]
+        return None
+
+    def label(self) -> str:
+        import json
+
+        if self.op is not None and self.other is not None and self.required_if_field is None:
+            return f"{self.field} {self.op.symbol} {self.other}"
+        if self.op is None and self.other is None and self.required_if_field is not None:
+            eq = json.dumps(self.required_if_equals, separators=(",", ":"), ensure_ascii=False)
+            return f"{self.field} required if {self.required_if_field} == {eq}"
+        return f"{self.field} (malformed cross_field rule)"
+
+    def check_shape(self) -> None:
+        prefix = self.wildcard_array()
+        for p in self.paths():
+            n = p.count("[]")
+            if n > 1:
+                raise ContractCompileError(
+                    f"cross_field path '{p}' has more than one `[]`; only one array level is supported"
+                )
+            if n == 1 and p[: p.find("[]")] != prefix:
+                raise ContractCompileError(
+                    f"cross_field rule on '{self.field}' uses `[]` on two different arrays; "
+                    "per-item rules must stay inside one array"
+                )
+        compare = self.op is not None and bool(self.other) and self.required_if_field is None
+        cond = self.op is None and self.other is None and bool(self.required_if_field)
+        if not self.field or not (compare or cond):
+            raise ContractCompileError(
+                f"cross_field rule on '{self.field}' must set either `op` and `other`, "
+                "or `required_if`, and not both"
+            )
+
+    def concrete(self, i: int) -> "CrossFieldRule":
+        sub = lambda p: None if p is None else p.replace("[]", f"[{i}]", 1)  # noqa: E731
+        return CrossFieldRule(
+            field=sub(self.field),
+            op=self.op,
+            other=sub(self.other),
+            required_if_field=sub(self.required_if_field),
+            required_if_equals=self.required_if_equals,
+            description=self.description,
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -363,8 +523,26 @@ def _compile_field_patterns(
                 raise ContractCompileError(
                     f"Invalid regex {f.pattern!r} for field {path!r}: {e}"
                 ) from e
-        if f.field_type == FieldType.OBJECT and f.properties:
-            _compile_field_patterns(f.properties, path, out)
+        _compile_nested_patterns(f, path, out)
+
+
+def _compile_nested_patterns(
+    f: FieldDefinition, path: str, out: Dict[str, Pattern[str]]
+) -> None:
+    """Object properties and array items. Item patterns are keyed with
+    ``[]`` in place of the index (``lines[].sku``), as in Rust (RFC-118)."""
+    if f.field_type == FieldType.OBJECT and f.properties:
+        _compile_field_patterns(f.properties, path, out)
+    if f.field_type == FieldType.ARRAY and f.items is not None:
+        item_path = f"{path}[]"
+        if f.items.pattern is not None:
+            try:
+                out[item_path] = re.compile(f.items.pattern)
+            except re.error as e:
+                raise ContractCompileError(
+                    f"Invalid regex {f.items.pattern!r} for field {item_path!r}: {e}"
+                ) from e
+        _compile_nested_patterns(f.items, item_path, out)
 
 
 def _validate_transform_types(fields: List[FieldDefinition], prefix: str) -> None:

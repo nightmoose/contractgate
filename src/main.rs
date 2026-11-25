@@ -98,6 +98,7 @@ mod scorecard;
 mod security_headers;
 mod settings;
 mod storage;
+mod synth_handler;
 #[cfg(test)]
 mod tests;
 mod usage;
@@ -2039,6 +2040,8 @@ fn build_router(state: Arc<AppState>) -> Router {
             "/contracts/scaffold",
             post(scaffold_handler::scaffold_handler),
         )
+        // Synthetic rows from a contract's rules (RFC-117)
+        .route("/contracts/synth", post(synth_handler::synth_handler))
         // Contract identity CRUD
         .route(
             "/contracts",

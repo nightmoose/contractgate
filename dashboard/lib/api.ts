@@ -56,6 +56,13 @@ function extractYamlMeta(
  * raw text body (truncated for sanity), then to `statusText`.  Never
  * throws — even `.text()` errors collapse to `Request failed: <status>`.
  */
+const SYNTH_ERROR_CODES = new Set([
+  "unsatisfiable_rule",
+  "invalid_contract",
+  "invalid_rows",
+  "no_envelope",
+]);
+
 async function extractErrorMessage(res: Response): Promise<string> {
   try {
     const body = await res.clone().json();
@@ -65,6 +72,15 @@ async function extractErrorMessage(res: Response): Promise<string> {
         typeof body.message === "string"
       ) {
         return body.message;
+      }
+      // RFC-117/118: synth errors name the rule in `message`.
+      if (
+        SYNTH_ERROR_CODES.has(body.error) &&
+        typeof body.message === "string"
+      ) {
+        const rule = typeof body.rule === "string" ? `${body.rule}` : body.error;
+        const field = typeof body.field === "string" ? ` on '${body.field}'` : "";
+        return `Rule '${rule}'${field}: ${body.message}`;
       }
       if (typeof body.error === "string") return body.error;
     }
@@ -837,6 +853,51 @@ export const playgroundValidate = (
       event,
       ...(opts?.atomic != null ? { atomic: opts.atomic } : {}),
     }),
+  });
+
+/** `POST /contracts/synth` request (RFC-117, RFC-118). */
+export interface SynthRequest {
+  yaml_content?: string;
+  contract_id?: string;
+  version?: string;
+  rows?: number;
+  mode?: "valid" | "invalid";
+  seed?: number;
+  anchor_time?: string;
+  envelope?: boolean;
+}
+
+export interface SynthBrokenRule {
+  field: string;
+  rule: string;
+  metric?: string;
+  violation_kind: string;
+  message: string;
+  constraint?: string;
+}
+
+export interface SynthInvalidRow {
+  record: Record<string, unknown>;
+  broken_rule: SynthBrokenRule;
+}
+
+export interface SynthResponse {
+  contract: { name: string; version: string };
+  source: Record<string, unknown>;
+  mode: "valid" | "invalid";
+  seed: number;
+  anchor_time: string;
+  row_count: number;
+  rows: Record<string, unknown>[] | SynthInvalidRow[];
+  skipped_rules: { field: string; rule: string; reason: string }[];
+  envelope_payload?: unknown;
+}
+
+/** Synthetic rows built only from the contract's rules. Writes nothing. */
+export const synthRows = (body: SynthRequest) =>
+  apiFetch<SynthResponse>("/contracts/synth", {
+    method: "POST",
+    body: JSON.stringify(body),
   });
 
 /**
