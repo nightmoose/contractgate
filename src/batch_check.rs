@@ -41,16 +41,24 @@ pub fn generate_check_sql(
         .iter()
         .map(|c| sql_dialect::quote_ident(dialect, c))
         .collect();
-    let key_cols_csv = key_cols_quoted.join(", ");
+    // Cast each key column to text so a mixed-type key still produces one
+    // consistent report shape, but keep its original name as the output
+    // alias (the UNION branches must agree on column names).
+    let key_cols_select = key_cols_quoted
+        .iter()
+        .map(|c| format!("{} as {c}", sql_dialect::cast_text(dialect, c)))
+        .collect::<Vec<_>>()
+        .join(", ");
+    let key_cols_order = key_cols_quoted.join(", ");
 
     let branches: Vec<String> = compiled
         .predicates
         .iter()
-        .map(|p| render_branch(&key_cols_csv, table_ref, p))
+        .map(|p| render_branch(&key_cols_select, table_ref, p))
         .collect();
 
     let sql = format!(
-        "with violations as (\n{body}\n)\nselect *\nfrom violations\norder by {key_cols_csv}, rule\n",
+        "with violations as (\n{body}\n)\nselect *\nfrom violations\norder by {key_cols_order}, rule\n",
         body = branches.join("\n  union all\n"),
     );
 
@@ -61,11 +69,11 @@ pub fn generate_check_sql(
     })
 }
 
-fn render_branch(key_cols_csv: &str, table_ref: &str, p: &RulePredicate) -> String {
+fn render_branch(key_cols_select: &str, table_ref: &str, p: &RulePredicate) -> String {
     let rule_lit = sql_dialect::quote_literal(&p.rule_id);
     let reason_lit = sql_dialect::quote_literal(&p.reason);
     format!(
-        "  select {key_cols_csv}, {rule_lit} as rule, {reason_lit} as reason\n  from {table_ref}\n  where {predicate}",
+        "  select {key_cols_select}, {rule_lit} as rule, {reason_lit} as reason\n  from {table_ref}\n  where {predicate}",
         predicate = p.predicate_sql,
     )
 }
@@ -106,6 +114,7 @@ ontology:
         // required:order_id, required:amount_usd, range:amount_usd
         assert_eq!(out.rule_count, 3);
         assert!(out.sql.contains("union all"));
+        assert!(out.sql.contains("\"order_id\"::text as \"order_id\""));
         assert!(out.sql.contains("order by \"order_id\", rule"));
     }
 }

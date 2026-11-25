@@ -101,6 +101,18 @@ pub fn length(expr: &str) -> String {
     format!("length({expr})")
 }
 
+/// Cast `<expr>` to a string type. Used for `check-table`'s report columns
+/// (key values, rendered alongside `rule` and `reason`, which are already
+/// text) so a report with a mixed-type key still has one consistent output
+/// shape across dialects.
+pub fn cast_text(dialect: SqlDialect, expr: &str) -> String {
+    match dialect {
+        SqlDialect::Postgres | SqlDialect::DuckDb => format!("{expr}::text"),
+        SqlDialect::Snowflake => format!("to_varchar({expr})"),
+        SqlDialect::Databricks => format!("cast({expr} as string)"),
+    }
+}
+
 /// Current timestamp expression for this dialect.
 pub fn now(dialect: SqlDialect) -> &'static str {
     match dialect {
