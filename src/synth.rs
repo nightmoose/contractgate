@@ -158,7 +158,7 @@ pub fn generate(
     let mut g = Generator::new(compiled, opts)?;
     match opts.mode {
         SynthMode::Valid => {
-            let mut rows = Vec::with_capacity(opts.rows);
+            let mut rows = Vec::new();
             for _ in 0..opts.rows {
                 let row = g.valid_row(false)?;
                 g.remember(&row);
@@ -507,7 +507,7 @@ impl<'a> Generator<'a> {
         targets.shuffle(&mut self.rng);
         let mut dead = vec![false; targets.len()];
         let mut skipped = Vec::new();
-        let mut out: Vec<InvalidRow> = Vec::with_capacity(n);
+        let mut out: Vec<InvalidRow> = Vec::new();
 
         for i in 0..n {
             let mut produced = None;
