@@ -172,9 +172,10 @@ fn invalid_rows_break_exactly_their_labeled_rule() {
     assert_eq!(out.invalid_rows.len(), 2000);
     assert_invalid(&c, &out);
 
-    // Only rules that cannot break alone are skipped. For example, a
-    // missing `quantity` also fails the metric bound on it, and a field max
-    // of 500 sits above the metric max of 400.
+    // Only rules the contract's own logic makes impossible to break alone
+    // are skipped, each with the reason. A missing `quantity` also fails
+    // the metric on it, a field max of 500 sits above the metric max of 400,
+    // and a required email with a completeness rule cannot be empty alone.
     let mut skipped: Vec<String> = out
         .skipped_rules
         .iter()
@@ -186,12 +187,16 @@ fn invalid_rows_break_exactly_their_labeled_rule() {
         [
             "customer_email:completeness",
             "customer_email:required",
-            "ingested_unix:type",
             "quantity:max",
             "quantity:required",
-            "quantity:type",
         ]
     );
+    for r in &out.skipped_rules {
+        assert!(
+            !r.reason.is_empty() && !r.reason.contains("every attempt"),
+            "skip must come from the contract's logic, not a failed search: {r:?}"
+        );
+    }
     let mut seen: Vec<String> = out
         .invalid_rows
         .iter()
@@ -300,7 +305,7 @@ fn unsatisfiable_rules_are_named() {
     assert_eq!(e.field.as_deref(), Some("s"));
 
     let e = err_rule(
-        &(base("    - name: label\n      type: string\n")
+        &(base("    - name: label\n      type: boolean\n")
             + "quality:\n  - field: label\n    type: freshness\n    max_age_seconds: 60\n"),
         5,
         SynthMode::Valid,
@@ -498,6 +503,13 @@ ontology:
           - name: kind
             type: string
             enum: [room, fee]
+          - name: code
+            type: string
+            pattern: "^L-[0-9]{3}$"
+          - name: fee_reason
+            type: string
+            required: false
+            min_length: 2
     - name: tags
       type: array
       required: false
@@ -507,10 +519,19 @@ ontology:
         max_length: 6
     - name: last_seen_unix
       type: integer
+    - name: seen_at
+      type: timestamp
+    - name: max_line_qty
+      type: integer
+      min: 5
+      max: 20
 quality:
   - field: last_seen_unix
     type: freshness
     max_age_seconds: 600
+  - field: seen_at
+    type: freshness
+    max_age_seconds: 900
 cross_field:
   - field: end_date
     op: gte
@@ -528,6 +549,13 @@ cross_field:
     required_if:
       field: status
       equals: refunded
+  - field: lines[].qty
+    op: lte
+    other: max_line_qty
+  - field: lines[].fee_reason
+    required_if:
+      field: lines[].kind
+      equals: fee
 "#;
 
 #[test]
@@ -573,6 +601,12 @@ fn cross_field_items_and_envelope() {
         "max_guests:cross_field:max_guests >= min_guests",
         "host_email:cross_field:host_email != guest_email",
         "refund_reason:cross_field:refund_reason required if status == \"refunded\"",
+        "lines[0].qty:cross_field:lines[].qty <= max_line_qty",
+        "lines[0].fee_reason:cross_field:lines[].fee_reason required if lines[].kind == \"fee\"",
+        "lines[0].code:pattern:",
+        "last_seen_unix:type:",
+        "seen_at:freshness:",
+        "seen_at:type:",
         "lines[0].sku:min_length:",
         "lines[0].sku:max_length:",
         "lines[0].sku:required:",
@@ -587,15 +621,22 @@ fn cross_field_items_and_envelope() {
             "no row broke {want}; saw {seen:?}"
         );
     }
-    // Coupled for real: a non-integer last_seen_unix also fails freshness,
-    // and max_guests below 1 is always below min_guests (min 1).
-    let mut skipped: Vec<String> = out
+    // The one rule that is logically impossible to break alone: any
+    // max_guests below its min of 1 is below min_guests (required, min 1),
+    // so `max_guests >= min_guests` fails too. The reason says so.
+    // seen_at:format is the other: freshness parses the same RFC 3339
+    // format, so a malformed timestamp always fails freshness too.
+    let mut skipped: Vec<(String, String)> = out
         .skipped_rules
         .iter()
-        .map(|r| format!("{}:{}", r.field, r.rule))
+        .map(|r| (format!("{}:{}", r.field, r.rule), r.reason.clone()))
         .collect();
     skipped.sort();
-    assert_eq!(skipped, ["last_seen_unix:type", "max_guests:min"]);
+    assert_eq!(skipped.len(), 2, "{skipped:?}");
+    assert_eq!(skipped[0].0, "max_guests:min");
+    assert!(skipped[0].1.contains("max_guests >= min_guests"));
+    assert_eq!(skipped[1].0, "seen_at:format");
+    assert!(skipped[1].1.contains("also fails freshness"));
 }
 
 #[test]

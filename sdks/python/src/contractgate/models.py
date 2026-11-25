@@ -29,6 +29,12 @@ class ViolationKind(str, Enum):
     METRIC_RANGE_VIOLATION = "metric_range_violation"
     UNKNOWN_FIELD = "unknown_field"
     UNDECLARED_FIELD = "undeclared_field"
+    LEAKAGE_VIOLATION = "leakage_violation"
+    COMPLETENESS_VIOLATION = "completeness_violation"
+    FRESHNESS_VIOLATION = "freshness_violation"
+    UNIQUENESS_VIOLATION = "uniqueness_violation"
+    CONTRACT_VERSION_DEPRECATED = "contract_version_deprecated"
+    CROSS_FIELD_VIOLATION = "cross_field_violation"
     # Client-side only: raised by the LLMGate repair-loop provenance check
     # (``contractgate.provenance``), never returned by the gateway.
     PROVENANCE_VIOLATION = "provenance_violation"

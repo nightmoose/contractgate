@@ -24,6 +24,23 @@ Each rule sets `field` and exactly one of:
 
 `field`, `other` and `required_if.field` accept dot paths into nested objects (`shipping.country`). `description` is optional. A rule that sets both forms, or neither, fails to compile.
 
+## Rules on array items
+
+Put `[]` after an array name to check the rule once per item:
+
+```yaml
+cross_field:
+  - field: lines[].qty           # every line's qty <= max_line_qty
+    op: lte
+    other: max_line_qty
+  - field: lines[].fee_reason    # within a line: fee_reason required if kind == "fee"
+    required_if:
+      field: lines[].kind
+      equals: fee
+```
+
+Paths with `[]` refer to the same item, so `lines[].fee_reason` and `lines[].kind` read one line at a time. A path without `[]` (`max_line_qty`) is a top-level field, the same for every item. A violation is reported on the item path (`lines[2].qty`), with the rule label (`lines[].qty <= max_line_qty`) in `expected`. A missing or empty array produces no checks. A path may use `[]` once, and all `[]` paths in one rule must name the same array; other rules fail to compile.
+
 ## How values compare
 
 | Both values are | Compared as |
@@ -46,4 +63,4 @@ A failed rule is reported on `field` with kind `cross_field_violation`. `expecte
 - Ingest, egress, the playground, `contractgate test` and every other path that uses the gateway validator.
 - The synthetic data generator follows the rules in valid mode and breaks them one at a time in invalid mode ([reference](synthetic-data-reference.md)).
 - ODCS export keeps the rules in `x-contractgate-ontology`, so an export and re-import round-trips them.
-- The Python SDK's local validator parses contracts with `cross_field` but does not enforce it yet.
+- The Python SDK's local validator (`Contract.compile().validate(...)`) enforces the same rules with the same violations. Both are checked against one shared fixture set (`tests/fixtures/parity/rfc118.json`).

@@ -27,7 +27,8 @@ use crate::contract::{
     CompareOp, Contract, CrossFieldRule, FieldDefinition, FieldType, QualityRuleType,
 };
 use crate::validation::{
-    compare_holds, string_format_ok, validate_at, CompiledContract, Violation, ViolationKind,
+    compare_holds, concrete_rule, expand_cross_rule, pattern_for, string_format_ok, validate_at,
+    CompiledContract, Violation, ViolationKind,
 };
 use rand::{rngs::StdRng, seq::SliceRandom, Rng, SeedableRng};
 use regex_syntax::hir::{Class, Hir, HirKind};
@@ -380,6 +381,9 @@ struct Generator<'a> {
     hirs: HashMap<String, Hir>,
     /// Uniqueness rule paths and the values already emitted for each.
     unique: Vec<(String, HashSet<String>)>,
+    /// Freshness windows (Unix seconds) for string and timestamp fields,
+    /// which get RFC 3339 values inside the window.
+    fresh: HashMap<String, (i64, i64)>,
 }
 
 impl<'a> Generator<'a> {
@@ -388,6 +392,7 @@ impl<'a> Generator<'a> {
         precheck_fields(&contract.ontology.entities, "")?;
 
         let mut eff = contract.ontology.entities.clone();
+        let mut fresh = HashMap::new();
         for m in &contract.metrics {
             let Some(path) = &m.field else { continue };
             if m.min.is_none() && m.max.is_none() {
@@ -432,6 +437,11 @@ impl<'a> Generator<'a> {
                     let t = numeric_template(&q.field, Some(lo), Some(hi));
                     let def =
                         ensure_path(&mut eff, &q.field, t, contract.compliance_mode, "freshness")?;
+                    if matches!(def.field_type, FieldType::String | FieldType::Timestamp) {
+                        // RFC-118: RFC 3339 values inside the window.
+                        fresh.insert(q.field.clone(), (lo as i64, hi as i64));
+                        continue;
+                    }
                     if matches!(def.field_type, FieldType::Float | FieldType::Any) {
                         def.field_type = FieldType::Integer;
                     }
@@ -458,6 +468,7 @@ impl<'a> Generator<'a> {
             oracles: HashMap::new(),
             hirs: HashMap::new(),
             unique,
+            fresh,
         })
     }
 
@@ -538,17 +549,16 @@ impl<'a> Generator<'a> {
                     continue; // the first row has nothing to duplicate
                 }
                 match self.break_rule(&t, &out)? {
-                    Some(row) => {
+                    Ok(row) => {
                         produced = Some(row);
                         break;
                     }
-                    None => {
+                    Err(reason) => {
                         dead[idx] = true;
                         skipped.push(SkippedRule {
                             field: t.path().to_string(),
                             rule: t.rule().to_string(),
-                            reason: "could not break this rule without also breaking another rule"
-                                .into(),
+                            reason,
                         });
                     }
                 }
@@ -581,13 +591,30 @@ impl<'a> Generator<'a> {
         &mut self,
         t: &Target,
         prior: &[InvalidRow],
-    ) -> Result<Option<InvalidRow>, SynthError> {
+    ) -> Result<Result<InvalidRow, String>, SynthError> {
+        if let Some(reason) = self.impossible_reason(t) {
+            return Ok(Err(reason));
+        }
+        let mut seen: Vec<(String, usize)> = Vec::new();
         for _ in 0..BREAK_ATTEMPTS {
             let base = self.valid_row(true)?;
-            let Some(mutated) = self.mutate(base, t, prior) else {
+            let Some(mut mutated) = self.mutate(base, t, prior) else {
                 continue;
             };
+            self.repair_others(&mut mutated, t);
             let violations = self.row_violations(&mutated);
+            for v in violations.iter().filter(|v| !t.matches(v)) {
+                let what = match (&v.kind, &v.expected) {
+                    (ViolationKind::CrossFieldViolation, Some(l)) => {
+                        format!("the cross_field rule '{l}'")
+                    }
+                    _ => format!("the {} rule on '{}'", rule_for_violation(v), v.field),
+                };
+                match seen.iter_mut().find(|(w, _)| *w == what) {
+                    Some((_, n)) => *n += 1,
+                    None => seen.push((what, 1)),
+                }
+            }
             let constraint = match t {
                 Target::CrossField(i, _) => Some(self.compiled.contract.cross_field[*i].label()),
                 _ => None,
@@ -599,7 +626,7 @@ impl<'a> Generator<'a> {
             });
             if violations.len() == 1 && t.matches(&violations[0]) && same_cross_rule {
                 let v = &violations[0];
-                return Ok(Some(InvalidRow {
+                return Ok(Ok(InvalidRow {
                     record: mutated,
                     broken_rule: BrokenRule {
                         field: v.field.clone(),
@@ -612,7 +639,263 @@ impl<'a> Generator<'a> {
                 }));
             }
         }
-        Ok(None)
+        seen.sort_by_key(|s| std::cmp::Reverse(s.1));
+        Ok(Err(match seen.first() {
+            Some((what, _)) => format!(
+                "every attempt to break the {} rule on '{}' also broke {what}",
+                t.rule(),
+                t.path()
+            ),
+            None => format!(
+                "the generator found no value that breaks only the {} rule on '{}'",
+                t.rule(),
+                t.path()
+            ),
+        }))
+    }
+
+    /// Rules that cannot fail alone by the contract's own logic, with the
+    /// reason. Checked before trying, so the explanation is exact.
+    fn impossible_reason(&self, t: &Target) -> Option<String> {
+        let c = &self.compiled.contract;
+        let def = find_def(&c.ontology.entities, t.path());
+        let completeness = |p: &str| {
+            c.quality
+                .iter()
+                .any(|q| q.rule_type == QualityRuleType::Completeness && q.field == p)
+        };
+        let metric_reads = |p: &str| {
+            c.metrics
+                .iter()
+                .find(|m| m.field.as_deref() == Some(p) && (m.min.is_some() || m.max.is_some()))
+        };
+        match t {
+            Target::Required(p) => {
+                if completeness(p) {
+                    return Some(format!(
+                        "a missing '{p}' always also fails the completeness rule on it"
+                    ));
+                }
+                if let Some(m) = metric_reads(p) {
+                    return Some(format!(
+                        "metric '{}' reads '{p}', so a missing value always also fails the metric",
+                        m.name
+                    ));
+                }
+            }
+            Target::Completeness(p) => {
+                let d = def?;
+                let strict_string = d.min_length.is_some_and(|m| m >= 1)
+                    || d.pattern.is_some()
+                    || d.allowed_values.is_some()
+                    || d.format
+                        .as_deref()
+                        .is_some_and(|f| !string_format_ok(f, ""))
+                    || !matches!(d.field_type, FieldType::String | FieldType::Any);
+                if d.required && !c.null_as_absent && strict_string {
+                    return Some(format!(
+                        "'{p}' is required and an empty string fails its own rules, so a missing, null or empty value always also breaks required, type or format"
+                    ));
+                }
+            }
+            Target::Format(p) => {
+                let d = def?;
+                let fresh = c
+                    .quality
+                    .iter()
+                    .any(|q| q.rule_type == QualityRuleType::Freshness && q.field == *p);
+                if fresh && matches!(d.field_type, FieldType::Timestamp) {
+                    return Some(format!(
+                        "the freshness rule reads '{p}' as an RFC 3339 date-time, so any value that fails the timestamp format also fails freshness"
+                    ));
+                }
+            }
+            Target::Type(p) => {
+                let d = def?;
+                if let Some(m) = metric_reads(p) {
+                    if !matches!(d.field_type, FieldType::Integer) {
+                        return Some(format!(
+                            "metric '{}' reads '{p}' as a number, so any non-number also fails the metric",
+                            m.name
+                        ));
+                    }
+                }
+            }
+            Target::Max(p) | Target::Min(p) => {
+                let d = def?;
+                let is_max = matches!(t, Target::Max(_));
+                for m in c
+                    .metrics
+                    .iter()
+                    .filter(|m| m.field.as_deref() == Some(p.as_str()))
+                {
+                    if is_max {
+                        if let (Some(fm), Some(mm)) = (d.max, m.max) {
+                            if mm <= fm {
+                                return Some(format!(
+                                    "any '{p}' above its max {fm} is also above metric '{}' max {mm}",
+                                    m.name
+                                ));
+                            }
+                        }
+                    } else if let (Some(fm), Some(mm)) = (d.min, m.min) {
+                        if mm >= fm {
+                            return Some(format!(
+                                "any '{p}' below its min {fm} is also below metric '{}' min {mm}",
+                                m.name
+                            ));
+                        }
+                    }
+                }
+                // Cross-field comparisons whose other side cannot follow.
+                for rule in &c.cross_field {
+                    let (Some(op), Some(other)) = (rule.op, &rule.other) else {
+                        continue;
+                    };
+                    // Normalise to big >= small.
+                    let (big, small) = match op {
+                        CompareOp::Gt | CompareOp::Gte => (&rule.field, other),
+                        CompareOp::Lt | CompareOp::Lte => (other, &rule.field),
+                        _ => continue,
+                    };
+                    let (big, small) = (big.replace("[]", "[0]"), small.replace("[]", "[0]"));
+                    let (mine, theirs) = if *p == big && !is_max {
+                        (d.min, find_def(&c.ontology.entities, &small))
+                    } else if *p == small && is_max {
+                        (d.max, find_def(&c.ontology.entities, &big))
+                    } else {
+                        continue;
+                    };
+                    let (Some(bound), Some(o)) = (mine, theirs) else {
+                        continue;
+                    };
+                    if !o.required {
+                        continue; // the other side can be left out
+                    }
+                    let blocked = if is_max {
+                        o.max.is_some_and(|om| om <= bound)
+                    } else {
+                        o.min.is_some_and(|om| om >= bound)
+                    };
+                    if blocked {
+                        let (side, ob) = if is_max {
+                            ("above its max", o.max.unwrap_or_default())
+                        } else {
+                            ("below its min", o.min.unwrap_or_default())
+                        };
+                        let rel = if is_max { "max" } else { "min" };
+                        return Some(format!(
+                            "any '{p}' {side} {bound} also fails the cross_field rule '{}', because '{}' has {rel} {ob} and is required",
+                            rule.label(),
+                            if *p == big { &small } else { &big }
+                        ));
+                    }
+                }
+            }
+            _ => {}
+        }
+        None
+    }
+
+    /// After `mutate`, fix every other rule the change knocked over while
+    /// leaving the target field alone (RFC-118): move the other side of a
+    /// cross-field comparison, flip a `required_if` condition, or draw a
+    /// new value for an unrelated field.
+    fn repair_others(&mut self, row: &mut Value, t: &Target) {
+        let tp = t.path().to_string();
+        for _ in 0..4 {
+            let others: Vec<Violation> = self
+                .row_violations(row)
+                .into_iter()
+                .filter(|v| !t.matches(v))
+                .collect();
+            if others.is_empty() {
+                return;
+            }
+            for v in others {
+                if v.kind == ViolationKind::CrossFieldViolation {
+                    if let Some(rule) = self.concrete_for(&v, row) {
+                        self.fix_cross_holding(row, &rule, &tp);
+                    }
+                } else if !touches(&v.field, &tp) {
+                    if let Some(nv) = self.regen(&v.field) {
+                        set_path(row, &v.field, nv);
+                    }
+                }
+            }
+        }
+    }
+
+    /// The concrete cross-field rule behind violation `v` on `row`.
+    fn concrete_for(&self, v: &Violation, row: &Value) -> Option<CrossFieldRule> {
+        let label = v.expected.as_deref()?;
+        self.compiled
+            .contract
+            .cross_field
+            .iter()
+            .filter(|r| r.label() == label)
+            .flat_map(|r| expand_cross_rule(r, row))
+            .find(|r| r.field == v.field)
+    }
+
+    fn fix_cross_holding(&mut self, row: &mut Value, rule: &CrossFieldRule, tp: &str) {
+        if let (Some(op), Some(other)) = (rule.op, &rule.other) {
+            let field_fixed = touches(&rule.field, tp);
+            let other_fixed = touches(other, tp);
+            if field_fixed && other_fixed {
+                return;
+            }
+            let (move_path, keep_path) = if field_fixed {
+                (other.clone(), rule.field.clone())
+            } else {
+                (rule.field.clone(), other.clone())
+            };
+            let Some(keep) = get_path(row, &keep_path).cloned() else {
+                return;
+            };
+            let holds = |cand: &Value| {
+                if move_path == rule.field {
+                    compare_holds(op, cand, &keep)
+                } else {
+                    compare_holds(op, &keep, cand)
+                }
+            };
+            if op == CompareOp::Eq {
+                set_path(row, &move_path, keep);
+                return;
+            }
+            for _ in 0..24 {
+                if let Some(cand) = self.regen(&move_path) {
+                    if holds(&cand) {
+                        set_path(row, &move_path, cand);
+                        return;
+                    }
+                }
+            }
+            // Last resort: leave an optional other side out, which skips
+            // the comparison.
+            let optional = find_def(&self.compiled.contract.ontology.entities, &move_path)
+                .is_some_and(|d| !d.required);
+            if optional {
+                remove_path(row, &move_path);
+            }
+        } else if let Some(cond) = &rule.required_if {
+            if touches(&rule.field, tp) {
+                if touches(&cond.field, tp) {
+                    return;
+                }
+                for _ in 0..16 {
+                    if let Some(cand) = self.regen(&cond.field) {
+                        if cand != cond.equals {
+                            set_path(row, &cond.field, cand);
+                            return;
+                        }
+                    }
+                }
+            } else if let Some(nv) = self.regen(&rule.field) {
+                set_path(row, &rule.field, nv);
+            }
+        }
     }
 
     /// Every rule invalid mode can aim at, in contract order.
@@ -642,7 +925,7 @@ impl<'a> Generator<'a> {
             }
         }
         for (i, r) in c.cross_field.iter().enumerate() {
-            out.push(Target::CrossField(i, r.field.clone()));
+            out.push(Target::CrossField(i, r.field.replacen("[]", "[0]", 1)));
         }
         if c.compliance_mode {
             out.push(Target::Compliance);
@@ -655,7 +938,12 @@ impl<'a> Generator<'a> {
         let def = find_def(&self.compiled.contract.ontology.entities, t.path()).cloned();
         let new_value: Option<Value> = match t {
             Target::CrossField(i, _) => {
-                let rule = self.compiled.contract.cross_field[*i].clone();
+                let rule = &self.compiled.contract.cross_field[*i];
+                let rule = if rule.wildcard_array().is_some() {
+                    concrete_rule(rule, 0)
+                } else {
+                    rule.clone()
+                };
                 return self.break_cross(row, &rule);
             }
             Target::Required(p) => {
@@ -675,9 +963,54 @@ impl<'a> Generator<'a> {
                 1 => Some(Value::Null),
                 _ => Some(json!("")),
             },
-            Target::Type(_) => {
+            Target::Type(p) => {
                 let d = def?;
                 let n = self.rng.gen_range(1..100_000);
+                let fresh_age = self.compiled.contract.quality.iter().find_map(|q| {
+                    (q.rule_type == QualityRuleType::Freshness && q.field == *p)
+                        .then_some(q.max_age_seconds)
+                        .flatten()
+                });
+                if let Some(age) = fresh_age {
+                    // Keep the value fresh so only the type rule fails.
+                    let secs = self.now - self.rng.gen_range(0..=(age / 2) as i64);
+                    return set_path(
+                        &mut row,
+                        p,
+                        match d.field_type {
+                            FieldType::Integer | FieldType::Float => json!(rfc3339(secs)),
+                            _ => json!(secs),
+                        },
+                    )
+                    .map(|_| row);
+                }
+                if d.field_type == FieldType::Integer && d.allowed_values.is_none() {
+                    // A fractional number inside the bounds fails only `type`
+                    // (metrics and ranges still see a number in range).
+                    let metric = self
+                        .compiled
+                        .contract
+                        .metrics
+                        .iter()
+                        .filter(|m| m.field.as_deref() == Some(p.as_str()));
+                    let mut lo = d.min.unwrap_or(f64::MIN);
+                    let mut hi = d.max.unwrap_or(f64::MAX);
+                    for m in metric {
+                        lo = lo.max(m.min.unwrap_or(f64::MIN));
+                        hi = hi.min(m.max.unwrap_or(f64::MAX));
+                    }
+                    let base = if lo > f64::MIN {
+                        lo.ceil()
+                    } else if hi < f64::MAX {
+                        hi.floor() - 1.0
+                    } else {
+                        n as f64
+                    };
+                    let v = base + 0.5;
+                    if v >= lo && v <= hi {
+                        return set_path(&mut row, p, json!(v)).map(|_| row);
+                    }
+                }
                 Some(match d.field_type {
                     FieldType::String | FieldType::Date | FieldType::Timestamp => json!(n),
                     FieldType::Integer | FieldType::Float => json!(format!("not_a_number_{n}")),
@@ -738,7 +1071,7 @@ impl<'a> Generator<'a> {
             }
             Target::Pattern(p) => {
                 let d = def?;
-                let re = self.compiled.patterns.get(p)?.clone();
+                let re = pattern_for(&self.compiled.patterns, p)?.clone();
                 let mut relaxed = d.clone();
                 relaxed.allowed_values = None;
                 relaxed.pattern = None;
@@ -774,9 +1107,13 @@ impl<'a> Generator<'a> {
                 }
                 found
             }
-            Target::Freshness(_, max_age) => {
+            Target::Freshness(p, max_age) => {
                 let age = *max_age as i64 + 1 + self.rng.gen_range(0..86_400);
-                Some(json!(self.now - age))
+                if self.fresh.contains_key(p) {
+                    Some(json!(rfc3339(self.now - age)))
+                } else {
+                    Some(json!(self.now - age))
+                }
             }
             Target::Uniqueness(p) => {
                 let candidates: Vec<&Value> = prior
@@ -815,7 +1152,13 @@ impl<'a> Generator<'a> {
     /// fill a conditionally required field. The validator still judges the
     /// result, and the row is regenerated if it fails.
     fn repair_cross(&mut self, row: &mut Value) {
-        let rules = self.compiled.contract.cross_field.clone();
+        let rules: Vec<CrossFieldRule> = self
+            .compiled
+            .contract
+            .cross_field
+            .iter()
+            .flat_map(|r| expand_cross_rule(r, row))
+            .collect();
         for rule in &rules {
             if let (Some(op), Some(other)) = (rule.op, &rule.other) {
                 let (Some(a), Some(b)) = (
@@ -1018,6 +1361,12 @@ impl<'a> Generator<'a> {
                 .choose(&mut self.rng)
                 .cloned()
                 .unwrap_or(Value::Null));
+        }
+        if let Some(&(lo, hi)) = self.fresh.get(path) {
+            if matches!(f.field_type, FieldType::String | FieldType::Timestamp) {
+                let secs = self.rng.gen_range(lo..=hi.max(lo));
+                return Ok(json!(rfc3339(secs)));
+            }
         }
         Ok(match f.field_type {
             FieldType::Integer => {
@@ -1348,8 +1697,7 @@ fn collect_field_targets(
 }
 
 /// Targets for one field at path `p`. `in_items` is true inside array
-/// items, where the validator does not apply `pattern` (patterns are
-/// compiled for object paths only), so no pattern target is emitted.
+/// items (rules there are aimed at the first item).
 fn field_targets(
     f: &FieldDefinition,
     p: String,
@@ -1382,7 +1730,7 @@ fn field_targets(
             if f.max_length.is_some() {
                 out.push(Target::MaxLength(p.clone()));
             }
-            if f.pattern.is_some() && !in_items {
+            if f.pattern.is_some() {
                 out.push(Target::Pattern(p.clone()));
             }
             let fmt_enforced = f.field_type != FieldType::String
@@ -1708,4 +2056,19 @@ pub fn flatten_record(v: &Value, prefix: &str, out: &mut Vec<(String, String)>) 
         Value::Null => out.push((prefix.to_string(), String::new())),
         other => out.push((prefix.to_string(), other.to_string())),
     }
+}
+
+/// Is `a` the same path as `b`, or a parent or child of it?
+fn touches(a: &str, b: &str) -> bool {
+    let under = |x: &str, y: &str| {
+        x.len() > y.len() && x.starts_with(y) && matches!(x.as_bytes()[y.len()], b'.' | b'[')
+    };
+    a == b || under(a, b) || under(b, a)
+}
+
+fn rfc3339(secs: i64) -> String {
+    chrono::DateTime::from_timestamp(secs, 0)
+        .unwrap_or_default()
+        .format("%Y-%m-%dT%H:%M:%SZ")
+        .to_string()
 }

@@ -210,8 +210,44 @@ impl CrossFieldRule {
         }
     }
 
-    /// Compile-time shape check: exactly one of `op` + `other`, or `required_if`.
+    /// Every path the rule reads.
+    fn paths(&self) -> Vec<&str> {
+        let mut v = vec![self.field.as_str()];
+        if let Some(o) = &self.other {
+            v.push(o);
+        }
+        if let Some(c) = &self.required_if {
+            v.push(&c.field);
+        }
+        v
+    }
+
+    /// The array path before `[]` when the rule applies per array item
+    /// (`lines[].qty <= max_qty` gives `lines`). `None` for plain rules.
+    pub fn wildcard_array(&self) -> Option<&str> {
+        self.paths()
+            .into_iter()
+            .find_map(|p| p.find("[]").map(|i| &p[..i]))
+    }
+
+    /// Compile-time shape check: exactly one of `op` + `other`, or
+    /// `required_if`; and at most one `[]`, on a single shared array.
     pub fn check_shape(&self) -> Result<(), String> {
+        let prefix = self.wildcard_array();
+        for p in self.paths() {
+            let n = p.matches("[]").count();
+            if n > 1 {
+                return Err(format!(
+                    "cross_field path '{p}' has more than one `[]`; only one array level is supported"
+                ));
+            }
+            if n == 1 && p.find("[]").map(|i| &p[..i]) != prefix {
+                return Err(format!(
+                    "cross_field rule on '{}' uses `[]` on two different arrays; per-item rules must stay inside one array",
+                    self.field
+                ));
+            }
+        }
         match (&self.op, &self.other, &self.required_if) {
             (Some(_), Some(o), None) if !o.is_empty() && !self.field.is_empty() => Ok(()),
             (None, None, Some(c)) if !c.field.is_empty() && !self.field.is_empty() => Ok(()),
@@ -684,8 +720,9 @@ pub struct QualityRule {
     #[serde(default)]
     pub description: Option<String>,
     // ── Freshness params ───────────────────────────────────────────────────
-    /// Maximum age of a timestamp value, in seconds.  The field must hold
-    /// a Unix epoch (integer seconds or milliseconds — detected by magnitude).
+    /// Maximum age of a timestamp value, in seconds.  The field may hold a
+    /// Unix epoch (integer or float seconds, or milliseconds detected by
+    /// magnitude) or an RFC 3339 date-time string (RFC-118 v1.2).
     /// Only used when `rule_type == Freshness`.
     #[serde(default)]
     pub max_age_seconds: Option<u64>,
@@ -716,8 +753,8 @@ pub enum QualityRuleType {
     /// ontology check path, but this rule makes the *intent* explicit and
     /// participates in the quality-coverage conformance score.
     Validity,
-    /// Field must hold a Unix epoch timestamp no older than `max_age_seconds`
-    /// relative to the ingest wall-clock time.  Detects stale / replayed events.
+    /// Field must hold a timestamp (Unix epoch or RFC 3339 string) no older
+    /// than `max_age_seconds` relative to the ingest wall-clock time.  Detects stale / replayed events.
     Freshness,
     /// Field value must be unique across all events in the same ingest batch.
     /// Detects duplicate events before they land in downstream sinks.
