@@ -8,13 +8,15 @@
  * stored. Downloads are built in the browser as JSON or CSV.
  */
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import clsx from "clsx";
-import { synthRows } from "@/lib/api";
+import { synthRows, warmApi } from "@/lib/api";
 import type { SynthInvalidRow, SynthResponse } from "@/lib/api";
 import { synthToCsv } from "@/lib/synth-csv";
+import { SYNTH_MAX_ROWS as MAX_ROWS } from "@/lib/synth-errors";
 
-const MAX_ROWS = 10000;
+/** After this long, explain that the API may be starting up. */
+const SLOW_MS = 3000;
 
 function download(name: string, text: string, type: string) {
   const url = URL.createObjectURL(new Blob([text], { type }));
@@ -48,6 +50,17 @@ export function SynthTab({
   const [running, setRunning] = useState(false);
   const [inputErr, setInputErr] = useState<string | null>(null);
   const [apiErr, setApiErr] = useState<string | null>(null);
+  const [elapsedMs, setElapsedMs] = useState(0);
+  const [totalMs, setTotalMs] = useState<number | null>(null);
+  const timer = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  // Wake the API when the tab opens, so Generate does not pay a cold start.
+  useEffect(() => {
+    warmApi();
+    return () => {
+      if (timer.current) clearInterval(timer.current);
+    };
+  }, []);
 
   if (!yamlContent.trim()) {
     return (
@@ -85,6 +98,10 @@ export function SynthTab({
       anchorIso = d.toISOString().replace(/\.\d{3}Z$/, "Z");
     }
     setRunning(true);
+    setTotalMs(null);
+    setElapsedMs(0);
+    const t0 = performance.now();
+    timer.current = setInterval(() => setElapsedMs(performance.now() - t0), 250);
     try {
       const res = await synthRows({
         yaml_content: yamlContent,
@@ -98,6 +115,9 @@ export function SynthTab({
     } catch (e) {
       setApiErr(e instanceof Error ? e.message : String(e));
     } finally {
+      if (timer.current) clearInterval(timer.current);
+      timer.current = null;
+      setTotalMs(Math.round(performance.now() - t0));
       setRunning(false);
     }
   };
@@ -208,6 +228,12 @@ export function SynthTab({
           />
           <span className="text-sm text-slate-300">Wrap rows in the contract&apos;s envelope (JSON)</span>
         </label>
+        {!hasEnvelope && (
+          <p className="text-xs text-slate-500 pl-6">
+            This contract has no <code className="font-mono">envelope:</code> block, so there is
+            nothing to wrap rows in. Add one to the YAML to turn this on.
+          </p>
+        )}
         <p className="text-xs text-slate-600">
           Same seed and anchor time give the same rows. Without an anchor, freshness rules use the
           current time.
@@ -215,13 +241,29 @@ export function SynthTab({
       </div>
       {inputErr && <p className="text-xs text-red-400">{inputErr}</p>}
 
-      <button
-        onClick={handleGenerate}
-        disabled={running}
-        className="px-5 py-2 bg-indigo-700 hover:bg-indigo-600 disabled:opacity-40 text-white text-sm font-medium rounded-lg transition-colors"
-      >
-        {running ? "Generating…" : "Generate synthetic data"}
-      </button>
+      <div className="flex items-center gap-3 flex-wrap">
+        <button
+          onClick={handleGenerate}
+          disabled={running}
+          aria-busy={running}
+          className="inline-flex items-center gap-2 px-5 py-2 bg-indigo-700 hover:bg-indigo-600 disabled:opacity-60 disabled:cursor-wait text-white text-sm font-medium rounded-lg transition-colors"
+        >
+          {running && (
+            <span
+              aria-hidden
+              className="h-4 w-4 rounded-full border-2 border-white/30 border-t-white animate-spin"
+            />
+          )}
+          {running ? "Generating…" : "Generate synthetic data"}
+        </button>
+        {running && (
+          <span role="status" className="text-xs text-slate-400">
+            {(elapsedMs / 1000).toFixed(1)}s
+            {elapsedMs > SLOW_MS &&
+              ". Still working: the first request after a quiet period can take a few seconds while the API starts."}
+          </span>
+        )}
+      </div>
 
       {apiErr && (
         <p className="text-sm text-red-400 bg-red-900/20 border border-red-800/40 rounded p-3">
@@ -248,7 +290,15 @@ export function SynthTab({
               </div>
             ))}
           </div>
-          <p className="text-xs text-slate-600">Anchor time: {result.anchor_time}</p>
+          <p className="text-xs text-slate-600">
+            Anchor time: {result.anchor_time}
+            {totalMs !== null && (
+              <>
+                {" "}· Done in {(totalMs / 1000).toFixed(2)}s
+                {typeof result.generation_ms === "number" && ` (generation ${result.generation_ms} ms on the server)`}
+              </>
+            )}
+          </p>
 
           <div className="flex gap-2 flex-wrap">
             <button
