@@ -17,6 +17,7 @@ import {
 } from "@/lib/api";
 import { localUpgradeMessage } from "@/lib/impact-upgrade";
 import { createLatestRequestTracker } from "@/lib/latest-request";
+import { LineageGraphView } from "./lineage-graph-view";
 
 interface ImpactPanelProps {
   contractId: string;
@@ -35,6 +36,7 @@ export function ImpactPanel({ contractId, versions }: ImpactPanelProps) {
   const [message, setMessage] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [importing, setImporting] = useState(false);
+  const [view, setView] = useState<"graph" | "list">("graph");
 
   // The selected version changes faster than its request can resolve
   // (picking v1.0.0 then v1.0.1 quickly). These track which request is the
@@ -183,6 +185,19 @@ export function ImpactPanel({ contractId, versions }: ImpactPanelProps) {
             </select>
           </label>
         )}
+        <div className="flex rounded-lg border border-[#374151] overflow-hidden" role="group" aria-label="Downstream impact view">
+          {(["graph", "list"] as const).map((value) => (
+            <button
+              key={value}
+              type="button"
+              data-testid={`impact-view-${value}`}
+              onClick={() => setView(value)}
+              className={`text-xs px-3 py-1.5 ${view === value ? "bg-[#1f2937] text-slate-100" : "text-slate-500"}`}
+            >
+              {value === "graph" ? "Graph" : "List"}
+            </button>
+          ))}
+        </div>
         <label className="ml-auto text-xs px-3 py-1.5 bg-[#1f2937] hover:bg-[#374151] text-slate-200 rounded-lg cursor-pointer">
           {importing ? "Importing…" : "Import lineage"}
           <input
@@ -246,7 +261,13 @@ export function ImpactPanel({ contractId, versions }: ImpactPanelProps) {
               ))}
             </ul>
           )}
-          {report.affected.length === 0 ? (
+          {view === "graph" ? (
+            <LineageGraphView
+              contractId={contractId}
+              affected={report.affected}
+              onUnavailable={() => setView("list")}
+            />
+          ) : report.affected.length === 0 ? (
             <p className="text-xs text-slate-500">No downstream assets are registered for this contract.</p>
           ) : (
             <ul className="space-y-2">
