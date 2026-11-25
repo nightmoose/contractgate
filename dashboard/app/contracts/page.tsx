@@ -79,6 +79,7 @@ import { KafkaTab } from "./_tabs/kafka";
 import { KinesisTab } from "./_tabs/kinesis";
 import { CollaborateTab } from "./_tabs/collaborate";
 import { OutboundTab } from "./_tabs/outbound";
+import { SynthTab } from "./_tabs/synth";
 import {
   pickDefaultVersion,
   newestVersionString,
@@ -142,7 +143,7 @@ function EditContractModal({
   const [publishModalOpen, setPublishModalOpen] = useState(false);
 
   // Modal-level tab state
-  type ModalTab = "yaml" | "versions" | "kafka" | "kinesis" | "collaborate" | "outbound";
+  type ModalTab = "yaml" | "versions" | "kafka" | "kinesis" | "collaborate" | "outbound" | "synth";
   const [modalTab, setModalTab] = useState<ModalTab>("yaml");
 
   // RFC-030: egress leakage mode
@@ -516,6 +517,18 @@ function EditContractModal({
             >
               ↗ Outbound
             </button>
+            {/* RFC-118: Generate synthetic data */}
+            <button
+              onClick={() => setModalTab("synth")}
+              className={clsx(
+                "px-4 py-2 text-sm font-medium rounded-t-lg transition-colors border-b-2 -mb-px",
+                modalTab === "synth"
+                  ? "text-slate-100 border-violet-500"
+                  : "text-slate-500 hover:text-slate-300 border-transparent"
+              )}
+            >
+              Synthetic data
+            </button>
           </div>
         )}
 
@@ -560,6 +573,12 @@ function EditContractModal({
                 setYamlDraft(yaml);
                 setModalTab("yaml");
               }}
+            />
+          ) : modalTab === "synth" ? (
+            <SynthTab
+              yamlContent={yamlDraft}
+              versionLabel={currentVersion?.version ?? null}
+              hasEnvelope={/^envelope\s*:/m.test(yamlDraft)}
             />
           ) : modalTab === "outbound" ? (
             <OutboundTab
