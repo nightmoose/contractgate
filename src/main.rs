@@ -44,7 +44,9 @@ use uuid::Uuid;
 // shared with other binaries (e.g. src/bin/demo.rs).  We re-export it here so
 // existing submodules that refer to `crate::contract` / `crate::validation`
 // continue to resolve unchanged.
-pub use contractgate::{contract, drop_mode, payload_redaction, transform, validation};
+pub use contractgate::{
+    contract, dbt_export, drop_mode, payload_redaction, sql_dialect, transform, validation,
+};
 
 mod api_key_auth;
 mod auth_fail_limit;
@@ -1090,6 +1092,80 @@ async fn export_odcs_handler(
         .into_response())
 }
 
+/// `GET /contracts/:id/versions/:version/export/dbt-tests` — generate dbt
+/// tests (schema.yml + singular SQL tests) from the contract version
+/// (RFC-119). Query params: `model` (dbt model name, defaults to the
+/// contract's name) and `dialect` (`postgres` | `duckdb` | `snowflake` |
+/// `databricks`, defaults to `postgres`; only affects the singular tests'
+/// regex/format predicates).
+async fn export_dbt_tests_handler(
+    State(state): State<Arc<AppState>>,
+    OrgId(org_id): OrgId,
+    Path((contract_id, version)): Path<(Uuid, String)>,
+    Query(params): Query<HashMap<String, String>>,
+) -> AppResult<Json<DbtTestsExportResponse>> {
+    if state.auth_configured() && org_id.is_none() {
+        return Err(error::AppError::Unauthorized);
+    }
+    let identity = storage::get_contract_identity(&state.db, contract_id, org_id).await?;
+    let cv = storage::get_version(&state.db, contract_id, &version, org_id).await?;
+    let contract: Contract = serde_yaml::from_str(&cv.yaml_content)
+        .map_err(|e| AppError::InvalidContractYaml(e.to_string()))?;
+
+    let dialect = params
+        .get("dialect")
+        .map(String::as_str)
+        .unwrap_or("postgres")
+        .parse::<sql_dialect::SqlDialect>()
+        .map_err(AppError::BadRequest)?;
+    let model = params.get("model").cloned().unwrap_or(identity.name);
+
+    let export = dbt_export::generate_dbt_tests(&contract, &model, dialect);
+
+    Ok(Json(DbtTestsExportResponse {
+        model,
+        dialect: dialect.to_string(),
+        schema_yml: export.schema_yml,
+        tests: export
+            .singular_tests
+            .into_iter()
+            .map(|t| GeneratedSqlTestResponse {
+                filename: t.filename,
+                sql: t.sql,
+            })
+            .collect(),
+        skipped: export
+            .skipped
+            .into_iter()
+            .map(|s| SkippedRuleResponse {
+                field: s.field,
+                reason: s.reason,
+            })
+            .collect(),
+    }))
+}
+
+#[derive(serde::Serialize)]
+struct DbtTestsExportResponse {
+    model: String,
+    dialect: String,
+    schema_yml: String,
+    tests: Vec<GeneratedSqlTestResponse>,
+    skipped: Vec<SkippedRuleResponse>,
+}
+
+#[derive(serde::Serialize)]
+struct GeneratedSqlTestResponse {
+    filename: String,
+    sql: String,
+}
+
+#[derive(serde::Serialize)]
+struct SkippedRuleResponse {
+    field: String,
+    reason: String,
+}
+
 /// `POST /contracts/:id/versions/:version/approve-import` — clear the
 /// `requires_review` flag set on a stripped ODCS import (D-002).  Only legal
 /// on draft versions.
@@ -2014,6 +2090,11 @@ fn build_router(state: Arc<AppState>) -> Router {
         .route(
             "/contracts/{id}/versions/{version}/export",
             get(export_odcs_handler),
+        )
+        // dbt test export (RFC-119) — schema.yml + singular SQL tests.
+        .route(
+            "/contracts/{id}/versions/{version}/export/dbt-tests",
+            get(export_dbt_tests_handler),
         )
         .route(
             "/contracts/{id}/versions/{version}/approve-import",
