@@ -254,6 +254,41 @@ class Client:
         _, body = self._dispatch(spec)
         return body
 
+    def synth(
+        self,
+        *,
+        yaml_content: Optional[str] = None,
+        contract_id: Optional[str] = None,
+        version: Optional[str] = None,
+        rows: int = 100,
+        mode: str = "valid",
+        seed: Optional[int] = None,
+        anchor_time: Optional[str] = None,
+        envelope: bool = False,
+        timeout: Optional[float] = None,
+    ) -> Any:
+        """Generate synthetic rows from a contract (``POST /contracts/synth``).
+
+        Pass ``yaml_content`` or ``contract_id`` (plus optional ``version``).
+        ``mode="invalid"`` returns rows that each break exactly one rule,
+        labeled with it. ``seed`` plus ``anchor_time`` (RFC 3339) make the
+        output repeat exactly. ``envelope=True`` adds ``envelope_payload``.
+        Returns the raw JSON response.
+        """
+        body = _t.synth_body(
+            yaml_content=yaml_content,
+            contract_id=contract_id,
+            version=version,
+            rows=rows,
+            mode=mode,
+            seed=seed,
+            anchor_time=anchor_time,
+            envelope=envelope,
+        )
+        spec = _t.build_synth_request(self._cfg, body, timeout=timeout)
+        _, resp = self._dispatch(spec)
+        return resp
+
     # ------------------------------------------------------------------
     # Internals
     # ------------------------------------------------------------------

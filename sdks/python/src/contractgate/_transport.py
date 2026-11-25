@@ -287,6 +287,54 @@ def build_playground_request(
     )
 
 
+def build_synth_request(
+    cfg: TransportConfig,
+    body: Dict[str, Any],
+    *,
+    timeout: Optional[float] = None,
+) -> RequestSpec:
+    return RequestSpec(
+        method="POST",
+        url=cfg.url("/contracts/synth"),
+        headers=cfg.headers({"Content-Type": "application/json"}),
+        params=None,
+        json_body=body,
+        timeout=timeout if timeout is not None else cfg.timeout,
+    )
+
+
+def synth_body(
+    *,
+    yaml_content: Optional[str] = None,
+    contract_id: Optional[str] = None,
+    version: Optional[str] = None,
+    rows: int = 100,
+    mode: str = "valid",
+    seed: Optional[int] = None,
+    anchor_time: Optional[str] = None,
+    envelope: bool = False,
+) -> Dict[str, Any]:
+    """Request body for ``POST /contracts/synth`` (RFC-117, RFC-118)."""
+    if (yaml_content is None) == (contract_id is None):
+        raise ValueError("pass exactly one of yaml_content or contract_id")
+    if mode not in ("valid", "invalid"):
+        raise ValueError("mode must be 'valid' or 'invalid'")
+    body: Dict[str, Any] = {"rows": rows, "mode": mode}
+    if yaml_content is not None:
+        body["yaml_content"] = yaml_content
+    if contract_id is not None:
+        body["contract_id"] = contract_id
+    if version is not None:
+        body["version"] = version
+    if seed is not None:
+        body["seed"] = seed
+    if anchor_time is not None:
+        body["anchor_time"] = anchor_time
+    if envelope:
+        body["envelope"] = True
+    return body
+
+
 # ---------------------------------------------------------------------------
 # Response decoding
 # ---------------------------------------------------------------------------

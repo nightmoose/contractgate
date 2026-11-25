@@ -2,8 +2,18 @@
 
 All notable changes to the `contractgate` Python SDK.
 
-## Unreleased
+## 0.4.2 (unreleased, not yet published)
 
+- New `contractgate synth` command (console script `contractgate`) that
+  calls the gateway's `POST /contracts/synth` (RFC-117, RFC-118). Takes a
+  contract file or `--contract-id` / `--version`, plus `--rows`,
+  `--invalid`, `--seed`, `--anchor` (RFC 3339 time for freshness rules),
+  `--envelope` and `--format json|csv`. The key comes from `--api-key` or
+  `CONTRACTGATE_API_KEY`; the URL from `--base-url` or
+  `CONTRACTGATE_BASE_URL`. Exit 1 names an unsatisfiable rule.
+- `Client.synth(...)` / `AsyncClient.synth(...)` for the same endpoint.
+- Note: a release tag must match `Cargo.toml` too, so the gateway version
+  needs the same bump before this ships.
 - Fix: repair hints no longer create two user messages in a row. When the
   conversation ends with a user turn, `LLMGate` / `AsyncLLMGate` fold the
   hint into that turn (string content or an extra text content part), so
