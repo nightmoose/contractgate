@@ -45,7 +45,8 @@ use uuid::Uuid;
 // existing submodules that refer to `crate::contract` / `crate::validation`
 // continue to resolve unchanged.
 pub use contractgate::{
-    contract, dbt_export, drop_mode, payload_redaction, sql_dialect, transform, validation,
+    contract, dbt_export, dbt_yaml, drop_mode, payload_redaction, sql_dialect, transform,
+    validation,
 };
 
 mod api_key_auth;
@@ -1166,6 +1167,115 @@ struct SkippedRuleResponse {
     reason: String,
 }
 
+/// `POST /contracts/import/dbt` - convert a dbt model contract (`schema.yml`)
+/// and create a native draft, following the same persist flow as ODCS import
+/// (RFC-120). v1 stores `import_source = native` (no new DB enum value).
+async fn import_dbt_handler(
+    State(state): State<Arc<AppState>>,
+    req: axum::extract::Request,
+) -> AppResult<(StatusCode, Json<VersionResponse>)> {
+    let raw_org = org_id_from_req(&req);
+    let dev_org = dev_org_fallback(&state, &req, raw_org);
+    let org_id = dev_org.as_ref().ok().copied().flatten();
+    let Json(body): Json<dbt_yaml::ImportDbtRequest> = axum::Json::from_request(req, &state)
+        .await
+        .map_err(|e| AppError::BadRequest(e.to_string()))?;
+
+    let result = dbt_yaml::import_dbt(&body.dbt_yaml, body.model.as_deref())
+        .map_err(AppError::BadRequest)?;
+
+    let name_in_yaml: Contract = serde_yaml::from_str(&result.yaml_content)
+        .map_err(|e| AppError::InvalidContractYaml(e.to_string()))?;
+    let name = body
+        .name_override
+        .as_deref()
+        .unwrap_or(&name_in_yaml.name)
+        .to_string();
+
+    let target = match (body.target_contract_id, body.contract_id) {
+        (Some(a), Some(b)) if a != b => {
+            return Err(AppError::BadRequest(
+                "target_contract_id and contract_id disagree; pass one".into(),
+            ))
+        }
+        (a, b) => a.or(b),
+    };
+    if let Some(contract_id) = target {
+        if state.auth_configured() && org_id.is_none() {
+            return Err(AppError::Unauthorized);
+        }
+        require_owner(&state, contract_id, org_id).await?;
+        let target = storage::get_contract_identity(&state.db, contract_id, org_id).await?;
+        let yaml = crate::version_pin::set_yaml_name(&result.yaml_content, &target.name);
+        let cv = storage::create_version_from_import(
+            &state.db,
+            contract_id,
+            &result.version,
+            &yaml,
+            contract::ImportSource::Native,
+            org_id,
+            state.self_hosted,
+        )
+        .await?;
+        return Ok((StatusCode::CREATED, Json(VersionResponse::from(&cv))));
+    }
+
+    let org_id = dev_org?;
+    if let Some(org) = org_id {
+        let existing = storage::owned_contract_ids_by_name(&state.db, &name, org).await?;
+        if let Some(id) = existing.first() {
+            return Err(AppError::Conflict(format!(
+                "a contract named '{name}' already exists in your org (id {id}); \
+                 pass target_contract_id to import as a new version"
+            )));
+        }
+    }
+    let yaml_named = crate::version_pin::set_yaml_name(&result.yaml_content, &name);
+    let (identity, _) = storage::create_contract_in(
+        &state.db,
+        &name,
+        name_in_yaml.description.as_deref(),
+        &yaml_named,
+        Default::default(),
+        org_id,
+        state.self_hosted,
+    )
+    .await?;
+    storage::delete_version(&state.db, identity.id, "1.0.0", org_id).await?;
+    let cv = storage::create_version_from_import(
+        &state.db,
+        identity.id,
+        &result.version,
+        &yaml_named,
+        contract::ImportSource::Native,
+        org_id,
+        state.self_hosted,
+    )
+    .await?;
+    Ok((StatusCode::CREATED, Json(VersionResponse::from(&cv))))
+}
+
+/// `GET /contracts/:id/versions/:version/export/dbt` - dbt model contract
+/// YAML (RFC-120). Query param `model` defaults to the contract's name.
+async fn export_dbt_handler(
+    State(state): State<Arc<AppState>>,
+    OrgId(org_id): OrgId,
+    Path((contract_id, version)): Path<(Uuid, String)>,
+    Query(params): Query<HashMap<String, String>>,
+) -> AppResult<axum::response::Response> {
+    if state.auth_configured() && org_id.is_none() {
+        return Err(error::AppError::Unauthorized);
+    }
+    let identity = storage::get_contract_identity(&state.db, contract_id, org_id).await?;
+    let cv = storage::get_version(&state.db, contract_id, &version, org_id).await?;
+    let contract: Contract = serde_yaml::from_str(&cv.yaml_content)
+        .map_err(|e| AppError::InvalidContractYaml(e.to_string()))?;
+    let model = params.get("model").cloned().unwrap_or(identity.name);
+    let (yaml, _warnings) =
+        dbt_yaml::export_dbt(&contract, Some(&model)).map_err(AppError::Internal)?;
+    Ok((StatusCode::OK, [("content-type", "application/yaml")], yaml).into_response())
+}
+
 /// `POST /contracts/:id/versions/:version/approve-import` — clear the
 /// `requires_review` flag set on a stripped ODCS import (D-002).  Only legal
 /// on draft versions.
@@ -2099,6 +2209,12 @@ fn build_router(state: Arc<AppState>) -> Router {
         .route(
             "/contracts/{id}/versions/{version}/export/dbt-tests",
             get(export_dbt_tests_handler),
+        )
+        // dbt model-contract import / export (RFC-120)
+        .route("/contracts/import/dbt", post(import_dbt_handler))
+        .route(
+            "/contracts/{id}/versions/{version}/export/dbt",
+            get(export_dbt_handler),
         )
         .route(
             "/contracts/{id}/versions/{version}/approve-import",

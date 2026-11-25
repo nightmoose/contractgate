@@ -119,6 +119,7 @@ them by name only.
 | 117 | [Synthetic data from a contract](rfcs/117-synthetic-data.md) | Accepted |
 | 118 | [Synthetic data v1.1 and cross-field rules](rfcs/118-synthetic-data-v1-1.md) | Accepted |
 | 119 | [Batch SQL: dbt test export and check-table](rfcs/119-batch-sql-contracts.md) | Accepted |
+| 120 | [dbt YAML import and export](rfcs/120-dbt-yaml-converter.md) | Accepted |
 
 ---
 
@@ -135,6 +136,10 @@ them by name only.
 | **Superseded** | Replaced by a later RFC listed in the notes column; kept for design context. |
 
 ---
+
+*2026-11-25: RFC-120, dbt YAML converter. `contractgate export dbt` / `import dbt` and `GET /contracts/{id}/versions/{version}/export/dbt` / `POST /contracts/import/dbt` convert between dbt model contracts (`schema.yml` with `config.contract.enforced`) and DataContractGate contracts. `import dbt --check-against` and `.github/actions/dbt-contract-check` fail a PR on drift. Rules dbt model contracts cannot express travel in `meta.contractgate` for a lossless round-trip. No migration. See `docs/datacontractgate-and-dbt-contracts.md`.*
+
+*2026-11-25: Readiness Review. `contractgate review <file.csv>` infers a draft contract from a CSV, validates every row, and writes contract.yaml, a self-contained DataContractGate-branded report.html (counts, top failing rules, PII flagged and masked, sample rejected rows with reasons), and rejected.csv. `contractgate-py review` wraps the Rust CLI when it is on PATH. Sample CSVs and a sub-10-minute script are in `examples/readiness-review/`. No migration. See `docs/readiness-review-reference.md`.*
 
 *2026-11-25: RFC-119, batch SQL. `contractgate export dbt-tests` and `GET /contracts/{id}/versions/{version}/export/dbt-tests` write dbt `schema.yml` generic tests (`not_null`, `unique`, `accepted_values`) plus singular SQL tests for patterns, formats, ranges, lengths, freshness, and cross-field rules. `contractgate check-table` compiles the same rules into one violation-report query for Postgres, DuckDB, Snowflake, or Databricks; `--execute` runs it against Postgres only. Golden files pin generated SQL. No migration. See `docs/batch-snowflake-databricks-reference.md`.*
 

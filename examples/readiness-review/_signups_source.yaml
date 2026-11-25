@@ -1,0 +1,30 @@
+version: "1.0"
+name: customer_signups
+description: Source contract used only to generate the sample signups CSV. Not the draft the review infers.
+ontology:
+  entities:
+    - name: user_id
+      type: string
+      required: true
+      format: uuid
+    - name: email
+      type: string
+      required: true
+      format: email
+    - name: full_name
+      type: string
+      required: true
+      min_length: 2
+      max_length: 60
+    - name: phone
+      type: string
+      required: false
+      min_length: 8
+      max_length: 20
+    - name: plan
+      type: string
+      required: true
+      enum: ["free", "pro", "impact"]
+    - name: signed_up_on
+      type: date
+      required: true

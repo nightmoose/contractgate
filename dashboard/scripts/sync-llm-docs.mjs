@@ -51,6 +51,8 @@ const FULL_BUNDLE = [
   "pii-masking-reference.md",
   "contract-families-reference.md",
   "batch-snowflake-databricks-reference.md",
+  "readiness-review-reference.md",
+  "datacontractgate-and-dbt-contracts.md",
 ];
 
 const missing = [...new Set([...FILES, ...FULL_BUNDLE])].filter(
