@@ -116,6 +116,7 @@ them by name only.
 | 114 | [Launch: public catalog cache, cheap bad keys, SSR bypass](rfcs/114-launch-catalog-cache-and-auth.md) | Accepted |
 | 115 | [Anonymous playground](rfcs/115-anonymous-playground.md) | Accepted |
 | 116 | [Downstream impact analysis](rfcs/116-lineage-impact.md) | Accepted |
+| 117 | [Synthetic data from a contract](rfcs/117-synthetic-data.md) | Accepted |
 
 ---
 
@@ -132,6 +133,8 @@ them by name only.
 | **Superseded** | Replaced by a later RFC listed in the notes column; kept for design context. |
 
 ---
+
+*2026-11-25: RFC-117, synthetic data. `POST /contracts/synth` and `contractgate synth` generate up to 10,000 rows from a contract's rules only (types, required, enum, ranges, lengths, patterns, formats, quality rules, metrics, compliance mode). No stored events are read. Valid rows pass the validator. Invalid rows each break exactly one rule and carry a `broken_rule` label. A rule that cannot be met returns an error naming it. Deterministic for a seed. No migration. See `docs/synthetic-data-reference.md`.*
 
 *2026-11-19 — RFC-116: downstream impact analysis. An org registers lineage (dbt `manifest.json` or an edge list). Proposing or publishing a contract version stores which downstream assets are affected and which field changes are breaking, with a plain-English sentence per asset. The graph is Postgres. Free orgs get HTTP 402 and no asset data. Pro + Impact (`orgs.plan = impact`) has every Pro gate plus impact analysis. Enterprise is entitled too. Pro is not. The lists and caps are constants in `src/plan.rs`. Migration `054_lineage_impact.sql` must be applied before the feature serves data. The gateway still boots without it. See `docs/impact-analysis-reference.md`.*
 

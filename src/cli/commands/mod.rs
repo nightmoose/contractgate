@@ -4,5 +4,6 @@ pub mod infer;
 pub mod pull;
 pub mod push;
 pub mod scaffold;
+pub mod synth;
 pub mod test;
 pub mod validate;

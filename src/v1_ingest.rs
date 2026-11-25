@@ -662,6 +662,7 @@ fn merge_openapi_op(
 /// document. Schemas match the handler request and response types.
 fn more_openapi_paths(paths: &mut serde_json::Map<String, Value>) {
     crate::impact::merge_openapi(paths);
+    crate::synth_handler::merge_openapi(paths);
     let upgrade = crate::plan::payload_storage_upgrade_message();
     let paid = crate::plan::paid_plans_phrase();
     let auth = json!([{"ApiKeyAuth": []}]);

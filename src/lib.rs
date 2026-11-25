@@ -21,6 +21,7 @@ pub mod payload_redaction;
 pub mod rate_limit;
 pub mod request_limits;
 pub mod scaffold;
+pub mod synth;
 pub mod transform;
 pub mod validation;
 
