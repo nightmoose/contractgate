@@ -2030,6 +2030,10 @@ fn build_router(state: Arc<AppState>) -> Router {
             "/contracts/{id}/versions/{version}/impact",
             get(impact::impact_get_handler).post(impact::impact_recompute_handler),
         )
+        .route(
+            "/contracts/{id}/lineage/graph",
+            get(impact::lineage_graph_handler),
+        )
         // Brownfield contract scaffolder (RFC-024)
         .route(
             "/contracts/scaffold",

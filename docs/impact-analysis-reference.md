@@ -87,11 +87,21 @@ Breaking kinds include `field_removed`, `field_renamed` (a field with `renamed_f
 
 Safe kinds include `field_added_optional`, `type_widened` (integer to float, or anything to any), `required_relaxed`, `enum_value_added`, and `constraint_widened`.
 
-`affected[]` has `name`, `kind`, `owner`, `hops`, `path`, and `explanation`. An unscoped edge carries every field change. A field-scoped edge carries only that field. The sentence is produced by a template. `explanation_source` is `template`. `summary_source` is `template` unless `CONTRACTGATE_IMPACT_LLM_URL` is set, in which case the gateway may POST the one-line summary there and fall back to the template if that call fails. The variable is optional.
+`affected[]` has `name`, `kind`, `owner`, `hops`, `path`, `explanation`, `severity`, and `changes`. An unscoped edge carries every field change. A field-scoped edge carries only that field. The sentence is produced by a template. `explanation_source` is `template`. `summary_source` is `template` unless `CONTRACTGATE_IMPACT_LLM_URL` is set, in which case the gateway may POST the one-line summary there and fall back to the template if that call fails. The variable is optional.
+
+`affected[].severity` is `breaking` when any field change reaching that asset is breaking, `safe` when every reaching change is safe, or `none` when the asset is listed with no reaching field changes (the first-version case, where there is no base to classify against). `affected[].changes` is the subset of the top-level `changes[]` that reaches that asset once field-scoped edges on its path have narrowed the set — the same list `explanation` is built from, as structured data instead of a sentence.
+
+## Lineage graph
+
+`GET /contracts/{id}/lineage/graph`
+
+Same gate as the impact routes (Pro + Impact or Enterprise; 402 with no asset data otherwise) and the same assets and edges as `GET /lineage` (capped at 500 assets, 1000 edges), scoped to the contract's owning org. Adds `focus_keys`, the asset keys that belong to this contract (usually the contract's own node plus any asset the import linked via `meta.contract_id`), so the dashboard can highlight or scope the view to them. It does not take a version or compute impact; combine it client-side with `affected[].severity` and `affected[].changes` from the impact response for a selected version to color nodes.
 
 ## Dashboard
 
 The contract version view has a Downstream impact section. It imports a manifest or an edge list and shows the report for the selected version. A 402 renders the upgrade message and does not render assets. The Upgrade link is a relative `/pricing` path so it stays on the current host; the API may still return the production pricing URL in `upgrade_url` for existing clients. The dashboard rewrites that production URL in the message text to `/pricing`.
+
+A Graph / List toggle switches between an interactive lineage graph (React Flow, dagre layout) and the plain list above. The graph renders every asset and edge for the org, scoped to this contract's connected component by default (toggle to "Whole org" for the full graph), colors nodes by `affected[].severity` for the selected version, and shows an edge's field scope on hover. Clicking a node opens a details panel with the field changes reaching it. The graph falls back to the list automatically if its own request fails or the migration is not applied (but not on a 402, which shows the upgrade message instead).
 
 ## Migration
 

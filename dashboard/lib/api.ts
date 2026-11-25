@@ -1843,6 +1843,8 @@ export interface ImpactAsset {
   hops: number;
   path: string[];
   explanation: string;
+  severity: "breaking" | "safe" | "none" | string;
+  changes: ImpactChange[];
 }
 
 export interface ImpactReport {
@@ -1983,6 +1985,50 @@ export async function recomputeVersionImpact(
     { method: "POST", signal },
   );
   return impactFromStatus(status, body);
+}
+
+export interface LineageGraphAsset {
+  kind: string;
+  key: string;
+  name: string;
+  owner: string | null;
+  contract_id: string | null;
+}
+
+export interface LineageGraphEdge {
+  from: string;
+  to: string;
+  edge: string;
+  field: string | null;
+}
+
+export interface LineageGraph {
+  asset_count: number;
+  edge_count: number;
+  focus_keys: string[];
+  assets: LineageGraphAsset[];
+  edges: LineageGraphEdge[];
+}
+
+export type LineageGraphResult =
+  | { status: "ok"; graph: LineageGraph }
+  | { status: "upgrade"; message: string; upgrade_url?: string }
+  | { status: "unavailable"; message: string }
+  | { status: "error"; message: string };
+
+/** The org's lineage graph, with this contract's own asset keys as focus_keys. */
+export async function getContractLineageGraph(
+  contractId: string,
+  signal?: AbortSignal,
+): Promise<LineageGraphResult> {
+  const { status, body } = await impactFetch(`/contracts/${contractId}/lineage/graph`, { signal });
+  const result = impactFromStatus(status, body);
+  if (result.status !== "ok" || !body) {
+    return result.status === "ok"
+      ? { status: "error", message: "Lineage graph returned an empty body." }
+      : result;
+  }
+  return { status: "ok", graph: body as unknown as LineageGraph };
 }
 
 // ---------------------------------------------------------------------------

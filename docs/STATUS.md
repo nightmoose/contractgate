@@ -133,6 +133,8 @@ them by name only.
 
 ---
 
+*2026-11-26 — RFC-116 follow-up: interactive lineage graph. The contract Versions tab's Downstream impact section has a Graph / List toggle. The graph (React Flow + dagre, both MIT) renders every lineage asset and edge for the org, scoped by default to the contract's connected component, colors nodes by the selected version's breaking/safe field changes, shows an edge's field scope on hover, and opens a details panel on click. `GET /contracts/{id}/lineage/graph` returns the org's assets and edges plus `focus_keys` for the contract; `affected[].severity` and `affected[].changes` are new, additive fields on the existing impact response. See `docs/impact-analysis-reference.md`.*
+
 *2026-11-19 — RFC-116: downstream impact analysis. An org registers lineage (dbt `manifest.json` or an edge list). Proposing or publishing a contract version stores which downstream assets are affected and which field changes are breaking, with a plain-English sentence per asset. The graph is Postgres. Free orgs get HTTP 402 and no asset data. Pro + Impact (`orgs.plan = impact`) has every Pro gate plus impact analysis. Enterprise is entitled too. Pro is not. The lists and caps are constants in `src/plan.rs`. Migration `054_lineage_impact.sql` must be applied before the feature serves data. The gateway still boots without it. See `docs/impact-analysis-reference.md`.*
 
 *2026-11-14 — RFC-115: logged-out visitors can run the playground. `POST /public/playground/validate` compiles the posted YAML, validates one event, and writes nothing. It is limited to 1 request/second per client IP with a burst of 8 and a 64 KiB body. The dashboard playground no longer shows the sample preview to anonymous visitors. See `docs/public-playground-reference.md`.*
