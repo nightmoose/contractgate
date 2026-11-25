@@ -1,4 +1,4 @@
-//! Synthetic data generator (RFC-120): every valid row passes the validator,
+//! Synthetic data generator (RFC-117): every valid row passes the validator,
 //! and every invalid row fails exactly the rule its label names.
 
 use contractgate::contract::Contract;
@@ -382,4 +382,61 @@ fn repo_contracts_hold_up() {
         files.len()
     );
     assert!(generated >= 10, "only {generated} repo contracts generated");
+}
+
+#[test]
+fn cli_writes_json_and_csv() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("c.yaml");
+    std::fs::write(&path, RICH).unwrap();
+    let bin = env!("CARGO_BIN_EXE_contractgate");
+    let run = |extra: &[&str]| {
+        std::process::Command::new(bin)
+            .arg("synth")
+            .arg(&path)
+            .args(extra)
+            .output()
+            .unwrap()
+    };
+
+    let a = run(&["--rows", "25", "--seed", "4"]);
+    assert_eq!(
+        a.status.code(),
+        Some(0),
+        "{}",
+        String::from_utf8_lossy(&a.stderr)
+    );
+    let rows: Vec<Value> = serde_json::from_slice(&a.stdout).unwrap();
+    assert_eq!(rows.len(), 25);
+    assert_valid(&compile(RICH), &rows);
+    assert_eq!(a.stdout, run(&["--rows", "25", "--seed", "4"]).stdout);
+
+    let bad = run(&[
+        "--rows",
+        "10",
+        "--seed",
+        "4",
+        "--invalid",
+        "--format",
+        "csv",
+    ]);
+    assert_eq!(bad.status.code(), Some(0));
+    let text = String::from_utf8(bad.stdout).unwrap();
+    let header = text.lines().next().unwrap();
+    assert!(header.contains("_broken_field") && header.contains("_broken_rule"));
+    assert!(header.contains("shipping.country"));
+    assert_eq!(text.lines().count(), 11);
+
+    let unsat = dir.path().join("u.yaml");
+    std::fs::write(
+        &unsat,
+        "version: \"1\"\nname: u\nontology:\n  entities:\n    - name: c\n      type: string\n      min_length: 5\n      max_length: 2\n",
+    )
+    .unwrap();
+    let e = std::process::Command::new(bin)
+        .args(["synth", unsat.to_str().unwrap(), "--rows", "3"])
+        .output()
+        .unwrap();
+    assert_eq!(e.status.code(), Some(1));
+    assert!(String::from_utf8_lossy(&e.stderr).contains("min_length"));
 }

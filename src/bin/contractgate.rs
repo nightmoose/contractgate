@@ -1,12 +1,12 @@
 //! `contractgate` CLI binary.
 //!
-//! Subcommands: push, pull, validate, scaffold, enforce, infer, test.
+//! Subcommands: push, pull, validate, scaffold, enforce, infer, test, synth.
 //! Auth via CONTRACTGATE_API_KEY env var or --api-key flag.
 //! Config via .contractgate.yml (walk-up from cwd, stop at git root).
 
 use clap::{Parser, Subcommand};
 use contractgate::cli::{
-    commands::{deploy, enforce, infer, pull, push, scaffold, test, validate},
+    commands::{deploy, enforce, infer, pull, push, scaffold, synth, test, validate},
     config::CliConfig,
 };
 use std::{path::PathBuf, process};
@@ -96,6 +96,18 @@ enum Cmd {
     ///   cg test --contract c.yaml --data '[{"user_id":"x"}]'
     ///   cg infer --from-stdin --name orders | cg test --contract orders.yaml --data -
     Test(test::TestArgs),
+    /// Generate synthetic rows from a contract's rules. Local, no network. (RFC-117)
+    ///
+    /// Rows come only from the contract: types, required, enums, ranges,
+    /// lengths, patterns, formats and quality rules. No real data is read.
+    /// `--invalid` makes each row break exactly one rule, labeled with it.
+    ///
+    /// Exit codes: 0 = rows written, 1 = a rule cannot be satisfied, 2 = load error.
+    ///
+    /// Examples:
+    ///   cg synth contracts/orders.yaml --rows 500 --seed 42
+    ///   cg synth contracts/orders.yaml --rows 50 --invalid --format csv -o bad.csv
+    Synth(synth::SynthArgs),
     /// Emit the JSON Schema for .contractgate.yml.
     #[command(hide = true)]
     ConfigSchema,
@@ -134,10 +146,11 @@ fn main() {
             pull::run(args, &cfg, &key)
         }
 
-        // Scaffold, enforce, infer, and test do not need gateway config or an API key.
+        // Scaffold, enforce, infer, synth, and test do not need gateway config or an API key.
         Cmd::Scaffold(args) => scaffold::run(args),
         Cmd::Enforce(args) => enforce::run(args),
         Cmd::Infer(args) => infer::run(args),
+        Cmd::Synth(args) => synth::run(args),
         Cmd::Test(args) => test::run(args).map_err(|e| {
             // Load/parse errors from test::run propagate as exit 2, not 10.
             eprintln!("error: {e:#}");

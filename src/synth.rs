@@ -1,4 +1,4 @@
-//! Synthetic data generator (RFC-120).
+//! Synthetic data generator (RFC-117).
 //!
 //! Builds test rows for a contract using only the contract's own rules:
 //! field types, `required`, `enum`, `min`/`max`, `min_length`/`max_length`,
@@ -674,7 +674,7 @@ impl<'a> Generator<'a> {
                 let step = self.rng.gen_range(1..10) as f64;
                 Some(match d.field_type {
                     FieldType::Integer => json!(lo.ceil() as i64 - step as i64),
-                    _ => json!(lo - step - self.rng.gen::<f64>()),
+                    _ => json!(round2(lo - step - self.rng.gen::<f64>())),
                 })
             }
             Target::Max(_) => {
@@ -683,7 +683,7 @@ impl<'a> Generator<'a> {
                 let step = self.rng.gen_range(1..10) as f64;
                 Some(match d.field_type {
                     FieldType::Integer => json!(hi.floor() as i64 + step as i64),
-                    _ => json!(hi + step + self.rng.gen::<f64>()),
+                    _ => json!(round2(hi + step + self.rng.gen::<f64>())),
                 })
             }
             Target::MinLength(p) => {
@@ -757,7 +757,7 @@ impl<'a> Generator<'a> {
                 Some(if is_integer_field(def.as_ref()) {
                     json!(lo.ceil() as i64 - step)
                 } else {
-                    json!(lo - step as f64 - self.rng.gen::<f64>())
+                    json!(round2(lo - step as f64 - self.rng.gen::<f64>()))
                 })
             }
             Target::MetricMax(_, _, hi) => {
@@ -765,7 +765,7 @@ impl<'a> Generator<'a> {
                 Some(if is_integer_field(def.as_ref()) {
                     json!(hi.floor() as i64 + step)
                 } else {
-                    json!(hi + step as f64 + self.rng.gen::<f64>())
+                    json!(round2(hi + step as f64 + self.rng.gen::<f64>()))
                 })
             }
         };
@@ -926,13 +926,18 @@ impl<'a> Generator<'a> {
                 Some("email") => {
                     // "@example.com" is 12 characters; size the local part
                     // so the whole address fits the length rules.
-                    let (lo, hi) = self.len_range(f);
-                    let n = if lo >= hi {
-                        lo
+                    let n = if f.min_length.is_some() || f.max_length.is_some() {
+                        let (lo, hi) = self.len_range(f);
+                        let n = if lo >= hi {
+                            lo
+                        } else {
+                            self.rng.gen_range(lo..=hi)
+                        };
+                        n.saturating_sub(12).max(1)
                     } else {
-                        self.rng.gen_range(lo..=hi)
+                        self.rng.gen_range(3..10)
                     };
-                    let local = self.lower(n.saturating_sub(12).max(1));
+                    let local = self.lower(n);
                     let tld = ["com", "org", "net"][self.rng.gen_range(0..3)];
                     Some(format!("{local}@example.{tld}"))
                 }
@@ -954,7 +959,7 @@ impl<'a> Generator<'a> {
         // and one built from the regex; the oracle keeps whichever fits.
         if let Some(pat) = &f.pattern {
             if semantic.is_none() || attempt % 2 == 1 {
-                return self.from_pattern(pat, path, f.min_length.unwrap_or(0));
+                return self.gen_from_pattern(pat, path, f.min_length.unwrap_or(0));
             }
         }
         if let Some(s) = semantic {
@@ -988,7 +993,7 @@ impl<'a> Generator<'a> {
         (lo, hi)
     }
 
-    fn from_pattern(
+    fn gen_from_pattern(
         &mut self,
         pat: &str,
         path: &str,
@@ -1326,10 +1331,11 @@ fn ensure_path<'f>(
                 cur.push(template.take().expect("used once"));
                 cur.len() - 1
             }
-            None => return Err(SynthError::new(
-                rule,
-                Some(path),
-                format!(
+            None => {
+                return Err(SynthError::new(
+                    rule,
+                    Some(path),
+                    format!(
                     "the {rule} rule on '{path}' points at a field the ontology does not declare{}",
                     if compliance_mode {
                         " while compliance_mode rejects undeclared fields"
@@ -1337,7 +1343,8 @@ fn ensure_path<'f>(
                         ""
                     }
                 ),
-            )),
+                ))
+            }
         };
         let f = &mut cur[idx];
         f.required = true;
@@ -1369,6 +1376,12 @@ fn find_def<'f>(fields: &'f [FieldDefinition], path: &str) -> Option<&'f FieldDe
         }
         cur = f.properties.as_deref()?;
     }
+}
+
+/// Two decimal places; callers step at least 1 past a bound, so rounding
+/// never brings a value back inside it.
+fn round2(x: f64) -> f64 {
+    (x * 100.0).round() / 100.0
 }
 
 fn max_opt(a: Option<f64>, b: Option<f64>) -> Option<f64> {
