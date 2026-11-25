@@ -1572,6 +1572,25 @@ async fn build_report(
             &relevant,
             base.is_none(),
         );
+        let severity = if relevant.iter().any(|c| c.severity == "breaking") {
+            "breaking"
+        } else if relevant.is_empty() {
+            "none"
+        } else {
+            "safe"
+        };
+        let reaching: Vec<Value> = relevant
+            .iter()
+            .map(|change| {
+                json!({
+                    "field": change.field,
+                    "kind": change.kind,
+                    "severity": change.severity,
+                    "detail": change.detail,
+                    "explanation": change.sentence(),
+                })
+            })
+            .collect();
         affected.push(json!({
             "key": row.external_key,
             "kind": row.kind,
@@ -1580,6 +1599,8 @@ async fn build_report(
             "hops": row.depth,
             "path": row.name_path,
             "explanation": explanation,
+            "severity": severity,
+            "changes": reaching,
         }));
     }
     affected.sort_by(|a, b| {
@@ -2230,6 +2251,76 @@ pub async fn import_lineage_handler(
     })))
 }
 
+type AssetRow = (String, String, String, Option<String>, Option<Uuid>);
+type EdgeRow = (String, String, String, Option<String>);
+
+/// Shared by the flat lineage listing and the graph view: every asset and
+/// edge for an org, capped the same way (500 assets, 1000 edges) so a graph
+/// never renders more than the dashboard can usefully lay out.
+async fn fetch_org_lineage(
+    pool: &PgPool,
+    org_id: Uuid,
+) -> AppResult<(Vec<AssetRow>, Vec<EdgeRow>, i64, i64)> {
+    let assets: Vec<AssetRow> = sqlx::query_as(
+        "SELECT kind, external_key, name, owner, contract_id FROM lineage_assets \
+         WHERE org_id = $1 ORDER BY kind, name LIMIT 500",
+    )
+    .bind(org_id)
+    .fetch_all(pool)
+    .await?;
+    let edges: Vec<EdgeRow> = sqlx::query_as(
+        "SELECT src.external_key, dst.external_key, e.edge_kind, e.field_name \
+         FROM lineage_edges e \
+         JOIN lineage_assets src ON src.id = e.from_asset_id \
+         JOIN lineage_assets dst ON dst.id = e.to_asset_id \
+         WHERE e.org_id = $1 \
+         ORDER BY src.external_key, dst.external_key LIMIT 1000",
+    )
+    .bind(org_id)
+    .fetch_all(pool)
+    .await?;
+    let asset_count: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM lineage_assets WHERE org_id = $1")
+            .bind(org_id)
+            .fetch_one(pool)
+            .await?;
+    let edge_count: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM lineage_edges WHERE org_id = $1")
+            .bind(org_id)
+            .fetch_one(pool)
+            .await?;
+    Ok((assets, edges, asset_count, edge_count))
+}
+
+fn assets_json(assets: &[AssetRow]) -> Vec<Value> {
+    assets
+        .iter()
+        .map(|(kind, key, name, owner, contract_id)| {
+            json!({
+                "kind": kind,
+                "key": key,
+                "name": name,
+                "owner": owner,
+                "contract_id": contract_id,
+            })
+        })
+        .collect()
+}
+
+fn edges_json(edges: &[EdgeRow]) -> Vec<Value> {
+    edges
+        .iter()
+        .map(|(from, to, kind, field)| {
+            json!({
+                "from": from,
+                "to": to,
+                "edge": kind,
+                "field": field,
+            })
+        })
+        .collect()
+}
+
 pub async fn list_lineage_handler(
     State(state): State<std::sync::Arc<AppState>>,
     crate::OrgId(org_id): crate::OrgId,
@@ -2240,52 +2331,42 @@ pub async fn list_lineage_handler(
     if !schema_ready(&state.db).await? {
         return Err(missing_schema());
     }
-    type AssetRow = (String, String, String, Option<String>, Option<Uuid>);
-    let assets: Vec<AssetRow> = sqlx::query_as(
-        "SELECT kind, external_key, name, owner, contract_id FROM lineage_assets \
-         WHERE org_id = $1 ORDER BY kind, name LIMIT 500",
-    )
-    .bind(org_id)
-    .fetch_all(&state.db)
-    .await?;
-    type EdgeRow = (String, String, String, Option<String>);
-    let edges: Vec<EdgeRow> = sqlx::query_as(
-        "SELECT src.external_key, dst.external_key, e.edge_kind, e.field_name \
-         FROM lineage_edges e \
-         JOIN lineage_assets src ON src.id = e.from_asset_id \
-         JOIN lineage_assets dst ON dst.id = e.to_asset_id \
-         WHERE e.org_id = $1 \
-         ORDER BY src.external_key, dst.external_key LIMIT 1000",
-    )
-    .bind(org_id)
-    .fetch_all(&state.db)
-    .await?;
-    let asset_count: i64 =
-        sqlx::query_scalar("SELECT COUNT(*) FROM lineage_assets WHERE org_id = $1")
-            .bind(org_id)
-            .fetch_one(&state.db)
-            .await?;
-    let edge_count: i64 =
-        sqlx::query_scalar("SELECT COUNT(*) FROM lineage_edges WHERE org_id = $1")
-            .bind(org_id)
-            .fetch_one(&state.db)
-            .await?;
+    let (assets, edges, asset_count, edge_count) = fetch_org_lineage(&state.db, org_id).await?;
     Ok(Json(json!({
         "asset_count": asset_count,
         "edge_count": edge_count,
-        "assets": assets.into_iter().map(|(kind, key, name, owner, contract_id)| json!({
-            "kind": kind,
-            "key": key,
-            "name": name,
-            "owner": owner,
-            "contract_id": contract_id,
-        })).collect::<Vec<_>>(),
-        "edges": edges.into_iter().map(|(from, to, kind, field)| json!({
-            "from": from,
-            "to": to,
-            "edge": kind,
-            "field": field,
-        })).collect::<Vec<_>>(),
+        "assets": assets_json(&assets),
+        "edges": edges_json(&edges),
+    })))
+}
+
+/// The org's lineage graph, shaped for a node-and-edge renderer, with the
+/// contract's own asset keys called out so the dashboard can focus on them.
+/// Gated and scoped exactly like `impact_get_handler`: the caller's plan is
+/// checked, the data is the contract's owning org's.
+pub async fn lineage_graph_handler(
+    State(state): State<std::sync::Arc<AppState>>,
+    crate::OrgId(org_id): crate::OrgId,
+    headers: HeaderMap,
+    Path(contract_id): Path<Uuid>,
+) -> AppResult<Json<Value>> {
+    let (gate, owner) = read_gate(&state, org_id, &headers, contract_id).await?;
+    let _plan = ensure_entitled(&state.db, state.self_hosted, gate).await?;
+    if !schema_ready(&state.db).await? {
+        return Err(missing_schema());
+    }
+    let (assets, edges, asset_count, edge_count) = fetch_org_lineage(&state.db, owner).await?;
+    let focus_keys: Vec<&str> = assets
+        .iter()
+        .filter(|(_, _, _, _, asset_contract_id)| *asset_contract_id == Some(contract_id))
+        .map(|(_, key, _, _, _)| key.as_str())
+        .collect();
+    Ok(Json(json!({
+        "asset_count": asset_count,
+        "edge_count": edge_count,
+        "focus_keys": focus_keys,
+        "assets": assets_json(&assets),
+        "edges": edges_json(&edges),
     })))
 }
 
@@ -2340,6 +2421,24 @@ pub fn merge_openapi(paths: &mut serde_json::Map<String, Value>) {
     let missing = json!({
         "description": "Migration 054_lineage_impact.sql is not applied yet. The gateway still serves every other route."
     });
+    let change_schema = json!({"type": "object", "properties": {
+        "field": {"type": "string"},
+        "kind": {"type": "string"},
+        "severity": {"type": "string"},
+        "detail": {"type": "string"},
+        "explanation": {"type": "string"}
+    }});
+    let affected_schema = json!({"type": "object", "properties": {
+        "key": {"type": "string"},
+        "kind": {"type": "string"},
+        "name": {"type": "string"},
+        "owner": {"type": ["string", "null"]},
+        "hops": {"type": "integer"},
+        "path": {"type": "array", "items": {"type": "string"}},
+        "explanation": {"type": "string"},
+        "severity": {"type": "string", "enum": ["breaking", "safe", "none"], "description": "breaking if any field change reaching this asset is breaking, else safe, else none for the unscoped first-version case"},
+        "changes": {"type": "array", "items": change_schema.clone(), "description": "The field changes that reach this asset, narrowed by field-scoped edges on its path"}
+    }});
     paths.insert("/lineage".into(), json!({
         "get": {
             "operationId": "list_lineage",
@@ -2402,22 +2501,8 @@ pub fn merge_openapi(paths: &mut serde_json::Map<String, Value>) {
                     "affected_count": {"type": "integer"},
                     "base_version": {"type": ["string", "null"]},
                     "trigger": {"type": "string"},
-                    "changes": {"type": "array", "items": {"type": "object", "properties": {
-                        "field": {"type": "string"},
-                        "kind": {"type": "string"},
-                        "severity": {"type": "string"},
-                        "detail": {"type": "string"},
-                        "explanation": {"type": "string"}
-                    }}},
-                    "affected": {"type": "array", "items": {"type": "object", "properties": {
-                        "key": {"type": "string"},
-                        "kind": {"type": "string"},
-                        "name": {"type": "string"},
-                        "owner": {"type": ["string", "null"]},
-                        "hops": {"type": "integer"},
-                        "path": {"type": "array", "items": {"type": "string"}},
-                        "explanation": {"type": "string"}
-                    }}}
+                    "changes": {"type": "array", "items": change_schema.clone()},
+                    "affected": {"type": "array", "items": affected_schema.clone()}
                 }}}}},
                 "401": {"description": "Missing or invalid credentials"},
                 "402": denied.clone(),
@@ -2443,8 +2528,32 @@ pub fn merge_openapi(paths: &mut serde_json::Map<String, Value>) {
                     "safe_count": {"type": "integer"}
                 }}}}},
                 "401": {"description": "Missing or invalid credentials"},
-                "402": denied,
+                "402": denied.clone(),
                 "404": {"description": "Contract or version not found"},
+                "503": missing.clone()
+            },
+            "security": auth.clone()
+        }
+    }));
+    paths.insert("/contracts/{id}/lineage/graph".into(), json!({
+        "get": {
+            "operationId": "get_contract_lineage_graph",
+            "summary": "Org lineage graph, with this contract's assets called out",
+            "description": "Same assets and edges as GET /lineage (capped at 500 assets, 1000 edges), plus focus_keys naming which asset keys belong to this contract so the dashboard can highlight or scope to them. Combine with GET .../impact's affected[].severity and affected[].changes to color nodes for a selected version.",
+            "parameters": [
+                {"name": "id", "in": "path", "required": true, "schema": {"type": "string", "format": "uuid"}}
+            ],
+            "responses": {
+                "200": {"description": "Graph for rendering", "content": {"application/json": {"schema": {"type": "object", "properties": {
+                    "asset_count": {"type": "integer"},
+                    "edge_count": {"type": "integer"},
+                    "focus_keys": {"type": "array", "items": {"type": "string"}},
+                    "assets": {"type": "array", "items": {"type": "object"}},
+                    "edges": {"type": "array", "items": {"type": "object"}}
+                }}}}},
+                "401": {"description": "Missing or invalid credentials"},
+                "402": denied,
+                "404": {"description": "Contract not found"},
                 "503": missing
             },
             "security": auth
@@ -3256,6 +3365,24 @@ edges:
         let explanation = revenue["explanation"].as_str().unwrap();
         assert!(explanation.contains("Breaking"));
         assert!(explanation.contains("Revenue"));
+        assert_eq!(revenue["severity"], "breaking");
+        let revenue_changes = revenue["changes"].as_array().unwrap();
+        assert!(!revenue_changes.is_empty());
+        assert!(revenue_changes.iter().any(|c| c["severity"] == "breaking"));
+
+        // The graph endpoint reuses this org's assets and edges, with the
+        // contract's own asset keys called out as the focus set.
+        let (graph_assets, graph_edges, graph_asset_count, graph_edge_count) =
+            fetch_org_lineage(&pool, org).await.unwrap();
+        assert_eq!(graph_asset_count, graph_assets.len() as i64);
+        assert_eq!(graph_edge_count, graph_edges.len() as i64);
+        let focus_keys: Vec<&str> = graph_assets
+            .iter()
+            .filter(|(_, _, _, _, asset_contract_id)| *asset_contract_id == Some(contract_id))
+            .map(|(_, key, _, _, _)| key.as_str())
+            .collect();
+        assert!(focus_keys.contains(&format!("contract:{contract_id}").as_str()));
+        assert!(!focus_keys.contains(&"model:stg"));
 
         let free = Uuid::new_v4();
         sqlx::query("INSERT INTO orgs (id, name, slug, plan) VALUES ($1, 'free', $2, 'free')")
