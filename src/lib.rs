@@ -14,6 +14,7 @@ pub mod batch_rules;
 pub mod cli;
 pub mod contract;
 pub mod dbt_export;
+pub mod dbt_yaml;
 pub mod demo_seed;
 pub mod drop_mode;
 pub mod error;

@@ -1,14 +1,14 @@
 //! `contractgate` CLI binary.
 //!
-//! Subcommands: push, pull, validate, scaffold, enforce, infer, test, synth.
+//! Subcommands: push, pull, validate, scaffold, enforce, infer, test, synth, review, export, import, check-table.
 //! Auth via CONTRACTGATE_API_KEY env var or --api-key flag.
 //! Config via .contractgate.yml (walk-up from cwd, stop at git root).
 
 use clap::{Parser, Subcommand};
 use contractgate::cli::{
     commands::{
-        check_table, deploy, enforce, export, infer, pull, push, review, scaffold, synth, test,
-        validate,
+        check_table, deploy, enforce, export, import, infer, pull, push, review, scaffold, synth,
+        test, validate,
     },
     config::CliConfig,
 };
@@ -118,8 +118,10 @@ enum Cmd {
     ///   cg review data.csv
     ///   cg review data.csv --out ./review-out --name orders
     Review(review::ReviewArgs),
-    /// Export a contract to another format. (RFC-119)
+    /// Export a contract to another format. (RFC-119, RFC-120)
     Export(export::ExportArgs),
+    /// Import a contract from another format. (RFC-120)
+    Import(import::ImportArgs),
     /// Run a contract's rules as SQL against a warehouse table and report
     /// violations with plain-English reasons. (RFC-119)
     ///
@@ -180,6 +182,10 @@ fn main() {
         }),
         Cmd::Export(args) => match &args.command {
             export::ExportCmd::DbtTests(a) => export::run(a),
+            export::ExportCmd::Dbt(a) => export::run_dbt(a),
+        },
+        Cmd::Import(args) => match &args.command {
+            import::ImportCmd::Dbt(a) => import::run_dbt(a),
         },
         Cmd::CheckTable(args) => check_table::run(args),
 
