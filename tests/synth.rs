@@ -787,3 +787,42 @@ fn free_form_strings_follow_field_names_when_rules_allow() {
     let inv = synth::generate(&c, &opts(60, SynthMode::Invalid, 7)).unwrap();
     assert!(inv.skipped_rules.is_empty(), "{:?}", inv.skipped_rules);
 }
+
+#[test]
+fn v11_skips_only_the_impossible_rules_for_any_seed() {
+    let c = synth::compile_yaml(V11).unwrap();
+    for seed in 0..40u64 {
+        let out = synth::generate(&c, &opts(300, SynthMode::Invalid, seed)).unwrap();
+        let mut got: Vec<String> = out
+            .skipped_rules
+            .iter()
+            .map(|s| format!("{}:{}", s.field, s.rule))
+            .collect();
+        got.sort();
+        assert_eq!(got, ["max_guests:min", "seen_at:format"], "seed {seed}");
+    }
+}
+
+#[test]
+fn rich_skips_only_the_impossible_rules_for_any_seed() {
+    let c = synth::compile_yaml(RICH).unwrap();
+    for seed in 0..20u64 {
+        let out = synth::generate(&c, &opts(300, SynthMode::Invalid, seed)).unwrap();
+        let mut got: Vec<String> = out
+            .skipped_rules
+            .iter()
+            .map(|s| format!("{}:{}", s.field, s.rule))
+            .collect();
+        got.sort();
+        assert_eq!(
+            got,
+            [
+                "customer_email:completeness",
+                "customer_email:required",
+                "quantity:max",
+                "quantity:required"
+            ],
+            "seed {seed}"
+        );
+    }
+}
