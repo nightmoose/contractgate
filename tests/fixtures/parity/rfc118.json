@@ -1,0 +1,1084 @@
+{
+  "cases": [
+    {
+      "event": {
+        "created_at": "2026-01-01T10:00:00Z",
+        "end_date": "2026-01-03",
+        "guest_email": "a@x.io",
+        "host_email": "b@x.io",
+        "lines": [
+          {
+            "code": "L-001",
+            "kind": "room",
+            "qty": 2
+          },
+          {
+            "code": "L-002",
+            "fee_reason": "late",
+            "kind": "fee",
+            "qty": 5
+          }
+        ],
+        "max_guests": 2,
+        "max_line_qty": 5,
+        "min_guests": 1,
+        "start_date": "2026-01-01",
+        "status": "booked",
+        "tags": [
+          "ab",
+          "cd"
+        ],
+        "updated_at": "2026-01-01T12:00:00+01:00"
+      },
+      "expected": [],
+      "name": "all rules hold"
+    },
+    {
+      "event": {
+        "created_at": "2026-01-01T10:00:00Z",
+        "end_date": "2025-12-31",
+        "guest_email": "a@x.io",
+        "host_email": "b@x.io",
+        "lines": [
+          {
+            "code": "L-001",
+            "kind": "room",
+            "qty": 2
+          },
+          {
+            "code": "L-002",
+            "fee_reason": "late",
+            "kind": "fee",
+            "qty": 5
+          }
+        ],
+        "max_guests": 2,
+        "max_line_qty": 5,
+        "min_guests": 1,
+        "start_date": "2026-01-01",
+        "status": "booked",
+        "tags": [
+          "ab",
+          "cd"
+        ],
+        "updated_at": "2026-01-01T12:00:00+01:00"
+      },
+      "expected": [
+        [
+          "end_date",
+          "cross_field_violation",
+          "Cross-field rule 'end_date >= start_date' failed: \"2025-12-31\" vs \"2026-01-01\""
+        ]
+      ],
+      "name": "end before start"
+    },
+    {
+      "event": {
+        "created_at": "2026-01-01T10:00:00Z",
+        "end_date": "2026-01-03",
+        "guest_email": "a@x.io",
+        "host_email": "b@x.io",
+        "lines": [
+          {
+            "code": "L-001",
+            "kind": "room",
+            "qty": 2
+          },
+          {
+            "code": "L-002",
+            "fee_reason": "late",
+            "kind": "fee",
+            "qty": 5
+          }
+        ],
+        "max_guests": 2,
+        "max_line_qty": 5,
+        "min_guests": 1,
+        "start_date": "2026-01-01",
+        "status": "booked",
+        "tags": [
+          "ab",
+          "cd"
+        ],
+        "updated_at": "2026-01-01T11:00:00+01:00"
+      },
+      "expected": [
+        [
+          "updated_at",
+          "cross_field_violation",
+          "Cross-field rule 'updated_at > created_at' failed: \"2026-01-01T11:00:00+01:00\" vs \"2026-01-01T10:00:00Z\""
+        ]
+      ],
+      "name": "same instant different offsets is not greater"
+    },
+    {
+      "event": {
+        "created_at": "2026-01-01T10:00:00Z",
+        "end_date": "2026-01-03",
+        "guest_email": "a@x.io",
+        "host_email": "b@x.io",
+        "lines": [
+          {
+            "code": "L-001",
+            "kind": "room",
+            "qty": 2
+          },
+          {
+            "code": "L-002",
+            "fee_reason": "late",
+            "kind": "fee",
+            "qty": 5
+          }
+        ],
+        "max_guests": 2,
+        "max_line_qty": 5,
+        "min_guests": 1,
+        "start_date": "2026-01-01",
+        "status": "booked",
+        "tags": [
+          "ab",
+          "cd"
+        ],
+        "updated_at": "2026-01-01T09:30:00-01:00"
+      },
+      "expected": [],
+      "name": "later instant across offsets"
+    },
+    {
+      "event": {
+        "created_at": "2026-01-01T10:00:00Z",
+        "end_date": "2026-01-03",
+        "guest_email": "a@x.io",
+        "host_email": "b@x.io",
+        "lines": [
+          {
+            "code": "L-001",
+            "kind": "room",
+            "qty": 2
+          },
+          {
+            "code": "L-002",
+            "fee_reason": "late",
+            "kind": "fee",
+            "qty": 5
+          }
+        ],
+        "max_guests": 0,
+        "max_line_qty": 5,
+        "min_guests": 1,
+        "start_date": "2026-01-01",
+        "status": "booked",
+        "tags": [
+          "ab",
+          "cd"
+        ],
+        "updated_at": "2026-01-01T12:00:00+01:00"
+      },
+      "expected": [
+        [
+          "max_guests",
+          "cross_field_violation",
+          "Cross-field rule 'max_guests >= min_guests' failed: 0 vs 1"
+        ]
+      ],
+      "name": "max below min"
+    },
+    {
+      "event": {
+        "created_at": "2026-01-01T10:00:00Z",
+        "end_date": "2026-01-03",
+        "guest_email": "a@x.io",
+        "host_email": "a@x.io",
+        "lines": [
+          {
+            "code": "L-001",
+            "kind": "room",
+            "qty": 2
+          },
+          {
+            "code": "L-002",
+            "fee_reason": "late",
+            "kind": "fee",
+            "qty": 5
+          }
+        ],
+        "max_guests": 2,
+        "max_line_qty": 5,
+        "min_guests": 1,
+        "start_date": "2026-01-01",
+        "status": "booked",
+        "tags": [
+          "ab",
+          "cd"
+        ],
+        "updated_at": "2026-01-01T12:00:00+01:00"
+      },
+      "expected": [
+        [
+          "host_email",
+          "cross_field_violation",
+          "Cross-field rule 'host_email != guest_email' failed: \"a@x.io\" vs \"a@x.io\""
+        ]
+      ],
+      "name": "emails equal"
+    },
+    {
+      "event": {
+        "created_at": "2026-01-01T10:00:00Z",
+        "end_date": "2026-01-03",
+        "guest_email": "a@x.io",
+        "host_email": "b@x.io",
+        "lines": [
+          {
+            "code": "L-001",
+            "kind": "room",
+            "qty": 2
+          },
+          {
+            "code": "L-002",
+            "fee_reason": "late",
+            "kind": "fee",
+            "qty": 5
+          }
+        ],
+        "max_guests": 2,
+        "max_line_qty": 5,
+        "min_guests": 1,
+        "start_date": "2026-01-01",
+        "status": "refunded",
+        "tags": [
+          "ab",
+          "cd"
+        ],
+        "updated_at": "2026-01-01T12:00:00+01:00"
+      },
+      "expected": [
+        [
+          "refund_reason",
+          "cross_field_violation",
+          "Cross-field rule 'refund_reason required if status == \"refunded\"' failed: 'refund_reason' is missing"
+        ]
+      ],
+      "name": "refunded without reason"
+    },
+    {
+      "event": {
+        "created_at": "2026-01-01T10:00:00Z",
+        "end_date": "2026-01-03",
+        "guest_email": "a@x.io",
+        "host_email": "b@x.io",
+        "lines": [
+          {
+            "code": "L-001",
+            "kind": "room",
+            "qty": 2
+          },
+          {
+            "code": "L-002",
+            "fee_reason": "late",
+            "kind": "fee",
+            "qty": 5
+          }
+        ],
+        "max_guests": 2,
+        "max_line_qty": 5,
+        "min_guests": 1,
+        "refund_reason": null,
+        "start_date": "2026-01-01",
+        "status": "refunded",
+        "tags": [
+          "ab",
+          "cd"
+        ],
+        "updated_at": "2026-01-01T12:00:00+01:00"
+      },
+      "expected": [
+        [
+          "refund_reason",
+          "type_mismatch",
+          "Field 'refund_reason' expected type String, got null"
+        ],
+        [
+          "refund_reason",
+          "cross_field_violation",
+          "Cross-field rule 'refund_reason required if status == \"refunded\"' failed: 'refund_reason' is missing"
+        ]
+      ],
+      "name": "refunded with null reason"
+    },
+    {
+      "event": {
+        "created_at": "2026-01-01T10:00:00Z",
+        "end_date": "2026-01-03",
+        "guest_email": "a@x.io",
+        "host_email": "b@x.io",
+        "lines": [
+          {
+            "code": "L-001",
+            "kind": "room",
+            "qty": 2
+          },
+          {
+            "code": "L-002",
+            "fee_reason": "late",
+            "kind": "fee",
+            "qty": 5
+          }
+        ],
+        "max_guests": 2,
+        "max_line_qty": 5,
+        "min_guests": 1,
+        "refund_reason": "dup",
+        "start_date": "2026-01-01",
+        "status": "refunded",
+        "tags": [
+          "ab",
+          "cd"
+        ],
+        "updated_at": "2026-01-01T12:00:00+01:00"
+      },
+      "expected": [],
+      "name": "refunded with reason"
+    },
+    {
+      "event": {
+        "created_at": "2026-01-01T10:00:00Z",
+        "end_date": "2026-01-03",
+        "guest_email": "a@x.io",
+        "host_email": "b@x.io",
+        "lines": [
+          {
+            "code": "L-001",
+            "kind": "room",
+            "qty": 2
+          },
+          {
+            "code": "L-002",
+            "fee_reason": "late",
+            "kind": "fee",
+            "qty": 5
+          }
+        ],
+        "max_guests": 2,
+        "max_line_qty": 5,
+        "min_guests": 1,
+        "status": "booked",
+        "tags": [
+          "ab",
+          "cd"
+        ],
+        "updated_at": "2026-01-01T12:00:00+01:00"
+      },
+      "expected": [
+        [
+          "start_date",
+          "missing_required_field",
+          "Required field 'start_date' is missing"
+        ]
+      ],
+      "name": "comparison skipped when one side absent"
+    },
+    {
+      "event": {
+        "created_at": "2026-01-01T10:00:00Z",
+        "end_date": 5,
+        "guest_email": "a@x.io",
+        "host_email": "b@x.io",
+        "lines": [
+          {
+            "code": "L-001",
+            "kind": "room",
+            "qty": 2
+          },
+          {
+            "code": "L-002",
+            "fee_reason": "late",
+            "kind": "fee",
+            "qty": 5
+          }
+        ],
+        "max_guests": 2,
+        "max_line_qty": 5,
+        "min_guests": 1,
+        "start_date": "2026-01-01",
+        "status": "booked",
+        "tags": [
+          "ab",
+          "cd"
+        ],
+        "updated_at": "2026-01-01T12:00:00+01:00"
+      },
+      "expected": [
+        [
+          "end_date",
+          "type_mismatch",
+          "Field 'end_date' expected type Date, got integer"
+        ]
+      ],
+      "name": "ordering passes on mismatched types"
+    },
+    {
+      "event": {
+        "created_at": "2026-01-01T10:00:00Z",
+        "end_date": "2026-01-03",
+        "guest_email": "a@x.io",
+        "host_email": 7,
+        "lines": [
+          {
+            "code": "L-001",
+            "kind": "room",
+            "qty": 2
+          },
+          {
+            "code": "L-002",
+            "fee_reason": "late",
+            "kind": "fee",
+            "qty": 5
+          }
+        ],
+        "max_guests": 2,
+        "max_line_qty": 5,
+        "min_guests": 1,
+        "start_date": "2026-01-01",
+        "status": "booked",
+        "tags": [
+          "ab",
+          "cd"
+        ],
+        "updated_at": "2026-01-01T12:00:00+01:00"
+      },
+      "expected": [
+        [
+          "host_email",
+          "type_mismatch",
+          "Field 'host_email' expected type String, got integer"
+        ]
+      ],
+      "name": "ne on mixed types uses json equality"
+    },
+    {
+      "event": {
+        "created_at": "2026-01-01T10:00:00Z",
+        "end_date": "2026-01-03",
+        "guest_email": "a@x.io",
+        "host_email": "b@x.io",
+        "lines": [
+          {
+            "code": "L-001",
+            "kind": "room",
+            "qty": 9
+          }
+        ],
+        "max_guests": 2,
+        "max_line_qty": 5,
+        "min_guests": 1,
+        "start_date": "2026-01-01",
+        "status": "booked",
+        "tags": [
+          "ab",
+          "cd"
+        ],
+        "updated_at": "2026-01-01T12:00:00+01:00"
+      },
+      "expected": [
+        [
+          "lines[0].qty",
+          "cross_field_violation",
+          "Cross-field rule 'lines[].qty <= max_line_qty' failed: 9 vs 5"
+        ]
+      ],
+      "name": "item qty above header"
+    },
+    {
+      "event": {
+        "created_at": "2026-01-01T10:00:00Z",
+        "end_date": "2026-01-03",
+        "guest_email": "a@x.io",
+        "host_email": "b@x.io",
+        "lines": [
+          {
+            "code": "L-001",
+            "kind": "room",
+            "qty": 1
+          },
+          {
+            "code": "L-002",
+            "kind": "room",
+            "qty": 6
+          }
+        ],
+        "max_guests": 2,
+        "max_line_qty": 5,
+        "min_guests": 1,
+        "start_date": "2026-01-01",
+        "status": "booked",
+        "tags": [
+          "ab",
+          "cd"
+        ],
+        "updated_at": "2026-01-01T12:00:00+01:00"
+      },
+      "expected": [
+        [
+          "lines[1].qty",
+          "cross_field_violation",
+          "Cross-field rule 'lines[].qty <= max_line_qty' failed: 6 vs 5"
+        ]
+      ],
+      "name": "second item breaks"
+    },
+    {
+      "event": {
+        "created_at": "2026-01-01T10:00:00Z",
+        "end_date": "2026-01-03",
+        "guest_email": "a@x.io",
+        "host_email": "b@x.io",
+        "lines": [
+          {
+            "code": "L-001",
+            "kind": "fee",
+            "qty": 1
+          }
+        ],
+        "max_guests": 2,
+        "max_line_qty": 5,
+        "min_guests": 1,
+        "start_date": "2026-01-01",
+        "status": "booked",
+        "tags": [
+          "ab",
+          "cd"
+        ],
+        "updated_at": "2026-01-01T12:00:00+01:00"
+      },
+      "expected": [
+        [
+          "lines[0].fee_reason",
+          "cross_field_violation",
+          "Cross-field rule 'lines[].fee_reason required if lines[].kind == \"fee\"' failed: 'lines[0].fee_reason' is missing"
+        ]
+      ],
+      "name": "fee item without reason"
+    },
+    {
+      "event": {
+        "created_at": "2026-01-01T10:00:00Z",
+        "end_date": "2026-01-03",
+        "guest_email": "a@x.io",
+        "host_email": "b@x.io",
+        "lines": [
+          {
+            "code": "X-1",
+            "kind": "room",
+            "qty": 1
+          }
+        ],
+        "max_guests": 2,
+        "max_line_qty": 5,
+        "min_guests": 1,
+        "start_date": "2026-01-01",
+        "status": "booked",
+        "tags": [
+          "ab",
+          "cd"
+        ],
+        "updated_at": "2026-01-01T12:00:00+01:00"
+      },
+      "expected": [
+        [
+          "lines[0].code",
+          "pattern_mismatch",
+          "Field 'lines[0].code' value \"X-1\" does not match required pattern"
+        ]
+      ],
+      "name": "item pattern mismatch"
+    },
+    {
+      "event": {
+        "created_at": "2026-01-01T10:00:00Z",
+        "end_date": "2026-01-03",
+        "guest_email": "a@x.io",
+        "host_email": "b@x.io",
+        "lines": [
+          {
+            "code": "L-001",
+            "kind": "room",
+            "qty": 2
+          },
+          {
+            "code": "L-002",
+            "fee_reason": "late",
+            "kind": "fee",
+            "qty": 5
+          }
+        ],
+        "max_guests": 2,
+        "max_line_qty": 5,
+        "min_guests": 1,
+        "start_date": "2026-01-01",
+        "status": "booked",
+        "tags": [
+          "ok",
+          "NO"
+        ],
+        "updated_at": "2026-01-01T12:00:00+01:00"
+      },
+      "expected": [
+        [
+          "tags[1]",
+          "pattern_mismatch",
+          "Field 'tags[1]' value \"NO\" does not match required pattern"
+        ]
+      ],
+      "name": "scalar item pattern mismatch"
+    },
+    {
+      "event": {
+        "created_at": "2026-01-01T10:00:00Z",
+        "end_date": "2026-01-03",
+        "guest_email": "a@x.io",
+        "host_email": "b@x.io",
+        "lines": [],
+        "max_guests": 2,
+        "max_line_qty": 5,
+        "min_guests": 1,
+        "start_date": "2026-01-01",
+        "status": "booked",
+        "tags": [
+          "ab",
+          "cd"
+        ],
+        "updated_at": "2026-01-01T12:00:00+01:00"
+      },
+      "expected": [],
+      "name": "empty array has no per-item checks"
+    },
+    {
+      "event": {
+        "created_at": "2026-01-01T10:00:00Z",
+        "end_date": "2026-01-03",
+        "guest_email": "",
+        "host_email": "b@x.io",
+        "lines": [
+          {
+            "code": "L-001",
+            "kind": "room",
+            "qty": 2
+          },
+          {
+            "code": "L-002",
+            "fee_reason": "late",
+            "kind": "fee",
+            "qty": 5
+          }
+        ],
+        "max_guests": 2,
+        "max_line_qty": 5,
+        "min_guests": 1,
+        "start_date": "2026-01-01",
+        "status": "booked",
+        "tags": [
+          "ab",
+          "cd"
+        ],
+        "updated_at": "2026-01-01T12:00:00+01:00"
+      },
+      "expected": [
+        [
+          "guest_email",
+          "completeness_violation",
+          "Quality completeness: field 'guest_email' is an empty string"
+        ]
+      ],
+      "name": "completeness empty string"
+    },
+    {
+      "event": {
+        "created_at": "2026-01-01T10:00:00Z",
+        "end_date": "2026-01-03",
+        "guest_email": null,
+        "host_email": "b@x.io",
+        "lines": [
+          {
+            "code": "L-001",
+            "kind": "room",
+            "qty": 2
+          },
+          {
+            "code": "L-002",
+            "fee_reason": "late",
+            "kind": "fee",
+            "qty": 5
+          }
+        ],
+        "max_guests": 2,
+        "max_line_qty": 5,
+        "min_guests": 1,
+        "start_date": "2026-01-01",
+        "status": "booked",
+        "tags": [
+          "ab",
+          "cd"
+        ],
+        "updated_at": "2026-01-01T12:00:00+01:00"
+      },
+      "expected": [
+        [
+          "guest_email",
+          "type_mismatch",
+          "Field 'guest_email' expected type String, got null"
+        ],
+        [
+          "guest_email",
+          "completeness_violation",
+          "Quality completeness: field 'guest_email' is absent or null"
+        ]
+      ],
+      "name": "completeness null"
+    },
+    {
+      "event": {
+        "created_at": "2026-01-01T10:00:00Z",
+        "end_date": "2026-01-03",
+        "guest_email": "a@x.io",
+        "host_email": "b@x.io",
+        "lines": [
+          {
+            "code": "L-001",
+            "kind": "room",
+            "qty": 2
+          },
+          {
+            "code": "L-002",
+            "fee_reason": "late",
+            "kind": "fee",
+            "qty": 5
+          }
+        ],
+        "max_guests": 2,
+        "max_line_qty": 5,
+        "min_guests": 1,
+        "seen_unix": 1767225500,
+        "start_date": "2026-01-01",
+        "status": "booked",
+        "tags": [
+          "ab",
+          "cd"
+        ],
+        "updated_at": "2026-01-01T12:00:00+01:00"
+      },
+      "expected": [],
+      "name": "freshness integer in window"
+    },
+    {
+      "event": {
+        "created_at": "2026-01-01T10:00:00Z",
+        "end_date": "2026-01-03",
+        "guest_email": "a@x.io",
+        "host_email": "b@x.io",
+        "lines": [
+          {
+            "code": "L-001",
+            "kind": "room",
+            "qty": 2
+          },
+          {
+            "code": "L-002",
+            "fee_reason": "late",
+            "kind": "fee",
+            "qty": 5
+          }
+        ],
+        "max_guests": 2,
+        "max_line_qty": 5,
+        "min_guests": 1,
+        "seen_unix": 1767225500.75,
+        "start_date": "2026-01-01",
+        "status": "booked",
+        "tags": [
+          "ab",
+          "cd"
+        ],
+        "updated_at": "2026-01-01T12:00:00+01:00"
+      },
+      "expected": [],
+      "name": "freshness float in window"
+    },
+    {
+      "event": {
+        "created_at": "2026-01-01T10:00:00Z",
+        "end_date": "2026-01-03",
+        "guest_email": "a@x.io",
+        "host_email": "b@x.io",
+        "lines": [
+          {
+            "code": "L-001",
+            "kind": "room",
+            "qty": 2
+          },
+          {
+            "code": "L-002",
+            "fee_reason": "late",
+            "kind": "fee",
+            "qty": 5
+          }
+        ],
+        "max_guests": 2,
+        "max_line_qty": 5,
+        "min_guests": 1,
+        "seen_unix": 1767225500000,
+        "start_date": "2026-01-01",
+        "status": "booked",
+        "tags": [
+          "ab",
+          "cd"
+        ],
+        "updated_at": "2026-01-01T12:00:00+01:00"
+      },
+      "expected": [],
+      "name": "freshness ms epoch"
+    },
+    {
+      "event": {
+        "created_at": "2026-01-01T10:00:00Z",
+        "end_date": "2026-01-03",
+        "guest_email": "a@x.io",
+        "host_email": "b@x.io",
+        "lines": [
+          {
+            "code": "L-001",
+            "kind": "room",
+            "qty": 2
+          },
+          {
+            "code": "L-002",
+            "fee_reason": "late",
+            "kind": "fee",
+            "qty": 5
+          }
+        ],
+        "max_guests": 2,
+        "max_line_qty": 5,
+        "min_guests": 1,
+        "seen_unix": 1767220000,
+        "start_date": "2026-01-01",
+        "status": "booked",
+        "tags": [
+          "ab",
+          "cd"
+        ],
+        "updated_at": "2026-01-01T12:00:00+01:00"
+      },
+      "expected": [
+        [
+          "seen_unix",
+          "freshness_violation",
+          "Quality freshness: field 'seen_unix' timestamp is 5600s old (max 600s)"
+        ]
+      ],
+      "name": "freshness too old"
+    },
+    {
+      "event": {
+        "created_at": "2026-01-01T10:00:00Z",
+        "end_date": "2026-01-03",
+        "guest_email": "a@x.io",
+        "host_email": "b@x.io",
+        "lines": [
+          {
+            "code": "L-001",
+            "kind": "room",
+            "qty": 2
+          },
+          {
+            "code": "L-002",
+            "fee_reason": "late",
+            "kind": "fee",
+            "qty": 5
+          }
+        ],
+        "max_guests": 2,
+        "max_line_qty": 5,
+        "min_guests": 1,
+        "seen_unix": 1767225700,
+        "start_date": "2026-01-01",
+        "status": "booked",
+        "tags": [
+          "ab",
+          "cd"
+        ],
+        "updated_at": "2026-01-01T12:00:00+01:00"
+      },
+      "expected": [
+        [
+          "seen_unix",
+          "freshness_violation",
+          "Quality freshness: field 'seen_unix' timestamp is -100s old (max 600s)"
+        ]
+      ],
+      "name": "freshness in future"
+    },
+    {
+      "event": {
+        "created_at": "2026-01-01T10:00:00Z",
+        "end_date": "2026-01-03",
+        "guest_email": "a@x.io",
+        "host_email": "b@x.io",
+        "lines": [
+          {
+            "code": "L-001",
+            "kind": "room",
+            "qty": 2
+          },
+          {
+            "code": "L-002",
+            "fee_reason": "late",
+            "kind": "fee",
+            "qty": 5
+          }
+        ],
+        "max_guests": 2,
+        "max_line_qty": 5,
+        "min_guests": 1,
+        "seen_at": "2026-01-01T00:55:00+01:00",
+        "start_date": "2026-01-01",
+        "status": "booked",
+        "tags": [
+          "ab",
+          "cd"
+        ],
+        "updated_at": "2026-01-01T12:00:00+01:00"
+      },
+      "expected": [],
+      "name": "freshness rfc3339 in window"
+    },
+    {
+      "event": {
+        "created_at": "2026-01-01T10:00:00Z",
+        "end_date": "2026-01-03",
+        "guest_email": "a@x.io",
+        "host_email": "b@x.io",
+        "lines": [
+          {
+            "code": "L-001",
+            "kind": "room",
+            "qty": 2
+          },
+          {
+            "code": "L-002",
+            "fee_reason": "late",
+            "kind": "fee",
+            "qty": 5
+          }
+        ],
+        "max_guests": 2,
+        "max_line_qty": 5,
+        "min_guests": 1,
+        "seen_at": "2025-12-31T22:00:00Z",
+        "start_date": "2026-01-01",
+        "status": "booked",
+        "tags": [
+          "ab",
+          "cd"
+        ],
+        "updated_at": "2026-01-01T12:00:00+01:00"
+      },
+      "expected": [
+        [
+          "seen_at",
+          "freshness_violation",
+          "Quality freshness: field 'seen_at' timestamp is 7200s old (max 600s)"
+        ]
+      ],
+      "name": "freshness rfc3339 too old"
+    },
+    {
+      "event": {
+        "created_at": "2026-01-01T10:00:00Z",
+        "end_date": "2026-01-03",
+        "guest_email": "a@x.io",
+        "host_email": "b@x.io",
+        "lines": [
+          {
+            "code": "L-001",
+            "kind": "room",
+            "qty": 2
+          },
+          {
+            "code": "L-002",
+            "fee_reason": "late",
+            "kind": "fee",
+            "qty": 5
+          }
+        ],
+        "max_guests": 2,
+        "max_line_qty": 5,
+        "min_guests": 1,
+        "seen_at": "yesterday",
+        "start_date": "2026-01-01",
+        "status": "booked",
+        "tags": [
+          "ab",
+          "cd"
+        ],
+        "updated_at": "2026-01-01T12:00:00+01:00"
+      },
+      "expected": [
+        [
+          "seen_at",
+          "pattern_mismatch",
+          "Field 'seen_at' value \"yesterday\" is not an RFC 3339 timestamp"
+        ],
+        [
+          "seen_at",
+          "freshness_violation",
+          "Quality freshness: field 'seen_at' is not a numeric Unix timestamp or an RFC 3339 date-time"
+        ]
+      ],
+      "name": "freshness not a timestamp"
+    },
+    {
+      "event": {
+        "created_at": "2026-01-01T10:00:00Z",
+        "end_date": "2026-01-03",
+        "guest_email": "a@x.io",
+        "host_email": "b@x.io",
+        "lines": [
+          {
+            "code": "L-001",
+            "kind": "room",
+            "qty": 2
+          },
+          {
+            "code": "L-002",
+            "fee_reason": "late",
+            "kind": "fee",
+            "qty": 5
+          }
+        ],
+        "max_guests": 2,
+        "max_line_qty": 5,
+        "min_guests": 1,
+        "note": "ééé",
+        "start_date": "2026-01-01",
+        "status": "booked",
+        "tags": [
+          "ab",
+          "cd"
+        ],
+        "updated_at": "2026-01-01T12:00:00+01:00"
+      },
+      "expected": [
+        [
+          "note",
+          "length_violation",
+          "Field 'note' length 6 exceeds maximum 4"
+        ]
+      ],
+      "name": "length counts utf-8 bytes"
+    }
+  ],
+  "contract_yaml": "version: \"1.0\"\nname: parity_rfc118\nontology:\n  entities:\n    - name: status\n      type: string\n      enum: [booked, refunded]\n    - name: refund_reason\n      type: string\n      required: false\n    - name: start_date\n      type: date\n    - name: end_date\n      type: date\n    - name: created_at\n      type: timestamp\n    - name: updated_at\n      type: timestamp\n    - name: min_guests\n      type: integer\n    - name: max_guests\n      type: integer\n    - name: guest_email\n      type: string\n    - name: host_email\n      type: string\n    - name: max_line_qty\n      type: integer\n    - name: seen_unix\n      type: number\n      required: false\n    - name: seen_at\n      type: timestamp\n      required: false\n    - name: note\n      type: string\n      required: false\n      max_length: 4\n    - name: lines\n      type: array\n      items:\n        name: line\n        type: object\n        properties:\n          - name: code\n            type: string\n            pattern: \"^L-[0-9]{3}$\"\n          - name: qty\n            type: integer\n          - name: kind\n            type: string\n          - name: fee_reason\n            type: string\n            required: false\n    - name: tags\n      type: array\n      required: false\n      items:\n        name: tag\n        type: string\n        pattern: \"^[a-z]+$\"\nquality:\n  - field: guest_email\n    type: completeness\n  - field: seen_unix\n    type: freshness\n    max_age_seconds: 600\n  - field: seen_at\n    type: freshness\n    max_age_seconds: 600\ncross_field:\n  - field: end_date\n    op: gte\n    other: start_date\n  - field: updated_at\n    op: gt\n    other: created_at\n  - field: max_guests\n    op: gte\n    other: min_guests\n  - field: host_email\n    op: ne\n    other: guest_email\n  - field: refund_reason\n    required_if:\n      field: status\n      equals: refunded\n  - field: lines[].qty\n    op: lte\n    other: max_line_qty\n  - field: lines[].fee_reason\n    required_if:\n      field: lines[].kind\n      equals: fee\n",
+  "note": "Shared by tests/parity_rfc118.rs (Rust) and sdks/python/tests/test_parity_rfc118.py. Expected violations are [field, kind, message] in engine order. now is 2026-01-01T00:00:00Z.",
+  "now": 1767225600
+}

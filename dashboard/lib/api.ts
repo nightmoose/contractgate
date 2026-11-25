@@ -19,6 +19,7 @@
 
 import * as yaml from "js-yaml";
 import { createClient } from "@/lib/supabase/client";
+import { synthErrorMessage } from "@/lib/synth-errors";
 
 const BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001";
 const API_KEY = process.env.NEXT_PUBLIC_API_KEY ?? "";
@@ -66,6 +67,9 @@ async function extractErrorMessage(res: Response): Promise<string> {
       ) {
         return body.message;
       }
+      // RFC-117/118: synth errors (rows limit, unsatisfiable rule, ...).
+      const synthMsg = synthErrorMessage(body);
+      if (synthMsg) return synthMsg;
       if (typeof body.error === "string") return body.error;
     }
   } catch {
@@ -838,6 +842,63 @@ export const playgroundValidate = (
       ...(opts?.atomic != null ? { atomic: opts.atomic } : {}),
     }),
   });
+
+/** `POST /contracts/synth` request (RFC-117, RFC-118). */
+export interface SynthRequest {
+  yaml_content?: string;
+  contract_id?: string;
+  version?: string;
+  rows?: number;
+  mode?: "valid" | "invalid";
+  seed?: number;
+  anchor_time?: string;
+  envelope?: boolean;
+}
+
+export interface SynthBrokenRule {
+  field: string;
+  rule: string;
+  metric?: string;
+  violation_kind: string;
+  message: string;
+  constraint?: string;
+}
+
+export interface SynthInvalidRow {
+  record: Record<string, unknown>;
+  broken_rule: SynthBrokenRule;
+}
+
+export interface SynthResponse {
+  contract: { name: string; version: string };
+  source: Record<string, unknown>;
+  mode: "valid" | "invalid";
+  seed: number;
+  anchor_time: string;
+  row_count: number;
+  rows: Record<string, unknown>[] | SynthInvalidRow[];
+  skipped_rules: { field: string; rule: string; reason: string }[];
+  envelope_payload?: unknown;
+  /** Server time spent compiling and generating, in ms. */
+  generation_ms?: number;
+}
+
+/** Synthetic rows built only from the contract's rules. Writes nothing. */
+export const synthRows = (body: SynthRequest) =>
+  apiFetch<SynthResponse>("/contracts/synth", {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+
+/**
+ * Wake the gateway before a slow first call (staging machines stop when
+ * idle). A simple GET with no custom headers: no preflight, no auth, and the
+ * response is ignored.
+ */
+export function warmApi(): void {
+  if (typeof window === "undefined") return;
+  fetch(`${BASE}/health`, { mode: "no-cors", cache: "no-store" }).catch(() => {});
+}
 
 /**
  * Anonymous playground. No session, no API key, no stored contract.
@@ -1843,6 +1904,8 @@ export interface ImpactAsset {
   hops: number;
   path: string[];
   explanation: string;
+  severity: "breaking" | "safe" | "none" | string;
+  changes: ImpactChange[];
 }
 
 export interface ImpactReport {
@@ -1983,6 +2046,50 @@ export async function recomputeVersionImpact(
     { method: "POST", signal },
   );
   return impactFromStatus(status, body);
+}
+
+export interface LineageGraphAsset {
+  kind: string;
+  key: string;
+  name: string;
+  owner: string | null;
+  contract_id: string | null;
+}
+
+export interface LineageGraphEdge {
+  from: string;
+  to: string;
+  edge: string;
+  field: string | null;
+}
+
+export interface LineageGraph {
+  asset_count: number;
+  edge_count: number;
+  focus_keys: string[];
+  assets: LineageGraphAsset[];
+  edges: LineageGraphEdge[];
+}
+
+export type LineageGraphResult =
+  | { status: "ok"; graph: LineageGraph }
+  | { status: "upgrade"; message: string; upgrade_url?: string }
+  | { status: "unavailable"; message: string }
+  | { status: "error"; message: string };
+
+/** The org's lineage graph, with this contract's own asset keys as focus_keys. */
+export async function getContractLineageGraph(
+  contractId: string,
+  signal?: AbortSignal,
+): Promise<LineageGraphResult> {
+  const { status, body } = await impactFetch(`/contracts/${contractId}/lineage/graph`, { signal });
+  const result = impactFromStatus(status, body);
+  if (result.status !== "ok" || !body) {
+    return result.status === "ok"
+      ? { status: "error", message: "Lineage graph returned an empty body." }
+      : result;
+  }
+  return { status: "ok", graph: body as unknown as LineageGraph };
 }
 
 // ---------------------------------------------------------------------------

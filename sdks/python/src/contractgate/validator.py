@@ -17,8 +17,13 @@ Per-event order (matches Rust):
        ``type: timestamp`` match ``NaiveDate::parse_from_str("%Y-%m-%d")``
        and ``DateTime::parse_from_rfc3339`` in that file.
     2. Walk metrics with ``field`` set + ``min``/``max`` bounds.
-    3. If ``compliance_mode`` is true, emit ``UNDECLARED_FIELD`` for
+    3. Per-event quality rules: ``completeness`` and ``freshness``
+       (``uniqueness`` is batch-level, ``validity`` is declarative).
+    3b. ``cross_field`` rules (RFC-118), including per-item ``[]`` paths.
+    4. If ``compliance_mode`` is true, emit ``UNDECLARED_FIELD`` for
        every top-level key not in the declared set.
+
+String lengths count UTF-8 bytes, as Rust's ``str::len`` does.
 """
 
 from __future__ import annotations
@@ -28,19 +33,27 @@ import time
 from typing import Any, Dict, List, Optional, Pattern
 
 from contractgate.contract import (
+    CompareOp,
     CompiledContract,
+    CrossFieldRule,
     FieldDefinition,
     FieldType,
     MetricDefinition,
+    QualityRule,
+    QualityRuleType,
 )
 from contractgate.models import ValidationResult, Violation, ViolationKind
 
 
-def validate(compiled: CompiledContract, event: Any) -> ValidationResult:
+def validate(
+    compiled: CompiledContract, event: Any, *, now: Optional[float] = None
+) -> ValidationResult:
     """Validate ``event`` against ``compiled``.
 
     Always succeeds — never raises. Mirrors the ``validate`` function
-    in ``src/validation.rs``.
+    in ``src/validation.rs``. ``now`` (Unix seconds) is the time
+    ``freshness`` rules are measured from; the wall clock when omitted
+    (``validate_at`` in Rust).
     """
     t0 = time.perf_counter()
     violations: List[Violation] = []
@@ -59,11 +72,25 @@ def validate(compiled: CompiledContract, event: Any) -> ValidationResult:
         )
 
     # 1. Ontology fields
-    _validate_fields(compiled.contract.entities, event, "", compiled.patterns, violations)
+    null_as_absent = compiled.contract.null_as_absent
+    _validate_fields(
+        compiled.contract.entities, event, "", compiled.patterns, violations, null_as_absent
+    )
 
     # 2. Metric definitions
     for metric in compiled.contract.metrics:
         _validate_metric(metric, event, violations)
+
+    # 3. Per-event quality rules
+    for rule in compiled.contract.quality:
+        if rule.rule_type == QualityRuleType.COMPLETENESS:
+            _check_completeness(rule, event, violations)
+        elif rule.rule_type == QualityRuleType.FRESHNESS:
+            _check_freshness(rule, event, now, violations)
+
+    # 3b. Cross-field rules (RFC-118)
+    for cross in compiled.contract.cross_field:
+        _check_cross_field(cross, event, violations)
 
     # 3. Compliance-mode undeclared field check (last — keeps the
     #    standard violations first, matching Rust's order so triage
@@ -101,6 +128,7 @@ def _validate_fields(
     prefix: str,
     patterns: Dict[str, Pattern[str]],
     violations: List[Violation],
+    null_as_absent: bool = False,
 ) -> None:
     if not isinstance(data, dict):
         # Parent type mismatch already reported.
@@ -108,7 +136,8 @@ def _validate_fields(
 
     for f in fields:
         path = f.name if not prefix else f"{prefix}.{f.name}"
-        if f.name not in data:
+        # RFC-087: with null_as_absent, a present null is a missing key.
+        if f.name not in data or (null_as_absent and data[f.name] is None):
             if f.required:
                 violations.append(
                     Violation(
@@ -118,7 +147,7 @@ def _validate_fields(
                     )
                 )
             continue
-        _validate_value(f, data[f.name], path, patterns, violations)
+        _validate_value(f, data[f.name], path, patterns, violations, null_as_absent)
 
 
 def _validate_value(
@@ -127,6 +156,7 @@ def _validate_value(
     path: str,
     patterns: Dict[str, Pattern[str]],
     violations: List[Violation],
+    null_as_absent: bool = False,
 ) -> None:
     # --- Type check ---
     if not _type_matches(f.field_type, value):
@@ -144,29 +174,30 @@ def _validate_value(
 
     # --- String checks ---
     if isinstance(value, str):
-        if f.min_length is not None and len(value) < f.min_length:
+        n_bytes = len(value.encode("utf-8"))
+        if f.min_length is not None and n_bytes < f.min_length:
             violations.append(
                 Violation(
                     field=path,
                     message=(
-                        f"Field '{path}' length {len(value)} is below minimum "
+                        f"Field '{path}' length {n_bytes} is below minimum "
                         f"{f.min_length}"
                     ),
                     kind=ViolationKind.LENGTH_VIOLATION,
                 )
             )
-        if f.max_length is not None and len(value) > f.max_length:
+        if f.max_length is not None and n_bytes > f.max_length:
             violations.append(
                 Violation(
                     field=path,
                     message=(
-                        f"Field '{path}' length {len(value)} exceeds maximum "
+                        f"Field '{path}' length {n_bytes} exceeds maximum "
                         f"{f.max_length}"
                     ),
                     kind=ViolationKind.LENGTH_VIOLATION,
                 )
             )
-        regex = patterns.get(path)
+        regex = _pattern_for(patterns, path)
         if regex is not None and not regex.search(value):
             # Rust's ``regex::Regex::is_match`` is unanchored — it returns true
             # if the regex matches anywhere in the string. ``re.search`` is
@@ -271,13 +302,294 @@ def _validate_value(
 
     # --- Recurse into nested objects ---
     if f.field_type == FieldType.OBJECT and f.properties:
-        _validate_fields(f.properties, value, path, patterns, violations)
+        _validate_fields(f.properties, value, path, patterns, violations, null_as_absent)
 
     # --- Recurse into array items ---
     if f.field_type == FieldType.ARRAY and f.items is not None and isinstance(value, list):
         for idx, item in enumerate(value):
             item_path = f"{path}[{idx}]"
-            _validate_value(f.items, item, item_path, patterns, violations)
+            _validate_value(f.items, item, item_path, patterns, violations, null_as_absent)
+
+
+_INDEX_RE = re.compile(r"\[[^\]]*\]")
+
+
+def _pattern_for(patterns: Dict[str, Pattern[str]], path: str) -> Optional[Pattern[str]]:
+    """Compiled pattern for a concrete path, including array items
+    (``lines[3].sku`` looks up ``lines[].sku``)."""
+    regex = patterns.get(path)
+    if regex is None and "[" in path:
+        regex = patterns.get(_INDEX_RE.sub("[]", path))
+    return regex
+
+
+# ---------------------------------------------------------------------------
+# Quality rules (per event)
+# ---------------------------------------------------------------------------
+
+
+def _get_nested(event: Any, path: str) -> Any:
+    """Dot path lookup that tells "absent" from "null" (``_MISSING``)."""
+    cur = event
+    for seg in path.split("."):
+        if not isinstance(cur, dict) or seg not in cur:
+            return _ABSENT
+        cur = cur[seg]
+    return cur
+
+
+_ABSENT = object()
+
+
+def _check_completeness(rule: QualityRule, event: Any, violations: List[Violation]) -> None:
+    v = _get_nested(event, rule.field)
+    if v is _ABSENT or v is None:
+        violations.append(
+            Violation(
+                field=rule.field,
+                message=f"Quality completeness: field '{rule.field}' is absent or null",
+                kind=ViolationKind.COMPLETENESS_VIOLATION,
+            )
+        )
+    elif v == "" and isinstance(v, str):
+        violations.append(
+            Violation(
+                field=rule.field,
+                message=f"Quality completeness: field '{rule.field}' is an empty string",
+                kind=ViolationKind.COMPLETENESS_VIOLATION,
+            )
+        )
+
+
+_I64_MIN = -(2**63)
+
+
+def _freshness_seconds(v: Any) -> Optional[int]:
+    """Mirror the Rust freshness reader: integer epochs (ms when above
+    1_700_000_000_000), fractional epochs (floored), RFC 3339 strings."""
+    import math
+
+    if isinstance(v, bool):
+        return None
+    if isinstance(v, int):
+        if _I64_MIN <= v <= _I64_MAX:
+            return v // 1000 if v > 1_700_000_000_000 else v
+        f = float(v)
+    elif isinstance(v, float):
+        f = v
+    elif isinstance(v, str):
+        inst = _rfc3339_instant(v)
+        return None if inst is None else inst[0]
+    else:
+        return None
+    if not math.isfinite(f):
+        return None
+    # Rust: f.floor() as i64 saturates at the i64 bounds.
+    secs = max(min(math.floor(f), _I64_MAX), _I64_MIN)
+    return secs // 1000 if secs > 1_700_000_000_000 else secs
+
+
+def _check_freshness(
+    rule: QualityRule, event: Any, now: Optional[float], violations: List[Violation]
+) -> None:
+    if rule.max_age_seconds is None:
+        return
+    v = _get_nested(event, rule.field)
+    if v is _ABSENT:
+        return
+    ts = _freshness_seconds(v)
+    if ts is None:
+        violations.append(
+            Violation(
+                field=rule.field,
+                message=(
+                    f"Quality freshness: field '{rule.field}' is not a numeric Unix "
+                    "timestamp or an RFC 3339 date-time"
+                ),
+                kind=ViolationKind.FRESHNESS_VIOLATION,
+            )
+        )
+        return
+    now_secs = int(now) if now is not None else int(time.time())
+    age = now_secs - ts
+    if age < 0 or age > rule.max_age_seconds:
+        violations.append(
+            Violation(
+                field=rule.field,
+                message=(
+                    f"Quality freshness: field '{rule.field}' timestamp is {age}s old "
+                    f"(max {rule.max_age_seconds}s)"
+                ),
+                kind=ViolationKind.FRESHNESS_VIOLATION,
+            )
+        )
+
+
+# ---------------------------------------------------------------------------
+# Cross-field rules (RFC-118)
+# ---------------------------------------------------------------------------
+
+
+def _resolve_indexed(event: Any, path: str) -> Any:
+    """``a.b[2].c``; returns ``_ABSENT`` when any step is missing."""
+    cur = event
+    for seg in path.split("."):
+        open_i = seg.find("[")
+        name = seg if open_i < 0 else seg[:open_i]
+        if open_i < 0 or name:
+            if not isinstance(cur, dict) or name not in cur:
+                return _ABSENT
+            cur = cur[name]
+        if open_i >= 0:
+            for idx in seg[open_i:].split("[")[1:]:
+                if not idx.endswith("]"):
+                    return _ABSENT
+                raw = idx[:-1]
+                if not raw.isdigit() or not raw.isascii():
+                    return _ABSENT
+                i = int(raw)
+                if not isinstance(cur, list) or i >= len(cur):
+                    return _ABSENT
+                cur = cur[i]
+    return cur
+
+
+def _expand_cross_rule(rule: CrossFieldRule, event: Any) -> List[CrossFieldRule]:
+    prefix = rule.wildcard_array()
+    if prefix is None:
+        return [rule]
+    arr = _resolve_indexed(event, prefix)
+    n = len(arr) if isinstance(arr, list) else 0
+    return [rule.concrete(i) for i in range(n)]
+
+
+def _rfc3339_instant(value: str) -> Optional[tuple]:
+    """(seconds, nanos) for an RFC 3339 string, or None. Mirrors Chrono:
+    second 60 becomes 59 plus 1_000_000_000 nanos."""
+    import calendar
+
+    if not _rfc3339_ok(value):
+        return None
+    raw = value
+    year, month, day = int(raw[0:4]), int(raw[5:7]), int(raw[8:10])
+    hour, minute, sec = int(raw[11:13]), int(raw[14:16]), int(raw[17:19])
+    rest = raw[19:]
+    nanos = 0
+    if rest.startswith("."):
+        parsed = _fractional_nanos(rest[1:])
+        if parsed is None:
+            return None
+        rest, nanos = parsed
+    if sec == 60:
+        sec = 59
+        nanos += 1_000_000_000
+    offset = 0
+    if rest[0] not in "Zz":
+        sign = 1 if rest[0] == "+" else -1
+        body = rest[1:]
+        offset = sign * (int(body[0:2]) * 3600 + int(body[3:5]) * 60)
+    secs = calendar.timegm((year, month, day, hour, minute, sec, 0, 0, 0)) - offset
+    return secs, nanos
+
+
+def _calendar_date(value: str) -> Optional[tuple]:
+    if not _calendar_date_ok(value):
+        return None
+    year, rest = _signed_year(value)
+    rest = rest[1:].lstrip()
+    month, rest = _take_digits(rest, 1, 2)
+    rest = rest[1:].lstrip()
+    day, rest = _take_digits(rest, 1, 2)
+    return (year, month, day)
+
+
+def _compare_values(a: Any, b: Any) -> Optional[int]:
+    """-1, 0, 1, or None when the values have no order (Rust ``compare_values``)."""
+    x, y = _numeric_value(a), _numeric_value(b)
+    if x is not None and y is not None:
+        if x != x or y != y:  # NaN
+            return None
+        return (x > y) - (x < y)
+    if not (isinstance(a, str) and isinstance(b, str)):
+        return None
+    ta, tb = _rfc3339_instant(a), _rfc3339_instant(b)
+    da = None if ta is not None else _calendar_date(a)
+    db = None if tb is not None else _calendar_date(b)
+    if ta is not None and tb is not None:
+        return (ta > tb) - (ta < tb)
+    if ta is None and tb is None and da is not None and db is not None:
+        return (da > db) - (da < db)
+    if ta is None and tb is None and da is None and db is None:
+        ea, eb = a.encode("utf-8"), b.encode("utf-8")
+        return (ea > eb) - (ea < eb)
+    return None
+
+
+def _compare_holds(op: CompareOp, a: Any, b: Any) -> bool:
+    o = _compare_values(a, b)
+    if o is None:
+        if op == CompareOp.EQ:
+            return _json_equal(a, b)
+        if op == CompareOp.NE:
+            return not _json_equal(a, b)
+        return True
+    return {
+        CompareOp.EQ: o == 0,
+        CompareOp.NE: o != 0,
+        CompareOp.LT: o < 0,
+        CompareOp.LTE: o <= 0,
+        CompareOp.GT: o > 0,
+        CompareOp.GTE: o >= 0,
+    }[op]
+
+
+def _json_equal(a: Any, b: Any) -> bool:
+    """serde_json ``Value`` equality: booleans are never numbers, and
+    integers and floats compare by JSON number value."""
+    if isinstance(a, bool) or isinstance(b, bool):
+        return isinstance(a, bool) and isinstance(b, bool) and a == b
+    if isinstance(a, dict) and isinstance(b, dict):
+        return a.keys() == b.keys() and all(_json_equal(a[k], b[k]) for k in a)
+    if isinstance(a, list) and isinstance(b, list):
+        return len(a) == len(b) and all(_json_equal(x, y) for x, y in zip(a, b))
+    if isinstance(a, (int, float)) and isinstance(b, (int, float)):
+        # serde_json keeps i64/u64 and f64 as different Number variants.
+        return type(a) is type(b) and a == b
+    return type(a) is type(b) and a == b
+
+
+def _check_cross_field(rule: CrossFieldRule, event: Any, violations: List[Violation]) -> None:
+    label = rule.label()
+    for c in _expand_cross_rule(rule, event):
+        if c.op is not None and c.other is not None:
+            a = _resolve_indexed(event, c.field)
+            b = _resolve_indexed(event, c.other)
+            if a is _ABSENT or a is None or b is _ABSENT or b is None:
+                continue
+            if not _compare_holds(c.op, a, b):
+                violations.append(
+                    Violation(
+                        field=c.field,
+                        message=(
+                            f"Cross-field rule '{label}' failed: "
+                            f"{_json_compact(a)} vs {_json_compact(b)}"
+                        ),
+                        kind=ViolationKind.CROSS_FIELD_VIOLATION,
+                    )
+                )
+        elif c.required_if_field is not None:
+            cond = _resolve_indexed(event, c.required_if_field)
+            if cond is _ABSENT or not _json_equal(cond, c.required_if_equals):
+                continue
+            v = _resolve_indexed(event, c.field)
+            if v is _ABSENT or v is None:
+                violations.append(
+                    Violation(
+                        field=c.field,
+                        message=f"Cross-field rule '{label}' failed: '{c.field}' is missing",
+                        kind=ViolationKind.CROSS_FIELD_VIOLATION,
+                    )
+                )
 
 
 # ---------------------------------------------------------------------------

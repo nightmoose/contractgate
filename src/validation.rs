@@ -139,6 +139,9 @@ pub enum ViolationKind {
     UniquenessViolation,
     /// D1: the request pinned a deprecated contract version.
     ContractVersionDeprecated,
+    /// RFC-118: a `cross_field` rule failed (a comparison between two
+    /// fields, or a conditional `required_if`).
+    CrossFieldViolation,
 }
 
 // ---------------------------------------------------------------------------
@@ -274,6 +277,9 @@ impl CompiledContract {
         let mut patterns = HashMap::new();
         compile_field_patterns(&contract.ontology.entities, "", &mut patterns)?;
         validate_transform_types(&contract.ontology.entities, "")?;
+        for rule in &contract.cross_field {
+            rule.check_shape().map_err(|e| anyhow::anyhow!(e))?;
+        }
 
         let declared_top_level_fields = if contract.compliance_mode {
             contract
@@ -315,14 +321,77 @@ fn compile_field_patterns(
             out.insert(path.clone(), re);
         }
 
-        // Recurse into nested object properties
-        if field.field_type == FieldType::Object {
-            if let Some(props) = &field.properties {
-                compile_field_patterns(props, &path, out)?;
+        compile_nested_patterns(field, &path, out)?;
+    }
+    Ok(())
+}
+
+/// Patterns under `field` at `path`: object properties and array items.
+/// Item patterns are keyed with `[]` in place of the index
+/// (`lines[].sku`), and looked up through [`pattern_for`] (RFC-118).
+fn compile_nested_patterns(
+    field: &FieldDefinition,
+    path: &str,
+    out: &mut HashMap<String, Regex>,
+) -> anyhow::Result<()> {
+    if field.field_type == FieldType::Object {
+        if let Some(props) = &field.properties {
+            compile_field_patterns(props, path, out)?;
+        }
+    }
+    if field.field_type == FieldType::Array {
+        if let Some(item) = &field.items {
+            let item_path = format!("{path}[]");
+            if let Some(pattern) = &item.pattern {
+                let re = Regex::new(pattern).map_err(|e| {
+                    anyhow::anyhow!(
+                        "Invalid regex '{}' for field '{}': {}",
+                        pattern,
+                        item_path,
+                        e
+                    )
+                })?;
+                out.insert(item_path.clone(), re);
             }
+            compile_nested_patterns(item, &item_path, out)?;
         }
     }
     Ok(())
+}
+
+/// `lines[3].sku` becomes `lines[].sku`. Paths without an index are
+/// returned unchanged.
+pub fn wildcard_indexes(path: &str) -> std::borrow::Cow<'_, str> {
+    if !path.contains('[') {
+        return std::borrow::Cow::Borrowed(path);
+    }
+    let mut out = String::with_capacity(path.len());
+    let mut in_index = false;
+    for c in path.chars() {
+        match c {
+            '[' => {
+                in_index = true;
+                out.push('[');
+            }
+            ']' => {
+                in_index = false;
+                out.push(']');
+            }
+            _ if in_index => {}
+            _ => out.push(c),
+        }
+    }
+    std::borrow::Cow::Owned(out)
+}
+
+/// The compiled pattern for a concrete field path, including paths inside
+/// array items.
+pub fn pattern_for<'a>(patterns: &'a HashMap<String, Regex>, path: &str) -> Option<&'a Regex> {
+    match patterns.get(path) {
+        Some(re) => Some(re),
+        None if path.contains('[') => patterns.get(wildcard_indexes(path).as_ref()),
+        None => None,
+    }
 }
 
 /// RFC-004: reject contracts that declare a `transform` on any non-string
@@ -364,6 +433,21 @@ fn validate_transform_types(fields: &[FieldDefinition], prefix: &str) -> anyhow:
 ///
 /// Returns a `ValidationResult` — always succeeds (never panics).
 pub fn validate(compiled: &CompiledContract, event: &Value) -> ValidationResult {
+    validate_inner(compiled, event, None)
+}
+
+/// [`validate`] with `freshness` rules judged against `now_unix` (Unix
+/// seconds) instead of the wall clock. Used by the synthetic data
+/// generator so a fixed anchor time gives repeatable results (RFC-118).
+pub fn validate_at(compiled: &CompiledContract, event: &Value, now_unix: i64) -> ValidationResult {
+    validate_inner(compiled, event, Some(now_unix))
+}
+
+fn validate_inner(
+    compiled: &CompiledContract,
+    event: &Value,
+    now: Option<i64>,
+) -> ValidationResult {
     let t0 = std::time::Instant::now();
     let mut violations = Vec::new();
 
@@ -416,12 +500,18 @@ pub fn validate(compiled: &CompiledContract, event: &Value) -> ValidationResult 
                 // declarative / scoring.
             }
             QualityRuleType::Freshness => {
-                check_freshness(rule, event, &mut violations);
+                check_freshness(rule, event, now, &mut violations);
             }
             QualityRuleType::Uniqueness => {
                 // Batch-level — skip in per-event path.
             }
         }
+    }
+
+    // 3b. RFC-118: cross-field rules. Empty for contracts that do not
+    //     declare `cross_field`, so this is a no-op for them.
+    for rule in &compiled.contract.cross_field {
+        check_cross_field(rule, event, &mut violations);
     }
 
     // 4. RFC-004: compliance-mode undeclared-field check.  Runs last so
@@ -851,7 +941,7 @@ fn validate_value(
         }
 
         // Pattern check (uses pre-compiled regex)
-        if let Some(re) = patterns.get(path) {
+        if let Some(re) = pattern_for(patterns, path) {
             if !re.is_match(s) {
                 violations.push(Violation {
                     field: path.to_string(),
@@ -1200,7 +1290,12 @@ fn check_completeness(rule: &QualityRule, event: &Value, violations: &mut Vec<Vi
 /// Detection heuristic: if the value is > 1_700_000_000_000 it is treated as
 /// milliseconds and divided by 1000 first.  This covers both second-precision
 /// and millisecond-precision timestamps without requiring a schema annotation.
-fn check_freshness(rule: &QualityRule, event: &Value, violations: &mut Vec<Violation>) {
+fn check_freshness(
+    rule: &QualityRule,
+    event: &Value,
+    now: Option<i64>,
+    violations: &mut Vec<Violation>,
+) {
     let Some(max_age) = rule.max_age_seconds else {
         // No max_age_seconds configured — nothing to check.
         return;
@@ -1211,14 +1306,20 @@ fn check_freshness(rule: &QualityRule, event: &Value, violations: &mut Vec<Viola
     };
 
     let ts_secs: Option<i64> = match val {
-        Value::Number(n) => n.as_i64().map(|v| {
-            // Heuristic: ms epoch if value is larger than ~year 2023 in seconds
-            if v > 1_700_000_000_000 {
-                v / 1000
-            } else {
-                v
-            }
-        }),
+        // Heuristic: ms epoch if value is larger than ~year 2023 in seconds.
+        // Fractional seconds (e.g. Python's time.time()) count too.
+        Value::Number(n) => n
+            .as_i64()
+            .or_else(|| {
+                n.as_f64()
+                    .filter(|f| f.is_finite())
+                    .map(|f| f.floor() as i64)
+            })
+            .map(|v| if v > 1_700_000_000_000 { v / 1000 } else { v }),
+        // RFC-118: RFC 3339 date-times (`type: timestamp` fields).
+        Value::String(s) => chrono::DateTime::parse_from_rfc3339(s)
+            .ok()
+            .map(|d| d.timestamp()),
         _ => None,
     };
 
@@ -1226,21 +1327,25 @@ fn check_freshness(rule: &QualityRule, event: &Value, violations: &mut Vec<Viola
         violations.push(Violation {
             field: rule.field.clone(),
             message: format!(
-                "Quality freshness: field '{}' is not a numeric Unix timestamp",
+                "Quality freshness: field '{}' is not a numeric Unix timestamp or an RFC 3339 date-time",
                 rule.field
             ),
             kind: ViolationKind::FreshnessViolation,
             received: Some(val.clone()),
-            expected: Some("integer Unix epoch (seconds or milliseconds)".into()),
+            expected: Some(
+                "Unix epoch (seconds or milliseconds) or RFC 3339 date-time".into(),
+            ),
             suggestion: None,
         });
         return;
     };
 
-    let now_secs = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_secs() as i64;
+    let now_secs = now.unwrap_or_else(|| {
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs() as i64
+    });
 
     let age_secs = now_secs - ts;
     if age_secs < 0 || age_secs > max_age as i64 {
@@ -1255,6 +1360,164 @@ fn check_freshness(rule: &QualityRule, event: &Value, violations: &mut Vec<Viola
             expected: Some(format!("timestamp within last {max_age}s")),
             suggestion: None,
         });
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Cross-field rules (RFC-118)
+// ---------------------------------------------------------------------------
+
+/// Order two JSON values for a cross-field comparison. Numbers compare
+/// numerically. Two strings compare as instants when both parse as RFC 3339,
+/// as dates when both parse as `YYYY-MM-DD`, and as text otherwise. Any
+/// other pairing has no order.
+pub fn compare_values(a: &Value, b: &Value) -> Option<std::cmp::Ordering> {
+    if let (Some(x), Some(y)) = (numeric_value(a), numeric_value(b)) {
+        return x.partial_cmp(&y);
+    }
+    let (Some(x), Some(y)) = (a.as_str(), b.as_str()) else {
+        return None;
+    };
+    let ts = |s: &str| chrono::DateTime::parse_from_rfc3339(s).ok();
+    let date = |s: &str| chrono::NaiveDate::parse_from_str(s, "%Y-%m-%d").ok();
+    match ((ts(x), date(x)), (ts(y), date(y))) {
+        ((Some(p), _), (Some(q), _)) => Some(p.cmp(&q)),
+        ((None, Some(p)), (None, Some(q))) => Some(p.cmp(&q)),
+        ((None, None), (None, None)) => Some(x.cmp(y)),
+        // One side is a date or timestamp and the other is not: no order.
+        _ => None,
+    }
+}
+
+/// Does `a <op> b` hold? `eq`/`ne` fall back to JSON equality when the
+/// values have no order (booleans, mixed types). Ordering operators pass
+/// when there is no order: the field's own `type`/format rule reports a
+/// mismatched value, so it is not reported twice.
+pub fn compare_holds(op: crate::contract::CompareOp, a: &Value, b: &Value) -> bool {
+    use crate::contract::CompareOp::*;
+    use std::cmp::Ordering::*;
+    match (op, compare_values(a, b)) {
+        (Eq, Some(o)) => o == Equal,
+        (Ne, Some(o)) => o != Equal,
+        (Eq, None) => a == b,
+        (Ne, None) => a != b,
+        (Lt, Some(o)) => o == Less,
+        (Lte, Some(o)) => o != Greater,
+        (Gt, Some(o)) => o == Greater,
+        (Gte, Some(o)) => o != Less,
+        (_, None) => true,
+    }
+}
+
+/// Resolve `a.b[2].c` (dot paths with optional `[index]` segments).
+pub fn resolve_indexed<'a>(event: &'a Value, path: &str) -> Option<&'a Value> {
+    let mut cur = event;
+    for seg in path.split('.') {
+        match seg.find('[') {
+            None => cur = cur.as_object()?.get(seg)?,
+            Some(open) => {
+                let name = &seg[..open];
+                if !name.is_empty() {
+                    cur = cur.as_object()?.get(name)?;
+                }
+                for idx in seg[open..].split('[').skip(1) {
+                    let i: usize = idx.strip_suffix(']')?.parse().ok()?;
+                    cur = cur.as_array()?.get(i)?;
+                }
+            }
+        }
+    }
+    Some(cur)
+}
+
+/// A cross-field rule with `[]` paths replaced by `[i]`.
+pub fn concrete_rule(
+    rule: &crate::contract::CrossFieldRule,
+    i: usize,
+) -> crate::contract::CrossFieldRule {
+    let sub = |p: &str| p.replacen("[]", &format!("[{i}]"), 1);
+    let mut r = rule.clone();
+    r.field = sub(&rule.field);
+    r.other = rule.other.as_deref().map(sub);
+    if let Some(c) = &mut r.required_if {
+        c.field = sub(&c.field);
+    }
+    r
+}
+
+/// Concrete versions of `rule` for `event`: one per array item when the
+/// rule has `[]` paths (RFC-118), otherwise the rule itself.
+pub fn expand_cross_rule(
+    rule: &crate::contract::CrossFieldRule,
+    event: &Value,
+) -> Vec<crate::contract::CrossFieldRule> {
+    match rule.wildcard_array() {
+        None => vec![rule.clone()],
+        Some(prefix) => {
+            let n = resolve_indexed(event, prefix)
+                .and_then(|v| v.as_array())
+                .map_or(0, |a| a.len());
+            (0..n).map(|i| concrete_rule(rule, i)).collect()
+        }
+    }
+}
+
+fn check_cross_field(
+    rule: &crate::contract::CrossFieldRule,
+    event: &Value,
+    violations: &mut Vec<Violation>,
+) {
+    let label = rule.label();
+    for concrete in expand_cross_rule(rule, event) {
+        check_concrete_cross_field(&concrete, &label, event, violations);
+    }
+}
+
+fn check_concrete_cross_field(
+    rule: &crate::contract::CrossFieldRule,
+    label: &str,
+    event: &Value,
+    violations: &mut Vec<Violation>,
+) {
+    let present = |path: &str| resolve_indexed(event, path).filter(|v| !v.is_null());
+    if let (Some(op), Some(other)) = (rule.op, &rule.other) {
+        let (Some(a), Some(b)) = (present(&rule.field), present(other)) else {
+            return; // absent or null: `required` covers presence
+        };
+        if !compare_holds(op, a, b) {
+            violations.push(Violation {
+                field: rule.field.clone(),
+                message: format!("Cross-field rule '{label}' failed: {} vs {}", a, b),
+                kind: ViolationKind::CrossFieldViolation,
+                received: Some(a.clone()),
+                expected: Some(label.to_string()),
+                suggestion: Some(format!(
+                    "Emit '{}' so that {label}, or relax the cross_field rule in the contract.",
+                    rule.field
+                )),
+            });
+        }
+    } else if let Some(cond) = &rule.required_if {
+        if resolve_indexed(event, &cond.field) != Some(&cond.equals) {
+            return;
+        }
+        // A present null counts as missing, as for completeness.
+        if present(&rule.field).is_none() {
+            violations.push(Violation {
+                field: rule.field.clone(),
+                message: format!(
+                    "Cross-field rule '{label}' failed: '{}' is missing",
+                    rule.field
+                ),
+                kind: ViolationKind::CrossFieldViolation,
+                received: None,
+                expected: Some(label.to_string()),
+                suggestion: Some(format!(
+                    "Include '{}' whenever '{}' is {}.",
+                    rule.field, cond.field, cond.equals
+                )),
+            });
+        }
     }
 }
 
@@ -1429,6 +1692,7 @@ mod tests {
             on_fail: crate::contract::OnFailMode::Quarantine,
             on_fail_locked: false,
             quarantine_guard: crate::contract::QuarantineGuardConfig::default(),
+            cross_field: Vec::new(),
         }
     }
 
