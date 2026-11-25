@@ -43,6 +43,8 @@ pub const MAX_ROWS: usize = 10_000;
 const MAX_STRING_LEN: usize = 4096;
 /// Candidate values tried per field before giving up on a rule.
 const FIELD_ATTEMPTS: usize = 64;
+/// Attempts that try a name-based realistic string before generic ones.
+const NAMED_ATTEMPTS: usize = 6;
 /// Whole-row attempts before giving up (covers row-level rules).
 const ROW_ATTEMPTS: usize = 64;
 /// Attempts to break one rule in isolation before skipping it.
@@ -1075,6 +1077,8 @@ impl<'a> Generator<'a> {
                 let mut relaxed = d.clone();
                 relaxed.allowed_values = None;
                 relaxed.pattern = None;
+                // No name-based guess: it would aim for a well-formed value.
+                relaxed.name = String::new();
                 let mut found = None;
                 for _ in 0..8 {
                     let v = self.gen_checked(&relaxed, p, "pattern").ok()?;
@@ -1089,6 +1093,7 @@ impl<'a> Generator<'a> {
                 let d = def?;
                 let mut relaxed = as_plain_string(&d);
                 relaxed.format = None;
+                relaxed.name = String::new();
                 let mut found = None;
                 for _ in 0..8 {
                     let v = self.gen_checked(&relaxed, p, "format").ok()?;
@@ -1220,25 +1225,65 @@ impl<'a> Generator<'a> {
                     set_path(&mut row, &rule.field, b);
                 }
                 _ => {
-                    // Swapping an ordered pair breaks lt/lte/gt/gte when the
-                    // values differ; otherwise draw new values for `field`.
-                    let swapped_breaks = op != CompareOp::Eq && !compare_holds(op, &b, &a);
-                    if swapped_breaks {
-                        set_path(&mut row, &rule.field, b);
-                        set_path(&mut row, other, a);
-                    } else {
-                        let mut done = false;
-                        for _ in 0..8 {
-                            let v = self.regen(&rule.field)?;
-                            if !compare_holds(op, &v, &b) {
-                                set_path(&mut row, &rule.field, v);
-                                done = true;
-                                break;
+                    // Strategies, tried from a seeded random start: swap the
+                    // pair, redraw `field`, redraw `other`, redraw both.
+                    // Redrawn values stay inside each field's own rules, so
+                    // whichever side has room to move is the one that moves.
+                    let start = self.rng.gen_range(0..4usize);
+                    let mut done = false;
+                    for k in 0..4 {
+                        if done {
+                            break;
+                        }
+                        match (start + k) % 4 {
+                            0 => {
+                                if op != CompareOp::Eq && !compare_holds(op, &b, &a) {
+                                    set_path(&mut row, &rule.field, b.clone());
+                                    set_path(&mut row, other, a.clone());
+                                    done = true;
+                                }
+                            }
+                            1 => {
+                                for _ in 0..8 {
+                                    let Some(v) = self.regen(&rule.field) else {
+                                        break;
+                                    };
+                                    if !compare_holds(op, &v, &b) {
+                                        set_path(&mut row, &rule.field, v);
+                                        done = true;
+                                        break;
+                                    }
+                                }
+                            }
+                            2 => {
+                                for _ in 0..8 {
+                                    let Some(w) = self.regen(other) else { break };
+                                    if !compare_holds(op, &a, &w) {
+                                        set_path(&mut row, other, w);
+                                        done = true;
+                                        break;
+                                    }
+                                }
+                            }
+                            _ => {
+                                for _ in 0..8 {
+                                    let (Some(v), Some(w)) =
+                                        (self.regen(&rule.field), self.regen(other))
+                                    else {
+                                        break;
+                                    };
+                                    if !compare_holds(op, &v, &w) {
+                                        set_path(&mut row, &rule.field, v);
+                                        set_path(&mut row, other, w);
+                                        done = true;
+                                        break;
+                                    }
+                                }
                             }
                         }
-                        if !done {
-                            return None;
-                        }
+                    }
+                    if !done {
+                        return None;
                     }
                 }
             }
@@ -1421,9 +1466,13 @@ impl<'a> Generator<'a> {
                     } else {
                         self.rng.gen_range(3..10)
                     };
-                    let local = self.lower(n);
-                    let tld = ["com", "org", "net"][self.rng.gen_range(0..3)];
-                    Some(format!("{local}@example.{tld}"))
+                    if f.min_length.is_none() && f.max_length.is_none() {
+                        Some(self.realistic_email())
+                    } else {
+                        let local = self.lower(n);
+                        let tld = ["com", "org", "net"][self.rng.gen_range(0..3)];
+                        Some(format!("{local}@example.{tld}"))
+                    }
                 }
                 Some("uuid") => {
                     let bytes: [u8; 16] = self.rng.gen();
@@ -1439,10 +1488,28 @@ impl<'a> Generator<'a> {
                 _ => None,
             },
         };
+        // No type or format shape: guess one from the field name (`email`,
+        // `first_name`, `phone`, `country`, ...). Only the first few attempts
+        // use it, and the oracle still checks every declared rule, so a guess
+        // that breaks a length or pattern rule falls back to the generic value.
+        let named = semantic.is_none()
+            && f.format.is_none()
+            && matches!(f.field_type, FieldType::String | FieldType::Any)
+            && attempt
+                < if f.pattern.is_some() {
+                    1
+                } else {
+                    NAMED_ATTEMPTS
+                };
+        let semantic = match semantic {
+            Some(s) => Some(s),
+            None if named => self.named_string(&f.name),
+            None => None,
+        };
         // With a pattern, alternate between the type/format-shaped value
         // and one built from the regex; the oracle keeps whichever fits.
         if let Some(pat) = &f.pattern {
-            if semantic.is_none() || attempt % 2 == 1 {
+            if semantic.is_none() || (attempt % 2 == 1 && !named) {
                 return self.gen_from_pattern(pat, path, f.min_length.unwrap_or(0));
             }
         }
@@ -1506,6 +1573,149 @@ impl<'a> Generator<'a> {
             ));
         }
         Ok(out)
+    }
+
+    fn pick(&mut self, xs: &[&str]) -> String {
+        xs[self.rng.gen_range(0..xs.len())].to_string()
+    }
+
+    fn realistic_email(&mut self) -> String {
+        let first = self.pick(FIRST_NAMES).to_ascii_lowercase();
+        let last = self.pick(LAST_NAMES).to_ascii_lowercase();
+        let n = self.rng.gen_range(1..100);
+        let domain = self.pick(&["example.com", "example.org", "example.net"]);
+        match self.rng.gen_range(0..3) {
+            0 => format!("{first}.{last}@{domain}"),
+            1 => format!("{}{last}{n}@{domain}", &first[..1]),
+            _ => format!("{first}{n}@{domain}"),
+        }
+    }
+
+    /// A realistic value for a free-form string field, chosen from its name.
+    /// `None` when the name gives no hint. Uses the seeded RNG, so output
+    /// stays deterministic.
+    fn named_string(&mut self, name: &str) -> Option<String> {
+        let toks = name_tokens(name);
+        let has = |w: &str| toks.iter().any(|t| t == w);
+        let last_tok = toks.last().map(String::as_str).unwrap_or("");
+        let v = if has("email") || has("mail") {
+            self.realistic_email()
+        } else if has("uuid") || has("guid") || last_tok == "id" {
+            let bytes: [u8; 16] = self.rng.gen();
+            uuid::Builder::from_random_bytes(bytes)
+                .into_uuid()
+                .to_string()
+        } else if has("phone") || has("mobile") || has("tel") || has("telephone") || has("fax") {
+            format!(
+                "+1-{}-555-{:04}",
+                self.rng.gen_range(201..990),
+                self.rng.gen_range(100..200)
+            )
+        } else if has("url") || has("website") || has("homepage") || has("link") || has("uri") {
+            let w = self.pick(WORDS);
+            format!("https://www.example.com/{w}")
+        } else if (has("first") && has("name"))
+            || has("firstname")
+            || has("given")
+            || has("forename")
+        {
+            self.pick(FIRST_NAMES)
+        } else if (has("last") && has("name"))
+            || has("lastname")
+            || has("surname")
+            || (has("family") && has("name"))
+        {
+            self.pick(LAST_NAMES)
+        } else if has("username")
+            || has("login")
+            || has("handle")
+            || has("nickname")
+            || (has("user") && last_tok == "name")
+        {
+            let first = self.pick(FIRST_NAMES).to_ascii_lowercase();
+            format!("{first}{}", self.rng.gen_range(1..1000))
+        } else if has("company")
+            || has("organization")
+            || has("organisation")
+            || has("employer")
+            || has("business")
+            || has("vendor")
+            || has("merchant")
+        {
+            let a = self.pick(LAST_NAMES);
+            let b = self.pick(&["Inc", "LLC", "Ltd", "Group", "Labs", "Partners"]);
+            format!("{a} {b}")
+        } else if has("country") {
+            let i = self.rng.gen_range(0..COUNTRIES.len());
+            let (code, full) = COUNTRIES[i];
+            if has("code") || has("iso") {
+                code.to_string()
+            } else {
+                full.to_string()
+            }
+        } else if has("currency") {
+            self.pick(&["USD", "EUR", "GBP", "CAD", "JPY", "AUD"])
+        } else if has("city") || has("town") {
+            self.pick(CITIES)
+        } else if has("street") || has("address") || has("addr") {
+            let n = self.rng.gen_range(1..9999);
+            let st = self.pick(LAST_NAMES);
+            let kind = self.pick(&["St", "Ave", "Rd", "Blvd", "Ln"]);
+            format!("{n} {st} {kind}")
+        } else if has("zip") || has("postcode") || has("postal") {
+            format!("{:05}", self.rng.gen_range(1001..99950))
+        } else if has("language") || has("locale") || has("lang") {
+            self.pick(&["en-US", "en-GB", "fr-FR", "de-DE", "es-ES", "ja-JP"])
+        } else if has("timezone") || has("tz") {
+            self.pick(&[
+                "America/New_York",
+                "Europe/London",
+                "Asia/Tokyo",
+                "America/Los_Angeles",
+            ])
+        } else if has("ip") {
+            format!("192.0.2.{}", self.rng.gen_range(1..255))
+        } else if has("sku") {
+            format!("SKU-{:05}", self.rng.gen_range(0..100000))
+        } else if has("color") || has("colour") {
+            self.pick(&["red", "blue", "green", "black", "white", "orange"])
+        } else if has("title") || has("subject") || has("headline") {
+            let a = self.pick(ADJECTIVES);
+            let b = self.pick(WORDS);
+            let mut t = format!("{a} {b} update");
+            t[..1].make_ascii_uppercase();
+            t
+        } else if has("description")
+            || has("comment")
+            || has("note")
+            || has("notes")
+            || has("message")
+            || has("summary")
+            || has("reason")
+            || has("bio")
+        {
+            let a = self.pick(ADJECTIVES);
+            let b = self.pick(WORDS);
+            let mut t = format!("{a} {b} looks good");
+            t[..1].make_ascii_uppercase();
+            t
+        } else if has("name") {
+            // name, full_name, customer_name, product_name ...
+            if has("product") || has("item") {
+                let a = self.pick(ADJECTIVES);
+                let b = self.pick(WORDS);
+                let mut t = format!("{a} {b}");
+                t[..1].make_ascii_uppercase();
+                t
+            } else {
+                let f = self.pick(FIRST_NAMES);
+                let l = self.pick(LAST_NAMES);
+                format!("{f} {l}")
+            }
+        } else {
+            return None;
+        };
+        Some(v)
     }
 
     fn alnum(&mut self, len: usize) -> String {
@@ -2059,6 +2269,64 @@ pub fn flatten_record(v: &Value, prefix: &str, out: &mut Vec<(String, String)>) 
 }
 
 /// Is `a` the same path as `b`, or a parent or child of it?
+/// Lowercase words of a field name: `customerEmail`, `customer_email` and
+/// `customer-email` all give `["customer", "email"]`.
+fn name_tokens(name: &str) -> Vec<String> {
+    let mut toks = Vec::new();
+    let mut cur = String::new();
+    let mut prev_lower = false;
+    for ch in name.chars() {
+        if !ch.is_ascii_alphanumeric() {
+            if !cur.is_empty() {
+                toks.push(std::mem::take(&mut cur));
+            }
+            prev_lower = false;
+            continue;
+        }
+        if ch.is_ascii_uppercase() && prev_lower && !cur.is_empty() {
+            toks.push(std::mem::take(&mut cur));
+        }
+        prev_lower = ch.is_ascii_lowercase() || ch.is_ascii_digit();
+        cur.push(ch.to_ascii_lowercase());
+    }
+    if !cur.is_empty() {
+        toks.push(cur);
+    }
+    toks
+}
+
+const FIRST_NAMES: &[&str] = &[
+    "Ava", "Liam", "Maya", "Noah", "Zoe", "Ethan", "Priya", "Lucas", "Sofia", "Omar", "Elena",
+    "Kenji", "Amara", "Diego", "Hannah", "Ravi", "Chloe", "Mateo", "Leila", "Owen",
+];
+const LAST_NAMES: &[&str] = &[
+    "Garcia", "Smith", "Chen", "Patel", "Johnson", "Okafor", "Nguyen", "Rossi", "Kim", "Lopez",
+    "Meyer", "Silva", "Brown", "Tanaka", "Haddad", "Novak", "Walker", "Reyes", "Clark", "Singh",
+];
+const CITIES: &[&str] = &[
+    "Boston", "Austin", "Denver", "Seattle", "Chicago", "Toronto", "London", "Berlin", "Madrid",
+    "Tokyo", "Sydney", "Lisbon",
+];
+const COUNTRIES: &[(&str, &str)] = &[
+    ("US", "United States"),
+    ("CA", "Canada"),
+    ("GB", "United Kingdom"),
+    ("DE", "Germany"),
+    ("FR", "France"),
+    ("ES", "Spain"),
+    ("JP", "Japan"),
+    ("AU", "Australia"),
+    ("BR", "Brazil"),
+    ("IN", "India"),
+];
+const ADJECTIVES: &[&str] = &[
+    "quick", "quiet", "bright", "classic", "compact", "daily", "fresh", "simple", "steady", "smart",
+];
+const WORDS: &[&str] = &[
+    "order", "invoice", "report", "shipment", "account", "booking", "widget", "lamp", "backpack",
+    "kettle", "notebook", "jacket",
+];
+
 fn touches(a: &str, b: &str) -> bool {
     let under = |x: &str, y: &str| {
         x.len() > y.len() && x.starts_with(y) && matches!(x.as_bytes()[y.len()], b'.' | b'[')

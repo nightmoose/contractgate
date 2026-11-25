@@ -1963,7 +1963,11 @@ fn build_router(state: Arc<AppState>) -> Router {
             axum::http::header::CONTENT_TYPE,
             axum::http::header::ACCEPT,
             axum::http::HeaderName::from_static("x-api-key"),
-        ]);
+        ])
+        // Let browsers cache the preflight for 10 minutes, so each dashboard
+        // POST is one round trip instead of two (and cannot wake a second
+        // stopped staging machine just for the OPTIONS).
+        .max_age(std::time::Duration::from_secs(600));
 
     // `public_cors` — genuinely public endpoints (no tenant data, no bearer
     // tokens).  Permissive so browsers and third-party tools can embed them.
