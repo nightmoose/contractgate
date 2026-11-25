@@ -15,7 +15,7 @@ pub struct CheckTableArgs {
     #[arg(value_name = "CONTRACT")]
     pub contract: PathBuf,
 
-    /// Table to check, used verbatim in the generated SQL — schema-qualify
+    /// Table to check, used verbatim in the generated SQL. Schema-qualify
     /// and quote it yourself if your warehouse needs that
     /// (`analytics.orders`, `"ORDERS"."PUBLIC"."ORDERS"`, ...).
     #[arg(long)]
@@ -25,7 +25,7 @@ pub struct CheckTableArgs {
     #[arg(long)]
     pub dialect: String,
 
-    /// Column(s) that identify a row, comma-separated. Required — the
+    /// Column(s) that identify a row, comma-separated. Required: the
     /// violation report is keyed by these.
     #[arg(long, value_delimiter = ',')]
     pub key: Vec<String>,

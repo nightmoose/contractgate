@@ -50,6 +50,7 @@ const FULL_BUNDLE = [
   "drop-mode-reference.md",
   "pii-masking-reference.md",
   "contract-families-reference.md",
+  "batch-snowflake-databricks-reference.md",
 ];
 
 const missing = [...new Set([...FILES, ...FULL_BUNDLE])].filter(

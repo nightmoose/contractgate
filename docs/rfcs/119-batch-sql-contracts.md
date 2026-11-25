@@ -1,4 +1,4 @@
-# RFC-119: Batch SQL — dbt test export and `check-table`
+# RFC-119: Batch SQL, dbt test export and `check-table`
 
 **Status:** Accepted
 **Date:** 2026-11-25
@@ -17,7 +17,7 @@ contract, or skip batch enforcement entirely.
 Two related, contract-driven surfaces, both pure Rust with no network calls
 and no new mandatory dependencies:
 
-1. **dbt test export** — `contractgate export dbt-tests <contract.yaml>` and
+1. **dbt test export.** `contractgate export dbt-tests <contract.yaml>` and
    `GET /contracts/{id}/versions/{version}/export/dbt-tests` generate:
    - `schema.yml` generic tests: `not_null` (from `required`), `unique`
      (from a `quality: uniqueness` rule), `accepted_values` (from `enum`).
@@ -25,34 +25,34 @@ and no new mandatory dependencies:
    - Singular SQL tests, one per field/rule that a generic test can't
      express: `pattern`, `format`, `min`/`max`, `min_length`/`max_length`,
      and one per `cross_field` rule. Each is `select * from {{ ref(model) }}
-     where <violates>` — the dbt convention that a non-empty result fails
+     where <violates>`: the dbt convention that a non-empty result fails
      the test.
    - `relationships` tests are not generated: the contract format has no
      foreign-key concept today. Documented as a gap; users add them by hand.
    - Fields of type `object` or `array`, and `[]`-wildcard paths (per-item
-     rules), are skipped with a comment in the output — dbt tests run
+     rules), are skipped with a comment in the output. dbt tests run
      against a flat table column, and the contract's nested/array rules are
      an event-shape concept that batch SQL can't express without knowing the
      warehouse's unnesting convention. Documented gap.
 
-2. **`check-table`** — `contractgate check-table <contract.yaml> --table
+2. **`check-table`.** `contractgate check-table <contract.yaml> --table
    <name> --dialect <postgres|duckdb|snowflake|databricks> --key <cols>`
    compiles the same rules into one SQL statement: a `UNION ALL` of
    per-rule `SELECT <key columns>, '<rule>' , '<plain-English reason>'`
    subqueries, so the result is a flat violation report with human-readable
    reasons, not just failed-row counts.
    - `--print-sql` (also the default without `--execute`) emits the SQL for
-     any dialect — this is what makes Snowflake/Databricks support testable
+     any dialect. This is what makes Snowflake/Databricks support testable
      without live credentials: golden-file tests assert the generated text.
    - `--execute` runs the query and prints a summary. Supported for
-     `postgres` only, via the `sqlx` dependency already in the tree — no
+     `postgres` only, via the `sqlx` dependency already in the tree, with no
      new dependency. `--execute` on `duckdb`, `snowflake`, or `databricks`
      errors and points at `--print-sql` plus the user's own SQL client.
      DuckDB was the original plan for a second local-execution dialect (the
      `duckdb` crate, bundled C++ build, same pattern as the existing
      `scaffold`/`kafka-ingress` features that need system build deps), but
      compiling the bundled amalgamation exhausted the shared build sandbox's
-     disk during implementation and had to be reverted — see "Not in v1".
+     disk during implementation and had to be reverted (see "Not in v1").
      There is also no Snowflake/Databricks driver in the dependency
      allow-list and no credentials to test one against.
    - `--quarantine-out <file>` (requires `--execute`) writes the violating
@@ -76,10 +76,10 @@ in `WHERE`, which several dialects reject).
   diff in generated SQL is a reviewable text diff.
 - A Postgres integration test (using the existing local test-DB script)
   loads sample rows into a real table and runs the generated SQL end to
-  end, asserting the actual violation rows — this is the "proven for
+  end, asserting the actual violation rows. This is the "proven for
   batch" evidence, standing in for a live Snowflake/Databricks/DuckDB run.
 
-No database migration — this feature reads an external warehouse table, not
+No database migration. This feature reads an external warehouse table, not
 DataContractGate's own Supabase schema.
 
 ## Not in v1
@@ -89,7 +89,7 @@ DataContractGate's own Supabase schema.
   files; execution is left to the user's own client (SnowSQL, Databricks
   SQL warehouse, `dbt test`).
 - Live execution against DuckDB. The `duckdb` crate's bundled build (the
-  only option — no system `libduckdb` is installed in this environment)
+  only option; no system `libduckdb` is installed in this environment)
   compiles a large vendored C++ amalgamation; attempting it filled the
   shared build sandbox's disk (`/workspace` hit 100% used) and had to be
   reverted. `--dialect duckdb` generates correct SQL (golden-file tested)

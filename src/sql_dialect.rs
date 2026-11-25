@@ -38,11 +38,14 @@ impl SqlDialect {
     }
 
     /// `true` for dialects this build can actually run a query against
-    /// (`--execute`). Snowflake and Databricks are generation-only: no
-    /// driver dependency is in the allow-listed license set, and there are
-    /// no credentials to test one against. See RFC-119.
+    /// (`--execute`). Only Postgres is wired up, via the existing `sqlx`
+    /// dependency. DuckDB, Snowflake, and Databricks are generation-only:
+    /// the `duckdb` crate's bundled build exhausted the shared sandbox disk
+    /// during implementation, and there is no Snowflake/Databricks driver
+    /// in the dependency allow-list (and no credentials to test one
+    /// against). See RFC-119.
     pub fn supports_execute(self) -> bool {
-        matches!(self, SqlDialect::Postgres | SqlDialect::DuckDb)
+        matches!(self, SqlDialect::Postgres)
     }
 }
 
@@ -150,9 +153,9 @@ mod tests {
     }
 
     #[test]
-    fn only_postgres_and_duckdb_execute() {
+    fn only_postgres_execute() {
         assert!(SqlDialect::Postgres.supports_execute());
-        assert!(SqlDialect::DuckDb.supports_execute());
+        assert!(!SqlDialect::DuckDb.supports_execute());
         assert!(!SqlDialect::Snowflake.supports_execute());
         assert!(!SqlDialect::Databricks.supports_execute());
     }
