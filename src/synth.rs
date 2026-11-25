@@ -1225,25 +1225,65 @@ impl<'a> Generator<'a> {
                     set_path(&mut row, &rule.field, b);
                 }
                 _ => {
-                    // Swapping an ordered pair breaks lt/lte/gt/gte when the
-                    // values differ; otherwise draw new values for `field`.
-                    let swapped_breaks = op != CompareOp::Eq && !compare_holds(op, &b, &a);
-                    if swapped_breaks {
-                        set_path(&mut row, &rule.field, b);
-                        set_path(&mut row, other, a);
-                    } else {
-                        let mut done = false;
-                        for _ in 0..8 {
-                            let v = self.regen(&rule.field)?;
-                            if !compare_holds(op, &v, &b) {
-                                set_path(&mut row, &rule.field, v);
-                                done = true;
-                                break;
+                    // Strategies, tried from a seeded random start: swap the
+                    // pair, redraw `field`, redraw `other`, redraw both.
+                    // Redrawn values stay inside each field's own rules, so
+                    // whichever side has room to move is the one that moves.
+                    let start = self.rng.gen_range(0..4usize);
+                    let mut done = false;
+                    for k in 0..4 {
+                        if done {
+                            break;
+                        }
+                        match (start + k) % 4 {
+                            0 => {
+                                if op != CompareOp::Eq && !compare_holds(op, &b, &a) {
+                                    set_path(&mut row, &rule.field, b.clone());
+                                    set_path(&mut row, other, a.clone());
+                                    done = true;
+                                }
+                            }
+                            1 => {
+                                for _ in 0..8 {
+                                    let Some(v) = self.regen(&rule.field) else {
+                                        break;
+                                    };
+                                    if !compare_holds(op, &v, &b) {
+                                        set_path(&mut row, &rule.field, v);
+                                        done = true;
+                                        break;
+                                    }
+                                }
+                            }
+                            2 => {
+                                for _ in 0..8 {
+                                    let Some(w) = self.regen(other) else { break };
+                                    if !compare_holds(op, &a, &w) {
+                                        set_path(&mut row, other, w);
+                                        done = true;
+                                        break;
+                                    }
+                                }
+                            }
+                            _ => {
+                                for _ in 0..8 {
+                                    let (Some(v), Some(w)) =
+                                        (self.regen(&rule.field), self.regen(other))
+                                    else {
+                                        break;
+                                    };
+                                    if !compare_holds(op, &v, &w) {
+                                        set_path(&mut row, &rule.field, v);
+                                        set_path(&mut row, other, w);
+                                        done = true;
+                                        break;
+                                    }
+                                }
                             }
                         }
-                        if !done {
-                            return None;
-                        }
+                    }
+                    if !done {
+                        return None;
                     }
                 }
             }
