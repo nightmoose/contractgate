@@ -404,7 +404,11 @@ fn cli_writes_json_and_csv() {
             .unwrap()
     };
 
-    let a = run(&["--rows", "25", "--seed", "4"]);
+    // Pin --anchor so two runs with the same seed print the same freshness
+    // values. Without it the CLI uses now(), and a second-boundary between
+    // the two invocations (common under cargo-llvm-cov) makes stdout differ.
+    let anchor = chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Secs, true);
+    let a = run(&["--rows", "25", "--seed", "4", "--anchor", &anchor]);
     assert_eq!(
         a.status.code(),
         Some(0),
@@ -414,7 +418,10 @@ fn cli_writes_json_and_csv() {
     let rows: Vec<Value> = serde_json::from_slice(&a.stdout).unwrap();
     assert_eq!(rows.len(), 25);
     assert_valid(&compile(RICH), &rows);
-    assert_eq!(a.stdout, run(&["--rows", "25", "--seed", "4"]).stdout);
+    assert_eq!(
+        a.stdout,
+        run(&["--rows", "25", "--seed", "4", "--anchor", &anchor]).stdout
+    );
 
     let bad = run(&[
         "--rows",
