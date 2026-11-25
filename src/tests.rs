@@ -90,6 +90,7 @@ mod fixtures {
             on_fail: crate::contract::OnFailMode::Quarantine,
             on_fail_locked: false,
             quarantine_guard: crate::contract::QuarantineGuardConfig::default(),
+            cross_field: Vec::new(),
         }
     }
 
@@ -119,6 +120,7 @@ mod fixtures {
             on_fail: crate::contract::OnFailMode::Quarantine,
             on_fail_locked: false,
             quarantine_guard: crate::contract::QuarantineGuardConfig::default(),
+            cross_field: Vec::new(),
         }
     }
 }
@@ -2108,6 +2110,7 @@ mod rfc028_tests {
             on_fail: crate::contract::OnFailMode::Quarantine,
             on_fail_locked: false,
             quarantine_guard: crate::contract::QuarantineGuardConfig::default(),
+            cross_field: Vec::new(),
         };
 
         let json_val = serde_json::to_value(&c).expect("Contract must serialize to JSON");
@@ -2161,6 +2164,7 @@ mod rfc028_tests {
             on_fail: crate::contract::OnFailMode::Quarantine,
             on_fail_locked: false,
             quarantine_guard: crate::contract::QuarantineGuardConfig::default(),
+            cross_field: Vec::new(),
         };
         let json_val = serde_json::to_value(&c).unwrap();
         assert!(
@@ -2233,6 +2237,7 @@ mod rfc028_tests {
             on_fail: crate::contract::OnFailMode::Quarantine,
             on_fail_locked: false,
             quarantine_guard: crate::contract::QuarantineGuardConfig::default(),
+            cross_field: Vec::new(),
         };
         assert_eq!(c.egress_leakage_mode, EgressLeakageMode::Off);
     }

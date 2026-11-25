@@ -110,6 +110,117 @@ pub struct Contract {
     /// no thresholds, so it does not change failure handling.
     #[serde(default, skip_serializing_if = "QuarantineGuardConfig::is_unset")]
     pub quarantine_guard: QuarantineGuardConfig,
+    /// RFC-118: rules that relate two fields of the same record
+    /// (`end_date` >= `start_date`, `refund_reason` required when
+    /// `status` is `refunded`). Omitted means none, so contracts written
+    /// before RFC-118 parse and validate exactly as before.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub cross_field: Vec<CrossFieldRule>,
+}
+
+// ---------------------------------------------------------------------------
+// Cross-field rules (RFC-118)
+// ---------------------------------------------------------------------------
+
+/// One rule relating two fields of a record. Exactly one form is allowed:
+///
+/// ```yaml
+/// cross_field:
+///   - field: end_date        # compare: field <op> other
+///     op: gte
+///     other: start_date
+///   - field: refund_reason   # conditional required
+///     required_if: { field: status, equals: refunded }
+/// ```
+///
+/// Comparisons skip when either side is absent or null (`required` covers
+/// presence). Numbers compare numerically; strings that both parse as RFC
+/// 3339 timestamps, or both as `YYYY-MM-DD` dates, compare as points in
+/// time; other strings compare as text.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct CrossFieldRule {
+    /// Field path the rule is about (dot notation).
+    pub field: String,
+    /// Comparison operator. Requires `other`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub op: Option<CompareOp>,
+    /// Field path compared against.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub other: Option<String>,
+    /// `field` must be present and non-null when this condition holds.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub required_if: Option<FieldCondition>,
+    /// Human-readable description (informational).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum CompareOp {
+    Lt,
+    Lte,
+    Gt,
+    Gte,
+    Eq,
+    Ne,
+}
+
+impl CompareOp {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            CompareOp::Lt => "lt",
+            CompareOp::Lte => "lte",
+            CompareOp::Gt => "gt",
+            CompareOp::Gte => "gte",
+            CompareOp::Eq => "eq",
+            CompareOp::Ne => "ne",
+        }
+    }
+
+    pub fn symbol(self) -> &'static str {
+        match self {
+            CompareOp::Lt => "<",
+            CompareOp::Lte => "<=",
+            CompareOp::Gt => ">",
+            CompareOp::Gte => ">=",
+            CompareOp::Eq => "==",
+            CompareOp::Ne => "!=",
+        }
+    }
+}
+
+/// `field` holds exactly `equals` (JSON equality).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct FieldCondition {
+    pub field: String,
+    pub equals: serde_json::Value,
+}
+
+impl CrossFieldRule {
+    /// Short label used in violation messages and synthetic-data labels,
+    /// e.g. `end_date >= start_date` or `refund_reason required if status == "refunded"`.
+    pub fn label(&self) -> String {
+        match (&self.op, &self.other, &self.required_if) {
+            (Some(op), Some(other), None) => format!("{} {} {}", self.field, op.symbol(), other),
+            (None, None, Some(c)) => {
+                format!("{} required if {} == {}", self.field, c.field, c.equals)
+            }
+            _ => format!("{} (malformed cross_field rule)", self.field),
+        }
+    }
+
+    /// Compile-time shape check: exactly one of `op` + `other`, or `required_if`.
+    pub fn check_shape(&self) -> Result<(), String> {
+        match (&self.op, &self.other, &self.required_if) {
+            (Some(_), Some(o), None) if !o.is_empty() && !self.field.is_empty() => Ok(()),
+            (None, None, Some(c)) if !c.field.is_empty() && !self.field.is_empty() => Ok(()),
+            _ => Err(format!(
+                "cross_field rule on '{}' must set either `op` and `other`, or `required_if`, and not both",
+                self.field
+            )),
+        }
+    }
 }
 
 fn is_default_on_fail(mode: &OnFailMode) -> bool {

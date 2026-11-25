@@ -261,6 +261,7 @@ fn make_contract(fields: &[(&str, FieldType, bool)]) -> Contract {
         on_fail: contractgate::contract::OnFailMode::Quarantine,
         on_fail_locked: false,
         quarantine_guard: contractgate::contract::QuarantineGuardConfig::default(),
+        cross_field: Vec::new(),
     }
 }
 

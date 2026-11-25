@@ -419,6 +419,7 @@ mod tests {
             on_fail: crate::contract::OnFailMode::Quarantine,
             on_fail_locked: false,
             quarantine_guard: crate::contract::QuarantineGuardConfig::default(),
+            cross_field: Vec::new(),
         }
     }
 
