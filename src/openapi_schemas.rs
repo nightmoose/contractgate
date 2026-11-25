@@ -791,6 +791,7 @@ fn fill_version_bodies(paths: &mut Map<String, Value>) {
             "200",
         ),
         ("/contracts/import", "post", "201"),
+        ("/contracts/import/dbt", "post", "201"),
         ("/contracts/{id}/versions", "post", "201"),
     ] {
         put_json(paths, path, method, status, version.clone());
@@ -1365,6 +1366,7 @@ fn fill_free_plan_limits(paths: &mut Map<String, Value>) {
         ("/contracts/{id}/versions", "post"),
         ("/contracts/deploy", "post"),
         ("/contracts/import", "post"),
+        ("/contracts/import/dbt", "post"),
         ("/contracts/import-published", "post"),
         ("/contracts/{id}/fork", "post"),
         ("/public-contract-families/{id}/fork", "post"),

@@ -21,6 +21,11 @@ pub enum ExportCmd {
     ///   cg export dbt-tests contracts/orders.yaml --model orders --out dbt/orders
     ///   cg export dbt-tests contracts/orders.yaml --dialect snowflake
     DbtTests(DbtTestsArgs),
+    /// Export a contract as a dbt model contract (`schema.yml`).
+    ///
+    /// Examples:
+    ///   cg export dbt contracts/orders.yaml --model orders --out models/schema.yml
+    Dbt(DbtArgs),
 }
 
 #[derive(Debug, Args)]
@@ -43,6 +48,21 @@ pub struct DbtTestsArgs {
     /// Output directory. Writes `<out>/schema.yml` and `<out>/tests/*.sql`.
     #[arg(long, short = 'o', default_value = ".")]
     pub out: PathBuf,
+}
+
+#[derive(Debug, Args)]
+pub struct DbtArgs {
+    /// Path to the contract YAML file.
+    #[arg(value_name = "CONTRACT")]
+    pub contract: PathBuf,
+
+    /// dbt model name. Defaults to the contract's `name`.
+    #[arg(long)]
+    pub model: Option<String>,
+
+    /// Output path for schema.yml. Use `-` for stdout. Defaults to `schema.yml`.
+    #[arg(long, short = 'o')]
+    pub out: Option<PathBuf>,
 }
 
 /// Exit codes: 0 = written, 2 = contract load/compile error.
@@ -97,6 +117,50 @@ pub fn run(args: &DbtTestsArgs) -> Result<i32> {
     );
     for s in &export.skipped {
         eprintln!("note: skipped {}: {}", s.field, s.reason);
+    }
+    Ok(0)
+}
+
+/// Exit codes: 0 = written, 2 = contract load error.
+pub fn run_dbt(args: &DbtArgs) -> Result<i32> {
+    let yaml = fs::read_to_string(&args.contract)
+        .with_context(|| format!("reading {}", args.contract.display()))?;
+    let contract: crate::contract::Contract = match serde_yaml::from_str(&yaml) {
+        Ok(c) => c,
+        Err(e) => {
+            eprintln!("error: parsing {}: {e}", args.contract.display());
+            return Ok(2);
+        }
+    };
+    let (schema, warnings) = match crate::dbt_yaml::export_dbt(&contract, args.model.as_deref()) {
+        Ok(v) => v,
+        Err(e) => {
+            eprintln!("error: {e}");
+            return Ok(2);
+        }
+    };
+    for w in &warnings {
+        eprintln!("note: {w}");
+    }
+    match &args.out {
+        Some(p) if p.as_os_str() == "-" => {
+            print!("{schema}");
+        }
+        Some(p) => {
+            if let Some(parent) = p.parent() {
+                if !parent.as_os_str().is_empty() {
+                    fs::create_dir_all(parent)
+                        .with_context(|| format!("creating {}", parent.display()))?;
+                }
+            }
+            fs::write(p, &schema).with_context(|| format!("writing {}", p.display()))?;
+            println!("wrote {}", p.display());
+        }
+        None => {
+            let p = PathBuf::from("schema.yml");
+            fs::write(&p, &schema).with_context(|| format!("writing {}", p.display()))?;
+            println!("wrote {}", p.display());
+        }
     }
     Ok(0)
 }

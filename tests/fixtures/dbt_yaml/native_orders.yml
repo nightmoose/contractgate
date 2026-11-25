@@ -1,0 +1,43 @@
+version: 2
+models:
+  - name: orders
+    description: Checkout orders from the storefront
+    config:
+      contract:
+        enforced: true
+    constraints:
+      - type: primary_key
+        columns: [order_id]
+    columns:
+      - name: order_id
+        data_type: varchar
+        description: Unique order identifier
+        constraints:
+          - type: not_null
+      - name: amount_usd
+        data_type: float
+        constraints:
+          - type: not_null
+          - type: check
+            expression: "amount_usd >= 0"
+      - name: status
+        data_type: varchar(16)
+        constraints:
+          - type: not_null
+        tests:
+          - accepted_values:
+              values: [pending, paid, shipped, delivered, cancelled]
+      - name: created_at
+        data_type: timestamp
+        constraints:
+          - type: not_null
+      - name: discount_code
+        data_type: character varying(20)
+      - name: customer_id
+        data_type: varchar
+        constraints:
+          - type: not_null
+        tests:
+          - relationships:
+              to: ref('customers')
+              field: id

@@ -1,0 +1,45 @@
+name: "DataContractGate dbt contract check"
+description: "Fail the job when a dbt schema.yml model contract has drifted from a DataContractGate contract."
+author: "DataContractGate"
+branding:
+  icon: check-circle
+  color: green
+
+inputs:
+  contract:
+    description: "Path to the DataContractGate contract YAML."
+    required: true
+  schema:
+    description: "Path to the dbt schema.yml."
+    required: true
+  model:
+    description: "Model name when schema.yml contains more than one model."
+    required: false
+    default: ""
+  binary:
+    description: "Path to the contractgate CLI. Must already be installed."
+    required: false
+    default: "contractgate"
+
+runs:
+  using: composite
+  steps:
+    - name: Check dbt model contract against DataContractGate
+      shell: bash
+      env:
+        CG_BIN: ${{ inputs.binary }}
+        CG_CONTRACT: ${{ inputs.contract }}
+        CG_SCHEMA: ${{ inputs.schema }}
+        CG_MODEL: ${{ inputs.model }}
+      run: |
+        set -euo pipefail
+        if ! command -v "$CG_BIN" >/dev/null 2>&1 && [ ! -x "$CG_BIN" ]; then
+          echo "error: contractgate CLI not found at '$CG_BIN'."
+          echo "Install or build it first, then pass binary: /path/to/contractgate."
+          exit 2
+        fi
+        extra=()
+        if [ -n "$CG_MODEL" ]; then
+          extra+=(--model "$CG_MODEL")
+        fi
+        "$CG_BIN" import dbt "$CG_SCHEMA" --check-against "$CG_CONTRACT" "${extra[@]}"
