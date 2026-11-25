@@ -117,6 +117,7 @@ them by name only.
 | 115 | [Anonymous playground](rfcs/115-anonymous-playground.md) | Accepted |
 | 116 | [Downstream impact analysis](rfcs/116-lineage-impact.md) | Accepted |
 | 117 | [Synthetic data from a contract](rfcs/117-synthetic-data.md) | Accepted |
+| 118 | [Synthetic data v1.1 and cross-field rules](rfcs/118-synthetic-data-v1-1.md) | Accepted |
 
 ---
 
@@ -133,6 +134,8 @@ them by name only.
 | **Superseded** | Replaced by a later RFC listed in the notes column; kept for design context. |
 
 ---
+
+*2026-11-25: RFC-118, synthetic data v1.1. Contracts gain an optional top-level `cross_field:` list (comparisons `lt`/`lte`/`gt`/`gte`/`eq`/`ne` between two fields, and `required_if`), enforced by the validator as `cross_field_violation`. Existing contracts are unchanged. The generator follows and breaks cross-field rules, breaks rules inside array items in invalid mode, wraps rows in the contract envelope on request, and takes an `anchor_time` so freshness repeats with a seed. New dashboard tab and Python `contractgate synth` (SDK 0.4.2, unpublished). No migration. See `docs/cross-field-rules-reference.md`.*
 
 *2026-11-25: RFC-117, synthetic data. `POST /contracts/synth` and `contractgate synth` generate up to 10,000 rows from a contract's rules only (types, required, enum, ranges, lengths, patterns, formats, quality rules, metrics, compliance mode). No stored events are read. Valid rows pass the validator. Invalid rows each break exactly one rule and carry a `broken_rule` label. A rule that cannot be met returns an error naming it. Deterministic for a seed. No migration. See `docs/synthetic-data-reference.md`.*
 

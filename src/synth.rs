@@ -23,8 +23,12 @@
 //! The one input from the outside world is `now_unix`, used only for
 //! `freshness` rules, which are defined relative to the current time.
 
-use crate::contract::{Contract, FieldDefinition, FieldType, QualityRuleType};
-use crate::validation::{string_format_ok, validate, CompiledContract, Violation, ViolationKind};
+use crate::contract::{
+    CompareOp, Contract, CrossFieldRule, FieldDefinition, FieldType, QualityRuleType,
+};
+use crate::validation::{
+    compare_holds, string_format_ok, validate_at, CompiledContract, Violation, ViolationKind,
+};
 use rand::{rngs::StdRng, seq::SliceRandom, Rng, SeedableRng};
 use regex_syntax::hir::{Class, Hir, HirKind};
 use serde::{Deserialize, Serialize};
@@ -100,11 +104,15 @@ pub struct BrokenRule {
     pub field: String,
     /// Rule name: `required`, `type`, `enum`, `min`, `max`, `min_length`,
     /// `max_length`, `pattern`, `format`, `completeness`, `freshness`,
-    /// `uniqueness`, `metric_min`, `metric_max` or `compliance_mode`.
+    /// `uniqueness`, `metric_min`, `metric_max`, `cross_field` or
+    /// `compliance_mode`. Array items use paths like `lines[0].sku`.
     pub rule: String,
     /// Metric name for `metric_min` / `metric_max`.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub metric: Option<String>,
+    /// For `cross_field`: the rule, e.g. `end_date >= start_date`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub constraint: Option<String>,
     /// The violation kind the validator reports for this row.
     pub violation_kind: ViolationKind,
     /// The validator's message for this row.
@@ -214,6 +222,8 @@ enum Target {
     Uniqueness(String),
     MetricMin(String, String, f64),
     MetricMax(String, String, f64),
+    /// Index into `contract.cross_field`, and the rule's field path.
+    CrossField(usize, String),
     Compliance,
 }
 
@@ -234,6 +244,7 @@ impl Target {
             Target::Uniqueness(_) => "uniqueness",
             Target::MetricMin(..) => "metric_min",
             Target::MetricMax(..) => "metric_max",
+            Target::CrossField(..) => "cross_field",
             Target::Compliance => "compliance_mode",
         }
     }
@@ -253,7 +264,8 @@ impl Target {
             | Target::Freshness(p, _)
             | Target::Uniqueness(p)
             | Target::MetricMin(_, p, _)
-            | Target::MetricMax(_, p, _) => p,
+            | Target::MetricMax(_, p, _)
+            | Target::CrossField(_, p) => p,
             Target::Compliance => "<undeclared>",
         }
     }
@@ -270,6 +282,7 @@ impl Target {
             Target::Freshness(..) => ViolationKind::FreshnessViolation,
             Target::Uniqueness(_) => ViolationKind::UniquenessViolation,
             Target::MetricMin(..) | Target::MetricMax(..) => ViolationKind::MetricRangeViolation,
+            Target::CrossField(..) => ViolationKind::CrossFieldViolation,
             Target::Compliance => ViolationKind::UndeclaredField,
         }
     }
@@ -331,6 +344,7 @@ fn rule_for_violation(v: &Violation) -> &'static str {
         ViolationKind::FreshnessViolation => "freshness",
         ViolationKind::UniquenessViolation => "uniqueness",
         ViolationKind::UndeclaredField => "compliance_mode",
+        ViolationKind::CrossFieldViolation => "cross_field",
         _ => "contract",
     }
 }
@@ -456,7 +470,10 @@ impl<'a> Generator<'a> {
         let mut last: Option<Violation> = None;
         let fields = self.eff.clone();
         for _ in 0..ROW_ATTEMPTS {
-            let row = self.gen_object(&fields, "", full)?;
+            let mut row = self.gen_object(&fields, "", full)?;
+            for _ in 0..3 {
+                self.repair_cross(&mut row);
+            }
             let violations = self.row_violations(&row);
             match violations.into_iter().next() {
                 None => return Ok(row),
@@ -469,7 +486,7 @@ impl<'a> Generator<'a> {
     /// Validator violations plus batch-uniqueness collisions against the
     /// rows already emitted.
     fn row_violations(&self, row: &Value) -> Vec<Violation> {
-        let mut out = validate(self.compiled, row).violations;
+        let mut out = validate_at(self.compiled, row, self.now).violations;
         for (path, seen) in &self.unique {
             if let Some(v) = get_path(row, path) {
                 if !v.is_null() && seen.contains(&v.to_string()) {
@@ -571,7 +588,16 @@ impl<'a> Generator<'a> {
                 continue;
             };
             let violations = self.row_violations(&mutated);
-            if violations.len() == 1 && t.matches(&violations[0]) {
+            let constraint = match t {
+                Target::CrossField(i, _) => Some(self.compiled.contract.cross_field[*i].label()),
+                _ => None,
+            };
+            // Several cross-field rules can share a field; the label must
+            // name the rule this row was built to break.
+            let same_cross_rule = constraint.as_ref().is_none_or(|c| {
+                violations.first().and_then(|v| v.expected.as_deref()) == Some(c.as_str())
+            });
+            if violations.len() == 1 && t.matches(&violations[0]) && same_cross_rule {
                 let v = &violations[0];
                 return Ok(Some(InvalidRow {
                     record: mutated,
@@ -579,6 +605,7 @@ impl<'a> Generator<'a> {
                         field: v.field.clone(),
                         rule: t.rule().to_string(),
                         metric: t.metric(),
+                        constraint,
                         violation_kind: v.kind.clone(),
                         message: v.message.clone(),
                     },
@@ -592,7 +619,7 @@ impl<'a> Generator<'a> {
     fn targets(&self) -> Vec<Target> {
         let c = &self.compiled.contract;
         let mut out = Vec::new();
-        collect_field_targets(&c.ontology.entities, "", &mut out);
+        collect_field_targets(&c.ontology.entities, "", false, &mut out);
         for q in &c.quality {
             match q.rule_type {
                 QualityRuleType::Completeness => out.push(Target::Completeness(q.field.clone())),
@@ -614,6 +641,9 @@ impl<'a> Generator<'a> {
                 out.push(Target::MetricMax(m.name.clone(), p.clone(), hi));
             }
         }
+        for (i, r) in c.cross_field.iter().enumerate() {
+            out.push(Target::CrossField(i, r.field.clone()));
+        }
         if c.compliance_mode {
             out.push(Target::Compliance);
         }
@@ -624,6 +654,10 @@ impl<'a> Generator<'a> {
     fn mutate(&mut self, mut row: Value, t: &Target, prior: &[InvalidRow]) -> Option<Value> {
         let def = find_def(&self.compiled.contract.ontology.entities, t.path()).cloned();
         let new_value: Option<Value> = match t {
+            Target::CrossField(i, _) => {
+                let rule = self.compiled.contract.cross_field[*i].clone();
+                return self.break_cross(row, &rule);
+            }
             Target::Required(p) => {
                 remove_path(&mut row, p);
                 return Some(row);
@@ -671,7 +705,7 @@ impl<'a> Generator<'a> {
             Target::Min(_) => {
                 let d = def?;
                 let lo = d.min?;
-                let step = self.rng.gen_range(1..10) as f64;
+                let step = self.rng.gen_range(1..4) as f64;
                 Some(match d.field_type {
                     FieldType::Integer => json!(lo.ceil() as i64 - step as i64),
                     _ => json!(round2(lo - step - self.rng.gen::<f64>())),
@@ -680,7 +714,7 @@ impl<'a> Generator<'a> {
             Target::Max(_) => {
                 let d = def?;
                 let hi = d.max?;
-                let step = self.rng.gen_range(1..10) as f64;
+                let step = self.rng.gen_range(1..4) as f64;
                 Some(match d.field_type {
                     FieldType::Integer => json!(hi.floor() as i64 + step as i64),
                     _ => json!(round2(hi + step + self.rng.gen::<f64>())),
@@ -753,7 +787,7 @@ impl<'a> Generator<'a> {
                 candidates.choose(&mut self.rng).map(|v| (*v).clone())
             }
             Target::MetricMin(_, _, lo) => {
-                let step = self.rng.gen_range(1..10);
+                let step = self.rng.gen_range(1..4);
                 Some(if is_integer_field(def.as_ref()) {
                     json!(lo.ceil() as i64 - step)
                 } else {
@@ -761,7 +795,7 @@ impl<'a> Generator<'a> {
                 })
             }
             Target::MetricMax(_, _, hi) => {
-                let step = self.rng.gen_range(1..10);
+                let step = self.rng.gen_range(1..4);
                 Some(if is_integer_field(def.as_ref()) {
                     json!(hi.floor() as i64 + step)
                 } else {
@@ -772,6 +806,107 @@ impl<'a> Generator<'a> {
         let v = new_value?;
         set_path(&mut row, t.path(), v)?;
         Some(row)
+    }
+
+    // -- cross-field rules ---------------------------------------------------
+
+    /// Nudge a fresh row toward the contract's cross-field rules: swap two
+    /// values that are out of order, copy for `eq`, regenerate for `ne`, and
+    /// fill a conditionally required field. The validator still judges the
+    /// result, and the row is regenerated if it fails.
+    fn repair_cross(&mut self, row: &mut Value) {
+        let rules = self.compiled.contract.cross_field.clone();
+        for rule in &rules {
+            if let (Some(op), Some(other)) = (rule.op, &rule.other) {
+                let (Some(a), Some(b)) = (
+                    get_path(row, &rule.field).filter(|v| !v.is_null()).cloned(),
+                    get_path(row, other).filter(|v| !v.is_null()).cloned(),
+                ) else {
+                    continue;
+                };
+                if compare_holds(op, &a, &b) {
+                    continue;
+                }
+                match op {
+                    CompareOp::Eq => {
+                        set_path(row, &rule.field, b);
+                    }
+                    CompareOp::Ne => {
+                        if let Some(v) = self.regen(&rule.field) {
+                            set_path(row, &rule.field, v);
+                        }
+                    }
+                    _ => {
+                        if compare_holds(op, &b, &a) {
+                            set_path(row, &rule.field, b);
+                            set_path(row, other, a);
+                        } else if let Some(v) = self.regen(&rule.field) {
+                            set_path(row, &rule.field, v);
+                        }
+                    }
+                }
+            } else if let Some(cond) = &rule.required_if {
+                let holds = get_path(row, &cond.field) == Some(&cond.equals);
+                let present = get_path(row, &rule.field).is_some_and(|v| !v.is_null());
+                if holds && !present {
+                    if let Some(v) = self.regen(&rule.field) {
+                        set_path(row, &rule.field, v);
+                    }
+                }
+            }
+        }
+    }
+
+    /// A fresh valid value for the field at `path`, from the generation
+    /// ontology. `None` when the path is not declared.
+    fn regen(&mut self, path: &str) -> Option<Value> {
+        let def = find_def(&self.eff, path)?.clone();
+        self.gen_field(&def, path, true).ok()
+    }
+
+    /// Make `row` fail `rule` (and, ideally, nothing else).
+    fn break_cross(&mut self, mut row: Value, rule: &CrossFieldRule) -> Option<Value> {
+        if let (Some(op), Some(other)) = (rule.op, &rule.other) {
+            let a = get_path(&row, &rule.field)?.clone();
+            let b = get_path(&row, other)?.clone();
+            if a.is_null() || b.is_null() {
+                return None;
+            }
+            match op {
+                CompareOp::Ne => {
+                    set_path(&mut row, &rule.field, b);
+                }
+                _ => {
+                    // Swapping an ordered pair breaks lt/lte/gt/gte when the
+                    // values differ; otherwise draw new values for `field`.
+                    let swapped_breaks = op != CompareOp::Eq && !compare_holds(op, &b, &a);
+                    if swapped_breaks {
+                        set_path(&mut row, &rule.field, b);
+                        set_path(&mut row, other, a);
+                    } else {
+                        let mut done = false;
+                        for _ in 0..8 {
+                            let v = self.regen(&rule.field)?;
+                            if !compare_holds(op, &v, &b) {
+                                set_path(&mut row, &rule.field, v);
+                                done = true;
+                                break;
+                            }
+                        }
+                        if !done {
+                            return None;
+                        }
+                    }
+                }
+            }
+            Some(row)
+        } else if let Some(cond) = &rule.required_if {
+            set_path(&mut row, &cond.field, cond.equals.clone())?;
+            remove_path(&mut row, &rule.field);
+            Some(row)
+        } else {
+            None
+        }
     }
 
     // -- values -------------------------------------------------------------
@@ -853,7 +988,7 @@ impl<'a> Generator<'a> {
         for attempt in 0..FIELD_ATTEMPTS {
             let candidate = self.raw_value(f, path, attempt)?;
             let wrapped = json!({ "v": candidate });
-            let res = validate(&self.oracles[&key], &wrapped);
+            let res = validate_at(&self.oracles[&key], &wrapped, self.now);
             if res.passed {
                 return Ok(candidate);
             }
@@ -1200,10 +1335,30 @@ fn precheck_fields(fields: &[FieldDefinition], prefix: &str) -> Result<(), Synth
     Ok(())
 }
 
-fn collect_field_targets(fields: &[FieldDefinition], prefix: &str, out: &mut Vec<Target>) {
+fn collect_field_targets(
+    fields: &[FieldDefinition],
+    prefix: &str,
+    in_items: bool,
+    out: &mut Vec<Target>,
+) {
     for f in fields {
         let p = join(prefix, &f.name);
-        if f.required {
+        field_targets(f, p, f.required, in_items, out);
+    }
+}
+
+/// Targets for one field at path `p`. `in_items` is true inside array
+/// items, where the validator does not apply `pattern` (patterns are
+/// compiled for object paths only), so no pattern target is emitted.
+fn field_targets(
+    f: &FieldDefinition,
+    p: String,
+    required: bool,
+    in_items: bool,
+    out: &mut Vec<Target>,
+) {
+    {
+        if required {
             out.push(Target::Required(p.clone()));
         }
         if f.field_type != FieldType::Any {
@@ -1227,7 +1382,7 @@ fn collect_field_targets(fields: &[FieldDefinition], prefix: &str, out: &mut Vec
             if f.max_length.is_some() {
                 out.push(Target::MaxLength(p.clone()));
             }
-            if f.pattern.is_some() {
+            if f.pattern.is_some() && !in_items {
                 out.push(Target::Pattern(p.clone()));
             }
             let fmt_enforced = f.field_type != FieldType::String
@@ -1243,7 +1398,13 @@ fn collect_field_targets(fields: &[FieldDefinition], prefix: &str, out: &mut Vec
         }
         if f.field_type == FieldType::Object {
             if let Some(props) = &f.properties {
-                collect_field_targets(props, &p, out);
+                collect_field_targets(props, &p, in_items, out);
+            }
+        }
+        // Rules inside array items, aimed at the first item.
+        if f.field_type == FieldType::Array {
+            if let Some(item) = &f.items {
+                field_targets(item, format!("{p}[0]"), false, true, out);
             }
         }
     }
@@ -1366,16 +1527,19 @@ fn ensure_path<'f>(
 }
 
 fn find_def<'f>(fields: &'f [FieldDefinition], path: &str) -> Option<&'f FieldDefinition> {
+    let segs = segments(path);
     let mut cur = fields;
-    let mut parts = path.split('.').peekable();
-    loop {
-        let name = parts.next()?;
-        let f = cur.iter().find(|f| f.name == name)?;
-        if parts.peek().is_none() {
+    for (n, (name, idx)) in segs.iter().enumerate() {
+        let mut f = cur.iter().find(|f| f.name == *name)?;
+        if idx.is_some() {
+            f = f.items.as_deref()?;
+        }
+        if n + 1 == segs.len() {
             return Some(f);
         }
         cur = f.properties.as_deref()?;
     }
+    None
 }
 
 /// Two decimal places; callers step at least 1 past a bound, so rounding
@@ -1444,44 +1608,91 @@ fn default_bounds(min: Option<f64>, max: Option<f64>, span: f64) -> (f64, f64) {
     }
 }
 
+/// Split `a.b[2].c` into `[("a", None), ("b", Some(2)), ("c", None)]`.
+fn segments(path: &str) -> Vec<(&str, Option<usize>)> {
+    path.split('.')
+        .map(
+            |seg| match seg.strip_suffix(']').and_then(|s| s.split_once('[')) {
+                Some((name, idx)) => (name, idx.parse().ok()),
+                None => (seg, None),
+            },
+        )
+        .collect()
+}
+
 fn get_path<'v>(v: &'v Value, path: &str) -> Option<&'v Value> {
     let mut cur = v;
-    for seg in path.split('.') {
-        cur = cur.as_object()?.get(seg)?;
+    for (name, idx) in segments(path) {
+        cur = cur.as_object()?.get(name)?;
+        if let Some(i) = idx {
+            cur = cur.as_array()?.get(i)?;
+        }
+    }
+    Some(cur)
+}
+
+fn get_path_mut<'v>(v: &'v mut Value, segs: &[(&str, Option<usize>)]) -> Option<&'v mut Value> {
+    let mut cur = v;
+    for (name, idx) in segs {
+        cur = cur.as_object_mut()?.get_mut(*name)?;
+        if let Some(i) = idx {
+            cur = cur.as_array_mut()?.get_mut(*i)?;
+        }
     }
     Some(cur)
 }
 
 fn set_path(v: &mut Value, path: &str, new: Value) -> Option<()> {
-    let mut cur = v;
-    let mut parts = path.split('.').peekable();
-    while let Some(seg) = parts.next() {
-        let obj = cur.as_object_mut()?;
-        if parts.peek().is_none() {
-            obj.insert(seg.to_string(), new);
-            return Some(());
+    let segs = segments(path);
+    let (last, parents) = segs.split_last()?;
+    let parent = get_path_mut(v, parents)?;
+    match last {
+        (name, None) => {
+            parent.as_object_mut()?.insert(name.to_string(), new);
         }
-        cur = obj.get_mut(seg)?;
+        (name, Some(i)) => {
+            *parent
+                .as_object_mut()?
+                .get_mut(*name)?
+                .as_array_mut()?
+                .get_mut(*i)? = new;
+        }
     }
-    None
+    Some(())
 }
 
 fn remove_path(v: &mut Value, path: &str) {
-    let mut cur = v;
-    let mut parts = path.split('.').peekable();
-    while let Some(seg) = parts.next() {
-        let Some(obj) = cur.as_object_mut() else {
-            return;
-        };
-        if parts.peek().is_none() {
-            obj.remove(seg);
-            return;
-        }
-        match obj.get_mut(seg) {
-            Some(next) => cur = next,
-            None => return,
-        }
+    let segs = segments(path);
+    let Some(((name, None), parents)) = segs.split_last() else {
+        return; // array elements are not removed
+    };
+    if let Some(obj) = get_path_mut(v, parents).and_then(|p| p.as_object_mut()) {
+        obj.remove(*name);
     }
+}
+
+/// Wrap generated records in the contract's `envelope` (RFC-038) so the
+/// result can be posted as one API-style batch. With `validate_wrapper`,
+/// the wrapper carries `success` and a one-page `pagination` block.
+pub fn wrap_envelope(contract: &Contract, records: Vec<Value>) -> Result<Value, SynthError> {
+    let Some(env) = &contract.envelope else {
+        return Err(SynthError::new(
+            "envelope",
+            None,
+            "the contract declares no `envelope`, so there is nothing to wrap the rows in",
+        ));
+    };
+    let n = records.len();
+    let mut obj = Map::new();
+    if env.validate_wrapper {
+        obj.insert("success".into(), json!(true));
+        obj.insert(
+            "pagination".into(),
+            json!({"page": 1, "limit": n, "total": n, "hasMore": false}),
+        );
+    }
+    obj.insert(env.records_path.clone(), Value::Array(records));
+    Ok(Value::Object(obj))
 }
 
 /// Flatten one record into CSV cells: nested objects use dot paths, and

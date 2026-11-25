@@ -268,6 +268,7 @@ mod tests {
             on_fail: crate::contract::OnFailMode::Quarantine,
             on_fail_locked: false,
             quarantine_guard: crate::contract::QuarantineGuardConfig::default(),
+            cross_field: Vec::new(),
         };
         CompiledContract::compile_with_salt(contract, salt).unwrap()
     }
@@ -552,6 +553,7 @@ mod tests {
             on_fail: crate::contract::OnFailMode::Quarantine,
             on_fail_locked: false,
             quarantine_guard: crate::contract::QuarantineGuardConfig::default(),
+            cross_field: Vec::new(),
         };
         let err = CompiledContract::compile_with_salt(contract, b"x".to_vec())
             .expect_err("non-string transform should fail compile");

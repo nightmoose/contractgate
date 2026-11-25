@@ -440,3 +440,249 @@ fn cli_writes_json_and_csv() {
     assert_eq!(e.status.code(), Some(1));
     assert!(String::from_utf8_lossy(&e.stderr).contains("min_length"));
 }
+
+const V11: &str = r#"
+version: "1.0"
+name: synth_v11
+envelope:
+  records_path: data
+  validate_wrapper: true
+ontology:
+  entities:
+    - name: booking_id
+      type: string
+      format: uuid
+    - name: status
+      type: string
+      enum: [booked, cancelled, refunded]
+    - name: refund_reason
+      type: string
+      required: false
+      min_length: 3
+    - name: start_date
+      type: date
+    - name: end_date
+      type: date
+    - name: created_at
+      type: timestamp
+    - name: updated_at
+      type: timestamp
+    - name: min_guests
+      type: integer
+      min: 1
+      max: 4
+    - name: max_guests
+      type: integer
+      min: 1
+      max: 8
+    - name: guest_email
+      type: string
+      format: email
+    - name: host_email
+      type: string
+      format: email
+    - name: lines
+      type: array
+      items:
+        name: line
+        type: object
+        properties:
+          - name: sku
+            type: string
+            min_length: 3
+            max_length: 8
+          - name: qty
+            type: integer
+            min: 1
+            max: 10
+          - name: kind
+            type: string
+            enum: [room, fee]
+    - name: tags
+      type: array
+      required: false
+      items:
+        name: tag
+        type: string
+        max_length: 6
+    - name: last_seen_unix
+      type: integer
+quality:
+  - field: last_seen_unix
+    type: freshness
+    max_age_seconds: 600
+cross_field:
+  - field: end_date
+    op: gte
+    other: start_date
+  - field: updated_at
+    op: gt
+    other: created_at
+  - field: max_guests
+    op: gte
+    other: min_guests
+  - field: host_email
+    op: ne
+    other: guest_email
+  - field: refund_reason
+    required_if:
+      field: status
+      equals: refunded
+"#;
+
+#[test]
+fn cross_field_items_and_envelope() {
+    let c = compile(V11);
+    for seed in [1, 2, 3] {
+        let out = synth::generate(&c, &opts(1000, SynthMode::Valid, seed)).expect("valid");
+        assert_valid(&c, &out.rows);
+        for r in &out.rows {
+            if r["status"] == "refunded" {
+                assert!(r["refund_reason"].is_string(), "{r}");
+            }
+        }
+        let wrapped = synth::wrap_envelope(&c.contract, out.rows.clone()).unwrap();
+        let env = contractgate::validation::validate_envelope_batch(
+            &c,
+            c.contract.envelope.as_ref().unwrap(),
+            &wrapped,
+        );
+        assert_eq!(env.quarantined, 0, "{:?}", env.violations.first());
+        assert_eq!(env.passed, 1000);
+    }
+
+    let out = synth::generate(&c, &opts(1500, SynthMode::Invalid, 5)).expect("invalid");
+    assert_invalid(&c, &out);
+    let mut seen: Vec<String> = out
+        .invalid_rows
+        .iter()
+        .map(|r| {
+            format!(
+                "{}:{}:{}",
+                r.broken_rule.field,
+                r.broken_rule.rule,
+                r.broken_rule.constraint.clone().unwrap_or_default()
+            )
+        })
+        .collect();
+    seen.sort();
+    seen.dedup();
+    for want in [
+        "end_date:cross_field:end_date >= start_date",
+        "updated_at:cross_field:updated_at > created_at",
+        "max_guests:cross_field:max_guests >= min_guests",
+        "host_email:cross_field:host_email != guest_email",
+        "refund_reason:cross_field:refund_reason required if status == \"refunded\"",
+        "lines[0].sku:min_length:",
+        "lines[0].sku:max_length:",
+        "lines[0].sku:required:",
+        "lines[0].qty:max:",
+        "lines[0].kind:enum:",
+        "lines[0]:type:",
+        "tags[0]:max_length:",
+        "tags[0]:type:",
+    ] {
+        assert!(
+            seen.iter().any(|s| s == want),
+            "no row broke {want}; saw {seen:?}"
+        );
+    }
+    // Coupled for real: a non-integer last_seen_unix also fails freshness,
+    // and max_guests below 1 is always below min_guests (min 1).
+    let mut skipped: Vec<String> = out
+        .skipped_rules
+        .iter()
+        .map(|r| format!("{}:{}", r.field, r.rule))
+        .collect();
+    skipped.sort();
+    assert_eq!(skipped, ["last_seen_unix:type", "max_guests:min"]);
+}
+
+#[test]
+fn anchor_time_makes_freshness_repeat() {
+    let c = compile(V11);
+    let anchor = 1_800_000_000;
+    let mk = |seed| SynthOptions {
+        rows: 30,
+        mode: SynthMode::Valid,
+        seed,
+        now_unix: anchor,
+    };
+    let a = serde_json::to_value(synth::generate(&c, &mk(9)).unwrap()).unwrap();
+    let b = serde_json::to_value(synth::generate(&c, &mk(9)).unwrap()).unwrap();
+    assert_eq!(a, b);
+    for r in a["rows"].as_array().unwrap() {
+        let t = r["last_seen_unix"].as_i64().unwrap();
+        assert!(t <= anchor && t >= anchor - 600, "{t}");
+    }
+}
+
+#[test]
+fn cross_field_parse_validate_and_odcs_round_trip() {
+    let c = compile(V11);
+    let ok = serde_json::json!({"start_date": "2026-01-02", "end_date": "2026-01-01"});
+    let r = validate(&c, &ok);
+    assert!(r.violations.iter().any(|v| v.field == "end_date"
+        && v.kind == contractgate::validation::ViolationKind::CrossFieldViolation));
+    // Malformed rule: both forms set.
+    let bad = format!(
+        "{}  - field: a\n    op: lt\n    other: b\n    required_if: {{field: c, equals: 1}}\n",
+        V11
+    );
+    let parsed: Contract = serde_yaml::from_str(&bad).unwrap();
+    assert!(CompiledContract::compile(parsed).is_err());
+    // A contract without cross_field serializes without the key.
+    let plain: Contract = serde_yaml::from_str(RICH).unwrap();
+    assert!(!serde_yaml::to_string(&plain)
+        .unwrap()
+        .contains("cross_field"));
+}
+
+#[test]
+fn cli_anchor_and_envelope() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("v11.yaml");
+    std::fs::write(&path, V11).unwrap();
+    let bin = env!("CARGO_BIN_EXE_contractgate");
+    let run = |extra: &[&str]| {
+        std::process::Command::new(bin)
+            .arg("synth")
+            .arg(&path)
+            .args(extra)
+            .output()
+            .unwrap()
+    };
+    let args = [
+        "--rows",
+        "12",
+        "--seed",
+        "5",
+        "--anchor",
+        "2026-01-01T00:00:00Z",
+        "--envelope",
+    ];
+    let a = run(&args);
+    assert_eq!(
+        a.status.code(),
+        Some(0),
+        "{}",
+        String::from_utf8_lossy(&a.stderr)
+    );
+    assert_eq!(a.stdout, run(&args).stdout);
+    let v: Value = serde_json::from_slice(&a.stdout).unwrap();
+    assert_eq!(v["data"].as_array().unwrap().len(), 12);
+
+    let mut inv = args.to_vec();
+    inv.push("--invalid");
+    let b = run(&inv);
+    assert_eq!(b.status.code(), Some(0));
+    let v: Value = serde_json::from_slice(&b.stdout).unwrap();
+    assert_eq!(v["labels"].as_array().unwrap().len(), 12);
+    assert!(v["payload"]["data"].is_array());
+
+    assert_eq!(run(&["--anchor", "soon"]).status.code(), Some(2));
+    assert_eq!(
+        run(&["--envelope", "--format", "csv"]).status.code(),
+        Some(2)
+    );
+}

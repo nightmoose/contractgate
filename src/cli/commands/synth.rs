@@ -33,6 +33,16 @@ pub struct SynthArgs {
     #[arg(long)]
     pub seed: Option<u64>,
 
+    /// RFC 3339 time that freshness rules are measured from (default now).
+    /// Set it with --seed for output that repeats exactly.
+    #[arg(long, value_name = "RFC3339")]
+    pub anchor: Option<String>,
+
+    /// Wrap the rows in the contract's `envelope` (JSON only). With
+    /// --invalid the output is `{"payload": ..., "labels": [...]}`.
+    #[arg(long)]
+    pub envelope: bool,
+
     /// Output format.
     #[arg(long, value_enum, default_value_t = Format::Json)]
     pub format: Format,
@@ -63,6 +73,20 @@ pub fn run(args: &SynthArgs) -> Result<i32> {
             return Ok(2);
         }
     };
+    let now_unix = match &args.anchor {
+        Some(t) => match chrono::DateTime::parse_from_rfc3339(t) {
+            Ok(d) => d.timestamp(),
+            Err(e) => {
+                eprintln!("error: --anchor must be RFC 3339 (e.g. 2026-01-01T00:00:00Z): {e}");
+                return Ok(2);
+            }
+        },
+        None => chrono::Utc::now().timestamp(),
+    };
+    if args.envelope && matches!(args.format, Format::Csv) {
+        eprintln!("error: --envelope needs --format json");
+        return Ok(2);
+    }
     let seed = args.seed.unwrap_or_else(rand::random);
     if args.seed.is_none() {
         eprintln!("seed: {seed}");
@@ -75,7 +99,7 @@ pub fn run(args: &SynthArgs) -> Result<i32> {
             SynthMode::Valid
         },
         seed,
-        now_unix: chrono::Utc::now().timestamp(),
+        now_unix,
     };
     let out = match synth::generate(&compiled, &opts) {
         Ok(o) => o,
@@ -97,6 +121,27 @@ pub fn run(args: &SynthArgs) -> Result<i32> {
     }
 
     let text = match args.format {
+        Format::Json if args.envelope => {
+            let records = if args.invalid {
+                out.invalid_rows.iter().map(|r| r.record.clone()).collect()
+            } else {
+                out.rows.clone()
+            };
+            let payload = match synth::wrap_envelope(&compiled.contract, records) {
+                Ok(p) => p,
+                Err(e) => {
+                    eprintln!("error: {}", e.message);
+                    return Ok(2);
+                }
+            };
+            let v = if args.invalid {
+                let labels: Vec<_> = out.invalid_rows.iter().map(|r| &r.broken_rule).collect();
+                serde_json::json!({"payload": payload, "labels": labels})
+            } else {
+                payload
+            };
+            serde_json::to_string_pretty(&v)? + "\n"
+        }
         Format::Json => {
             let v = if args.invalid {
                 serde_json::to_value(&out.invalid_rows)?

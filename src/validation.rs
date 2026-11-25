@@ -139,6 +139,9 @@ pub enum ViolationKind {
     UniquenessViolation,
     /// D1: the request pinned a deprecated contract version.
     ContractVersionDeprecated,
+    /// RFC-118: a `cross_field` rule failed (a comparison between two
+    /// fields, or a conditional `required_if`).
+    CrossFieldViolation,
 }
 
 // ---------------------------------------------------------------------------
@@ -274,6 +277,9 @@ impl CompiledContract {
         let mut patterns = HashMap::new();
         compile_field_patterns(&contract.ontology.entities, "", &mut patterns)?;
         validate_transform_types(&contract.ontology.entities, "")?;
+        for rule in &contract.cross_field {
+            rule.check_shape().map_err(|e| anyhow::anyhow!(e))?;
+        }
 
         let declared_top_level_fields = if contract.compliance_mode {
             contract
@@ -364,6 +370,21 @@ fn validate_transform_types(fields: &[FieldDefinition], prefix: &str) -> anyhow:
 ///
 /// Returns a `ValidationResult` — always succeeds (never panics).
 pub fn validate(compiled: &CompiledContract, event: &Value) -> ValidationResult {
+    validate_inner(compiled, event, None)
+}
+
+/// [`validate`] with `freshness` rules judged against `now_unix` (Unix
+/// seconds) instead of the wall clock. Used by the synthetic data
+/// generator so a fixed anchor time gives repeatable results (RFC-118).
+pub fn validate_at(compiled: &CompiledContract, event: &Value, now_unix: i64) -> ValidationResult {
+    validate_inner(compiled, event, Some(now_unix))
+}
+
+fn validate_inner(
+    compiled: &CompiledContract,
+    event: &Value,
+    now: Option<i64>,
+) -> ValidationResult {
     let t0 = std::time::Instant::now();
     let mut violations = Vec::new();
 
@@ -416,12 +437,18 @@ pub fn validate(compiled: &CompiledContract, event: &Value) -> ValidationResult 
                 // declarative / scoring.
             }
             QualityRuleType::Freshness => {
-                check_freshness(rule, event, &mut violations);
+                check_freshness(rule, event, now, &mut violations);
             }
             QualityRuleType::Uniqueness => {
                 // Batch-level — skip in per-event path.
             }
         }
+    }
+
+    // 3b. RFC-118: cross-field rules. Empty for contracts that do not
+    //     declare `cross_field`, so this is a no-op for them.
+    for rule in &compiled.contract.cross_field {
+        check_cross_field(rule, event, &mut violations);
     }
 
     // 4. RFC-004: compliance-mode undeclared-field check.  Runs last so
@@ -1200,7 +1227,12 @@ fn check_completeness(rule: &QualityRule, event: &Value, violations: &mut Vec<Vi
 /// Detection heuristic: if the value is > 1_700_000_000_000 it is treated as
 /// milliseconds and divided by 1000 first.  This covers both second-precision
 /// and millisecond-precision timestamps without requiring a schema annotation.
-fn check_freshness(rule: &QualityRule, event: &Value, violations: &mut Vec<Violation>) {
+fn check_freshness(
+    rule: &QualityRule,
+    event: &Value,
+    now: Option<i64>,
+    violations: &mut Vec<Violation>,
+) {
     let Some(max_age) = rule.max_age_seconds else {
         // No max_age_seconds configured — nothing to check.
         return;
@@ -1237,10 +1269,12 @@ fn check_freshness(rule: &QualityRule, event: &Value, violations: &mut Vec<Viola
         return;
     };
 
-    let now_secs = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_secs() as i64;
+    let now_secs = now.unwrap_or_else(|| {
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs() as i64
+    });
 
     let age_secs = now_secs - ts;
     if age_secs < 0 || age_secs > max_age as i64 {
@@ -1255,6 +1289,101 @@ fn check_freshness(rule: &QualityRule, event: &Value, violations: &mut Vec<Viola
             expected: Some(format!("timestamp within last {max_age}s")),
             suggestion: None,
         });
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Cross-field rules (RFC-118)
+// ---------------------------------------------------------------------------
+
+/// Order two JSON values for a cross-field comparison. Numbers compare
+/// numerically. Two strings compare as instants when both parse as RFC 3339,
+/// as dates when both parse as `YYYY-MM-DD`, and as text otherwise. Any
+/// other pairing has no order.
+pub fn compare_values(a: &Value, b: &Value) -> Option<std::cmp::Ordering> {
+    if let (Some(x), Some(y)) = (numeric_value(a), numeric_value(b)) {
+        return x.partial_cmp(&y);
+    }
+    let (Some(x), Some(y)) = (a.as_str(), b.as_str()) else {
+        return None;
+    };
+    let ts = |s: &str| chrono::DateTime::parse_from_rfc3339(s).ok();
+    let date = |s: &str| chrono::NaiveDate::parse_from_str(s, "%Y-%m-%d").ok();
+    match ((ts(x), date(x)), (ts(y), date(y))) {
+        ((Some(p), _), (Some(q), _)) => Some(p.cmp(&q)),
+        ((None, Some(p)), (None, Some(q))) => Some(p.cmp(&q)),
+        ((None, None), (None, None)) => Some(x.cmp(y)),
+        // One side is a date or timestamp and the other is not: no order.
+        _ => None,
+    }
+}
+
+/// Does `a <op> b` hold? `eq`/`ne` fall back to JSON equality when the
+/// values have no order (booleans, mixed types). Ordering operators pass
+/// when there is no order: the field's own `type`/format rule reports a
+/// mismatched value, so it is not reported twice.
+pub fn compare_holds(op: crate::contract::CompareOp, a: &Value, b: &Value) -> bool {
+    use crate::contract::CompareOp::*;
+    use std::cmp::Ordering::*;
+    match (op, compare_values(a, b)) {
+        (Eq, Some(o)) => o == Equal,
+        (Ne, Some(o)) => o != Equal,
+        (Eq, None) => a == b,
+        (Ne, None) => a != b,
+        (Lt, Some(o)) => o == Less,
+        (Lte, Some(o)) => o != Greater,
+        (Gt, Some(o)) => o == Greater,
+        (Gte, Some(o)) => o != Less,
+        (_, None) => true,
+    }
+}
+
+fn check_cross_field(
+    rule: &crate::contract::CrossFieldRule,
+    event: &Value,
+    violations: &mut Vec<Violation>,
+) {
+    let present = |path: &str| get_nested_value(event, path).filter(|v| !v.is_null());
+    let label = rule.label();
+    if let (Some(op), Some(other)) = (rule.op, &rule.other) {
+        let (Some(a), Some(b)) = (present(&rule.field), present(other)) else {
+            return; // absent or null: `required` covers presence
+        };
+        if !compare_holds(op, a, b) {
+            violations.push(Violation {
+                field: rule.field.clone(),
+                message: format!("Cross-field rule '{label}' failed: {} vs {}", a, b),
+                kind: ViolationKind::CrossFieldViolation,
+                received: Some(a.clone()),
+                expected: Some(label),
+                suggestion: Some(format!(
+                    "Emit '{}' so that {}, or relax the cross_field rule in the contract.",
+                    rule.field,
+                    rule.label()
+                )),
+            });
+        }
+    } else if let Some(cond) = &rule.required_if {
+        if get_nested_value(event, &cond.field) != Some(&cond.equals) {
+            return;
+        }
+        // A present null counts as missing, as for completeness.
+        if present(&rule.field).is_none() {
+            violations.push(Violation {
+                field: rule.field.clone(),
+                message: format!(
+                    "Cross-field rule '{label}' failed: '{}' is missing",
+                    rule.field
+                ),
+                kind: ViolationKind::CrossFieldViolation,
+                received: None,
+                expected: Some(label),
+                suggestion: Some(format!(
+                    "Include '{}' whenever '{}' is {}.",
+                    rule.field, cond.field, cond.equals
+                )),
+            });
+        }
     }
 }
 
@@ -1429,6 +1558,7 @@ mod tests {
             on_fail: crate::contract::OnFailMode::Quarantine,
             on_fail_locked: false,
             quarantine_guard: crate::contract::QuarantineGuardConfig::default(),
+            cross_field: Vec::new(),
         }
     }
 

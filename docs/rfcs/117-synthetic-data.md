@@ -23,6 +23,8 @@ Surfaces: `POST /contracts/synth` (contract inline or by id, API key required, n
 
 ## Not in v1
 
+All three are addressed in [RFC-118](118-synthetic-data-v1-1.md).
+
 - Cross-field rules such as "end date after start date". The contract format has no cross-field rule today, so the generator has nothing to read. When the format gains one, the generator should follow it.
 - Breaking rules inside array items in `invalid` mode. Items are generated valid.
 - Envelope wrappers (RFC-038). Rows are the inner records.

@@ -120,6 +120,7 @@ pub async fn infer_avro_handler(
         on_fail: crate::contract::OnFailMode::Quarantine,
         on_fail_locked: false,
         quarantine_guard: crate::contract::QuarantineGuardConfig::default(),
+        cross_field: Vec::new(),
     };
 
     let yaml_content = serde_yaml::to_string(&contract)
