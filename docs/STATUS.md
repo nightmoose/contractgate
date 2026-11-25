@@ -118,6 +118,7 @@ them by name only.
 | 116 | [Downstream impact analysis](rfcs/116-lineage-impact.md) | Accepted |
 | 117 | [Synthetic data from a contract](rfcs/117-synthetic-data.md) | Accepted |
 | 118 | [Synthetic data v1.1 and cross-field rules](rfcs/118-synthetic-data-v1-1.md) | Accepted |
+| 119 | [Batch SQL: dbt test export and check-table](rfcs/119-batch-sql-contracts.md) | Accepted |
 
 ---
 
@@ -134,6 +135,8 @@ them by name only.
 | **Superseded** | Replaced by a later RFC listed in the notes column; kept for design context. |
 
 ---
+
+*2026-11-25: RFC-119, batch SQL. `contractgate export dbt-tests` and `GET /contracts/{id}/versions/{version}/export/dbt-tests` write dbt `schema.yml` generic tests (`not_null`, `unique`, `accepted_values`) plus singular SQL tests for patterns, formats, ranges, lengths, freshness, and cross-field rules. `contractgate check-table` compiles the same rules into one violation-report query for Postgres, DuckDB, Snowflake, or Databricks; `--execute` runs it against Postgres only. Golden files pin generated SQL. No migration. See `docs/batch-snowflake-databricks-reference.md`.*
 
 *2026-11-26 — RFC-116 follow-up: interactive lineage graph. The contract Versions tab's Downstream impact section has a Graph / List toggle. The graph (React Flow + dagre, both MIT) renders every lineage asset and edge for the org, scoped by default to the contract's connected component, colors nodes by the selected version's breaking/safe field changes, shows an edge's field scope on hover, and opens a details panel on click. `GET /contracts/{id}/lineage/graph` returns the org's assets and edges plus `focus_keys` for the contract; `affected[].severity` and `affected[].changes` are new, additive fields on the existing impact response. See `docs/impact-analysis-reference.md`.*
 

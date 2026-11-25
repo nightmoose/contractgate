@@ -1,0 +1,44 @@
+version: "2.0.0"
+name: "orders"
+description: "Checkout orders emitted by the storefront, mirroring the demo Impact org's orders contract (RFC-119 golden fixture)."
+ontology:
+  entities:
+    - name: order_id
+      type: string
+      required: true
+      pattern: "^ord_[A-Za-z0-9]{10,32}$"
+    - name: customer_id
+      type: string
+      required: true
+      pattern: "^cus_[A-Za-z0-9]{8,32}$"
+    - name: amount_usd
+      type: number
+      required: true
+      min: 0
+    - name: status
+      type: string
+      required: true
+      enum: ["pending", "paid", "shipped", "delivered", "cancelled"]
+    - name: created_at
+      type: timestamp
+      required: true
+    - name: updated_at
+      type: timestamp
+      required: true
+    - name: discount_code
+      type: string
+      required: false
+      min_length: 4
+      max_length: 20
+quality:
+  - field: order_id
+    type: uniqueness
+  - field: created_at
+    type: freshness
+    max_age_seconds: 604800
+cross_field:
+  - field: updated_at
+    op: gte
+    other: created_at
+  - field: discount_code
+    required_if: { field: status, equals: cancelled }
