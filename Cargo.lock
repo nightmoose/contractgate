@@ -1043,6 +1043,7 @@ dependencies = [
  "rayon",
  "rdkafka",
  "regex",
+ "regex-syntax",
  "reqwest",
  "serde",
  "serde_json",
