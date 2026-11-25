@@ -37,7 +37,9 @@ dev = [
 ]
 
 [project.scripts]
-contractgate = "contractgate.cli:main_exit"
+# Not "contractgate": that name belongs to the Rust CLI binary. Also runs as
+# `python -m contractgate`.
+contractgate-py = "contractgate.cli:main_exit"
 
 [project.urls]
 Homepage = "https://datacontractgate.com"

@@ -198,7 +198,7 @@ The comparison table is Self-Hosted Free: real login with `CONTRACTGATE_SELF_HOS
 docker compose up
 ```
 
-**Python SDK** (`pip install contractgate` installs this library, not the `contractgate` CLI):
+**Python SDK** (`pip install contractgate` installs this library and a `contractgate-py` command, not the Rust `contractgate` CLI):
 ```bash
 pip install contractgate
 ```

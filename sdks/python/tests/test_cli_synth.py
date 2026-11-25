@@ -170,3 +170,30 @@ async def test_async_client_synth():
 
 def _mockasync():
     return httpx.MockTransport(lambda req: httpx.Response(200, json=VALID))
+
+
+def test_console_script_does_not_shadow_rust_binary():
+    """The Rust CLI owns the name ``contractgate``; the SDK ships ``contractgate-py``."""
+    import re
+    from pathlib import Path
+
+    text = (Path(__file__).resolve().parents[1] / "pyproject.toml").read_text()
+    section = text.split("[project.scripts]", 1)[1].split("\n[", 1)[0]
+    scripts = dict(re.findall(r'^([\w.-]+)\s*=\s*"([^"]+)"', section, re.M))
+    assert "contractgate" not in scripts
+    assert scripts["contractgate-py"] == "contractgate.cli:main_exit"
+
+
+def test_python_dash_m_runs_cli():
+    import subprocess
+    import sys
+
+    from contractgate._version import __version__
+
+    out = subprocess.run(
+        [sys.executable, "-m", "contractgate", "--version"],
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    assert out.stdout.strip() == f"contractgate-py {__version__}"

@@ -4,7 +4,7 @@ All notable changes to the `contractgate` Python SDK.
 
 ## 0.4.2 (unreleased, not yet published)
 
-- New `contractgate synth` command (console script `contractgate`) that
+- New `contractgate-py synth` command (also `python -m contractgate synth`) that
   calls the gateway's `POST /contracts/synth` (RFC-117, RFC-118). Takes a
   contract file or `--contract-id` / `--version`, plus `--rows`,
   `--invalid`, `--seed`, `--anchor` (RFC 3339 time for freshness rules),
@@ -12,8 +12,16 @@ All notable changes to the `contractgate` Python SDK.
   `CONTRACTGATE_API_KEY`; the URL from `--base-url` or
   `CONTRACTGATE_BASE_URL`. Exit 1 names an unsatisfiable rule.
 - `Client.synth(...)` / `AsyncClient.synth(...)` for the same endpoint.
-- Note: a release tag must match `Cargo.toml` too, so the gateway version
-  needs the same bump before this ships.
+- The console script is `contractgate-py`, not `contractgate`, so it never
+  shadows the Rust `contractgate` binary when both are installed.
+- The local validator (`Contract.compile()` / `validate`) now enforces
+  `cross_field:` rules (including per-item `lines[].qty` paths), quality
+  `completeness` and `freshness` rules, patterns inside array items, and
+  `null_as_absent`, and counts string lengths in UTF-8 bytes. Results match
+  the gateway on the shared parity corpus (`tests/fixtures/parity/rfc118.json`).
+  `validate(..., now=...)` pins the clock for freshness.
+- `Cargo.toml` and `mcp/` are at 0.4.2 too, so a `v0.4.2` tag passes the
+  release version checks.
 - Fix: repair hints no longer create two user messages in a row. When the
   conversation ends with a user turn, `LLMGate` / `AsyncLLMGate` fold the
   hint into that turn (string content or an extra text content part), so

@@ -1,10 +1,14 @@
-"""``contractgate`` command line (Python SDK).
+"""``contractgate-py`` command line (Python SDK).
+
+Installed as the ``contractgate-py`` console script and also runnable as
+``python -m contractgate``. It is deliberately not called ``contractgate``:
+that name belongs to the Rust CLI binary, and both can sit on one PATH.
 
 One subcommand for now:
 
-    contractgate synth CONTRACT.yaml --rows 100 [--invalid] [--seed N]
+    contractgate-py synth CONTRACT.yaml --rows 100 [--invalid] [--seed N]
         [--anchor 2026-01-01T00:00:00Z] [--envelope] [--format json|csv] [-o FILE]
-    contractgate synth --contract-id UUID [--version 1.2.0] ...
+    contractgate-py synth --contract-id UUID [--version 1.2.0] ...
 
 ``synth`` calls the gateway's ``POST /contracts/synth`` (RFC-117, RFC-118).
 Rows come only from the contract's rules; no stored data is read.
@@ -39,7 +43,7 @@ DEFAULT_BASE_URL = "https://api.datacontractgate.com"
 
 def _parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
-        prog="contractgate",
+        prog="contractgate-py",
         description="DataContractGate command line (Python SDK).",
     )
     p.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
