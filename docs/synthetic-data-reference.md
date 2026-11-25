@@ -1,6 +1,6 @@
 # Synthetic data reference
 
-DataContractGate can generate test rows from a contract. Rows come only from the contract's rules. No stored events, quarantine rows or other real samples are read, and nothing is written. Design: [RFC-117](rfcs/117-synthetic-data.md).
+DataContractGate can generate test rows from a contract. Rows come only from the contract's rules. No stored events, quarantine rows or other real samples are read, and nothing is written. Design: [RFC-117](rfcs/117-synthetic-data.md), [RFC-118](rfcs/118-synthetic-data-v1-1.md).
 
 ## What the generator reads
 
@@ -15,14 +15,17 @@ DataContractGate can generate test rows from a contract. Rows come only from the
 | `pattern` | a string built from the regex | a string the regex does not match |
 | `format: email`, `uuid`, `uri`, `url` | a value in that format | a string that is not in that format |
 | `type: date`, `type: timestamp` | `YYYY-MM-DD`, RFC 3339 | a string that does not parse |
-| nested `properties`, array `items` | generated recursively | (nested object fields: as above) |
+| nested `properties` | generated recursively | as above, on the nested field |
+| array `items` | generated recursively | as above, on the first item (`lines[0].qty`). Patterns inside items are not broken, since the validator does not check them there. |
 | quality `completeness` | present, non-null, non-empty | absent, `null` or `""` |
-| quality `freshness` | Unix seconds inside `max_age_seconds` of now | an older timestamp |
+| quality `freshness` | Unix seconds inside `max_age_seconds` of the anchor time | an older timestamp |
 | quality `uniqueness` | no repeated value in the batch | repeating an earlier row's value |
 | `metrics` with `field`, `min`, `max` | inside the metric range | a value outside it |
 | `compliance_mode: true` | declared fields only | one extra undeclared field |
+| `cross_field` comparison | holds (for example `end_date >= start_date`) | values that make it fail; label rule `cross_field`, `constraint` holds the rule |
+| `cross_field` `required_if` | the field is present when the condition holds | condition true and the field left out |
 
-Cross-field rules (for example one date after another) are not part of the contract format yet, so they are not generated.
+Cross-field rules are described in the [cross-field rules reference](cross-field-rules-reference.md).
 
 Every row is checked with the same validator ingest uses before it is returned. Valid rows pass it, with no batch uniqueness duplicates. Each invalid row fails exactly one rule, and its `broken_rule` label names that rule.
 
@@ -30,7 +33,7 @@ When a rule cannot be met, the call fails with the rule and field named. Example
 
 In invalid mode, a rule that cannot be broken without breaking another one is left out and listed in `skipped_rules`. Example: leaving out a field that a metric also reads fails both the `required` rule and the metric.
 
-The same seed, contract and DataContractGate version give the same rows. Freshness values are relative to the current time.
+The same seed, anchor time, contract and DataContractGate version give the same rows. The anchor time defaults to now, so without it freshness values (and only those) change between runs. Rows anchored far from now fail real-time freshness on ingest.
 
 ## API
 
@@ -44,6 +47,8 @@ The same seed, contract and DataContractGate version give the same rows. Freshne
 | `rows` | integer | 1 to 10000. Default 100. |
 | `mode` | `valid` or `invalid` | Default `valid`. |
 | `seed` | integer | Optional. A random seed is used and returned when omitted. |
+| `anchor_time` | RFC 3339 string | Optional. Time freshness rules are measured from. Now when omitted; returned either way. |
+| `envelope` | boolean | Optional. Also return the rows wrapped in the contract's `envelope` as `envelope_payload`. |
 
 ```bash
 curl -s https://api.datacontractgate.com/contracts/synth \
@@ -59,6 +64,7 @@ Response:
   "source": {"type": "stored", "contract_id": "<uuid>", "version": "1.0"},
   "mode": "invalid",
   "seed": 42,
+  "anchor_time": "2026-11-25T18:00:00Z",
   "row_count": 3,
   "rows": [
     {
@@ -75,13 +81,17 @@ Response:
 }
 ```
 
-In `valid` mode each entry of `rows` is the record itself.
+In `valid` mode each entry of `rows` is the record itself. A broken cross-field rule also carries `constraint`, the rule's label (for example `end_date >= start_date`).
+
+With `envelope: true`, `envelope_payload` holds the records (valid or invalid) at the contract's `records_path`. When the envelope has `validate_wrapper: true`, the wrapper also gets `success: true` and `pagination: {page: 1, limit: n, total: n, hasMore: false}`.
 
 Errors:
 
 | Status | `error` | When |
 |---|---|---|
 | 400 | `invalid_rows` | `rows` is 0 or above 10000 |
+| 400 | `no_envelope` | `envelope: true` and the contract declares no envelope |
+| 400 | | `anchor_time` is not RFC 3339 |
 | 400 | | both or neither of `yaml_content` and `contract_id`, or the contract has no stable version and no `version` was sent |
 | 404 | | `contract_id` or `version` is not in your org |
 | 422 | `invalid_contract` | the YAML does not parse or compile |
@@ -90,7 +100,7 @@ Errors:
 ## CLI
 
 ```
-contractgate synth <CONTRACT> [--rows N] [--invalid] [--seed S] [--format json|csv] [-o FILE]
+contractgate synth <CONTRACT> [--rows N] [--invalid] [--seed S] [--anchor RFC3339] [--envelope] [--format json|csv] [-o FILE]
 ```
 
 Runs locally on a contract YAML file. No API key or network is needed.
@@ -98,6 +108,8 @@ Runs locally on a contract YAML file. No API key or network is needed.
 - `--format json` (default) prints a JSON array. With `--invalid`, each entry is `{record, broken_rule}`.
 - `--format csv` flattens nested objects into dot-path columns and writes arrays as JSON text. With `--invalid`, the `_broken_field` and `_broken_rule` columns hold the label.
 - Without `--seed`, the chosen seed is printed to stderr so the run can be repeated.
+- `--anchor` sets the time freshness rules are measured from (default now).
+- `--envelope` (JSON only) prints the wrapped payload. With `--invalid` it prints `{payload, labels}`.
 
 Exit codes: 0 rows written, 1 a rule cannot be met (the message names it), 2 the contract cannot be read or compiled.
 
@@ -106,3 +118,18 @@ contractgate synth contracts/orders.yaml --rows 500 --seed 42 > orders.json
 contractgate synth contracts/orders.yaml --rows 50 --invalid --format csv -o bad_orders.csv
 contractgate test --contract contracts/orders.yaml --data orders.json   # all pass
 ```
+
+## Dashboard
+
+Open a contract and pick the **Synthetic data** tab. Set rows, mode, an optional seed and anchor time, and whether to wrap rows in the envelope, then **Generate synthetic data**. The tab sends the YAML of the version on screen, so drafts work. Download the result as JSON or CSV (same layout as the CLI).
+
+## Python SDK
+
+The Python package (0.4.2, not yet on PyPI) adds a `contractgate synth` command that calls the API, plus `Client.synth(...)`.
+
+```
+contractgate synth contracts/orders.yaml --rows 100 --seed 42 --anchor 2026-01-01T00:00:00Z
+contractgate synth --contract-id <uuid> --invalid --format csv -o bad.csv
+```
+
+It takes the same options as the Rust CLI plus `--contract-id`, `--version`, `--api-key` (default `$CONTRACTGATE_API_KEY`) and `--base-url` (default `$CONTRACTGATE_BASE_URL`, then `https://api.datacontractgate.com`). Exit codes: 0 rows written, 1 a rule cannot be met, 2 any other error. If both the Rust and Python CLIs are installed, the first `contractgate` on your `PATH` wins; the Rust one runs locally, the Python one calls the API.
