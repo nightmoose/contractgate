@@ -5,6 +5,7 @@ pub mod export;
 pub mod infer;
 pub mod pull;
 pub mod push;
+pub mod review;
 pub mod scaffold;
 pub mod synth;
 pub mod test;

@@ -7,7 +7,8 @@
 use clap::{Parser, Subcommand};
 use contractgate::cli::{
     commands::{
-        check_table, deploy, enforce, export, infer, pull, push, scaffold, synth, test, validate,
+        check_table, deploy, enforce, export, infer, pull, push, review, scaffold, synth, test,
+        validate,
     },
     config::CliConfig,
 };
@@ -110,6 +111,13 @@ enum Cmd {
     ///   cg synth contracts/orders.yaml --rows 500 --seed 42
     ///   cg synth contracts/orders.yaml --rows 50 --invalid --format csv -o bad.csv
     Synth(synth::SynthArgs),
+    /// Infer a draft contract from a CSV, validate every row, and write a
+    /// Readiness Review report (contract.yaml, report.html, rejected.csv).
+    ///
+    /// Examples:
+    ///   cg review data.csv
+    ///   cg review data.csv --out ./review-out --name orders
+    Review(review::ReviewArgs),
     /// Export a contract to another format. (RFC-119)
     Export(export::ExportArgs),
     /// Run a contract's rules as SQL against a warehouse table and report
@@ -164,6 +172,7 @@ fn main() {
         Cmd::Enforce(args) => enforce::run(args),
         Cmd::Infer(args) => infer::run(args),
         Cmd::Synth(args) => synth::run(args),
+        Cmd::Review(args) => review::run(args),
         Cmd::Test(args) => test::run(args).map_err(|e| {
             // Load/parse errors from test::run propagate as exit 2, not 10.
             eprintln!("error: {e:#}");

@@ -23,6 +23,7 @@ pub mod infer_proto;
 pub mod payload_redaction;
 pub mod rate_limit;
 pub mod request_limits;
+pub mod review;
 pub mod scaffold;
 pub mod sql_dialect;
 pub mod synth;

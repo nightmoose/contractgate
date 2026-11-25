@@ -4,14 +4,18 @@ Installed as the ``contractgate-py`` console script and also runnable as
 ``python -m contractgate``. It is deliberately not called ``contractgate``:
 that name belongs to the Rust CLI binary, and both can sit on one PATH.
 
-One subcommand for now:
+Subcommands:
 
     contractgate-py synth CONTRACT.yaml --rows 100 [--invalid] [--seed N]
         [--anchor 2026-01-01T00:00:00Z] [--envelope] [--format json|csv] [-o FILE]
     contractgate-py synth --contract-id UUID [--version 1.2.0] ...
+    contractgate-py review FILE.csv [--out DIR] [--name NAME]
 
 ``synth`` calls the gateway's ``POST /contracts/synth`` (RFC-117, RFC-118).
 Rows come only from the contract's rules; no stored data is read.
+
+``review`` shells out to the Rust ``contractgate review`` CLI (the binary
+must be on PATH) and writes a Readiness Review report from a CSV.
 
 The API key comes from ``--api-key`` or ``CONTRACTGATE_API_KEY``; the
 gateway URL from ``--base-url`` or ``CONTRACTGATE_BASE_URL``.
@@ -29,6 +33,8 @@ import csv
 import io
 import json
 import os
+import shutil
+import subprocess
 import sys
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
@@ -83,6 +89,20 @@ def _parser() -> argparse.ArgumentParser:
         help=f"Gateway URL (default: $CONTRACTGATE_BASE_URL or {DEFAULT_BASE_URL}).",
     )
     s.add_argument("--timeout", type=float, default=120.0, help="Seconds (default 120).")
+
+    r = sub.add_parser(
+        "review",
+        help="Infer a draft contract from a CSV and write a Readiness Review report.",
+        description=(
+            "Thin wrapper around the Rust `contractgate review` CLI. "
+            "The Rust binary must be on PATH. It infers a draft contract, "
+            "validates every row, and writes contract.yaml, report.html, "
+            "and rejected.csv."
+        ),
+    )
+    r.add_argument("file", help="Path to the CSV file.")
+    r.add_argument("-o", "--out", help="Output directory.")
+    r.add_argument("--name", help="Name for the inferred contract.")
     return p
 
 
@@ -210,6 +230,34 @@ def _synth(args: argparse.Namespace, transport: Optional[httpx.BaseTransport]) -
     return 0
 
 
+
+def _review(args: argparse.Namespace) -> int:
+    """Shell out to the Rust ``contractgate review`` CLI.
+
+    Inference and the HTML report live in the Rust binary. This wrapper
+    exists so ``contractgate-py review`` works when both CLIs are installed.
+    """
+    rust = shutil.which("contractgate")
+    if not rust:
+        sys.stderr.write(
+            "error: `contractgate` (the Rust CLI) was not found on PATH. "
+            "Build it with `cargo build --release --bin contractgate` and "
+            "put target/release on PATH, then re-run.\n"
+        )
+        return 2
+    cmd = [rust, "review", args.file]
+    if args.out:
+        cmd.extend(["--out", args.out])
+    if args.name:
+        cmd.extend(["--name", args.name])
+    try:
+        proc = subprocess.run(cmd, check=False)
+    except OSError as e:
+        sys.stderr.write(f"error: running {rust}: {e}\n")
+        return 2
+    return proc.returncode
+
+
 def main(
     argv: Optional[Sequence[str]] = None,
     *,
@@ -219,6 +267,8 @@ def main(
     args = _parser().parse_args(argv)
     if args.command == "synth":
         return _synth(args, transport)
+    if args.command == "review":
+        return _review(args)
     return 2  # pragma: no cover - argparse enforces a subcommand
 
 
