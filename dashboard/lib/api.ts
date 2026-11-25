@@ -19,6 +19,7 @@
 
 import * as yaml from "js-yaml";
 import { createClient } from "@/lib/supabase/client";
+import { synthErrorMessage } from "@/lib/synth-errors";
 
 const BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001";
 const API_KEY = process.env.NEXT_PUBLIC_API_KEY ?? "";
@@ -56,13 +57,6 @@ function extractYamlMeta(
  * raw text body (truncated for sanity), then to `statusText`.  Never
  * throws — even `.text()` errors collapse to `Request failed: <status>`.
  */
-const SYNTH_ERROR_CODES = new Set([
-  "unsatisfiable_rule",
-  "invalid_contract",
-  "invalid_rows",
-  "no_envelope",
-]);
-
 async function extractErrorMessage(res: Response): Promise<string> {
   try {
     const body = await res.clone().json();
@@ -73,15 +67,9 @@ async function extractErrorMessage(res: Response): Promise<string> {
       ) {
         return body.message;
       }
-      // RFC-117/118: synth errors name the rule in `message`.
-      if (
-        SYNTH_ERROR_CODES.has(body.error) &&
-        typeof body.message === "string"
-      ) {
-        const rule = typeof body.rule === "string" ? `${body.rule}` : body.error;
-        const field = typeof body.field === "string" ? ` on '${body.field}'` : "";
-        return `Rule '${rule}'${field}: ${body.message}`;
-      }
+      // RFC-117/118: synth errors (rows limit, unsatisfiable rule, ...).
+      const synthMsg = synthErrorMessage(body);
+      if (synthMsg) return synthMsg;
       if (typeof body.error === "string") return body.error;
     }
   } catch {
@@ -891,6 +879,8 @@ export interface SynthResponse {
   rows: Record<string, unknown>[] | SynthInvalidRow[];
   skipped_rules: { field: string; rule: string; reason: string }[];
   envelope_payload?: unknown;
+  /** Server time spent compiling and generating, in ms. */
+  generation_ms?: number;
 }
 
 /** Synthetic rows built only from the contract's rules. Writes nothing. */
@@ -899,6 +889,16 @@ export const synthRows = (body: SynthRequest) =>
     method: "POST",
     body: JSON.stringify(body),
   });
+
+/**
+ * Wake the gateway before a slow first call (staging machines stop when
+ * idle). A simple GET with no custom headers: no preflight, no auth, and the
+ * response is ignored.
+ */
+export function warmApi(): void {
+  if (typeof window === "undefined") return;
+  fetch(`${BASE}/health`, { mode: "no-cors", cache: "no-store" }).catch(() => {});
+}
 
 /**
  * Anonymous playground. No session, no API key, no stored contract.

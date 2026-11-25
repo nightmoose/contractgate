@@ -12,6 +12,7 @@ DataContractGate can generate test rows from a contract. Rows come only from the
 | `enum` | one of the listed values | a value of the right type outside the list |
 | `min` / `max` | inside the range | a value below `min` or above `max` |
 | `min_length` / `max_length` | length inside the bounds | a shorter or longer string |
+| free-form `type: string` (no `pattern`, `format` or `enum`) | a realistic value guessed from the field name when it passes every declared rule (`email`, `first_name`, `customer_name`, `phone`, `website`, `country` / `country_code`, `city`, `address`, `zip`, `currency`, `*_id` as a UUID, and more), otherwise a random string | |
 | `pattern` | a string built from the regex | a string the regex does not match |
 | `format: email`, `uuid`, `uri`, `url` | a value in that format | a string that is not in that format |
 | `type: date`, `type: timestamp` | `YYYY-MM-DD`, RFC 3339 | a string that does not parse |
@@ -89,9 +90,12 @@ Response:
       }
     }
   ],
-  "skipped_rules": []
+  "skipped_rules": [],
+  "generation_ms": 3
 }
 ```
+
+`generation_ms` is the server time spent compiling the contract and generating rows.
 
 In `valid` mode each entry of `rows` is the record itself. A broken cross-field rule also carries `constraint`, the rule's label (for example `end_date >= start_date`).
 

@@ -112,6 +112,7 @@ pub async fn synth_handler(
         now_unix: anchor.timestamp(),
     };
 
+    let started = std::time::Instant::now();
     // CPU-bound; keep it off the async reactor.
     let result = tokio::task::spawn_blocking(move || {
         let compiled = synth::compile_yaml(&yaml)?;
@@ -149,6 +150,7 @@ pub async fn synth_handler(
                 "row_count": count,
                 "rows": rows,
                 "skipped_rules": out.skipped_rules,
+                "generation_ms": started.elapsed().as_millis() as u64,
             });
             if let Some(p) = payload {
                 body["envelope_payload"] = p;
@@ -215,7 +217,8 @@ pub fn merge_openapi(paths: &mut serde_json::Map<String, Value>) {
                 "envelope_payload": {"type": "object", "description": "Present when envelope=true: the records wrapped in the contract's envelope."},
                 "row_count": {"type": "integer"},
                 "rows": {"type": "array", "description": "valid: records. invalid: {record, broken_rule: {field, rule, metric?, violation_kind, message, constraint?}}.", "items": {"type": "object"}},
-                "skipped_rules": {"type": "array", "items": {"type": "object", "properties": {"field": {"type": "string"}, "rule": {"type": "string"}, "reason": {"type": "string"}}}}
+                "skipped_rules": {"type": "array", "items": {"type": "object", "properties": {"field": {"type": "string"}, "rule": {"type": "string"}, "reason": {"type": "string"}}}},
+                "generation_ms": {"type": "integer", "description": "Server time spent compiling and generating, in milliseconds."}
             }}}}},
             "400": {"description": "Bad request, rows outside 1 to 10000, a bad anchor_time, or envelope=true on a contract with no envelope", "content": {"application/json": {"schema": rule_error.clone()}}},
             "401": {"description": "Missing or invalid credentials"},

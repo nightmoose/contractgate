@@ -727,3 +727,63 @@ fn cli_anchor_and_envelope() {
         Some(2)
     );
 }
+
+const NAMED: &str = r#"
+version: "1.0"
+name: named_fields
+ontology:
+  entities:
+    - name: id
+      type: integer
+    - name: email
+      type: string
+    - name: customerName
+      type: string
+    - name: phone
+      type: string
+    - name: website
+      type: string
+    - name: country_code
+      type: string
+    - name: user_id
+      type: string
+    - name: city
+      type: string
+      max_length: 3
+    - name: contact_email
+      type: string
+      pattern: "^[0-9]{4}$"
+    - name: widget
+      type: string
+"#;
+
+#[test]
+fn free_form_strings_follow_field_names_when_rules_allow() {
+    let c = synth::compile_yaml(NAMED).unwrap();
+    let out = synth::generate(&c, &opts(200, SynthMode::Valid, 7)).unwrap();
+    let again = synth::generate(&c, &opts(200, SynthMode::Valid, 7)).unwrap();
+    assert_eq!(out.rows, again.rows, "seeded output must repeat");
+    for r in &out.rows {
+        assert!(validate(&c, r).passed, "{r}");
+        let s = |k: &str| r[k].as_str().unwrap().to_string();
+        let email = s("email");
+        assert!(
+            email.contains('@') && [".com", ".org", ".net"].iter().any(|t| email.ends_with(t)),
+            "{email}"
+        );
+        assert!(s("customerName").contains(' '), "{}", s("customerName"));
+        assert!(s("phone").starts_with("+1-"), "{}", s("phone"));
+        assert!(s("website").starts_with("https://"), "{}", s("website"));
+        assert_eq!(s("country_code").len(), 2);
+        assert!(uuid::Uuid::parse_str(&s("user_id")).is_ok());
+        // City names do not fit max_length 3, so the generic value is used.
+        assert!(s("city").len() <= 3);
+        // The declared pattern wins over the name.
+        assert_eq!(s("contact_email").len(), 4);
+        // No hint in the name: generic string.
+        assert!(!s("widget").is_empty());
+    }
+    // Invalid mode still breaks every format-free rule on these fields.
+    let inv = synth::generate(&c, &opts(60, SynthMode::Invalid, 7)).unwrap();
+    assert!(inv.skipped_rules.is_empty(), "{:?}", inv.skipped_rules);
+}
