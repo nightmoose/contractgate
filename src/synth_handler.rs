@@ -41,6 +41,14 @@ pub struct SynthRequest {
     /// Same seed, same contract, same rows. Random (and echoed) when omitted.
     #[serde(default)]
     pub seed: Option<u64>,
+    /// RFC 3339 time that `freshness` rules are measured from. Now when
+    /// omitted. Fix it (with `seed`) for rows that repeat exactly (RFC-118).
+    #[serde(default)]
+    pub anchor_time: Option<String>,
+    /// Also return the rows wrapped in the contract's `envelope` as
+    /// `envelope_payload` (RFC-118). 400 when the contract has none.
+    #[serde(default)]
+    pub envelope: bool,
 }
 
 fn default_rows() -> usize {
@@ -85,12 +93,23 @@ pub async fn synth_handler(
         }
     };
 
+    let anchor = match &req.anchor_time {
+        Some(t) => chrono::DateTime::parse_from_rfc3339(t)
+            .map_err(|e| {
+                AppError::BadRequest(format!(
+                    "anchor_time must be RFC 3339 (e.g. 2026-01-01T00:00:00Z): {e}"
+                ))
+            })?
+            .with_timezone(&chrono::Utc),
+        None => chrono::Utc::now(),
+    };
+    let want_envelope = req.envelope;
     let seed = req.seed.unwrap_or_else(rand::random);
     let opts = SynthOptions {
         rows: req.rows,
         mode: req.mode,
         seed,
-        now_unix: chrono::Utc::now().timestamp(),
+        now_unix: anchor.timestamp(),
     };
 
     // CPU-bound; keep it off the async reactor.
@@ -98,32 +117,46 @@ pub async fn synth_handler(
         let compiled = synth::compile_yaml(&yaml)?;
         let name = compiled.contract.name.clone();
         let version = compiled.contract.version.clone();
-        synth::generate(&compiled, &opts).map(|o| (name, version, o))
+        let out = synth::generate(&compiled, &opts)?;
+        let payload = if want_envelope {
+            let records = match out.mode {
+                SynthMode::Valid => out.rows.clone(),
+                SynthMode::Invalid => out.invalid_rows.iter().map(|r| r.record.clone()).collect(),
+            };
+            Some(synth::wrap_envelope(&compiled.contract, records)?)
+        } else {
+            None
+        };
+        Ok::<_, synth::SynthError>((name, version, out, payload))
     })
     .await
     .map_err(|e| AppError::Internal(format!("synth task failed: {e}")))?;
 
     match result {
-        Ok((name, version, out)) => {
+        Ok((name, version, out, payload)) => {
             let count = out.rows.len() + out.invalid_rows.len();
             let rows: Value = match out.mode {
                 SynthMode::Valid => Value::Array(out.rows),
                 SynthMode::Invalid => serde_json::to_value(&out.invalid_rows)
                     .map_err(|e| AppError::Internal(e.to_string()))?,
             };
-            Ok(Json(json!({
+            let mut body = json!({
                 "contract": {"name": name, "version": version},
                 "source": source,
                 "mode": out.mode.as_str(),
                 "seed": out.seed,
+                "anchor_time": anchor.to_rfc3339_opts(chrono::SecondsFormat::Secs, true),
                 "row_count": count,
                 "rows": rows,
                 "skipped_rules": out.skipped_rules,
-            }))
-            .into_response())
+            });
+            if let Some(p) = payload {
+                body["envelope_payload"] = p;
+            }
+            Ok(Json(body).into_response())
         }
         Err(e) => {
-            let status = if e.rule == "rows" {
+            let status = if e.rule == "rows" || e.rule == "envelope" {
                 StatusCode::BAD_REQUEST
             } else {
                 StatusCode::UNPROCESSABLE_ENTITY
@@ -131,6 +164,7 @@ pub async fn synth_handler(
             let code = match e.rule.as_str() {
                 "contract" => "invalid_contract",
                 "rows" => "invalid_rows",
+                "envelope" => "no_envelope",
                 _ => "unsatisfiable_rule",
             };
             Ok((
@@ -151,7 +185,7 @@ pub async fn synth_handler(
 /// OpenAPI entry for the route (merged by `v1_ingest::openapi_handler`).
 pub fn merge_openapi(paths: &mut serde_json::Map<String, Value>) {
     let rule_error = json!({"type": "object", "properties": {
-        "error": {"type": "string", "enum": ["unsatisfiable_rule", "invalid_contract", "invalid_rows"]},
+        "error": {"type": "string", "enum": ["unsatisfiable_rule", "invalid_contract", "invalid_rows", "no_envelope"]},
         "rule": {"type": "string"},
         "field": {"type": ["string", "null"]},
         "message": {"type": "string"},
@@ -160,14 +194,16 @@ pub fn merge_openapi(paths: &mut serde_json::Map<String, Value>) {
     paths.insert("/contracts/synth".into(), json!({"post": {
         "operationId": "synth_rows",
         "summary": "Generate synthetic rows from a contract's rules",
-        "description": "Rows come only from the contract (types, required, enum, min/max, lengths, pattern, format, quality rules, metrics). No stored events are read and nothing is written. mode=invalid returns rows that each break exactly one rule, with a broken_rule label. Deterministic for a given seed.",
+        "description": "Rows come only from the contract (types, required, enum, min/max, lengths, pattern, format, quality rules, metrics, cross_field rules, array items). No stored events are read and nothing is written. mode=invalid returns rows that each break exactly one rule, with a broken_rule label. Deterministic for a given seed.",
         "requestBody": {"required": true, "content": {"application/json": {"schema": {"type": "object", "properties": {
             "yaml_content": {"type": "string", "description": "Contract YAML. Send this or contract_id."},
             "contract_id": {"type": "string", "format": "uuid"},
             "version": {"type": "string", "description": "Version of contract_id. Latest stable when omitted."},
             "rows": {"type": "integer", "minimum": 1, "maximum": 10000, "default": 100},
             "mode": {"type": "string", "enum": ["valid", "invalid"], "default": "valid"},
-            "seed": {"type": "integer", "minimum": 0}
+            "seed": {"type": "integer", "minimum": 0},
+            "anchor_time": {"type": "string", "format": "date-time", "description": "Time freshness rules are measured from. Now when omitted. Set it with seed for rows that repeat exactly."},
+            "envelope": {"type": "boolean", "default": false, "description": "Also return the rows wrapped in the contract's envelope as envelope_payload. 400 no_envelope when the contract has none."}
         }}}}},
         "responses": {
             "200": {"description": "Generated rows", "content": {"application/json": {"schema": {"type": "object", "properties": {
@@ -175,11 +211,13 @@ pub fn merge_openapi(paths: &mut serde_json::Map<String, Value>) {
                 "source": {"type": "object"},
                 "mode": {"type": "string"},
                 "seed": {"type": "integer"},
+                "anchor_time": {"type": "string", "format": "date-time"},
+                "envelope_payload": {"type": "object", "description": "Present when envelope=true: the records wrapped in the contract's envelope."},
                 "row_count": {"type": "integer"},
-                "rows": {"type": "array", "description": "valid: records. invalid: {record, broken_rule: {field, rule, metric?, violation_kind, message}}.", "items": {"type": "object"}},
+                "rows": {"type": "array", "description": "valid: records. invalid: {record, broken_rule: {field, rule, metric?, violation_kind, message, constraint?}}.", "items": {"type": "object"}},
                 "skipped_rules": {"type": "array", "items": {"type": "object", "properties": {"field": {"type": "string"}, "rule": {"type": "string"}, "reason": {"type": "string"}}}}
             }}}}},
-            "400": {"description": "Bad request, or rows outside 1 to 10000", "content": {"application/json": {"schema": rule_error.clone()}}},
+            "400": {"description": "Bad request, rows outside 1 to 10000, a bad anchor_time, or envelope=true on a contract with no envelope", "content": {"application/json": {"schema": rule_error.clone()}}},
             "401": {"description": "Missing or invalid credentials"},
             "404": {"description": "contract_id or version not found in the caller's org"},
             "422": {"description": "Invalid contract, or a rule cannot be satisfied. rule and field name it.", "content": {"application/json": {"schema": rule_error}}}
@@ -268,5 +306,54 @@ mod tests {
             .await;
         assert_eq!(r.status_code(), StatusCode::UNPROCESSABLE_ENTITY);
         assert_eq!(r.json::<Value>()["error"], "invalid_contract");
+
+        let r = s
+            .post("/contracts/synth")
+            .json(&json!({"yaml_content": YAML, "rows": 5, "envelope": true}))
+            .await;
+        assert_eq!(r.status_code(), StatusCode::BAD_REQUEST);
+        assert_eq!(r.json::<Value>()["error"], "no_envelope");
+
+        let r = s
+            .post("/contracts/synth")
+            .json(&json!({"yaml_content": YAML, "rows": 5, "anchor_time": "yesterday"}))
+            .await;
+        assert_eq!(r.status_code(), StatusCode::BAD_REQUEST);
+    }
+
+    const V11: &str = "version: \"1\"\nname: t\nenvelope:\n  records_path: data\nontology:\n  entities:\n    - name: start\n      type: string\n      format: date\n    - name: end\n      type: string\n      format: date\n    - name: ts\n      type: integer\ncross_field:\n  - field: end\n    op: gte\n    other: start\nquality:\n  - field: ts\n    type: freshness\n    max_age_seconds: 60\n";
+
+    #[tokio::test]
+    async fn anchor_and_envelope() {
+        let s = server();
+        let body = json!({"yaml_content": V11, "rows": 15, "seed": 9,
+            "anchor_time": "2026-01-01T00:00:00Z", "envelope": true});
+        let a = s.post("/contracts/synth").json(&body).await;
+        assert_eq!(a.status_code(), StatusCode::OK, "{}", a.text());
+        let a = a.json::<Value>();
+        let b = s.post("/contracts/synth").json(&body).await.json::<Value>();
+        assert_eq!(a["rows"], b["rows"]);
+        assert_eq!(a["anchor_time"], "2026-01-01T00:00:00Z");
+        let anchor = 1_767_225_600_i64;
+        for r in a["rows"].as_array().unwrap() {
+            assert!(r["end"].as_str() >= r["start"].as_str());
+            let ts = r["ts"].as_i64().unwrap();
+            assert!(ts <= anchor && anchor - ts <= 60);
+        }
+        assert_eq!(a["envelope_payload"]["data"], a["rows"]);
+
+        let inv = s
+            .post("/contracts/synth")
+            .json(
+                &json!({"yaml_content": V11, "rows": 30, "seed": 9, "mode": "invalid",
+                "anchor_time": "2026-01-01T00:00:00Z"}),
+            )
+            .await
+            .json::<Value>();
+        assert!(inv["rows"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|r| r["broken_rule"]["rule"] == "cross_field"));
     }
 }

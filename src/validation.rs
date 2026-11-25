@@ -380,7 +380,11 @@ pub fn validate_at(compiled: &CompiledContract, event: &Value, now_unix: i64) ->
     validate_inner(compiled, event, Some(now_unix))
 }
 
-fn validate_inner(compiled: &CompiledContract, event: &Value, now: Option<i64>) -> ValidationResult {
+fn validate_inner(
+    compiled: &CompiledContract,
+    event: &Value,
+    now: Option<i64>,
+) -> ValidationResult {
     let t0 = std::time::Instant::now();
     let mut violations = Vec::new();
 
@@ -1348,10 +1352,7 @@ fn check_cross_field(
         if !compare_holds(op, a, b) {
             violations.push(Violation {
                 field: rule.field.clone(),
-                message: format!(
-                    "Cross-field rule '{label}' failed: {} vs {}",
-                    a, b
-                ),
+                message: format!("Cross-field rule '{label}' failed: {} vs {}", a, b),
                 kind: ViolationKind::CrossFieldViolation,
                 received: Some(a.clone()),
                 expected: Some(label),
@@ -1370,7 +1371,10 @@ fn check_cross_field(
         if present(&rule.field).is_none() {
             violations.push(Violation {
                 field: rule.field.clone(),
-                message: format!("Cross-field rule '{label}' failed: '{}' is missing", rule.field),
+                message: format!(
+                    "Cross-field rule '{label}' failed: '{}' is missing",
+                    rule.field
+                ),
                 kind: ViolationKind::CrossFieldViolation,
                 received: None,
                 expected: Some(label),

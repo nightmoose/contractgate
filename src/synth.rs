@@ -23,7 +23,9 @@
 //! The one input from the outside world is `now_unix`, used only for
 //! `freshness` rules, which are defined relative to the current time.
 
-use crate::contract::{CompareOp, Contract, CrossFieldRule, FieldDefinition, FieldType, QualityRuleType};
+use crate::contract::{
+    CompareOp, Contract, CrossFieldRule, FieldDefinition, FieldType, QualityRuleType,
+};
 use crate::validation::{
     compare_holds, string_format_ok, validate_at, CompiledContract, Violation, ViolationKind,
 };
@@ -1609,10 +1611,12 @@ fn default_bounds(min: Option<f64>, max: Option<f64>, span: f64) -> (f64, f64) {
 /// Split `a.b[2].c` into `[("a", None), ("b", Some(2)), ("c", None)]`.
 fn segments(path: &str) -> Vec<(&str, Option<usize>)> {
     path.split('.')
-        .map(|seg| match seg.strip_suffix(']').and_then(|s| s.split_once('[')) {
-            Some((name, idx)) => (name, idx.parse().ok()),
-            None => (seg, None),
-        })
+        .map(
+            |seg| match seg.strip_suffix(']').and_then(|s| s.split_once('[')) {
+                Some((name, idx)) => (name, idx.parse().ok()),
+                None => (seg, None),
+            },
+        )
         .collect()
 }
 
@@ -1647,7 +1651,11 @@ fn set_path(v: &mut Value, path: &str, new: Value) -> Option<()> {
             parent.as_object_mut()?.insert(name.to_string(), new);
         }
         (name, Some(i)) => {
-            *parent.as_object_mut()?.get_mut(*name)?.as_array_mut()?.get_mut(*i)? = new;
+            *parent
+                .as_object_mut()?
+                .get_mut(*name)?
+                .as_array_mut()?
+                .get_mut(*i)? = new;
         }
     }
     Some(())

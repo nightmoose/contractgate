@@ -582,7 +582,10 @@ fn cross_field_items_and_envelope() {
         "tags[0]:max_length:",
         "tags[0]:type:",
     ] {
-        assert!(seen.iter().any(|s| s == want), "no row broke {want}; saw {seen:?}");
+        assert!(
+            seen.iter().any(|s| s == want),
+            "no row broke {want}; saw {seen:?}"
+        );
     }
     // Coupled for real: a non-integer last_seen_unix also fails freshness,
     // and max_guests below 1 is always below min_guests (min 1).
@@ -619,11 +622,8 @@ fn cross_field_parse_validate_and_odcs_round_trip() {
     let c = compile(V11);
     let ok = serde_json::json!({"start_date": "2026-01-02", "end_date": "2026-01-01"});
     let r = validate(&c, &ok);
-    assert!(r
-        .violations
-        .iter()
-        .any(|v| v.field == "end_date"
-            && v.kind == contractgate::validation::ViolationKind::CrossFieldViolation));
+    assert!(r.violations.iter().any(|v| v.field == "end_date"
+        && v.kind == contractgate::validation::ViolationKind::CrossFieldViolation));
     // Malformed rule: both forms set.
     let bad = format!(
         "{}  - field: a\n    op: lt\n    other: b\n    required_if: {{field: c, equals: 1}}\n",
@@ -633,5 +633,56 @@ fn cross_field_parse_validate_and_odcs_round_trip() {
     assert!(CompiledContract::compile(parsed).is_err());
     // A contract without cross_field serializes without the key.
     let plain: Contract = serde_yaml::from_str(RICH).unwrap();
-    assert!(!serde_yaml::to_string(&plain).unwrap().contains("cross_field"));
+    assert!(!serde_yaml::to_string(&plain)
+        .unwrap()
+        .contains("cross_field"));
+}
+
+#[test]
+fn cli_anchor_and_envelope() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("v11.yaml");
+    std::fs::write(&path, V11).unwrap();
+    let bin = env!("CARGO_BIN_EXE_contractgate");
+    let run = |extra: &[&str]| {
+        std::process::Command::new(bin)
+            .arg("synth")
+            .arg(&path)
+            .args(extra)
+            .output()
+            .unwrap()
+    };
+    let args = [
+        "--rows",
+        "12",
+        "--seed",
+        "5",
+        "--anchor",
+        "2026-01-01T00:00:00Z",
+        "--envelope",
+    ];
+    let a = run(&args);
+    assert_eq!(
+        a.status.code(),
+        Some(0),
+        "{}",
+        String::from_utf8_lossy(&a.stderr)
+    );
+    assert_eq!(a.stdout, run(&args).stdout);
+    let v: Value = serde_json::from_slice(&a.stdout).unwrap();
+    assert_eq!(v["data"].as_array().unwrap().len(), 12);
+
+    let mut inv = args.to_vec();
+    inv.push("--invalid");
+    let b = run(&inv);
+    assert_eq!(b.status.code(), Some(0));
+    let v: Value = serde_json::from_slice(&b.stdout).unwrap();
+    assert_eq!(v["labels"].as_array().unwrap().len(), 12);
+    assert!(v["payload"]["data"].is_array());
+
+    assert_eq!(run(&["--anchor", "soon"]).status.code(), Some(2));
+    assert_eq!(
+        run(&["--envelope", "--format", "csv"]).status.code(),
+        Some(2)
+    );
 }
