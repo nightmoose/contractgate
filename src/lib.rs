@@ -9,8 +9,11 @@
 //! inside submodules (`error.rs`, `ingest.rs`, `storage.rs`) continue to
 //! resolve unchanged.
 
+pub mod batch_check;
+pub mod batch_rules;
 pub mod cli;
 pub mod contract;
+pub mod dbt_export;
 pub mod demo_seed;
 pub mod drop_mode;
 pub mod error;
@@ -21,6 +24,7 @@ pub mod payload_redaction;
 pub mod rate_limit;
 pub mod request_limits;
 pub mod scaffold;
+pub mod sql_dialect;
 pub mod synth;
 pub mod transform;
 pub mod validation;
