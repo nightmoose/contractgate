@@ -389,6 +389,7 @@ mod tests {
 
     fn simple_field(name: &str, ft: FieldType, required: bool) -> FieldDefinition {
         FieldDefinition {
+            distribution: None,
             name: name.to_string(),
             field_type: ft,
             required,

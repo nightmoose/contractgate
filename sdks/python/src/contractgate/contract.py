@@ -132,6 +132,9 @@ class FieldDefinition:
     # ODCS logicalTypeOptions.format. Enforced for email, uuid, and uri/url
     # on string values; any other name is metadata and passes.
     format: Optional[str] = None
+    # Synth-only hint (``uniform`` / ``normal`` / ``lognormal`` /
+    # ``exponential``). Read and checked here; the local validator ignores it.
+    distribution: Optional[Dict[str, Any]] = None
 
     @classmethod
     def from_yaml(cls, raw: Any) -> "FieldDefinition":
@@ -166,7 +169,54 @@ class FieldDefinition:
             items=items,
             transform=transform,
             format=_opt_str(raw.get("format")),
+            distribution=_parse_distribution(raw.get("distribution")),
         )
+
+
+_DIST_PARAMS = {
+    "uniform": (),
+    "normal": ("mean", "sd"),
+    "lognormal": ("mean", "sd"),
+    "exponential": ("rate",),
+}
+
+
+def _parse_distribution(raw: Any) -> Optional[Dict[str, Any]]:
+    """Check a field ``distribution`` hint (same rules as the Rust engine)."""
+    if raw is None:
+        return None
+    if isinstance(raw, str):
+        raw = {"type": raw}
+    if not isinstance(raw, dict):
+        raise ContractCompileError(
+            "distribution must be a name or a map with a `type` "
+            "(uniform, normal, lognormal, exponential)"
+        )
+    kind = raw.get("type", raw.get("kind"))
+    if not isinstance(kind, str):
+        raise ContractCompileError("distribution needs a `type`")
+    kind = kind.lower()
+    if kind not in _DIST_PARAMS:
+        raise ContractCompileError(
+            f"unknown distribution type {kind!r}; use one of: "
+            "uniform, normal, lognormal, exponential"
+        )
+    out: Dict[str, Any] = {"type": kind}
+    for key in raw:
+        if key not in ("type", "kind") and key not in _DIST_PARAMS[kind]:
+            raise ContractCompileError(f"distribution {kind} does not take `{key}`")
+    for key in _DIST_PARAMS[kind]:
+        v = raw.get(key)
+        if isinstance(v, bool) or not isinstance(v, (int, float)) or v != v or abs(v) == float("inf"):
+            raise ContractCompileError(f"distribution {kind} needs a numeric `{key}`")
+        out[key] = float(v)
+    if kind in ("normal", "lognormal") and out["sd"] <= 0:
+        raise ContractCompileError(f"distribution {kind} needs sd greater than 0, got {out['sd']}")
+    if kind == "exponential" and out["rate"] <= 0:
+        raise ContractCompileError(
+            f"distribution exponential needs rate greater than 0, got {out['rate']}"
+        )
+    return out
 
 
 # ---------------------------------------------------------------------------
@@ -324,6 +374,9 @@ def _odcs_prop(p: Dict[str, Any]) -> Dict[str, Any]:
     ):
         if opts.get(src) is not None:
             ent[dst] = opts[src]
+    for cp in p.get("customProperties") or []:
+        if isinstance(cp, dict) and cp.get("property") == "x-cg-distribution" and cp.get("value") is not None:
+            ent["distribution"] = cp["value"]
     for src, dst in (("minimum", "min"), ("maximum", "max")):
         if isinstance(opts.get(src), (int, float)) and not isinstance(opts.get(src), bool):
             ent[dst] = opts[src]

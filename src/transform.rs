@@ -232,6 +232,7 @@ mod tests {
 
     fn entity(name: &str, transform: Option<Transform>) -> FieldDefinition {
         FieldDefinition {
+            distribution: None,
             name: name.to_string(),
             field_type: FieldType::String,
             required: false,
