@@ -209,6 +209,7 @@ mod tests {
 
     fn make_field(name: &str, ft: FieldType) -> FieldDefinition {
         FieldDefinition {
+            distribution: None,
             name: name.to_string(),
             field_type: ft,
             required: true,

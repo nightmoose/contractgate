@@ -2,6 +2,18 @@
 
 All notable changes to `@nightmoose/contractgate-sdk`.
 
+## 0.4.2 — 2026-11-26
+
+- `Contract.fromYaml` accepts ODCS v3.x documents (no `ontology`): fields are
+  read from `schema[0].properties[]` (`logicalType`, or `physicalType` when it
+  is absent; `required`, `primaryKey`, `enum`, `logicalTypeOptions`), a map
+  `description` is read as text, and unknown ODCS fields are ignored. Mirrors
+  the Python SDK and the gateway.
+- `ontology` is optional in native contracts.
+- ODCS `date` and `timestamp` read as strings, and `unique` / quality rules are
+  not checked locally (this SDK has no date type or quality rules).
+- Version aligned with DataContractGate 0.4.2.
+
 ## 0.4.1 — 2026-10-28
 
 Version alignment with DataContractGate 0.4.1. No SDK API changes.

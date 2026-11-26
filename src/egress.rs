@@ -789,6 +789,7 @@ mod tests {
 
     fn bare_field(name: &str) -> FieldDefinition {
         FieldDefinition {
+            distribution: None,
             name: name.into(),
             field_type: FieldType::String,
             required: true,

@@ -24,7 +24,7 @@
 //! `freshness` rules, which are defined relative to the current time.
 
 use crate::contract::{
-    CompareOp, Contract, CrossFieldRule, FieldDefinition, FieldType, QualityRuleType,
+    CompareOp, Contract, CrossFieldRule, Distribution, FieldDefinition, FieldType, QualityRuleType,
 };
 use crate::validation::{
     compare_holds, concrete_rule, expand_cross_rule, pattern_for, string_format_ok, validate_at,
@@ -49,6 +49,8 @@ const NAMED_ATTEMPTS: usize = 6;
 const ROW_ATTEMPTS: usize = 64;
 /// Attempts to break one rule in isolation before skipping it.
 const BREAK_ATTEMPTS: usize = 16;
+/// Redraws of a distribution value before giving up on the bounds.
+const DIST_ATTEMPTS: usize = 1000;
 
 /// Which kind of rows to generate.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
@@ -199,10 +201,23 @@ pub fn generate(
 
 /// Parse and compile contract YAML, mapping failures to a `contract` rule error.
 pub fn compile_yaml(yaml: &str) -> Result<CompiledContract, SynthError> {
-    let contract: Contract = crate::odcs::parse_contract_yaml(yaml)
-        .map_err(|e| SynthError::new("contract", None, format!("invalid contract YAML: {e}")))?;
-    CompiledContract::compile(contract)
-        .map_err(|e| SynthError::new("contract", None, format!("contract does not compile: {e}")))
+    compile_yaml_with(yaml, None).map(|(c, _)| c)
+}
+
+/// [`compile_yaml`] for ODCS documents with several `schema` objects:
+/// `schema_object` picks one by name. Also returns the ODCS import notes.
+pub fn compile_yaml_with(
+    yaml: &str,
+    schema_object: Option<&str>,
+) -> Result<(CompiledContract, Vec<String>), SynthError> {
+    let (contract, notes): (Contract, Vec<String>) =
+        crate::odcs::parse_contract_yaml_with(yaml, schema_object).map_err(|e| {
+            SynthError::new("contract", None, format!("invalid contract YAML: {e}"))
+        })?;
+    let compiled = CompiledContract::compile(contract).map_err(|e| {
+        SynthError::new("contract", None, format!("contract does not compile: {e}"))
+    })?;
+    Ok((compiled, notes))
 }
 
 // ---------------------------------------------------------------------------
@@ -1413,6 +1428,30 @@ impl<'a> Generator<'a> {
                 return Ok(json!(rfc3339(secs)));
             }
         }
+        // A distribution hint (RFC-117 follow-up) reshapes numeric draws.
+        // `uniform` is the default and keeps the original code path.
+        if let Some(d) = f
+            .distribution
+            .as_ref()
+            .filter(|d| **d != Distribution::Uniform)
+        {
+            match f.field_type {
+                FieldType::Integer | FieldType::Float => {
+                    return self.draw_distribution(f, path, d);
+                }
+                _ => {
+                    return Err(SynthError::new(
+                        "distribution",
+                        Some(path),
+                        format!(
+                            "field '{path}' has a {} distribution, which only applies to \
+                             integer and number fields",
+                            d.name()
+                        ),
+                    ));
+                }
+            }
+        }
         Ok(match f.field_type {
             FieldType::Integer => {
                 let (lo, hi) = int_bounds(f, path)?;
@@ -1440,6 +1479,93 @@ impl<'a> Generator<'a> {
                 json!(self.string_value(f, path, attempt)?)
             }
         })
+    }
+
+    /// Standard normal draw (Box-Muller), deterministic for the seed.
+    fn std_normal(&mut self) -> f64 {
+        let u1 = 1.0 - self.rng.gen::<f64>();
+        let u2 = self.rng.gen::<f64>();
+        (-2.0 * u1.ln()).sqrt() * (std::f64::consts::TAU * u2).cos()
+    }
+
+    /// One integer or number from a `normal`, `lognormal` or `exponential`
+    /// hint. Draws outside the field's `min` / `max` are redrawn, so the
+    /// result is the distribution truncated to the bounds.
+    fn draw_distribution(
+        &mut self,
+        f: &FieldDefinition,
+        path: &str,
+        d: &Distribution,
+    ) -> Result<Value, SynthError> {
+        let integer = f.field_type == FieldType::Integer;
+        let lo = f.min.map(|m| if integer { m.ceil() } else { m });
+        let hi = f.max.map(|m| if integer { m.floor() } else { m });
+        if let (Some(a), Some(b)) = (lo, hi) {
+            if a > b {
+                return Err(SynthError::new(
+                    "min",
+                    Some(path),
+                    format!(
+                        "field '{path}' has no {} between min {:?} and max {:?}",
+                        if integer { "integer" } else { "number" },
+                        f.min,
+                        f.max
+                    ),
+                ));
+            }
+        }
+        // Digits kept for non-integers: 2 normally, more when values are small.
+        let scale = match d {
+            Distribution::Normal { sd, .. } => *sd,
+            Distribution::Lognormal { mean, .. } => mean.exp(),
+            Distribution::Exponential { rate } => 1.0 / rate,
+            Distribution::Uniform => 1.0,
+        };
+        let decimals = if scale >= 1.0 || !scale.is_finite() || scale <= 0.0 {
+            2
+        } else {
+            (2.0 + (-scale.log10()).ceil()).min(8.0) as i32
+        };
+        let factor = 10f64.powi(decimals);
+        for _ in 0..DIST_ATTEMPTS {
+            let x = match d {
+                Distribution::Normal { mean, sd } => mean + sd * self.std_normal(),
+                Distribution::Lognormal { mean, sd } => (mean + sd * self.std_normal()).exp(),
+                Distribution::Exponential { rate } => {
+                    f.min.unwrap_or(0.0) - (1.0 - self.rng.gen::<f64>()).ln() / rate
+                }
+                Distribution::Uniform => unreachable!("uniform keeps the default path"),
+            };
+            if !x.is_finite() {
+                continue;
+            }
+            let v = if integer {
+                x.round()
+            } else {
+                let r = (x * factor).round() / factor;
+                // Rounding may step over a bound; use the raw draw then.
+                if lo.is_some_and(|a| r < a) || hi.is_some_and(|b| r > b) {
+                    x
+                } else {
+                    r
+                }
+            };
+            if v.abs() > SAFE_INT || lo.is_some_and(|a| v < a) || hi.is_some_and(|b| v > b) {
+                continue;
+            }
+            return Ok(if integer { json!(v as i64) } else { json!(v) });
+        }
+        Err(SynthError::new(
+            "distribution",
+            Some(path),
+            format!(
+                "field '{path}': the {} distribution puts almost no values between min {:?} \
+                 and max {:?}; move the mean or widen the bounds",
+                d.name(),
+                f.min,
+                f.max
+            ),
+        ))
     }
 
     fn string_value(
@@ -2010,6 +2136,7 @@ fn numeric_template(path: &str, min: Option<f64>, max: Option<f64>) -> FieldDefi
 
 fn string_template(path: &str) -> FieldDefinition {
     FieldDefinition {
+        distribution: None,
         name: path.to_string(),
         field_type: FieldType::String,
         required: true,

@@ -199,6 +199,7 @@ fn json_schema_to_definition(
                 let (item_ft, item_props, item_items) = resolve_schema_type(items_s);
                 let item_av = items_s.get("enum").and_then(|e| e.as_array()).cloned();
                 FieldDefinition {
+                    distribution: None,
                     name: "item".to_string(),
                     field_type: item_ft,
                     required: true,
@@ -215,6 +216,7 @@ fn json_schema_to_definition(
                 }
             } else {
                 FieldDefinition {
+                    distribution: None,
                     name: "item".to_string(),
                     field_type: FieldType::Any,
                     required: true,
@@ -262,6 +264,7 @@ fn json_schema_to_definition(
         .map(|v| v as usize);
 
     Ok(FieldDefinition {
+        distribution: None,
         name: name.to_string(),
         field_type,
         required,

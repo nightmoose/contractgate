@@ -49,6 +49,10 @@ pub struct SynthRequest {
     /// `envelope_payload` (RFC-118). 400 when the contract has none.
     #[serde(default)]
     pub envelope: bool,
+    /// For `yaml_content` in ODCS with several `schema` objects: which one to
+    /// use, by name. The first when omitted.
+    #[serde(default)]
+    pub schema_object: Option<String>,
 }
 
 fn default_rows() -> usize {
@@ -104,6 +108,7 @@ pub async fn synth_handler(
         None => chrono::Utc::now(),
     };
     let want_envelope = req.envelope;
+    let schema_object = req.schema_object.clone();
     let seed = req.seed.unwrap_or_else(rand::random);
     let opts = SynthOptions {
         rows: req.rows,
@@ -115,7 +120,7 @@ pub async fn synth_handler(
     let started = std::time::Instant::now();
     // CPU-bound; keep it off the async reactor.
     let result = tokio::task::spawn_blocking(move || {
-        let compiled = synth::compile_yaml(&yaml)?;
+        let (compiled, notes) = synth::compile_yaml_with(&yaml, schema_object.as_deref())?;
         let name = compiled.contract.name.clone();
         let version = compiled.contract.version.clone();
         let out = synth::generate(&compiled, &opts)?;
@@ -128,13 +133,13 @@ pub async fn synth_handler(
         } else {
             None
         };
-        Ok::<_, synth::SynthError>((name, version, out, payload))
+        Ok::<_, synth::SynthError>((name, version, out, payload, notes))
     })
     .await
     .map_err(|e| AppError::Internal(format!("synth task failed: {e}")))?;
 
     match result {
-        Ok((name, version, out, payload)) => {
+        Ok((name, version, out, payload, notes)) => {
             let count = out.rows.len() + out.invalid_rows.len();
             let rows: Value = match out.mode {
                 SynthMode::Valid => Value::Array(out.rows),
@@ -154,6 +159,9 @@ pub async fn synth_handler(
             });
             if let Some(p) = payload {
                 body["envelope_payload"] = p;
+            }
+            if !notes.is_empty() {
+                body["notes"] = json!(notes);
             }
             Ok(Json(body).into_response())
         }
@@ -205,6 +213,7 @@ pub fn merge_openapi(paths: &mut serde_json::Map<String, Value>) {
             "mode": {"type": "string", "enum": ["valid", "invalid"], "default": "valid"},
             "seed": {"type": "integer", "minimum": 0},
             "anchor_time": {"type": "string", "format": "date-time", "description": "Time freshness rules are measured from. Now when omitted. Set it with seed for rows that repeat exactly."},
+            "schema_object": {"type": "string", "description": "For ODCS yaml_content with several schema objects: the one to use, by name. The first when omitted."},
             "envelope": {"type": "boolean", "default": false, "description": "Also return the rows wrapped in the contract's envelope as envelope_payload. 400 no_envelope when the contract has none."}
         }}}}},
         "responses": {
@@ -215,6 +224,7 @@ pub fn merge_openapi(paths: &mut serde_json::Map<String, Value>) {
                 "seed": {"type": "integer"},
                 "anchor_time": {"type": "string", "format": "date-time"},
                 "envelope_payload": {"type": "object", "description": "Present when envelope=true: the records wrapped in the contract's envelope."},
+                "notes": {"type": "array", "items": {"type": "string"}, "description": "ODCS content that did not map (ignored schema objects, composite key, relationships). Omitted when empty."},
                 "row_count": {"type": "integer"},
                 "rows": {"type": "array", "description": "valid: records. invalid: {record, broken_rule: {field, rule, metric?, violation_kind, message, constraint?}}.", "items": {"type": "object"}},
                 "skipped_rules": {"type": "array", "items": {"type": "object", "properties": {"field": {"type": "string"}, "rule": {"type": "string"}, "reason": {"type": "string"}}}},
@@ -263,6 +273,36 @@ mod tests {
         assert_eq!(b["source"]["type"], "inline");
         let row = &b["rows"][0];
         assert!(row["id"].as_str().unwrap().starts_with('A'));
+    }
+
+    const ODCS_MULTI: &str = "apiVersion: v3.1.0\nkind: DataContract\nversion: 1.0.0\nschema:\n  - name: a\n    properties:\n      - name: x\n        logicalType: integer\n        required: true\n  - name: b\n    properties:\n      - name: y\n        logicalType: string\n        required: true\n";
+
+    #[tokio::test]
+    async fn odcs_schema_object_selects_and_notes_are_returned() {
+        let r = server()
+            .post("/contracts/synth")
+            .json(&json!({"yaml_content": ODCS_MULTI, "rows": 3, "seed": 1}))
+            .await;
+        assert_eq!(r.status_code(), StatusCode::OK);
+        let b = r.json::<Value>();
+        assert!(b["rows"][0]["x"].is_number());
+        assert!(b["notes"][0].as_str().unwrap().contains("ignored: b"));
+        let r = server()
+            .post("/contracts/synth")
+            .json(&json!({"yaml_content": ODCS_MULTI, "rows": 3, "seed": 1, "schema_object": "b"}))
+            .await;
+        let b = r.json::<Value>();
+        assert!(b["rows"][0]["y"].is_string());
+        assert!(b["notes"][0].as_str().unwrap().contains("ignored: a"));
+        let r = server()
+            .post("/contracts/synth")
+            .json(&json!({"yaml_content": ODCS_MULTI, "schema_object": "zzz"}))
+            .await;
+        assert_eq!(r.status_code(), StatusCode::UNPROCESSABLE_ENTITY);
+        assert!(r.json::<Value>()["message"]
+            .as_str()
+            .unwrap()
+            .contains("'zzz' not found"));
     }
 
     #[tokio::test]

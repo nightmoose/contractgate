@@ -1633,6 +1633,7 @@ mod tests {
             ontology: Ontology {
                 entities: vec![
                     FieldDefinition {
+                        distribution: None,
                         name: "user_id".into(),
                         field_type: FieldType::String,
                         required: true,
@@ -1648,6 +1649,7 @@ mod tests {
                         format: None,
                     },
                     FieldDefinition {
+                        distribution: None,
                         name: "event_type".into(),
                         field_type: FieldType::String,
                         required: true,
@@ -1667,6 +1669,7 @@ mod tests {
                         format: None,
                     },
                     FieldDefinition {
+                        distribution: None,
                         name: "timestamp".into(),
                         field_type: FieldType::Integer,
                         required: true,
@@ -1733,6 +1736,7 @@ mod tests {
         let mut c = make_simple_contract();
         c.null_as_absent = null_as_absent;
         c.ontology.entities.push(FieldDefinition {
+            distribution: None,
             name: "note".into(),
             field_type: FieldType::String,
             required: false,

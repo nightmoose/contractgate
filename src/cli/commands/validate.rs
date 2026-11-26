@@ -16,6 +16,11 @@ pub struct ValidateArgs {
     /// Emit machine-readable JSON output.
     #[arg(long)]
     pub json: bool,
+
+    /// For an ODCS file with several `schema` objects: the one to use, by
+    /// name (default: the first).
+    #[arg(long, value_name = "NAME")]
+    pub schema_object: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -57,7 +62,7 @@ pub fn run(args: &ValidateArgs, cfg: &CliConfig) -> Result<i32> {
     let mut any_failure = false;
 
     for path in &files {
-        let result = validate_file(path);
+        let result = validate_file(path, args.schema_object.as_deref());
         match result {
             Ok(notes) => {
                 let name = path.display().to_string();
@@ -99,11 +104,11 @@ pub fn run(args: &ValidateArgs, cfg: &CliConfig) -> Result<i32> {
 
 /// Native or ODCS v3.x YAML. Returns notes for anything in an ODCS document
 /// that did not map.
-fn validate_file(path: &Path) -> Result<Vec<String>> {
+fn validate_file(path: &Path, schema_object: Option<&str>) -> Result<Vec<String>> {
     let src =
         std::fs::read_to_string(path).map_err(|e| anyhow::anyhow!("cannot read file: {e}"))?;
     let (contract, notes): (Contract, Vec<String>) =
-        crate::odcs::parse_contract_yaml_with_notes(&src)
+        crate::odcs::parse_contract_yaml_with(&src, schema_object)
             .map_err(|e| anyhow::anyhow!("YAML parse error: {e}"))?;
     CompiledContract::compile(contract).map_err(|e| anyhow::anyhow!("compile error: {e}"))?;
     Ok(notes)

@@ -50,6 +50,11 @@ pub struct SynthArgs {
     /// Write to this file instead of stdout.
     #[arg(long, short = 'o', value_name = "FILE")]
     pub out: Option<PathBuf>,
+
+    /// For an ODCS file with several `schema` objects: the one to use, by
+    /// name (default: the first).
+    #[arg(long, value_name = "NAME")]
+    pub schema_object: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, clap::ValueEnum)]
@@ -66,13 +71,13 @@ pub fn run(args: &SynthArgs) -> Result<i32> {
             return Ok(2);
         }
     };
-    if let Ok((_, notes)) = crate::odcs::normalize_contract_yaml(&yaml) {
-        for n in notes {
-            eprintln!("note: {n}");
+    let compiled = match synth::compile_yaml_with(&yaml, args.schema_object.as_deref()) {
+        Ok((c, notes)) => {
+            for n in notes {
+                eprintln!("note: {n}");
+            }
+            c
         }
-    }
-    let compiled = match synth::compile_yaml(&yaml) {
-        Ok(c) => c,
         Err(e) => {
             eprintln!("error: {}", e.message);
             return Ok(2);

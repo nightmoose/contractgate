@@ -22,6 +22,7 @@ Framework bundles.
 | `min_length` / `max_length` | `logicalTypeOptions.minLength` / `maxLength` | `x-cg-min-length` / `x-cg-max-length` |
 | `min` / `max` (number/integer) | `logicalTypeOptions.minimum` / `maximum` | `x-cg-min` / `x-cg-max` |
 | `format` (new, string) | `logicalTypeOptions.format` | `x-cg-format` |
+| `distribution` (synth-only hint) | n/a | `x-cg-distribution` (a map such as `{type: normal, mean: 50, sd: 10}`) |
 | `enum` | `quality: [{type: library, metric: invalidValues, mustBe: 0, arguments: {validValues: [...]}}]` (v3.1.0 has no property `enum`), tagged `x-cg-derived: enum` | `x-cg-enum` |
 | `required` | `required` | — |
 | quality `uniqueness` | `unique: true` + `library` / `duplicateValues` / `dimension: uniqueness` | `x-cg-quality` on the entry |

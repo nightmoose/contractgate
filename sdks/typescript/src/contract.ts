@@ -224,6 +224,134 @@ function parseGlossaryEntry(raw: unknown): GlossaryEntry {
 // Contract + CompiledContract
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// ODCS v3.x input
+// ---------------------------------------------------------------------------
+
+type Json = Record<string, unknown>;
+
+const isMap = (v: unknown): v is Json =>
+  v !== null && typeof v === 'object' && !Array.isArray(v);
+
+// ODCS logicalType -> field type. This SDK has no date or timestamp type, so
+// those read as strings (the shape is not checked locally).
+const ODCS_LOGICAL: Record<string, string> = {
+  integer: 'integer', long: 'integer', int: 'integer',
+  number: 'float', double: 'float', float: 'float', decimal: 'float',
+  boolean: 'boolean', bool: 'boolean',
+  object: 'object', record: 'object', struct: 'object', map: 'object',
+  array: 'array', list: 'array',
+  any: 'any',
+};
+
+// Used only when a property has no logicalType.
+const ODCS_PHYSICAL: Record<string, string> = {
+  int: 'integer', integer: 'integer', bigint: 'integer', smallint: 'integer',
+  tinyint: 'integer', long: 'integer', short: 'integer',
+  float: 'float', double: 'float', real: 'float', decimal: 'float',
+  numeric: 'float', number: 'float',
+  boolean: 'boolean', bool: 'boolean',
+  struct: 'object', record: 'object', object: 'object', map: 'object',
+  json: 'object', jsonb: 'object', variant: 'object',
+  array: 'array', list: 'array',
+};
+
+/** A document with no `ontology` and an `apiVersion: v3*`, `kind: DataContract`
+ * or a `schema` list. */
+function isOdcs(r: Json): boolean {
+  if ('ontology' in r) return false;
+  const api = r['apiVersion'];
+  return (
+    (typeof api === 'string' && api.startsWith('v3')) ||
+    r['kind'] === 'DataContract' ||
+    Array.isArray(r['schema'])
+  );
+}
+
+function odcsDescription(v: unknown): string | undefined {
+  if (typeof v === 'string') return v;
+  if (isMap(v)) {
+    for (const k of ['purpose', 'usage', 'limitations']) {
+      if (typeof v[k] === 'string') return v[k] as string;
+    }
+  }
+  return undefined;
+}
+
+function odcsEnum(v: unknown): unknown[] | undefined {
+  if (!Array.isArray(v)) return undefined;
+  const out = v
+    .map((i) => (isMap(i) ? i['value'] : i))
+    .filter((i) => ['string', 'number', 'boolean'].includes(typeof i));
+  return out.length ? out : undefined;
+}
+
+function odcsProp(p: Json): Json {
+  const logical = p['logicalType'];
+  let type: string;
+  if (typeof logical === 'string') {
+    type = ODCS_LOGICAL[logical] ?? 'string';
+  } else {
+    const base = String(p['physicalType'] ?? '').toLowerCase().split(/[(< ]/)[0] ?? '';
+    type = ODCS_PHYSICAL[base] ?? 'string';
+  }
+  const opts = isMap(p['logicalTypeOptions']) ? p['logicalTypeOptions'] : {};
+  const ent: Json = {
+    name: String(p['name']),
+    type,
+    required: p['required'] === true || p['primaryKey'] === true,
+  };
+  const en = odcsEnum(p['enum']) ?? odcsEnum(opts['enum']);
+  if (en) ent['enum'] = en;
+  for (const [src, dst] of [
+    ['pattern', 'pattern'],
+    ['minLength', 'min_length'],
+    ['maxLength', 'max_length'],
+    ['minimum', 'min'],
+    ['maximum', 'max'],
+  ] as const) {
+    if (opts[src] !== undefined && opts[src] !== null) ent[dst] = opts[src];
+  }
+  return ent;
+}
+
+/** Map an ODCS v3.x document (`schema[0].properties[]`) to the native contract
+ * mapping. Unknown ODCS fields are ignored. */
+function odcsToNative(r: Json): Json {
+  const api = r['apiVersion'];
+  if (typeof api === 'string' && !api.startsWith('v3')) {
+    throw new ContractCompileError(`unsupported ODCS apiVersion ${JSON.stringify(api)}; supported: v3.x`);
+  }
+  let version = r['version'];
+  if (typeof version === 'number') version = String(version);
+  if (typeof version !== 'string' || !version) {
+    throw new ContractCompileError("ODCS document is missing the required 'version' field");
+  }
+  const schema = r['schema'];
+  if (!Array.isArray(schema) || schema.length === 0 || !isMap(schema[0])) {
+    throw new ContractCompileError(
+      "ODCS document has no 'schema' array; fields are read from schema[].properties[]",
+    );
+  }
+  const s0 = schema[0];
+  const props = s0['properties'];
+  if (!Array.isArray(props) || props.length === 0) {
+    throw new ContractCompileError(
+      `ODCS schema[0] (${JSON.stringify(s0['name'])}) has no properties; nothing to validate`,
+    );
+  }
+  // Same order as the Rust importer: dataProduct, schema[0].name, root name.
+  const name =
+    [r['dataProduct'], s0['name'], r['name']].find(
+      (v): v is string => typeof v === 'string' && v.trim() !== '',
+    ) ?? 'imported_contract';
+  const entities = props.filter((p): p is Json => isMap(p) && !!p['name']).map(odcsProp);
+  const native: Json = { version, name, ontology: { entities } };
+  const desc = odcsDescription(r['description']) ?? odcsDescription(s0['description']);
+  if (desc) native['description'] = desc;
+  return native;
+}
+
 export interface ContractData {
   version: string;
   name: string;
@@ -254,7 +382,8 @@ export class Contract {
     if (raw === null || typeof raw !== 'object' || Array.isArray(raw)) {
       throw new ContractCompileError('contract YAML must be a mapping at the top level');
     }
-    const r = raw as Record<string, unknown>;
+    let r = raw as Record<string, unknown>;
+    if (isOdcs(r)) r = odcsToNative(r);
 
     const version = r['version'];
     const name = r['name'];
@@ -265,11 +394,12 @@ export class Contract {
       throw new ContractCompileError('contract.name is required');
     }
 
-    const ontologyRaw = r['ontology'];
+    // `ontology` is optional; a contract may have none.
+    const ontologyRaw = r['ontology'] ?? {};
     if (ontologyRaw === null || typeof ontologyRaw !== 'object' || Array.isArray(ontologyRaw)) {
-      throw new ContractCompileError('contract.ontology is required and must be a mapping');
+      throw new ContractCompileError('contract.ontology must be a mapping');
     }
-    const entitiesRaw = (ontologyRaw as Record<string, unknown>)['entities'];
+    const entitiesRaw = (ontologyRaw as Record<string, unknown>)['entities'] ?? [];
     if (!Array.isArray(entitiesRaw)) {
       throw new ContractCompileError('contract.ontology.entities must be a list');
     }
@@ -285,7 +415,7 @@ export class Contract {
     return new Contract({
       version,
       name,
-      description: typeof r['description'] === 'string' ? r['description'] : undefined,
+      description: odcsDescription(r['description']),
       complianceMode: r['compliance_mode'] === true,
       entities,
       glossary,

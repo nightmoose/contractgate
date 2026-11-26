@@ -406,6 +406,7 @@ ontology:
 
     fn field(name: &str, field_type: FieldType) -> FieldDefinition {
         FieldDefinition {
+            distribution: None,
             name: name.to_string(),
             field_type,
             required: false,

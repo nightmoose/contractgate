@@ -79,8 +79,10 @@ fn official_full_example_parses_and_synths() {
         Some("Views built on top of the seller tables.")
     );
     // schema[0] only; the second object is reported, not silently dropped.
-    assert_eq!(notes.len(), 1, "{notes:?}");
+    // It also notes the relationships it does not enforce.
+    assert_eq!(notes.len(), 2, "{notes:?}");
     assert!(notes[0].contains("receivers"), "{notes:?}");
+    assert!(notes[1].contains("relationships"), "{notes:?}");
     let cc = c
         .ontology
         .entities
@@ -219,6 +221,7 @@ fn validate_command_accepts_odcs_directory() {
     let args = ValidateArgs {
         dir: Some(tmp.path().to_path_buf()),
         json: false,
+        schema_object: None,
     };
     assert_eq!(run(&args, &CliConfig::default()).unwrap(), 0);
 }
@@ -239,4 +242,17 @@ fn json_style_odcs_is_detected() {
         "schema":[{"name":"t","properties":[{"name":"id","logicalType":"integer","required":true}]}]}"#;
     let c = parse_contract_yaml(y).expect("parses");
     assert_eq!(c.ontology.entities.len(), 1);
+}
+
+#[test]
+fn official_full_example_second_object_by_name() {
+    let (c, notes) =
+        contractgate::odcs::parse_contract_yaml_with(FULL, Some("receivers")).expect("parses");
+    assert!(notes[0].contains("imported 'receivers'"), "{notes:?}");
+    assert!(!c.ontology.entities.is_empty());
+    assert!(c
+        .ontology
+        .entities
+        .iter()
+        .all(|f| f.name != "rcvr_cntry_code"));
 }

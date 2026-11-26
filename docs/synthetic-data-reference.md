@@ -11,6 +11,7 @@ DataContractGate can generate test rows from a contract. Rows come only from the
 | `required: false` | present in about 3 of 4 rows | |
 | `enum` | one of the listed values | a value of the right type outside the list |
 | `min` / `max` | inside the range | a value below `min` or above `max` |
+| `distribution` (integer, number) | drawn from that shape, inside `min` / `max` (see [Value distributions](#value-distributions)) | as `min` / `max` above |
 | `min_length` / `max_length` | length inside the bounds | a shorter or longer string |
 | free-form `type: string` (no `pattern`, `format` or `enum`) | a realistic value guessed from the field name when it passes every declared rule (`email`, `first_name`, `customer_name`, `phone`, `website`, `country` / `country_code`, `city`, `address`, `zip`, `currency`, `*_id` as a UUID, and more), otherwise a random string | |
 | `pattern` | a string built from the regex | a string the regex does not match |
@@ -47,6 +48,45 @@ In invalid mode the generator tries to break every rule alone. When breaking the
 Fix the contract (widen the field range, drop the duplicate rule) if one of these should be testable alone.
 
 The same seed, anchor time, contract and DataContractGate version give the same rows. The anchor time defaults to now, so without it freshness values (and only those) change between runs. Rows anchored far from now fail real-time freshness on ingest.
+
+## Value distributions
+
+By default numbers are drawn evenly (uniform) between `min` and `max`. With no bounds, integers come from 0 to 10,000 and numbers from 0 to 1,000, and numbers are rounded to 2 decimals. To shape the values, add a `distribution` hint to an `integer` or `number` field:
+
+```yaml
+ontology:
+  entities:
+    - name: order_total
+      type: number
+      min: 0
+      distribution: { type: lognormal, mean: 3.5, sd: 0.6 }
+    - name: age
+      type: integer
+      min: 18
+      max: 90
+      distribution: { type: normal, mean: 42, sd: 12 }
+    - name: wait_seconds
+      type: number
+      min: 0
+      distribution: { type: exponential, rate: 0.05 }
+```
+
+| `type` | Parameters | Values |
+|---|---|---|
+| `uniform` | none (`distribution: uniform`) | Evenly between `min` and `max`. The default, and the same rows as no hint. |
+| `normal` | `mean`, `sd` (greater than 0) | Bell curve around `mean`. |
+| `lognormal` | `mean`, `sd` (greater than 0) | `exp(N(mean, sd))`. `mean` and `sd` describe the underlying normal, the way NumPy and R do, not the resulting values. For values with a mean near 100 and a long right tail, try `mean: 4.5, sd: 0.5`. Always positive. |
+| `exponential` | `rate` (greater than 0) | `min + Exp(rate)` (from 0 with no `min`). The spread above the start averages `1 / rate`. Right-skewed. |
+
+Rules:
+
+- `min` and `max` still hold. A draw outside them is redrawn, so the result is the distribution cut off at the bounds. If the bounds leave almost no mass (a mean of 1000 with `max: 10`), the call fails with `rule: distribution` and the field named.
+- Integers are rounded to the nearest whole number. Numbers keep 2 decimals, or more when the values are small.
+- An `enum` on the field wins: its values are picked evenly and the hint is ignored.
+- A hint on a string, date or other non-numeric field fails the call (`rule: distribution`). Dates and timestamps have no distribution hint yet.
+- The same seed gives the same rows.
+- It is synth-only. Validation, ingest and every other feature ignore it. A bad hint (`sd: 0`, an unknown `type`, a missing parameter) is rejected when the contract is read, with a message that names the problem.
+- ODCS: put it in the property's `customProperties` as `x-cg-distribution` with the same map as the value (see [odcs/using-odcs-directly.md](odcs/using-odcs-directly.md)).
 
 ## API
 
@@ -154,4 +194,5 @@ It takes the same options as the Rust CLI plus `--contract-id`, `--version`, `--
 ## ODCS input
 
 `contractgate synth` and `POST /contracts/synth` accept an ODCS v3.x document
-with no `ontology`. See [`odcs/using-odcs-directly.md`](odcs/using-odcs-directly.md).
+with no `ontology`. Pass `--schema-object NAME` (or `schema_object` in the API) to pick one object of a multi-object file; the response lists unmapped content in `notes`.
+See [`odcs/using-odcs-directly.md`](odcs/using-odcs-directly.md).

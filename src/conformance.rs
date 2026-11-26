@@ -379,6 +379,7 @@ mod tests {
             ontology: Ontology {
                 entities: vec![
                     FieldDefinition {
+                        distribution: None,
                         name: "user_id".into(),
                         field_type: FieldType::String,
                         required: true,
@@ -394,6 +395,7 @@ mod tests {
                         format: None,
                     },
                     FieldDefinition {
+                        distribution: None,
                         name: "amount".into(),
                         field_type: FieldType::Float,
                         required: false,

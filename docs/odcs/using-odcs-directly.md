@@ -32,11 +32,49 @@ kept as native YAML; an ODCS document is converted once, on the way in.
 
 Unknown ODCS fields are ignored.
 
+To shape synthetic values on a number or integer property, add a custom property named `x-cg-distribution`:
+
+```yaml
+- name: amount
+  logicalType: number
+  customProperties:
+    - property: x-cg-distribution
+      value: { type: normal, mean: 120, sd: 25 }
+```
+
+`type` is `uniform`, `normal`, `lognormal` (`mean` and `sd` of the underlying normal) or `exponential` (`rate`). Details: [synthetic data reference](../synthetic-data-reference.md#value-distributions). A bad value is an import error that names the property.
+
+## Choosing a schema object
+
+An ODCS file can describe several tables or topics in `schema[]`. A
+DataContractGate contract covers one of them. The first is used unless you pick
+one by `name` (`physicalName` and `id` also match):
+
+```sh
+contractgate validate --schema-object customers contracts/shop.odcs.yaml
+contractgate synth --schema-object customers contracts/shop.odcs.yaml
+```
+
+`--schema-object` is on `validate`, `synth`, `test` and `enforce`. The API takes
+`schema_object` on `POST /contracts/synth` (with `yaml_content`) and on
+`POST /contracts/import`. An unknown name is an error that lists the names in
+the file. A native contract ignores it.
+
+The note that lists the ignored objects (and any composite key or relationships
+note) is printed by the CLI and returned as `notes` in the JSON response of
+`POST /contracts/synth` and `POST /contracts/import`. `notes` is left out when
+there is nothing to say. To cover several objects, import each one as its own
+contract.
+
 ## What does not map
 
-- Only `schema[0]` is read. Other schema objects are reported as a note
-  (`contractgate validate` prints it) and skipped.
-- `relationships` and foreign keys, composite primary key uniqueness.
+- One schema object is read per contract (see below). The others are skipped
+  and listed in a note.
+- `relationships` and foreign keys. A contract validates one object's events
+  and has no lookup into another, so these are not enforced. A note says so.
+- Uniqueness of a composite primary key. Each key column is made required, but
+  uniqueness rules cover one field, so the combination is not checked. A note
+  says so.
 - Dataset-level `quality` (for example `rowCount`), `sql` and `custom` quality
   checks from other engines.
 - `servers`, `team`, `roles`, `slaProperties`, `support`, `price`,
