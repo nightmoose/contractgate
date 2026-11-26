@@ -232,3 +232,11 @@ fn compiled_odcs_contract_validates_events() {
     let bad = serde_json::json!({"order_id": "a", "amount": -1, "status": "weird"});
     assert!(!validate(&compiled, &bad).passed);
 }
+
+#[test]
+fn json_style_odcs_is_detected() {
+    let y = r#"{"apiVersion":"v3.1.0","kind":"DataContract","version":"1.0.0","name":"j",
+        "schema":[{"name":"t","properties":[{"name":"id","logicalType":"integer","required":true}]}]}"#;
+    let c = parse_contract_yaml(y).expect("parses");
+    assert_eq!(c.ontology.entities.len(), 1);
+}

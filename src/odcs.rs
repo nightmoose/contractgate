@@ -737,23 +737,53 @@ pub fn import_odcs(yaml: &str) -> Result<ImportResult, String> {
     }
 }
 
-/// True when a parsed YAML document is an ODCS data contract rather than a
-/// native DataContractGate contract: no `ontology`, and an `apiVersion: v3.x`,
-/// `kind: DataContract`, or a `schema` list.
-pub fn looks_like_odcs(doc: &Value) -> bool {
-    let Some(m) = doc.as_mapping() else {
-        return false;
-    };
-    if m.contains_key("ontology") {
+/// Top-level (column 0) `key: value` pairs of a block-style YAML document.
+/// A flow-style (`{...}`) document yields no keys here.
+fn top_level_pairs(yaml: &str) -> Vec<(&str, &str)> {
+    yaml.lines()
+        .filter(|l| {
+            l.chars()
+                .next()
+                .is_some_and(|c| !c.is_whitespace() && c != '#' && c != '-')
+        })
+        .filter_map(|l| {
+            let (k, v) = l.split_once(':')?;
+            let k = k.trim().trim_matches(['"', '\'']);
+            let v = v
+                .split(" #")
+                .next()
+                .unwrap_or("")
+                .trim()
+                .trim_matches(['"', '\'']);
+            Some((k, v))
+        })
+        .collect()
+}
+
+/// True when the document is an ODCS data contract rather than a native
+/// DataContractGate contract: no top-level `ontology`, and an `apiVersion:
+/// v3.x`, `kind: DataContract`, a `schema` list or a Data Contract
+/// Specification header. Read from the top-level keys, so native YAML on hot
+/// paths is not parsed twice.
+fn looks_like_odcs(yaml: &str) -> bool {
+    let flow = yaml.trim_start().starts_with('{');
+    if flow {
+        // JSON-style document: look for the quoted keys.
+        return !yaml.contains("\"ontology\"")
+            && (yaml.contains("\"apiVersion\"")
+                || yaml.contains("\"schema\"")
+                || yaml.contains("\"dataContractSpecification\""));
+    }
+    let pairs = top_level_pairs(yaml);
+    if pairs.iter().any(|(k, _)| *k == "ontology") {
         return false;
     }
-    let api_v3 = m
-        .get("apiVersion")
-        .and_then(|v| v.as_str())
-        .is_some_and(|v| v.starts_with("v3"));
-    let kind = m.get("kind").and_then(|v| v.as_str()) == Some("DataContract");
-    let schema = m.get("schema").is_some_and(|v| v.is_sequence());
-    api_v3 || kind || schema
+    pairs.iter().any(|(k, v)| match *k {
+        "apiVersion" => v.starts_with("v3"),
+        "kind" => *v == "DataContract",
+        "schema" | "dataContractSpecification" => true,
+        _ => false,
+    })
 }
 
 /// Accept native DataContractGate YAML or an ODCS v3.x document and return
@@ -762,24 +792,7 @@ pub fn looks_like_odcs(doc: &Value) -> bool {
 pub fn normalize_contract_yaml(
     yaml: &str,
 ) -> Result<(std::borrow::Cow<'_, str>, Vec<String>), String> {
-    // Cheap pre-check so native YAML on hot paths is not parsed twice.
-    let maybe_odcs = yaml.contains("apiVersion")
-        || yaml.contains("DataContract")
-        || yaml.contains("schema:")
-        || yaml.contains("dataContractSpecification");
-    if !maybe_odcs {
-        return Ok((std::borrow::Cow::Borrowed(yaml), Vec::new()));
-    }
-    let doc: Value = match serde_yaml::from_str(yaml) {
-        Ok(d) => d,
-        // Leave YAML syntax errors to the caller's native parse so the
-        // message and line numbers stay what they were.
-        Err(_) => return Ok((std::borrow::Cow::Borrowed(yaml), Vec::new())),
-    };
-    let spec = doc.as_mapping().is_some_and(|m| {
-        m.contains_key("dataContractSpecification") && !m.contains_key("ontology")
-    });
-    if !looks_like_odcs(&doc) && !spec {
+    if !looks_like_odcs(yaml) {
         return Ok((std::borrow::Cow::Borrowed(yaml), Vec::new()));
     }
     let r = import_odcs(yaml).map_err(|e| format!("ODCS import: {e}"))?;
