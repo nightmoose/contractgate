@@ -139,8 +139,8 @@ fn load_contract(spec: &str) -> anyhow::Result<(String, CompiledContract)> {
     }
     let yaml =
         std::fs::read_to_string(spec).map_err(|e| anyhow::anyhow!("cannot read {spec}: {e}"))?;
-    let contract: Contract =
-        serde_yaml::from_str(&yaml).map_err(|e| anyhow::anyhow!("invalid contract YAML: {e}"))?;
+    let contract: Contract = crate::odcs::parse_contract_yaml(&yaml)
+        .map_err(|e| anyhow::anyhow!("invalid contract YAML: {e}"))?;
     let name = contract.name.clone();
     let compiled = CompiledContract::compile(contract)
         .map_err(|e| anyhow::anyhow!("contract compile failed: {e}"))?;

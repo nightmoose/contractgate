@@ -149,8 +149,8 @@ fn dry_run_files(files: &[PathBuf], mode: output::Mode) -> Result<i32> {
 fn parse_file(path: &Path) -> Result<(String, String, String)> {
     let yaml =
         std::fs::read_to_string(path).map_err(|e| anyhow::anyhow!("cannot read file: {e}"))?;
-    let contract: Contract =
-        serde_yaml::from_str(&yaml).map_err(|e| anyhow::anyhow!("YAML parse error: {e}"))?;
+    let contract: Contract = crate::odcs::parse_contract_yaml(&yaml)
+        .map_err(|e| anyhow::anyhow!("YAML parse error: {e}"))?;
     Ok((yaml, contract.name.clone(), contract.version.clone()))
 }
 

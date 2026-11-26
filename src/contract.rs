@@ -54,7 +54,8 @@ pub struct Contract {
     /// Human-readable name for the contract
     pub name: String,
     /// Optional description of what data this contract covers
-    #[serde(default)]
+    /// Accepts a string or an ODCS v3 description object.
+    #[serde(default, deserialize_with = "lenient_description")]
     pub description: Option<String>,
     /// RFC-004: when true, events containing fields not declared in
     /// `ontology.entities` are rejected as per-event `UNDECLARED_FIELD`
@@ -62,7 +63,10 @@ pub struct Contract {
     /// (undeclared fields pass through untouched).
     #[serde(default)]
     pub compliance_mode: bool,
-    /// Field-level ontology (structure + constraints)
+    /// Field-level ontology (structure + constraints). Optional so a contract
+    /// that only carries quality rules still parses; ODCS documents are
+    /// mapped into this by `odcs::parse_contract_yaml`.
+    #[serde(default)]
     pub ontology: Ontology,
     /// Business glossary entries
     #[serde(default)]
@@ -272,9 +276,27 @@ fn is_false(value: &bool) -> bool {
 // ---------------------------------------------------------------------------
 
 /// The structural schema — a list of field (entity) definitions.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct Ontology {
+    #[serde(default)]
     pub entities: Vec<FieldDefinition>,
+}
+
+/// `description` as a string, or the ODCS v3 object form
+/// (`purpose`, then `usage`, then `limitations`). Other shapes read as absent.
+fn lenient_description<'de, D>(d: D) -> Result<Option<String>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let v = serde_yaml::Value::deserialize(d)?;
+    Ok(match v {
+        serde_yaml::Value::String(s) => Some(s),
+        serde_yaml::Value::Mapping(m) => ["purpose", "usage", "limitations"]
+            .iter()
+            .find_map(|k| m.get(*k).and_then(|v| v.as_str()))
+            .map(String::from),
+        _ => None,
+    })
 }
 
 /// Defines a single field (entity attribute) inside a data event.

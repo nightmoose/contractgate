@@ -140,10 +140,10 @@ impl DiffSummarizer for RuleBasedSummarizer {
 // ---------------------------------------------------------------------------
 
 pub async fn diff_handler(Json(req): Json<DiffRequest>) -> AppResult<Json<DiffResponse>> {
-    let contract_a: Contract = serde_yaml::from_str(&req.contract_yaml_a)
+    let contract_a: Contract = crate::odcs::parse_contract_yaml(&req.contract_yaml_a)
         .map_err(|e| AppError::BadRequest(format!("invalid contract_yaml_a: {e}")))?;
 
-    let contract_b: Contract = serde_yaml::from_str(&req.contract_yaml_b)
+    let contract_b: Contract = crate::odcs::parse_contract_yaml(&req.contract_yaml_b)
         .map_err(|e| AppError::BadRequest(format!("invalid contract_yaml_b: {e}")))?;
 
     let changes = diff_contracts(&contract_a, &contract_b);

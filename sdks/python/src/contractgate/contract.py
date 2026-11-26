@@ -242,6 +242,146 @@ class GlossaryEntry:
 
 
 # ---------------------------------------------------------------------------
+# ODCS v3.x input
+# ---------------------------------------------------------------------------
+
+_ODCS_LOGICAL = {
+    "integer": "integer", "long": "integer", "int": "integer",
+    "number": "number", "double": "number", "float": "number", "decimal": "number",
+    "boolean": "boolean", "bool": "boolean",
+    "object": "object", "record": "object", "struct": "object", "map": "object",
+    "array": "array", "list": "array",
+    "date": "date", "date32": "date",
+    "timestamp": "timestamp", "datetime": "timestamp", "timestamptz": "timestamp",
+    "any": "any",
+}
+_ODCS_PHYSICAL = {
+    "int": "integer", "integer": "integer", "bigint": "integer", "smallint": "integer",
+    "tinyint": "integer", "long": "integer", "short": "integer",
+    "float": "number", "double": "number", "real": "number", "decimal": "number",
+    "numeric": "number", "number": "number",
+    "boolean": "boolean", "bool": "boolean",
+    "date": "date",
+    "timestamp": "timestamp", "timestamptz": "timestamp", "datetime": "timestamp",
+    "struct": "object", "record": "object", "object": "object", "map": "object",
+    "json": "object", "jsonb": "object", "variant": "object",
+    "array": "array", "list": "array",
+}
+
+
+def _is_odcs(raw: Dict[str, Any]) -> bool:
+    """An ODCS document: no ``ontology`` and an ``apiVersion: v3*``,
+    ``kind: DataContract`` or a ``schema`` list."""
+    if "ontology" in raw:
+        return False
+    api = raw.get("apiVersion")
+    return (
+        (isinstance(api, str) and api.startswith("v3"))
+        or raw.get("kind") == "DataContract"
+        or isinstance(raw.get("schema"), list)
+    )
+
+
+def _odcs_description(v: Any) -> Optional[str]:
+    if isinstance(v, str):
+        return v
+    if isinstance(v, dict):
+        for k in ("purpose", "usage", "limitations"):
+            if isinstance(v.get(k), str):
+                return v[k]
+    return None
+
+
+def _odcs_enum(v: Any) -> Optional[List[Any]]:
+    if not isinstance(v, list):
+        return None
+    out = [i.get("value") if isinstance(i, dict) else i for i in v]
+    out = [i for i in out if isinstance(i, (str, int, float, bool))]
+    return out or None
+
+
+def _odcs_prop(p: Dict[str, Any]) -> Dict[str, Any]:
+    logical = p.get("logicalType")
+    if isinstance(logical, str):
+        ftype = _ODCS_LOGICAL.get(logical, "string")
+    else:
+        base = str(p.get("physicalType") or "").lower()
+        for sep in ("(", "<", " "):
+            base = base.split(sep)[0]
+        ftype = _ODCS_PHYSICAL.get(base, "string")
+    opts = p.get("logicalTypeOptions") if isinstance(p.get("logicalTypeOptions"), dict) else {}
+    ent: Dict[str, Any] = {
+        "name": str(p.get("name")),
+        "type": ftype,
+        "required": bool(p.get("required", False)) or p.get("primaryKey") is True,
+    }
+    enum = _odcs_enum(p.get("enum")) or _odcs_enum(opts.get("enum"))
+    if enum:
+        ent["enum"] = enum
+    for src, dst in (
+        ("pattern", "pattern"), ("minLength", "min_length"), ("maxLength", "max_length"),
+        ("format", "format"),
+    ):
+        if opts.get(src) is not None:
+            ent[dst] = opts[src]
+    for src, dst in (("minimum", "min"), ("maximum", "max")):
+        if isinstance(opts.get(src), (int, float)) and not isinstance(opts.get(src), bool):
+            ent[dst] = opts[src]
+    return ent
+
+
+def _odcs_to_native(raw: Dict[str, Any]) -> Dict[str, Any]:
+    """Map an ODCS v3.x document (schema[0].properties[]) to the native
+    contract mapping. Unknown ODCS fields are ignored."""
+    api = raw.get("apiVersion")
+    if isinstance(api, str) and not api.startswith("v3"):
+        raise ContractCompileError(f"unsupported ODCS apiVersion {api!r}; supported: v3.x")
+    version = raw.get("version")
+    if isinstance(version, (int, float)) and not isinstance(version, bool):
+        version = str(version)
+    if not isinstance(version, str) or not version:
+        raise ContractCompileError("ODCS document is missing the required 'version' field")
+    schema = raw.get("schema")
+    if not isinstance(schema, list) or not schema or not isinstance(schema[0], dict):
+        raise ContractCompileError(
+            "ODCS document has no 'schema' array; fields are read from schema[].properties[]"
+        )
+    s0 = schema[0]
+    props = s0.get("properties")
+    if not isinstance(props, list) or not props:
+        raise ContractCompileError(
+            f"ODCS schema[0] ({s0.get('name')!r}) has no properties; nothing to validate"
+        )
+    # Same order as the Rust importer: dataProduct, schema[0].name, root name.
+    name = next(
+        (
+            v
+            for v in (raw.get("dataProduct"), s0.get("name"), raw.get("name"))
+            if isinstance(v, str) and v.strip()
+        ),
+        "imported_contract",
+    )
+    entities = [_odcs_prop(p) for p in props if isinstance(p, dict) and p.get("name")]
+    pk = [p for p in props if isinstance(p, dict) and p.get("primaryKey") is True]
+    quality = []
+    for p in props:
+        if not isinstance(p, dict) or not p.get("name"):
+            continue
+        if p.get("unique") is True or (p.get("primaryKey") is True and len(pk) == 1):
+            quality.append({"field": str(p["name"]), "type": "uniqueness"})
+    native: Dict[str, Any] = {
+        "version": version,
+        "name": name,
+        "ontology": {"entities": entities},
+        "quality": quality,
+    }
+    desc = _odcs_description(raw.get("description")) or _odcs_description(s0.get("description"))
+    if desc:
+        native["description"] = desc
+    return native
+
+
+# ---------------------------------------------------------------------------
 # Top-level Contract
 # ---------------------------------------------------------------------------
 
@@ -271,6 +411,9 @@ class Contract:
         if not isinstance(raw, dict):
             raise ContractCompileError("contract YAML must be a mapping at the top level")
 
+        if _is_odcs(raw):
+            raw = _odcs_to_native(raw)
+
         version = raw.get("version")
         name = raw.get("name")
         if not isinstance(version, str) or not version:
@@ -278,10 +421,11 @@ class Contract:
         if not isinstance(name, str) or not name:
             raise ContractCompileError("contract.name is required")
 
-        ontology_raw = raw.get("ontology")
+        # `ontology` is optional; a contract may carry only quality rules.
+        ontology_raw = raw.get("ontology") if raw.get("ontology") is not None else {}
         if not isinstance(ontology_raw, dict):
-            raise ContractCompileError("contract.ontology is required and must be a mapping")
-        entities_raw = ontology_raw.get("entities")
+            raise ContractCompileError("contract.ontology must be a mapping")
+        entities_raw = ontology_raw.get("entities") if ontology_raw.get("entities") is not None else []
         if not isinstance(entities_raw, list):
             raise ContractCompileError("contract.ontology.entities must be a list")
         entities = [FieldDefinition.from_yaml(e) for e in entities_raw]
@@ -294,7 +438,7 @@ class Contract:
         return cls(
             version=version,
             name=name,
-            description=_opt_str(raw.get("description")),
+            description=_opt_str(_odcs_description(raw.get("description"))),
             compliance_mode=bool(raw.get("compliance_mode", False)),
             entities=entities,
             glossary=glossary,
