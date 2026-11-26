@@ -69,6 +69,8 @@ const compiled = contract.compile();
 const { passed, violations } = compiled.validate({ user_id: "alice", timestamp: 1700000000 });
 ```
 
+`Contract.fromYaml` also reads an ODCS v3.x document directly (no `ontology` needed): fields come from `schema[0].properties[]`, a map `description` is read as text, and unknown ODCS fields are ignored. `ontology` is optional in native contracts too.
+
 The local validator mirrors the Rust engine exactly. Conformance is enforced via a shared fixture corpus under `tests/conformance/`.
 
 ## Error hierarchy
