@@ -45,8 +45,8 @@ use uuid::Uuid;
 // existing submodules that refer to `crate::contract` / `crate::validation`
 // continue to resolve unchanged.
 pub use contractgate::{
-    contract, dbt_export, dbt_yaml, drop_mode, payload_redaction, sql_dialect, transform,
-    validation,
+    contract, contract_diff, dbt_export, dbt_yaml, drop_mode, payload_redaction, sql_dialect,
+    transform, validation,
 };
 
 mod api_key_auth;
