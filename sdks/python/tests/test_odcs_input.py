@@ -49,3 +49,33 @@ def test_unsupported_odcs_errors_are_clear():
         Contract.from_yaml("apiVersion: v3.1.0\nkind: DataContract\nname: n\nversion: 1.0.0\n")
     with pytest.raises(ContractCompileError, match="unsupported ODCS apiVersion"):
         Contract.from_yaml("apiVersion: v2.2.2\nkind: DataContract\nname: n\nversion: 1\nschema: []\n")
+
+
+def test_distribution_hint_is_read_and_checked():
+    c = Contract.from_yaml(
+        'version: "1.0"\nname: d\nontology:\n  entities:\n'
+        "    - name: x\n      type: number\n"
+        "      distribution: {type: normal, mean: 5, sd: 2}\n"
+    )
+    assert c.entities[0].distribution == {"type": "normal", "mean": 5.0, "sd": 2.0}
+    # the validator ignores it
+    assert c.compile().validate({"x": 1.5}).passed
+    with pytest.raises(ContractCompileError, match="sd greater than 0"):
+        Contract.from_yaml(
+            'version: "1.0"\nname: d\nontology:\n  entities:\n'
+            "    - name: x\n      type: number\n      distribution: {type: normal, mean: 1, sd: 0}\n"
+        )
+    with pytest.raises(ContractCompileError, match="unknown distribution type"):
+        Contract.from_yaml(
+            'version: "1.0"\nname: d\nontology:\n  entities:\n'
+            "    - name: x\n      type: number\n      distribution: {type: weibull}\n"
+        )
+
+
+def test_odcs_x_cg_distribution_custom_property():
+    c = Contract.from_yaml(
+        "apiVersion: v3.1.0\nkind: DataContract\nversion: 1.0.0\nname: n\nschema:\n  - name: t\n    properties:\n"
+        "      - name: x\n        logicalType: number\n        customProperties:\n"
+        "          - property: x-cg-distribution\n            value: {type: lognormal, mean: 3, sd: 0.5}\n"
+    )
+    assert c.entities[0].distribution == {"type": "lognormal", "mean": 3.0, "sd": 0.5}

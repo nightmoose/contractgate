@@ -637,6 +637,7 @@ fn import_column(
     }
 
     Ok(FieldDefinition {
+        distribution: None,
         name,
         field_type,
         required,

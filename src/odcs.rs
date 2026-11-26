@@ -24,8 +24,8 @@
 //! `name`; callers must NOT pass the salt to any outbound serializer.
 
 use crate::contract::{
-    Contract, ContractIdentity, ContractVersion, EgressLeakageMode, FieldDefinition, FieldType,
-    ImportSource, Ontology, QualityRule, QualityRuleType, UniqueScope, VersionState,
+    Contract, ContractIdentity, ContractVersion, Distribution, EgressLeakageMode, FieldDefinition,
+    FieldType, ImportSource, Ontology, QualityRule, QualityRuleType, UniqueScope, VersionState,
 };
 use serde_yaml::{Mapping, Value};
 
@@ -266,6 +266,11 @@ fn build_odcs_property(name: &str, f: &FieldDefinition, prop_quality: &[&Quality
     }
     if let Some(v) = f.max {
         custom.push(custom_prop("x-cg-max", num(v)));
+    }
+    if let Some(d) = &f.distribution {
+        if let Ok(v) = serde_yaml::to_value(d) {
+            custom.push(custom_prop("x-cg-distribution", v));
+        }
     }
     if let Some(v) = f.min_length {
         custom.push(custom_prop(
@@ -1156,6 +1161,7 @@ fn build_field_tree(pairs: Vec<(String, FieldDefinition)>) -> Result<Vec<FieldDe
             continue;
         }
         top_level.push(FieldDefinition {
+            distribution: None,
             name: parent_name,
             field_type: FieldType::Object,
             required: false,
@@ -1279,6 +1285,7 @@ fn odcs_prop_to_field(m: &Mapping, full_name: &str) -> Result<FieldDefinition, S
     let mut min = opt("minimum").and_then(|v| v.as_f64());
     let mut max = opt("maximum").and_then(|v| v.as_f64());
     let mut format = opt("format").and_then(|v| v.as_str()).map(String::from);
+    let mut distribution: Option<Distribution> = None;
     if field_type == FieldType::Date && format.as_deref() == Some(CG_DATE_FORMAT) {
         format = None; // CG's built-in date format
     }
@@ -1342,6 +1349,14 @@ fn odcs_prop_to_field(m: &Mapping, full_name: &str) -> Result<FieldDefinition, S
                     max_length = val.and_then(|v| v.as_u64()).map(|n| n as usize);
                 }
                 "x-cg-format" => format = val.and_then(|v| v.as_str()).map(String::from),
+                // Synth-only hint; a bad value is an error, not silently dropped.
+                "x-cg-distribution" => {
+                    if let Some(v) = val.filter(|v| !v.is_null()) {
+                        distribution = Some(Distribution::from_value(v).map_err(|e| {
+                            format!("property '{full_name}': x-cg-distribution: {e}")
+                        })?);
+                    }
+                }
                 // Transform kind/style not reconstructed in Mode B —
                 // transform secrets (salt) are absent; review required (D-002).
                 _ => {}
@@ -1364,6 +1379,7 @@ fn odcs_prop_to_field(m: &Mapping, full_name: &str) -> Result<FieldDefinition, S
     };
 
     Ok(FieldDefinition {
+        distribution,
         name: leaf_name,
         field_type,
         required,

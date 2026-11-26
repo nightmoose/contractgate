@@ -169,6 +169,7 @@ fn infer_field(name: &str, values: &[&Value], total_samples: usize) -> FieldDefi
     let field_type = infer_type(&non_null);
 
     let mut def = FieldDefinition {
+        distribution: None,
         name: name.to_string(),
         field_type: field_type.clone(),
         required,

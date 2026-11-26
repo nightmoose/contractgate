@@ -32,6 +32,18 @@ kept as native YAML; an ODCS document is converted once, on the way in.
 
 Unknown ODCS fields are ignored.
 
+To shape synthetic values on a number or integer property, add a custom property named `x-cg-distribution`:
+
+```yaml
+- name: amount
+  logicalType: number
+  customProperties:
+    - property: x-cg-distribution
+      value: { type: normal, mean: 120, sd: 25 }
+```
+
+`type` is `uniform`, `normal`, `lognormal` (`mean` and `sd` of the underlying normal) or `exponential` (`rate`). Details: [synthetic data reference](../synthetic-data-reference.md#value-distributions). A bad value is an import error that names the property.
+
 ## Choosing a schema object
 
 An ODCS file can describe several tables or topics in `schema[]`. A
