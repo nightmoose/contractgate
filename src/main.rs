@@ -970,7 +970,8 @@ async fn import_odcs_handler(
         .await
         .map_err(|e| AppError::BadRequest(e.to_string()))?;
 
-    let result = odcs::import_odcs(&body.odcs_yaml).map_err(AppError::BadRequest)?;
+    let result = odcs::import_odcs_with(&body.odcs_yaml, body.schema_object.as_deref())
+        .map_err(AppError::BadRequest)?;
 
     // Name override from request body wins over the ODCS-parsed name.
     let name_in_yaml: Contract = serde_yaml::from_str(&result.yaml_content)
@@ -1011,7 +1012,9 @@ async fn import_odcs_handler(
             state.self_hosted,
         )
         .await?;
-        return Ok((StatusCode::CREATED, Json(VersionResponse::from(&cv))));
+        let mut resp = VersionResponse::from(&cv);
+        resp.notes = result.warnings;
+        return Ok((StatusCode::CREATED, Json(resp)));
     }
 
     // No target: a new identity needs an org (NOT NULL column).
@@ -1059,7 +1062,9 @@ async fn import_odcs_handler(
     )
     .await?;
 
-    Ok((StatusCode::CREATED, Json(VersionResponse::from(&cv))))
+    let mut resp = VersionResponse::from(&cv);
+    resp.notes = result.warnings;
+    Ok((StatusCode::CREATED, Json(resp)))
 }
 
 /// `GET /contracts/:id/versions/:version/export` — return the contract version

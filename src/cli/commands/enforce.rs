@@ -38,6 +38,11 @@ pub struct EnforceArgs {
     #[arg(long, env = "CG_KAFKA_BROKER", value_name = "HOST:PORT")]
     pub broker: Option<String>,
 
+    /// For an ODCS file with several `schema` objects: the one to use, by
+    /// name (default: the first).
+    #[arg(long, value_name = "NAME")]
+    pub schema_object: Option<String>,
+
     /// Kafka topic to consume.
     #[arg(long, value_name = "TOPIC")]
     pub topic: Option<String>,
@@ -74,7 +79,7 @@ pub struct EnforceArgs {
 
 pub fn run(args: &EnforceArgs) -> anyhow::Result<i32> {
     // Load and compile the contract.
-    let (contract_name, compiled) = load_contract(&args.contract)?;
+    let (contract_name, compiled) = load_contract(&args.contract, args.schema_object.as_deref())?;
 
     // Collect events to validate.
     let events = collect_events(args)?;
@@ -130,7 +135,10 @@ pub fn run(args: &EnforceArgs) -> anyhow::Result<i32> {
 // Helpers
 // ---------------------------------------------------------------------------
 
-fn load_contract(spec: &str) -> anyhow::Result<(String, CompiledContract)> {
+fn load_contract(
+    spec: &str,
+    schema_object: Option<&str>,
+) -> anyhow::Result<(String, CompiledContract)> {
     if spec.starts_with("id:") {
         anyhow::bail!(
             "contract ID lookup (id:uuid) is a Phase 2 feature; \
@@ -139,8 +147,9 @@ fn load_contract(spec: &str) -> anyhow::Result<(String, CompiledContract)> {
     }
     let yaml =
         std::fs::read_to_string(spec).map_err(|e| anyhow::anyhow!("cannot read {spec}: {e}"))?;
-    let contract: Contract = crate::odcs::parse_contract_yaml(&yaml)
-        .map_err(|e| anyhow::anyhow!("invalid contract YAML: {e}"))?;
+    let (contract, _notes): (Contract, Vec<String>) =
+        crate::odcs::parse_contract_yaml_with(&yaml, schema_object)
+            .map_err(|e| anyhow::anyhow!("invalid contract YAML: {e}"))?;
     let name = contract.name.clone();
     let compiled = CompiledContract::compile(contract)
         .map_err(|e| anyhow::anyhow!("contract compile failed: {e}"))?;

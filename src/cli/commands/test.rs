@@ -46,6 +46,11 @@ pub struct TestArgs {
     /// Summary line only; suppress per-violation detail.
     #[arg(long)]
     pub quiet: bool,
+
+    /// For an ODCS file with several `schema` objects: the one to use, by
+    /// name (default: the first).
+    #[arg(long, value_name = "NAME")]
+    pub schema_object: Option<String>,
 }
 
 #[derive(Debug, Clone, clap::ValueEnum)]
@@ -90,11 +95,12 @@ struct Summary {
 
 pub fn run(args: &TestArgs) -> anyhow::Result<i32> {
     // --- Load + compile contract (exit 2 on failure) ----------------------
-    let (contract_name, compiled) = load_contract(&args.contract).map_err(|e| {
-        eprintln!("error: {e:#}");
-        // We can't return i32 from map_err; we propagate and handle at call site.
-        e
-    })?;
+    let (contract_name, compiled) = load_contract(&args.contract, args.schema_object.as_deref())
+        .map_err(|e| {
+            eprintln!("error: {e:#}");
+            // We can't return i32 from map_err; we propagate and handle at call site.
+            e
+        })?;
 
     // --- Read records (exit 2 on top-level parse failure) -----------------
     let records = read_records(&args.data).map_err(|e| {
@@ -216,11 +222,15 @@ impl Format {
     }
 }
 
-fn load_contract(path: &PathBuf) -> anyhow::Result<(String, CompiledContract)> {
+fn load_contract(
+    path: &PathBuf,
+    schema_object: Option<&str>,
+) -> anyhow::Result<(String, CompiledContract)> {
     let yaml = std::fs::read_to_string(path)
         .map_err(|e| anyhow::anyhow!("cannot read {}: {e}", path.display()))?;
-    let contract: Contract = crate::odcs::parse_contract_yaml(&yaml)
-        .map_err(|e| anyhow::anyhow!("invalid contract YAML: {e}"))?;
+    let (contract, _notes): (Contract, Vec<String>) =
+        crate::odcs::parse_contract_yaml_with(&yaml, schema_object)
+            .map_err(|e| anyhow::anyhow!("invalid contract YAML: {e}"))?;
     let name = contract.name.clone();
     let compiled = CompiledContract::compile(contract)
         .map_err(|e| anyhow::anyhow!("contract compile failed: {e}"))?;
