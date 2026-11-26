@@ -154,4 +154,5 @@ It takes the same options as the Rust CLI plus `--contract-id`, `--version`, `--
 ## ODCS input
 
 `contractgate synth` and `POST /contracts/synth` accept an ODCS v3.x document
-with no `ontology`. See [`odcs/using-odcs-directly.md`](odcs/using-odcs-directly.md).
+with no `ontology`. Pass `--schema-object NAME` (or `schema_object` in the API) to pick one object of a multi-object file; the response lists unmapped content in `notes`.
+See [`odcs/using-odcs-directly.md`](odcs/using-odcs-directly.md).

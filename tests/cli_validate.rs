@@ -24,6 +24,7 @@ fn args_for_dir(dir: PathBuf) -> ValidateArgs {
     ValidateArgs {
         dir: Some(dir),
         json: false,
+        schema_object: None,
     }
 }
 
@@ -31,6 +32,7 @@ fn args_for_dir_json(dir: PathBuf) -> ValidateArgs {
     ValidateArgs {
         dir: Some(dir),
         json: true,
+        schema_object: None,
     }
 }
 

@@ -1209,6 +1209,11 @@ pub struct VersionResponse {
     pub import_source: ImportSource,
     /// When `true`, human review is required before promotion to stable.
     pub requires_review: bool,
+    /// Import notes: ODCS content that did not map (ignored schema objects,
+    /// composite key, relationships). Only set by `POST /contracts/import`,
+    /// and omitted from the JSON when empty.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub notes: Vec<String>,
 }
 
 impl From<&ContractVersion> for VersionResponse {
@@ -1226,6 +1231,7 @@ impl From<&ContractVersion> for VersionResponse {
             egress_leakage_mode: v.egress_leakage_mode,
             import_source: v.import_source,
             requires_review: v.requires_review,
+            notes: Vec::new(),
         }
     }
 }

@@ -699,6 +699,14 @@ fn description_text(v: Option<&Value>) -> Option<String> {
 /// transforms, glossary, metrics, and dataset-level rules (`rowCount`) are
 /// not recoverable — the caller sets `requires_review = true` (D-002).
 pub fn import_odcs(yaml: &str) -> Result<ImportResult, String> {
+    import_odcs_with(yaml, None)
+}
+
+/// [`import_odcs`] for a document whose `schema` has several objects:
+/// `schema_object` picks one by `name` (or `physicalName`, or `id`); the
+/// first object is used when it is `None`. A DataContractGate export (lossless
+/// import) is a single contract, so the choice does not apply to it.
+pub fn import_odcs_with(yaml: &str, schema_object: Option<&str>) -> Result<ImportResult, String> {
     let doc: Value = serde_yaml::from_str(yaml).map_err(|e| format!("invalid ODCS YAML: {e}"))?;
 
     let mapping = doc
@@ -731,9 +739,17 @@ pub fn import_odcs(yaml: &str) -> Result<ImportResult, String> {
     };
 
     if root_extension(mapping, "x-contractgate-version").is_some() {
-        import_mode_a(mapping, version)
+        let mut r = import_mode_a(mapping, version)?;
+        if schema_object.is_some() {
+            r.warnings.push(
+                "schema_object ignored: this document is a DataContractGate export, \
+                 which carries one contract"
+                    .to_string(),
+            );
+        }
+        Ok(r)
     } else {
-        import_mode_b(mapping, version)
+        import_mode_b(mapping, version, schema_object)
     }
 }
 
@@ -792,10 +808,20 @@ fn looks_like_odcs(yaml: &str) -> bool {
 pub fn normalize_contract_yaml(
     yaml: &str,
 ) -> Result<(std::borrow::Cow<'_, str>, Vec<String>), String> {
+    normalize_contract_yaml_with(yaml, None)
+}
+
+/// [`normalize_contract_yaml`] with a `schema_object` choice for ODCS
+/// documents that have several schema objects (see [`import_odcs_with`]).
+/// Ignored for native YAML.
+pub fn normalize_contract_yaml_with<'a>(
+    yaml: &'a str,
+    schema_object: Option<&str>,
+) -> Result<(std::borrow::Cow<'a, str>, Vec<String>), String> {
     if !looks_like_odcs(yaml) {
         return Ok((std::borrow::Cow::Borrowed(yaml), Vec::new()));
     }
-    let r = import_odcs(yaml).map_err(|e| format!("ODCS import: {e}"))?;
+    let r = import_odcs_with(yaml, schema_object).map_err(|e| format!("ODCS import: {e}"))?;
     Ok((std::borrow::Cow::Owned(r.yaml_content), r.warnings))
 }
 
@@ -806,7 +832,15 @@ pub fn parse_contract_yaml(yaml: &str) -> Result<Contract, String> {
 
 /// Like [`parse_contract_yaml`], also returning ODCS import notes.
 pub fn parse_contract_yaml_with_notes(yaml: &str) -> Result<(Contract, Vec<String>), String> {
-    let (native, notes) = normalize_contract_yaml(yaml)?;
+    parse_contract_yaml_with(yaml, None)
+}
+
+/// [`parse_contract_yaml_with_notes`] with a `schema_object` choice.
+pub fn parse_contract_yaml_with(
+    yaml: &str,
+    schema_object: Option<&str>,
+) -> Result<(Contract, Vec<String>), String> {
+    let (native, notes) = normalize_contract_yaml_with(yaml, schema_object)?;
     let contract: Contract = serde_yaml::from_str(&native).map_err(|e| e.to_string())?;
     Ok((contract, notes))
 }
@@ -872,7 +906,11 @@ fn import_mode_a(doc: &Mapping, version: String) -> Result<ImportResult, String>
 
 // ── Mode B (stripped / foreign ODCS) ─────────────────────────────────────────
 
-fn import_mode_b(doc: &Mapping, version: String) -> Result<ImportResult, String> {
+fn import_mode_b(
+    doc: &Mapping,
+    version: String,
+    schema_object: Option<&str>,
+) -> Result<ImportResult, String> {
     let schema_seq = doc
         .get("schema")
         .and_then(|v| v.as_sequence())
@@ -882,14 +920,41 @@ fn import_mode_b(doc: &Mapping, version: String) -> Result<ImportResult, String>
                 .to_string()
         })?;
 
+    let object_name = |v: &Value| -> String {
+        v.as_mapping()
+            .and_then(|m| m.get("name"))
+            .and_then(|n| n.as_str())
+            .unwrap_or("?")
+            .to_string()
+    };
+    // Which schema object: by name, physicalName or id when asked, else the first.
+    let idx = match schema_object {
+        None => 0,
+        Some(want) => schema_seq
+            .iter()
+            .position(|o| {
+                o.as_mapping().is_some_and(|m| {
+                    ["name", "physicalName", "id"]
+                        .iter()
+                        .any(|k| m.get(*k).and_then(|v| v.as_str()) == Some(want))
+                })
+            })
+            .ok_or_else(|| {
+                let names: Vec<String> = schema_seq.iter().map(object_name).collect();
+                format!(
+                    "schema object '{want}' not found; this document has: {}",
+                    names.join(", ")
+                )
+            })?,
+    };
     let schema0 = schema_seq
-        .first()
+        .get(idx)
         .and_then(|v| v.as_mapping())
         .ok_or_else(|| {
             "ODCS 'schema' array is empty or its first entry is not a mapping".to_string()
         })?;
 
-    // Contract name: dataProduct › schema[0].name › root name (the order
+    // Contract name: dataProduct › schema object name › root name (the order
     // existing imports already use).
     let name = doc
         .get("dataProduct")
@@ -909,8 +974,8 @@ fn import_mode_b(doc: &Mapping, version: String) -> Result<ImportResult, String>
         .filter(|p| !p.is_empty())
         .ok_or_else(|| {
             format!(
-                "ODCS schema[0] ('{}') has no properties; nothing to validate. \
-                 Add schema[0].properties[] with a name and logicalType per field",
+                "ODCS schema[{idx}] ('{}') has no properties; nothing to validate. \
+                 Add schema[{idx}].properties[] with a name and logicalType per field",
                 schema0.get("name").and_then(|v| v.as_str()).unwrap_or("?")
             )
         })?;
@@ -923,22 +988,45 @@ fn import_mode_b(doc: &Mapping, version: String) -> Result<ImportResult, String>
             .get("name")
             .and_then(|v| v.as_str())
             .unwrap_or("schema[0]");
-        let skipped: Vec<&str> = schema_seq
+        let skipped: Vec<String> = schema_seq
             .iter()
-            .skip(1)
-            .map(|s| {
-                s.as_mapping()
-                    .and_then(|m| m.get("name"))
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("?")
-            })
+            .enumerate()
+            .filter(|(i, _)| *i != idx)
+            .map(|(_, o)| object_name(o))
             .collect();
         warnings.push(format!(
-            "ODCS schema has {} objects; imported '{}' (schema[0]) and ignored: {}",
+            "ODCS schema has {} objects; imported '{}' (schema[{}]) and ignored: {}. \
+             Pick another with schema_object (--schema-object on the CLI)",
             schema_seq.len(),
             used,
+            idx,
             skipped.join(", ")
         ));
+    }
+    let key_cols: Vec<&str> = props
+        .iter()
+        .filter_map(|p| p.as_mapping())
+        .filter(|m| m.get("primaryKey").and_then(|v| v.as_bool()) == Some(true))
+        .filter_map(|m| m.get("name").and_then(|v| v.as_str()))
+        .collect();
+    if key_cols.len() > 1 {
+        warnings.push(format!(
+            "composite primary key ({}): each column is required, but uniqueness of the \
+             combination is not enforced (uniqueness rules cover one field)",
+            key_cols.join(", ")
+        ));
+    }
+    let has_relationships = schema0.contains_key("relationships")
+        || props
+            .iter()
+            .filter_map(|p| p.as_mapping())
+            .any(|m| m.contains_key("relationships"));
+    if has_relationships {
+        warnings.push(
+            "relationships (foreign keys) are not enforced: a contract validates one object's \
+             events and has no lookup into another"
+                .to_string(),
+        );
     }
 
     let compliance_mode = root_extension(doc, "x-contractgate-compliance-mode")
@@ -1301,6 +1389,10 @@ fn odcs_prop_to_field(m: &Mapping, full_name: &str) -> Result<FieldDefinition, S
 pub struct ImportOdcsRequest {
     /// Raw ODCS YAML document.
     pub odcs_yaml: String,
+    /// For a document with several `schema` objects: which one to import, by
+    /// name. The first when absent.
+    #[serde(default)]
+    pub schema_object: Option<String>,
     /// Optional contract identity name override.  When absent, the importer
     /// reads `dataProduct` (or `schema[0].name`) from the ODCS document.
     #[serde(default)]

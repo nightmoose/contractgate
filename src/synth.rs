@@ -199,10 +199,23 @@ pub fn generate(
 
 /// Parse and compile contract YAML, mapping failures to a `contract` rule error.
 pub fn compile_yaml(yaml: &str) -> Result<CompiledContract, SynthError> {
-    let contract: Contract = crate::odcs::parse_contract_yaml(yaml)
-        .map_err(|e| SynthError::new("contract", None, format!("invalid contract YAML: {e}")))?;
-    CompiledContract::compile(contract)
-        .map_err(|e| SynthError::new("contract", None, format!("contract does not compile: {e}")))
+    compile_yaml_with(yaml, None).map(|(c, _)| c)
+}
+
+/// [`compile_yaml`] for ODCS documents with several `schema` objects:
+/// `schema_object` picks one by name. Also returns the ODCS import notes.
+pub fn compile_yaml_with(
+    yaml: &str,
+    schema_object: Option<&str>,
+) -> Result<(CompiledContract, Vec<String>), SynthError> {
+    let (contract, notes): (Contract, Vec<String>) =
+        crate::odcs::parse_contract_yaml_with(yaml, schema_object).map_err(|e| {
+            SynthError::new("contract", None, format!("invalid contract YAML: {e}"))
+        })?;
+    let compiled = CompiledContract::compile(contract).map_err(|e| {
+        SynthError::new("contract", None, format!("contract does not compile: {e}"))
+    })?;
+    Ok((compiled, notes))
 }
 
 // ---------------------------------------------------------------------------

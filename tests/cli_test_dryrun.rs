@@ -24,6 +24,7 @@ fn args(data: &str) -> TestArgs {
         format: Format::Human,
         fail_fast: false,
         quiet: false,
+        schema_object: None,
     }
 }
 
@@ -34,6 +35,7 @@ fn args_json(data: &str) -> TestArgs {
         format: Format::Json,
         fail_fast: false,
         quiet: false,
+        schema_object: None,
     }
 }
 
@@ -114,6 +116,7 @@ fn bad_contract_yaml_returns_err() {
         format: Format::Human,
         fail_fast: false,
         quiet: false,
+        schema_object: None,
     };
     // run() returns Err for load/compile failures (caller maps to exit 2).
     assert!(run(&bad_args).is_err(), "bad contract YAML → Err");
@@ -127,6 +130,7 @@ fn missing_data_file_returns_err() {
         format: Format::Human,
         fail_fast: false,
         quiet: false,
+        schema_object: None,
     };
     assert!(run(&bad_args).is_err(), "missing data file → Err");
 }
@@ -149,6 +153,7 @@ fn fail_fast_exits_1_on_first_failing_record() {
         format: Format::Human,
         fail_fast: true,
         quiet: true,
+        schema_object: None,
     };
     let code = run(&ff_args).expect("run");
     assert_eq!(code, 1);
@@ -165,6 +170,7 @@ fn quiet_mode_does_not_panic() {
         format: Format::Human,
         fail_fast: false,
         quiet: true,
+        schema_object: None,
     };
     let code = run(&quiet_args).expect("run");
     assert_eq!(code, 1);
