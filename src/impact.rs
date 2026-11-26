@@ -143,7 +143,7 @@ pub fn classify_yaml(before: Option<&str>, after: &str) -> Result<Vec<FieldChang
 }
 
 fn parse_contract(yaml: &str) -> Result<Contract, String> {
-    serde_yaml::from_str(yaml).map_err(|e| format!("invalid contract YAML: {e}"))
+    crate::odcs::parse_contract_yaml(yaml).map_err(|e| format!("invalid contract YAML: {e}"))
 }
 
 fn collect_renames(yaml: &str) -> HashMap<String, String> {

@@ -1,0 +1,24 @@
+apiVersion: v3.2.0
+kind: DataContract
+id: 11111111-2222-3333-4444-555555555555
+name: orders
+version: 1.0.0
+status: active
+description:
+  purpose: Minimal orders contract
+schema:
+  - name: orders
+    physicalType: table
+    properties:
+      - name: order_id
+        logicalType: string
+        required: true
+        unique: true
+      - name: amount
+        logicalType: number
+        required: true
+        logicalTypeOptions:
+          minimum: 0
+      - name: status
+        logicalType: string
+        enum: [open, closed]

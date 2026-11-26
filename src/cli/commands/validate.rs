@@ -24,6 +24,9 @@ struct FileResult {
     status: &'static str,
     #[serde(skip_serializing_if = "Option::is_none")]
     error: Option<String>,
+    /// ODCS parts that did not map (extra schema objects, ...).
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    notes: Vec<String>,
 }
 
 /// Parse + compile each contract YAML locally. No network. Per-file pass/fail.
@@ -56,15 +59,20 @@ pub fn run(args: &ValidateArgs, cfg: &CliConfig) -> Result<i32> {
     for path in &files {
         let result = validate_file(path);
         match result {
-            Ok(()) => {
+            Ok(notes) => {
                 let name = path.display().to_string();
+                let mut text = format!("PASS  {name}");
+                for n in &notes {
+                    text.push_str(&format!("\n      note: {n}"));
+                }
                 output::ok(
                     mode,
-                    &format!("PASS  {name}"),
+                    &text,
                     &FileResult {
                         file: name,
                         status: "pass",
                         error: None,
+                        notes,
                     },
                 );
             }
@@ -79,6 +87,7 @@ pub fn run(args: &ValidateArgs, cfg: &CliConfig) -> Result<i32> {
                         file: name,
                         status: "fail",
                         error: Some(msg),
+                        notes: Vec::new(),
                     },
                 );
             }
@@ -88,11 +97,14 @@ pub fn run(args: &ValidateArgs, cfg: &CliConfig) -> Result<i32> {
     Ok(if any_failure { 1 } else { 0 })
 }
 
-fn validate_file(path: &Path) -> Result<()> {
+/// Native or ODCS v3.x YAML. Returns notes for anything in an ODCS document
+/// that did not map.
+fn validate_file(path: &Path) -> Result<Vec<String>> {
     let src =
         std::fs::read_to_string(path).map_err(|e| anyhow::anyhow!("cannot read file: {e}"))?;
-    let contract: Contract =
-        serde_yaml::from_str(&src).map_err(|e| anyhow::anyhow!("YAML parse error: {e}"))?;
+    let (contract, notes): (Contract, Vec<String>) =
+        crate::odcs::parse_contract_yaml_with_notes(&src)
+            .map_err(|e| anyhow::anyhow!("YAML parse error: {e}"))?;
     CompiledContract::compile(contract).map_err(|e| anyhow::anyhow!("compile error: {e}"))?;
-    Ok(())
+    Ok(notes)
 }

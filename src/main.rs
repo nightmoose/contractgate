@@ -79,7 +79,7 @@ mod kinesis_ingress;
 mod me;
 mod metering;
 pub mod observability;
-mod odcs;
+use contractgate::odcs;
 mod passed_events;
 mod plan;
 mod public_catalog;
@@ -1579,8 +1579,8 @@ fn playground_disposition(passed: bool, on_fail: contract::OnFailMode) -> &'stat
 /// audit or quarantine write. The authenticated route and the anonymous
 /// route both call this.
 fn run_playground(req: PlaygroundRequest) -> AppResult<PlaygroundResponse> {
-    let contract: contract::Contract = serde_yaml::from_str(&req.yaml_content)
-        .map_err(|e| AppError::InvalidContractYaml(e.to_string()))?;
+    let contract: contract::Contract =
+        odcs::parse_contract_yaml(&req.yaml_content).map_err(AppError::InvalidContractYaml)?;
     // Copied before `compile` moves the contract. `OnFailMode` is `Copy`.
     let on_fail = contract.on_fail;
 
