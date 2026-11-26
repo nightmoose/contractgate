@@ -130,6 +130,8 @@ All other diff kinds emit no suggestion.
 
 ### CLI `diff`
 
+> **Update 2026-11-26:** the drift form `cg diff` (local files vs the deployed stable version, exit 0/1/2) shipped. See [`cg diff` reference](../cg-diff-reference.md). The two-file form below, severity and `--strict` are still open.
+
 ```
 contractgate diff <yaml-a> <yaml-b> [--json] [--strict]
   POST /contracts/diff with both files. Print summary + per-change

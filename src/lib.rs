@@ -13,6 +13,7 @@ pub mod batch_check;
 pub mod batch_rules;
 pub mod cli;
 pub mod contract;
+pub mod contract_diff;
 pub mod dbt_export;
 pub mod dbt_yaml;
 pub mod demo_seed;

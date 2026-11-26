@@ -1,5 +1,6 @@
 pub mod check_table;
 pub mod deploy;
+pub mod diff;
 pub mod enforce;
 pub mod export;
 pub mod import;
