@@ -4,7 +4,7 @@ Zapier pulls a lead, an order, a row, a form submission out of a system that wil
 
 A failure is quarantined and the Zap stops. A pass continues, and the next step writes the **Payload** DataContractGate returned. Declared PII is already masked.
 
-The integration source is [`zapier/`](../zapier/). It is not in the public Zapier directory until that version is submitted and approved. Pushing it puts the action in your Zap editor the same day.
+The integration source is [`zapier/`](../zapier/). The integration has been in Zapier's public directory in Beta since 14 October 2026: <https://zapier.com/apps/datacontractgate/integrations>. Pushing a new version from this directory updates that listing; a not-yet-published version still appears in your own Zap editor the same day.
 
 ## 1. Contract and key
 
@@ -30,7 +30,7 @@ Log in with a [deploy key](https://developer.zapier.com/partner-settings/deploy-
 
 `register` writes `zapier/.zapierapprc`. Commit it. The next `push` updates this integration instead of creating another one.
 
-The version is private. In the Zap editor, search for DataContractGate. After one real Zap works, submit that version for the public listing from the Zapier developer UI.
+In the Zap editor, search for DataContractGate (public Beta since 14 October 2026). Pushing from this repo still works for a not-yet-published version in your own editor.
 
 Self-hosted gateway: set **Gateway URL** on the connection. Cloud users leave it blank (`https://app.datacontractgate.com`). The connection test fails if that URL does not answer like the DataContractGate API, instead of connecting with zero contracts.
 

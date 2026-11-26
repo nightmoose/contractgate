@@ -54,6 +54,8 @@ All existing orgs default to `free`. Admins set `growth` or `enterprise` via Sup
 | `growth` | Growth | $299/mo |
 | `enterprise` | Enterprise | Custom |
 
+Superseded: live price is Pro $199/mo, or $166/mo billed annually ($1,992/yr). The stored plan key remains `growth`. Pro + Impact is $499/mo, or $416/mo billed annually ($4,990/yr). This RFC is historical; see [plan-gating-reference.md](../plan-gating-reference.md).
+
 Self-hosted is not a cloud plan — it has no `organizations` row.
 
 ---
