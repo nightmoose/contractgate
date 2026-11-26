@@ -21,6 +21,7 @@ pub mod error;
 pub mod infer;
 pub mod infer_avro;
 pub mod infer_proto;
+pub mod odcs;
 pub mod payload_redaction;
 pub mod rate_limit;
 pub mod request_limits;

@@ -336,7 +336,10 @@ pub async fn create_contract_in(
     // (RFC-004: YAML is authoritative; column is a denormalization for
     // SQL-level filtering).
     // The first version row is always 1.0.0; the stored YAML says the same.
-    let yaml_owned = crate::version_pin::set_yaml_version(yaml_content, "1.0.0");
+    // ODCS v3.x input is converted to native contract YAML before it is stored.
+    let (yaml_native, _odcs_notes) = crate::odcs::normalize_contract_yaml(yaml_content)
+        .map_err(AppError::InvalidContractYaml)?;
+    let yaml_owned = crate::version_pin::set_yaml_version(&yaml_native, "1.0.0");
     let yaml_content = yaml_owned.as_str();
     let parsed: Contract = serde_yaml::from_str(yaml_content)
         .map_err(|e| AppError::InvalidContractYaml(e.to_string()))?;
@@ -708,8 +711,11 @@ pub async fn create_version_in(
     org_id: Option<Uuid>,
     self_hosted: bool,
 ) -> AppResult<ContractVersion> {
+    // ODCS v3.x input is converted to native contract YAML before it is stored.
+    let (yaml_native, _odcs_notes) = crate::odcs::normalize_contract_yaml(yaml_content)
+        .map_err(AppError::InvalidContractYaml)?;
     // The stored YAML's `version:` always matches the version row.
-    let yaml_owned = crate::version_pin::set_yaml_version(yaml_content, version);
+    let yaml_owned = crate::version_pin::set_yaml_version(&yaml_native, version);
     let yaml_content = yaml_owned.as_str();
     let parsed: Contract = serde_yaml::from_str(yaml_content)
         .map_err(|e| AppError::InvalidContractYaml(e.to_string()))?;
@@ -776,6 +782,10 @@ pub async fn patch_version_yaml(
     // DB trigger `contract_versions_compliance_mode_guard` will reject any
     // change to `compliance_mode` once the version leaves draft, so this is
     // safe to always bind (RFC-004).
+    // ODCS v3.x input is converted to native contract YAML before it is stored.
+    let (yaml_native, _odcs_notes) = crate::odcs::normalize_contract_yaml(yaml_content)
+        .map_err(AppError::InvalidContractYaml)?;
+    let yaml_content = yaml_native.as_ref();
     let parsed: Contract = serde_yaml::from_str(yaml_content)
         .map_err(|e| AppError::InvalidContractYaml(e.to_string()))?;
     let compliance_mode = parsed.compliance_mode;
@@ -936,6 +946,10 @@ pub async fn deploy_contract_version_in(
     self_hosted: bool,
 ) -> AppResult<(ContractVersion, i64)> {
     // Parse YAML and extract version — fail fast before touching the DB.
+    // ODCS v3.x input is converted to native contract YAML before it is stored.
+    let (yaml_native, _odcs_notes) = crate::odcs::normalize_contract_yaml(yaml_content)
+        .map_err(AppError::InvalidContractYaml)?;
+    let yaml_content = yaml_native.as_ref();
     let parsed: crate::contract::Contract = serde_yaml::from_str(yaml_content)
         .map_err(|e| AppError::InvalidContractYaml(e.to_string()))?;
     let version = parsed.version.clone();

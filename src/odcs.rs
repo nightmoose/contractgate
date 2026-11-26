@@ -86,12 +86,34 @@ fn logical_to_field_type(s: &str) -> FieldType {
         "integer" | "long" | "int" => FieldType::Integer,
         "double" | "float" | "decimal" | "number" => FieldType::Float,
         "boolean" | "bool" => FieldType::Boolean,
-        "object" | "record" | "struct" => FieldType::Object,
+        // ODCS v3.2 `map` is a free-form key/value object.
+        "object" | "record" | "struct" | "map" => FieldType::Object,
         "array" | "list" => FieldType::Array,
         // RFC-044: date32 is the Arrow/Iceberg alias
         "date" | "date32" => FieldType::Date,
         "timestamp" | "datetime" | "timestamptz" => FieldType::Timestamp,
         "any" => FieldType::Any,
+        _ => FieldType::String,
+    }
+}
+
+/// Best-effort type from an ODCS `physicalType` such as `varchar(18)`,
+/// `BIGINT`, `NUMERIC(10,2)` or `MAP<STRING, STRING>`, used only when a
+/// property has no `logicalType`.
+fn physical_to_field_type(s: &str) -> FieldType {
+    let t = s.trim().to_ascii_lowercase();
+    let base = t.split(['(', '<', ' ']).next().unwrap_or("");
+    match base {
+        "int" | "integer" | "bigint" | "smallint" | "tinyint" | "long" | "short" | "int2"
+        | "int4" | "int8" | "serial" | "bigserial" => FieldType::Integer,
+        "float" | "double" | "real" | "decimal" | "numeric" | "number" | "float4" | "float8"
+        | "money" => FieldType::Float,
+        "boolean" | "bool" | "bit" => FieldType::Boolean,
+        "date" => FieldType::Date,
+        "timestamp" | "timestamptz" | "datetime" | "datetime2" | "timestamp_ntz"
+        | "timestamp_ltz" => FieldType::Timestamp,
+        "struct" | "record" | "object" | "map" | "json" | "jsonb" | "variant" => FieldType::Object,
+        "array" | "list" => FieldType::Array,
         _ => FieldType::String,
     }
 }
@@ -637,6 +659,9 @@ pub struct ImportResult {
     pub yaml_content: String,
     /// Fidelity level — `Odcs` (lossless) or `OdcsStripped` (best-effort).
     pub import_source: ImportSource,
+    /// Parts of the document that did not map (extra schema objects, ...).
+    /// Empty for a lossless import.
+    pub warnings: Vec<String>,
 }
 
 /// Look up a top-level `x-contractgate-*` extension in either location:
@@ -680,20 +705,110 @@ pub fn import_odcs(yaml: &str) -> Result<ImportResult, String> {
         .as_mapping()
         .ok_or_else(|| "ODCS document must be a YAML mapping".to_string())?;
 
-    // Extract the mandatory `version` field.
-    let version = mapping
-        .get("version")
-        .and_then(|v| v.as_str())
-        .ok_or_else(|| "ODCS document missing required 'version' field".to_string())?
-        .to_string();
+    // A Data Contract Specification (datacontract.com, pre-ODCS) document is
+    // a different format; say so instead of failing on a missing field.
+    if mapping.contains_key("dataContractSpecification") {
+        return Err(
+            "this is a Data Contract Specification (datacontract.com) document, \
+             not ODCS; convert it first, e.g. `datacontract export --format odcs`"
+                .to_string(),
+        );
+    }
 
     check_api_version(mapping)?;
+
+    // The mandatory `version` field. A bare number (`version: 1.0`) is read
+    // as its text.
+    let version = match mapping.get("version") {
+        Some(Value::String(s)) if !s.trim().is_empty() => s.clone(),
+        Some(Value::Number(n)) => n.to_string(),
+        _ => {
+            return Err(
+                "ODCS document is missing the required 'version' field (e.g. version: 1.0.0)"
+                    .to_string(),
+            )
+        }
+    };
 
     if root_extension(mapping, "x-contractgate-version").is_some() {
         import_mode_a(mapping, version)
     } else {
         import_mode_b(mapping, version)
     }
+}
+
+/// Top-level (column 0) `key: value` pairs of a block-style YAML document.
+/// A flow-style (`{...}`) document yields no keys here.
+fn top_level_pairs(yaml: &str) -> Vec<(&str, &str)> {
+    yaml.lines()
+        .filter(|l| {
+            l.chars()
+                .next()
+                .is_some_and(|c| !c.is_whitespace() && c != '#' && c != '-')
+        })
+        .filter_map(|l| {
+            let (k, v) = l.split_once(':')?;
+            let k = k.trim().trim_matches(['"', '\'']);
+            let v = v
+                .split(" #")
+                .next()
+                .unwrap_or("")
+                .trim()
+                .trim_matches(['"', '\'']);
+            Some((k, v))
+        })
+        .collect()
+}
+
+/// True when the document is an ODCS data contract rather than a native
+/// DataContractGate contract: no top-level `ontology`, and an `apiVersion:
+/// v3.x`, `kind: DataContract`, a `schema` list or a Data Contract
+/// Specification header. Read from the top-level keys, so native YAML on hot
+/// paths is not parsed twice.
+fn looks_like_odcs(yaml: &str) -> bool {
+    let flow = yaml.trim_start().starts_with('{');
+    if flow {
+        // JSON-style document: look for the quoted keys.
+        return !yaml.contains("\"ontology\"")
+            && (yaml.contains("\"apiVersion\"")
+                || yaml.contains("\"schema\"")
+                || yaml.contains("\"dataContractSpecification\""));
+    }
+    let pairs = top_level_pairs(yaml);
+    if pairs.iter().any(|(k, _)| *k == "ontology") {
+        return false;
+    }
+    pairs.iter().any(|(k, v)| match *k {
+        "apiVersion" => v.starts_with("v3"),
+        "kind" => *v == "DataContract",
+        "schema" | "dataContractSpecification" => true,
+        _ => false,
+    })
+}
+
+/// Accept native DataContractGate YAML or an ODCS v3.x document and return
+/// the native contract YAML. Native input comes back unchanged. The second
+/// value lists anything in an ODCS document that did not map.
+pub fn normalize_contract_yaml(
+    yaml: &str,
+) -> Result<(std::borrow::Cow<'_, str>, Vec<String>), String> {
+    if !looks_like_odcs(yaml) {
+        return Ok((std::borrow::Cow::Borrowed(yaml), Vec::new()));
+    }
+    let r = import_odcs(yaml).map_err(|e| format!("ODCS import: {e}"))?;
+    Ok((std::borrow::Cow::Owned(r.yaml_content), r.warnings))
+}
+
+/// Parse contract YAML (native or ODCS v3.x) into a [`Contract`].
+pub fn parse_contract_yaml(yaml: &str) -> Result<Contract, String> {
+    parse_contract_yaml_with_notes(yaml).map(|(c, _)| c)
+}
+
+/// Like [`parse_contract_yaml`], also returning ODCS import notes.
+pub fn parse_contract_yaml_with_notes(yaml: &str) -> Result<(Contract, Vec<String>), String> {
+    let (native, notes) = normalize_contract_yaml(yaml)?;
+    let contract: Contract = serde_yaml::from_str(&native).map_err(|e| e.to_string())?;
+    Ok((contract, notes))
 }
 
 /// Accept `v3.1.0` and `v3.2.0`, and any other `v3.*` string, so a document
@@ -733,13 +848,16 @@ fn import_mode_a(doc: &Mapping, version: String) -> Result<ImportResult, String>
         other => other,
     };
 
+    // The ODCS document's top-level `version` is the version row (export
+    // writes it from the row); make the embedded contract agree with it.
+    let mut ontology = ontology;
+    if let Value::Mapping(m) = &mut ontology {
+        m.insert(v_str("version"), v_str(version.clone()));
+    }
     // Re-serialize the ontology subtree to a YAML string.  Key ordering may
     // differ from the original, but the Contract is semantically identical.
     let yaml_content = serde_yaml::to_string(&ontology)
         .map_err(|e| format!("failed to serialize x-contractgate-ontology: {e}"))?;
-    // The ODCS document's top-level `version` is the version row (export
-    // writes it from the row); make the embedded contract agree with it.
-    let yaml_content = crate::version_pin::set_yaml_version(&yaml_content, &version);
 
     let _: Contract = serde_yaml::from_str(&yaml_content)
         .map_err(|e| format!("x-contractgate-ontology is not a valid Contract: {e}"))?;
@@ -748,6 +866,7 @@ fn import_mode_a(doc: &Mapping, version: String) -> Result<ImportResult, String>
         version,
         yaml_content,
         import_source: ImportSource::Odcs,
+        warnings: Vec::new(),
     })
 }
 
@@ -757,17 +876,25 @@ fn import_mode_b(doc: &Mapping, version: String) -> Result<ImportResult, String>
     let schema_seq = doc
         .get("schema")
         .and_then(|v| v.as_sequence())
-        .ok_or_else(|| "ODCS document missing 'schema' array".to_string())?;
+        .ok_or_else(|| {
+            "ODCS document has no 'schema' array; DataContractGate reads fields from \
+             schema[].properties[]"
+                .to_string()
+        })?;
 
     let schema0 = schema_seq
         .first()
         .and_then(|v| v.as_mapping())
-        .ok_or_else(|| "ODCS 'schema' array is empty or not a mapping".to_string())?;
+        .ok_or_else(|| {
+            "ODCS 'schema' array is empty or its first entry is not a mapping".to_string()
+        })?;
 
-    // Contract name: dataProduct › schema[0].name › root name.
+    // Contract name: dataProduct › schema[0].name › root name (the order
+    // existing imports already use).
     let name = doc
         .get("dataProduct")
         .and_then(|v| v.as_str())
+        .filter(|s| !s.trim().is_empty())
         .or_else(|| schema0.get("name").and_then(|v| v.as_str()))
         .or_else(|| doc.get("name").and_then(|v| v.as_str()))
         .unwrap_or("imported_contract")
@@ -776,14 +903,43 @@ fn import_mode_b(doc: &Mapping, version: String) -> Result<ImportResult, String>
     let description = description_text(doc.get("description"))
         .or_else(|| description_text(schema0.get("description")));
 
-    let (entities, quality) =
-        if let Some(props) = schema0.get("properties").and_then(|v| v.as_sequence()) {
-            let fields = unflatten_odcs_properties(props)?;
-            let rules = extract_quality_rules_from_props(props);
-            (fields, rules)
-        } else {
-            (vec![], vec![])
-        };
+    let props = schema0
+        .get("properties")
+        .and_then(|v| v.as_sequence())
+        .filter(|p| !p.is_empty())
+        .ok_or_else(|| {
+            format!(
+                "ODCS schema[0] ('{}') has no properties; nothing to validate. \
+                 Add schema[0].properties[] with a name and logicalType per field",
+                schema0.get("name").and_then(|v| v.as_str()).unwrap_or("?")
+            )
+        })?;
+    let entities = unflatten_odcs_properties(props)?;
+    let quality = extract_quality_rules_from_props(props);
+
+    let mut warnings = Vec::new();
+    if schema_seq.len() > 1 {
+        let used = schema0
+            .get("name")
+            .and_then(|v| v.as_str())
+            .unwrap_or("schema[0]");
+        let skipped: Vec<&str> = schema_seq
+            .iter()
+            .skip(1)
+            .map(|s| {
+                s.as_mapping()
+                    .and_then(|m| m.get("name"))
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("?")
+            })
+            .collect();
+        warnings.push(format!(
+            "ODCS schema has {} objects; imported '{}' (schema[0]) and ignored: {}",
+            schema_seq.len(),
+            used,
+            skipped.join(", ")
+        ));
+    }
 
     let compliance_mode = root_extension(doc, "x-contractgate-compliance-mode")
         .and_then(|v| v.as_bool())
@@ -814,6 +970,7 @@ fn import_mode_b(doc: &Mapping, version: String) -> Result<ImportResult, String>
         version,
         yaml_content,
         import_source: ImportSource::OdcsStripped,
+        warnings,
     })
 }
 
@@ -822,6 +979,11 @@ fn import_mode_b(doc: &Mapping, version: String) -> Result<ImportResult, String>
 /// uniqueness rule when `quality[]` didn't already declare one.
 fn extract_quality_rules_from_props(props: &[Value]) -> Vec<QualityRule> {
     let mut all_rules: Vec<QualityRule> = Vec::new();
+    let pk_count = props
+        .iter()
+        .filter_map(|p| p.as_mapping())
+        .filter(|m| m.get("primaryKey").and_then(|v| v.as_bool()) == Some(true))
+        .count();
     for p in props {
         let Some(m) = p.as_mapping() else { continue };
         let Some(name) = m.get("name").and_then(|v| v.as_str()) else {
@@ -832,7 +994,10 @@ fn extract_quality_rules_from_props(props: &[Value]) -> Vec<QualityRule> {
             .and_then(|v| v.as_sequence())
             .map(|q| odcs_quality_to_rules(name, q))
             .unwrap_or_default();
-        let unique = m.get("unique").and_then(|v| v.as_bool()) == Some(true);
+        // `primaryKey` on its own implies unique when it is the only key
+        // column; a composite key has no single-column uniqueness.
+        let unique = m.get("unique").and_then(|v| v.as_bool()) == Some(true)
+            || (m.get("primaryKey").and_then(|v| v.as_bool()) == Some(true) && pk_count == 1);
         if unique
             && !rules
                 .iter()
@@ -996,11 +1161,21 @@ fn odcs_prop_to_field(m: &Mapping, full_name: &str) -> Result<FieldDefinition, S
 
     let logical = custom_prop_value(m, "x-cg-type")
         .and_then(|v| v.as_str())
-        .or_else(|| m.get("logicalType").and_then(|v| v.as_str()))
-        .unwrap_or("string");
-    let field_type = logical_to_field_type(logical);
+        .or_else(|| m.get("logicalType").and_then(|v| v.as_str()));
+    // No logicalType (it is optional in practice): fall back to the SQL-ish
+    // physicalType, then to string.
+    let field_type = match logical {
+        Some(l) => logical_to_field_type(l),
+        None => m
+            .get("physicalType")
+            .and_then(|v| v.as_str())
+            .map(physical_to_field_type)
+            .unwrap_or(FieldType::String),
+    };
 
-    let required = m.get("required").and_then(|v| v.as_bool()).unwrap_or(false);
+    // A primary key column is never null.
+    let required = m.get("required").and_then(|v| v.as_bool()).unwrap_or(false)
+        || m.get("primaryKey").and_then(|v| v.as_bool()) == Some(true);
 
     // ── ODCS-native constraints ──────────────────────────────────────────────
     let opts = m.get("logicalTypeOptions").and_then(|v| v.as_mapping());

@@ -98,7 +98,7 @@ pub fn run(args: &DeployArgs, cfg: &CliConfig, api_key: &str) -> Result<i32> {
         }
     };
 
-    let contract: Contract = match serde_yaml::from_str(&yaml) {
+    let contract: Contract = match crate::odcs::parse_contract_yaml(&yaml) {
         Ok(c) => c,
         Err(e) => {
             let msg = format!("YAML parse error: {e}");

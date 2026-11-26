@@ -199,7 +199,7 @@ pub fn generate(
 
 /// Parse and compile contract YAML, mapping failures to a `contract` rule error.
 pub fn compile_yaml(yaml: &str) -> Result<CompiledContract, SynthError> {
-    let contract: Contract = serde_yaml::from_str(yaml)
+    let contract: Contract = crate::odcs::parse_contract_yaml(yaml)
         .map_err(|e| SynthError::new("contract", None, format!("invalid contract YAML: {e}")))?;
     CompiledContract::compile(contract)
         .map_err(|e| SynthError::new("contract", None, format!("contract does not compile: {e}")))

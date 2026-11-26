@@ -66,6 +66,11 @@ pub fn run(args: &SynthArgs) -> Result<i32> {
             return Ok(2);
         }
     };
+    if let Ok((_, notes)) = crate::odcs::normalize_contract_yaml(&yaml) {
+        for n in notes {
+            eprintln!("note: {n}");
+        }
+    }
     let compiled = match synth::compile_yaml(&yaml) {
         Ok(c) => c,
         Err(e) => {

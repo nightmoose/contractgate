@@ -150,3 +150,8 @@ python -m contractgate synth contracts/orders.yaml --rows 10
 ```
 
 It takes the same options as the Rust CLI plus `--contract-id`, `--version`, `--api-key` (default `$CONTRACTGATE_API_KEY`) and `--base-url` (default `$CONTRACTGATE_BASE_URL`, then `https://api.datacontractgate.com`). Exit codes: 0 rows written, 1 a rule cannot be met, 2 any other error. The command is named `contractgate-py` so it never shadows the Rust `contractgate` binary: both can be installed side by side. `contractgate` runs locally, `contractgate-py` calls the API.
+
+## ODCS input
+
+`contractgate synth` and `POST /contracts/synth` accept an ODCS v3.x document
+with no `ontology`. See [`odcs/using-odcs-directly.md`](odcs/using-odcs-directly.md).
