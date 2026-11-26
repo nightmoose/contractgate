@@ -181,6 +181,7 @@ fn avro_field_to_definition(field: &Value) -> Result<FieldDefinition, String> {
     let (field_type, required, allowed_values, properties, items) = resolve_avro_type(type_val)?;
 
     Ok(FieldDefinition {
+        distribution: None,
         name,
         field_type,
         required,
@@ -229,6 +230,7 @@ fn resolve_avro_type(type_val: &Value) -> AvroTypeResolution {
                     let (item_ft, item_req, item_av, item_props, item_items) =
                         resolve_avro_type(items_val)?;
                     let items_def = FieldDefinition {
+                        distribution: None,
                         name: "item".to_string(),
                         field_type: item_ft,
                         required: item_req,

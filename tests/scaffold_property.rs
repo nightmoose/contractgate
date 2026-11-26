@@ -236,6 +236,7 @@ fn make_contract(fields: &[(&str, FieldType, bool)]) -> Contract {
             entities: fields
                 .iter()
                 .map(|(name, ft, required)| FieldDefinition {
+                    distribution: None,
                     name: name.to_string(),
                     field_type: ft.clone(),
                     required: *required,
@@ -280,6 +281,7 @@ proptest! {
         let mut theirs = base.clone();
         // theirs adds an extra field
         theirs.ontology.entities.push(FieldDefinition {
+            distribution: None,
             name: extra_field.clone(),
             field_type: FieldType::String,
             required: false,
@@ -313,6 +315,7 @@ proptest! {
         let base = make_contract(&[("id", FieldType::String, true)]);
         let mut ours = base.clone();
         ours.ontology.entities.push(FieldDefinition {
+            distribution: None,
             name: extra_field.clone(),
             field_type: FieldType::Integer,
             required: true,
@@ -347,6 +350,7 @@ proptest! {
         let ours = make_contract(&[("a", FieldType::String, true)]);
         let mut theirs = make_contract(&[("a", FieldType::String, true)]);
         theirs.ontology.entities.push(FieldDefinition {
+            distribution: None,
             name: extra.clone(),
             field_type: FieldType::String,
             required: false,

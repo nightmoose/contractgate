@@ -36,6 +36,7 @@ mod fixtures {
     #[allow(dead_code)]
     pub fn entity(name: &str, field_type: FieldType) -> FieldDefinition {
         FieldDefinition {
+            distribution: None,
             name: name.to_string(),
             field_type,
             required: false,
@@ -2070,6 +2071,7 @@ mod rfc028_tests {
             ontology: Ontology {
                 entities: vec![
                     FieldDefinition {
+                        distribution: None,
                         name: "monthly_rent".into(),
                         field_type: FieldType::Float,
                         required: true,
@@ -2085,6 +2087,7 @@ mod rfc028_tests {
                         format: None,
                     },
                     FieldDefinition {
+                        distribution: None,
                         name: "tenant_id".into(),
                         field_type: FieldType::String,
                         required: true,

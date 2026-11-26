@@ -489,6 +489,7 @@ fn proto_field_to_definition(
     let (field_type, allowed_values, properties, items) = resolve_proto_type(f, proto);
 
     Ok(FieldDefinition {
+        distribution: None,
         name: f.name.clone(),
         field_type,
         required: !f.optional,
@@ -516,6 +517,7 @@ fn resolve_proto_type(f: &ProtoField, proto: &ParsedProto) -> ProtoTypeResolutio
         };
         let (item_ft, item_av, item_props, item_items) = resolve_proto_type(&inner, proto);
         let items_def = FieldDefinition {
+            distribution: None,
             name: "item".to_string(),
             field_type: item_ft,
             required: true,
