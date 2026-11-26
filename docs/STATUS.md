@@ -187,6 +187,8 @@ them by name only.
 
 *2026-10-07 — v0.2.0 released (2026-10-01) to every channel: GitHub Release (CLI for 4 targets), PyPI `contractgate`, npm `@nightmoose/contractgate-sdk` (RFC-018) and `@nightmoose/contractgate-mcp-server` (RFC-090; the old `@contractgate/mcp-server` is deprecated), and the MCP Registry as `io.github.nightmoose/contractgate`. RFC-093 (egress as a first-class door) is on main. Release pipeline is idempotent and retryable — see the header of `.github/workflows/release.yml`.*
 
+*2026-11-26 — `cg diff` added (RFC-015 drift half): compares local contract YAML with the latest stable version on the gateway, changes nothing, exits 0 (no drift), 1 (drift or not deployed) or 2 (check could not run). Field-level changes reuse the `POST /contracts/diff` logic, now in `src/contract_diff.rs`. Tests in `tests/cli_diff.rs`; reference at `docs/cg-diff-reference.md`. The severity taxonomy and `--strict` flag of RFC-015 are not part of this change.*
+
 *2026-08-23 — RFC-090: official stdio MCP server at `mcp/` (`npx -y @contractgate/mcp-server`). Tools wrap existing gateway routes (infer, dry-run ingest / playground, deploy, quarantine, list). No engine changes. Reference: `docs/mcp-reference.md`, served raw at `/mcp-reference.md`.
 
 *2026-09-11 — RFC-091: dashboard “What’s this?” inspect mode. Help catalog + `HelpTarget` on sidebar/page headers/dense controls; `?` / Esc; empty-state first-run on Dashboard / Contracts / Audit. No engine changes. Reference: `docs/help-mode-reference.md`.
