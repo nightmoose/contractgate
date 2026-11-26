@@ -344,6 +344,128 @@ pub struct FieldDefinition {
     /// are carried as metadata only.  Omitted from YAML when unset.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub format: Option<String>,
+    /// Synthetic-data hint for integer / number fields (RFC-117). Only
+    /// `synth` reads it: validation ignores it. Omitted from YAML when unset.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub distribution: Option<Distribution>,
+}
+
+/// How `synth` draws values for a numeric field. Values are always kept
+/// inside the field's `min` / `max` (draws outside are redrawn), and an
+/// `enum` on the field wins over the hint.
+///
+/// YAML forms: `distribution: uniform`, or a map such as
+/// `{type: normal, mean: 50, sd: 10}`, `{type: lognormal, mean: 3, sd: 0.5}`
+/// or `{type: exponential, rate: 0.1}`.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(tag = "type", rename_all = "lowercase")]
+pub enum Distribution {
+    /// Evenly between `min` and `max` (the default when no hint is given).
+    Uniform,
+    /// Bell curve with the given mean and standard deviation.
+    Normal { mean: f64, sd: f64 },
+    /// `exp(N(mean, sd))`: `mean` and `sd` describe the underlying normal,
+    /// not the resulting values (the NumPy / R convention). Right-skewed.
+    Lognormal { mean: f64, sd: f64 },
+    /// `min + Exp(rate)` (from 0 when there is no `min`); the mean spread
+    /// above the start is `1 / rate`. Right-skewed.
+    Exponential { rate: f64 },
+}
+
+impl Distribution {
+    /// The `type` name, for messages.
+    pub fn name(&self) -> &'static str {
+        match self {
+            Distribution::Uniform => "uniform",
+            Distribution::Normal { .. } => "normal",
+            Distribution::Lognormal { .. } => "lognormal",
+            Distribution::Exponential { .. } => "exponential",
+        }
+    }
+
+    /// Names accepted for `type`.
+    const KINDS: &'static str = "uniform, normal, lognormal, exponential";
+
+    /// Build from a parsed YAML/JSON value, with a message naming the problem.
+    pub fn from_value(v: &serde_yaml::Value) -> Result<Self, String> {
+        use serde_yaml::Value;
+        let (kind, map) = match v {
+            Value::String(s) => (s.clone(), None),
+            Value::Mapping(m) => {
+                let kind = m
+                    .get("type")
+                    .or_else(|| m.get("kind"))
+                    .and_then(|k| k.as_str())
+                    .ok_or_else(|| format!("distribution needs a `type` ({})", Self::KINDS))?
+                    .to_string();
+                (kind, Some(m))
+            }
+            _ => {
+                return Err(format!(
+                    "distribution must be a name or a map with a `type` ({})",
+                    Self::KINDS
+                ))
+            }
+        };
+        let kind = kind.to_ascii_lowercase();
+        let num = |key: &str| -> Result<f64, String> {
+            map.and_then(|m| m.get(key))
+                .and_then(|v| v.as_f64())
+                .filter(|n| n.is_finite())
+                .ok_or_else(|| format!("distribution {kind} needs a numeric `{key}`"))
+        };
+        let allowed: &[&str] = match kind.as_str() {
+            "uniform" => &[],
+            "normal" | "lognormal" => &["mean", "sd"],
+            "exponential" => &["rate"],
+            other => {
+                return Err(format!(
+                    "unknown distribution type {other:?}; use one of: {}",
+                    Self::KINDS
+                ))
+            }
+        };
+        if let Some(m) = map {
+            for key in m.keys().filter_map(|k| k.as_str()) {
+                if key != "type" && key != "kind" && !allowed.contains(&key) {
+                    return Err(format!("distribution {kind} does not take `{key}`"));
+                }
+            }
+        }
+        let d = match kind.as_str() {
+            "uniform" => Distribution::Uniform,
+            "normal" => Distribution::Normal {
+                mean: num("mean")?,
+                sd: num("sd")?,
+            },
+            "lognormal" => Distribution::Lognormal {
+                mean: num("mean")?,
+                sd: num("sd")?,
+            },
+            _ => Distribution::Exponential { rate: num("rate")? },
+        };
+        match &d {
+            Distribution::Normal { sd, .. } | Distribution::Lognormal { sd, .. } if *sd <= 0.0 => {
+                Err(format!(
+                    "distribution {kind} needs sd greater than 0, got {sd}"
+                ))
+            }
+            Distribution::Exponential { rate } if *rate <= 0.0 => Err(format!(
+                "distribution exponential needs rate greater than 0, got {rate}"
+            )),
+            _ => Ok(d),
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for Distribution {
+    fn deserialize<D>(d: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let v = serde_yaml::Value::deserialize(d)?;
+        Distribution::from_value(&v).map_err(serde::de::Error::custom)
+    }
 }
 
 /// Supported field types inside a contract ontology.
