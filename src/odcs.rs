@@ -988,6 +988,16 @@ fn import_mode_b(
     let quality = extract_quality_rules_from_props(props);
 
     let mut warnings = Vec::new();
+    let bare_bounds = bare_min_max_fields(props);
+    if !bare_bounds.is_empty() {
+        warnings.push(format!(
+            "bare 'minimum'/'maximum' on {} are not part of the ODCS v3.x schema \
+             (SchemaBaseProperty has no such field; only logicalTypeOptions is open for \
+             implementation metadata) and are ignored. Use logicalTypeOptions.minimum / \
+             logicalTypeOptions.maximum instead",
+            bare_bounds.join(", ")
+        ));
+    }
     // The note is for the default (first object). An explicit schema_object
     // means the caller already chose, so it is not repeated.
     if schema_seq.len() > 1 && schema_object.is_none() {
@@ -1133,6 +1143,35 @@ fn unflatten_odcs_properties(props: &[Value]) -> Result<Vec<FieldDefinition>, St
         fields.push(odcs_prop_to_field(m, name)?);
     }
     Ok(fields)
+}
+
+/// Property (and nested object/array item) names that set `minimum` or
+/// `maximum` directly on the property, rather than under
+/// `logicalTypeOptions`. The official ODCS v3.x `SchemaBaseProperty` schema
+/// has `unevaluatedProperties: false` and does not list `minimum` /
+/// `maximum` among its allowed keys (only the open `logicalTypeOptions`
+/// object carries that kind of metadata), so a bare `minimum` / `maximum`
+/// is silently dropped by this importer and should be flagged.
+fn bare_min_max_fields(props: &[Value]) -> Vec<String> {
+    let mut out = Vec::new();
+    collect_bare_min_max(props, &mut out);
+    out
+}
+
+fn collect_bare_min_max(props: &[Value], out: &mut Vec<String>) {
+    for p in props {
+        let Some(m) = p.as_mapping() else { continue };
+        let name = m.get("name").and_then(|v| v.as_str()).unwrap_or("item");
+        if m.contains_key("minimum") || m.contains_key("maximum") {
+            out.push(name.to_string());
+        }
+        if let Some(nested) = m.get("properties").and_then(|v| v.as_sequence()) {
+            collect_bare_min_max(nested, out);
+        }
+        if let Some(item) = m.get("items") {
+            collect_bare_min_max(std::slice::from_ref(item), out);
+        }
+    }
 }
 
 fn yaml_to_json_values(seq: &[Value]) -> Vec<serde_json::Value> {

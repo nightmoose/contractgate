@@ -33,6 +33,14 @@ kept as native YAML; an ODCS document is converted once, on the way in.
 
 Unknown ODCS fields are ignored.
 
+A `minimum` or `maximum` set directly on a property (not under
+`logicalTypeOptions`) is ignored, with a warning. The official ODCS v3.x
+`SchemaBaseProperty` schema has `unevaluatedProperties: false` and does not
+list `minimum` / `maximum` among its allowed keys — only the open
+`logicalTypeOptions` object is defined for that kind of metadata. Put bounds
+under `logicalTypeOptions.minimum` / `logicalTypeOptions.maximum` instead;
+see the table above.
+
 A property name is the column name. Dots and brackets stay in it. DataContractGate
 does not split `Rate.x` into an object `Rate` with a field `x`. A real nested
 object is a property with `logicalType: object` and its own `properties` list.
