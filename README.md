@@ -213,7 +213,10 @@ client.ingest(contract_id="...", events={"user_id": "u1", "event_type": "click"}
 cargo install --git https://github.com/nightmoose/contractgate contractgate
 contractgate test --contract examples/contracts/api/user_events.yaml --data examples/contracts/api/pass.json
 contractgate test --contract examples/contracts/api/user_events.yaml --data examples/contracts/api/fail.json
+contractgate synth datacontract.yaml --rows 100 --seed 1 --synth-config synth.yaml
 ```
+
+`contractgate --version` prints the crate version. `synth --synth-config` is a separate YAML file of per-field generation hints (distribution, and for strings a prefix, suffix, or pattern). Contract min, max, enum, and format rules still apply. Details: [`docs/synthetic-data-reference.md`](docs/synthetic-data-reference.md).
 
 **GitHub Action** (compile every YAML under `contracts/` on PRs):
 

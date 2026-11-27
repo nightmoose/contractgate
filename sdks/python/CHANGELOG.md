@@ -2,7 +2,11 @@
 
 All notable changes to the `contractgate` Python SDK.
 
-## 0.4.2 (unreleased, not yet published)
+## 0.4.3
+
+- Version aligned with DataContractGate 0.4.3.
+
+## 0.4.2 (2026-11-26)
 
 - New `contractgate-py synth` command (also `python -m contractgate synth`) that
   calls the gateway's `POST /contracts/synth` (RFC-117, RFC-118). Takes a

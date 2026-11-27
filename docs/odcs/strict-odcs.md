@@ -63,6 +63,10 @@ Nested objects keep the D-001 shape: flattened to dot-notation leaf names
   **`x-cg-*` wins** when both exist; `x-cg-quality` wins over the mapped metric.
   `description` may be a string or the object form (`purpose` › `usage` ›
   `limitations`).
+  Property `name` values are literal column names. `Rate.x` is one number
+  field, not an object `Rate`. Nesting comes from `logicalType: object` plus
+  `properties`, or from `items`. Mode A still restores the nested ontology
+  embedded in a DataContractGate export.
 * **Not mapped:** schema-level `rowCount` (DCG validates per event and has no
   dataset row-count rule), exclusive bounds, non-numeric (date) bounds, and
   date formats other than `yyyy-MM-dd` (kept in `format`, but DCG's `date`

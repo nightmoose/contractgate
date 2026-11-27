@@ -52,9 +52,19 @@ pub struct SynthArgs {
     pub out: Option<PathBuf>,
 
     /// For an ODCS file with several `schema` objects: the one to use, by
-    /// name (default: the first).
+    /// name (default: the first). Passing this suppresses the note about
+    /// the other objects.
     #[arg(long, value_name = "NAME")]
     pub schema_object: Option<String>,
+
+    /// YAML file of per-field generation hints, keyed by field name
+    /// (literal names, including dots). `distribution` overrides an
+    /// in-contract hint. String fields may also set `prefix`, `suffix`,
+    /// and `pattern`. Contract min, max, enum, format, and pattern rules
+    /// still win: a valid row has to pass them. Several files can describe
+    /// the same contract; pass the one to use.
+    #[arg(long, value_name = "FILE")]
+    pub synth_config: Option<PathBuf>,
 }
 
 #[derive(Debug, Clone, Copy, clap::ValueEnum)]
@@ -71,7 +81,7 @@ pub fn run(args: &SynthArgs) -> Result<i32> {
             return Ok(2);
         }
     };
-    let compiled = match synth::compile_yaml_with(&yaml, args.schema_object.as_deref()) {
+    let mut compiled = match synth::compile_yaml_with(&yaml, args.schema_object.as_deref()) {
         Ok((c, notes)) => {
             for n in notes {
                 eprintln!("note: {n}");
@@ -82,6 +92,25 @@ pub fn run(args: &SynthArgs) -> Result<i32> {
             eprintln!("error: {}", e.message);
             return Ok(2);
         }
+    };
+    let hints = match &args.synth_config {
+        Some(p) => {
+            let text = match std::fs::read_to_string(p) {
+                Ok(s) => s,
+                Err(e) => {
+                    eprintln!("error: cannot read {}: {e}", p.display());
+                    return Ok(2);
+                }
+            };
+            match synth::apply_synth_config(&mut compiled.contract, &text) {
+                Ok(h) => h,
+                Err(e) => {
+                    eprintln!("error: {}", e.message);
+                    return Ok(2);
+                }
+            }
+        }
+        None => std::collections::HashMap::new(),
     };
     let now_unix = match &args.anchor {
         Some(t) => match chrono::DateTime::parse_from_rfc3339(t) {
@@ -110,6 +139,7 @@ pub fn run(args: &SynthArgs) -> Result<i32> {
         },
         seed,
         now_unix,
+        hints,
     };
     let out = match synth::generate(&compiled, &opts) {
         Ok(o) => o,

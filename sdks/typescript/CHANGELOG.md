@@ -2,7 +2,11 @@
 
 All notable changes to `@nightmoose/contractgate-sdk`.
 
-## 0.4.2 — 2026-11-26
+## 0.4.3
+
+- Version aligned with DataContractGate 0.4.3.
+
+## 0.4.2 (2026-11-26)
 
 - `Contract.fromYaml` accepts ODCS v3.x documents (no `ontology`): fields are
   read from `schema[0].properties[]` (`logicalType`, or `physicalType` when it

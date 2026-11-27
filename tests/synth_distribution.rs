@@ -18,6 +18,7 @@ fn opts(rows: usize, seed: u64) -> SynthOptions {
         mode: SynthMode::Valid,
         seed,
         now_unix: 1_780_000_000,
+        hints: Default::default(),
     }
 }
 

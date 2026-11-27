@@ -156,13 +156,14 @@ Errors:
 ## CLI
 
 ```
-contractgate synth <CONTRACT> [--rows N] [--invalid] [--seed S] [--anchor RFC3339] [--envelope] [--format json|csv] [-o FILE]
+contractgate synth <CONTRACT> [--rows N] [--invalid] [--seed S] [--anchor RFC3339] [--envelope] [--format json|csv] [--schema-object NAME] [--synth-config FILE] [-o FILE]
 ```
 
 Runs locally on a contract YAML file. No API key or network is needed.
 
 - `--format json` (default) prints a JSON array. With `--invalid`, each entry is `{record, broken_rule}`.
-- `--format csv` flattens nested objects into dot-path columns and writes arrays as JSON text. With `--invalid`, the `_broken_field` and `_broken_rule` columns hold the label.
+- `--format csv` flattens nested objects into dot-path columns and writes arrays as JSON text. A field whose name itself contains a dot or brackets (`Rate.x`, `Amount [A]`) is one column, written under that name. With `--invalid`, the `_broken_field` and `_broken_rule` columns hold the label.
+- `--synth-config FILE` reads per-field generation hints from a separate YAML file. See [Synth config files](#synth-config-files).
 - Without `--seed`, the chosen seed is printed to stderr so the run can be repeated.
 - `--anchor` sets the time freshness rules are measured from (default now).
 - `--envelope` (JSON only) prints the wrapped payload. With `--invalid` it prints `{payload, labels}`.
@@ -172,8 +173,35 @@ Exit codes: 0 rows written, 1 a rule cannot be met (the message names it), 2 the
 ```bash
 contractgate synth contracts/orders.yaml --rows 500 --seed 42 > orders.json
 contractgate synth contracts/orders.yaml --rows 50 --invalid --format csv -o bad_orders.csv
+contractgate synth datacontract.yaml --rows 100 --seed 1 --synth-config synth.yaml
 contractgate test --contract contracts/orders.yaml --data orders.json   # all pass
 ```
+
+## Synth config files
+
+A distribution describes observed data. It is not a rule the validator enforces,
+so it can live outside the contract. `--synth-config` points at a YAML file
+whose `fields` map is keyed by field name. The key is the literal name,
+including dots (`Rate.x`). A path such as `shipping.country` addresses a nested
+property of a native contract. Several files can describe the same contract;
+each run uses the one you pass.
+
+```yaml
+fields:
+  "Rate.x":
+    distribution: { type: normal, mean: 40, sd: 8 }
+  sku:
+    prefix: "SKU-"
+    suffix: "-A"
+    pattern: "^SKU-[A-Z]{4}-A$"
+```
+
+| Key | Applies to | Effect |
+|---|---|---|
+| `distribution` | integer, number | Same shapes as an in-contract hint: `uniform`, `normal` (`mean`, `sd`), `lognormal` (`mean`, `sd` of the underlying normal), `exponential` (`rate`). Overrides `distribution` on the field and ODCS `x-cg-distribution`. |
+| `prefix`, `suffix`, `pattern` | string | Shape the generated text. `pattern` here is a hint. The contract's own `pattern` is what the row must match. |
+
+Contract rules win. `min` and `max` still clip a distribution (a draw outside them is redrawn). `enum` is what gets picked, and the hint is ignored. `format`, length bounds, and the contract `pattern` still have to pass, or the run fails and names the field. In-contract `distribution` hints keep working when you do not pass a config file.
 
 ## Dashboard
 
@@ -181,7 +209,7 @@ Open a contract and pick the **Synthetic data** tab. Set rows, mode, an optional
 
 ## Python SDK
 
-The Python package (0.4.2, not yet on PyPI) adds a `contractgate-py synth` command (also `python -m contractgate synth`) that calls the API, plus `Client.synth(...)`.
+The Python package (0.4.3) adds a `contractgate-py synth` command (also `python -m contractgate synth`) that calls the API, plus `Client.synth(...)`.
 
 ```
 contractgate-py synth contracts/orders.yaml --rows 100 --seed 42 --anchor 2026-01-01T00:00:00Z
@@ -194,5 +222,6 @@ It takes the same options as the Rust CLI plus `--contract-id`, `--version`, `--
 ## ODCS input
 
 `contractgate synth` and `POST /contracts/synth` accept an ODCS v3.x document
-with no `ontology`. Pass `--schema-object NAME` (or `schema_object` in the API) to pick one object of a multi-object file; the response lists unmapped content in `notes`.
+with no `ontology`. Property names are literal columns, including dots and brackets.
+Pass `--schema-object NAME` (or `schema_object` in the API) to pick one object of a multi-object file. The ignored-objects note is omitted when you pass it. Other unmapped content is still listed in `notes`.
 See [`odcs/using-odcs-directly.md`](odcs/using-odcs-directly.md).

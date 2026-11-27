@@ -3,7 +3,7 @@
   "name": "io.github.nightmoose/contractgate",
   "title": "AISchemaGate and DataContractGate",
   "description": "AISchemaGate validates and repairs structured LLM output against a contract, plus DataContractGate.",
-  "version": "0.4.2",
+  "version": "0.4.3",
   "websiteUrl": "https://app.datacontractgate.com/mcp-reference.md",
   "_meta": {
     "io.modelcontextprotocol.registry/publisher-provided": {
@@ -38,7 +38,7 @@
       "registryType": "npm",
       "registryBaseUrl": "https://registry.npmjs.org",
       "identifier": "@nightmoose/contractgate-mcp-server",
-      "version": "0.4.2",
+      "version": "0.4.3",
       "runtimeHint": "npx",
       "transport": {
         "type": "stdio"
