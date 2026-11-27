@@ -26,6 +26,7 @@ kept as native YAML; an ODCS document is converted once, on the way in.
 | `required`, `primaryKey` | required |
 | `unique`, single-column `primaryKey` | batch uniqueness rule |
 | `logicalTypeOptions` `pattern`, `format`, `minLength`, `maxLength`, `minimum`, `maximum` | the matching field rules |
+| `physicalType: varchar(n)` / `char(n)` / `nvarchar(n)` (string types with a length argument) | `max_length: n`, unless `logicalTypeOptions.maxLength` already set one |
 | property `enum` (plain values or `{value: ...}` items) | allowed values |
 | property `quality` library metrics `nullValues`, `missingValues`, `duplicateValues`, `invalidValues` | quality rules |
 | property `name` | the field name, kept literally (`Rate.x` and `Amount [A]` are one field each, not a path) |

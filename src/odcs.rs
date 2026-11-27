@@ -118,6 +118,17 @@ fn physical_to_field_type(s: &str) -> FieldType {
     }
 }
 
+/// The length argument of a SQL-ish string type, e.g. `18` from
+/// `varchar(18)` or `nvarchar(255)`. `None` when there is no parenthesized
+/// argument, or it is not a single integer (a precision/scale pair like
+/// `decimal(10,2)` never reaches this: `physical_to_field_type` already
+/// maps `decimal` to `FieldType::Float`).
+fn physical_type_length(s: &str) -> Option<usize> {
+    let open = s.find('(')?;
+    let close = s[open..].find(')')? + open;
+    s[open + 1..close].trim().parse().ok()
+}
+
 // ---------------------------------------------------------------------------
 // Property flattening (D-001)
 // ---------------------------------------------------------------------------
@@ -1268,6 +1279,18 @@ fn odcs_prop_to_field(m: &Mapping, full_name: &str) -> Result<FieldDefinition, S
     let mut max_length = opt("maxLength")
         .and_then(|v| v.as_u64())
         .map(|n| n as usize);
+    // `physicalType: varchar(18)` (or `char`, `nvarchar`, ...) sets a max
+    // length too, when `logicalTypeOptions.maxLength` did not already set
+    // one. Types with a numeric arg that already map to a non-string
+    // FieldType (`decimal(10,2)`, `numeric(10,2)`) are matched by
+    // `physical_to_field_type` before reaching the default String case, so
+    // this only fires for genuinely string-ish physical types.
+    if max_length.is_none() && field_type == FieldType::String {
+        max_length = m
+            .get("physicalType")
+            .and_then(|v| v.as_str())
+            .and_then(physical_type_length);
+    }
     // Date bounds are strings in ODCS; only numeric bounds map to CG min/max.
     let mut min = opt("minimum").and_then(|v| v.as_f64());
     let mut max = opt("maximum").and_then(|v| v.as_f64());
