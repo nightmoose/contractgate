@@ -1,14 +1,14 @@
 //! `contractgate` CLI binary.
 //!
-//! Subcommands: push, pull, validate, scaffold, enforce, infer, test, synth, review, export, import, check-table.
+//! Subcommands: push, pull, diff, validate, scaffold, enforce, infer, test, synth, review, export, import, check-table.
 //! Auth via CONTRACTGATE_API_KEY env var or --api-key flag.
 //! Config via .contractgate.yml (walk-up from cwd, stop at git root).
 
 use clap::{Parser, Subcommand};
 use contractgate::cli::{
     commands::{
-        check_table, deploy, enforce, export, import, infer, pull, push, review, scaffold, synth,
-        test, validate,
+        check_table, deploy, diff, enforce, export, import, infer, pull, push, review, scaffold,
+        synth, test, validate,
     },
     config::CliConfig,
 };
@@ -17,8 +17,8 @@ use std::{path::PathBuf, process};
 #[derive(Parser)]
 #[command(
     name = "contractgate",
-    about = "DataContractGate CLI — push, pull, and validate semantic contracts",
-    version
+    about = "DataContractGate CLI: push, pull, and validate semantic contracts",
+    version = env!("CARGO_PKG_VERSION")
 )]
 struct Cli {
     /// API key for the DataContractGate gateway.
@@ -52,6 +52,15 @@ enum Cmd {
     Push(push::PushArgs),
     /// Pull contracts from gateway and write as YAML files.
     Pull(pull::PullArgs),
+    /// Compare local contract YAML with the deployed stable version. Changes nothing.
+    ///
+    /// Exit codes: 0 = no drift, 1 = drift (a file differs from the deployed
+    /// version or is not deployed), 2 = the check could not run.
+    ///
+    /// Examples:
+    ///   cg diff
+    ///   cg diff --name orders --json
+    Diff(diff::DiffArgs),
     /// Parse + compile each contract YAML locally. No network.
     Validate(validate::ValidateArgs),
     /// Derive a draft contract from a Kafka topic or local file (RFC-024).
@@ -110,6 +119,7 @@ enum Cmd {
     /// Examples:
     ///   cg synth contracts/orders.yaml --rows 500 --seed 42
     ///   cg synth contracts/orders.yaml --rows 50 --invalid --format csv -o bad.csv
+    ///   cg synth datacontract.yaml --rows 100 --seed 1 --synth-config synth.yaml
     Synth(synth::SynthArgs),
     /// Infer a draft contract from a CSV, validate every row, and write a
     /// Readiness Review report (contract.yaml, report.html, rejected.csv).
@@ -167,6 +177,11 @@ fn main() {
         Cmd::Pull(args) => {
             let key = require_api_key(&cli.api_key);
             pull::run(args, &cfg, &key)
+        }
+
+        Cmd::Diff(args) => {
+            let key = require_api_key(&cli.api_key);
+            diff::run(args, &cfg, &key)
         }
 
         // Scaffold, enforce, infer, synth, and test do not need gateway config or an API key.

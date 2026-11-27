@@ -988,7 +988,9 @@ fn import_mode_b(
     let quality = extract_quality_rules_from_props(props);
 
     let mut warnings = Vec::new();
-    if schema_seq.len() > 1 {
+    // The note is for the default (first object). An explicit schema_object
+    // means the caller already chose, so it is not repeated.
+    if schema_seq.len() > 1 && schema_object.is_none() {
         let used = schema0
             .get("name")
             .and_then(|v| v.as_str())
@@ -1110,10 +1112,16 @@ fn extract_quality_rules_from_props(props: &[Value]) -> Vec<QualityRule> {
     all_rules
 }
 
-/// Reverse D-001 flattening: convert ODCS dot-notation property list back to a
-/// nested CG field tree.
+/// Convert an ODCS `properties` list into field definitions.
+///
+/// Each property `name` is a literal column name. Dots and brackets stay in
+/// the name (`Rate.x`, `Amount [A]`). They are not a nested path. Real
+/// nesting comes from a property with `logicalType: object` and its own
+/// `properties` list, or from `items` on an array. DataContractGate's own
+/// exports still round-trip nested objects in Mode A, because that path
+/// reads the embedded ontology rather than these names.
 fn unflatten_odcs_properties(props: &[Value]) -> Result<Vec<FieldDefinition>, String> {
-    let mut pairs: Vec<(String, FieldDefinition)> = Vec::new();
+    let mut fields = Vec::new();
     for p in props {
         let m = p
             .as_mapping()
@@ -1121,64 +1129,10 @@ fn unflatten_odcs_properties(props: &[Value]) -> Result<Vec<FieldDefinition>, St
         let name = m
             .get("name")
             .and_then(|v| v.as_str())
-            .ok_or_else(|| "ODCS property missing 'name'".to_string())?
-            .to_string();
-        let field_def = odcs_prop_to_field(m, &name)?;
-        pairs.push((name, field_def));
+            .ok_or_else(|| "ODCS property missing 'name'".to_string())?;
+        fields.push(odcs_prop_to_field(m, name)?);
     }
-
-    build_field_tree(pairs)
-}
-
-/// Group flat (dot-notation name, FieldDefinition) pairs into a nested tree.
-fn build_field_tree(pairs: Vec<(String, FieldDefinition)>) -> Result<Vec<FieldDefinition>, String> {
-    let mut top_level: Vec<FieldDefinition> = Vec::new();
-    let mut nested: std::collections::BTreeMap<String, Vec<(String, FieldDefinition)>> =
-        std::collections::BTreeMap::new();
-
-    for (name, field) in pairs {
-        if let Some(dot_pos) = name.find('.') {
-            let parent = name[..dot_pos].to_string();
-            let rest = name[dot_pos + 1..].to_string();
-            let mut child = field;
-            child.name = rest.clone();
-            nested.entry(parent).or_default().push((rest, child));
-        } else {
-            top_level.push(field);
-        }
-    }
-
-    for (parent_name, children) in nested {
-        let child_fields = build_field_tree(children)?;
-        if let Some(existing) = top_level
-            .iter_mut()
-            .find(|f| f.name == parent_name && f.field_type == FieldType::Object)
-        {
-            existing
-                .properties
-                .get_or_insert_with(Vec::new)
-                .extend(child_fields);
-            continue;
-        }
-        top_level.push(FieldDefinition {
-            distribution: None,
-            name: parent_name,
-            field_type: FieldType::Object,
-            required: false,
-            pattern: None,
-            allowed_values: None,
-            min: None,
-            max: None,
-            min_length: None,
-            max_length: None,
-            properties: Some(child_fields),
-            items: None,
-            transform: None,
-            format: None,
-        });
-    }
-
-    Ok(top_level)
+    Ok(fields)
 }
 
 fn yaml_to_json_values(seq: &[Value]) -> Vec<serde_json::Value> {
@@ -1247,12 +1201,6 @@ fn parse_odcs_enum(v: Option<&Value>) -> Option<Vec<serde_json::Value>> {
 /// Parse a single ODCS property mapping into a CG `FieldDefinition`.
 /// ODCS-native fields are read first; `x-cg-*` customProperties override.
 fn odcs_prop_to_field(m: &Mapping, full_name: &str) -> Result<FieldDefinition, String> {
-    let leaf_name = full_name
-        .rsplit('.')
-        .next()
-        .unwrap_or(full_name)
-        .to_string();
-
     let logical = custom_prop_value(m, "x-cg-type")
         .and_then(|v| v.as_str())
         .or_else(|| m.get("logicalType").and_then(|v| v.as_str()));
@@ -1380,7 +1328,7 @@ fn odcs_prop_to_field(m: &Mapping, full_name: &str) -> Result<FieldDefinition, S
 
     Ok(FieldDefinition {
         distribution,
-        name: leaf_name,
+        name: full_name.to_string(),
         field_type,
         required,
         pattern,

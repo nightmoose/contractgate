@@ -71,9 +71,11 @@ fn schema_object_selects_by_name_physical_name_and_id() {
         ["customer_id", "age"]
     );
     let r = import_odcs_with(MULTI, Some("customers")).unwrap();
-    let n = r.warnings.iter().find(|w| w.contains("objects")).unwrap();
-    assert!(n.contains("imported 'customers' (schema[1])"), "{n}");
-    assert!(n.contains("ignored: orders"), "{n}");
+    assert!(
+        r.warnings.iter().all(|w| !w.contains("objects")),
+        "an explicit schema object does not repeat the ignored-objects note: {:?}",
+        r.warnings
+    );
 }
 
 #[test]
@@ -124,6 +126,7 @@ fn selected_object_synths_valid_rows() {
             mode: SynthMode::Valid,
             seed: 1,
             now_unix: 1_780_000_000,
+            hints: Default::default(),
         },
     )
     .unwrap();

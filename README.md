@@ -72,7 +72,7 @@ DataContractGate is a high-performance validation gateway that enforces rich sem
 
 The same contract can gate what **leaves** your system. `POST /egress/{contract_id}` runs the identical engine on any outbound payload — a reverse-ETL row, a notebook export, a state object headed to a decision model. Failing records are blocked, declared PII is masked, and the caller forwards only the returned `payload`. See [`docs/egress-validation-reference.md`](docs/egress-validation-reference.md).
 
-**Validating LLM output?** The same engine powers [AISchemaGate](https://aischemagate.com) (`pip install aischemagate` / `npm install @nightmoose/aischemagate`). One-line wrapper over OpenAI / Anthropic / vLLM / Ollama responses — extracts the structured JSON, validates against your contract, optionally re-prompts on violation. Non-streaming only in v1. See [`docs/llm-output-validation.md`](docs/llm-output-validation.md), [`docs/llm-sdk-reference.md`](docs/llm-sdk-reference.md), and the copy-paste guides in [`docs/integrations/`](docs/integrations/) (Vercel AI SDK, structured outputs, LangGraph). Ingest recipes: [`examples/recipes/`](examples/recipes/).
+**Validating LLM output?** The same engine powers [AISchemaGate](https://aischemagate.com) (`pip install aischemagate` / `npm install @nightmoose/aischemagate`). One-line wrapper over OpenAI / Anthropic / vLLM / Ollama responses — extracts the structured JSON, validates against your contract, optionally re-prompts on violation. Non-streaming only in v1. See [`docs/llm-output-validation.md`](docs/llm-output-validation.md), [`docs/llm-sdk-reference.md`](docs/llm-sdk-reference.md), and the copy-paste guides in [`docs/integrations/`](docs/integrations/) (gating an agent's tools, Vercel AI SDK, structured outputs, LangGraph). Ingest recipes: [`examples/recipes/`](examples/recipes/).
 
 **Measured validation performance** (in-process `validate()` only — not HTTP, auth, or Postgres). Passing samples from [`catalog/seeds/stripe-charges`](catalog/seeds/stripe-charges/), contract compiled once before the timer, one thread: p99 **0.93 µs**, **1,547,368 events/sec**. A one-field failure on the same contract was slower (p99 1.27 µs, 1,153,482 events/sec). Measured 2026-11-10 on an Intel Xeon (family 6 model 207 stepping 2, 2400 MHz, 4 vCPU KVM guest). Those two pass figures are the slower end of three release runs. Reproduce from the repository root:
 
@@ -213,7 +213,10 @@ client.ingest(contract_id="...", events={"user_id": "u1", "event_type": "click"}
 cargo install --git https://github.com/nightmoose/contractgate contractgate
 contractgate test --contract examples/contracts/api/user_events.yaml --data examples/contracts/api/pass.json
 contractgate test --contract examples/contracts/api/user_events.yaml --data examples/contracts/api/fail.json
+contractgate synth datacontract.yaml --rows 100 --seed 1 --synth-config synth.yaml
 ```
+
+`contractgate --version` prints the crate version. `synth --synth-config` is a separate YAML file of per-field generation hints (distribution, and for strings a prefix, suffix, or pattern). Contract min, max, enum, and format rules still apply. Details: [`docs/synthetic-data-reference.md`](docs/synthetic-data-reference.md).
 
 **GitHub Action** (compile every YAML under `contracts/` on PRs):
 

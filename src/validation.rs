@@ -805,7 +805,18 @@ fn validate_fields(
 
         // RFC-087: when `null_as_absent` is on, a present JSON `null` is treated
         // exactly like a missing key (optional → skip, required → missing).
-        let effective = match obj.get(&field.name) {
+        // Literal key first (`Rate.x`, `Amount [A]`). When that key is
+        // absent, a dotted or bracketed name still matches a native nested
+        // path, so a flattened DataContractGate export keeps validating
+        // nested JSON.
+        let looked_up = obj.get(&field.name).or_else(|| {
+            if field.name.contains('.') || field.name.contains('[') {
+                resolve_indexed(data, &field.name)
+            } else {
+                None
+            }
+        });
+        let effective = match looked_up {
             Some(v) if null_as_absent && v.is_null() => None,
             other => other,
         };
@@ -1165,13 +1176,13 @@ fn validate_metric(metric: &MetricDefinition, event: &Value, violations: &mut Ve
 // Utilities
 // ---------------------------------------------------------------------------
 
-/// Resolve a dot-separated path in a JSON value (e.g. "user.address.zip").
+/// Resolve a path in a JSON value (e.g. "user.address.zip").
+///
+/// A literal object key wins, including keys that contain dots or brackets.
+/// Otherwise the path is walked as nested objects and numeric `[index]`
+/// segments. See [`resolve_indexed`].
 fn resolve_path<'a>(value: &'a Value, path: &str) -> Option<&'a Value> {
-    let mut current = value;
-    for key in path.split('.') {
-        current = current.get(key)?;
-    }
-    Some(current)
+    resolve_indexed(value, path)
 }
 
 /// Extract a numeric f64 from any JSON number (int, uint, or float).
@@ -1243,13 +1254,11 @@ fn field_type_label(ft: &FieldType) -> String {
 // Quality rule helpers (per-event)
 // ---------------------------------------------------------------------------
 
-/// Walk a dot-notation path and return the value at that path, or None.
+/// Walk a field path and return the value at that path, or None.
+///
+/// Same rules as [`resolve_indexed`]: a literal key wins, then nested objects.
 fn get_nested_value<'a>(event: &'a Value, path: &str) -> Option<&'a Value> {
-    let mut cur = event;
-    for segment in path.split('.') {
-        cur = cur.as_object()?.get(segment)?;
-    }
-    Some(cur)
+    resolve_indexed(event, path)
 }
 
 /// `rule_type: completeness` — field must be present, non-null, non-empty string.
@@ -1409,25 +1418,67 @@ pub fn compare_holds(op: crate::contract::CompareOp, a: &Value, b: &Value) -> bo
     }
 }
 
-/// Resolve `a.b[2].c` (dot paths with optional `[index]` segments).
-pub fn resolve_indexed<'a>(event: &'a Value, path: &str) -> Option<&'a Value> {
-    let mut cur = event;
-    for seg in path.split('.') {
-        match seg.find('[') {
-            None => cur = cur.as_object()?.get(seg)?,
-            Some(open) => {
-                let name = &seg[..open];
-                if !name.is_empty() {
-                    cur = cur.as_object()?.get(name)?;
-                }
-                for idx in seg[open..].split('[').skip(1) {
-                    let i: usize = idx.strip_suffix(']')?.parse().ok()?;
-                    cur = cur.as_array()?.get(i)?;
-                }
-            }
+/// Resolve `path` against `value`.
+///
+/// A whole-path object key wins, so ODCS column names such as `Rate.x` and
+/// `Amount [A]` are literal. When that key is absent, the path is walked as
+/// a native nested path (`customer.address.country`, `lines[0].qty`). An
+/// index is only `[` + digits + `]`. A bracket that is not an index, such
+/// as `[A]`, stays part of the name.
+pub fn resolve_indexed<'a>(value: &'a Value, path: &str) -> Option<&'a Value> {
+    if path.is_empty() {
+        return Some(value);
+    }
+    if let Some(found) = value.as_object().and_then(|o| o.get(path)) {
+        return Some(found);
+    }
+    let obj = value.as_object()?;
+    let mut best: Option<&str> = None;
+    for key in obj.keys() {
+        if key.len() >= path.len() || !path.starts_with(key.as_str()) {
+            continue;
+        }
+        let rest = &path[key.len()..];
+        if !(rest.starts_with('.') || rest.starts_with('[')) {
+            continue;
+        }
+        if best.map(|b| key.len() > b.len()).unwrap_or(true) {
+            best = Some(key.as_str());
         }
     }
-    Some(cur)
+    let key = best?;
+    let rest = &path[key.len()..];
+    descend(obj.get(key)?, rest)
+}
+
+fn descend<'a>(value: &'a Value, rest: &str) -> Option<&'a Value> {
+    let rest = rest.strip_prefix('.').unwrap_or(rest);
+    if rest.is_empty() {
+        return Some(value);
+    }
+    if rest.starts_with('[') {
+        let (val, rest) = take_indexes(value, rest)?;
+        if rest.is_empty() {
+            return Some(val);
+        }
+        return resolve_indexed(val, rest.strip_prefix('.').unwrap_or(rest));
+    }
+    resolve_indexed(value, rest)
+}
+
+/// Consume one or more leading `[digits]` indexes.
+fn take_indexes<'a, 'b>(mut value: &'a Value, mut rest: &'b str) -> Option<(&'a Value, &'b str)> {
+    while rest.starts_with('[') {
+        let end = rest.find(']')?;
+        let inside = &rest[1..end];
+        if inside.is_empty() || !inside.bytes().all(|b| b.is_ascii_digit()) {
+            return None;
+        }
+        let idx: usize = inside.parse().ok()?;
+        value = value.as_array()?.get(idx)?;
+        rest = &rest[end + 1..];
+    }
+    Some((value, rest))
 }
 
 /// A cross-field rule with `[]` paths replaced by `[i]`.

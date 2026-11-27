@@ -1052,6 +1052,11 @@ ontology:
         );
         assert_eq!(city.field_type, FieldType::String);
 
+        assert_lines_preserved(c);
+    }
+
+    fn assert_lines_preserved(c: &crate::contract::Contract) {
+        let es = &c.ontology.entities;
         let lines = field(es, "lines");
         assert_eq!(lines.field_type, FieldType::Array);
         let item = lines.items.as_ref().expect("lines.items");
@@ -1067,6 +1072,23 @@ ontology:
             tags.items.as_ref().expect("tags.items").field_type,
             FieldType::String
         );
+    }
+
+    fn assert_dotted_names_stay_literal(c: &crate::contract::Contract) {
+        let es = &c.ontology.entities;
+        assert!(
+            es.iter().all(|f| f.name != "customer"),
+            "dotted names are not split into a customer object: {:?}",
+            es.iter().map(|f| &f.name).collect::<Vec<_>>()
+        );
+        let email = field(es, "customer.email");
+        assert_eq!(email.field_type, FieldType::String);
+        assert!(email.required);
+        assert_eq!(email.pattern.as_deref(), Some("^.+@.+$"));
+        let city = field(es, "customer.address.city");
+        assert_eq!(city.field_type, FieldType::String);
+        assert!(city.required);
+        assert_lines_preserved(c);
     }
 
     fn nested_export() -> String {
@@ -1101,7 +1123,29 @@ ontology:
         let r = odcs::import_odcs(&stripped).unwrap();
         assert_eq!(r.import_source, ImportSource::OdcsStripped);
         let c: crate::contract::Contract = serde_yaml::from_str(&r.yaml_content).unwrap();
-        assert_nested_preserved(&c);
+        // Property names stay literal. Nested objects in a DataContractGate
+        // export come back through Mode A (the embedded ontology). A stripped
+        // file keeps `customer.email` as one field. Array `items` are still
+        // nested, because that is real ODCS structure, not a dotted name.
+        assert_dotted_names_stay_literal(&c);
+        let cc = crate::validation::CompiledContract::compile(c.clone()).unwrap();
+        let flat = serde_json::json!({
+            "order_id": "A",
+            "customer.email": "a@b.co",
+            "customer.address.city": "Boston",
+            "lines": [{"sku": "ABC", "qty": 1}]
+        });
+        assert!(crate::validation::validate(&cc, &flat).passed, "{flat}");
+        let nested = serde_json::json!({
+            "order_id": "A",
+            "customer": {"email": "a@b.co", "address": {"city": "Boston"}},
+            "lines": [{"sku": "ABC", "qty": 1}]
+        });
+        assert!(
+            crate::validation::validate(&cc, &nested).passed,
+            "nested JSON still matches a dotted ODCS name: {nested} {:?}",
+            crate::validation::validate(&cc, &nested).violations
+        );
         // Re-export of the imported contract is stable (same field tree).
         let identity = make_identity("orders");
         let cv = make_version(identity.id, "1.0.0", &r.yaml_content);
@@ -1112,7 +1156,7 @@ ontology:
         })
         .unwrap();
         let r2 = odcs::import_odcs(&again).unwrap();
-        assert_nested_preserved(&serde_yaml::from_str(&r2.yaml_content).unwrap());
+        assert_dotted_names_stay_literal(&serde_yaml::from_str(&r2.yaml_content).unwrap());
     }
 
     #[test]
@@ -5497,12 +5541,18 @@ mod odcs_strict_tests {
                 "field {name}"
             );
         }
-        let cust = field(b, "customer").properties.as_ref().unwrap();
-        assert_eq!(field(cust, "id").pattern.as_deref(), Some("^C[0-9]+$"));
-        let addr = field(cust, "address").properties.as_ref().unwrap();
         assert_eq!(
-            field(addr, "country").allowed_values,
+            field(b, "customer.id").pattern.as_deref(),
+            Some("^C[0-9]+$")
+        );
+        assert_eq!(
+            field(b, "customer.address.country").allowed_values,
             Some(vec![json!("US"), json!("CA")])
+        );
+        assert!(
+            b.iter()
+                .all(|f| f.field_type != FieldType::Object || f.name != "customer"),
+            "a dotted property name is not turned into an object"
         );
         // Quality rules survive via library metrics / custom engine.
         let mut kinds: Vec<_> = back
@@ -6096,8 +6146,9 @@ schema:
         ] {
             assert_eq!(allowed(f, name), allowed(e, name), "{name}");
         }
-        let foreign_customer = field(f, "customer").properties.as_ref().unwrap();
-        assert_eq!(allowed(foreign_customer, "tier"), allowed(customer, "tier"));
+        // A stripped export keeps the flattened property name `customer.tier`
+        // as one field. The enum still applies.
+        assert_eq!(allowed(f, "customer.tier"), allowed(customer, "tier"));
         assert_eq!(
             field(f, "tags").items.as_ref().unwrap().allowed_values,
             tag.allowed_values
