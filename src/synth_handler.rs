@@ -115,6 +115,7 @@ pub async fn synth_handler(
         mode: req.mode,
         seed,
         now_unix: anchor.timestamp(),
+        hints: std::collections::HashMap::new(),
     };
 
     let started = std::time::Instant::now();
@@ -213,7 +214,7 @@ pub fn merge_openapi(paths: &mut serde_json::Map<String, Value>) {
             "mode": {"type": "string", "enum": ["valid", "invalid"], "default": "valid"},
             "seed": {"type": "integer", "minimum": 0},
             "anchor_time": {"type": "string", "format": "date-time", "description": "Time freshness rules are measured from. Now when omitted. Set it with seed for rows that repeat exactly."},
-            "schema_object": {"type": "string", "description": "For ODCS yaml_content with several schema objects: the one to use, by name. The first when omitted."},
+            "schema_object": {"type": "string", "description": "For ODCS yaml_content with several schema objects: the one to use, by name. The first when omitted. When set, the note listing the other objects is omitted."},
             "envelope": {"type": "boolean", "default": false, "description": "Also return the rows wrapped in the contract's envelope as envelope_payload. 400 no_envelope when the contract has none."}
         }}}}},
         "responses": {
@@ -293,7 +294,10 @@ mod tests {
             .await;
         let b = r.json::<Value>();
         assert!(b["rows"][0]["y"].is_string());
-        assert!(b["notes"][0].as_str().unwrap().contains("ignored: a"));
+        assert!(
+            b.get("notes").is_none(),
+            "explicit schema_object suppresses the note: {b}"
+        );
         let r = server()
             .post("/contracts/synth")
             .json(&json!({"yaml_content": ODCS_MULTI, "schema_object": "zzz"}))

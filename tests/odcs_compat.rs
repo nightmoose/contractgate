@@ -21,6 +21,7 @@ fn opts(mode: SynthMode) -> SynthOptions {
         mode,
         seed: 7,
         now_unix: 1_780_000_000,
+        hints: Default::default(),
     }
 }
 
@@ -248,7 +249,18 @@ fn json_style_odcs_is_detected() {
 fn official_full_example_second_object_by_name() {
     let (c, notes) =
         contractgate::odcs::parse_contract_yaml_with(FULL, Some("receivers")).expect("parses");
-    assert!(notes[0].contains("imported 'receivers'"), "{notes:?}");
+    assert!(
+        notes.iter().all(|n| !n.contains("objects")),
+        "explicit schema_object suppresses the multi-object note: {notes:?}"
+    );
+    let (_first, default_notes) =
+        contractgate::odcs::parse_contract_yaml_with(FULL, None).expect("parses");
+    assert!(
+        default_notes
+            .iter()
+            .any(|n| n.contains("ignored: receivers")),
+        "{default_notes:?}"
+    );
     assert!(!c.ontology.entities.is_empty());
     assert!(c
         .ontology

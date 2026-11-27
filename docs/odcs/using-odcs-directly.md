@@ -28,9 +28,22 @@ kept as native YAML; an ODCS document is converted once, on the way in.
 | `logicalTypeOptions` `pattern`, `format`, `minLength`, `maxLength`, `minimum`, `maximum` | the matching field rules |
 | property `enum` (plain values or `{value: ...}` items) | allowed values |
 | property `quality` library metrics `nullValues`, `missingValues`, `duplicateValues`, `invalidValues` | quality rules |
-| nested names (`a.b`) and `items` | nested objects and array items |
+| property `name` | the field name, kept literally (`Rate.x` and `Amount [A]` are one field each, not a path) |
+| nested `properties` on an object, and `items` | nested objects and array items |
 
 Unknown ODCS fields are ignored.
+
+A property name is the column name. Dots and brackets stay in it. DataContractGate
+does not split `Rate.x` into an object `Rate` with a field `x`. A real nested
+object is a property with `logicalType: object` and its own `properties` list.
+Native contracts are unchanged: a field `customer` of type object with a
+property `address` is still addressed as `customer.address`. When a dotted
+ODCS name is missing as a literal key, validation also accepts the same path
+as nested JSON, so an older nested payload still matches.
+
+Properties are optional unless `required: true` (or `primaryKey: true`).
+Synthetic rows leave those fields out on some rows. A number field is a
+number whenever it is present.
 
 To shape synthetic values on a number or integer property, add a custom property named `x-cg-distribution`:
 
@@ -63,8 +76,10 @@ the file. A native contract ignores it.
 The note that lists the ignored objects (and any composite key or relationships
 note) is printed by the CLI and returned as `notes` in the JSON response of
 `POST /contracts/synth` and `POST /contracts/import`. `notes` is left out when
-there is nothing to say. To cover several objects, import each one as its own
-contract.
+there is nothing to say. Passing `--schema-object` (or `schema_object` in the
+API) means you already chose the object, so that ignored-objects note is left
+out. A composite key or relationships note is still printed when it applies.
+To cover several objects, import each one as its own contract.
 
 ## What does not map
 

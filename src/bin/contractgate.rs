@@ -17,8 +17,8 @@ use std::{path::PathBuf, process};
 #[derive(Parser)]
 #[command(
     name = "contractgate",
-    about = "DataContractGate CLI — push, pull, and validate semantic contracts",
-    version
+    about = "DataContractGate CLI: push, pull, and validate semantic contracts",
+    version = env!("CARGO_PKG_VERSION")
 )]
 struct Cli {
     /// API key for the DataContractGate gateway.
@@ -119,6 +119,7 @@ enum Cmd {
     /// Examples:
     ///   cg synth contracts/orders.yaml --rows 500 --seed 42
     ///   cg synth contracts/orders.yaml --rows 50 --invalid --format csv -o bad.csv
+    ///   cg synth datacontract.yaml --rows 100 --seed 1 --synth-config synth.yaml
     Synth(synth::SynthArgs),
     /// Infer a draft contract from a CSV, validate every row, and write a
     /// Readiness Review report (contract.yaml, report.html, rejected.csv).

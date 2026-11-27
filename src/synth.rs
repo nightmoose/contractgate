@@ -70,6 +70,16 @@ impl SynthMode {
     }
 }
 
+/// String-only generation hint from `--synth-config`. Contract `pattern`,
+/// `format`, `enum`, and length rules still win: a hint that cannot produce
+/// a passing value fails the run.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct StringHint {
+    pub prefix: Option<String>,
+    pub suffix: Option<String>,
+    pub pattern: Option<String>,
+}
+
 /// Inputs for one generation run.
 #[derive(Debug, Clone)]
 pub struct SynthOptions {
@@ -78,6 +88,193 @@ pub struct SynthOptions {
     pub seed: u64,
     /// Wall clock in Unix seconds. Only `freshness` rules read it.
     pub now_unix: i64,
+    /// Per-field string hints keyed by the field path (`Rate.x`, `sku`).
+    /// Empty when no `--synth-config` was given.
+    pub hints: HashMap<String, StringHint>,
+}
+
+/// One field entry in a synth config file.
+#[derive(Debug, Deserialize)]
+struct SynthFieldConfig {
+    #[serde(default)]
+    distribution: Option<Distribution>,
+    #[serde(default)]
+    prefix: Option<String>,
+    #[serde(default)]
+    suffix: Option<String>,
+    #[serde(default)]
+    pattern: Option<String>,
+}
+
+/// `--synth-config` file. Keys under `fields` are field names or paths.
+#[derive(Debug, Deserialize)]
+struct SynthConfigFile {
+    fields: HashMap<String, SynthFieldConfig>,
+}
+
+/// Read a synth config file. Distributions override in-contract hints on
+/// `contract`. String hints are returned keyed by the field path the
+/// generator uses. A key that matches no field is an error. Contract
+/// `min` / `max` / `enum` / `format` / `pattern` are not changed.
+pub fn apply_synth_config(
+    contract: &mut Contract,
+    yaml: &str,
+) -> Result<HashMap<String, StringHint>, SynthError> {
+    let file: SynthConfigFile = serde_yaml::from_str(yaml).map_err(|e| {
+        SynthError::new(
+            "synth_config",
+            None,
+            format!("invalid synth config YAML: {e}"),
+        )
+    })?;
+    let mut hints = HashMap::new();
+    let mut used = HashSet::new();
+    apply_field_hints(
+        &mut contract.ontology.entities,
+        "",
+        &file.fields,
+        &mut hints,
+        &mut used,
+    )?;
+    let unknown: Vec<&str> = file
+        .fields
+        .keys()
+        .filter(|k| !used.contains(k.as_str()))
+        .map(String::as_str)
+        .collect();
+    if !unknown.is_empty() {
+        let mut names = unknown;
+        names.sort();
+        return Err(SynthError::new(
+            "synth_config",
+            None,
+            format!(
+                "synth config names fields that are not in the contract: {}",
+                names.join(", ")
+            ),
+        ));
+    }
+    Ok(hints)
+}
+
+fn type_name(t: &FieldType) -> &'static str {
+    match t {
+        FieldType::String => "string",
+        FieldType::Integer => "integer",
+        FieldType::Float => "number",
+        FieldType::Boolean => "boolean",
+        FieldType::Object => "object",
+        FieldType::Array => "array",
+        FieldType::Any => "any",
+        FieldType::Date => "date",
+        FieldType::Timestamp => "timestamp",
+    }
+}
+
+fn blank_to_none(s: Option<String>) -> Option<String> {
+    s.filter(|v| !v.is_empty())
+}
+
+fn apply_field_hints(
+    fields: &mut [FieldDefinition],
+    prefix: &str,
+    cfg: &HashMap<String, SynthFieldConfig>,
+    hints: &mut HashMap<String, StringHint>,
+    used: &mut HashSet<String>,
+) -> Result<(), SynthError> {
+    for f in fields {
+        let path = join(prefix, &f.name);
+        let by_path = cfg.get(&path);
+        let by_name = if path != f.name {
+            cfg.get(&f.name)
+        } else {
+            None
+        };
+        if let Some(entry) = by_path.or(by_name) {
+            if by_path.is_some() {
+                used.insert(path.clone());
+            }
+            if by_name.is_some() {
+                used.insert(f.name.clone());
+            }
+            install_hint(f, &path, entry, hints)?;
+        }
+        if let Some(props) = f.properties.as_mut() {
+            apply_field_hints(props, &path, cfg, hints, used)?;
+        }
+        if let Some(item) = f.items.as_mut() {
+            let item_path = format!("{path}[]");
+            if item.properties.as_ref().is_some_and(|p| !p.is_empty()) {
+                let props = item.properties.as_mut().unwrap();
+                apply_field_hints(props, &item_path, cfg, hints, used)?;
+            } else {
+                // A scalar element is generated at `tags[0]`, not `tags[0].tag`.
+                apply_one_field(item, &item_path, cfg, hints, used)?;
+            }
+        }
+    }
+    Ok(())
+}
+
+fn apply_one_field(
+    f: &mut FieldDefinition,
+    path: &str,
+    cfg: &HashMap<String, SynthFieldConfig>,
+    hints: &mut HashMap<String, StringHint>,
+    used: &mut HashSet<String>,
+) -> Result<(), SynthError> {
+    let by_path = cfg.get(path);
+    let by_name = if path != f.name {
+        cfg.get(&f.name)
+    } else {
+        None
+    };
+    let Some(entry) = by_path.or(by_name) else {
+        return Ok(());
+    };
+    if by_path.is_some() {
+        used.insert(path.to_string());
+    }
+    if by_name.is_some() {
+        used.insert(f.name.clone());
+    }
+    install_hint(f, path, entry, hints)
+}
+
+fn install_hint(
+    f: &mut FieldDefinition,
+    path: &str,
+    entry: &SynthFieldConfig,
+    hints: &mut HashMap<String, StringHint>,
+) -> Result<(), SynthError> {
+    if let Some(dist) = &entry.distribution {
+        f.distribution = Some(dist.clone());
+    }
+    let prefix_s = blank_to_none(entry.prefix.clone());
+    let suffix_s = blank_to_none(entry.suffix.clone());
+    let pattern_s = blank_to_none(entry.pattern.clone());
+    if prefix_s.is_some() || suffix_s.is_some() || pattern_s.is_some() {
+        if !matches!(f.field_type, FieldType::String | FieldType::Any) {
+            return Err(SynthError::new(
+                "synth_config",
+                Some(path),
+                format!(
+                    "field '{path}' is a {}, and prefix, suffix, and pattern hints apply to string fields",
+                    type_name(&f.field_type)
+                ),
+            ));
+        }
+        let hint = StringHint {
+            prefix: prefix_s,
+            suffix: suffix_s,
+            pattern: pattern_s,
+        };
+        hints.insert(path.to_string(), hint.clone());
+        if path != f.name {
+            hints.entry(f.name.clone()).or_insert(hint);
+        }
+    }
+    Ok(())
 }
 
 /// A rule that could not be satisfied (or a request that cannot be served).
@@ -401,6 +598,8 @@ struct Generator<'a> {
     /// Freshness windows (Unix seconds) for string and timestamp fields,
     /// which get RFC 3339 values inside the window.
     fresh: HashMap<String, (i64, i64)>,
+    /// String hints from `--synth-config`, keyed by field path and name.
+    hints: HashMap<String, StringHint>,
 }
 
 impl<'a> Generator<'a> {
@@ -486,6 +685,7 @@ impl<'a> Generator<'a> {
             hirs: HashMap::new(),
             unique,
             fresh,
+            hints: opts.hints.clone(),
         })
     }
 
@@ -1568,12 +1768,91 @@ impl<'a> Generator<'a> {
         ))
     }
 
+    fn hint_for(&self, path: &str) -> Option<&StringHint> {
+        if let Some(h) = self.hints.get(path) {
+            return Some(h);
+        }
+        let wild = wildcard_indexes(path);
+        if wild != path {
+            if let Some(h) = self.hints.get(&wild) {
+                return Some(h);
+            }
+        }
+        let leaf = path.rsplit(['.', '[']).next().unwrap_or(path);
+        if leaf != path {
+            return self.hints.get(leaf);
+        }
+        None
+    }
+
+    /// A string shaped by `--synth-config`. `None` when this field has no
+    /// string hint, so the normal generator runs. The contract's `pattern`
+    /// is used instead of the hint pattern when both are set.
+    fn hinted_string(
+        &mut self,
+        f: &FieldDefinition,
+        path: &str,
+    ) -> Result<Option<String>, SynthError> {
+        let Some(hint) = self.hint_for(path).cloned() else {
+            return Ok(None);
+        };
+        if hint.prefix.is_none() && hint.suffix.is_none() && hint.pattern.is_none() {
+            return Ok(None);
+        }
+        let prefix = hint.prefix.unwrap_or_default();
+        let suffix = hint.suffix.unwrap_or_default();
+        let pat = f.pattern.clone().or(hint.pattern.clone());
+        if let Some(pat) = pat.as_deref() {
+            for _ in 0..8 {
+                let s = self.gen_from_pattern(pat, path, f.min_length.unwrap_or(0))?;
+                if s.starts_with(&prefix) && (suffix.is_empty() || s.ends_with(&suffix)) {
+                    return Ok(Some(s));
+                }
+            }
+        }
+        let affix = prefix.len() + suffix.len();
+        if let Some(max) = f.max_length {
+            if affix > max {
+                return Err(SynthError::new(
+                    "max_length",
+                    Some(path),
+                    format!(
+                        "field '{path}': prefix and suffix are {affix} characters, above max_length {max}"
+                    ),
+                ));
+            }
+        }
+        let (mut lo, mut hi) = self.len_range(f);
+        lo = lo.max(affix);
+        if let Some(max) = f.max_length {
+            hi = hi.min(max);
+        }
+        if lo > hi {
+            hi = lo;
+        }
+        let total = if lo >= hi {
+            lo
+        } else {
+            self.rng.gen_range(lo..=hi.min(lo.saturating_add(8)))
+        };
+        let body_len = total.saturating_sub(affix);
+        let body = if body_len == 0 {
+            String::new()
+        } else {
+            self.alnum(body_len)
+        };
+        Ok(Some(format!("{prefix}{body}{suffix}")))
+    }
+
     fn string_value(
         &mut self,
         f: &FieldDefinition,
         path: &str,
         attempt: usize,
     ) -> Result<String, SynthError> {
+        if let Some(s) = self.hinted_string(f, path)? {
+            return Ok(s);
+        }
         let semantic = match f.field_type {
             FieldType::Date => Some(self.date()),
             FieldType::Timestamp => Some(self.timestamp()),
@@ -2118,6 +2397,31 @@ fn oracle_key(f: &FieldDefinition) -> String {
     serde_json::to_string(f).unwrap_or_default()
 }
 
+/// `lines[0].sku` to `lines[].sku`, so a hint keyed on the array form matches.
+fn wildcard_indexes(path: &str) -> String {
+    let mut out = String::with_capacity(path.len());
+    let mut rest = path;
+    while let Some(start) = rest.find('[') {
+        out.push_str(&rest[..start]);
+        let after = &rest[start + 1..];
+        if let Some(end) = after.find(']') {
+            let inside = &after[..end];
+            if !inside.is_empty() && inside.bytes().all(|c| c.is_ascii_digit()) {
+                out.push_str("[]");
+                rest = &after[end + 1..];
+                continue;
+            }
+        }
+        out.push('[');
+        rest = if after.is_empty() { "" } else { after };
+        if rest.is_empty() && after.is_empty() {
+            break;
+        }
+    }
+    out.push_str(rest);
+    out
+}
+
 fn join(prefix: &str, name: &str) -> String {
     if prefix.is_empty() {
         name.to_string()
@@ -2165,66 +2469,143 @@ fn ensure_path<'f>(
     rule: &str,
 ) -> Result<&'f mut FieldDefinition, SynthError> {
     let mut template = Some(template);
-    let mut parts = path.split('.').peekable();
+    let original = path.to_string();
     let mut cur = fields;
+    let mut path = original.clone();
     loop {
-        let name = parts.next().unwrap_or_default();
-        let last = parts.peek().is_none();
-        let pos = cur.iter().position(|f| f.name == name);
-        let idx = match pos {
-            Some(i) => i,
-            None if last && !compliance_mode && !path.contains('.') => {
+        let idx = best_field_index(cur, &path);
+        let Some(idx) = idx else {
+            if path == original
+                && !original.contains('.')
+                && !original.contains('[')
+                && !compliance_mode
+            {
                 cur.push(template.take().expect("used once"));
-                cur.len() - 1
+                let i = cur.len() - 1;
+                cur[i].required = true;
+                return Ok(&mut cur[i]);
             }
-            None => {
-                return Err(SynthError::new(
-                    rule,
-                    Some(path),
-                    format!(
-                    "the {rule} rule on '{path}' points at a field the ontology does not declare{}",
+            return Err(SynthError::new(
+                rule,
+                Some(&original),
+                format!(
+                    "the {rule} rule on '{original}' points at a field the ontology does not declare{}",
                     if compliance_mode {
                         " while compliance_mode rejects undeclared fields"
                     } else {
                         ""
                     }
                 ),
-                ))
-            }
+            ));
         };
-        let f = &mut cur[idx];
-        f.required = true;
-        if last {
-            return Ok(f);
+        let name = cur[idx].name.clone();
+        cur[idx].required = true;
+        if path == name {
+            return Ok(&mut cur[idx]);
         }
-        if f.field_type != FieldType::Object {
+        let rest = path[name.len()..].to_string();
+        if rest.starts_with('[') {
+            let after = strip_index_prefix(&rest).ok_or_else(|| {
+                SynthError::new(
+                    rule,
+                    Some(&original),
+                    format!(
+                        "the {rule} rule on '{original}' has a bracket that is not an array index"
+                    ),
+                )
+            })?;
+            if cur[idx].items.is_none() {
+                return Err(SynthError::new(
+                    rule,
+                    Some(&original),
+                    format!(
+                        "the {rule} rule on '{original}' goes through '{}', which is not an array",
+                        name
+                    ),
+                ));
+            }
+            if after.is_empty() {
+                let item = cur[idx].items.as_deref_mut().expect("checked");
+                item.required = true;
+                return Ok(item);
+            }
+            let after = after.trim_start_matches('.').to_string();
+            let item = cur[idx].items.as_deref_mut().expect("checked");
+            if item.field_type != FieldType::Object {
+                return Err(SynthError::new(
+                    rule,
+                    Some(&original),
+                    format!(
+                        "the {rule} rule on '{original}' goes through '{}', which is not an object",
+                        name
+                    ),
+                ));
+            }
+            path = after;
+            cur = item.properties.get_or_insert_with(Vec::new);
+            continue;
+        }
+        let rest = rest.trim_start_matches('.').to_string();
+        if cur[idx].field_type != FieldType::Object {
             return Err(SynthError::new(
                 rule,
-                Some(path),
+                Some(&original),
                 format!(
-                    "the {rule} rule on '{path}' goes through '{}', which is not an object",
-                    f.name
+                    "the {rule} rule on '{original}' goes through '{}', which is not an object",
+                    name
                 ),
             ));
         }
-        cur = f.properties.get_or_insert_with(Vec::new);
+        path = rest;
+        cur = cur[idx].properties.get_or_insert_with(Vec::new);
     }
 }
 
-fn find_def<'f>(fields: &'f [FieldDefinition], path: &str) -> Option<&'f FieldDefinition> {
-    let segs = segments(path);
-    let mut cur = fields;
-    for (n, (name, idx)) in segs.iter().enumerate() {
-        let mut f = cur.iter().find(|f| f.name == *name)?;
-        if idx.is_some() {
-            f = f.items.as_deref()?;
+/// Longest field name that is `path` or a prefix of it followed by `.` or `[`.
+fn best_field_index(fields: &[FieldDefinition], path: &str) -> Option<usize> {
+    let mut best: Option<(usize, usize)> = None;
+    for (i, f) in fields.iter().enumerate() {
+        let name = f.name.as_str();
+        let ok =
+            path == name || (path.starts_with(name) && path[name.len()..].starts_with(['.', '[']));
+        if ok && best.map(|(_, n)| name.len() > n).unwrap_or(true) {
+            best = Some((i, name.len()));
         }
-        if n + 1 == segs.len() {
-            return Some(f);
-        }
-        cur = f.properties.as_deref()?;
     }
-    None
+    best.map(|(i, _)| i)
+}
+
+fn find_def<'f>(fields: &'f [FieldDefinition], path: &str) -> Option<&'f FieldDefinition> {
+    let idx = best_field_index(fields, path)?;
+    let f = &fields[idx];
+    if path == f.name {
+        return Some(f);
+    }
+    let rest = &path[f.name.len()..];
+    if rest.starts_with('[') {
+        let after = strip_index_prefix(rest)?;
+        let item = f.items.as_deref()?;
+        if after.is_empty() {
+            return Some(item);
+        }
+        let after = after.trim_start_matches('.');
+        return find_def(item.properties.as_deref()?, after);
+    }
+    let rest = rest.trim_start_matches('.');
+    find_def(f.properties.as_deref()?, rest)
+}
+
+/// Drop leading `[digits]` groups. `None` when a bracket is not an index.
+fn strip_index_prefix(mut rest: &str) -> Option<&str> {
+    while rest.starts_with('[') {
+        let end = rest.find(']')?;
+        let inside = &rest[1..end];
+        if inside.is_empty() || !inside.bytes().all(|b| b.is_ascii_digit()) {
+            return None;
+        }
+        rest = &rest[end + 1..];
+    }
+    Some(rest)
 }
 
 /// Two decimal places; callers step at least 1 past a bound, so rounding
@@ -2293,67 +2674,115 @@ fn default_bounds(min: Option<f64>, max: Option<f64>, span: f64) -> (f64, f64) {
     }
 }
 
-/// Split `a.b[2].c` into `[("a", None), ("b", Some(2)), ("c", None)]`.
-fn segments(path: &str) -> Vec<(&str, Option<usize>)> {
-    path.split('.')
-        .map(
-            |seg| match seg.strip_suffix(']').and_then(|s| s.split_once('[')) {
-                Some((name, idx)) => (name, idx.parse().ok()),
-                None => (seg, None),
-            },
-        )
-        .collect()
-}
-
 fn get_path<'v>(v: &'v Value, path: &str) -> Option<&'v Value> {
-    let mut cur = v;
-    for (name, idx) in segments(path) {
-        cur = cur.as_object()?.get(name)?;
-        if let Some(i) = idx {
-            cur = cur.as_array()?.get(i)?;
-        }
-    }
-    Some(cur)
-}
-
-fn get_path_mut<'v>(v: &'v mut Value, segs: &[(&str, Option<usize>)]) -> Option<&'v mut Value> {
-    let mut cur = v;
-    for (name, idx) in segs {
-        cur = cur.as_object_mut()?.get_mut(*name)?;
-        if let Some(i) = idx {
-            cur = cur.as_array_mut()?.get_mut(*i)?;
-        }
-    }
-    Some(cur)
+    crate::validation::resolve_indexed(v, path)
 }
 
 fn set_path(v: &mut Value, path: &str, new: Value) -> Option<()> {
-    let segs = segments(path);
-    let (last, parents) = segs.split_last()?;
-    let parent = get_path_mut(v, parents)?;
-    match last {
-        (name, None) => {
-            parent.as_object_mut()?.insert(name.to_string(), new);
-        }
-        (name, Some(i)) => {
-            *parent
-                .as_object_mut()?
-                .get_mut(*name)?
-                .as_array_mut()?
-                .get_mut(*i)? = new;
+    if path.is_empty() {
+        return None;
+    }
+    if let Some(obj) = v.as_object_mut() {
+        if obj.contains_key(path) {
+            obj.insert(path.to_string(), new);
+            return Some(());
         }
     }
+    if let Some(key) = longest_json_prefix(v, path) {
+        let rest = path[key.len()..].to_string();
+        let child = v.as_object_mut()?.get_mut(&key)?;
+        return set_descend(child, &rest, new);
+    }
+    if path.starts_with('[') {
+        return set_descend(v, path, new);
+    }
+    // No nested prefix: the whole path is one literal key (`Rate.x`).
+    v.as_object_mut()?.insert(path.to_string(), new);
     Some(())
 }
 
-fn remove_path(v: &mut Value, path: &str) {
-    let segs = segments(path);
-    let Some(((name, None), parents)) = segs.split_last() else {
-        return; // array elements are not removed
-    };
-    if let Some(obj) = get_path_mut(v, parents).and_then(|p| p.as_object_mut()) {
-        obj.remove(*name);
+fn set_descend(value: &mut Value, rest: &str, new: Value) -> Option<()> {
+    let rest = rest.strip_prefix('.').unwrap_or(rest);
+    if rest.is_empty() {
+        *value = new;
+        return Some(());
     }
+    if let Some((idx, after)) = leading_index(rest) {
+        let slot = value.as_array_mut()?.get_mut(idx)?;
+        return set_descend(slot, after, new);
+    }
+    set_path(value, rest, new)
+}
+
+fn remove_path(v: &mut Value, path: &str) {
+    if path.is_empty() {
+        return;
+    }
+    if let Some(obj) = v.as_object_mut() {
+        if obj.contains_key(path) {
+            obj.remove(path);
+            return;
+        }
+    }
+    let Some(key) = longest_json_prefix(v, path) else {
+        return;
+    };
+    let rest = path[key.len()..].to_string();
+    let Some(child) = v.as_object_mut().and_then(|o| o.get_mut(&key)) else {
+        return;
+    };
+    remove_descend(child, &rest);
+}
+
+/// Walk indexes, then remove an object key. An array element itself is left
+/// in place (`lines[0]` is not deleted; `lines[0].sku` is).
+fn remove_descend(value: &mut Value, rest: &str) {
+    let rest = rest.strip_prefix('.').unwrap_or(rest);
+    if rest.is_empty() {
+        return;
+    }
+    if let Some((idx, after)) = leading_index(rest) {
+        let Some(slot) = value.as_array_mut().and_then(|a| a.get_mut(idx)) else {
+            return;
+        };
+        let after = after.strip_prefix('.').unwrap_or(after);
+        if after.is_empty() {
+            return;
+        }
+        remove_path(slot, after);
+        return;
+    }
+    remove_path(value, rest);
+}
+
+fn longest_json_prefix(v: &Value, path: &str) -> Option<String> {
+    let obj = v.as_object()?;
+    let mut best: Option<&str> = None;
+    for key in obj.keys() {
+        if key.len() >= path.len() || !path.starts_with(key.as_str()) {
+            continue;
+        }
+        let rest = &path[key.len()..];
+        if !(rest.starts_with('.') || rest.starts_with('[')) {
+            continue;
+        }
+        if best.map(|b| key.len() > b.len()).unwrap_or(true) {
+            best = Some(key.as_str());
+        }
+    }
+    best.map(str::to_string)
+}
+
+fn leading_index(rest: &str) -> Option<(usize, &str)> {
+    if !rest.starts_with('[') {
+        return None;
+    }
+    let end = rest.find(']')?;
+    let inside = &rest[1..end];
+    if inside.is_empty() || !inside.bytes().all(|b| b.is_ascii_digit()) {
+        return None;
+    }
+    Some((inside.parse().ok()?, &rest[end + 1..]))
 }
 
 /// Wrap generated records in the contract's `envelope` (RFC-038) so the

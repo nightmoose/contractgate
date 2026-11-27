@@ -111,6 +111,7 @@ fn opts(rows: usize, mode: SynthMode, seed: u64) -> SynthOptions {
         mode,
         seed,
         now_unix: now(),
+        hints: Default::default(),
     }
 }
 
@@ -248,6 +249,7 @@ fn same_seed_same_rows() {
         mode,
         seed,
         now_unix: n,
+        hints: Default::default(),
     };
     for mode in [SynthMode::Valid, SynthMode::Invalid] {
         let a = serde_json::to_value(synth::generate(&c, &mk(5, mode)).unwrap()).unwrap();
@@ -655,6 +657,7 @@ fn anchor_time_makes_freshness_repeat() {
         mode: SynthMode::Valid,
         seed,
         now_unix: anchor,
+        hints: Default::default(),
     };
     let a = serde_json::to_value(synth::generate(&c, &mk(9)).unwrap()).unwrap();
     let b = serde_json::to_value(synth::generate(&c, &mk(9)).unwrap()).unwrap();
