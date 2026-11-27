@@ -1,4 +1,4 @@
-//! `cg enforce --mode shadow` subcommand — run shadow enforcement against a
+//! `contractgate enforce --mode shadow` subcommand — run shadow enforcement against a
 //! live topic without touching the hot ingest path.  RFC-024 §G.
 
 use crate::contract::Contract;

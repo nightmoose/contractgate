@@ -16,8 +16,8 @@ pub enum ImportCmd {
     /// Convert a dbt model contract (`schema.yml`) into a DataContractGate contract.
     ///
     /// Examples:
-    ///   cg import dbt models/schema.yml --model orders --out contracts/orders.yaml
-    ///   cg import dbt models/schema.yml --check-against contracts/orders.yaml
+    ///   contractgate import dbt models/schema.yml --model orders --out contracts/orders.yaml
+    ///   contractgate import dbt models/schema.yml --check-against contracts/orders.yaml
     Dbt(DbtImportArgs),
 }
 

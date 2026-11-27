@@ -148,11 +148,11 @@ rows = json.load(open(sys.argv[1]))
 json.dump([r["record"] for r in rows], open(sys.argv[2], "w"))
 PY
 
-  # cg test exits 1 when records fail. Anything else means the harness broke.
+  # contractgate test exits 1 when records fail. Anything else means the harness broke.
   code=0
   contractgate test --contract "$contract" --data "$work/$name.records.json" \
     --format json --quiet > "$work/$name.result.json" || code=$?
-  [ "$code" -eq 1 ] || { echo "$name: expected exit 1 from cg test, got $code"; exit 1; }
+  [ "$code" -eq 1 ] || { echo "$name: expected exit 1 from contractgate test, got $code"; exit 1; }
 
   python3 - "$name" "$work/$name.rows.json" "$work/$name.result.json" <<'PY'
 import json, sys
@@ -422,4 +422,4 @@ Said plainly, so you can place it correctly in your stack.
 - [LangGraph tool-call gate](langgraph-tool-gate.md), [OpenAI, Anthropic, Pydantic, Instructor](openai-anthropic-structured-output.md), [Vercel AI SDK](vercel-ai-sdk.md)
 - [LLM output validation playbook](../llm-output-validation.md), [LLMGate reference](../llm-sdk-reference.md)
 - [Egress validation reference](../egress-validation-reference.md), [PII masking and leakage guard](../pii-masking-reference.md)
-- [Synthetic data reference](../synthetic-data-reference.md), [`cg test` reference](../cg-test-reference.md)
+- [Synthetic data reference](../synthetic-data-reference.md), [`contractgate test` reference](../cg-test-reference.md)

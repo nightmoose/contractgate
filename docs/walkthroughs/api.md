@@ -33,11 +33,11 @@ ontology:
 
 ## 2. The command
 
-Validate locally first with [`cg test`](../cg-test-reference.md), then send to
+Validate locally first with [`contractgate test`](../cg-test-reference.md), then send to
 the live endpoint:
 
 ```
-cg test --contract examples/contracts/api/user_events.yaml --data events.ndjson
+contractgate test --contract examples/contracts/api/user_events.yaml --data events.ndjson
 ```
 
 ```bash
@@ -84,10 +84,10 @@ populated and is routed to quarantine (unless `dry_run=true`).
 
 ## 5. Wire it in
 
-Gate a batch in CI before promotion — `cg test` exits non-zero on any failure:
+Gate a batch in CI before promotion — `contractgate test` exits non-zero on any failure:
 
 ```
-cg test --contract user_events.yaml --data batch.ndjson --quiet || exit 1
+contractgate test --contract user_events.yaml --data batch.ndjson --quiet || exit 1
 ```
 
 In an application, POST batches to `/v1/ingest/{contract_id}` and branch on each

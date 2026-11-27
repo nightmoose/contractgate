@@ -1,4 +1,4 @@
-//! `cg scaffold` subcommand — derive a draft contract from a Kafka topic or
+//! `contractgate scaffold` subcommand — derive a draft contract from a Kafka topic or
 //! local file.  RFC-024 §F.
 
 use crate::scaffold::{scaffold_from_file, ScaffoldConfig};

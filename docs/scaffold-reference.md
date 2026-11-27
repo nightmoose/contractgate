@@ -1,4 +1,4 @@
-# cg scaffold — Reference
+# contractgate scaffold — Reference
 
 Generate a draft DataContractGate contract from a live Kafka topic or a local
 schema file, then validate events against it in shadow mode before promoting.
@@ -7,10 +7,10 @@ schema file, then validate events against it in shadow mode before promoting.
 
 ## Overview
 
-`cg scaffold` samples events from a source, profiles field statistics, detects
+`contractgate scaffold` samples events from a source, profiles field statistics, detects
 PII candidates, and emits a draft CG YAML contract ready for human review.
 
-`cg enforce --mode shadow` replays sampled events through the existing
+`contractgate enforce --mode shadow` replays sampled events through the existing
 validation engine against a draft contract and reports violations — without
 touching the live ingest path.
 
@@ -24,7 +24,7 @@ always drafts until a human promotes them.
 
 | Requirement | Notes |
 |-------------|-------|
-| `cg` CLI ≥ MVP release | Build with `cargo build --features scaffold` |
+| `contractgate` CLI ≥ MVP release | Build with `cargo build --features scaffold` |
 | Kafka broker access | PLAINTEXT or SASL/PLAIN for MVP; mTLS / SCRAM in Phase 2 |
 | Schema Registry (optional) | Required for Avro/Protobuf schema-driven inference |
 | `$CG_KAFKA_BROKER` env var | Default broker address; overridden with `--broker` |
@@ -41,13 +41,13 @@ The fastest way to get started — no Kafka required.
 
 ```bash
 # JSON array or NDJSON
-cg scaffold --from-file samples.json --output contracts/orders.yaml
+contractgate scaffold --from-file samples.json --output contracts/orders.yaml
 
 # Avro schema
-cg scaffold --from-file schema.avsc --output contracts/orders.yaml
+contractgate scaffold --from-file schema.avsc --output contracts/orders.yaml
 
 # Protobuf schema
-cg scaffold --from-file events.proto --output contracts/orders.yaml
+contractgate scaffold --from-file events.proto --output contracts/orders.yaml
 ```
 
 Supported file extensions: `.json`, `.ndjson`, `.avsc`, `.proto`.
@@ -57,7 +57,7 @@ Supported file extensions: `.json`, `.ndjson`, `.avsc`, `.proto`.
 ## Scaffold from a live Kafka topic
 
 ```bash
-cg scaffold orders \
+contractgate scaffold orders \
   --broker kafka:9092 \
   --schema-registry http://sr:8081 \
   --records 5000 \
@@ -86,10 +86,10 @@ the topic.
 
 ## CLI reference
 
-### `cg scaffold`
+### `contractgate scaffold`
 
 ```
-cg scaffold <topic>
+contractgate scaffold <topic>
     --broker <host:port>            (default: $CG_KAFKA_BROKER)
     --schema-registry <url>         (default: $CG_SR_URL; omit for SR-less mode)
     --auth <plaintext|sasl-plain>   (default: plaintext; mTLS/SCRAM in Phase 2)
@@ -100,7 +100,7 @@ cg scaffold <topic>
     --dry-run                       (print merge diff; write no files)
     --from-earliest                 (start from topic beginning instead of tail)
 
-cg scaffold --from-file <path>
+contractgate scaffold --from-file <path>
     [--output, --dry-run same as above]
 ```
 
@@ -109,10 +109,10 @@ Sampling stops at whichever limit fires first: `--records` or `--wall-clock`.
 `--contract-id` enables **merge mode**: the new scaffold is merged with the
 existing contract version, preserving human edits. See [Merge semantics](#merge-semantics) below.
 
-### `cg enforce --mode shadow`
+### `contractgate enforce --mode shadow`
 
 ```
-cg enforce --mode shadow
+contractgate enforce --mode shadow
     --contract <file.yaml | id:uuid>
     --broker <host:port>
     --topic <topic>
@@ -143,7 +143,7 @@ path code.
 
 ## Reading the emitted contract
 
-`cg scaffold` emits a standard CG YAML contract. Fields are inferred from the
+`contractgate scaffold` emits a standard CG YAML contract. Fields are inferred from the
 sampled events. PII candidates are flagged with `# TODO` annotations — they
 are **never** emitted as live YAML `transform` blocks, regardless of
 confidence.
@@ -212,7 +212,7 @@ promoting.
 
 ## Merge semantics
 
-When you run `cg scaffold --contract-id <uuid>`, the new scaffold output is
+When you run `contractgate scaffold --contract-id <uuid>`, the new scaffold output is
 **merged** with the existing contract version at field granularity:
 
 | Situation | Result |
@@ -272,7 +272,7 @@ Credentials are never written into emitted contract YAML or test fixtures.
 
 - Promote a scaffolded contract: `POST /contracts/{id}/versions/1.0.0/promote`
 - Add metric formulas to the `metrics:` block manually before promoting
-- Run shadow enforcement before going live: `cg enforce --mode shadow`
+- Run shadow enforcement before going live: `contractgate enforce --mode shadow`
 - Full ingest reference: [v1-ingest-reference.md](v1-ingest-reference.md)
 - Quick start: [quickstart-5min.md](quickstart-5min.md)
 - RFC-024 design decisions: [rfcs/024-brownfield-scaffolder.md](rfcs/024-brownfield-scaffolder.md)

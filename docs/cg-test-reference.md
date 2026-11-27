@@ -1,4 +1,4 @@
-# `cg test` — Local Contract Dry-Run Reference
+# `contractgate test` — Local Contract Dry-Run Reference
 
 **RFC-076 | Added 2026-06-01**
 
@@ -10,7 +10,7 @@ against a contract YAML. No server, no Kafka, no network required.
 ## Synopsis
 
 ```
-cg test --contract <FILE> --data <FILE|-> [OPTIONS]
+contractgate test --contract <FILE> --data <FILE|-> [OPTIONS]
 ```
 
 ## Flags
@@ -116,21 +116,21 @@ Passing records are included by default; add `--quiet` to suppress them.
 
 ```bash
 # Edit the contract, re-run immediately:
-cg test --contract contracts/events.yaml --data samples.ndjson
+contractgate test --contract contracts/events.yaml --data samples.ndjson
 ```
 
-### Chain with `cg infer`
+### Chain with `contractgate infer`
 
 ```bash
 curl "https://api.example.com/events" \
-  | cg infer --from-stdin --name events \
-  | cg test --contract contracts/events.yaml --data -
+  | contractgate infer --from-stdin --name events \
+  | contractgate test --contract contracts/events.yaml --data -
 ```
 
 ### CI assertion
 
 ```bash
-cg test --contract contracts/events.yaml --data tests/fixtures/events.ndjson \
+contractgate test --contract contracts/events.yaml --data tests/fixtures/events.ndjson \
   --format json --quiet
 # exit 1 fails the build; exit 2 flags a harness problem
 ```
@@ -138,10 +138,10 @@ cg test --contract contracts/events.yaml --data tests/fixtures/events.ndjson \
 ### Fail fast during development
 
 ```bash
-cg test --contract c.yaml --data big_sample.ndjson --fail-fast
+contractgate test --contract c.yaml --data big_sample.ndjson --fail-fast
 ```
 
-## What `cg test` does NOT do
+## What `contractgate test` does NOT do
 
 - No remote contract lookup (`id:uuid` is not supported; pass a local YAML path).
 - No metric formula evaluation — `validate_metric` checks min/max envelope only;
@@ -151,6 +151,6 @@ cg test --contract c.yaml --data big_sample.ndjson --fail-fast
 
 ## See also
 
-- [`cg validate`](./cli-reference.md) — check whether a contract YAML is well-formed.
-- [`cg enforce`](./cli-reference.md) — shadow-enforce against live Kafka traffic.
-- [`cg infer`](./cli-reference.md) — derive a contract from a JSON response or Newman export.
+- [`contractgate validate`](./cli-reference.md) — check whether a contract YAML is well-formed.
+- [`contractgate enforce`](./cli-reference.md) — shadow-enforce against live Kafka traffic.
+- [`contractgate infer`](./cli-reference.md) — derive a contract from a JSON response or Newman export.

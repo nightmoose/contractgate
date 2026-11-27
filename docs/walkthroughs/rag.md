@@ -52,10 +52,10 @@ quality:
 ## 2. The command
 
 Validate a data file locally — no server, no network
-([`cg test` reference](../cg-test-reference.md)):
+([`contractgate test` reference](../cg-test-reference.md)):
 
 ```
-cg test --contract examples/contracts/rag/rag_corpus_ingest.yaml --data corpus.ndjson
+contractgate test --contract examples/contracts/rag/rag_corpus_ingest.yaml --data corpus.ndjson
 ```
 
 ## 3. A passing record
@@ -125,9 +125,9 @@ for record in raw_records:
     pipeline.chunk_embed_and_index(record)    # your existing steps, unchanged
 ```
 
-In CI, gate a corpus file before a rebuild — `cg test` exits non-zero if any
+In CI, gate a corpus file before a rebuild — `contractgate test` exits non-zero if any
 record fails:
 
 ```
-cg test --contract rag_corpus_ingest.yaml --data corpus.ndjson --quiet || exit 1
+contractgate test --contract rag_corpus_ingest.yaml --data corpus.ndjson --quiet || exit 1
 ```

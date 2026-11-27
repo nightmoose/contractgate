@@ -1,9 +1,9 @@
-# `cg diff`: Drift Check Against the Deployed Contract
+# `contractgate diff`: Drift Check Against the Deployed Contract
 
 **Added 2026-11-26 | Part of the CLI GitOps flow (RFC-014), implements the drift half of RFC-015. Not in the 0.4.2 release; it ships with the next one.**
 
 Compare the contract YAML files in your repo with the latest stable version
-deployed on the gateway. `cg diff` changes nothing, locally or on the gateway.
+deployed on the gateway. `contractgate diff` changes nothing, locally or on the gateway.
 It exits non-zero when they differ, so a scheduled job or a pull request check
 can fail on drift.
 
@@ -12,11 +12,11 @@ can fail on drift.
 ## Synopsis
 
 ```
-cg diff [--dir <DIR>] [--name <NAME>] [--fail-on-remote-only] [--json]
+contractgate diff [--dir <DIR>] [--name <NAME>] [--fail-on-remote-only] [--json]
 ```
 
 It needs an API key (`CONTRACTGATE_API_KEY` or `--api-key`) and the gateway URL
-from `.contractgate.yml`, exactly like `cg push` and `cg pull`.
+from `.contractgate.yml`, exactly like `contractgate push` and `contractgate pull`.
 
 ## Flags
 
@@ -31,8 +31,8 @@ from `.contractgate.yml`, exactly like `cg push` and `cg pull`.
 
 Each local file is compared with the latest stable version of the contract that
 has the same `name`. The comparison is on the file text, ignoring line endings
-and trailing whitespace. This is the same text `cg pull` writes and `cg push`
-sends, so `cg pull` followed by `cg diff` is always clean.
+and trailing whitespace. This is the same text `contractgate pull` writes and `contractgate push`
+sends, so `contractgate pull` followed by `contractgate diff` is always clean.
 
 | Status | Meaning | Counts as drift |
 |---|---|---|
@@ -53,7 +53,7 @@ on the gateway is not what the pipeline enforces, so it is not the baseline.
 | `1` | Drift: at least one file is `drifted` or `not_deployed` (or `remote_only` with `--fail-on-remote-only`). |
 | `2` | The check could not complete: nothing matched the directory, a file could not be read or parsed, the gateway could not be reached or rejected the key, or `--name` matched no local file. Error wins over drift. |
 
-These match `cg test` and `cg synth` (0 clean, 1 findings, 2 harness problem).
+These match `contractgate test` and `contractgate synth` (0 clean, 1 findings, 2 harness problem).
 As for every command that talks to the gateway, a missing API key exits `11`
 and an unreadable `.contractgate.yml` exits `10`.
 
@@ -129,8 +129,8 @@ broken check from real drift.
 
 ## Notes
 
-- Read-only. It never pushes, pulls or deploys. To fix drift, run `cg push`
-  (repo is right) or `cg pull` (gateway is right).
+- Read-only. It never pushes, pulls or deploys. To fix drift, run `contractgate push`
+  (repo is right) or `contractgate pull` (gateway is right).
 - It does not say whether a change is breaking. For that, see
   [Impact analysis](impact-analysis-reference.md) and `POST /contracts/diff`.
 - Contracts that share a name in one organization are matched on the first one

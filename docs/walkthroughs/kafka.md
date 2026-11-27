@@ -34,11 +34,11 @@ quality:
 
 ## 2. The command
 
-Validate locally with [`cg test`](../cg-test-reference.md) before enabling the
+Validate locally with [`contractgate test`](../cg-test-reference.md) before enabling the
 stream:
 
 ```
-cg test --contract examples/contracts/kafka/clickstream.yaml --data events.ndjson
+contractgate test --contract examples/contracts/kafka/clickstream.yaml --data events.ndjson
 ```
 
 Then enable Kafka ingress from the contract's **Kafka** tab in the dashboard.
@@ -60,7 +60,7 @@ p.produce("cg-<contract_id>-raw", value=event)
 ```
 
 [`examples/contracts/kafka/pass.json`](../../examples/contracts/kafka/pass.json)
-pins a fixed epoch for repeatable `cg test` runs — regenerate `timestamp` to
+pins a fixed epoch for repeatable `contractgate test` runs — regenerate `timestamp` to
 the current epoch before re-running; the `freshness` rule rejects anything
 older than `max_age_seconds`:
 
@@ -69,7 +69,7 @@ older than `max_age_seconds`:
 ```
 
 Valid events land on `cg-{contract_id}-clean` with a `cg-contract-version`
-header. Locally, `cg test` reports:
+header. Locally, `contractgate test` reports:
 
 ```
   PASS  1
@@ -109,6 +109,6 @@ p.produce("cg-<contract_id>-raw", value=event)
 c.subscribe(["cg-<contract_id>-clean"])
 ```
 
-Gate the contract itself in CI with `cg test` before shipping a contract change.
+Gate the contract itself in CI with `contractgate test` before shipping a contract change.
 See the [Kafka ingress reference](../kafka-ingress-reference.md) for connection
 settings and credential rotation.

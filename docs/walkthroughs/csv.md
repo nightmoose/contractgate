@@ -60,10 +60,10 @@ curl -X POST https://your-instance/contracts/infer/csv \
 ```
 
 ```
-cg test --contract signups.yaml --data signups.ndjson
+contractgate test --contract signups.yaml --data signups.ndjson
 ```
 
-> `cg test` takes JSON/NDJSON, not raw CSV — convert rows to JSON objects
+> `contractgate test` takes JSON/NDJSON, not raw CSV — convert rows to JSON objects
 > (one per line) before testing, or POST them to `/v1/ingest`.
 
 ## 3. A passing record
@@ -104,7 +104,7 @@ Re-infer when the source schema legitimately changes; otherwise gate new files
 in CI:
 
 ```
-cg test --contract signups.yaml --data new_signups.ndjson --quiet || exit 1
+contractgate test --contract signups.yaml --data new_signups.ndjson --quiet || exit 1
 ```
 
 For continuous ingest, POST rows (as JSON) to

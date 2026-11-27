@@ -20,7 +20,7 @@ contracts in [`examples/contracts/`](../../examples/contracts/) are the runnable
 sources used in each walkthrough.
 
 New to DataContractGate? Start with [api.md](api.md) — it's the most common
-evaluation entry point — then [`cg test`](../cg-test-reference.md) for local
+evaluation entry point — then [`contractgate test`](../cg-test-reference.md) for local
 validation with no server.
 
 Authoring a new walkthrough: copy [`_TEMPLATE.md`](_TEMPLATE.md) and fill the

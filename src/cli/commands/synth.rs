@@ -187,7 +187,11 @@ pub fn run(args: &SynthArgs) -> Result<i32> {
         }
         Format::Json => {
             let fields = &compiled.contract.ontology.entities;
-            let rows: Vec<_> = out.rows.iter().map(|r| synth::order_record(r, fields)).collect();
+            let rows: Vec<_> = out
+                .rows
+                .iter()
+                .map(|r| synth::order_record(r, fields))
+                .collect();
             serde_json::to_string_pretty(&rows)? + "\n"
         }
         Format::Csv => to_csv(&out, &compiled.contract.ontology.entities)?,

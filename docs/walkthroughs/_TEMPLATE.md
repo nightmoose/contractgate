@@ -29,10 +29,10 @@ Copy-paste YAML for this surface. Link to the runnable file in
 
 ## 2. The command
 
-The exact invocation. For local validation, `cg test`:
+The exact invocation. For local validation, `contractgate test`:
 
 ```
-cg test --contract <contract>.yaml --data <data>.ndjson
+contractgate test --contract <contract>.yaml --data <data>.ndjson
 ```
 
 ## 3. A passing record

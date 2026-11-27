@@ -34,7 +34,7 @@ export CONTRACT_ID=<paste id here>
 pending quarantine events exist.
 
 ```bash
-cg deploy-contract contracts/user_events.yaml \
+contractgate deploy-contract contracts/user_events.yaml \
   --source demo \
   --deployed-by "$USER"
 ```

@@ -18,13 +18,13 @@ pub enum ExportCmd {
     /// Generate dbt tests (schema.yml + singular SQL tests) from a contract.
     ///
     /// Examples:
-    ///   cg export dbt-tests contracts/orders.yaml --model orders --out dbt/orders
-    ///   cg export dbt-tests contracts/orders.yaml --dialect snowflake
+    ///   contractgate export dbt-tests contracts/orders.yaml --model orders --out dbt/orders
+    ///   contractgate export dbt-tests contracts/orders.yaml --dialect snowflake
     DbtTests(DbtTestsArgs),
     /// Export a contract as a dbt model contract (`schema.yml`).
     ///
     /// Examples:
-    ///   cg export dbt contracts/orders.yaml --model orders --out models/schema.yml
+    ///   contractgate export dbt contracts/orders.yaml --model orders --out models/schema.yml
     Dbt(DbtArgs),
 }
 

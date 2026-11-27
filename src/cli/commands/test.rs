@@ -1,4 +1,4 @@
-//! `cg test` subcommand — local contract dry-run against sample data.  RFC-076.
+//! `contractgate test` subcommand — local contract dry-run against sample data.  RFC-076.
 //!
 //! Loads a contract YAML and runs every record in a local data file (or stdin)
 //! through the existing `validate()` engine.  No server, no Kafka, no network.

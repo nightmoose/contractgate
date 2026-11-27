@@ -41,11 +41,11 @@ quality:
 
 ## 2. The command
 
-Validate locally with [`cg test`](../cg-test-reference.md) before enabling the
+Validate locally with [`contractgate test`](../cg-test-reference.md) before enabling the
 stream:
 
 ```
-cg test --contract examples/contracts/kinesis/telemetry.yaml --data samples.ndjson
+contractgate test --contract examples/contracts/kinesis/telemetry.yaml --data samples.ndjson
 ```
 
 Then enable Kinesis ingress via
@@ -67,7 +67,7 @@ A producer writes to `cg-{contract_id}-raw`:
 ```
 
 [`examples/contracts/kinesis/pass.json`](../../examples/contracts/kinesis/pass.json)
-pins a fixed epoch for repeatable `cg test` runs — regenerate `timestamp` to
+pins a fixed epoch for repeatable `contractgate test` runs — regenerate `timestamp` to
 the current epoch before re-running; the 1-hour `freshness` window here is
 tighter than Kafka's:
 
@@ -75,7 +75,7 @@ tighter than Kafka's:
 { "device_id": "dev-01", "metric": "cpu", "value": 42.5, "timestamp": 1784249150 }
 ```
 
-Valid records land on `cg-{contract_id}-clean`. Locally, `cg test` reports:
+Valid records land on `cg-{contract_id}-clean`. Locally, `contractgate test` reports:
 
 ```
   PASS  1
@@ -105,6 +105,6 @@ inspection or replay; the original payload is preserved.
 
 Producers write to the raw stream; downstream consumers read from the clean
 stream — only validated records reach them. No application logic change beyond
-the stream names. Gate the contract in CI with `cg test` before shipping a
+the stream names. Gate the contract in CI with `contractgate test` before shipping a
 change. See the [Kinesis ingress reference](../kinesis-ingress-reference.md) for
 IAM policy, environment variables, and credential rotation.

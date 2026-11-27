@@ -32,16 +32,16 @@ partner_payout_feed.yaml         + .pass.json / .fail.json
 
 Each `.pass.json` should validate with 0 violations. Each `.fail.json` is a concrete, intentional violation (wrong enum, case, pattern, or range).
 
-## Validate locally (`cg test`)
+## Validate locally (`contractgate test`)
 
 From the repo root (requires a built CLI — `cargo build -p contractgate --bin contractgate`, then `alias cg=…` / `cg` on PATH):
 
 ```bash
-cg test --contract examples/contract-chain/stripe/stripe_charges_raw.yaml \
+contractgate test --contract examples/contract-chain/stripe/stripe_charges_raw.yaml \
         --data examples/contract-chain/stripe/stripe_charges_raw.pass.json
 # expect exit 0
 
-cg test --contract examples/contract-chain/stripe/stripe_charges_raw.yaml \
+contractgate test --contract examples/contract-chain/stripe/stripe_charges_raw.yaml \
         --data examples/contract-chain/stripe/stripe_charges_raw.fail.json
 # expect exit 1 (amount < 0, currency case, status enum)
 ```

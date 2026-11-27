@@ -23,7 +23,7 @@ On failure it:
 ## CLI Usage
 
 ```
-cg deploy-contract <FILE> [OPTIONS]
+contractgate deploy-contract <FILE> [OPTIONS]
 ```
 
 ### Arguments
@@ -46,15 +46,15 @@ cg deploy-contract <FILE> [OPTIONS]
 
 ```bash
 # Deploy from CI, recording source and job ID
-cg deploy-contract contracts/orders.yaml \
+contractgate deploy-contract contracts/orders.yaml \
   --source yardi \
   --deployed-by "$CI_JOB_ID"
 
 # Dry-run: validate YAML without touching the gateway
-cg deploy-contract contracts/events.yaml --dry-run
+contractgate deploy-contract contracts/events.yaml --dry-run
 
 # Machine-readable output for downstream scripts
-cg deploy-contract contracts/leases.yaml --json | jq .deprecated_count
+contractgate deploy-contract contracts/leases.yaml --json | jq .deprecated_count
 ```
 
 ---

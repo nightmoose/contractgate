@@ -44,8 +44,8 @@ enum Cmd {
     /// quarantine events exist.  Admin / service-role key required.
     ///
     /// Examples:
-    ///   cg deploy-contract contracts/orders.yaml --source yardi --deployed-by ci-job-42
-    ///   cg deploy-contract contracts/events.yaml --dry-run
+    ///   contractgate deploy-contract contracts/orders.yaml --source yardi --deployed-by ci-job-42
+    ///   contractgate deploy-contract contracts/events.yaml --dry-run
     #[command(name = "deploy-contract")]
     DeployContract(deploy::DeployArgs),
     /// Walk contracts dir, parse YAML, push to gateway.
@@ -58,24 +58,24 @@ enum Cmd {
     /// version or is not deployed), 2 = the check could not run.
     ///
     /// Examples:
-    ///   cg diff
-    ///   cg diff --name orders --json
+    ///   contractgate diff
+    ///   contractgate diff --name orders --json
     Diff(diff::DiffArgs),
     /// Parse + compile each contract YAML locally. No network.
     Validate(validate::ValidateArgs),
     /// Derive a draft contract from a Kafka topic or local file (RFC-024).
     ///
     /// Examples:
-    ///   cg scaffold orders --broker kafka:9092 --output contracts/orders.yaml
-    ///   cg scaffold --from-file samples.json --name user_events
-    ///   cg scaffold --from-file schema.avsc --name orders
-    ///   cg scaffold --from-file events.proto --output contracts/events.yaml
+    ///   contractgate scaffold orders --broker kafka:9092 --output contracts/orders.yaml
+    ///   contractgate scaffold --from-file samples.json --name user_events
+    ///   contractgate scaffold --from-file schema.avsc --name orders
+    ///   contractgate scaffold --from-file events.proto --output contracts/events.yaml
     Scaffold(scaffold::ScaffoldArgs),
     /// Shadow-enforce a contract against live Kafka traffic (RFC-024).
     ///
     /// Examples:
-    ///   cg enforce --mode shadow --contract contracts/orders.yaml --topic orders
-    ///   cg enforce --mode shadow --contract my.yaml --topic events --report json
+    ///   contractgate enforce --mode shadow --contract contracts/orders.yaml --topic orders
+    ///   contractgate enforce --mode shadow --contract my.yaml --topic events --report json
     Enforce(enforce::EnforceArgs),
     /// Infer a DataContractGate contract from a JSON response (RFC-046).
     ///
@@ -86,11 +86,11 @@ enum Cmd {
     ///
     /// Examples:
     ///   curl "https://api.example.com/users/1" \
-    ///     | cg infer --from-stdin --name users --out contracts/users.yaml
+    ///     | contractgate infer --from-stdin --name users --out contracts/users.yaml
     ///   curl -H "Authorization: Bearer $TOKEN" "https://api.census.gov/..." \
-    ///     | cg infer --from-stdin --name census_acs5
+    ///     | contractgate infer --from-stdin --name census_acs5
     ///   newman run collection.json --reporters json --reporter-json-export out.json
-    ///   cg infer --from-newman out.json --out contracts/orders.yaml --odcs
+    ///   contractgate infer --from-newman out.json --out contracts/orders.yaml --odcs
     Infer(infer::InferArgs),
     /// Dry-run a contract against local sample data. No server, no Kafka. (RFC-076)
     ///
@@ -98,15 +98,15 @@ enum Cmd {
     /// and prints a pass/fail summary with per-record violation detail.
     ///
     /// Accepts NDJSON, a JSON array, or a single JSON object.
-    /// Use `-` as --data to read from stdin (chainable with `cg infer`).
+    /// Use `-` as --data to read from stdin (chainable with `contractgate infer`).
     ///
     /// Exit codes: 0 = all pass, 1 = violations found, 2 = load/parse error.
     ///
     /// Examples:
-    ///   cg test --contract contracts/events.yaml --data samples.ndjson
-    ///   cg test --contract c.yaml --data events.json --format json
-    ///   cg test --contract c.yaml --data '[{"user_id":"x"}]'
-    ///   cg infer --from-stdin --name orders | cg test --contract orders.yaml --data -
+    ///   contractgate test --contract contracts/events.yaml --data samples.ndjson
+    ///   contractgate test --contract c.yaml --data events.json --format json
+    ///   contractgate test --contract c.yaml --data '[{"user_id":"x"}]'
+    ///   contractgate infer --from-stdin --name orders | contractgate test --contract orders.yaml --data -
     Test(test::TestArgs),
     /// Generate synthetic rows from a contract's rules. Local, no network. (RFC-117)
     ///
@@ -117,16 +117,16 @@ enum Cmd {
     /// Exit codes: 0 = rows written, 1 = a rule cannot be satisfied, 2 = load error.
     ///
     /// Examples:
-    ///   cg synth contracts/orders.yaml --rows 500 --seed 42
-    ///   cg synth contracts/orders.yaml --rows 50 --invalid --format csv -o bad.csv
-    ///   cg synth datacontract.yaml --rows 100 --seed 1 --synth-config synth.yaml
+    ///   contractgate synth contracts/orders.yaml --rows 500 --seed 42
+    ///   contractgate synth contracts/orders.yaml --rows 50 --invalid --format csv -o bad.csv
+    ///   contractgate synth datacontract.yaml --rows 100 --seed 1 --synth-config synth.yaml
     Synth(synth::SynthArgs),
     /// Infer a draft contract from a CSV, validate every row, and write a
     /// Readiness Review report (contract.yaml, report.html, rejected.csv).
     ///
     /// Examples:
-    ///   cg review data.csv
-    ///   cg review data.csv --out ./review-out --name orders
+    ///   contractgate review data.csv
+    ///   contractgate review data.csv --out ./review-out --name orders
     Review(review::ReviewArgs),
     /// Export a contract to another format. (RFC-119, RFC-120)
     Export(export::ExportArgs),
@@ -136,8 +136,8 @@ enum Cmd {
     /// violations with plain-English reasons. (RFC-119)
     ///
     /// Examples:
-    ///   cg check-table contracts/orders.yaml --table orders --dialect snowflake --key order_id
-    ///   cg check-table contracts/orders.yaml --table orders --dialect postgres \
+    ///   contractgate check-table contracts/orders.yaml --table orders --dialect snowflake --key order_id
+    ///   contractgate check-table contracts/orders.yaml --table orders --dialect postgres \
     ///     --key order_id --execute --conn postgres://localhost/mydb
     #[command(name = "check-table")]
     CheckTable(check_table::CheckTableArgs),
