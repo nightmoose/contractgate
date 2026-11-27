@@ -2824,6 +2824,163 @@ pub fn flatten_record(v: &Value, prefix: &str, out: &mut Vec<(String, String)>) 
     }
 }
 
+/// Leaf dot-path templates for `fields`, in contract declaration order
+/// (ODCS `properties[]` order, or native field order). Nested object fields
+/// are flattened (`a.b`); array item leaves use `[]` with no index, since
+/// row-to-row array length varies. Used to give CSV columns and JSON keys a
+/// stable, seed-independent order instead of first-seen-in-data order.
+pub fn leaf_templates(fields: &[FieldDefinition]) -> Vec<String> {
+    let mut out = Vec::new();
+    leaf_templates_into(fields, "", &mut out);
+    out
+}
+
+fn leaf_templates_into(fields: &[FieldDefinition], prefix: &str, out: &mut Vec<String>) {
+    for f in fields {
+        let path = join(prefix, &f.name);
+        match (&f.field_type, &f.properties, &f.items) {
+            (FieldType::Object, Some(props), _) if !props.is_empty() => {
+                leaf_templates_into(props, &path, out);
+            }
+            (FieldType::Array, _, Some(item)) => {
+                let item_path = format!("{path}[]");
+                match item.properties.as_deref() {
+                    Some(props) if !props.is_empty() => {
+                        leaf_templates_into(props, &item_path, out);
+                    }
+                    _ => out.push(item_path),
+                }
+            }
+            _ => out.push(path),
+        }
+    }
+}
+
+/// Sort key for an actual flattened column name (e.g. `tags[2].sku` or
+/// `Amount [A]`) against `templates` from [`leaf_templates`]: rank by the
+/// template's position (array indices collapsed to `[]`), then by the
+/// array index itself, then by the literal name as a final tie-break.
+pub fn column_sort_key(col: &str, templates: &[String]) -> (usize, Vec<u64>, String) {
+    let (template, indices) = column_template(col);
+    let rank = templates
+        .iter()
+        .position(|t| *t == template)
+        .unwrap_or(templates.len());
+    (rank, indices, col.to_string())
+}
+
+/// Split a flattened column name into its template (array indices replaced
+/// with `[]`) and the indices themselves, in order. A bracketed segment
+/// that is not purely digits (e.g. the literal column `Amount [A]`) is left
+/// untouched.
+fn column_template(col: &str) -> (String, Vec<u64>) {
+    let mut template = String::new();
+    let mut indices = Vec::new();
+    let mut chars = col.chars().peekable();
+    while let Some(c) = chars.next() {
+        if c == '[' {
+            let mut digits = String::new();
+            while let Some(&d) = chars.peek() {
+                if d.is_ascii_digit() {
+                    digits.push(d);
+                    chars.next();
+                } else {
+                    break;
+                }
+            }
+            if !digits.is_empty() && chars.peek() == Some(&']') {
+                chars.next();
+                template.push_str("[]");
+                indices.push(digits.parse().unwrap_or(0));
+                continue;
+            }
+            template.push('[');
+            template.push_str(&digits);
+            continue;
+        }
+        template.push(c);
+    }
+    (template, indices)
+}
+
+/// A JSON value serialized with explicit, caller-chosen object key order
+/// (independent of `serde_json`'s default alphabetical `Map` order).
+pub enum OrderedJson {
+    Obj(Vec<(String, OrderedJson)>),
+    Arr(Vec<OrderedJson>),
+    Scalar(Value),
+}
+
+impl Serialize for OrderedJson {
+    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        use serde::ser::{SerializeMap, SerializeSeq};
+        match self {
+            OrderedJson::Obj(entries) => {
+                let mut map = s.serialize_map(Some(entries.len()))?;
+                for (k, v) in entries {
+                    map.serialize_entry(k, v)?;
+                }
+                map.end()
+            }
+            OrderedJson::Arr(items) => {
+                let mut seq = s.serialize_seq(Some(items.len()))?;
+                for v in items {
+                    seq.serialize_element(v)?;
+                }
+                seq.end()
+            }
+            OrderedJson::Scalar(v) => v.serialize(s),
+        }
+    }
+}
+
+/// Reorder a generated record's keys (recursing into nested objects and
+/// arrays) to match the contract's declared field order, for stable JSON
+/// output. Keys present in `v` but not declared on the matching field (not
+/// expected from this generator, but handled defensively) keep their
+/// original relative order, appended last.
+pub fn order_record(v: &Value, fields: &[FieldDefinition]) -> OrderedJson {
+    match v {
+        Value::Object(m) => order_object(m, fields),
+        other => order_value(other, None),
+    }
+}
+
+fn order_object(m: &Map<String, Value>, fields: &[FieldDefinition]) -> OrderedJson {
+    let mut entries = Vec::new();
+    let mut seen = HashSet::new();
+    for f in fields {
+        if let Some(child) = m.get(&f.name) {
+            seen.insert(f.name.as_str());
+            entries.push((f.name.clone(), order_value(child, Some(f))));
+        }
+    }
+    for (k, val) in m {
+        if !seen.contains(k.as_str()) {
+            entries.push((k.clone(), order_value(val, None)));
+        }
+    }
+    OrderedJson::Obj(entries)
+}
+
+fn order_value(v: &Value, def: Option<&FieldDefinition>) -> OrderedJson {
+    match v {
+        Value::Object(m) => match def.and_then(|d| d.properties.as_deref()) {
+            Some(fields) => order_object(m, fields),
+            None => OrderedJson::Obj(
+                m.iter()
+                    .map(|(k, val)| (k.clone(), order_value(val, None)))
+                    .collect(),
+            ),
+        },
+        Value::Array(items) => {
+            let item_def = def.and_then(|d| d.items.as_deref());
+            OrderedJson::Arr(items.iter().map(|it| order_value(it, item_def)).collect())
+        }
+        other => OrderedJson::Scalar(other.clone()),
+    }
+}
+
 /// Is `a` the same path as `b`, or a parent or child of it?
 /// Lowercase words of a field name: `customerEmail`, `customer_email` and
 /// `customer-email` all give `["customer", "email"]`.

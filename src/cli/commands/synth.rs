@@ -11,7 +11,6 @@
 use crate::synth::{self, flatten_record, SynthMode, SynthOptions};
 use anyhow::Result;
 use clap::Args;
-use serde_json::Value;
 use std::{io::Write, path::PathBuf};
 
 #[derive(Debug, Args)]
@@ -182,15 +181,16 @@ pub fn run(args: &SynthArgs) -> Result<i32> {
             };
             serde_json::to_string_pretty(&v)? + "\n"
         }
-        Format::Json => {
-            let v = if args.invalid {
-                serde_json::to_value(&out.invalid_rows)?
-            } else {
-                Value::Array(out.rows)
-            };
+        Format::Json if args.invalid => {
+            let v = serde_json::to_value(&out.invalid_rows)?;
             serde_json::to_string_pretty(&v)? + "\n"
         }
-        Format::Csv => to_csv(&out)?,
+        Format::Json => {
+            let fields = &compiled.contract.ontology.entities;
+            let rows: Vec<_> = out.rows.iter().map(|r| synth::order_record(r, fields)).collect();
+            serde_json::to_string_pretty(&rows)? + "\n"
+        }
+        Format::Csv => to_csv(&out, &compiled.contract.ontology.entities)?,
     };
     match &args.out {
         Some(p) => std::fs::write(p, text)?,
@@ -200,8 +200,11 @@ pub fn run(args: &SynthArgs) -> Result<i32> {
 }
 
 /// Nested objects become dot-path columns; arrays are JSON text. Invalid
-/// rows get `_broken_field` and `_broken_rule` columns.
-fn to_csv(out: &synth::SynthOutput) -> Result<String> {
+/// rows get `_broken_field` and `_broken_rule` columns. Column order
+/// follows the contract's declared field order, not the order columns
+/// happen to appear in the generated rows (which varies by seed, since
+/// optional fields are present on different rows).
+fn to_csv(out: &synth::SynthOutput, fields: &[crate::contract::FieldDefinition]) -> Result<String> {
     let mut rows: Vec<Vec<(String, String)>> = Vec::new();
     if out.mode == SynthMode::Invalid {
         for r in &out.invalid_rows {
@@ -218,6 +221,7 @@ fn to_csv(out: &synth::SynthOutput) -> Result<String> {
             rows.push(cells);
         }
     }
+    let templates = synth::leaf_templates(fields);
     let mut header: Vec<String> = Vec::new();
     for cells in &rows {
         for (k, _) in cells {
@@ -226,6 +230,7 @@ fn to_csv(out: &synth::SynthOutput) -> Result<String> {
             }
         }
     }
+    header.sort_by_key(|h| synth::column_sort_key(h, &templates));
     let mut w = csv::Writer::from_writer(Vec::new());
     w.write_record(&header)?;
     for cells in &rows {

@@ -455,6 +455,49 @@ fn cli_writes_json_and_csv() {
     assert!(String::from_utf8_lossy(&e.stderr).contains("min_length"));
 }
 
+/// CSV header order (nested objects and an array included) must follow the
+/// contract's declared field order, not the order columns happen to appear
+/// in the generated rows. Checked by confirming the header is already in
+/// the canonical order the contract declares, across several seeds.
+#[test]
+fn csv_header_order_is_stable_across_seeds_with_nested_and_array_fields() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("c.yaml");
+    std::fs::write(&path, RICH).unwrap();
+    let bin = env!("CARGO_BIN_EXE_contractgate");
+    let compiled = compile(RICH);
+    let templates = synth::leaf_templates(&compiled.contract.ontology.entities);
+
+    for seed in ["1", "2", "4", "42", "1000"] {
+        let out = std::process::Command::new(bin)
+            .args(["synth", path.to_str().unwrap(), "--rows", "60", "--seed"])
+            .arg(seed)
+            .args(["--format", "csv"])
+            .output()
+            .unwrap();
+        assert_eq!(
+            out.status.code(),
+            Some(0),
+            "{}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+        let text = String::from_utf8(out.stdout).unwrap();
+        let header: Vec<String> = text
+            .lines()
+            .next()
+            .unwrap()
+            .split(',')
+            .map(str::to_string)
+            .collect();
+        let mut sorted = header.clone();
+        sorted.sort_by_key(|h| synth::column_sort_key(h, &templates));
+        assert_eq!(
+            header, sorted,
+            "seed {seed}: header is not in the contract's declared field order"
+        );
+    }
+}
+
 const V11: &str = r#"
 version: "1.0"
 name: synth_v11

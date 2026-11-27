@@ -236,6 +236,86 @@ fn cli_synth_csv_matches_the_three_columns() {
 }
 
 #[test]
+fn csv_header_order_follows_declared_field_order_regardless_of_seed() {
+    let tmp = tempfile::tempdir().unwrap();
+    let contract = tmp.path().join("datacontract.yaml");
+    std::fs::write(&contract, CONTRACT).unwrap();
+    for seed in [1u64, 2, 7, 42, 1000] {
+        let out = tmp.path().join(format!("rows-{seed}.csv"));
+        let code = synth::run(&SynthArgs {
+            contract: contract.clone(),
+            rows: 20,
+            invalid: false,
+            seed: Some(seed),
+            anchor: None,
+            envelope: false,
+            format: Format::Csv,
+            out: Some(out.clone()),
+            schema_object: None,
+            synth_config: None,
+        })
+        .unwrap();
+        assert_eq!(code, 0, "seed {seed}");
+        let text = std::fs::read_to_string(&out).unwrap();
+        let mut reader = csv::Reader::from_reader(text.as_bytes());
+        let header: Vec<String> = reader
+            .headers()
+            .unwrap()
+            .iter()
+            .map(str::to_string)
+            .collect();
+        assert_eq!(
+            header,
+            ["Amount [A]", "Rate.x", "plain"],
+            "seed {seed}: header order must match the contract's declared property order, not seed-dependent first-seen order"
+        );
+    }
+}
+
+#[test]
+fn json_row_key_order_follows_declared_field_order() {
+    let tmp = tempfile::tempdir().unwrap();
+    let contract = tmp.path().join("datacontract.yaml");
+    std::fs::write(&contract, CONTRACT).unwrap();
+    for seed in [1u64, 42] {
+        let out = tmp.path().join(format!("rows-{seed}.json"));
+        let code = synth::run(&SynthArgs {
+            contract: contract.clone(),
+            rows: 20,
+            invalid: false,
+            seed: Some(seed),
+            anchor: None,
+            envelope: false,
+            format: Format::Json,
+            out: Some(out.clone()),
+            schema_object: None,
+            synth_config: None,
+        })
+        .unwrap();
+        assert_eq!(code, 0, "seed {seed}");
+        let text = std::fs::read_to_string(&out).unwrap();
+        // Key order survives only in the raw text, not after re-parsing into
+        // a plain `serde_json::Value` (whose `Map` sorts keys), so check the
+        // text directly: every row's keys must appear in declared order.
+        for line_group in text.split("},") {
+            let positions: Vec<(usize, &str)> = ["Amount [A]", "Rate.x", "plain"]
+                .iter()
+                .filter_map(|k| {
+                    let needle = format!("\"{k}\"");
+                    line_group.find(&needle).map(|pos| (pos, *k))
+                })
+                .collect();
+            let mut sorted = positions.clone();
+            sorted.sort_by_key(|(pos, _)| *pos);
+            assert_eq!(
+                positions, sorted,
+                "seed {seed}: keys out of declared order in: {line_group}"
+            );
+        }
+    }
+}
+
+#[test]
 fn cli_version_comes_from_the_crate() {
     let out = std::process::Command::new(env!("CARGO_BIN_EXE_contractgate"))
         .arg("--version")
