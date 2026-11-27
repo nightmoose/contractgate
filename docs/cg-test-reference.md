@@ -18,21 +18,44 @@ cg test --contract <FILE> --data <FILE|-> [OPTIONS]
 | Flag | Default | Description |
 |---|---|---|
 | `--contract <FILE>` | *(required)* | Path to contract YAML file. |
-| `--data <FILE>` | *(required)* | Input data: NDJSON file, JSON array file, or single JSON object file. Use `-` to read from stdin. |
+| `--data <FILE>` | *(required)* | Input data: NDJSON file, JSON array file, single JSON object file, or CSV file. Use `-` to read from stdin. |
+| `--data-format auto\|json\|ndjson\|csv` | `auto` | Input data format. `auto` detects CSV from a `.csv` extension; anything else is parsed as JSON array / object or NDJSON, whichever matches. |
 | `--format human\|json` | `human` | Output format. `json` emits a machine-readable summary with per-record violation detail. |
 | `--fail-fast` | off | Stop at the first failing record. Uniqueness batch checks are skipped in this mode. |
 | `--quiet` | off | Print summary line only; suppress per-violation detail in human mode; suppress passing records in json mode. |
 
 ## Input formats
 
-`--data` accepts three shapes, auto-detected:
+`--data` accepts four shapes:
 
 - **NDJSON** — one JSON object per line (streams large files without loading all into memory).
 - **JSON array** — `[{...}, {...}]`.
 - **Single JSON object** — `{...}` (one record; fastest inner-loop iteration).
+- **CSV** — one header row plus one record per line, typed against the contract.
+  This is what `contractgate synth --format csv` writes, so a synth CSV file can
+  be checked back against the same contract.
 
-A malformed line in NDJSON is reported as a record-level error (with its index)
-rather than aborting — the remaining records still run.
+JSON/NDJSON/single-object are auto-detected regardless of `--data-format`. CSV
+needs either a `.csv` extension or an explicit `--data-format csv` (stdin, or a
+file without that extension).
+
+A malformed line in NDJSON, or a malformed row in CSV, is reported as a
+record-level error (with its index) rather than aborting — the remaining
+records still run.
+
+### CSV typing
+
+Column names are matched to contract fields the same way `synth --format csv`
+named them: a literal column name wins (`Amount [A]`, `Rate.x`), and otherwise
+the name is walked as a native nested or array path (`shipping.country`,
+`tags[0]`). Each cell is typed against the field it matches: `integer`,
+`number`, and `boolean` fields parse to a JSON number or boolean; anything
+else (and any cell that fails to parse) stays a JSON string, so the validator
+reports a clear type mismatch instead of a parse error. An empty cell means no
+value for that column — the key is left out of the record entirely, the same
+as an optional field `synth --format csv` had nothing to put there. A required
+field left empty is still reported missing, exactly as a JSON record that
+leaves the key out would be.
 
 ## Exit codes
 

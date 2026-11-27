@@ -9,11 +9,11 @@
 //!   2 — usage / load error (bad contract YAML, unreadable data file,
 //!         unparseable top-level JSON)
 
-use crate::contract::Contract;
+use crate::contract::{Contract, FieldDefinition, FieldType};
 use crate::validation::{validate, CompiledContract, Violation};
 use clap::Args;
 use serde::Serialize;
-use serde_json::Value;
+use serde_json::{Map, Value};
 use std::{
     io::{self, Read},
     path::PathBuf,
@@ -30,10 +30,16 @@ pub struct TestArgs {
     #[arg(long, value_name = "FILE", required = true)]
     pub contract: PathBuf,
 
-    /// Path to data file (NDJSON, JSON array, or single JSON object).
+    /// Path to data file (NDJSON, JSON array, single JSON object, or CSV).
     /// Use `-` to read from stdin.
     #[arg(long, value_name = "FILE", required = true)]
     pub data: String,
+
+    /// Data file format. `auto` (default) detects CSV from a `.csv`
+    /// extension and otherwise parses JSON array / object / NDJSON, same as
+    /// before this flag existed.
+    #[arg(long, value_enum, default_value_t = DataFormat::Auto)]
+    pub data_format: DataFormat,
 
     /// Output format.
     #[arg(long, value_enum, default_value_t = Format::Human)]
@@ -57,6 +63,17 @@ pub struct TestArgs {
 pub enum Format {
     Human,
     Json,
+}
+
+/// Data file format for `--data`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, clap::ValueEnum)]
+pub enum DataFormat {
+    /// Detect CSV from a `.csv` extension; anything else is parsed as JSON
+    /// (array, single object) or NDJSON, whichever matches.
+    Auto,
+    Json,
+    Ndjson,
+    Csv,
 }
 
 // ---------------------------------------------------------------------------
@@ -103,7 +120,13 @@ pub fn run(args: &TestArgs) -> anyhow::Result<i32> {
         })?;
 
     // --- Read records (exit 2 on top-level parse failure) -----------------
-    let records = read_records(&args.data).map_err(|e| {
+    let data_format = resolve_format(&args.data, args.data_format);
+    let records = read_records(
+        &args.data,
+        data_format,
+        &compiled.contract.ontology.entities,
+    )
+    .map_err(|e| {
         eprintln!("error reading data: {e:#}");
         e
     })?;
@@ -237,9 +260,27 @@ fn load_contract(
     Ok((name, compiled))
 }
 
+/// `--data-format auto`: detect CSV from a `.csv` extension (case
+/// insensitive); everything else keeps going through [`parse_records`],
+/// which already auto-detects JSON array / single object / NDJSON.
+fn resolve_format(source: &str, explicit: DataFormat) -> DataFormat {
+    if explicit != DataFormat::Auto {
+        return explicit;
+    }
+    if source.to_ascii_lowercase().ends_with(".csv") {
+        DataFormat::Csv
+    } else {
+        DataFormat::Auto
+    }
+}
+
 /// Read records from a file path or `-` (stdin).
 /// Returns a Vec of `Result<Value, String>` — malformed lines are errors, not hard aborts.
-fn read_records(source: &str) -> anyhow::Result<Vec<Result<Value, String>>> {
+fn read_records(
+    source: &str,
+    format: DataFormat,
+    fields: &[FieldDefinition],
+) -> anyhow::Result<Vec<Result<Value, String>>> {
     let raw = if source == "-" {
         let mut buf = String::new();
         io::stdin()
@@ -251,7 +292,125 @@ fn read_records(source: &str) -> anyhow::Result<Vec<Result<Value, String>>> {
         std::fs::read_to_string(source).map_err(|e| anyhow::anyhow!("cannot read {source}: {e}"))?
     };
 
-    parse_records(&raw)
+    match format {
+        DataFormat::Csv => parse_csv_records(&raw, fields),
+        DataFormat::Auto | DataFormat::Json | DataFormat::Ndjson => parse_records(&raw),
+    }
+}
+
+/// Parse CSV into one JSON object per row. Column names are matched to
+/// contract fields the same way `synth --format csv` named them: a literal
+/// column name wins (`Amount [A]`, `Rate.x`), otherwise the name is walked
+/// as a native nested / array path (`shipping.country`, `tags[0]`). Cells
+/// are typed against the matching field: integer / float / boolean parse
+/// to a JSON number or bool, anything else (and anything that fails to
+/// parse) stays a JSON string so the validator can report a clear type
+/// mismatch. An empty cell means no value — the key is left out of the
+/// row entirely, the same as an optional field `synth --format csv` had
+/// nothing to put in that column for. A required field left empty is
+/// still reported missing, same as a JSON record that leaves the key out.
+fn parse_csv_records(
+    raw: &str,
+    fields: &[FieldDefinition],
+) -> anyhow::Result<Vec<Result<Value, String>>> {
+    let mut reader = csv::ReaderBuilder::new().from_reader(raw.as_bytes());
+    let headers: Vec<String> = reader
+        .headers()
+        .map_err(|e| anyhow::anyhow!("cannot read CSV header: {e}"))?
+        .iter()
+        .map(str::to_string)
+        .collect();
+    let header_types: Vec<Option<FieldType>> = headers
+        .iter()
+        .map(|h| field_type_for_path(fields, h))
+        .collect();
+
+    let mut out = Vec::new();
+    for rec in reader.records() {
+        match rec {
+            Ok(rec) => {
+                let mut obj = Map::new();
+                for (i, cell) in rec.iter().enumerate() {
+                    if cell.is_empty() {
+                        continue;
+                    }
+                    let key = headers
+                        .get(i)
+                        .cloned()
+                        .unwrap_or_else(|| format!("col_{i}"));
+                    let ty = header_types.get(i).and_then(|t| t.clone());
+                    obj.insert(key, csv_cell_value(cell, ty));
+                }
+                out.push(Ok(Value::Object(obj)));
+            }
+            Err(e) => out.push(Err(format!("CSV parse error: {e}"))),
+        }
+    }
+    Ok(out)
+}
+
+/// The contract field type a CSV column name maps to, if any: a literal
+/// name match wins, otherwise the name is walked as a dotted / bracketed
+/// nested path (mirrors `resolve_indexed`'s rule for data, applied to the
+/// field tree instead).
+fn field_type_for_path(fields: &[FieldDefinition], path: &str) -> Option<FieldType> {
+    if let Some(f) = fields.iter().find(|f| f.name == path) {
+        return Some(f.field_type.clone());
+    }
+    for f in fields {
+        if path.len() <= f.name.len() || !path.starts_with(f.name.as_str()) {
+            continue;
+        }
+        let mut rest = &path[f.name.len()..];
+        if let Some(stripped) = rest.strip_prefix('.') {
+            let Some(props) = f.properties.as_deref() else {
+                continue;
+            };
+            if let Some(ty) = field_type_for_path(props, stripped) {
+                return Some(ty);
+            }
+        } else if rest.starts_with('[') {
+            let Some(item) = f.items.as_deref() else {
+                continue;
+            };
+            while rest.starts_with('[') {
+                let Some(end) = rest.find(']') else { break };
+                rest = &rest[end + 1..];
+            }
+            let rest = rest.strip_prefix('.').unwrap_or(rest);
+            if rest.is_empty() {
+                return Some(item.field_type.clone());
+            }
+            let Some(props) = item.properties.as_deref() else {
+                continue;
+            };
+            if let Some(ty) = field_type_for_path(props, rest) {
+                return Some(ty);
+            }
+        }
+    }
+    None
+}
+
+/// Type one non-empty CSV cell against the field it maps to.
+fn csv_cell_value(cell: &str, field_type: Option<FieldType>) -> Value {
+    match field_type {
+        Some(FieldType::Integer) => cell
+            .parse::<i64>()
+            .map(Value::from)
+            .unwrap_or_else(|_| Value::String(cell.to_string())),
+        Some(FieldType::Float) => {
+            serde_json::Number::from_f64(cell.parse::<f64>().unwrap_or(f64::NAN))
+                .map(Value::Number)
+                .unwrap_or_else(|| Value::String(cell.to_string()))
+        }
+        Some(FieldType::Boolean) => match cell.to_ascii_lowercase().as_str() {
+            "true" => Value::Bool(true),
+            "false" => Value::Bool(false),
+            _ => Value::String(cell.to_string()),
+        },
+        _ => Value::String(cell.to_string()),
+    }
 }
 
 fn parse_records(raw: &str) -> anyhow::Result<Vec<Result<Value, String>>> {
