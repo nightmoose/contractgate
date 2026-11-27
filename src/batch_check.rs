@@ -32,9 +32,16 @@ pub fn generate_check_sql(
 
     let compiled = batch_rules::compile(contract, dialect, table_ref);
     if compiled.predicates.is_empty() {
-        return Err(
-            "this contract has no rule that translates to batch SQL (see skipped list)".to_string(),
-        );
+        let mut msg = "this contract has no rule that translates to batch SQL".to_string();
+        if compiled.skipped.is_empty() {
+            msg.push_str(" (and no rule was skipped either — the contract has no rules at all)");
+        } else {
+            msg.push_str(", see skipped list:\n");
+            for s in &compiled.skipped {
+                msg.push_str(&format!("  {}: {}\n", s.field, s.reason));
+            }
+        }
+        return Err(msg);
     }
 
     let key_cols_quoted: Vec<String> = key_columns
@@ -116,5 +123,40 @@ ontology:
         assert!(out.sql.contains("union all"));
         assert!(out.sql.contains("\"order_id\"::text as \"order_id\""));
         assert!(out.sql.contains("order by \"order_id\", rule"));
+    }
+
+    /// Every rule on this contract is skipped (an object field, no quality
+    /// rules), so `predicates` is empty. The "no rule" error must name the
+    /// skipped field and reason, not just say "see skipped list" and leave
+    /// the caller with nothing to look at.
+    #[test]
+    fn no_translatable_rule_error_names_the_skipped_fields_and_reasons() {
+        let contract: Contract = serde_yaml::from_str(
+            r#"
+version: "1.0"
+name: profile
+ontology:
+  entities:
+    - name: address
+      type: object
+      properties:
+        - name: city
+          type: string
+"#,
+        )
+        .unwrap();
+        let keys = vec!["id".to_string()];
+        let err =
+            generate_check_sql(&contract, SqlDialect::Postgres, "profile", &keys).unwrap_err();
+        assert!(
+            err.contains("no rule that translates to batch SQL"),
+            "{err}"
+        );
+        assert!(err.contains("skipped list"), "{err}");
+        assert!(err.contains("address"), "{err}");
+        assert!(
+            err.contains("batch SQL operates on flat table columns"),
+            "{err}"
+        );
     }
 }

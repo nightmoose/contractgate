@@ -252,3 +252,54 @@ fn postgres_check_table_reports_planted_violations() {
             .expect("cleanup");
     });
 }
+
+/// `contractgate check-table` on a contract with no translatable rule
+/// previously exited with "no rule that translates to batch SQL (see
+/// skipped list)" and printed no skipped list at all. The skipped list
+/// must be on stderr now.
+#[test]
+fn cli_check_table_prints_the_skipped_list_on_no_translatable_rule() {
+    let tmp = tempfile::tempdir().unwrap();
+    let contract = tmp.path().join("profile.yaml");
+    fs::write(
+        &contract,
+        r#"
+version: "1.0"
+name: profile
+ontology:
+  entities:
+    - name: address
+      type: object
+      properties:
+        - name: city
+          type: string
+"#,
+    )
+    .unwrap();
+
+    let out = std::process::Command::new(env!("CARGO_BIN_EXE_contractgate"))
+        .args([
+            "check-table",
+            contract.to_str().unwrap(),
+            "--table",
+            "profile",
+            "--dialect",
+            "postgres",
+            "--key",
+            "id",
+            "--print-sql",
+        ])
+        .output()
+        .unwrap();
+    assert_eq!(out.status.code(), Some(2));
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains("no rule that translates to batch SQL"),
+        "{stderr}"
+    );
+    assert!(stderr.contains("address"), "{stderr}");
+    assert!(
+        stderr.contains("batch SQL operates on flat table columns"),
+        "{stderr}"
+    );
+}
