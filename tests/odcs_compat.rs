@@ -220,6 +220,7 @@ fn validate_command_accepts_odcs_directory() {
     std::fs::write(tmp.path().join("datacontract.yaml"), MINIMAL).unwrap();
     std::fs::write(tmp.path().join("full.yaml"), FULL).unwrap();
     let args = ValidateArgs {
+        files: Vec::new(),
         dir: Some(tmp.path().to_path_buf()),
         json: false,
         schema_object: None,

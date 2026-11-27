@@ -22,6 +22,7 @@ fn cfg() -> CliConfig {
 
 fn args_for_dir(dir: PathBuf) -> ValidateArgs {
     ValidateArgs {
+        files: Vec::new(),
         dir: Some(dir),
         json: false,
         schema_object: None,
@@ -30,6 +31,7 @@ fn args_for_dir(dir: PathBuf) -> ValidateArgs {
 
 fn args_for_dir_json(dir: PathBuf) -> ValidateArgs {
     ValidateArgs {
+        files: Vec::new(),
         dir: Some(dir),
         json: true,
         schema_object: None,
@@ -141,4 +143,71 @@ fn validate_json_flag_does_not_panic() {
     let args = args_for_dir_json(tmp.path().to_path_buf());
     let code = run(&args, &cfg()).expect("run");
     assert_eq!(code, 0);
+}
+
+// ── Positional file path(s) ──────────────────────────────────────────────────
+
+#[test]
+fn validate_accepts_a_positional_file_path() {
+    // The exact shape docs/odcs/using-odcs-directly.md shows:
+    // `contractgate validate --schema-object tbl full-example.odcs.yaml`.
+    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/fixtures/odcs/full-example.odcs.yaml");
+    let args = ValidateArgs {
+        files: vec![path],
+        dir: None,
+        json: false,
+        schema_object: Some("tbl".to_string()),
+    };
+    let code = run(&args, &cfg()).expect("run");
+    assert_eq!(code, 0);
+}
+
+#[test]
+fn validate_accepts_several_positional_file_paths() {
+    let dir = fixtures_dir();
+    let args = ValidateArgs {
+        files: vec![
+            dir.join("valid_user_events.yaml"),
+            dir.join("valid_orders.yaml"),
+        ],
+        dir: None,
+        json: false,
+        schema_object: None,
+    };
+    let code = run(&args, &cfg()).expect("run");
+    assert_eq!(code, 0);
+}
+
+#[test]
+fn validate_positional_file_path_takes_priority_over_dir() {
+    // --dir points at an invalid-only directory, but an explicit FILE
+    // argument for a valid contract must still be the one checked.
+    let tmp = tempfile::tempdir().expect("tempdir");
+    std::fs::copy(
+        fixtures_dir().join("invalid_bad_yaml.yaml"),
+        tmp.path().join("invalid_bad_yaml.yaml"),
+    )
+    .unwrap();
+
+    let args = ValidateArgs {
+        files: vec![fixtures_dir().join("valid_user_events.yaml")],
+        dir: Some(tmp.path().to_path_buf()),
+        json: false,
+        schema_object: None,
+    };
+    let code = run(&args, &cfg()).expect("run");
+    assert_eq!(code, 0, "FILE args must win over --dir");
+}
+
+#[test]
+fn validate_positional_missing_file_exits_1() {
+    let args = ValidateArgs {
+        files: vec![PathBuf::from("/nonexistent/contract.yaml")],
+        dir: None,
+        json: false,
+        schema_object: None,
+    };
+    let code = run(&args, &cfg()).expect("run");
+    assert_eq!(code, 1);
 }

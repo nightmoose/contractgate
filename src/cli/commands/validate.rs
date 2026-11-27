@@ -9,7 +9,13 @@ use std::path::{Path, PathBuf};
 
 #[derive(Args, Debug)]
 pub struct ValidateArgs {
-    /// Directory containing contract YAML files (overrides config).
+    /// Contract YAML file(s) to validate. Takes priority over --dir /
+    /// the configured contracts directory when given.
+    #[arg(value_name = "FILE")]
+    pub files: Vec<PathBuf>,
+
+    /// Directory containing contract YAML files (overrides config). Ignored
+    /// when one or more FILE positional arguments are given.
     #[arg(long)]
     pub dir: Option<PathBuf>,
 
@@ -43,21 +49,24 @@ pub fn run(args: &ValidateArgs, cfg: &CliConfig) -> Result<i32> {
         output::Mode::Human
     };
 
-    let dir = args
-        .dir
-        .clone()
-        .unwrap_or_else(|| cfg.contracts.dir.clone());
-
-    let pattern = format!("{}/{}", dir.display(), cfg.contracts.pattern);
-    let files: Vec<PathBuf> = glob(&pattern)
-        .map(|paths| paths.filter_map(|p| p.ok()).collect())
-        .unwrap_or_default();
-
-    if files.is_empty() {
-        let msg = format!("no contract files matched: {pattern}");
-        output::err(mode, &msg, &serde_json::json!({"error": msg}));
-        return Ok(1);
-    }
+    let files: Vec<PathBuf> = if !args.files.is_empty() {
+        args.files.clone()
+    } else {
+        let dir = args
+            .dir
+            .clone()
+            .unwrap_or_else(|| cfg.contracts.dir.clone());
+        let pattern = format!("{}/{}", dir.display(), cfg.contracts.pattern);
+        let matched: Vec<PathBuf> = glob(&pattern)
+            .map(|paths| paths.filter_map(|p| p.ok()).collect())
+            .unwrap_or_default();
+        if matched.is_empty() {
+            let msg = format!("no contract files matched: {pattern}");
+            output::err(mode, &msg, &serde_json::json!({"error": msg}));
+            return Ok(1);
+        }
+        matched
+    };
 
     let mut any_failure = false;
 
