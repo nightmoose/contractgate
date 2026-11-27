@@ -1,8 +1,8 @@
 # DataContractGate
 
-**Semantic contracts at every pipeline boundary** — *Patent Pending*
+**Semantic contracts at every pipeline boundary** (*Patent Pending*)
 
-Trust but verify at ingest, between stages, and on egress — before your warehouse, reverse ETL, partners, or AI agents.
+Trust but verify at ingest, between stages, and on egress: before your warehouse, reverse ETL, partners, or AI agents.
 
 ## Try it in 10 minutes
 
@@ -14,7 +14,7 @@ cd contractgate
 make demo
 ```
 
-Opens at **http://localhost:3000** — dashboard pre-loaded with three starter
+Opens at **http://localhost:3000**: dashboard pre-loaded with three starter
 contracts and a live event stream. A cold start (image pulls plus the dashboard
 image) took about 1 minute. Later runs reuse the Docker layer cache.
 
@@ -30,7 +30,7 @@ make demo-logs    # follow all service logs
 
 ## Run the demo locally
 
-Everything the demo shows runs on your machine in Docker — no account, no hosted
+Everything the demo shows runs on your machine in Docker: no account, no hosted
 service, no data leaving your laptop. Two options, depending on what you want to
 see:
 
@@ -68,13 +68,13 @@ Full walkthrough and tuning knobs: [`demo/README.md`](demo/README.md).
 
 ![Purchase passes the user_events contract; delete is outside the enum and a negative amount is below the minimum](docs/images/validate-terminal.png)
 
-DataContractGate is a high-performance validation gateway that enforces rich semantic data contracts in real time. Built in Rust, it goes far beyond JSON Schema or basic type checks — ontology, glossary, patterns, enums, computed metrics, and automatic inference. In-process validation of the passing `stripe-charges` catalog samples is p99 0.93 µs and 1,547,368 events/sec on one thread.
+DataContractGate is a high-performance validation gateway that enforces rich semantic data contracts in real time. Built in Rust, it goes far beyond JSON Schema or basic type checks: ontology, glossary, patterns, enums, computed metrics, and automatic inference. In-process validation of the passing `stripe-charges` catalog samples is p99 0.93 µs and 1,547,368 events/sec on one thread.
 
-The same contract can gate what **leaves** your system. `POST /egress/{contract_id}` runs the identical engine on any outbound payload — a reverse-ETL row, a notebook export, a state object headed to a decision model. Failing records are blocked, declared PII is masked, and the caller forwards only the returned `payload`. See [`docs/egress-validation-reference.md`](docs/egress-validation-reference.md).
+The same contract can gate what **leaves** your system. `POST /egress/{contract_id}` runs the identical engine on any outbound payload: a reverse-ETL row, a notebook export, a state object headed to a decision model. Failing records are blocked, declared PII is masked, and the caller forwards only the returned `payload`. See [`docs/egress-validation-reference.md`](docs/egress-validation-reference.md).
 
-**Validating LLM output?** The same engine powers [AISchemaGate](https://aischemagate.com) (`pip install aischemagate` / `npm install @nightmoose/aischemagate`). One-line wrapper over OpenAI / Anthropic / vLLM / Ollama responses — extracts the structured JSON, validates against your contract, optionally re-prompts on violation. Non-streaming only in v1. See [`docs/llm-output-validation.md`](docs/llm-output-validation.md), [`docs/llm-sdk-reference.md`](docs/llm-sdk-reference.md), and the copy-paste guides in [`docs/integrations/`](docs/integrations/) (gating an agent's tools, Vercel AI SDK, structured outputs, LangGraph). Ingest recipes: [`examples/recipes/`](examples/recipes/).
+**Validating LLM output?** The same engine powers [AISchemaGate](https://aischemagate.com) (`pip install aischemagate` / `npm install @nightmoose/aischemagate`). One-line wrapper over OpenAI / Anthropic / vLLM / Ollama responses: extracts the structured JSON, validates against your contract, optionally re-prompts on violation. Non-streaming only in v1. See [`docs/llm-output-validation.md`](docs/llm-output-validation.md), [`docs/llm-sdk-reference.md`](docs/llm-sdk-reference.md), and the copy-paste guides in [`docs/integrations/`](docs/integrations/) (gating an agent's tools, Vercel AI SDK, structured outputs, LangGraph). Ingest recipes: [`examples/recipes/`](examples/recipes/).
 
-**Measured validation performance** (in-process `validate()` only — not HTTP, auth, or Postgres). Passing samples from [`catalog/seeds/stripe-charges`](catalog/seeds/stripe-charges/), contract compiled once before the timer, one thread: p99 **0.93 µs**, **1,547,368 events/sec**. A one-field failure on the same contract was slower (p99 1.27 µs, 1,153,482 events/sec). Measured 2026-11-10 on an Intel Xeon (family 6 model 207 stepping 2, 2400 MHz, 4 vCPU KVM guest). Those two pass figures are the slower end of three release runs. Reproduce from the repository root:
+**Measured validation performance** (in-process `validate()` only; not HTTP, auth, or Postgres). Passing samples from [`catalog/seeds/stripe-charges`](catalog/seeds/stripe-charges/), contract compiled once before the timer, one thread: p99 **0.93 µs**, **1,547,368 events/sec**. A one-field failure on the same contract was slower (p99 1.27 µs, 1,153,482 events/sec). Measured 2026-11-10 on an Intel Xeon (family 6 model 207 stepping 2, 2400 MHz, 4 vCPU KVM guest). Those two pass figures are the slower end of three release runs. Reproduce from the repository root:
 
 ```bash
 cargo run --release --bin contractgate-bench
@@ -131,7 +131,7 @@ Claude Code / Cursor plugin:
 
 Redpanda Connect (HTTP processor, no custom plugin): [`docs/examples/redpanda-connect/`](docs/examples/redpanda-connect/).
 
-Zapier — validate the record a Zap just pulled, before the next step writes it. A failure is quarantined and the Zap stops. A pass continues with the payload DataContractGate returned. Setup and the `zapier-platform push` commands: [`docs/zapier.md`](docs/zapier.md). Source: [`zapier/`](zapier/).
+Zapier: validate the record a Zap just pulled, before the next step writes it. A failure is quarantined and the Zap stops. A pass continues with the payload DataContractGate returned. Setup and the `zapier-platform push` commands: [`docs/zapier.md`](docs/zapier.md). Source: [`zapier/`](zapier/).
 
 ---
 
@@ -153,14 +153,14 @@ The comparison table is Self-Hosted Free: real login with `CONTRACTGATE_SELF_HOS
 
 ## Key Features
 
-- **Semantic YAML Contracts** — entities, types, patterns, enums, required fields, glossary, and computed metrics
-- **Real-time Validation** — at ingestion (Kafka, HTTP, batch). The in-process engine on the recorded host is p99 0.93 µs (see Measured validation performance)
-- **Visual Contract Builder** — intuitive UI + live YAML preview
-- **AI-Powered Inference** — paste sample JSON → instantly generates a full contract
-- **Quarantine + Replay** — automatically hold and replay violating events
-- **Versioned Contracts** — draft → stable → deprecated with compliance mode
-- **High Performance** — Rust + Axum core, 1,547,368 events/sec on one thread, in-process (see Measured validation performance)
-- **Polyglot** — Rust engine, Python SDK, CLI, Kafka Connect, Zapier, Next.js dashboard
+- **Semantic YAML Contracts**: entities, types, patterns, enums, required fields, glossary, and computed metrics
+- **Real-time Validation**: at ingestion (Kafka, HTTP, batch). The in-process engine on the recorded host is p99 0.93 µs (see Measured validation performance)
+- **Visual Contract Builder**: intuitive UI + live YAML preview
+- **AI-Powered Inference**: paste sample JSON → instantly generates a full contract
+- **Quarantine + Replay**: automatically hold and replay violating events
+- **Versioned Contracts**: draft → stable → deprecated with compliance mode
+- **High Performance**: Rust + Axum core, 1,547,368 events/sec on one thread, in-process (see Measured validation performance)
+- **Polyglot**: Rust engine, Python SDK, CLI, Kafka Connect, Zapier, Next.js dashboard
 
 ---
 
@@ -208,9 +208,36 @@ client = Client(base_url="http://localhost:8080", api_key="cg_demo_key")
 client.ingest(contract_id="...", events={"user_id": "u1", "event_type": "click"})
 ```
 
-**CLI** (`contractgate test` is the Rust binary, installed with Cargo):
+**CLI** (`contractgate test` is the Rust binary):
+
+Prebuilt binary (fastest, no Rust toolchain needed). Pick a target:
+`x86_64-unknown-linux-gnu`, `aarch64-unknown-linux-gnu`, `x86_64-apple-darwin`,
+or `aarch64-apple-darwin`. Check [the latest release](https://github.com/nightmoose/contractgate/releases/latest)
+for the current version.
+
 ```bash
-cargo install --git https://github.com/nightmoose/contractgate contractgate
+VERSION=0.4.3   # see the releases page above for the latest
+TARGET=x86_64-unknown-linux-gnu
+curl -LO "https://github.com/nightmoose/contractgate/releases/download/v${VERSION}/contractgate-${VERSION}-${TARGET}.tar.gz"
+curl -LO "https://github.com/nightmoose/contractgate/releases/download/v${VERSION}/SHA256SUMS"
+sha256sum --ignore-missing -c SHA256SUMS
+tar xzf "contractgate-${VERSION}-${TARGET}.tar.gz"
+./contractgate --version
+```
+
+Build from source (needs a Rust toolchain; run `rustup default stable`
+first if `cargo` has no default toolchain set; compiling takes a few
+minutes):
+
+```bash
+cargo install --git https://github.com/nightmoose/contractgate contractgate --bin contractgate
+```
+
+`--bin contractgate` builds and installs only the CLI. Drop it and the
+install also builds and installs this crate's other binaries:
+`contractgate-server`, `contractgate-bench`, and `demo-seeder`.
+
+```bash
 contractgate test --contract examples/contracts/api/user_events.yaml --data examples/contracts/api/pass.json
 contractgate test --contract examples/contracts/api/user_events.yaml --data examples/contracts/api/fail.json
 contractgate synth datacontract.yaml --rows 100 --seed 1 --synth-config synth.yaml
@@ -249,7 +276,7 @@ repos:
 | Connectors | Kafka Connect, HTTP, batch, Python SDK, CLI |
 | Observability | Prometheus + Grafana |
 
-**Where to put the gate:** [Trust but verify at every boundary](docs/architecture/where-to-enforce-contracts.md) — ingest, between stages, egress, and AISchemaGate for LLM output, plus Airflow/dbt quarantine-check examples under [`examples/airflow/`](examples/airflow/) and [`examples/dbt/`](examples/dbt/). A local schema-drift walkthrough (catch at the contract, flag dbt impact, draft a fix for review) is [`examples/schema-drift-agent/`](examples/schema-drift-agent/).
+**Where to put the gate:** [Trust but verify at every boundary](docs/architecture/where-to-enforce-contracts.md): ingest, between stages, egress, and AISchemaGate for LLM output, plus Airflow/dbt quarantine-check examples under [`examples/airflow/`](examples/airflow/) and [`examples/dbt/`](examples/dbt/). A local schema-drift walkthrough (catch at the contract, flag dbt impact, draft a fix for review) is [`examples/schema-drift-agent/`](examples/schema-drift-agent/).
 
 Full RFCs and design docs live in [`docs/rfcs/`](docs/rfcs/). For a quick shipped-vs-draft view, see [`docs/STATUS.md`](docs/STATUS.md).
 
@@ -269,7 +296,7 @@ Full RFCs and design docs live in [`docs/rfcs/`](docs/rfcs/). For a quick shippe
 | Self-hosted OSS | **Yes (`make demo`)** | Yes | Open core | Commercial | Yes |
 | License | **MIT** | Apache 2.0 | Open core | Commercial | Apache 2.0 |
 
-Keep your Great Expectations, Soda, and dbt tests. They check modeled data after processing. DataContractGate verifies payloads as they cross boundaries — complementary, not either/or.
+Keep your Great Expectations, Soda, and dbt tests. They check modeled data after processing. DataContractGate verifies payloads as they cross boundaries; complementary, not either/or.
 
 ---
 
@@ -283,7 +310,7 @@ Active RFCs: [`docs/rfcs/`](docs/rfcs/) · RFC status index: [`docs/STATUS.md`](
 
 ## License
 
-MIT — see [`LICENSE`](LICENSE). Free to use, fork, and build on top (commercial use welcome).
+MIT. See [`LICENSE`](LICENSE). Free to use, fork, and build on top (commercial use welcome).
 
 The semantic contract enforcement algorithm is the subject of a pending patent.
 The MIT License governs this code. The patent application covers the enforcement
