@@ -161,7 +161,7 @@ pub fn run(args: &InferArgs) -> Result<i32> {
             .read_to_string(&mut buf)
             .context("reading from stdin")?;
         let val: Value = serde_json::from_str(buf.trim())
-            .context("stdin is not valid JSON — pipe the raw JSON response body")?;
+            .context("stdin is not valid JSON: pipe the raw JSON response body")?;
         let samples = match val {
             Value::Array(arr) => arr
                 .into_iter()
@@ -191,7 +191,7 @@ pub fn run(args: &InferArgs) -> Result<i32> {
             serde_json::from_str(&raw).context("parsing Newman JSON reporter output")?;
         let samples = extract_samples(&report);
         if samples.is_empty() {
-            bail!("no JSON response bodies found in Newman report — ensure the collection has at least one successful request");
+            bail!("no JSON response bodies found in Newman report: ensure the collection has at least one successful request");
         }
         let default = report
             .collection

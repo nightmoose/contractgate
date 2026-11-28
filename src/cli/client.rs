@@ -61,7 +61,7 @@ impl GatewayClient {
     fn decode<R: DeserializeOwned>(&self, resp: Response) -> Result<R> {
         let status = resp.status();
         if status == 401 {
-            bail!("authentication failed (401) — check CONTRACTGATE_API_KEY");
+            bail!("authentication failed (401): check CONTRACTGATE_API_KEY");
         }
         if status == 404 {
             bail!("not found (404)");

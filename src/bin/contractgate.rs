@@ -79,7 +79,7 @@ enum Cmd {
     Enforce(enforce::EnforceArgs),
     /// Infer a DataContractGate contract from a JSON response (RFC-046).
     ///
-    /// Two input modes — all processing is local, no network calls:
+    /// Two input modes. All processing is local, no network calls:
     ///
     ///   --from-stdin   Pipe raw curl/httpie output directly.
     ///   --from-newman  Read a Newman JSON reporter export file.

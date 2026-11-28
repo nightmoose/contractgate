@@ -1,7 +1,8 @@
-//! The installed binary is `contractgate`, not `cg` — help text and
+//! The installed binary is `contractgate`, not `cg`: help text and
 //! examples must say so. Regression for the clean-install report: several
 //! `--help` examples said `cg synth` / `cg test` / `cg check-table` etc.,
-//! which did not exist as a binary or alias.
+//! which did not exist as a binary or alias. Also checks no `--help` output
+//! contains an em dash (public copy uses plain ASCII punctuation).
 
 use std::process::Command;
 
@@ -37,10 +38,11 @@ fn top_level_help_says_contractgate_not_cg() {
     let text = help(&["--help"]);
     assert!(!has_bare_cg_command(&text), "{text}");
     assert!(text.contains("contractgate"), "{text}");
+    assert!(!text.contains('\u{2014}'), "em dash in --help:\n{text}");
 }
 
 #[test]
-fn every_subcommand_help_says_contractgate_not_cg() {
+fn every_subcommand_help_says_contractgate_not_cg_and_has_no_em_dash() {
     let top = help(&["--help"]);
     let commands: Vec<&str> = top
         .lines()
@@ -57,6 +59,10 @@ fn every_subcommand_help_says_contractgate_not_cg() {
         assert!(
             !has_bare_cg_command(&text),
             "`{cmd} --help` still says bare `cg`:\n{text}"
+        );
+        assert!(
+            !text.contains('\u{2014}'),
+            "`{cmd} --help` contains an em dash:\n{text}"
         );
     }
 }

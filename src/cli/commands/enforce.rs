@@ -86,7 +86,7 @@ pub fn run(args: &EnforceArgs) -> anyhow::Result<i32> {
     let total = events.len() as u64;
 
     if total == 0 {
-        eprintln!("No events collected — nothing to validate.");
+        eprintln!("No events collected: nothing to validate.");
         return Ok(0);
     }
 

@@ -149,7 +149,7 @@ pub fn scaffold_from_topic(
 
     if sample.sr_unavailable {
         eprintln!(
-            "WARNING: Schema Registry unreachable — Avro/Protobuf payloads decoded as best-effort JSON.\n\
+            "WARNING: Schema Registry unreachable: Avro/Protobuf payloads decoded as best-effort JSON.\n\
              Quality will be low.  Obtain SR access and re-run, or use --require-sr to abort."
         );
     }
@@ -369,7 +369,7 @@ fn run_profiler(samples: &[Value], _config: &ScaffoldConfig) -> Vec<FieldStats> 
         profiler.record_event(s);
     }
     if profiler.over_budget() {
-        eprintln!("WARNING: profiler exceeded memory budget — some stats are approximate");
+        eprintln!("WARNING: profiler exceeded memory budget: some stats are approximate");
     }
     profiler.finalise()
 }
@@ -506,7 +506,7 @@ fn emit_field(
             "{pad}# scaffold: pii-candidate confidence={:.2} reason=\"{}\"\n",
             c.confidence, c.reason
         ));
-        out.push_str(&format!("{pad}# TODO: review PII — consider adding:\n"));
+        out.push_str(&format!("{pad}# TODO: review PII: consider adding:\n"));
         out.push_str(&format!(
             "{pad}#   transform:\n{pad}#     kind: {}\n",
             c.suggested_transform
